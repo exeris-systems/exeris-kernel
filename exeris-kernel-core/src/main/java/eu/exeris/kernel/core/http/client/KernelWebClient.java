@@ -114,7 +114,9 @@ public final class KernelWebClient {
      * Creates a client with explicit enricher composition (ADR-032) and retry
      * policy (ADR-045).
      *
-     * @param engine           a started client engine targeting a single host
+     * @param engine           a started client engine; the peer comes from the request's
+     *                         authority, or from the engine's configured default when it
+     *                         names none (ADR-074)
      * @param allocator        the kernel memory allocator (used by the resolved encoder)
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
@@ -140,7 +142,9 @@ public final class KernelWebClient {
      * Convenience constructor — explicit enricher, defaults the retry policy to
      * {@link HttpRetryPolicy#none()} (preserves the ADR-026 no-implicit-retry surface).
      *
-     * @param engine           a started client engine targeting a single host
+     * @param engine           a started client engine; the peer comes from the request's
+     *                         authority, or from the engine's configured default when it
+     *                         names none (ADR-074)
      * @param allocator        the kernel memory allocator (used by the resolved encoder)
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
@@ -160,7 +164,9 @@ public final class KernelWebClient {
      * {@link HttpClientRequestEnricher#noop()} and the retry policy to
      * {@link HttpRetryPolicy#none()}.
      *
-     * @param engine           a started client engine targeting a single host
+     * @param engine           a started client engine; the peer comes from the request's
+     *                         authority, or from the engine's configured default when it
+     *                         names none (ADR-074)
      * @param allocator        the kernel memory allocator
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
@@ -236,7 +242,15 @@ public final class KernelWebClient {
         while (true) {
             // ADR-045: the typed body is re-encoded each attempt; no LoanedBuffer is retained across
             // attempts, so the codec path's zero-leak invariant is untouched by retry.
-            HttpRequest request = enricher.enrich(buildRequest(method, path, requestBody));
+            // ADR-074 decision 5: authority, THEN enrich, THEN send. The engine would substitute
+            // its default inside send(), which is strictly after enrichment — so an enricher binding
+            // an outbound credential's audience to the peer (ADR-040) would observe null every time.
+            // Resolving it here is what makes that decision true of the only path that exists.
+            HttpRequest addressed = buildRequest(method, path, requestBody);
+            if (addressed.authority() == null) {
+                addressed = addressed.withAuthority(engine.defaultAuthority());
+            }
+            HttpRequest request = enricher.enrich(addressed);
 
             HttpResponse response;
             try {

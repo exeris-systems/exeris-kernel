@@ -35,6 +35,81 @@ class HttpConfigTest {
                 HttpVersion.HTTP_2);
     }
 
+    private static HttpConfig client(String defaultAuthority) {
+        return new HttpConfig(
+                HttpMode.CLIENT,
+                null,
+                -1,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                false,
+                HttpVersion.HTTP_1_1,
+                defaultAuthority);
+    }
+
+    @Nested
+    @DisplayName("Client peer (ADR-074) — refused at construction, where the message names the key")
+    class ClientPeer {
+
+        // These assert CONSTRUCTION-time refusal specifically, and that is the whole point of the
+        // slice. The engine refuses the same shapes at send() with an IllegalStateException, which
+        // is a different code path throwing a different type — so a TCK case there does not cover
+        // this one. Deferring a misconfigured key to the first request reports an operator mistake
+        // as a client problem, which is the anti-pattern validateRequestLimits above argues against.
+
+        @Test
+        @DisplayName("no default peer is legal — an unaddressed request is then refused at send")
+        void nullIsLegal() {
+            assertThatCode(() -> client(null)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a host:port peer is accepted, bracketed IPv6 included")
+        void wellFormedPeersAreAccepted() {
+            assertThatCode(() -> client("payments.internal:8443")).doesNotThrowAnyException();
+            assertThatCode(() -> client("[::1]:8080")).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a blank peer is refused rather than treated as absent")
+        void blankIsRefused() {
+            assertThatThrownBy(() -> client("   "))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("omit the key instead");
+        }
+
+        @Test
+        @DisplayName("a URL is refused, because it is what an operator writes when the key looks like one")
+        void urlShapedValueIsRefused() {
+            assertThatThrownBy(() -> client("https://payments.internal/api"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("not a URL");
+        }
+
+        @Test
+        @DisplayName("a peer without a port is refused at construction, not at the first request")
+        void missingPortIsRefused() {
+            // HttpRequest carries no scheme, so there is no basis for choosing 80 over 443 — and
+            // defaulting to the listener port is exactly what ADR-074 removed.
+            assertThatThrownBy(() -> client("payments.internal"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("explicit port");
+        }
+
+        @Test
+        @DisplayName("an unbracketed IPv6 literal is refused, because it is ambiguous rather than unusual")
+        void unbracketedIpv6IsRefused() {
+            // "::1:8080" is itself a valid IPv6 address, so reading it as host "::1" port 8080 is a
+            // guess. Measured: both forms parse and resolve, which is what makes it silent.
+            assertThatThrownBy(() -> client("::1:8080"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("bracketed");
+        }
+    }
+
     @Nested
     @DisplayName("Protective bounds — zero is refused, because zero refuses everything")
     class ProtectiveBounds {

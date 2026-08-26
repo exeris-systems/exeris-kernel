@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -69,6 +70,11 @@ public abstract class AbstractHttpProviderLoopbackTck {
     }
 
     protected HttpConfig clientConfig(String host, int port) {
+        // ADR-074: the peer is now a DIAL address the client is given, not the SERVER/DUAL listener
+        // address it used to read out of bindHost. This fixture happened to work before only
+        // because the two were the same value — a coincidence, now a setting. bindHost/port stay
+        // populated so the rest of the fixture is unchanged; defaultAuthority is what the client
+        // actually dials.
         return new HttpConfig(
                 eu.exeris.kernel.spi.http.HttpMode.CLIENT,
                 host,
@@ -79,7 +85,8 @@ public abstract class AbstractHttpProviderLoopbackTck {
                 HttpConfig.DEFAULT_MAX_HEADER_SIZE,
                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
-                HttpVersion.HTTP_1_1
+                HttpVersion.HTTP_1_1,
+                host + ":" + port
         );
     }
 
@@ -120,6 +127,53 @@ public abstract class AbstractHttpProviderLoopbackTck {
                 response.body().close();
             }
         }
+    }
+
+    @Test
+    @DisplayName("A request's authority overrides the engine's configured default peer (ADR-074)")
+    void requestAuthorityOverridesTheConfiguredDefaultPeer() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int defaultPort = nextFreePort();
+        int addressedPort = nextFreePort();
+
+        // Two servers. The client is configured to default to the FIRST and the request names the
+        // SECOND, so only a client that reads the request's authority can reach it. Before ADR-074
+        // the engine took its peer from HttpConfig.bindHost at construction and never looked at the
+        // request at all — this case is therefore unreachable on the previous behaviour rather than
+        // merely differently-answered.
+        AtomicReference<String> reachedBy = new AtomicReference<>();
+        HttpHandler defaultHandler = exchange -> {
+            reachedBy.set("default");
+            exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+        };
+        HttpHandler addressedHandler = exchange -> {
+            reachedBy.set("addressed");
+            exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+        };
+
+        try (HttpServerEngine defaultServer = createServerEngine(provider, serverConfig(host, defaultPort));
+             HttpServerEngine addressedServer = createServerEngine(provider, serverConfig(host, addressedPort));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, defaultPort))) {
+            defaultServer.setHandler(defaultHandler);
+            addressedServer.setHandler(addressedHandler);
+            defaultServer.start();
+            addressedServer.start();
+            clientEngine.start();
+
+            HttpResponse response = clientEngine.send(
+                    HttpRequest.noBody(HttpMethod.GET, requestPath(), requestVersion(), List.of())
+                            .withAuthority(host + ":" + addressedPort));
+
+            assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+            if (response.body() != null) {
+                response.body().close();
+            }
+        }
+
+        assertThat(reachedBy.get())
+                .as("the request named the second peer, so the second peer must be the one reached")
+                .isEqualTo("addressed");
     }
 
     @Test

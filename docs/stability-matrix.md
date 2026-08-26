@@ -96,6 +96,14 @@ as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.
 
 ### `…spi.http` per-surface breakdown
 
+> **ADR-074 added a component to two `stable` records without breaking either, and it was measured
+> rather than asserted.** `HttpRequest` gained `authority` and `HttpConfig` gained
+> `defaultAuthority`; both retain their previous canonical constructor as a bridge, so the SPI
+> compatibility gate reports **`stable-breaks=0` / `stable-src-breaks=0`** against `v0.11.0`.
+> The residual risk the gate cannot see is source-level and out-of-tree: a record **deconstruction
+> pattern** (`case HttpRequest(m, p, v, h, b)`) or a `HttpRequest::new` canonical-constructor
+> reference would not compile. Neither appears anywhere in this repository — checked, not assumed.
+
 Because this package is `mixed`, the breakdown is **exhaustive**: every class in
 `eu.exeris.kernel.spi.http` appears in exactly one row. A class named in no row would be neither
 gated nor reported by the compatibility gate, so completeness here is enforced, not aspirational —
@@ -105,6 +113,8 @@ gated nor reported by the compatibility gate, so completeness here is enforced, 
 |---|---|---|---|---|
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
 | Request/response carriers: `HttpRequest`, `HttpResponse`, `HttpTypedResponse`, `HttpStatus`, `HttpMethod`, `HttpVersion`, `HttpHeader` | **stable** | 0.5.0 | ADR-009 | exercised through the engine/exchange/handler TCKs above |
+| ↳ `HttpRequest.authority()` / `HttpConfig.defaultAuthority()` / `HttpClientEngine.defaultAuthority()` | **stable** | 0.12.0 | ADR-074 | `AbstractHttpClientEngineTck$PeerAddressing`, `AbstractHttpProviderLoopbackTck`, `KernelWebClientRetryTest#enricherObservesTheResolvedAuthority` |
+| `HttpConfigValidation` | _internal_ | 0.12.0 | ADR-074 | — (package-private; `HttpConfig`'s own construction-time validation, extracted rather than published) |
 | Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck` |
 | `HttpClientRequestEnricher` | **stable** | 0.8.0 | ADR-032 | `AbstractHttpClientRequestEnricherTck` |
 | Body codecs: `HttpRequestBodyEncoder`, `HttpRequestBodyDecoder`, `HttpResponseBodyEncoder`, `HttpResponseBodyDecoder`, `HttpRequestBodyEncoderRegistry`, `HttpRequestBodyDecoderRegistry`, `HttpResponseBodyEncoderRegistry`, `HttpResponseBodyDecoderRegistry`, `HttpRequestEncodingContext`, `HttpRequestDecodingContext`, `HttpResponseEncodingContext`, `HttpResponseDecodingContext`, `HttpEncodedBody` | **preview** | 0.8.0 | ADR-034 / ADR-036 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
