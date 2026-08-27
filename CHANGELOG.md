@@ -127,6 +127,34 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Decided
 
+- **ADR-077 — a route declares how it executes, and the dispatcher draws the connection
+  consequence.** Closes RFC-2026-08-26 (now ACCEPTED) and the cycle's only 1.0-CRITICAL item.
+  `CommunityHttpRequestDispatcher` binds a `PersistenceSessionBox` around every non-streaming
+  request, unconditionally and with no configuration key anywhere, so a handler that blocks holds its
+  pooled connection across the block while the work it waits on draws from that same pool — the first
+  cross-runtime benchmark result where the kernel loses categorically rather than by a margin.
+
+  The decision builds the seam and leaves the default: `RouteRequirement` gains an execution facet,
+  `PROMPT` (today's behaviour, the default) or `LONG_RUNNING`. **`spi.http` does not name a
+  connection** — the facet describes the route, and the Community dispatcher makes the inference,
+  because an HTTP SPI naming a pool concept is a Wall breach. Every existing static factory keeps
+  returning `PROMPT`, so a policy implementation that never names execution is unaffected. The
+  request-scoped promise in `persistence.md` is narrowed to `PROMPT` routes rather than retracted,
+  and `CommunityRequestScopeBypassIsolationIT`'s backend-PID assertion is not edited.
+
+  Two questions the RFC handed the ADR by name are settled. **Release ownership never moves to the
+  handle** — a `LONG_RUNNING` route has no box, so `openConnection` returns an owning handle, which
+  is not a new model but the one every non-request path already runs, flow threads included. And the
+  **default flip is gated on three named artefacts**, not on "a measurement": the acquire-rate
+  multiplier inside `[1.0×, 3.17×]` measured as reuses crossing a transaction boundary, the
+  interceptor's session-key cost at that rate, and a saga-benchmark re-run with `ConnectionHold`
+  enabled so the request-side and flow-side holds are apportioned rather than assumed.
+
+  Re-verifying the RFC's six constraints at their declaration sites produced one correction:
+  `NonOwningPersistenceConnection` is a private static nested class inside `PersistenceSessionBox`,
+  not a top-level type — nothing outside the box can reference it, which is exactly why release
+  ownership cannot migrate to the handle. Decision only; no source touched.
+
 - **Heterogeneous multi-hop graph traversal moves into 1.0 scope; not into 0.12.** The ROADMAP
   entry (surfaced by dogfooding, 2026-07-31) previously read *post-1.0*, on the ground that graph
   the subsystem is in 1.0 while this particular contract widening is surface the scope ruling never
