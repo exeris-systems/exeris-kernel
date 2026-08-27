@@ -126,10 +126,40 @@ search_path`: a setting a strategy never writes is not a setting it is free to i
 
 ## Request Session and the Scope Key
 
-One HTTP request is one connection. `CommunityHttpRequestDispatcher` binds a
-`PersistenceSessionBox` for the request; the first persistence call acquires a
+One HTTP request is one connection — **on a route that returns promptly**. `CommunityHttpRequestDispatcher`
+binds a `PersistenceSessionBox` for the request; the first persistence call acquires a
 connection, every later call reuses it, and `box.release()` in the handler's
 `finally` returns it to the pool.
+
+### The promise is scoped to `PROMPT` routes (ADR-077, since 0.12)
+
+The qualifier is new and the behaviour it qualifies is not: `PROMPT` is what every
+`RouteRequirement` factory returns, so a route that declares nothing gets exactly the paragraph
+above.
+
+A route that **blocks** can say so — `RouteRequirement.authenticated().longRunning()` — and then no
+session is bound at all. Each persistence call acquires and releases through the engine, landing on
+the ownership rule every path outside a request session already runs, flow threads included.
+
+The reason is that the promise inverts under blocking. A handler that waits holds its pooled
+connection across the wait, while the work it waits on draws from that same pool: hold-and-wait on
+one pool, and an availability collapse rather than a slowdown. What the declaration buys is that
+nothing pooled is pinned across the block; what it costs is more acquires, and therefore more
+`RlsConnectionInterceptor` round-trips, since isolation is re-established per acquisition.
+
+Two consequences worth stating plainly:
+
+- **A `LONG_RUNNING` handle is owning.** Its `close()` is real, not the no-op a request-scoped
+  handle hands out, so a missed close is a genuine pool leak. Try-with-resources is not a style
+  preference on such a route.
+- **The declaration can go stale.** A route marked `LONG_RUNNING` that stops blocking keeps paying
+  the extra acquires forever. `eu.exeris.kernel.http.RouteExecution` carries the handler duration on
+  every such request so the mismatch is detectable; the kernel deliberately sets no threshold, since
+  what counts as "too fast to be blocking" is a deployment's judgement, not the runtime's.
+
+The default does not move until three measurements exist — the acquire-rate multiplier inside
+`[1.0×, 3.17×]` counted as reuses crossing a transaction boundary, the interceptor's session-key
+cost at that rate, and a saga-benchmark re-run with `ConnectionHold` enabled. ADR-077 records why.
 
 ### Measuring how long a connection is actually held (since 0.12)
 

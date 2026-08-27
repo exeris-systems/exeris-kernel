@@ -10,6 +10,43 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **A route can declare that it blocks, and stop pinning a pooled connection while it does**
+  (ADR-077). `RouteRequirement` gains an execution facet — `PROMPT` (the default) or `LONG_RUNNING`
+  via `longRunning()`. On a `LONG_RUNNING` route `CommunityHttpRequestDispatcher` binds no
+  `PersistenceSessionBox`, so each persistence call acquires and releases through the engine instead
+  of holding one connection across a block whose own work draws from the same pool.
+
+  **The facet names the route, not a connection.** `spi.http` must stay blind to what a driver holds,
+  so the Community dispatcher draws the persistence consequence; another driver may draw a different
+  one, or none. That is why the enum is `Execution` and not `ConnectionLifetime` — the alternative
+  was costed in the ADR and rejected as a Wall breach.
+
+  **Nothing moves for a route that says nothing.** Every existing factory returns `PROMPT`, the two
+  scope-free shapes hand back shared constants so the wither stays allocation-free, and
+  `persistence.md`'s "One HTTP request is one connection" is narrowed to `PROMPT` routes rather than
+  retracted — `CommunityRequestScopeBypassIsolationIT`'s backend-PID assertion is untouched and still
+  passes as written.
+
+  Two costs are accepted by name rather than discovered later. A `LONG_RUNNING` handle is **owning**,
+  so a missed `close()` is a real pool leak — the rule every non-request path already runs. And a
+  declaration can go **stale**: `eu.exeris.kernel.http.RouteExecution` carries the handler duration on
+  every such request so the mismatch is detectable, with no threshold baked in, because what counts
+  as "too fast to be blocking" is a deployment's judgement. It is the first kernel JFR event to carry
+  a request path, which its Javadoc says out loud instead of leaving in a field list.
+
+  Coverage: `AbstractHttpRoutePolicyTck` gains the orthogonality contract (a requirement and its
+  `LONG_RUNNING` twin must decide identically on every shape and every principal, plus a non-vacuity
+  case so an admit-everything binding cannot pass it); `RouteRequirementTest` pins the carrier;
+  `CommunityRouteExecutionBindingTest` pins the dispatcher's decision in the default build; and
+  `CommunityRouteExecutionIsolationIT` pins its consequence in backend PIDs against a live pool.
+  `RouteExecutionEventTest` runs the mitigation the ADR records as unproven, so a documented signal
+  cannot ship without firing.
+
+  All three dispatcher-side suites are mutation-checked, each with the asymmetry that proves the
+  branch rather than the plumbing: binding the session unconditionally reddens the `LONG_RUNNING`
+  cases while the `PROMPT` ones stay green, and deleting the JFR emit reddens the signal test through
+  its *positive control* — the assertion that tells silence from a deaf recording.
+
 - **HTTP/2 stops silently ignoring the header limits an operator configures.** ADR-071 left this as
   its stated out-of-scope tail: `http.maxRequestHeaderCount` / `…Size` are honoured on HTTP/1 and
   the h2 path referenced neither, so a limit could be believed set while it was not. Closing it

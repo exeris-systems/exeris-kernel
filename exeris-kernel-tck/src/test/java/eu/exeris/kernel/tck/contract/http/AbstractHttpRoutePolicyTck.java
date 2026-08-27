@@ -13,6 +13,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -183,6 +185,53 @@ public abstract class AbstractHttpRoutePolicyTck {
             assertThat(decide(RouteRequirement.requiringAllScopes(Set.of(READ, WRITE)),
                     principalWith(READ, WRITE, UNRELATED)))
                     .isEqualTo(Decision.ADMIT);
+        }
+    }
+
+    @Nested
+    @DisplayName("The execution facet (ADR-077) is orthogonal to the authorization decision")
+    class ExecutionFacet {
+
+        @Test
+        @DisplayName("declaring LONG_RUNNING changes no decision, on any shape or any principal")
+        void longRunningDoesNotMoveTheDecision() {
+            // The facet describes what a driver may hold across the handler, not who may call it. An
+            // implementation that keyed its decision on the whole requirement — by equality against a
+            // constant, say — would pass every other case in this TCK and fail here.
+            List<RouteRequirement> shapes = List.of(
+                    RouteRequirement.permitAll(),
+                    RouteRequirement.authenticated(),
+                    RouteRequirement.requiringAnyScope(Set.of(READ, WRITE)),
+                    RouteRequirement.requiringAllScopes(Set.of(READ, WRITE)));
+            List<PrincipalContext> principals = new ArrayList<>();
+            principals.add(null);
+            principals.add(principalWith());
+            principals.add(principalWith(READ));
+            principals.add(principalWith(READ, WRITE, UNRELATED));
+
+            assertThat(shapes).hasSize(4);
+            for (RouteRequirement shape : shapes) {
+                for (PrincipalContext principal : principals) {
+                    assertThat(decide(shape.longRunning(), principal))
+                            .as("%s under %s must decide as its PROMPT twin",
+                                    shape, principal == null ? "no identity" : "an identity")
+                            .isEqualTo(decide(shape, principal));
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("the decision that proves the case above is not vacuous")
+        void theShapesUnderTestStillDisagreeWithEachOther() {
+            // Without this, an implementation that returned one constant for everything would satisfy
+            // longRunningDoesNotMoveTheDecision perfectly.
+            assertThat(decide(RouteRequirement.permitAll().longRunning(), null))
+                    .isEqualTo(Decision.ADMIT);
+            assertThat(decide(RouteRequirement.authenticated().longRunning(), null))
+                    .isEqualTo(Decision.UNAUTHENTICATED);
+            assertThat(decide(RouteRequirement.requiringAllScopes(Set.of(READ, WRITE)).longRunning(),
+                    principalWith(READ)))
+                    .isEqualTo(Decision.FORBIDDEN);
         }
     }
 
