@@ -83,6 +83,15 @@ final class CommunityHttpConfigResolver {
         // rather than a product of the other two, which would have loosened the default twelvefold.
         int maxHeaderBlockSize = configProvider.getInt("http.maxHeaderBlockSize")
             .orElse(HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE);
+        // Three HTTP/2 keys and not one, because they bound three different quantities: the
+        // COMPRESSED block on the wire (above), the CUMULATIVE decoded field section, and a
+        // SINGLE decoded literal. Compression is what makes the first two independent — neither
+        // can be computed from the other — and the middle one is the only one RFC 9113 §6.5.2
+        // defines SETTINGS_MAX_HEADER_LIST_SIZE against, so it is the one that gets advertised.
+        int maxHeaderListSize = configProvider.getInt("http.maxHeaderListSize")
+            .orElse(HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE);
+        int maxStringLiteralSize = configProvider.getInt("http.maxStringLiteralSize")
+            .orElse(HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
         String defaultAuthority = configProvider.getString("http.client.defaultAuthority")
             .map(String::strip)
             .filter(value -> !value.isEmpty())
@@ -100,7 +109,9 @@ final class CommunityHttpConfigResolver {
             h2cUpgradeEnabled,
             maxVersion,
             defaultAuthority,
-            maxHeaderBlockSize
+            maxHeaderBlockSize,
+            maxHeaderListSize,
+            maxStringLiteralSize
         );
     }
 

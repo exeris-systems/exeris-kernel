@@ -94,6 +94,22 @@ final class HttpConfigValidation {
         }
     }
 
+    /* default */ static void validateHeaderListSize(int maxHeaderListSize) {
+        if (maxHeaderListSize <= 0) {
+            throw new IllegalArgumentException(
+                    "http.maxHeaderListSize must be > 0 (0 refuses every HTTP/2 request, it is not "
+                            + "unlimited), got: " + maxHeaderListSize);
+        }
+    }
+
+    /* default */ static void validateStringLiteralSize(int maxStringLiteralSize) {
+        if (maxStringLiteralSize <= 0) {
+            throw new IllegalArgumentException(
+                    "http.maxStringLiteralSize must be > 0 (0 refuses every HPACK literal, it is "
+                            + "not unlimited), got: " + maxStringLiteralSize);
+        }
+    }
+
     /* default */ static void validatePort(HttpMode mode, int port, String bindHost) {
         if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
             validateServerDualBinding(bindHost, port);

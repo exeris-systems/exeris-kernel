@@ -300,7 +300,9 @@ class KernelWebClientIntegrationTest {
                 false,
                 HttpVersion.HTTP_1_1,
                 "127.0.0.1" + ":" + port,
-                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 

@@ -92,6 +92,16 @@ turns an operator's configuration error into what looks like a client error, onc
   `HpackDecoder.MAX_STRING_LITERAL` remain hardcoded at 65 536. Giving them a configuration path is
   the next slice; this one makes the h1 keys true first, because a key that lies is worse than a key
   that is absent.
+
+  *Amendment 2026-08-27 — this slice has landed, and it took THREE keys rather than the two
+  constants named above. `http.maxHeaderBlockSize` bounds the compressed HEADERS + CONTINUATION
+  block, `http.maxStringLiteralSize` replaces the constant named here, and `http.maxHeaderListSize`
+  is the one this text did not anticipate: RFC 9113 §6.5.2 defines SETTINGS_MAX_HEADER_LIST_SIZE
+  against the CUMULATIVE DECODED field section, a quantity the HPACK decoder was already enforcing
+  from a separate hardcoded 65 536 that no constant named above covers. Folding it into the block
+  bound would have put a compressed number in the slot the RFC reserves for a decoded one, so the
+  server would advertise a limit nothing checks — and asymmetrically, since raising the key is the
+  only reason to touch it and raising is the direction that breaks. Three quantities, three keys.*
 - **PAQS.** `AdmissionController.MAX_ACTIVE_STREAMS` and `PaqsScheduler.SPIN_THRESHOLD` have no
   configuration surface and no `paqs.*` namespace exists. Same stream, separate slice.
 - The four `System.getProperty` reads that bypass `ConfigProvider` entirely.

@@ -60,18 +60,26 @@ final class CommunityHttp2ControlFrames {
     }
 
     /**
-     * Sends the server's initial SETTINGS, advertising the header-block bound it actually enforces.
+     * Sends the server's initial SETTINGS, advertising the decoded-field-section bound it enforces.
      *
      * <p>Until 0.12 this wrote an EMPTY SETTINGS frame, so a peer was told nothing and the 64 KiB the
-     * assembler enforced was discoverable only by tripping it. SETTINGS_MAX_HEADER_LIST_SIZE
+     * decoder enforced was discoverable only by tripping it. SETTINGS_MAX_HEADER_LIST_SIZE
      * (RFC 9113 §6.5.2) is the protocol's own way to say it, which is why closing the HTTP/1÷HTTP/2
      * asymmetry needed no new mechanism — only for the configured value to reach the frame.
+     *
+     * <p>The value advertised is {@code maxHeaderListSize} and deliberately NOT the header-block
+     * bound, even though the two ship with the same default. RFC 9113 §6.5.2 defines this setting
+     * against the UNCOMPRESSED field section, which is the quantity the HPACK decoder enforces;
+     * the block bound is on COMPRESSED wire bytes and is a different number as soon as either is
+     * configured. Advertising the block bound here would tell a peer a limit nothing checks — and
+     * asymmetrically, because raising it would be believed and never honoured while lowering it
+     * would merely be conservative. Raising it is the only reason to touch the key.
      */
     /* default */ static void sendServerSettings(MemoryAllocator allocator, TransportStream stream,
-                                                 int maxHeaderBlockSize) {
+                                                 int maxHeaderListSize) {
         try (LoanedBuffer outbound = allocator.allocateNetwork(H2_HANDSHAKE_BUFFER_BYTES)) {
             long written = Http2FrameEncoder.writeSettings(outbound.segment(), 0, 0, false,
-                    Http2Settings.ID_MAX_HEADER_LIST_SIZE, maxHeaderBlockSize);
+                    Http2Settings.ID_MAX_HEADER_LIST_SIZE, maxHeaderListSize);
             outbound.setSize(written);
             stream.write(outbound.segment(), (int) written);
         }

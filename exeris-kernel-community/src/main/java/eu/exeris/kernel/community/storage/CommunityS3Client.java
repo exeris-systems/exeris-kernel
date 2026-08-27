@@ -88,7 +88,9 @@ final class CommunityS3Client implements AutoCloseable {
                 // endpoint by setting a LISTEN address to a DIAL value — the coincidence the ADR
                 // removed. The value is unchanged; it is now stated where it is read.
                 settings.host() + ":" + settings.port(),
-                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE));
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE));
         this.engine.start();
     }
 

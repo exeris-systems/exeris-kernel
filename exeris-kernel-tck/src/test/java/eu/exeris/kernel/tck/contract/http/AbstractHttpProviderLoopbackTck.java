@@ -87,7 +87,9 @@ public abstract class AbstractHttpProviderLoopbackTck {
                 false,
                 HttpVersion.HTTP_1_1,
                 host + ":" + port,
-                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 

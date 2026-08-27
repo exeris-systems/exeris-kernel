@@ -23,6 +23,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   limit whose job is to refuse a header bomb. Protective per ADR-071, so `0` and negatives are
   refused rather than read as unlimited.
 
+  **Three keys, not one, because HTTP/2 bounds three different quantities.** `http.maxHeaderBlockSize`
+  is the COMPRESSED block above. `http.maxHeaderListSize` is the CUMULATIVE DECODED field section —
+  what RFC 9113 §6.5.2 actually defines SETTINGS_MAX_HEADER_LIST_SIZE against, and what the HPACK
+  decoder enforces; it is therefore the value advertised. Advertising the block bound instead would
+  hand a peer a number nothing checks, and asymmetrically: lowering the key would merely be
+  conservative while raising it would be believed and ignored — and raising it is the only reason to
+  touch it. `http.maxStringLiteralSize` is one decoded name or value, checked against the declared
+  length before the bytes are read, which is what refuses an oversized allocation up front rather
+  than after. Compression is what makes the first two independent; neither can be derived from the
+  other. This closes ADR-071's HTTP/2 tail completely — both constants it named by name, plus the
+  third bound it did not know it was leaving behind — and the ROADMAP's Operational Limits table
+  loses both HTTP/2 rows.
+
 - **`KernelWebClient.withAuthority(String)`** — the typed surface can now name its peer, which is
   what makes ADR-074's "one engine serves many peers" reachable rather than merely decided. Until
   this, every call built through the façade resolved to the engine's configured default, so the

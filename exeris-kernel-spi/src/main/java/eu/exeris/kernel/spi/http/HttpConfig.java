@@ -52,6 +52,20 @@ import java.util.Objects;
  *                              per-field size and a field count on HTTP/1 — multiplying
  *                              them out would loosen this bound roughly twelvefold at the
  *                              shipped defaults. Protective, so {@code > 0} is required
+ * @param maxHeaderListSize     HTTP/2 only: bound in bytes on the CUMULATIVE decoded field
+ *                              section, enforced by the HPACK decoder and advertised to the
+ *                              peer as SETTINGS_MAX_HEADER_LIST_SIZE. This is the quantity
+ *                              RFC 9113 §6.5.2 defines that setting against, which is why it
+ *                              is a separate key from {@code maxHeaderBlockSize} and not a
+ *                              second name for it: that one bounds COMPRESSED wire bytes, and
+ *                              compression means the two cannot be derived from each other.
+ *                              Advertising one while enforcing the other is how a peer comes
+ *                              to be told a limit nothing honours. Protective, {@code > 0}
+ * @param maxStringLiteralSize  HTTP/2 only: bound in bytes on ONE decoded HPACK name or value,
+ *                              checked against the declared length before its bytes are read.
+ *                              Distinct from the cumulative bound above because it is what
+ *                              refuses an oversized allocation up front rather than after.
+ *                              Protective, {@code > 0}
  * @since 0.5.0
  */
 public record HttpConfig(
@@ -66,7 +80,9 @@ public record HttpConfig(
         boolean h2cUpgradeEnabled,
         HttpVersion maxVersion,
         String defaultAuthority,
-        int maxHeaderBlockSize
+        int maxHeaderBlockSize,
+        int maxHeaderListSize,
+        int maxStringLiteralSize
 ) {
 
     /** Default bind address: all interfaces. */
@@ -96,6 +112,24 @@ public record HttpConfig(
      */
     public static final int DEFAULT_MAX_HEADER_BLOCK_SIZE = 65_536;
 
+    /**
+     * Default HTTP/2 decoded-field-section bound in bytes — the value the HPACK decoder was
+     * constructed with unconditionally before 0.12, kept so this key changes reachability and
+     * not behaviour.
+     *
+     * @since 0.12.0
+     */
+    public static final int DEFAULT_MAX_HEADER_LIST_SIZE = 65_536;
+
+    /**
+     * Default HPACK single-literal bound in bytes — the value {@code HpackDecoder} held as a
+     * constant before 0.12, kept on the same reachability-not-behaviour grounds. Named by
+     * ADR-071 as the other half of its deferred HTTP/2 tail.
+     *
+     * @since 0.12.0
+     */
+    public static final int DEFAULT_MAX_STRING_LITERAL_SIZE = 65_536;
+
     /** Default max request body: 10 MiB. */
     public static final long DEFAULT_MAX_REQUEST_BODY_BYTES = 10L * 1_024 * 1_024;
 
@@ -110,6 +144,8 @@ public record HttpConfig(
             HttpConfigValidation.validatePort(mode, port, bindHost);
             HttpConfigValidation.validateDefaultAuthority(defaultAuthority);
             HttpConfigValidation.validateHeaderBlockSize(maxHeaderBlockSize);
+            HttpConfigValidation.validateHeaderListSize(maxHeaderListSize);
+            HttpConfigValidation.validateStringLiteralSize(maxStringLiteralSize);
         }
     }
 
@@ -145,7 +181,8 @@ public record HttpConfig(
                       HttpVersion maxVersion) {
         this(mode, bindHost, port, maxConnections, idleTimeoutMillis, maxRequestHeaderCount,
                 maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion, null,
-                DEFAULT_MAX_HEADER_BLOCK_SIZE);
+                DEFAULT_MAX_HEADER_BLOCK_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE,
+                DEFAULT_MAX_STRING_LITERAL_SIZE);
     }
 
     /**
@@ -167,7 +204,9 @@ public record HttpConfig(
                 true,
                 HttpVersion.HTTP_2,
                 null,
-                DEFAULT_MAX_HEADER_BLOCK_SIZE
+                DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                DEFAULT_MAX_HEADER_LIST_SIZE,
+                DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 
@@ -189,7 +228,9 @@ public record HttpConfig(
                 false,
                 HttpVersion.HTTP_2,
                 null,
-                DEFAULT_MAX_HEADER_BLOCK_SIZE
+                DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                DEFAULT_MAX_HEADER_LIST_SIZE,
+                DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 }

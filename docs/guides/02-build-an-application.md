@@ -263,9 +263,17 @@ Inside your application, read config with `KernelProviders.CURRENT_CONFIG.get()`
 
 `http.mode`, `http.bindHost`, `http.port` (falls back to `network.port`), `http.maxConnections`,
 `http.idleTimeoutMillis`, `http.maxRequestHeaderCount`, `http.maxRequestHeaderSize`,
-`http.maxRequestBodyBytes`, `http.h2cUpgradeEnabled`, `http.maxVersion`.
+`http.maxRequestBodyBytes`, `http.h2cUpgradeEnabled`, `http.maxVersion`,
+`http.client.defaultAuthority`, `http.maxHeaderBlockSize`, `http.maxHeaderListSize`,
+`http.maxStringLiteralSize`.
 
-Source: `exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/CommunityHttpConfigResolver.java:65-116`.
+The last three are HTTP/2 only, and they are three keys because they bound three different
+quantities — the COMPRESSED header block on the wire, the CUMULATIVE DECODED field section, and a
+SINGLE decoded literal. Compression is what makes the first two independent, and the middle one is
+what the server advertises as SETTINGS_MAX_HEADER_LIST_SIZE. All three are protective bounds, so
+`0` is refused rather than read as "unlimited".
+
+Source: `CommunityHttpConfigResolver.resolve`.
 
 > ### Gotcha: HTTP binds nothing, silently
 >

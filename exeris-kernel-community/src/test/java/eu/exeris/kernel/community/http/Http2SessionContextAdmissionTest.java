@@ -32,7 +32,7 @@ final class Http2SessionContextAdmissionTest {
     @BeforeEach
     void setUp() {
         allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
-        session = Http2SessionContext.create(allocator, HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE);
+        session = Http2SessionContext.create(allocator, HttpConfig.defaultServer());
     }
 
     @AfterEach

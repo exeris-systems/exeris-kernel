@@ -38,7 +38,6 @@ import java.nio.charset.StandardCharsets;
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class HpackDecoder {
 
-    private static final int MAX_STRING_LITERAL = 65_536;
     private static final int MAX_INTEGER_SHIFT = 28;
     private static final long MAX_UINT32 = 0xFFFF_FFFFL;
 
@@ -63,6 +62,7 @@ public final class HpackDecoder {
     private final HpackDynamicTable dynamicTable;
     private final MemoryAllocator allocator;
     private final long maxHeaderListSize;
+    private final int maxStringLiteralSize;
     private long protocolMaxTableSize;
 
     /** Transient decode position — valid only within a {@link #decode} invocation. */
@@ -93,16 +93,26 @@ public final class HpackDecoder {
      * dynamic table max size. Call {@link #setProtocolMaxTableSize(long)} after a
      * SETTINGS_HEADER_TABLE_SIZE acknowledgement (RFC 7541 §4.2).
      *
-     * @param dynamicTable      dynamic table for this decoding context
-     * @param allocator         memory allocator for Huffman scratch buffers
-     * @param maxHeaderListSize maximum cumulative size of decoded header list (bytes)
+     * <p>The two bounds are different quantities and neither substitutes for the other.
+     * {@code maxHeaderListSize} is cumulative over the whole decoded field section — it is what
+     * RFC 9113 §6.5.2 defines SETTINGS_MAX_HEADER_LIST_SIZE against, so it is the one a server
+     * advertises. {@code maxStringLiteralSize} bounds a <em>single</em> name or value before its
+     * bytes are read, which is what stops one declared length from asking for an allocation the
+     * cumulative bound would only notice afterwards.
+     *
+     * @param dynamicTable         dynamic table for this decoding context
+     * @param allocator            memory allocator for Huffman scratch buffers
+     * @param maxHeaderListSize    maximum cumulative size of decoded header list (bytes)
+     * @param maxStringLiteralSize maximum size of one decoded name or value literal (bytes)
      */
     public HpackDecoder(HpackDynamicTable dynamicTable,
                         MemoryAllocator allocator,
-                        long maxHeaderListSize) {
+                        long maxHeaderListSize,
+                        int maxStringLiteralSize) {
         this.dynamicTable = dynamicTable;
         this.allocator = allocator;
         this.maxHeaderListSize = maxHeaderListSize;
+        this.maxStringLiteralSize = maxStringLiteralSize;
         this.protocolMaxTableSize = dynamicTable.maxSize();
     }
 
@@ -283,8 +293,8 @@ public final class HpackDecoder {
 
         int strLen = readInteger(seg, end, 7);
 
-        if (strLen > MAX_STRING_LITERAL) {
-            throw new HpackDecodingException(MSG_STRING_LITERAL_TOO_LONG, strLen, MAX_STRING_LITERAL);
+        if (strLen > maxStringLiteralSize) {
+            throw new HpackDecodingException(MSG_STRING_LITERAL_TOO_LONG, strLen, maxStringLiteralSize);
         }
 
         long strStart = decodePos;
