@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
@@ -45,7 +46,7 @@ final class Http2RapidResetSpecTest {
     @BeforeEach
     void setUp() {
         allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
-        session = Http2SessionContext.create(allocator);
+        session = Http2SessionContext.create(allocator, HttpConfig.defaultServer());
     }
 
     @AfterEach

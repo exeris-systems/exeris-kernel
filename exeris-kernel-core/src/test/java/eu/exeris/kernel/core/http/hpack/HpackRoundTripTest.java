@@ -67,7 +67,7 @@ class HpackRoundTripTest {
             HpackEncoder encoder =
                     new HpackEncoder(encTable, testAllocator, true);
             HpackDecoder decoder =
-                    new HpackDecoder(decTable, testAllocator, 65_536);
+                    new HpackDecoder(decTable, testAllocator, 65_536, 65_536);
 
             MemorySegment buf = testArena.allocate(4096);
             long pos = 0;
@@ -91,7 +91,7 @@ class HpackRoundTripTest {
             HpackEncoder encoder =
                     new HpackEncoder(encTable, testAllocator, false);
             HpackDecoder decoder =
-                    new HpackDecoder(decTable, testAllocator, 65_536);
+                    new HpackDecoder(decTable, testAllocator, 65_536, 65_536);
 
             MemorySegment buf = testArena.allocate(4096);
             long pos = encoder.encodeHeader(
@@ -110,7 +110,7 @@ class HpackRoundTripTest {
             HpackEncoder encoder =
                     new HpackEncoder(encTable, testAllocator, true);
             HpackDecoder decoder =
-                    new HpackDecoder(decTable, testAllocator, 65_536);
+                    new HpackDecoder(decTable, testAllocator, 65_536, 65_536);
 
             MemorySegment buf = testArena.allocate(4096);
             long pos = 0;

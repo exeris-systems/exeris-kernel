@@ -79,6 +79,37 @@ final class HttpConfigValidation {
         }
     }
 
+    /**
+     * Refuses a non-positive HTTP/2 header-block bound.
+     *
+     * <p>Protective rather than capacity, so ADR-071's ruling applies: {@code 0} is not "unlimited",
+     * it is a bound that refuses every header block, and a protection must not be switchable off by
+     * a value that looks like an empty template slot.
+     */
+    /* default */ static void validateHeaderBlockSize(int maxHeaderBlockSize) {
+        if (maxHeaderBlockSize <= 0) {
+            throw new IllegalArgumentException(
+                    "http.maxHeaderBlockSize must be > 0 (0 refuses every HTTP/2 header block, it is "
+                            + "not unlimited), got: " + maxHeaderBlockSize);
+        }
+    }
+
+    /* default */ static void validateHeaderListSize(int maxHeaderListSize) {
+        if (maxHeaderListSize <= 0) {
+            throw new IllegalArgumentException(
+                    "http.maxHeaderListSize must be > 0 (0 refuses every HTTP/2 request, it is not "
+                            + "unlimited), got: " + maxHeaderListSize);
+        }
+    }
+
+    /* default */ static void validateStringLiteralSize(int maxStringLiteralSize) {
+        if (maxStringLiteralSize <= 0) {
+            throw new IllegalArgumentException(
+                    "http.maxStringLiteralSize must be > 0 (0 refuses every HPACK literal, it is "
+                            + "not unlimited), got: " + maxStringLiteralSize);
+        }
+    }
+
     /* default */ static void validatePort(HttpMode mode, int port, String bindHost) {
         if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
             validateServerDualBinding(bindHost, port);

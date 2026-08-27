@@ -47,7 +47,155 @@ class HttpConfigTest {
                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
                 HttpVersion.HTTP_1_1,
-                defaultAuthority);
+                defaultAuthority,
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
+    }
+
+    private static HttpConfig withHeaderBlock(int maxHeaderBlockSize) {
+        return withHttp2Bounds(maxHeaderBlockSize,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE, HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
+    }
+
+    private static HttpConfig withHeaderList(int maxHeaderListSize) {
+        return withHttp2Bounds(HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                maxHeaderListSize, HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
+    }
+
+    private static HttpConfig withStringLiteral(int maxStringLiteralSize) {
+        return withHttp2Bounds(HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE, maxStringLiteralSize);
+    }
+
+    private static HttpConfig withHttp2Bounds(int maxHeaderBlockSize,
+                                              int maxHeaderListSize,
+                                              int maxStringLiteralSize) {
+        return new HttpConfig(
+                HttpMode.SERVER,
+                HttpConfig.DEFAULT_BIND_HOST,
+                HttpConfig.DEFAULT_PORT,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                true,
+                HttpVersion.HTTP_2,
+                null,
+                maxHeaderBlockSize,
+                maxHeaderListSize,
+                maxStringLiteralSize);
+    }
+
+    @Nested
+    @DisplayName("HTTP/2 header block — protective, so zero is refused (ADR-071 tail)")
+    class HeaderBlockBound {
+
+        @Test
+        @DisplayName("the pre-0.12 value is still the default, so the key changes reach and not behaviour")
+        void defaultIsUnchanged() {
+            assertThat(HttpConfig.defaultServer().maxHeaderBlockSize())
+                    .isEqualTo(HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE)
+                    .isEqualTo(65_536);
+        }
+
+        @Test
+        @DisplayName("zero is refused — a protective bound has no unlimited reading")
+        void zeroIsRefused() {
+            assertThatThrownBy(() -> withHeaderBlock(0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("http.maxHeaderBlockSize");
+        }
+
+        @Test
+        @DisplayName("a negative bound is refused")
+        void negativeIsRefused() {
+            assertThatThrownBy(() -> withHeaderBlock(-1)).isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("raising it is accepted — which is the point an operator could not reach before")
+        void raisingIsAccepted() {
+            assertThatCode(() -> withHeaderBlock(1_048_576)).doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("HTTP/2 decoded field section — the bound the peer is actually told about")
+    class HeaderListBound {
+
+        @Test
+        @DisplayName("the pre-0.12 value is still the default, so the key changes reach and not behaviour")
+        void defaultIsUnchanged() {
+            assertThat(HttpConfig.defaultServer().maxHeaderListSize())
+                    .isEqualTo(HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE)
+                    .isEqualTo(65_536);
+        }
+
+        @Test
+        @DisplayName("it is a separate knob from the header-block bound, not an alias for it")
+        void independentOfTheBlockBound() {
+            // Sharing a default is not sharing a value. They bound compressed wire bytes and the
+            // decoded field section respectively, so compression alone makes them independent —
+            // and a config that could not separate them would have no way to express that.
+            HttpConfig config = withHttp2Bounds(32_768, 200_000, 16_384);
+            assertThat(config.maxHeaderListSize()).isEqualTo(200_000);
+            assertThat(config.maxHeaderBlockSize()).isEqualTo(32_768);
+        }
+
+        @Test
+        @DisplayName("zero is refused — a protective bound has no unlimited reading")
+        void zeroIsRefused() {
+            assertThatThrownBy(() -> withHeaderList(0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("http.maxHeaderListSize");
+        }
+
+        @Test
+        @DisplayName("a negative bound is refused")
+        void negativeIsRefused() {
+            assertThatThrownBy(() -> withHeaderList(-1)).isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("raising it is accepted — the direction an operator actually touches it")
+        void raisingIsAccepted() {
+            assertThatCode(() -> withHeaderList(1_048_576)).doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("HPACK string literal — the other constant ADR-071 named as its tail")
+    class StringLiteralBound {
+
+        @Test
+        @DisplayName("the pre-0.12 value is still the default, so the key changes reach and not behaviour")
+        void defaultIsUnchanged() {
+            assertThat(HttpConfig.defaultServer().maxStringLiteralSize())
+                    .isEqualTo(HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE)
+                    .isEqualTo(65_536);
+        }
+
+        @Test
+        @DisplayName("zero is refused — a protective bound has no unlimited reading")
+        void zeroIsRefused() {
+            assertThatThrownBy(() -> withStringLiteral(0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("http.maxStringLiteralSize");
+        }
+
+        @Test
+        @DisplayName("a negative bound is refused")
+        void negativeIsRefused() {
+            assertThatThrownBy(() -> withStringLiteral(-1)).isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("lowering it is accepted — a constrained node's reason for touching this one")
+        void loweringIsAccepted() {
+            assertThatCode(() -> withStringLiteral(4_096)).doesNotThrowAnyException();
+        }
     }
 
     @Nested
