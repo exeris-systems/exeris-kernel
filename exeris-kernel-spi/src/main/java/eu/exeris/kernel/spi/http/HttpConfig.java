@@ -46,12 +46,14 @@ import java.util.Objects;
  *                              is a DIAL address, deliberately not {@code bindHost}, which is a
  *                              LISTEN address
  * @param maxHeaderBlockSize    HTTP/2 only: bound in bytes on an assembled HEADERS +
- *                              CONTINUATION block, also advertised to the peer as
- *                              SETTINGS_MAX_HEADER_LIST_SIZE (RFC 9113 §6.5.2). It is a
- *                              separate key from the two above BECAUSE they are a
- *                              per-field size and a field count on HTTP/1 — multiplying
- *                              them out would loosen this bound roughly twelvefold at the
- *                              shipped defaults. Protective, so {@code > 0} is required
+ *                              CONTINUATION block as it arrives COMPRESSED on the wire,
+ *                              enforced locally by the header-block assembler and
+ *                              deliberately NOT advertised — the protocol has no setting
+ *                              for a compressed bound, and {@code maxHeaderListSize} is the
+ *                              one SETTINGS carries. It is a separate key from the two
+ *                              above BECAUSE they are a per-field size and a field count on
+ *                              HTTP/1 — multiplying them out would loosen this bound roughly
+ *                              twelvefold at the shipped defaults. Protective, {@code > 0}
  * @param maxHeaderListSize     HTTP/2 only: bound in bytes on the CUMULATIVE decoded field
  *                              section, enforced by the HPACK decoder and advertised to the
  *                              peer as SETTINGS_MAX_HEADER_LIST_SIZE. This is the quantity

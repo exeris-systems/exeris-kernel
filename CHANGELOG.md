@@ -15,8 +15,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the h2 path referenced neither, so a limit could be believed set while it was not. Closing it
   needed no new mechanism — `Http2Settings` already carried `ID_MAX_HEADER_LIST_SIZE` (RFC 9113
   §6.5.2) and the server was sending an **empty** SETTINGS frame, telling a peer nothing at all.
-  It now advertises the bound it enforces, and `Http2HeaderBlockAssembler`'s 65 536 becomes the
-  documented default of a new `http.maxHeaderBlockSize` key rather than a constant.
+  It now advertises a bound it enforces, and `Http2HeaderBlockAssembler`'s 65 536 becomes the
+  documented default of a new `http.maxHeaderBlockSize` key rather than a constant. (Which bound
+  is advertised is settled below: not this one.)
   **A separate key, not a product of the other two, and the reason is measured**: those describe a
   per-field size and a field count on HTTP/1, so multiplying them out yields ~800 KiB at the shipped
   defaults — a twelvefold *loosening* of a protective bound, which is the wrong direction for a

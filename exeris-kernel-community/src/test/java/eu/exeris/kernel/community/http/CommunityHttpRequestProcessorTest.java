@@ -533,7 +533,8 @@ class CommunityHttpRequestProcessorTest {
         assertThat(frame1.frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frame1.streamId()).isZero();
         assertThat(frame1.length())
-                .as("the server must advertise the header-block bound it enforces, not an empty SETTINGS")
+                .as("the server must advertise a bound it enforces, not an empty SETTINGS; WHICH "
+                        + "bound is asserted by serverSettingsAdvertisesTheDecodedListBound")
                 .isEqualTo(6);
         pos += Http2FrameParser.FRAME_HEADER_SIZE + frame1.length();
 
