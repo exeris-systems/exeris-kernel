@@ -19,6 +19,15 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       Sees shading, the merged {@code META-INF/services}, and the manifest.</li>
  * </ul>
  *
+ * <h2>Rule for anything added here</h2>
+ * <p><b>A clause that ITERATES {@code responses} must assert its size first; a clause that INDEXES
+ * it need not.</b> {@code get(i)} throws on a short list, so indexing carries its own guard —
+ * {@code allSatisfy} and {@code noneMatch} over an empty list both pass. Every clause runs as its
+ * own {@code @Test} and therefore does not inherit
+ * {@link #assertEveryRequestAnswered(List, String)}'s check, and an empty response list is exactly
+ * what the defect these suites exist for produced. Without the rule, the assertions that survive a
+ * dead session are the ones that prove least.
+ *
  * <p>Neither layer is redundant, because the two fail apart: a dependency the reactor resolves can
  * still be dropped or version-collapsed by the shade plugin, and a jar that starts can still have
  * been built from a classpath that never held the right artifact. {@link DiagnosticsCliTest} sees

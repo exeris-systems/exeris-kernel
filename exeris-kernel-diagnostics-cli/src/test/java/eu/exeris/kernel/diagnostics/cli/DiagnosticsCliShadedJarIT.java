@@ -119,6 +119,7 @@ class DiagnosticsCliShadedJarIT {
     @Test
     @DisplayName("stdout carries only the protocol — logging must not desync the NDJSON framing")
     void stdoutCarriesOnlyProtocol() {
+        assertThat(responses).hasSameSizeAs(DiagnosticsProtocolContract.REQUESTS);
         assertThat(responses)
                 .as("every stdout line must be a JSON object; consumers frame on newlines")
                 .allSatisfy(line -> assertThat(line).startsWith("{").endsWith("}"));
