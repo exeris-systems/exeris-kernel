@@ -2230,6 +2230,96 @@ excluded, proven non-vacuous by deleting one sweep and watching it fail.
 
 ---
 
+### Graph: The Churn-to-Data SLO Was A Coin Flip, And The Path Has Two Regimes (surfaced 2026-08-27)
+
+**Gap:** `GraphChurnRatioTck` is the executable half of graph.md's "Zero-BS Performance Metric" — the
+`< 20x` Community / `< 1x` Enterprise churn-to-data contract. It failed intermittently in local runs
+and never in CI. Neither observation was evidence about the graph path: the number it compared
+against the threshold was not a byte measurement of anything.
+
+Three defects composed, and the third is why the first two stayed invisible:
+
+1. **The numerator was a Poisson count, not a byte count.** It summed `allocationSize` where JFR
+   provides it and `weight` where it does not. `jdk.ObjectAllocationSample` — which dominates the
+   recording — provides only `weight`, the sampler's extrapolation, and it arrives in a
+   near-constant ~261 KB quantum. Across repetitions the count of sampled `eu.exeris.*` events was
+   0, 2, 4, 5, 6 and 10, so the reported ratio could take only the values 0.00, 4.09, 8.17, 10.22,
+   12.26 … 20.44.
+2. **The denominator spanned different work from the numerator.** `measurementIterations()` (1 000)
+   fed the denominator while the workload ran `Config.ofDefaults().hotPathIterations()` (10 000).
+   That factor of ten is exactly what scaled one sampler hit to 2.04 ratio units, and so put the
+   20.0 threshold between the ninth hit and the tenth. **The test failed when the sampler drew ten.**
+   At a mean of ~4.6 that is a few percent per run — which is what "flakes locally, never in CI"
+   actually was: a low-rate draw, not a property of either machine.
+3. **A numerator filtered to `eu.exeris.*` cannot observe the documented quantity.** graph.md
+   attributes the ~15x to the driver — "standard Bolt/JDBC drivers exhibit a ~15x
+   allocation-to-data ratio" — and the filter excludes the driver by construction. On the Community
+   Bolt path the kernel's own share is ~1% of the total. On a realistic result set the filtered
+   signal is **empty**: three consecutive measurements of a 500-id traversal sampled zero
+   `eu.exeris.*` events, which the shipped arithmetic reports as a perfect `0.00x`.
+
+**A fourth defect sat in the workload, not the instrument.** The ratio is defined per byte of data
+transferred, and the traversal returned one id — 16 bytes of payload for ~11.7 KB of allocation.
+Measured honestly that workload reports ~730x, and what it measures is session and protocol setup
+rather than churn per data byte.
+
+**Owner:** Graph subsystem, TCK.
+
+**Resolution (this change):** the numerator is the exact per-thread allocated-bytes delta, driver
+included; the denominator derives from the iteration count actually run and the result-set size
+actually returned; the traversal carries a 500-id fan-out so the fixed per-round-trip cost
+amortises.
+
+**What the corrected instrument found immediately — the substantive item.** The Community Bolt
+traversal path has **two allocation regimes**, and the choice is made once per JVM and then holds:
+
+| Regime | Bytes / traversal | Ratio | Against graph.md's 20x |
+|---|---|---|---|
+| fast | ~142 000 | 17.4 – 18.0x | inside |
+| slow | ~166 000 | 20.5 – 20.8x | **breached** |
+
+They are separated by a flat 17%, and nothing mixes them: three JVMs ran six windows of 300
+traversals each — 4 200 traversals per process, warm-up included — and every window in a process
+landed in the same regime. Roughly two runs in seven take the slow one (4 of 14 observed
+processes). So the documented `< 20x` is
+met in one regime and breached in the other, and **that is a property of the driver path, not of the
+change under review** — which is why the TCK's Community bound is set at 23x as a *regression*
+bound, with graph.md's 20x kept as the contract it reports against. Deciding which number is the
+honest one to publish, or removing the slow regime, is open work.
+
+**What is also still open:**
+
+- **Cold traversals exceed the contract, and graph.md does not say it is a steady-state figure.** On
+  a fresh JVM, allocation is 18.0–18.3x over the first hundred traversals and **19.9–20.6x over the
+  second** — a C2 recompilation transient above the 20x bound — before settling from traversal ~200
+  onward (fifty consecutive windows across five JVMs, none above 18.0). The TCK warms past the knee,
+  which is right for measuring the contract and silent about the fact that a cold process does not
+  meet it.
+- **`EX-GRPH-5005` has no emission site.** `ExcessiveAllocationException` is declared in the SPI and
+  its `rawArgs` layout is tested, but nothing throws it. graph.md claimed the TCK emitted it under
+  `LeakDetectionMode.PARANOID`; the TCK never did, and the doc has been corrected. Either a driver
+  self-reports a breach through it, or the code is dead.
+- **Only the Bolt path is measured.** graph.md documents ~15x for PGQ/JDBC too, and there is no
+  churn binding for the SQL path — it needs a `ScopedValue`-bound persistence engine, which is why
+  the Cypher backend was chosen for the one binding that exists.
+- **The denominator counts semantic bytes (16 per UUID), not transferred bytes** — the wire encodes
+  each id as a 36-character string. The conservative choice, stated in the TCK Javadoc, and a
+  different quantity from graph.md's literal wording.
+
+**Merge Gate:** the churn TCK passes across repeated **fresh JVMs**, not repeated windows inside one
+— the distinction that hid both the regime split and the warm-up transient through a first round of
+verification; proven non-vacuous by a mutation adding per-row allocation to the traversal and
+watching the ratio cross the bound from either regime. Then: a decision on the regime split (fix,
+or publish the slow figure), and a binding for the PGQ path or a recorded decision that the SQL
+path's churn stays unmeasured.
+
+**1.0 disposition:** the instrument fix is not 1.0-blocking. The regime split is **1.0-blocking as a
+claims matter**: graph.md's churn figures are a public performance claim, nothing in the repository
+measured them until now, and what the measurement says is that the published number holds about five
+times in seven.
+
+---
+
 ## Known Gaps / Future Work planned for v0.12
 
 ### Persistence + Flow: Request-Session Scope Collision, Lost Choreography Wake, Silent Snapshot Refusal
@@ -2602,7 +2692,16 @@ That is not merely inconvenient. It moves the join into application code, which 
 
 **Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
 
-**1.0 disposition:** post-1.0 — but the reason is narrower than "graph is not 1.0", which would contradict the **"Graph in 1.0 — DECIDED: stays in 1.0"** ruling in this same section. Graph the subsystem *is* in 1.0: it is substantially complete and TCK-backed. What is post-1.0 is *this contract widening*. The 1.0 decision was taken about the graph surface as it stands, on the strength of GRAPH-111's zero-alloc and churn-ratio TCKs; a new traversal primitive is new surface that ruling never assessed, and adding it inside the 1.0 window would re-open a scope question that was deliberately closed.
+**Corroborated from the cost side (2026-08-27).** The gap above was written from expressiveness: a two-hop heterogeneous query is not sayable in one request. The benchmark track reached the same wall from the other direction. The graph arm originally ran inside the saga scenario; splitting the two left a standalone graph scenario that is **not ready to run**, because client-side hop composition is what it would be measuring. It is blocked pending the cost work this entry describes, which means the missing primitive is now holding up a measurement rather than only an API.
+
+**The round-trip cost is no longer an estimate.** This entry argued "one round trip per hop and an N+1 fan-out on the second" qualitatively. The corrected churn TCK puts a number on the unit: a 1-hop traversal returning **one** id costs **~11.7 KB of allocation for 16 bytes of payload** — the shape of every second-hop call in an N+1 fan-out. Against ~142 KB for a single 500-id traversal, composing the same query client-side over 500 intermediate nodes costs ~5.8 MB where the engine-side path would cost ~142 KB: roughly **forty times the allocation for the same answer**.
+
+**1.0 disposition — REVISED 2026-08-27: in 1.0, not in 0.12.** The previous reading was *post-1.0*, on the narrow ground that graph the subsystem is in 1.0 while *this contract widening* is new surface the scope ruling never assessed, and that adding it inside the 1.0 window would re-open a deliberately closed question. That reasoning is superseded, for two reasons that both post-date it:
+
+- **The cost evidence above**, which converts the gap from a convenience argument into a No-Waste-Compute one — a fortyfold allocation penalty for expressing the canonical graph use case is not a scope question.
+- **Half the evidence the original ruling leaned on was not evidence.** That ruling was taken "on the strength of GRAPH-111's zero-alloc and churn-ratio TCKs". The churn-ratio TCK is the one shown in the entry above to have reported a JFR sampler draw rather than a byte count; it certified nothing about this path until 2026-08-27. The zero-alloc TCK is untouched by that finding and stands.
+
+**Sequencing: not v0.12.** The RFC this entry requires has not been written, and v0.12 is committed elsewhere. The 1.0 commitment is to the primitive landing before the GA cut, not to the release that carries it.
 
 ---
 
