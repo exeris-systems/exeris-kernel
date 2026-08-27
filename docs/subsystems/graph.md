@@ -204,7 +204,10 @@ try (GraphCursor cursor = graphService.bfsCursor(query)) {
 ```
 
 > If a traversal result fits in a single slab, `streamBfsJson` is the zero-allocation fast path.
-> For unbounded graph traversals, use `bfsCursor()` to prevent `EX-GRPH-5005` (slab overflow).
+> There is no cursor surface for a result that does not: `bfsCursor()` appears in no source file,
+> and `EX-GRPH-5005` is never thrown (see the error-code table above). Today an unbounded traversal
+> materialises its whole result — `traverseBreadthFirst` into an `ArrayList<UUID>`, `streamBfsJson`
+> into one `LoanedBuffer` sized to the encoded array — so the bound is whatever the driver returns.
 
 ### Cycle Detection
 
@@ -241,12 +244,14 @@ connections of user X"). Leaving it at the default 10 prevents runaway traversal
 
 ### Load Tests
 
-- **Churn-to-Data Ratio:** TCK measures bytes allocated per byte transferred.
-  Failure emits `EX-GRPH-5005` with `bytesAllocated` and `bytesTransferred` in `rawArgs`.
+- **Churn-to-Data Ratio:** `GraphChurnRatioTck` measures allocated bytes per byte of data
+  transferred over a fan-out traversal, and fails the build with an assertion carrying the measured
+  ratio, the allocated bytes and the transferred bytes. It does **not** emit `EX-GRPH-5005`; nothing
+  throws that exception (see the error-code table above).
 - **Carrier Pinning:** JFR-based validation that driver I/O does not stall Virtual Threads
   (`CarrierPinnedEvent` must not fire during standard traversal).
 
-> **TCK bindings:** Both `ExecutionGraphZeroAllocTck` and `GraphChurnRatioTck` now have Community-tier concrete bindings in `exeris-kernel-community/src/test/`. `CommunityExecutionGraphZeroAllocTckTest` runs in the main `build-and-verify` lane (in-process shortest-path hot path, no database). `CommunityGraphChurnRatioTckIT` is `@Tag("integration")` (live Neo4j via Testcontainers) and runs in the `persistence-rls-gate` CI job — gating Community churn-to-data ratio (`EX-GRPH-5005`) below the documented 20x threshold.
+> **TCK bindings:** Both `ExecutionGraphZeroAllocTck` and `GraphChurnRatioTck` now have Community-tier concrete bindings in `exeris-kernel-community/src/test/`. `CommunityExecutionGraphZeroAllocTckTest` runs in the main `build-and-verify` lane (in-process shortest-path hot path, no database). `CommunityGraphChurnRatioTckIT` is `@Tag("integration")` (live Neo4j via Testcontainers) and runs in the `persistence-rls-gate` CI job — gating the Community churn-to-data ratio below the **regression** bound described in §2, not below the published 20x contract, which this path meets in only one of its two allocation regimes.
 
 ---
 

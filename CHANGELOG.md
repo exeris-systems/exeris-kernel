@@ -107,6 +107,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the packaged jar over stdio at `verify` — where shading, the merged `META-INF/services`, and the
   manifest are first observable, and where the distributed artifact's preview-cleanliness (ADR-066)
   becomes an executed claim rather than a scanned one.
+
 - **The HTTP client dialled the address its own server listened on.** Not "single-host", which is
   what every document said: `CommunityHttpClientEngine` has no public constructor, its only
   reachable path took `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL
@@ -125,6 +126,21 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   head-of-line isolation for large object transfers, stands on its own and is now the one stated.
 
 ### Decided
+
+- **Heterogeneous multi-hop graph traversal moves into 1.0 scope; not into 0.12.** The ROADMAP
+  entry (surfaced by dogfooding, 2026-07-31) previously read *post-1.0*, on the ground that graph
+  the subsystem is in 1.0 while this particular contract widening is surface the scope ruling never
+  assessed. Two things that post-date that reading overturn it. The benchmark track hit the same
+  wall from the cost side: the graph arm used to run inside the saga scenario, and splitting the
+  two left a standalone graph scenario that cannot run yet, because client-side hop composition is
+  precisely what it would be measuring. And the corrected churn TCK (above) prices the unit — a
+  1-hop traversal returning one id costs ~11.7 KB of allocation for 16 bytes of payload, so
+  composing a two-hop query client-side over 500 intermediate nodes costs ~5.8 MB where an
+  engine-side path costs ~142 KB. A fortyfold allocation penalty on the canonical graph use case is
+  a No-Waste-Compute question, not a scope one. Recorded with the correction that half the original
+  ruling's evidence — "GRAPH-111's zero-alloc and churn-ratio TCKs" — included the churn TCK shown
+  above to have measured a sampler draw. The RFC that entry requires is still unwritten, so the
+  commitment is to the GA cut, not to a named release.
 
 - **ADR-074 — a request names its own peer.** Discharges the one question RFC-2026-06-29 left
   explicitly owed: its split disposition made multi-peer addressing 1.0 scope but fixed *when*, not

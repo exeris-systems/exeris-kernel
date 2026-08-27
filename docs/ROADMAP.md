@@ -2692,7 +2692,16 @@ That is not merely inconvenient. It moves the join into application code, which 
 
 **Merge Gate:** RFC accepted with one shape and dissent recorded. If a primitive lands: `AbstractGraphSessionTck` covers a heterogeneous two-hop path, a hop that matches nothing (empty result, not error), depth interaction, and a cross-tenant probe proving the second hop cannot escape the caller's isolation key; both bindings green; the zero-copy streaming variant covered, not only the `List<UUID>` one.
 
-**1.0 disposition:** post-1.0 — but the reason is narrower than "graph is not 1.0", which would contradict the **"Graph in 1.0 — DECIDED: stays in 1.0"** ruling in this same section. Graph the subsystem *is* in 1.0: it is substantially complete and TCK-backed. What is post-1.0 is *this contract widening*. The 1.0 decision was taken about the graph surface as it stands, on the strength of GRAPH-111's zero-alloc and churn-ratio TCKs; a new traversal primitive is new surface that ruling never assessed, and adding it inside the 1.0 window would re-open a scope question that was deliberately closed.
+**Corroborated from the cost side (2026-08-27).** The gap above was written from expressiveness: a two-hop heterogeneous query is not sayable in one request. The benchmark track reached the same wall from the other direction. The graph arm originally ran inside the saga scenario; splitting the two left a standalone graph scenario that is **not ready to run**, because client-side hop composition is what it would be measuring. It is blocked pending the cost work this entry describes, which means the missing primitive is now holding up a measurement rather than only an API.
+
+**The round-trip cost is no longer an estimate.** This entry argued "one round trip per hop and an N+1 fan-out on the second" qualitatively. The corrected churn TCK puts a number on the unit: a 1-hop traversal returning **one** id costs **~11.7 KB of allocation for 16 bytes of payload** — the shape of every second-hop call in an N+1 fan-out. Against ~142 KB for a single 500-id traversal, composing the same query client-side over 500 intermediate nodes costs ~5.8 MB where the engine-side path would cost ~142 KB: roughly **forty times the allocation for the same answer**.
+
+**1.0 disposition — REVISED 2026-08-27: in 1.0, not in 0.12.** The previous reading was *post-1.0*, on the narrow ground that graph the subsystem is in 1.0 while *this contract widening* is new surface the scope ruling never assessed, and that adding it inside the 1.0 window would re-open a deliberately closed question. That reasoning is superseded, for two reasons that both post-date it:
+
+- **The cost evidence above**, which converts the gap from a convenience argument into a No-Waste-Compute one — a fortyfold allocation penalty for expressing the canonical graph use case is not a scope question.
+- **Half the evidence the original ruling leaned on was not evidence.** That ruling was taken "on the strength of GRAPH-111's zero-alloc and churn-ratio TCKs". The churn-ratio TCK is the one shown in the entry above to have reported a JFR sampler draw rather than a byte count; it certified nothing about this path until 2026-08-27. The zero-alloc TCK is untouched by that finding and stands.
+
+**Sequencing: not v0.12.** The RFC this entry requires has not been written, and v0.12 is committed elsewhere. The 1.0 commitment is to the primitive landing before the GA cut, not to the release that carries it.
 
 ---
 
