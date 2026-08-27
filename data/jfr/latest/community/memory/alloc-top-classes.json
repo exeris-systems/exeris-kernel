@@ -1,86 +1,56 @@
 [ {
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "count" : 64,
-  "bytes" : 3853936,
+  "count" : 60,
+  "bytes" : 1145136,
   "category" : "TEST_HARNESS"
 }, {
   "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
-  "count" : 16,
-  "bytes" : 736000,
+  "count" : 17,
+  "bytes" : 759648,
   "category" : "TEST_HARNESS"
 }, {
   "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "count" : 5,
-  "bytes" : 1339072,
+  "count" : 6,
+  "bytes" : 17080,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.String",
-  "count" : 4,
-  "bytes" : 4747072,
-  "category" : "JVM_NOISE"
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "count" : 6,
+  "bytes" : 642672,
+  "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "[B",
-  "count" : 4,
-  "bytes" : 275960,
+  "class" : "java.util.HashMap",
+  "count" : 3,
+  "bytes" : 214224,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.LinkedHashMap",
   "count" : 2,
-  "bytes" : 92056,
+  "bytes" : 107176,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.LinkedHashMap$Entry",
+  "class" : "java.util.HashSet",
   "count" : 2,
-  "bytes" : 91936,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 2,
-  "bytes" : 183832,
+  "bytes" : 107192,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$KeySet",
   "count" : 2,
-  "bytes" : 91936,
+  "bytes" : 4094304,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.ArrayList$Itr",
+  "class" : "[B",
   "count" : 1,
-  "bytes" : 91920,
+  "bytes" : 107128,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.HashMap$Node",
+  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
   "count" : 1,
-  "bytes" : 91944,
+  "bytes" : 107128,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.HashMap$KeyIterator",
   "count" : 1,
-  "bytes" : 459560,
+  "bytes" : 107088,
   "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.concurrent.ForkJoinTask$RunnableExecuteAction",
-  "count" : 1,
-  "bytes" : 91920,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread",
-  "count" : 1,
-  "bytes" : 91856,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.Object",
-  "count" : 1,
-  "bytes" : 91872,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 1,
-  "bytes" : 91888,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000004b2fe580",
-  "count" : 1,
-  "bytes" : 91904,
-  "category" : "LOOM_RUNTIME"
 } ]

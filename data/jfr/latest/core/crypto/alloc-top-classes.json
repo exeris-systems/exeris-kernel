@@ -1,36 +1,41 @@
 [ {
-  "class" : "[Ljava.util.HashMap$Node;",
+  "class" : "java.util.LinkedHashMap$Entry",
   "count" : 3,
-  "bytes" : 512640,
+  "bytes" : 659328,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap$Node",
+  "count" : 2,
+  "bytes" : 523128,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "[B",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap",
+  "count" : 1,
+  "bytes" : 261536,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.ArrayList$Itr",
+  "count" : 1,
+  "bytes" : 261552,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+  "count" : 1,
+  "bytes" : 125344,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.lang.String",
-  "count" : 2,
-  "bytes" : 256320,
+  "count" : 1,
+  "bytes" : 261568,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-  "count" : 2,
-  "bytes" : 512584,
+  "class" : "java.lang.VirtualThread",
+  "count" : 1,
+  "bytes" : 261544,
   "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "jdk.jfr.internal.SettingsManager$InternalSetting",
-  "count" : 1,
-  "bytes" : 256304,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap",
-  "count" : 1,
-  "bytes" : 256216,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 1,
-  "bytes" : 392472,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
-  "count" : 1,
-  "bytes" : 256312,
-  "category" : "JVM_NOISE"
 } ]
