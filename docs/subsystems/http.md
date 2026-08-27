@@ -215,6 +215,15 @@ The policy answers `RouteRequirement` (`permitAll` / `authenticated` / `requirin
 `PrincipalContext` into admit / `401` / `403`. Roles are not expressible here — see
 [`security.md`](security.md) for why the edge checks scopes and `@RequiresRole` stays at the method.
 
+**A route also declares how it executes (since 0.12, ADR-077).** `RouteRequirement` carries an
+execution facet — `PROMPT` by default, `LONG_RUNNING` via `longRunning()`. It is about the route, not
+about a connection: this SPI stays blind to what a driver holds, and the Community dispatcher is what
+draws the consequence (a `LONG_RUNNING` route gets no request-scoped persistence session bound, so a
+handler that blocks pins nothing pooled across the block). The facet changes no authorization
+decision — `AbstractHttpRoutePolicyTck` asserts that a requirement and its `LONG_RUNNING` twin decide
+identically on every shape and every principal. See [`persistence.md`](persistence.md) for the cost
+side of the trade.
+
 **A stream open passes the same gate as a request, through the same code.** Opening an SSE stream is
 a request that happens to be answered by an engine rather than an exchange, so it is subject to the
 route requirement identically: `CommunityHttpRequestDispatcher.dispatchStream` runs the same

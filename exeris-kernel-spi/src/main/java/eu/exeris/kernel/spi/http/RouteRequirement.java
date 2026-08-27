@@ -25,6 +25,17 @@ import java.util.Set;
  * {@code methodId} the kernel cannot derive from a URL. Offering a role predicate here would invite
  * callers to express at the edge something the edge cannot answer.
  *
+ * <h2>How the route executes (ADR-077)</h2>
+ * <p>A requirement also declares whether the handler returns promptly or blocks —
+ * {@link Execution#PROMPT} by default, {@link Execution#LONG_RUNNING} via {@link #longRunning()}.
+ * The facet describes the <em>route</em>, deliberately not a connection: this package must stay
+ * blind to what a driver holds, so the Community dispatcher is what draws the consequence (it binds
+ * no request-scoped persistence session across a {@code LONG_RUNNING} route). Another driver may
+ * draw a different one, or none.
+ *
+ * <p>The default reproduces the behaviour that shipped before the facet existed, so a policy that
+ * never names execution is unaffected by its arrival.
+ *
  * <h2>Allocation</h2>
  * <p>Instances are immutable and meant to be built once, at policy-declaration time, and returned
  * repeatedly. A {@link HttpRoutePolicy} that constructs a requirement per request moves allocation
@@ -33,16 +44,24 @@ import java.util.Set;
  *
  * @since 0.11.0
  */
-// TooManyMethods: ten methods on an immutable value carrier — four factories (one per shape the
+// TooManyMethods: twelve methods on an immutable value carrier — four factories (one per shape the
 // contract offers), two accessors that exist specifically to keep the decision path allocation-free,
-// kind(), and the three Object overrides a Valhalla-ready carrier is obliged to define. Splitting the
-// type to satisfy the count would put the shapes and the reads in different places for no gain.
+// kind(), execution() and longRunning() (ADR-077's facet, a reader and a wither rather than four more
+// factories), and the three Object overrides a Valhalla-ready carrier is obliged to define. Splitting
+// the type to satisfy the count would put the shapes and the reads in different places for no gain.
 @SuppressWarnings("PMD.TooManyMethods")
 public final class RouteRequirement {
 
-    private static final RouteRequirement PERMIT_ALL = new RouteRequirement(Kind.PERMIT_ALL, Set.of());
+    private static final RouteRequirement PERMIT_ALL =
+            new RouteRequirement(Kind.PERMIT_ALL, Set.of(), Execution.PROMPT);
     private static final RouteRequirement AUTHENTICATED =
-            new RouteRequirement(Kind.AUTHENTICATED, Set.of());
+            new RouteRequirement(Kind.AUTHENTICATED, Set.of(), Execution.PROMPT);
+    // Shared too, so longRunning() on the scope-free shapes stays allocation-free on a path the
+    // class contract already forbids allocating on.
+    private static final RouteRequirement PERMIT_ALL_LONG_RUNNING =
+            new RouteRequirement(Kind.PERMIT_ALL, Set.of(), Execution.LONG_RUNNING);
+    private static final RouteRequirement AUTHENTICATED_LONG_RUNNING =
+            new RouteRequirement(Kind.AUTHENTICATED, Set.of(), Execution.LONG_RUNNING);
 
     /** How the declared scopes are matched. */
     public enum Kind {
@@ -56,13 +75,31 @@ public final class RouteRequirement {
         ALL_SCOPES
     }
 
+    /**
+     * How a route executes, and therefore what a driver may hold across it.
+     *
+     * @since 0.12.0
+     */
+    public enum Execution {
+        /** The handler returns promptly; request-scoped resources may be held for its duration. */
+        PROMPT,
+        /**
+         * The handler blocks. A driver must not hold request-scoped resources across it — on the
+         * Community HTTP path that means no request-scoped persistence session, because a handler
+         * that blocks while holding a pooled connection waits on work that draws from the same pool.
+         */
+        LONG_RUNNING
+    }
+
     private final Kind kind;
     private final Set<String> scopes;
     private final String[] scopeArray;
+    private final Execution execution;
 
-    private RouteRequirement(Kind kind, Set<String> scopes) {
+    private RouteRequirement(Kind kind, Set<String> scopes, Execution execution) {
         this.kind = kind;
         this.scopes = scopes;
+        this.execution = execution;
         // Pre-flattened so the decision path iterates an array instead of an iterator over a Set.
         this.scopeArray = scopes.toArray(new String[0]);
     }
@@ -95,7 +132,7 @@ public final class RouteRequirement {
      *                                  route nobody can call
      */
     public static RouteRequirement requiringAnyScope(Set<String> requiredScopes) {
-        return new RouteRequirement(Kind.ANY_SCOPE, validated(requiredScopes));
+        return new RouteRequirement(Kind.ANY_SCOPE, validated(requiredScopes), Execution.PROMPT);
     }
 
     /**
@@ -108,7 +145,7 @@ public final class RouteRequirement {
      *                                  {@link #authenticated()}
      */
     public static RouteRequirement requiringAllScopes(Set<String> requiredScopes) {
-        return new RouteRequirement(Kind.ALL_SCOPES, validated(requiredScopes));
+        return new RouteRequirement(Kind.ALL_SCOPES, validated(requiredScopes), Execution.PROMPT);
     }
 
     /**
@@ -118,6 +155,42 @@ public final class RouteRequirement {
      */
     public Kind kind() {
         return kind;
+    }
+
+    /**
+     * Returns how this route executes.
+     *
+     * @return the execution shape; never {@code null}, {@link Execution#PROMPT} unless
+     *         {@link #longRunning()} was called
+     * @since 0.12.0
+     */
+    public Execution execution() {
+        return execution;
+    }
+
+    /**
+     * Returns this requirement declared {@link Execution#LONG_RUNNING}.
+     *
+     * <p>There is no inverse: {@link Execution#PROMPT} is what every factory already returns, so a
+     * route that wants it names nothing. Idempotent, and free on the scope-free shapes — both return
+     * shared constants rather than allocating, which is what keeps a policy that builds requirements
+     * eagerly from paying for the facet.
+     *
+     * @return an equal requirement whose execution is {@link Execution#LONG_RUNNING}
+     * @since 0.12.0
+     */
+    public RouteRequirement longRunning() {
+        if (execution == Execution.LONG_RUNNING) {
+            return this;
+        }
+        // Switched on kind, not compared by identity: the class contract forbids identity-sensitive
+        // operations on this carrier, and PERMIT_ALL / AUTHENTICATED are the only shapes whose kind
+        // determines their whole value (both carry no scopes).
+        return switch (kind) {
+            case PERMIT_ALL -> PERMIT_ALL_LONG_RUNNING;
+            case AUTHENTICATED -> AUTHENTICATED_LONG_RUNNING;
+            case ANY_SCOPE, ALL_SCOPES -> new RouteRequirement(kind, scopes, Execution.LONG_RUNNING);
+        };
     }
 
     /**
@@ -160,16 +233,22 @@ public final class RouteRequirement {
         // equivalent one by hand. Valhalla-ready carriers must not be identity-sensitive.
         return other instanceof RouteRequirement that
                 && kind == that.kind
+                && execution == that.execution
                 && scopes.equals(that.scopes);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, scopes);
+        return Objects.hash(kind, execution, scopes);
     }
 
     @Override
     public String toString() {
-        return "RouteRequirement[" + kind + (scopes.isEmpty() ? "" : ", scopes=" + scopes) + ']';
+        // PROMPT is left unrendered: it is the default, and printing it would change the rendering
+        // of every requirement that existed before the facet did.
+        return "RouteRequirement[" + kind
+                + (scopes.isEmpty() ? "" : ", scopes=" + scopes)
+                + (execution == Execution.PROMPT ? "" : ", " + execution)
+                + ']';
     }
 }
