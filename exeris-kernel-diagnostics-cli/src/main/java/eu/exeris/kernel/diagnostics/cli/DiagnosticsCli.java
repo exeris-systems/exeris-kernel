@@ -4,16 +4,13 @@
  */
 package eu.exeris.kernel.diagnostics.cli;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.diagnostics.KernelDiagnostics;
 import eu.exeris.kernel.spi.diagnostics.KernelDiagnosticsProvider;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
@@ -23,10 +20,12 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.UncheckedIOException;
+import java.lang.System.Logger;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
 /**
@@ -52,13 +51,17 @@ import java.util.ServiceLoader;
  *   ← {"error":"…"}          (on unknown method / malformed request / missing name)
  * </pre>
  *
- * <p><b>Optional fields serialise as JSON {@code null}, not absent keys</b> (default {@code Jdk8Module}
- * config): an empty {@code Optional} on a snapshot (e.g. {@code cpuQuotaMicros} on a non-container host)
- * appears as {@code "cpuQuotaMicros":null}. Consumers must treat {@code null} and an absent key alike.
+ * <p><b>Optional fields serialise as JSON {@code null}, not absent keys</b> (default
+ * {@code tools.jackson} databind config): an empty {@code Optional} on a snapshot (e.g.
+ * {@code cpuQuotaMicros} on a non-container host) appears as {@code "cpuQuotaMicros":null}.
+ * Consumers must treat {@code null} and an absent key alike.
  *
  * @since 0.9.0
  */
 public final class DiagnosticsCli {
+
+    /** Protocol goes to stdout; diagnosis goes here, which {@code System.Logger} routes to stderr. */
+    private static final Logger LOG = System.getLogger(DiagnosticsCli.class.getName());
 
     private final KernelDiagnostics diagnostics;
     private final ObjectMapper mapper;
@@ -83,12 +86,19 @@ public final class DiagnosticsCli {
                 });
     }
 
-    /** Jackson mapper configured for the wire schema: ISO-8601 instants, {@code Optional} support. */
+    /**
+     * Jackson mapper for the wire schema, and it needs no configuration to produce it.
+     * {@code tools.jackson} (Jackson 3) has {@code java.time} and {@code Optional} support built into
+     * databind rather than in separate modules, and {@code DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS}
+     * is off by default there, so a bare mapper already writes ISO-8601 instants and an empty
+     * {@code Optional} as JSON {@code null} — the two properties this CLI's protocol promises.
+     *
+     * <p>Bare constructor rather than a {@code JsonMapper.builder()} round-trip, for the reason
+     * {@code CommunityJsonMappers} gives: a builder can drift from the bare-constructor defaults,
+     * and here those defaults ARE the contract.
+     */
     /* default */ static ObjectMapper newMapper() {
-        return new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .registerModule(new Jdk8Module())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return new ObjectMapper();
     }
 
     /** Resolves the winning provider (highest {@link KernelDiagnosticsProvider#priority()}). */
@@ -118,13 +128,34 @@ public final class DiagnosticsCli {
     }
 
     /**
-     * Handles one request line and returns the JSON response line. Never throws — malformed input,
-     * unknown methods, and serialization failures are returned as {@code {"error":"…"}}.
+     * Handles one request line and returns the JSON response line. Never throws: malformed input,
+     * unknown methods, and a failure inside the diagnostics implementation all come back as
+     * {@code {"error":"…"}} on the same line the caller is waiting for.
+     *
+     * <p>The dispatch catch takes {@link LinkageError} and {@link ServiceConfigurationError}
+     * alongside {@link RuntimeException}, and that is deliberate rather than defensive breadth.
+     * {@code listProviders} instantiates every provider on the classpath through
+     * {@link ServiceLoader}, so a provider whose class initialiser fails arrives here as an
+     * {@code Error}, not an exception — and letting it escape ends the process, which costs the
+     * caller the whole NDJSON channel rather than one answer. The protocol has no request ids and a
+     * consumer caches the child across calls, so a dead process is a dead session. One broken
+     * provider must degrade one method.
      */
+    // PMD.AvoidCatchingGenericException — the generic catch IS the contract here: this method is the
+    // process boundary, and its documented promise is that nothing escapes it. Narrowing the catch
+    // to the exception types seen so far would mean the next unforeseen one ends the session, which
+    // is exactly the failure this guard exists to prevent. Everything caught is reported, not
+    // swallowed: the caller gets an error response and the operator gets the stack on stderr.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     /* default */ String handle(String requestLine) {
+        JsonNode request;
         try {
-            JsonNode request = mapper.readTree(requestLine);
-            String method = request.path("method").asText("");
+            request = mapper.readTree(requestLine);
+        } catch (JacksonException e) {
+            return error("malformed request: " + e.getOriginalMessage());
+        }
+        String method = request.path("method").asString("");
+        try {
             return switch (method) {
                 case "listProviders" -> mapper.writeValueAsString(diagnostics.listProviders());
                 case "getBootstrapDag" -> mapper.writeValueAsString(diagnostics.getBootstrapDag());
@@ -133,13 +164,21 @@ public final class DiagnosticsCli {
                 case "" -> error("missing 'method'");
                 default -> error("unknown method: " + method);
             };
-        } catch (JsonProcessingException e) {
-            return error("malformed request: " + e.getOriginalMessage());
+        } catch (RuntimeException | LinkageError | ServiceConfigurationError e) {
+            LOG.log(Logger.Level.ERROR, () -> "diagnostics method '" + method + "' failed", e);
+            // The throwable's own text goes back over the wire, which is a decision and not an
+            // oversight: this process has no network surface and trusts whoever spawned it (see
+            // the class javadoc), the caller is the only party that can act on the failure, and a
+            // response saying only "it failed" would send an operator to a stderr they may not be
+            // capturing. That reasoning is local to a trusted stdio tool. A subsystem-facing error
+            // path does NOT inherit it — Throwable.toString() carries wrapped-cause text, which is
+            // where connection strings and principal names surface.
+            return error("method '" + method + "' failed: " + e);
         }
     }
 
-    private String describeSubsystem(JsonNode request) throws JsonProcessingException {
-        String name = request.path("name").asText("");
+    private String describeSubsystem(JsonNode request) {
+        String name = request.path("name").asString("");
         if (name.isBlank()) {
             return error("describeSubsystem requires a non-blank 'name'");
         }
@@ -149,7 +188,7 @@ public final class DiagnosticsCli {
     private String error(String message) {
         try {
             return mapper.writeValueAsString(Map.of("error", message));
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException _) {
             return "{\"error\":\"serialization failure\"}";
         }
     }
