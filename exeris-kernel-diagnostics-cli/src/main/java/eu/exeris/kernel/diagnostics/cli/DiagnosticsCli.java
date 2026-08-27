@@ -166,6 +166,13 @@ public final class DiagnosticsCli {
             };
         } catch (RuntimeException | LinkageError | ServiceConfigurationError e) {
             LOG.log(Logger.Level.ERROR, () -> "diagnostics method '" + method + "' failed", e);
+            // The throwable's own text goes back over the wire, which is a decision and not an
+            // oversight: this process has no network surface and trusts whoever spawned it (see
+            // the class javadoc), the caller is the only party that can act on the failure, and a
+            // response saying only "it failed" would send an operator to a stderr they may not be
+            // capturing. That reasoning is local to a trusted stdio tool. A subsystem-facing error
+            // path does NOT inherit it — Throwable.toString() carries wrapped-cause text, which is
+            // where connection strings and principal names surface.
             return error("method '" + method + "' failed: " + e);
         }
     }
@@ -181,7 +188,7 @@ public final class DiagnosticsCli {
     private String error(String message) {
         try {
             return mapper.writeValueAsString(Map.of("error", message));
-        } catch (JacksonException e) {
+        } catch (JacksonException _) {
             return "{\"error\":\"serialization failure\"}";
         }
     }

@@ -82,8 +82,9 @@ final class DiagnosticsProtocolContract {
     static void assertProviderInventoryComplete(List<String> responses) {
         String out = responses.get(LIST_PROVIDERS);
         assertThat(out).startsWith("{\"schemaVersion\":\"1.0\"");
-        assertThat(EVERY_SPI_TYPE).allSatisfy(spiType ->
-                assertThat(out).contains("\"spiType\":\"" + spiType + "\""));
+        assertThat(out).contains(EVERY_SPI_TYPE.stream()
+                .map(spiType -> "\"spiType\":\"" + spiType + "\"")
+                .toArray(String[]::new));
         assertThat(out).contains("\"providerName\":\"ExerisCommunity/");
     }
 
@@ -96,6 +97,11 @@ final class DiagnosticsProtocolContract {
      * assuming: the configuration that used to make it true is gone.
      */
     static void assertInstantsAreIso8601(List<String> responses) {
+        // Size first, and not for tidiness. Each clause here runs as its own @Test, so this one
+        // does not inherit assertEveryRequestAnswered's check — and allSatisfy over an EMPTY list
+        // passes. An empty list is precisely what the defect this suite exists for produced, so
+        // without this the one assertion that survives a dead session is the one that proves least.
+        assertThat(responses).hasSameSizeAs(REQUESTS);
         assertThat(responses).allSatisfy(line -> assertThat(line).containsPattern(
                 "\"capturedAt\":\"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z\""));
     }

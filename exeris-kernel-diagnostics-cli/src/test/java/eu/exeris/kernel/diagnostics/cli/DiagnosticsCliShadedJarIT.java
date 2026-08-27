@@ -8,9 +8,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -56,13 +54,19 @@ class DiagnosticsCliShadedJarIT {
                 .as("shaded jar under test — set by the module POM as exeris.cli.jar")
                 .isRegularFile();
 
+        Path capturedStdout = Files.createTempFile("diagnostics-cli-it-", ".out");
         Path capturedStderr = Files.createTempFile("diagnostics-cli-it-", ".err");
+        // BOTH streams go to files rather than pipes. Writing every request before reading any
+        // response is only safe while the responses fit the OS pipe buffer, and that is an
+        // assumption about payload size that a growing REQUESTS list or a provider-rich classpath
+        // would quietly invalidate — into a deadlock, which reads as a CI hang rather than as a
+        // failure. A file has no such bound, and it costs one temp file.
         Process child = new ProcessBuilder(javaBinary(), "-jar", jar.toString())
+                .redirectOutput(capturedStdout.toFile())
                 .redirectError(capturedStderr.toFile())
                 .start();
 
-        // Write every request, then close stdin: EOF is what ends serve(), and the responses are a
-        // few KB, so they cannot fill the pipe while we are still writing.
+        // Closing stdin is what ends serve(): the loop runs to EOF.
         try (BufferedWriter toChild = new BufferedWriter(
                 new OutputStreamWriter(child.getOutputStream(), StandardCharsets.UTF_8))) {
             for (String request : DiagnosticsProtocolContract.REQUESTS) {
@@ -70,16 +74,14 @@ class DiagnosticsCliShadedJarIT {
                 toChild.write('\n');
             }
         }
-        try (BufferedReader fromChild = new BufferedReader(
-                new InputStreamReader(child.getInputStream(), StandardCharsets.UTF_8))) {
-            responses = fromChild.lines().toList();
-        }
 
         boolean exited = child.waitFor(CHILD_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         if (!exited) {
             child.destroyForcibly();
         }
+        responses = Files.readAllLines(capturedStdout, StandardCharsets.UTF_8);
         stderr = Files.readString(capturedStderr, StandardCharsets.UTF_8);
+        Files.deleteIfExists(capturedStdout);
         Files.deleteIfExists(capturedStderr);
 
         assertThat(exited).as("the CLI must exit on stdin EOF; stderr was:%n%s", stderr).isTrue();
