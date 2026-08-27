@@ -2,11 +2,11 @@
 
 | Field             | Value                                                                                          |
 |:------------------|:-----------------------------------------------------------------------------------------------|
-| **Status**        | **DRAFT**                                                                                      |
+| **Status**        | **ACCEPTED**                                                                                   |
 | **Author(s)**     | Arkadiusz Przychocki                                                                           |
 | **Date Opened**   | 2026-08-26                                                                                     |
-| **Date Closed**   | —                                                                                              |
-| **Target ADR(s)** | TBD — a number is reserved in the global index when this RFC is accepted, and not before.      |
+| **Date Closed**   | 2026-08-27                                                                                     |
+| **Target ADR(s)** | [ADR-076](../adr/ADR-076-route-declared-connection-lifetime.md)                                |
 | **Affected Repos**| `exeris-kernel`                                                                                |
 | **Reviewers**     | —                                                                                              |
 
@@ -319,14 +319,33 @@ but a reader should not take "the request session is the whole story" from this 
 
 ## Decision Record
 
-_(Filled in when status reaches ACCEPTED / REJECTED / WITHDRAWN.)_
+| Field                | Value                                                                              |
+|:---------------------|:-----------------------------------------------------------------------------------|
+| **Outcome**          | **ACCEPTED** — the recommendation is taken as written: build the seam, leave the default |
+| **Date**             | 2026-08-27                                                                         |
+| **Resulting ADR(s)** | [ADR-076](../adr/ADR-076-route-declared-connection-lifetime.md)                    |
+| **Notes**            | See below.                                                                         |
 
-| Field                | Value       |
-|:---------------------|:------------|
-| **Outcome**          | —           |
-| **Date**             | —           |
-| **Resulting ADR(s)** | —           |
-| **Notes**            | —           |
+**What the ADR settled that this document left open.**
+
+- **Where the lifetime facet belongs.** On `RouteRequirement`, and named for the route's *execution
+  shape* (`PROMPT` / `LONG_RUNNING`) rather than for a connection lifetime. `spi.http` must not name a
+  persistence concept, so the Community dispatcher draws the consequence instead of the SPI stating
+  it. This document framed the question as "where on `RouteRequirement`"; the answer turned out to be
+  "and under what vocabulary".
+- **Release ownership under a shorter lifetime.** It never moves to the handle. On a `LONG_RUNNING`
+  route there is no box, so `openConnection` returns an owning handle — which is not a new ownership
+  model but the one the kernel already runs on every path outside a request box, flow threads
+  included. Constraint 6's warning stands and is accepted under that existing rule.
+- **What gates the default flip.** Named as three artefacts rather than "a measurement": the
+  acquire-rate multiplier inside `[1.0×, 3.17×]` measured as reuses crossing a transaction boundary,
+  the interceptor's session-key cost at that rate, and a benchmark re-run with `ConnectionHold`
+  enabled so the request-side and flow-side holds are apportioned rather than assumed.
+
+**One correction to this document's constraint 6.** `NonOwningPersistenceConnection` is a private
+static nested class inside `PersistenceSessionBox`, not a top-level type. Nothing outside the box can
+reference it — which is precisely why release ownership cannot migrate to the handle without making a
+private type public, and strengthens rather than weakens the constraint.
 
 ## Open questions / follow-ups
 
