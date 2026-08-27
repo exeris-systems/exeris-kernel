@@ -6,7 +6,7 @@
 | **Author(s)**     | Arkadiusz Przychocki                                                                           |
 | **Date Opened**   | 2026-08-26                                                                                     |
 | **Date Closed**   | 2026-08-27                                                                                     |
-| **Target ADR(s)** | [ADR-076](../adr/ADR-076-route-declared-connection-lifetime.md)                                |
+| **Target ADR(s)** | [ADR-077](../adr/ADR-077-route-declared-connection-lifetime.md)                                |
 | **Affected Repos**| `exeris-kernel`                                                                                |
 | **Reviewers**     | —                                                                                              |
 
@@ -323,7 +323,7 @@ but a reader should not take "the request session is the whole story" from this 
 |:---------------------|:-----------------------------------------------------------------------------------|
 | **Outcome**          | **ACCEPTED** — the recommendation is taken as written: build the seam, leave the default |
 | **Date**             | 2026-08-27                                                                         |
-| **Resulting ADR(s)** | [ADR-076](../adr/ADR-076-route-declared-connection-lifetime.md)                    |
+| **Resulting ADR(s)** | [ADR-077](../adr/ADR-077-route-declared-connection-lifetime.md)                    |
 | **Notes**            | See below.                                                                         |
 
 **What the ADR settled that this document left open.**

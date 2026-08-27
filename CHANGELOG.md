@@ -127,7 +127,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Decided
 
-- **ADR-076 — a route declares how it executes, and the dispatcher draws the connection
+- **ADR-077 — a route declares how it executes, and the dispatcher draws the connection
   consequence.** Closes RFC-2026-08-26 (now ACCEPTED) and the cycle's only 1.0-CRITICAL item.
   `CommunityHttpRequestDispatcher` binds a `PersistenceSessionBox` around every non-streaming
   request, unconditionally and with no configuration key anywhere, so a handler that blocks holds its
