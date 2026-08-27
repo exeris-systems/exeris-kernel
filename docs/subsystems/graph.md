@@ -38,9 +38,41 @@ Neo4j) — business code never changes when the driver is swapped.
 
 ### 2. Metric Transparency (Churn-to-Data Ratio)
 
-Exeris does not mask the cost of its abstraction. In TCK mode, every driver emits a **Churn-to-Data Ratio**:
+Exeris does not mask the cost of its abstraction. In TCK mode, every driver reports a **Churn-to-Data Ratio**:
 bytes allocated per byte of graph data transferred. If a Community driver reports ~15x, that is the documented
-baseline. The TCK measures this ratio and fails with `EX-GRPH-5005` when allocation exceeds the driver's declared contract.
+baseline. `GraphChurnRatioTck` measures the ratio over a fan-out traversal. The tier contract is Community
+`< 20x`, Enterprise `< 1x`; what the TCK *fails the build on* is a regression bound at or above it, for the
+reason set out below.
+
+Two properties of that measurement follow from what the ratio is *about*, and both are load-bearing:
+
+- **The numerator counts driver allocation.** The documented cost is the driver's — "standard Bolt/JDBC drivers
+  exhibit a ~15x ratio" — so the measurement uses the exact per-thread allocated-bytes delta, not a JFR event
+  stream filtered to `eu.exeris.*` types. On the Community Bolt path the kernel's own share is ~1% of the total;
+  a filtered numerator would exclude the thing being measured, and would report a perfect `0.0` for a driver that
+  allocated gigabytes outside the `eu.exeris` namespace.
+- **The traversal must return a result set.** The ratio is per byte of data transferred, so the workload has to
+  carry enough data for the fixed per-round-trip cost to amortise. A 1-hop traversal returning a single id costs
+  ~11.7 KB of allocation for 16 bytes of payload — a ratio in the 700s that measures session and protocol setup
+  rather than churn per data byte.
+
+**Measured, and it does not land on one number.** On the Community Bolt path the ratio settles into one of two
+regimes, chosen once per JVM and then held for the life of the process (three JVMs × 4 200 traversals each, no
+window mixing):
+
+| Regime | Bytes / traversal | Ratio | Against the `< 20x` contract |
+|:---|---:|---:|:---|
+| fast | ~142 000 | 17.4 – 18.0x | inside |
+| slow | ~166 000 | 20.5 – 20.8x | **breached** |
+
+Roughly two runs in seven take the slow regime (4 of 14 observed processes). The `< 20x` figure above is
+therefore the contract, not a description of every run; `GraphChurnRatioTck` enforces a higher *regression* bound so that a pre-existing regime
+choice does not read as a regression, and reports the contract alongside each measurement. Closing the gap — or
+deciding which figure is the honest one to publish — is tracked in `docs/ROADMAP.md`.
+
+A cold process does not meet the contract at all: allocation runs 18.0–18.3x over the first hundred traversals
+and 19.9–20.6x over the second, a JIT recompilation transient, before settling from traversal ~200 onward. The
+published ratio is a steady-state figure.
 
 ### 3. No-Arena Policy (L0 Enforcement at L2)
 
@@ -87,8 +119,10 @@ in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
 | `EX-GRPH-5004` | Path Not Found            | `[0] long sourceMost, [1] long sourceLeast, [2] long targetMost, [3] long targetLeast` |
 | `EX-GRPH-5005` | Excessive Allocation      | `[0] String driverName, [1] long bytesAllocated, [2] long bytesXfer` — Thrown as: `ExcessiveAllocationException` (`eu.exeris.kernel.spi.exceptions.graph.ExcessiveAllocationException`) |
 
-**TCK enforcement for `EX-GRPH-5005`:** When running with `LeakDetectionMode.PARANOID`, the TCK measures the
-Churn-to-Data Ratio after each traversal benchmark. If allocation exceeds the driver's declared ratio contract, `EX-GRPH-5005` is emitted and the test fails.
+**`EX-GRPH-5005` status:** `ExcessiveAllocationException` is declared in the SPI and its `rawArgs` layout is
+covered by `GraphExceptionLayoutTest`, but no kernel code path throws it — a driver self-reporting a breach at
+runtime would be its first caller. TCK enforcement of the ratio does not go through it: `GraphChurnRatioTck`
+fails the build with an assertion carrying the measured ratio, the allocated bytes and the transferred bytes.
 
 ---
 

@@ -52,6 +52,41 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The graph churn-to-data TCK measured a coin flip, not a ratio.** `GraphChurnRatioTck` is the
+  executable half of graph.md's `< 20x` Community / `< 1x` Enterprise contract. It failed
+  intermittently locally and never in CI, and neither fact was evidence about the graph path. Its
+  numerator summed `weight` from `jdk.ObjectAllocationSample` — the sampler's extrapolation, which
+  arrives in a near-constant ~261 KB quantum — so the number was `quantum ×` *(times the sampler
+  happened to land on a kernel object)*, a Poisson count. Its denominator ran 1 000 iterations while
+  the workload ran 10 000, and that factor of ten is exactly what scaled one sampler hit to 2.04
+  ratio units and left the 20.0 threshold sitting between the ninth hit and the tenth. **The test
+  failed when the sampler drew ten**, at an observed mean of ~4.6 — a few percent per run, which is
+  all "flakes here, never there" ever was.
+
+  Two further defects meant it could not have measured the contract even correctly summed. The
+  numerator was filtered to `eu.exeris.*` types while graph.md attributes the ~15x to the *driver*;
+  on a 500-id traversal that filtered signal is **empty** — three consecutive measurements sampled
+  zero such events, which the shipped arithmetic reports as a perfect `0.00x`. And a traversal
+  returning one id spends ~11.7 KB of allocation on 16 bytes of payload, so the workload measured
+  session and protocol setup rather than churn per data byte.
+
+  The numerator is now the exact per-thread allocated-bytes delta, driver included; the denominator
+  derives from the iterations actually run and the result-set size actually returned; the traversal
+  carries a 500-id fan-out so the fixed per-round-trip cost amortises.
+
+  **What the corrected instrument found on its first honest run is the substantive part.** The
+  Community Bolt path has two allocation regimes — ~142 000 bytes/traversal (17.4–18.0x) and
+  ~166 000 (20.5–20.8x) — separated by a flat 17% and **fixed per JVM**: three processes ran six
+  windows of 300 traversals each and every window in a process stayed in one regime. Roughly two
+  runs in seven take the slow one (4 of 14 observed processes), so graph.md's published `< 20x` is met in one regime and breached
+  in the other. The TCK's Community bound is therefore **23x as a regression bound**, ~10% above the
+  observed slow-regime ceiling and tripped by a mutation adding 128 bytes per returned row (26.6x);
+  graph.md's 20x stays the contract and is reported alongside every measurement. Which number is
+  honest to publish, and whether the slow regime can be removed, is recorded in the ROADMAP as
+  1.0-blocking on the claims side. Separately, graph.md's assertion that the TCK emits
+  `EX-GRPH-5005` is corrected: nothing throws `ExcessiveAllocationException` anywhere.
+
+
 - **The HTTP client dialled the address its own server listened on.** Not "single-host", which is
   what every document said: `CommunityHttpClientEngine` has no public constructor, its only
   reachable path took `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL
