@@ -52,6 +52,28 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The diagnostics CLI died on `listProviders`, and took the caller's session with it.** The
+  shipped executable pinned its own Jackson 2 for the NDJSON codec while the kernel it boots uses
+  Jackson 3. Those are not independent: both resolve `com.fasterxml.jackson.core:jackson-annotations`,
+  of which Maven keeps one version, and the CLI's direct Jackson 2 outranked the kernel's transitive
+  Jackson 3 by proximity — pinning annotations to 2.18.7, below the 2.21 `jackson-databind` 3.x
+  needs. Every kernel mapper built at runtime then failed on `NoClassDefFoundError: JsonSerializeAs`,
+  which killed `listProviders` (the only method that instantiates every provider) and, because the
+  dispatch guard caught only `JsonProcessingException`, the process. A consumer that caches the child
+  across calls lost every later request too, not just that one. The CLI now uses the kernel's Jackson,
+  declared directly so it cannot be outranked again; `handle()` catches `LinkageError` and
+  `ServiceConfigurationError` alongside `RuntimeException`, so one broken provider degrades one
+  method; and the shaded jar shrinks by 2.4 MB with the second databind gone. Affected 0.10.2 through
+  0.12.0-SNAPSHOT — on 0.10.2 masked by the preview-flag failure that ADR-066 closed at 0.11.0.
+
+- **Nothing ever ran the artifact this module ships.** Its only test drove `handle()` against a fake,
+  so no kernel booted, no provider class initialiser ran, and the defect above stayed green through
+  three published versions. Two live suites now close that: `DiagnosticsCliLiveKernelTest` boots the
+  kernel in-process on the resolved classpath (default build), and `DiagnosticsCliShadedJarIT` spawns
+  the packaged jar over stdio at `verify` — where shading, the merged `META-INF/services`, and the
+  manifest are first observable, and where the distributed artifact's preview-cleanliness (ADR-066)
+  becomes an executed claim rather than a scanned one.
+
 - **The HTTP client dialled the address its own server listened on.** Not "single-host", which is
   what every document said: `CommunityHttpClientEngine` has no public constructor, its only
   reachable path took `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL
