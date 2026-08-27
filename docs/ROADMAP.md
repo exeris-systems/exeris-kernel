@@ -1889,6 +1889,69 @@ the failure this entry exists to prevent. Emit the selection as a JFR event, as 
 proving an ambiguous configuration fails at startup rather than choosing; `docs/subsystems/storage.md`
 loses its "provider selection is an open gap" paragraph.
 
+**Two things the Resolution above assumes and does not state** (added 2026-08-27, from the
+`exeris-tooling` side of the same gap — its ROADMAP tracks this as the kernel ask that keeps `@Blob`
+out of emitted output):
+
+- **There is no `KernelProviders` slot to bind into, and the obvious name is already taken.** The
+  registry carries `JOB_SCHEDULER_PROVIDER` + `JOB_SCHEDULER` for scheduling and nothing for blobs;
+  `STORAGE_CONTEXT` is ADR-012's isolation-key carrier, not a store. Whatever this slice adds must
+  say `BLOB_*` and not `STORAGE_*`, or every reader after it has to check which of the two a given
+  `STORAGE_` name means.
+- **A generated application cannot be made to boot by naming the subsystem alone.** `Application.main()`
+  declares subsystems by name, and a code generator can emit a name. It cannot invent the config key
+  this entry makes mandatory — and an unset key with both providers present is, correctly, a startup
+  failure rather than a default. So the emitted output has to carry the name *and* the key, or refuse
+  at build time and say which key the author owes. This is the asymmetry with scheduling, which a
+  generator handles today precisely because `CommunitySchedulingSubsystem` has one provider and a
+  fallback (`JobSchedulerConfig.DEFAULT_NAME`). Storage has two at equal priority and can have no
+  fallback, so the difference is not a detail of this entry — it is the whole of it.
+
+---
+
+### Diagnostics: The Provider Inventory Reports Nine Of Fifteen Provider SPIs (surfaced 2026-08-27)
+
+**Gap:** `CommunityProviderInventory.discover` makes nine `discover(...)` calls — memory, crypto,
+telemetry, persistence, events, flow, transport, graph, security. Community registers **fifteen**
+provider SPIs in `META-INF/services`. Diffing the two mechanically:
+
+| Registered but never swept | Kind |
+|---|---|
+| `HttpProvider` | ordinary driver, and one of the ten bootable subsystems |
+| `JobSchedulerProvider` | ordinary driver (v0.11, ADR-057) |
+| `BlobStorageProvider` | ordinary driver (v0.11, ADR-056) |
+| `SubsystemProvider`, `ConfigProvider`, `KernelDiagnosticsProvider` | bootstrap/meta — plausibly deliberate, but nothing says so |
+
+The consequence is not cosmetic, because `listProviders` is a published contract (ADR-033) and the
+out-of-process surface an agent or a code generator reads to decide what the kernel it is talking to
+can do. A consumer asking "is a blob backend present?" gets an answer that means "no provider of a
+kind this inventory happens to enumerate", and cannot tell that from "no provider". Absence and
+unawareness are indistinguishable through the SPI — which is the one property a diagnostics surface
+exists to prevent.
+
+`HttpProvider` is the entry that shows this is not a v0.11 oversight to sweep up alongside the two new
+drivers. It predates both, it backs the subsystem consumers ask about first, and it has been missing
+the whole time. The inventory is a hand-maintained list of `discover(...)` calls with nothing tying it
+to the set of SPIs that exist, so it falls behind once per new provider SPI, silently, by
+construction. Three of the six may well belong outside a *driver* inventory; the defect is that the
+list cannot distinguish "excluded on purpose" from "never added", and neither can a reader.
+
+**Owner:** Diagnostics / Community.
+
+**Resolution:** Add the sweeps that belong, and record the exclusions that do not as named exclusions
+rather than as absences. Then close the class instead of the instance: a gate that fails when a
+provider SPI has neither a `discover(...)` call nor an entry in an explicit exclusion list.
+
+Enumerate the SPIs for that gate **from their declaration site** — the `*Provider` interfaces in
+`exeris-kernel-spi` — and diff against registration. Do not enumerate from `META-INF/services`: that
+is how `IdentityProvider` was missed once already, because it is registry-dispatched rather than
+ServiceLoader-registered, so a services-file census reports it as not existing rather than as not
+enumerable.
+
+**Merge Gate:** `listProviders` reports an HTTP provider, a scheduler and a blob store on a default
+Community classpath; a gate test that fails when a provider SPI is neither swept nor explicitly
+excluded, proven non-vacuous by deleting one sweep and watching it fail.
+
 ---
 
 ### Events: Durable Emission And Cross-Node Delivery Cannot Be Had Together (surfaced 2026-08-02)
