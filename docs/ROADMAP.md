@@ -1864,6 +1864,31 @@ S3 driver's ceiling stops being the engine's ceiling.
 
 ---
 
+### HTTP/2: The Peer's Advertised Header Limit Is Parsed And Never Read (surfaced 2026-08-27)
+
+**Gap:** `Http2Settings` parses `SETTINGS_MAX_HEADER_LIST_SIZE` out of a peer's SETTINGS frame into
+`maxHeaderListSize`, and `maxHeaderListSize()` has **zero call sites** in Core or Community main
+sources. The server therefore encodes response headers to whatever size it likes regardless of what
+the client said it would accept.
+
+RFC 9113 §6.5.2 makes the setting advisory — a sender *may* exceed it and risk rejection — so this
+is not a protocol violation, and it is deliberately filed as a gap rather than a defect. What it
+costs is diagnosis: a client that advertises 8 KiB and then resets our stream is doing exactly what
+it said it would, and from this side the rejection is unattributable. The symmetric half now works
+(0.12 advertises the bound the decoder enforces), which is what makes the missing half visible.
+
+**Owner:** HTTP / Core.
+
+**Resolution:** Honour the parsed value on the encode path, or refuse to and say so: if a response's
+field section would exceed the peer's advertised bound, fail it locally with a named error rather
+than emitting a frame the peer is expected to reject. Either is defensible; silently keeping a value
+nobody reads is not.
+
+**Merge Gate:** a test where the peer advertises a small bound and an oversized response header set
+produces the chosen behaviour deterministically, rather than depending on what the peer does with it.
+
+---
+
 ### Storage: Two Blob Providers, No Way To Choose Between Them (surfaced 2026-08-01)
 
 **Gap:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider` are both
@@ -2536,8 +2561,6 @@ This is a genuine product-SPI gap rather than a stylistic one. Request/response 
 |---|---|---|---|
 | `MAX_ACTIVE_STREAMS` | 5 000 | `AdmissionController` | Its own Javadoc: sheds "regardless of memory pressure" |
 | `SPIN_THRESHOLD` | 10 000 | `PaqsScheduler` | |
-| `MAX_HEADER_BLOCK_SIZE` | 65 536 | `Http2HeaderBlockAssembler` | HTTP/1 equivalent **is** configurable |
-| `MAX_STRING_LITERAL` | 65 536 | `HpackDecoder` | HTTP/1 equivalent **is** configurable |
 | `TRANSLATION_CACHE_MAX_ENTRIES` | 1 024 | `JdbcPersistenceConnection` | |
 | `DEFAULT_NETWORK_OFF_HEAP_THRESHOLD` | 32 KiB | `CommunityMemoryAllocator` | |
 | `FLOW_PROGRESS_ORDINAL_PROBE_LIMIT` | 32 | `FlowProgressPublisher` | |

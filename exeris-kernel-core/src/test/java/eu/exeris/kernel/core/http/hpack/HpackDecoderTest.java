@@ -89,7 +89,7 @@ class HpackDecoderTest {
         @DisplayName("New name, new value — does NOT add to dynamic table")
         void newNameNoIndex() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
 
             // First byte: 0x00 (no-index, name index = 0)
             // Then: string literal "x-test" (no Huffman), then value "v"
@@ -107,6 +107,54 @@ class HpackDecoderTest {
     }
 
     // =========================================================================
+    // String-literal bound — configured, not constant (ADR-071 tail)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("String-literal bound comes from the constructor, not from a constant")
+    class StringLiteralBound {
+
+        /**
+         * A name longer than the small bound below and far shorter than the shipped default.
+         *
+         * <p>64 bytes and not 600: {@code writeStringLiteral} encodes the length in ONE byte, so a
+         * literal over 126 is written with a truncated prefix and the decoder refuses it for
+         * running past the block instead of for exceeding the bound. The first case below would
+         * still have gone green on that — which is what the second case is here to prevent.
+         */
+        private static final String LONG_NAME = "x-".concat("a".repeat(62));
+
+        @Test
+        @DisplayName("a literal above the configured bound is refused")
+        void aboveConfiguredBoundIsRefused() {
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536, 8);
+            MemorySegment block = testArena.allocate(2048);
+            long end = writeLiteralNoIndex(block, 0, LONG_NAME, "v");
+
+            assertThatThrownBy(() -> decoder.decode(block, 0, end, (n, v, sensitive) -> { }))
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .hasMessageContaining("string literal");
+        }
+
+        @Test
+        @DisplayName("the same input decodes under the shipped default — so the refusal is the BOUND, not the input")
+        void sameInputPassesAtTheDefault() {
+            // Without this half the test above would pass against a decoder that refused every
+            // literal of that shape for some unrelated reason, and would keep passing if the
+            // constructor argument were ignored and the old constant restored.
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536, 65_536);
+            MemorySegment block = testArena.allocate(2048);
+            long end = writeLiteralNoIndex(block, 0, LONG_NAME, "v");
+
+            List<String[]> decoded = new ArrayList<>();
+            decoder.decode(block, 0, end, (n, v, sensitive) -> decoded.add(new String[]{n, v}));
+
+            assertThat(decoded).hasSize(1);
+            assertThat(decoded.get(0)).containsExactly(LONG_NAME, "v");
+        }
+    }
+
+    // =========================================================================
     // Literal Header — Never Indexed (§6.2.3)
     // =========================================================================
 
@@ -118,7 +166,7 @@ class HpackDecoderTest {
         @DisplayName("Never-indexed field arrives with sensitive=true")
         void neverIndexedSensitiveFlag() {
             HpackDecoder decoder = new HpackDecoder(
-                    new HpackDynamicTable(4096), allocator, 65_536);
+                    new HpackDynamicTable(4096), allocator, 65_536, 65_536);
 
             MemorySegment block = testArena.allocate(64);
             long pos = writeLiteralNeverIndexed(block, 0, "authorization", "bearer token");
@@ -142,7 +190,7 @@ class HpackDecoderTest {
         @DisplayName("Size update at beginning of block is accepted")
         void sizeUpdateEmitsNoHeader() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
 
             MemorySegment block = testArena.allocate(1);
             block.set(ValueLayout.JAVA_BYTE, 0, (byte) 0x20);
@@ -158,7 +206,7 @@ class HpackDecoderTest {
         @DisplayName("Two size updates at beginning of block are accepted (RFC §4.2 — at most two)")
         void twoSizeUpdatesAtStartAccepted() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
 
             // First size update: 0 (fits in 5-bit prefix: 0x20 | 0 = 0x20)
             // Second size update: 32 → 32 >= 31 so: 0x3F (prefix saturated) + 0x01 (32-31=1)
@@ -185,7 +233,7 @@ class HpackDecoderTest {
         @DisplayName("RFC §4.2 — size update after indexed field throws HpackDecodingException")
         void sizeUpdateAfterIndexedRejected() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
 
             MemorySegment block = testArena.allocate(2);
             block.set(ValueLayout.JAVA_BYTE, 0, (byte) 0x82); // indexed idx 2
@@ -200,7 +248,7 @@ class HpackDecoderTest {
         @DisplayName("RFC §4.2 — size update after literal field throws HpackDecodingException")
         void sizeUpdateAfterLiteralRejected() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
 
             MemorySegment block = testArena.allocate(8);
             long pos = writeLiteralNoIndex(block, 0, "x", "y");
@@ -219,7 +267,7 @@ class HpackDecoderTest {
         @DisplayName("RFC §6.3 — size update exceeding protocol limit throws HpackDecodingException")
         void sizeUpdateExceedingProtocolLimitRejected() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
             decoder.setProtocolMaxTableSize(256);
 
             MemorySegment block = testArena.allocate(4);
@@ -239,7 +287,7 @@ class HpackDecoderTest {
         @DisplayName("setProtocolMaxTableSize respected — size update within limit accepted")
         void sizeUpdateWithinProtocolLimitAccepted() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
             decoder.setProtocolMaxTableSize(256);
 
             MemorySegment block = testArena.allocate(2);
@@ -255,7 +303,7 @@ class HpackDecoderTest {
         @Test
         @DisplayName("setProtocolMaxTableSize rejects negative value")
         void setProtocolMaxTableSizeRejectsNegative() {
-            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536, 65_536);
             assertThatThrownBy(() -> decoder.setProtocolMaxTableSize(-1L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("SETTINGS_HEADER_TABLE_SIZE");
@@ -264,7 +312,7 @@ class HpackDecoderTest {
         @Test
         @DisplayName("setProtocolMaxTableSize rejects value exceeding 2^32-1")
         void setProtocolMaxTableSizeRejectsAboveUint32Max() {
-            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536, 65_536);
             assertThatThrownBy(() -> decoder.setProtocolMaxTableSize(0x1_0000_0000L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("SETTINGS_HEADER_TABLE_SIZE");
@@ -273,7 +321,7 @@ class HpackDecoderTest {
         @Test
         @DisplayName("setProtocolMaxTableSize accepts boundary value 0xFFFF_FFFFL")
         void setProtocolMaxTableSizeAcceptsUint32Max() {
-            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536, 65_536);
             assertThatCode(() -> decoder.setProtocolMaxTableSize(0xFFFF_FFFFL))
                     .doesNotThrowAnyException();
         }
@@ -282,7 +330,7 @@ class HpackDecoderTest {
         @DisplayName("§6.3 size update accepts uint32 max value")
         void sizeUpdateAcceptsUint32Max() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
             decoder.setProtocolMaxTableSize(0xFFFF_FFFFL);
 
             MemorySegment block = testArena.allocate(8);
@@ -302,7 +350,7 @@ class HpackDecoderTest {
         @DisplayName("§6.3 size update rejects value above uint32")
         void sizeUpdateRejectsAboveUint32() {
             HpackDynamicTable table = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(table, allocator, 65_536, 65_536);
             decoder.setProtocolMaxTableSize(0xFFFF_FFFFL);
 
             MemorySegment block = testArena.allocate(8);
@@ -342,7 +390,7 @@ class HpackDecoderTest {
         @DisplayName("String literal exceeding MAX_STRING_LITERAL throws")
         void stringTooLong() {
             HpackDecoder decoder = new HpackDecoder(
-                    new HpackDynamicTable(4096), allocator, 65_536);
+                    new HpackDynamicTable(4096), allocator, 65_536, 65_536);
 
             // Build a literal no-index frame with length > 65536
             MemorySegment block = testArena.allocate(16);
@@ -386,7 +434,7 @@ class HpackDecoderTest {
         @DisplayName("Header list size exceeding limit throws HpackDecodingException")
         void headerListSizeExceeded() {
             HpackDecoder decoder = new HpackDecoder(
-                    new HpackDynamicTable(4096), allocator, 50);
+                    new HpackDynamicTable(4096), allocator, 50, 65_536);
 
             HpackDynamicTable encTable = new HpackDynamicTable(4096);
             HpackEncoder encoder = new HpackEncoder(encTable, allocator, false);
@@ -493,7 +541,7 @@ class HpackDecoderTest {
 
     private List<String[]> decode(MemorySegment block, long offset, long length) {
         HpackDecoder decoder = new HpackDecoder(
-                new HpackDynamicTable(4096), allocator, 65_536);
+                new HpackDynamicTable(4096), allocator, 65_536, 65_536);
         List<String[]> result = new ArrayList<>();
         decoder.decode(block, offset, length,
                 (name, value, sensitive) -> result.add(new String[]{name, value}));

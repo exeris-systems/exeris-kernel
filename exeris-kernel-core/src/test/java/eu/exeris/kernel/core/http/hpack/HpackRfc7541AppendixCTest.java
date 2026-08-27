@@ -107,7 +107,7 @@ class HpackRfc7541AppendixCTest {
             };
 
             HpackDynamicTable decTable = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536, 65_536);
             List<String[]> headers = decode(decoder, rfcBytes);
 
             assertThat(headers).hasSize(1);
@@ -136,7 +136,7 @@ class HpackRfc7541AppendixCTest {
             };
 
             HpackDynamicTable decTable = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536, 65_536);
             List<Boolean> sensitive = new ArrayList<>();
             MemorySegment block = fromBytes(rfcBytes);
             decoder.decode(block, 0, rfcBytes.length,
@@ -161,7 +161,7 @@ class HpackRfc7541AppendixCTest {
             byte[] rfcBytes = {(byte) 0x82};
 
             HpackDecoder decoder = new HpackDecoder(
-                    new HpackDynamicTable(4096), allocator, 65_536);
+                    new HpackDynamicTable(4096), allocator, 65_536, 65_536);
             List<String[]> headers = decode(decoder, rfcBytes);
 
             assertThat(headers).hasSize(1);
@@ -209,7 +209,7 @@ class HpackRfc7541AppendixCTest {
             };
 
             HpackDynamicTable decTable = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536, 65_536);
             List<String[]> headers = decode(decoder, rfcBytes);
 
             assertThat(headers).hasSize(4);
@@ -244,7 +244,7 @@ class HpackRfc7541AppendixCTest {
         @DisplayName("C.3.2 — Second Request (dynamic table reuse + new cache-control)")
         void c32SecondRequest() {
             HpackDynamicTable decTable = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536, 65_536);
 
             byte[] firstRequest = {
                 (byte) 0x82, (byte) 0x86, (byte) 0x84,
@@ -292,7 +292,7 @@ class HpackRfc7541AppendixCTest {
         @DisplayName("C.3.3 — Third Request (custom header added to dynamic table)")
         void c33ThirdRequest() {
             HpackDynamicTable decTable = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536, 65_536);
 
             byte[] firstRequest = {
                 (byte) 0x82, (byte) 0x86, (byte) 0x84,
@@ -373,7 +373,7 @@ class HpackRfc7541AppendixCTest {
             };
 
             HpackDynamicTable decTable = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536, 65_536);
             List<String[]> headers = decode(decoder, rfcBytes);
 
             assertThat(headers).hasSize(4);
@@ -413,7 +413,7 @@ class HpackRfc7541AppendixCTest {
             };
 
             HpackDynamicTable decTable = new HpackDynamicTable(4096);
-            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536);
+            HpackDecoder decoder = new HpackDecoder(decTable, allocator, 65_536, 65_536);
 
             byte[] firstRequest = {
                 (byte) 0x82, (byte) 0x86, (byte) 0x84,

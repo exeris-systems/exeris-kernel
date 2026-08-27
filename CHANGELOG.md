@@ -10,6 +10,33 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **HTTP/2 stops silently ignoring the header limits an operator configures.** ADR-071 left this as
+  its stated out-of-scope tail: `http.maxRequestHeaderCount` / `…Size` are honoured on HTTP/1 and
+  the h2 path referenced neither, so a limit could be believed set while it was not. Closing it
+  needed no new mechanism — `Http2Settings` already carried `ID_MAX_HEADER_LIST_SIZE` (RFC 9113
+  §6.5.2) and the server was sending an **empty** SETTINGS frame, telling a peer nothing at all.
+  It now advertises a bound it enforces, and `Http2HeaderBlockAssembler`'s 65 536 becomes the
+  documented default of a new `http.maxHeaderBlockSize` key rather than a constant. (Which bound
+  is advertised is settled below: not this one.)
+  **A separate key, not a product of the other two, and the reason is measured**: those describe a
+  per-field size and a field count on HTTP/1, so multiplying them out yields ~800 KiB at the shipped
+  defaults — a twelvefold *loosening* of a protective bound, which is the wrong direction for a
+  limit whose job is to refuse a header bomb. Protective per ADR-071, so `0` and negatives are
+  refused rather than read as unlimited.
+
+  **Three keys, not one, because HTTP/2 bounds three different quantities.** `http.maxHeaderBlockSize`
+  is the COMPRESSED block above. `http.maxHeaderListSize` is the CUMULATIVE DECODED field section —
+  what RFC 9113 §6.5.2 actually defines SETTINGS_MAX_HEADER_LIST_SIZE against, and what the HPACK
+  decoder enforces; it is therefore the value advertised. Advertising the block bound instead would
+  hand a peer a number nothing checks, and asymmetrically: lowering the key would merely be
+  conservative while raising it would be believed and ignored — and raising it is the only reason to
+  touch it. `http.maxStringLiteralSize` is one decoded name or value, checked against the declared
+  length before the bytes are read, which is what refuses an oversized allocation up front rather
+  than after. Compression is what makes the first two independent; neither can be derived from the
+  other. This closes ADR-071's HTTP/2 tail completely — both constants it named by name, plus the
+  third bound it did not know it was leaving behind — and the ROADMAP's Operational Limits table
+  loses both HTTP/2 rows.
+
 - **`KernelWebClient.withAuthority(String)`** — the typed surface can now name its peer, which is
   what makes ADR-074's "one engine serves many peers" reachable rather than merely decided. Until
   this, every call built through the façade resolved to the engine's configured default, so the
@@ -18,9 +45,6 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   mirrors `HttpRequest.withAuthority` so there is one vocabulary rather than two. It deliberately
   does **not** validate — the shape is checked at `HttpConfig` construction and at send, and a third
   copy of that rule inside a façade would be the fourth hand-synced version of it.
-
-### Added
-
 - **A request can name the peer it is sent to** (ADR-074). `HttpRequest` gains a nullable
   `authority`, `HttpConfig` gains `defaultAuthority`, and both keep their previous canonical
   constructor as a bridge — the SPI gate reports `stable-breaks=0` against `v0.11.0`, measured.
