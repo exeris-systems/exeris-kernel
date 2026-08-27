@@ -7,6 +7,7 @@ package eu.exeris.kernel.core.transport.scheduler;
 import eu.exeris.kernel.core.memory.ResourceArbiter;
 import eu.exeris.kernel.core.memory.ResourceArbiter.Action;
 import eu.exeris.kernel.spi.transport.StreamPriority;
+import eu.exeris.kernel.spi.transport.TransportConfig;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
@@ -52,13 +53,6 @@ import java.lang.invoke.VarHandle;
  */
 public final class AdmissionController {
 
-    /**
-     * Hard limit on concurrently active streams per engine instance.
-     * Set to {@value} to match the Performance Contract: 5 000 queue saturation threshold.
-     * Exceeding this limit triggers SHED regardless of memory pressure.
-     */
-    private static final int MAX_ACTIVE_STREAMS = 5_000;
-
     private static final VarHandle ACTIVE_COUNT;
 
     static {
@@ -73,17 +67,47 @@ public final class AdmissionController {
     /* default */ volatile int activeStreamCount;
 
     private final ResourceArbiter arbiter;
+    private final int maxActiveStreams;
+    private final int capacityCeiling;
 
     /**
-     * Creates a new {@code AdmissionController} backed by the given arbiter.
+     * Creates a new {@code AdmissionController} with the default stream ceiling.
      *
      * @param arbiter the memory-pressure arbiter; must not be {@code null}
+     * @see TransportConfig#DEFAULT_MAX_ACTIVE_STREAMS
      */
     public AdmissionController(ResourceArbiter arbiter) {
+        this(arbiter, TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS);
+    }
+
+    /**
+     * Creates a new {@code AdmissionController} enforcing the given stream ceiling.
+     *
+     * @param arbiter          the memory-pressure arbiter; must not be {@code null}
+     * @param maxActiveStreams concurrently admitted streams to allow, or
+     *                         {@link TransportConfig#UNBOUNDED_ACTIVE_STREAMS} for no ceiling.
+     *                         Refused here as well as at config construction: a controller built
+     *                         directly by a driver is the same operator error one layer down.
+     * @since 0.12.0
+     */
+    public AdmissionController(ResourceArbiter arbiter, int maxActiveStreams) {
         if (arbiter == null) {
             throw new IllegalArgumentException("arbiter must not be null");
         }
+        if (maxActiveStreams < 1 && maxActiveStreams != TransportConfig.UNBOUNDED_ACTIVE_STREAMS) {
+            throw new IllegalArgumentException(
+                    "maxActiveStreams must be >= 1, or "
+                            + TransportConfig.UNBOUNDED_ACTIVE_STREAMS
+                            + " for no ceiling, got: " + maxActiveStreams);
+        }
         this.arbiter = arbiter;
+        this.maxActiveStreams = maxActiveStreams;
+        // The sentinel is normalised once, here, rather than branched on per admission. The counter
+        // is an int, so "no ceiling" is Integer.MAX_VALUE and not a special case the hot loop has to
+        // recognise — a comparison against the raw -1 would shed every stream instead of none.
+        this.capacityCeiling = maxActiveStreams == TransportConfig.UNBOUNDED_ACTIVE_STREAMS
+                ? Integer.MAX_VALUE
+                : maxActiveStreams;
     }
 
     // =========================================================================
@@ -97,7 +121,7 @@ public final class AdmissionController {
      * Virtual Thread is spawned. It must be allocation-free.
      *
      * <p>For admitting decisions this method also atomically reserves one slot in the
-     * active stream counter, enforcing {@link #MAX_ACTIVE_STREAMS} as a hard cap under
+     * active stream counter, enforcing {@link #maxActiveStreams()} as a hard cap under
      * concurrency. If capacity is exhausted at reservation time the decision is
      * overridden to {@link Decision#SHED_CAPACITY}, regardless of memory pressure.
      *
@@ -116,7 +140,7 @@ public final class AdmissionController {
 
         for (;;) {
             int current = (int) ACTIVE_COUNT.getAcquire(this);
-            if (current >= MAX_ACTIVE_STREAMS) {
+            if (current >= capacityCeiling) {
                 return Decision.SHED_CAPACITY;
             }
             if (ACTIVE_COUNT.compareAndSet(this, current, current + 1)) {
@@ -145,6 +169,20 @@ public final class AdmissionController {
      */
     public int activeStreamCount() {
         return (int) ACTIVE_COUNT.getAcquire(this);
+    }
+
+    /**
+     * Returns the configured ceiling as given, sentinel and all.
+     *
+     * <p>Reports {@link TransportConfig#UNBOUNDED_ACTIVE_STREAMS} rather than the
+     * {@code Integer.MAX_VALUE} the hot path compares against, so a diagnostic reading this shows
+     * what the operator configured and not what the loop was rewritten to.
+     *
+     * @return the configured maximum, or {@link TransportConfig#UNBOUNDED_ACTIVE_STREAMS}
+     * @since 0.12.0
+     */
+    public int maxActiveStreams() {
+        return maxActiveStreams;
     }
 
     // =========================================================================

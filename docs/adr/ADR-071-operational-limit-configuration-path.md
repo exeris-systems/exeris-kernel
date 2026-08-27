@@ -104,6 +104,32 @@ turns an operator's configuration error into what looks like a client error, onc
   only reason to touch it and raising is the direction that breaks. Three quantities, three keys.*
 - **PAQS.** `AdmissionController.MAX_ACTIVE_STREAMS` and `PaqsScheduler.SPIN_THRESHOLD` have no
   configuration surface and no `paqs.*` namespace exists. Same stream, separate slice.
+
+  *Amendment 2026-08-27 — this slice has landed, and it took ONE key rather than the two constants
+  named above.* `transport.paqs.maxActiveStreams` carries the admission ceiling on
+  `TransportConfig`, under the `transport.*` namespace every wired transport key already uses
+  (`network.*` is the legacy fallback the resolver consults second, and the `network.paqs.*` block
+  in `config.md` remains what it was: planned, unwired, and mostly watermark thresholds rather than
+  PAQS). It falls in this decision's **third class** — protective, with a viable unbounded setting —
+  so `-1` means no ceiling, following `maxRequestBodyBytes`, and `0` is refused. The reason `0` is
+  refused is the mechanism §3 insists on stating accurately: a ceiling of zero admits nothing, so it
+  fails closed and catastrophically rather than open.
+
+  *`SPIN_THRESHOLD` did not become a key, and the reason is not sizing.* It is not an operational
+  limit at all: it is reachable only from `PaqsScheduler.close()`, decides nothing about which
+  streams are served, and bounds only how the shutdown drain spends CPU while waiting — under
+  `DRAIN_DEADLINE_NANOS`, which already carries its own reasoned refusal in the same class. Publishing
+  it would offer an operator a knob whose only effect is how hot the last milliseconds of a shutdown
+  run. Two prior catalogues of this gap listed it beside the admission ceiling as though they were the
+  same kind of thing; they are not, and the same catalogues missed the drain deadline, which is the
+  constant in that class an operator might actually have a view about.
+
+  *What the ceiling is enforced against was also wrong to leave implicit.* Removing it does not
+  remove admission control — the memory-pressure arbiter still decides every stream first — which is
+  what makes an unbounded setting defensible for a JVM-controlled deployment rather than simply
+  unguarded. The internal normalisation is where this bites in code: the counter is an `int`, so the
+  sentinel is turned into `Integer.MAX_VALUE` once at construction. Compared raw, `-1` would shed
+  every stream instead of none, and a test that does not hold its slots open passes either way.
 - The four `System.getProperty` reads that bypass `ConfigProvider` entirely.
 
 ## Cross-references
@@ -118,3 +144,11 @@ turns an operator's configuration error into what looks like a client error, onc
   parser call to the default-substituting overload fails three of the four cases.
 - `HttpConfig` validation rejects non-positive header bounds; `Http1Codec` rejects them at
   construction.
+- For the PAQS amendment: `AbstractPaqsSchedulerTck$ConfiguredAdmissionCeiling` holds handler slots
+  open so the ceiling is what bounds concurrent service, and asserts the slots come back — a
+  ceiling is a concurrency bound, not a lifetime quota. Mutation-checked in three directions, each
+  with the control staying green: ignoring the configured value reddens three unit cases and both
+  TCK cases; comparing the `-1` sentinel raw instead of normalising it reddens *only* the two
+  unbounded cases; and dropping the key read from the HTTP listener alone reddens *only* the
+  listener's wiring case. The first mutation is what caught the original unbounded TCK case letting
+  its handlers return immediately, which passed under any ceiling at all.

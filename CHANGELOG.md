@@ -10,6 +10,32 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **The PAQS admission ceiling becomes configurable, and the constant beside it is documented as
+  deliberately not** (ADR-071 amendment). `transport.paqs.maxActiveStreams` carries the cap on
+  concurrently admitted streams on `TransportConfig`; `AdmissionController` enforces the configured
+  value instead of a private `5_000`. `-1` (`TransportConfig.UNBOUNDED_ACTIVE_STREAMS`) removes the
+  count ceiling — the memory-pressure arbiter still decides every stream, so this is not an
+  unguarded engine — and `0` is refused at startup, by the config record and again by the
+  controller, because a ceiling of zero admits nothing.
+
+  **Both sites that build a `TransportConfig` read it**: the transport subsystem and the HTTP
+  listener's own carrier. A key honoured on one of them is indistinguishable, from the outside, from
+  a key that does not work — the failure this ADR exists because of.
+
+  `PaqsScheduler.SPIN_THRESHOLD` did **not** become a key. It is reachable only from `close()` and
+  bounds how the shutdown drain spends CPU while waiting, under a drain deadline already documented
+  as deliberately fixed; the ROADMAP entry that listed it as an operational limit is corrected
+  rather than implemented.
+
+  A caller that passes no ceiling is unaffected: the 8-argument `TransportConfig` constructor
+  remains as a bridge applying the same 5 000 the scheduler already enforced, which is also what
+  keeps the SPI gate at zero `stable` breaks for a `stable`-classified surface.
+
+  Coverage: `AbstractPaqsSchedulerTck$ConfiguredAdmissionCeiling` (a lowered ceiling bounds
+  concurrent service under load and the slots come back; the sentinel admits past the default),
+  `TransportConfigActiveStreamsTest`, `AdmissionControllerTest$ConfiguredCeiling`, and one wiring
+  test per construction site.
+
 - **A route can declare that it blocks, and stop pinning a pooled connection while it does**
   (ADR-077). `RouteRequirement` gains an execution facet — `PROMPT` (the default) or `LONG_RUNNING`
   via `longRunning()`. On a `LONG_RUNNING` route `CommunityHttpRequestDispatcher` binds no
