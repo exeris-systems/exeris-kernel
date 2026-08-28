@@ -65,10 +65,15 @@ final class NativeTcpReactor {
 
     private volatile Thread thread;
 
+    // One reaper per reactor, not one per carrier: it carries a next-sweep cursor that is only
+    // ever touched by this reactor's thread, which is what keeps the sweep lock-free.
+    private final NativeTcpIdleReaper idleReaper;
+
     /* default */ NativeTcpReactor(NativeTcpCarrier host, int index, Selector selector) {
         this.host = host;
         this.index = index;
         this.selector = selector;
+        this.idleReaper = NativeTcpIdleReaper.forTimeout(host.idleTimeoutMillis());
     }
 
     /* default */ void start() {
@@ -160,6 +165,11 @@ final class NativeTcpReactor {
                         host.closeKeyStream(key);
                     }
                 }
+
+                // After dispatch, so a key serviced this turn carries its fresh stamp into the
+                // sweep rather than being judged on the previous turn's. Self-gated to the sweep
+                // interval; on a disabled timeout this is one predictable branch per select.
+                idleReaper.sweep(selector, host, index, System.nanoTime());
             } catch (IOException e) {
                 if (host.isReactorActive()) {
                     host.handleAsyncFailure("reactor/" + index, e);

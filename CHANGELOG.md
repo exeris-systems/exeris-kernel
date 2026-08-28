@@ -388,6 +388,53 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   branch silently runs a path it never declared. Keyed by `(name, version)` now, pinned by a TCK case
   whose declared edge skips a step, because a sequential one cannot observe the loss.
 
+### Fixed
+
+- **`transport.idleTimeoutMillis` reclaims idle connections, which it had never done.** The key was
+  read by both config resolvers, validated against `>= 0`, carried into `HttpConfig`, copied into
+  `TransportConfig` and printed by `toString()` — and compared to nothing. No code outside
+  construction read `TransportConfig.idleTimeoutMillis()`, so no connection was ever closed for
+  idleness at any setting, while `HttpConfig`'s javadoc documented the semantics of the limit in
+  detail (*"0 = no timeout"*). A carried knob is worse than a missing one: the operator sets it,
+  sees it echoed back, and diagnoses the resulting connection leak against `maxConnections`, which
+  is enforced.
+
+  `NativeTcpIdleReaper` now sweeps each reactor's own selector keys after dispatch — one instance
+  per reactor, no timer thread, no scheduled task, no shared state — closing streams whose last
+  read or queued write is older than the configured span. The sweep is gated to `idleTimeout / 4`
+  clamped to [250 ms, 5 s], the same cadence shape `CommunityTenantPoolRegistry` uses and for the
+  same reason: a reactor returns from `select` thousands of times a second under load, and an
+  ungated O(keys) walk would put a scan of every connection on the hot path to enforce a limit
+  measured in seconds.
+
+  **What counts as activity is asymmetric between the directions, deliberately.** On ingress only
+  an attempted `read()` counts, never bytes merely arriving — which is what makes the same stamp
+  bound a slow-loris hold, since dribbling a byte a second is precisely what defeats a timeout that
+  trusts arrival. On egress both the attempted write and bytes actually leaving the socket count,
+  so a large response draining to a slow client keeps its own connection alive instead of being cut
+  off mid-transfer. The first cut of this had the egress half wrong in a way worth recording,
+  because it is this entry's own subject one layer down: `write()` reaches `queueWrite` **only on
+  the TLS branch**, so on a plaintext stream — `CommunityHttpExchange`'s path, and the default one —
+  answering a request moved bytes without counting as activity, and idle reclamation silently
+  became a property of whether TLS was configured. Found in review of the PR that fixes it.
+
+  Teardown reuses `closeKeyStream` and is abortive, for the reason that method's contract already
+  states: a graceful close waits on queued egress, and a peer quiet enough to be reclaimed may
+  never drain it.
+
+  `0` still means no timeout (ADR-071's capacity/timeout class), and negatives are still refused by
+  `HttpConfig`. New JFR event `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` carries
+  the observed idle span *and* the configured limit, because the ratio is what tells an operator
+  whether a fleet is being trimmed on a threshold or is reclaiming dead peers.
+
+  Coverage: `NativeTcpIdleTimeoutTest` — reclamation with the event asserted, `0` reclaiming
+  nothing, **a connection reading every 166 ms under a 500 ms timeout surviving**, and **a
+  connection the server only writes to surviving**. The last two are what make the first two mean
+  anything: a carrier reclaiming every connection on a timer passes reclamation-and-disabled
+  identically, and the read-driven case alone leaves the entire egress half of the contract
+  unexercised by data movement — which is exactly how the plaintext `write()` gap survived the
+  first cut of this change.
+
 ### Security
 
 - **The four dependencies carrying published advisories are bumped, and one of them was not

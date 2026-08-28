@@ -39,6 +39,17 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * Carrier ingress behaviour: registration, established-callback ordering, and channel ownership.
+ *
+ * <p><b>Known coverage gap, recorded rather than implied.</b> {@code fireEstablishedOnce}'s CAS
+ * guard is reachable more than once only on the <em>TLS</em> path, where
+ * {@code readTlsIngressFromFd()} calls it per ingress read; on plaintext it is reached from
+ * {@code markRegistrationReady()}, once per connection. Every engine in this class is plaintext,
+ * so removing the CAS leaves the whole class green — measured, not assumed. Nothing anywhere else
+ * asserts on the established count either, so the one-shot is currently unguarded on the only path
+ * where it does work. Closing that needs a TLS-bound case and is a separate slice.
+ */
 @Tag("integration")
 @Timeout(30)
 class NativeTcpCarrierIngressIntegrationTest {
@@ -267,6 +278,12 @@ class NativeTcpCarrierIngressIntegrationTest {
         AtomicBoolean established = new AtomicBoolean(false);
         AtomicBoolean establishedBeforeDispatch = new AtomicBoolean(false);
         CountDownLatch handled = new CountDownLatch(1);
+        // Released once all three client writes have returned. Without it the handler's
+        // try-with-resources closes the stream on the FIRST dispatch, racing writes 2 and 3 — and
+        // the race has two losing sides, not one: the client can take a broken pipe, or the writes
+        // can be dropped and the test passes having driven a single ingress read, which is not the
+        // premise it asserts on. Ordering the close after the writes removes both.
+        CountDownLatch writesLanded = new CountDownLatch(1);
 
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         TransportEngine[] holder = new TransportEngine[1];
@@ -292,6 +309,15 @@ class NativeTcpCarrierIngressIntegrationTest {
             try (stream) {
                 // onConnectionEstablished must have fired before the stream is dispatched.
                 establishedBeforeDispatch.set(established.get());
+                // Hold the stream open until every write is in, so the ingress reads this test
+                // exists to provoke actually happen. The handler runs on a virtual thread, so
+                // parking here costs no carrier.
+                if (!writesLanded.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("client writes did not land within 5s");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
             } finally {
                 handled.countDown();
             }
@@ -303,17 +329,27 @@ class NativeTcpCarrierIngressIntegrationTest {
             try (SocketChannel client = SocketChannel.open()) {
                 client.configureBlocking(true);
                 client.connect(new InetSocketAddress("127.0.0.1", port));
-                // Multiple writes drive multiple ingress reads; the one-shot latch must keep
-                // onConnectionEstablished firing exactly once.
+                // Multiple writes drive multiple ingress reads. Note what that does and does not
+                // prove HERE: this engine is plaintext (no certPath/keyPath), and on the plaintext
+                // path fireEstablishedOnce() is reached from markRegistrationReady(), once per
+                // connection — not per ingress read. So the CAS one-shot cannot be observed to
+                // re-fire on this path, and breaking it leaves this test green (verified by
+                // mutation). What this case actually pins is the ORDERING — established before
+                // dispatch — plus the count on a path that only reaches the site once.
+                // The CAS is load-bearing on the TLS path, where readTlsIngressFromFd() calls it
+                // per ingress read, and NOTHING covers it there. See the class javadoc.
                 client.write(ByteBuffer.wrap("a".getBytes(StandardCharsets.UTF_8)));
                 client.write(ByteBuffer.wrap("b".getBytes(StandardCharsets.UTF_8)));
                 client.write(ByteBuffer.wrap("c".getBytes(StandardCharsets.UTF_8)));
+                writesLanded.countDown();
 
                 assertThat(handled.await(5, TimeUnit.SECONDS)).isTrue();
             }
 
-            // Poll for stability rather than a fixed sleep: the count must never exceed 1
-            // (a re-fire would be caught the moment it happens) and settle at exactly 1.
+            // Poll for stability rather than a fixed sleep. Honest about its reach: on this
+            // plaintext path a re-fire is not reachable at all, so this loop guards the ordering
+            // and the single-fire invariant against a future change that moves the call site onto
+            // the per-read path, rather than against today's CAS.
             Instant settleDeadline = Instant.now().plus(Duration.ofMillis(500));
             while (Instant.now().isBefore(settleDeadline)) {
                 assertThat(establishedCount.get())

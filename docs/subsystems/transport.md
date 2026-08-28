@@ -95,6 +95,63 @@ limit. It is reachable only from `close()`, decides nothing about which streams 
 bounds only how the drain spends CPU while it waits — under a drain deadline that is itself
 deliberately fixed. It stays a constant.
 
+## Idle connection reclamation
+
+`TransportConfig.idleTimeoutMillis()` (`transport.idleTimeoutMillis`, and `http.idleTimeoutMillis`
+reaching the same carrier through `HttpConfig`, default `HttpConfig.DEFAULT_IDLE_TIMEOUT_MS` =
+30 000) closes a connection that has moved no bytes for that long.
+
+**What the values mean** (ADR-071's capacity/timeout class):
+
+| Value | Meaning |
+|:--|:--|
+| `> 0` | reclaim after this many milliseconds without activity |
+| `0` | reclamation disabled — connections are held until the peer or the application closes them |
+| negatives | **refused at startup** by `HttpConfig` validation |
+
+**What counts as activity is deliberately asymmetric between the two directions**, and the
+asymmetry is the point rather than an oversight:
+
+| Direction | Refreshes the stamp | Does not |
+|:--|:--|:--|
+| ingress | the application calling `read()` | bytes merely *arriving* in the inbound queue |
+| egress | `write()` / `queueWrite()`, **and** bytes actually leaving the socket — the direct write, the reactor's deferred drain, and the TLS drain | — |
+
+On ingress, only an attempted read counts. A peer that opens a connection and sends nothing never
+causes one, so the same stamp that expires an idle keep-alive also bounds a slow-loris hold: a
+handler parked in `read()` for a body that never arrives has not refreshed its stamp since the read
+began. **Stamping on arrival would defeat exactly that** — dribbling one byte per second is what a
+slow-loris does, and a connection nobody is reading is not doing work.
+
+On egress the opposite is required: bytes leaving *are* the server doing work for this connection,
+so a large response draining to a slow client keeps its own connection alive rather than being cut
+off mid-transfer. `write()` reaching `queueWrite` only on the TLS branch is what made this wrong in
+the first cut — plaintext responses, which is `CommunityHttpExchange`'s path and the default one,
+moved bytes without counting, and idle reclamation became a property of whether TLS was configured.
+
+**The sweep is per reactor and rides a wake-up that was going to happen anyway.**
+`NativeTcpIdleReaper` runs inside the reactor's select loop after the selected keys are dispatched
+— no timer thread, no scheduled task, and no state shared between reactors. It is gated to
+`idleTimeout / 4` clamped to [250 ms, 5 s], because a reactor returns from `select` thousands of
+times a second under load and an ungated O(keys) walk would put a scan of the whole connection set
+on the hot path to enforce a limit measured in seconds. The same cadence shape, for the same
+reason, governs `CommunityTenantPoolRegistry`'s pool reclaim.
+
+**Teardown is abortive**, through the same `closeKeyStream` path as a dispatch fault. A graceful
+close waits for queued egress to drain, and a peer quiet enough to be reclaimed is exactly the peer
+that may never drain it.
+
+What an operator observes: `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout`, carrying
+the stream id, the reactor index, the observed idle span and the configured timeout. Both spans are
+on the event because the ratio is the interesting quantity — idle spans clustered just past the
+limit mean a fleet being trimmed on a threshold, spans minutes past it mean genuinely dead peers.
+
+> **This limit did nothing before 0.12.0.** It was read from configuration, validated, carried
+> through `HttpConfig` into `TransportConfig` and rendered by `toString()`, and never compared to
+> anything: no code read `idleTimeoutMillis()` outside construction. A knob that is carried but
+> unconsumed is worse than a missing one, because the missing one is discoverable — the operator
+> who sets it sees it echoed back and concludes it works.
+
 ## Accept-path failure modes
 
 There are two ways an accepted connection ends without being served, and they look identical from the
@@ -482,6 +539,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | `StreamLifecycleEvent` | `eu.exeris.kernel.transport.StreamLifecycle` | State transitions within a stream lifetime |
 | `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.transport.IngressQueueDepth` | Current queue depth metric |
 | `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
+| `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |
 
 ---
 

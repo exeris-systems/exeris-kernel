@@ -117,6 +117,14 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
     // Set by reset(long): abandon queued writes (no drain wait) and terminate abortively (RST).
     private final AtomicBoolean resetRequested = new AtomicBoolean(false);
+    // Last time the application moved bytes on this connection, for idle reclamation
+    // (transport.idleTimeoutMillis, swept by NativeTcpIdleReaper on the owning reactor).
+    // "Activity" is an attempted read or queued write, not bytes observed on the wire: a peer that
+    // opens a connection and then sends nothing never reaches either, which is what makes the same
+    // stamp bound a slow-loris hold as well as an idle keep-alive. Volatile because the writer is
+    // whichever virtual thread served the request and the reader is the reactor thread; a plain
+    // long would let a reactor read an indefinitely stale stamp and reclaim a live connection.
+    private volatile long lastActivityNanos = System.nanoTime();
     private final Queue<NativeTcpStreamPendingWrite> outboundQueue =
             new MpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
     private final Queue<LoanedBuffer> inboundQueue = QUEUE_BACKPRESSURE_ENABLED
@@ -218,6 +226,7 @@ final class NativeTcpStream implements TransportStream {
         if (maxBytes <= 0) {
             return 0;
         }
+        lastActivityNanos = System.nanoTime();
 
         Thread currentThread = Thread.currentThread();
         NativeTcpStreamConsumerGate.acquireSingleConsumer(runtime.inboundConsumer(), currentThread, "inbound");
@@ -311,6 +320,11 @@ final class NativeTcpStream implements TransportStream {
         if (length == 0) {
             return;
         }
+        // Both public egress entries stamp. Only queueWrite did until #374 review: write()
+        // reaches queueWrite ONLY on the TLS branch, so every plaintext response — which is
+        // CommunityHttpExchange's path, and the default one — moved bytes without counting as
+        // activity, and idle reclamation became a property of whether TLS was configured.
+        lastActivityNanos = System.nanoTime();
 
         if (tlsEngine == null) {
             if (hasPendingData()) {
@@ -354,6 +368,7 @@ final class NativeTcpStream implements TransportStream {
         if (length < 0 || length > buffer.capacity()) {
             throw new IllegalArgumentException("length out of range for loaned buffer");
         }
+        lastActivityNanos = System.nanoTime();
         if (closeRequested.get() || closed.get()) {
             throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
         }
@@ -386,6 +401,15 @@ final class NativeTcpStream implements TransportStream {
             close();
             throw error;
         }
+    }
+
+    /**
+     * Nanosecond stamp of the last read or queued write, for the owning reactor's idle sweep.
+     *
+     * @return a {@link System#nanoTime()} reading; comparable only by subtraction
+     */
+    /* default */ long lastActivityNanos() {
+        return lastActivityNanos;
     }
 
     @Override
@@ -762,6 +786,10 @@ final class NativeTcpStream implements TransportStream {
                 finalizeCloseIfRequestedAfterBestEffortFlush();
                 return false;
             }
+            // Covers the TLS drain, whose ciphertext goes out through tlsEngine.wrap and so never
+            // passes tryWrite: without this, a response queued once and drained slowly would carry
+            // only its enqueue stamp.
+            lastActivityNanos = System.nanoTime();
             completeQueueHeadAfterDrain(pending);
             pending = outboundQueue.peek();
         }
@@ -922,11 +950,19 @@ final class NativeTcpStream implements TransportStream {
         if (length <= 0) {
             return 0;
         }
-        if (plainSocketBackend.usesCoreSocketSeam()) {
-            return NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(
-                    socketHandles, plainSocketHandle, channel, source, offset, length, streamId);
+        // The single point plaintext bytes leave this socket: writeDirect's loop and the
+        // reactor's deferred drain (via pendingWriteTryWriter) both arrive here. Stamping on
+        // egress — not only on the application's call — is what keeps a large response draining
+        // to a slow client from being reclaimed mid-transfer while its bytes are still flowing.
+        // One volatile store per syscall.
+        int written = plainSocketBackend.usesCoreSocketSeam()
+                ? NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(
+                        socketHandles, plainSocketHandle, channel, source, offset, length, streamId)
+                : NativeTcpStreamPlainSocketIo.nioFallbackWrite(channel, source, offset, length);
+        if (written > 0) {
+            lastActivityNanos = System.nanoTime();
         }
-        return NativeTcpStreamPlainSocketIo.nioFallbackWrite(channel, source, offset, length);
+        return written;
     }
 
     private void ensureOpen() {
