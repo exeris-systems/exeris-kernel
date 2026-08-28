@@ -7,6 +7,7 @@ package eu.exeris.kernel.core.flow;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
 import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
@@ -37,6 +38,11 @@ final class FlowProgressDisabledEvent extends Event {
     /* default */ int probeLimit;
 
     /* default */ static void emit(String eventTypeName, int baseOrdinal, int probeLimit) {
+        // Guard order matches this cycle's other new events (CommunityConnectionIdleTimeout,
+        // CommunityAcceptFault): no allocation at all when JFR was never initialised.
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
         FlowProgressDisabledEvent event = new FlowProgressDisabledEvent();
         if (!event.isEnabled()) {
             return;

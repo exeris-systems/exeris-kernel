@@ -276,24 +276,36 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
      *         something
      */
     /* default */ static int resolveSqlTranslationCacheMaxEntries() {
-        if (!KernelProviders.CURRENT_CONFIG.isBound()) {
-            return DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES;
-        }
-        ConfigProvider config = KernelProviders.CURRENT_CONFIG.get();
-        if (config == null) {
-            return DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES;
-        }
-        int configured = config.getInt(SQL_TRANSLATION_CACHE_KEY)
-                .orElse(DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES);
+        int configured = readConfiguredCacheMaxEntries();
         if (configured < 0) {
-            throw new IllegalArgumentException(
-                    SQL_TRANSLATION_CACHE_KEY + " must be >= 0 (0 disables caching), got: " + configured);
+            throw refusedCacheBound(configured);
         }
         return configured;
     }
 
+    /** The configured value, unvalidated — a negative one is carried out so the caller can keep it. */
+    private static int readConfiguredCacheMaxEntries() {
+        if (!KernelProviders.CURRENT_CONFIG.isBound()) {
+            return DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES;
+        }
+        ConfigProvider config = KernelProviders.CURRENT_CONFIG.get();
+        return config == null
+                ? DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES
+                : config.getIntOrDefault(SQL_TRANSLATION_CACHE_KEY, DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES);
+    }
+
+    private static IllegalArgumentException refusedCacheBound(int configured) {
+        return new IllegalArgumentException(
+                SQL_TRANSLATION_CACHE_KEY + " must be >= 0 (0 disables caching), got: " + configured);
+    }
+
     private static final class SqlPlaceholderTranslator {
-        private static final int CACHE_LIMIT_UNRESOLVED = -1;
+        /**
+         * Unresolved marker. {@code Integer.MIN_VALUE} rather than {@code -1} so that any OTHER
+         * negative in this field is the refused configured value itself — which is what lets a
+         * misconfigured deployment fail identically on every statement without re-resolving.
+         */
+        private static final int CACHE_LIMIT_UNRESOLVED = Integer.MIN_VALUE;
 
         /**
          * Compute-once via CAS rather than double-checked locking, per CONTRIBUTING's lazy-init
@@ -344,12 +356,18 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
          */
         private static int cacheMaxEntries() {
             int cached = CACHE_LIMIT.get();
-            if (cached != CACHE_LIMIT_UNRESOLVED) {
-                return cached;
+            if (cached == CACHE_LIMIT_UNRESOLVED) {
+                CACHE_LIMIT.compareAndSet(CACHE_LIMIT_UNRESOLVED, readConfiguredCacheMaxEntries());
+                cached = CACHE_LIMIT.get();
             }
-            int resolved = resolveSqlTranslationCacheMaxEntries();
-            CACHE_LIMIT.compareAndSet(CACHE_LIMIT_UNRESOLVED, resolved);
-            return CACHE_LIMIT.get();
+            if (cached < 0) {
+                // The refused value itself, remembered. translateParams runs from prepareStatement
+                // on every statement, so re-resolving would make a misconfigured deployment pay a
+                // provider lookup per statement to be told the same thing. It is broken either way;
+                // it should not be slow about it.
+                throw refusedCacheBound(cached);
+            }
+            return cached;
         }
 
         private static String translate(String sql) {
