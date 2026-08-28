@@ -148,6 +148,11 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Community persistence: PostgreSQL JDBC driver (optional runtime) -->
         <dependency>
             <groupId>org.postgresql</groupId>

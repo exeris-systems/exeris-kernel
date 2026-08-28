@@ -15,7 +15,10 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.lang.reflect.Field;
+import java.net.StandardProtocolFamily;
 import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -26,6 +29,26 @@ final class CommunityTransportTestHarness {
     private static final long CONNECT_TIMEOUT_SECONDS = 5L;
 
     private CommunityTransportTestHarness() {
+    }
+
+    /**
+     * Whether {@code SocketChannel}'s {@code fd} field is reachable, which the FFM socket seam
+     * needs. Gated by {@code --add-opens java.base/sun.nio.ch} and {@code java.base/java.io} — a
+     * real environment capability, unlike the certificate assumption this module used to carry.
+     *
+     * <p>Lives here because four suites were about to hold four identical copies; the fourth is
+     * what made it worth moving rather than repeating.
+     *
+     * @return {@code true} when the field can be read reflectively
+     */
+    static boolean isSocketFdAccessible() {
+        try (SocketChannel channel = SocketChannel.open(StandardProtocolFamily.INET)) {
+            Field field = channel.getClass().getDeclaredField("fd");
+            field.setAccessible(true);
+            return field.get(channel) != null;
+        } catch (IOException | ReflectiveOperationException | RuntimeException probeFailure) {
+            return false;
+        }
     }
 
     static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler) {
