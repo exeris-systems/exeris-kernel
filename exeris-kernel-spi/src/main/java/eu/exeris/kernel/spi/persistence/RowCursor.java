@@ -40,6 +40,20 @@ import java.util.UUID;
  */
 public interface RowCursor {
 
+    /*
+     * Two rules hold for every accessor below, and are repeated on each of them so that a reader of
+     * one method need not have read this one (ADR-080 ruling 1):
+     *
+     *   Column index — an index outside [0, columnCount()) throws IndexOutOfBoundsException. All
+     *   thirteen accessors, uniformly. Before ADR-080 only getInt and getSegment said so; the other
+     *   eleven behaved this way without declaring it, which is a coincidence rather than a contract
+     *   and is what let two implementations read the same silence differently.
+     *
+     *   SQL NULL — a reference-typed accessor returns null; a primitive accessor throws
+     *   NullPointerException, because it has no null to return. getLength returns -1 and getSegment
+     *   throws: a read-only view of nothing is not a segment.
+     */
+
     // =========================================================================
     // Primitive access — zero allocation (Enterprise hot path)
     // =========================================================================
@@ -61,6 +75,8 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return long value
+     * @throws IndexOutOfBoundsException if column is out of range
+     * @throws NullPointerException      if the column value is SQL NULL (use {@link #isNull} first)
      */
     long getLong(int column);
 
@@ -69,6 +85,8 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return short value
+     * @throws IndexOutOfBoundsException if column is out of range
+     * @throws NullPointerException      if the column value is SQL NULL (use {@link #isNull} first)
      */
     short getShort(int column);
 
@@ -77,6 +95,8 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return float value
+     * @throws IndexOutOfBoundsException if column is out of range
+     * @throws NullPointerException      if the column value is SQL NULL (use {@link #isNull} first)
      */
     float getFloat(int column);
 
@@ -85,6 +105,8 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return double value
+     * @throws IndexOutOfBoundsException if column is out of range
+     * @throws NullPointerException      if the column value is SQL NULL (use {@link #isNull} first)
      */
     double getDouble(int column);
 
@@ -93,6 +115,8 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return boolean value
+     * @throws IndexOutOfBoundsException if column is out of range
+     * @throws NullPointerException      if the column value is SQL NULL (use {@link #isNull} first)
      */
     boolean getBoolean(int column);
 
@@ -103,6 +127,7 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return {@code true} if NULL
+     * @throws IndexOutOfBoundsException if column is out of range
      */
     boolean isNull(int column);
 
@@ -121,7 +146,8 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return segment containing raw column bytes (read-only)
-     * @throws NullPointerException if column is SQL NULL
+     * @throws IndexOutOfBoundsException if column is out of range
+     * @throws NullPointerException      if the column value is SQL NULL (use {@link #isNull} first)
      */
     MemorySegment getSegment(int column);
 
@@ -133,6 +159,7 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return byte length, or {@code -1} if NULL
+     * @throws IndexOutOfBoundsException if column is out of range
      */
     int getLength(int column);
 
@@ -149,6 +176,7 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return String value, or {@code null} if SQL NULL
+     * @throws IndexOutOfBoundsException if column is out of range
      */
     String getString(int column);
 
@@ -160,6 +188,7 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return byte array, or {@code null} if SQL NULL
+     * @throws IndexOutOfBoundsException if column is out of range
      */
     byte[] getBytes(int column);
 
@@ -171,6 +200,7 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return UUID value, or {@code null} if SQL NULL
+     * @throws IndexOutOfBoundsException if column is out of range
      */
     UUID getUuid(int column);
 
@@ -189,6 +219,7 @@ public interface RowCursor {
      *
      * @param column zero-based column index
      * @return Instant value, or {@code null} if SQL NULL
+     * @throws IndexOutOfBoundsException if column is out of range
      * @since 0.8.0
      */
     Instant getInstant(int column);
