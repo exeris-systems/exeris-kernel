@@ -388,6 +388,31 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   branch silently runs a path it never declared. Keyed by `(name, version)` now, pinned by a TCK case
   whose declared edge skips a step, because a sequential one cannot observe the loss.
 
+### Security
+
+- **The four dependencies carrying published advisories are bumped, and one of them was not
+  four packages.** `jackson.version` 3.1.1 → 3.2.2, `postgresql.version` 42.7.11 → 42.7.13, and
+  `lz4.version` 1.10.2 → 1.11.2 in `exeris-kernel-bom`, which is what fixes them for every
+  distributed coordinate; `tools/jfr-reporter` moves 2.18.7 → 2.22.2 on its own pinned Jackson 2.
+  The lz4 pin is not decorative — `at.yawk.lz4:lz4-java` reaches the tree only as a runtime
+  transitive of `kafka-clients`, and it is this BOM entry that fixed it at the vulnerable version.
+
+  **The alert count describes `main`, not this line.** Dependabot scans the default branch, which
+  still carries 0.11.0, so seven of the alerts it reports are against a
+  `exeris-kernel-diagnostics-cli` that no longer exists as described: the CLI's Jackson 2 was
+  removed on this branch when the module moved to the kernel's Jackson 3. Those seven close on
+  release integration, with no bump owed. What was actually open here is the BOM and the reporter.
+
+- **`tools/jfr-reporter` stays on Jackson 2, deliberately.** The case for finishing the migration
+  was that the distribution should not carry two Jackson generations — and it no longer does: the
+  reporter has its own POM, inherits neither the parent nor the BOM, is outside the reactor, and is
+  never deployed. It is built and executed only by the JFR job in CI. Rewriting a report writer
+  whose output feeds that job, to remove a dependency no consumer resolves, buys nothing a version
+  bump does not. Verified by running the shaded jar against a real recording rather than by
+  building it: 180 allocation events through the streaming generator, all five JSON artefacts
+  written, exit 0 — the check the CLI regression taught, where a jar that assembled was executed
+  nowhere.
+
 ## [0.11.0] — 2026-08-11
 
 ### Added
