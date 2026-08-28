@@ -21,9 +21,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.net.StandardProtocolFamily;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -67,7 +64,7 @@ class NativeTcpTlsEstablishedOnceIntegrationTest {
     @Test
     @DisplayName("onConnectionEstablished fires once across many TLS ingress reads")
     void establishedFiresOnceAcrossManyTlsIngressReads() throws Exception {
-        assumeTrue(isSocketFdAccessible(),
+        assumeTrue(CommunityTransportTestHarness.isSocketFdAccessible(),
                 "SocketChannel FileDescriptor access needs --add-opens java.base/sun.nio.ch "
                         + "and java.base/java.io");
 
@@ -165,13 +162,4 @@ class NativeTcpTlsEstablishedOnceIntegrationTest {
         }
     }
 
-    private static boolean isSocketFdAccessible() {
-        try (SocketChannel channel = SocketChannel.open(StandardProtocolFamily.INET)) {
-            Field field = channel.getClass().getDeclaredField("fd");
-            field.setAccessible(true);
-            return field.get(channel) != null;
-        } catch (IOException | ReflectiveOperationException | RuntimeException probeFailure) {
-            return false;
-        }
-    }
 }

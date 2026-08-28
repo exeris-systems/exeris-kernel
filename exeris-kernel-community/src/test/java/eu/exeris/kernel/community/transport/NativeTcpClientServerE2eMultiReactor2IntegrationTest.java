@@ -5,7 +5,6 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.CommunityKernelCryptoProvider;
-import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
@@ -26,7 +25,6 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.io.TempDir;
@@ -140,7 +138,7 @@ class NativeTcpClientServerE2eMultiReactor2IntegrationTest {
         byte[] payload = "kernel-e2e-tls-roundtrip".getBytes(StandardCharsets.UTF_8);
         CountDownLatch handled = new CountDownLatch(1);
 
-        assumeTrue(isSocketFdAccessible(),
+        assumeTrue(CommunityTransportTestHarness.isSocketFdAccessible(),
             "SocketChannel FileDescriptor field access is unavailable without --add-opens java.base/sun.nio.ch=ALL-UNNAMED and --add-opens java.base/java.io=ALL-UNNAMED");
 
         // Generated per run rather than read from ../native-libs/certs, which is in no commit, no
@@ -241,19 +239,4 @@ class NativeTcpClientServerE2eMultiReactor2IntegrationTest {
         }
     }
 
-    private static boolean isSocketFdAccessible() {
-        try (ServerSocketChannel server = ServerSocketChannel.open()) {
-            server.bind(new InetSocketAddress("127.0.0.1", 0));
-            int port = ((InetSocketAddress) server.getLocalAddress()).getPort();
-            try (SocketChannel client = SocketChannel.open()) {
-                client.connect(new InetSocketAddress("127.0.0.1", port));
-                try (SocketChannel accepted = server.accept()) {
-                    return SocketChannelFdAccess.canResolveFd(client)
-                            && SocketChannelFdAccess.canResolveFd(accepted);
-                }
-            }
-        } catch (IOException ex) {
-            return false;
-        }
-    }
 }

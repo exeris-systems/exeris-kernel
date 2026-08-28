@@ -5,7 +5,6 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.CommunityKernelCryptoProvider;
-import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
@@ -19,6 +18,7 @@ import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -26,7 +26,6 @@ import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.io.TempDir;
@@ -42,6 +41,19 @@ class NativeTcpClientServerE2eIntegrationTest {
 
     @TempDir
     /* default */ static Path tlsMaterialDir;
+
+    /**
+     * Generated once for the class, not once per test: keypair generation is the expensive part and
+     * both TLS cases want the same material. Replaces ../native-libs/certs, which is in no commit,
+     * no .gitignore, no script and no workflow — so the old assumeTrue never held and these tests
+     * skipped in every build while the summary line read as a pass.
+     */
+    private static TlsTestCertificate certificate;
+
+    @BeforeAll
+    static void generateTlsMaterial() {
+        certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+    }
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
@@ -140,13 +152,9 @@ class NativeTcpClientServerE2eIntegrationTest {
         byte[] payload = "kernel-e2e-tls-roundtrip".getBytes(StandardCharsets.UTF_8);
         CountDownLatch handled = new CountDownLatch(1);
 
-        assumeTrue(isSocketFdAccessible(),
+        assumeTrue(CommunityTransportTestHarness.isSocketFdAccessible(),
             "SocketChannel FileDescriptor field access is unavailable without --add-opens java.base/sun.nio.ch=ALL-UNNAMED and --add-opens java.base/java.io=ALL-UNNAMED");
 
-        // Generated per run rather than read from ../native-libs/certs, which is in no commit, no
-        // .gitignore, no script and no workflow — so the old assumeTrue never held and this test
-        // skipped in every build while the summary line read as a pass.
-        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
 
         KernelCryptoProvider cryptoProvider;
         try {
@@ -242,13 +250,9 @@ class NativeTcpClientServerE2eIntegrationTest {
         CountDownLatch handled = new CountDownLatch(1);
         byte[][] received = new byte[1][];
 
-        assumeTrue(isSocketFdAccessible(),
+        assumeTrue(CommunityTransportTestHarness.isSocketFdAccessible(),
             "SocketChannel FileDescriptor field access is unavailable without --add-opens java.base/sun.nio.ch=ALL-UNNAMED and --add-opens java.base/java.io=ALL-UNNAMED");
 
-        // Generated per run rather than read from ../native-libs/certs, which is in no commit, no
-        // .gitignore, no script and no workflow — so the old assumeTrue never held and this test
-        // skipped in every build while the summary line read as a pass.
-        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
 
         KernelCryptoProvider cryptoProvider;
         try {
@@ -337,19 +341,4 @@ class NativeTcpClientServerE2eIntegrationTest {
         }
     }
 
-    private static boolean isSocketFdAccessible() {
-        try (ServerSocketChannel server = ServerSocketChannel.open()) {
-            server.bind(new InetSocketAddress("127.0.0.1", 0));
-            int port = ((InetSocketAddress) server.getLocalAddress()).getPort();
-            try (SocketChannel client = SocketChannel.open()) {
-                client.connect(new InetSocketAddress("127.0.0.1", port));
-                try (SocketChannel accepted = server.accept()) {
-                    return SocketChannelFdAccess.canResolveFd(client)
-                            && SocketChannelFdAccess.canResolveFd(accepted);
-                }
-            }
-        } catch (IOException ex) {
-            return false;
-        }
-    }
 }
