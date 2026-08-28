@@ -2693,6 +2693,24 @@ The policy half is open and deliberately unbundled: whether an accept-time cap i
 **1.0 disposition:** part of the 1.0-blocking operational-limit configuration path (ADR-071).
 
 **Status (v0.12): DELIVERED.** Also recorded while cataloguing: with `transport.queueBackpressureEnabled` at its default `false`, the TLS ingress queue is **count-unbounded** rather than merely large. Defensible — entries are off-heap loans the watermark arbiter accounts for, so PAQS sheds under memory pressure — but stated rather than left to be discovered.
+### Config: The Four Hardcoded Constants, and Why Only One Became a Key (T1-4 close, 2026-08-28)
+
+**Gap:** four constants were catalogued as "hardcoded operational limits needing a configuration path". Read at their call sites, three of them are not that, and promoting all four would have published knobs an operator cannot use or a driver refuses.
+
+**Owner:** Community persistence + memory, Core flow.
+
+**Resolution, per constant.**
+
+- `TRANSLATION_CACHE_MAX_ENTRIES` (1024, `JdbcPersistenceConnection`) — **promoted** to `persistence.sqlTranslationCacheMaxEntries`. It is a genuine operational limit and worse than it looks: the cache it bounds **never evicts**, so an application with more distinct statements than the bound retains the earliest ones it happened to see rather than the hottest, and re-translates everything else on every call. Raising it was the only lever and there was none. `0` disables; negatives are refused rather than corrected.
+- `DEFAULT_NETWORK_OFF_HEAP_THRESHOLD` (32 KB, `CommunityMemoryAllocator`) — **not a key, because the key already exists**. `MemoryProviderConfig.networkOffHeapThreshold` is an SPI record component, validated and bootstrapped; the Community allocator *refuses* any other value with an explicit message, and reads it nowhere at runtime. A new key would publish a setting the driver declines. The constant is the value the driver insists on, and the refusal is the contract.
+- `FLOW_PROGRESS_ORDINAL_PROBE_LIMIT` (32, `FlowProgressPublisher`) — **not a key.** It bounds a collision-probe window for an event ordinal; an operator has no basis for choosing a value. What it *did* have is a silent failure: exhausting the window disables `FlowProgress` publication for the life of the process, after which `publishProgress` returns on a cached sentinel and a subscriber never hears anything — indistinguishable from a system in which no flow terminated. Now emits `eu.exeris.kernel.flow.ProgressDisabled`, once, at the transition.
+- `MAX_RECLAIM_CADENCE_MS` (5 s, `CommunityTenantPoolRegistry`) — **not a key.** It clamps a *derived* quantity (`tenantIdleTtl / 4`) whose input the operator already controls; a second knob on the output would let the two disagree.
+
+**Merge Gate:** the promoted key resolves from configuration, honours `0`, refuses negatives and defaults when unbound — each arm tested; the give-up event is registered in `telemetry.md`; the two refusals carry their reason at the constant.
+
+**1.0 disposition:** closes the constants half of the 1.0-blocking operational-limit configuration path (ADR-071).
+
+**Status (v0.12): DELIVERED.** With this and the property-read slice, T1-4 is complete: the eight constants, the property reads, the HTTP/1÷HTTP/2 header asymmetry (#342, #362), the PAQS ceiling (#372), the disable-semantics ADR (ADR-071) and the carried-but-unenforced idle timeout (#374). **Three of the twelve catalogued items turned out not to be what the catalogue said** — `SPIN_THRESHOLD`, the off-heap threshold and the reclaim cadence — which is worth carrying forward into how the next sweep is read.
 
 ---
 
