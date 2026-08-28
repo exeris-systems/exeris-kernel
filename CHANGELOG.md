@@ -435,6 +435,36 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   unexercised by data movement — which is exactly how the plaintext `write()` gap survived the
   first cut of this change.
 
+### Added
+
+- **The SQL translation cache gets a bound an operator can raise, and the other three constants get
+  reasons** (T1-4 close). `persistence.sqlTranslationCacheMaxEntries` replaces a private `1024` in
+  `JdbcPersistenceConnection`. The limit matters more than its size suggests, because **the cache
+  never evicts**: past the bound an application retains the earliest statements it happened to see
+  rather than the hottest, and re-translates everything else on every call. `0` disables caching —
+  coherent for a workload with unbounded statement variety — and a negative value is refused rather
+  than replaced by the default, which would leave a misconfigured deployment believing it had set
+  something.
+
+- **`eu.exeris.kernel.flow.ProgressDisabled`** — `FlowProgressPublisher` probes a bounded window of
+  hash-derived event ordinals and, when every candidate collides, disables `FlowProgress`
+  publication for the life of the process. Nothing recorded that: `publishProgress` afterwards
+  returns on a cached sentinel, so a subscriber never receives anything, which is indistinguishable
+  from a system in which no flow ever terminated. Emitted once, at the transition, not per call.
+
+### Decided
+
+- **Three of the four catalogued "hardcoded limits" did not become keys, and the reasons differ.**
+  `DEFAULT_NETWORK_OFF_HEAP_THRESHOLD` needs no key because one exists —
+  `MemoryProviderConfig.networkOffHeapThreshold` is an SPI record component that the Community
+  allocator *refuses* any non-default value for, explicitly, and reads nowhere at runtime; a new key
+  would publish a setting the driver declines. `FLOW_PROGRESS_ORDINAL_PROBE_LIMIT` bounds a
+  collision probe an operator has no basis for sizing — its defect was silence, now fixed above.
+  `MAX_RECLAIM_CADENCE_MS` clamps a *derived* value (`tenantIdleTtl / 4`) whose input is already
+  configurable; a knob on the output would let the two disagree. With `PaqsScheduler.SPIN_THRESHOLD`
+  from #372, that is **three of twelve catalogued items that were not what the catalogue said** —
+  recorded because the pattern matters more than any one of them.
+
 ### Security
 
 - **The four dependencies carrying published advisories are bumped, and one of them was not
