@@ -1,57 +1,49 @@
 [ {
-  "t" : 1787833074969,
+  "t" : 1787924610411,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$Node",
+  "class" : "java.util.HashSet",
   "thread" : "main",
   "size" : 261560,
   "stackId" : "stk_0001",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787833074973,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap",
-  "thread" : "main",
-  "size" : 261504,
+  "t" : 1787924610414,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.lang.String",
+  "thread" : "C2 CompilerThread0",
+  "size" : 32,
   "stackId" : "stk_0002",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787833074973,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.LinkedHashMap",
-  "thread" : "main",
-  "size" : 88,
-  "stackId" : "stk_0002",
-  "category" : "JVM_NOISE"
-}, {
-  "t" : 1787833074973,
+  "t" : 1787924610414,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.LinkedHashMap$Entry",
-  "thread" : "main",
-  "size" : 261528,
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "JFR Periodic Tasks",
+  "size" : 2434632,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787833074973,
+  "t" : 1787924610414,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.LinkedHashMap$Entry",
-  "thread" : "main",
-  "size" : 56,
+  "class" : "java.util.ArrayList$Itr",
+  "thread" : "JFR Periodic Tasks",
+  "size" : 32,
   "stackId" : "stk_0003",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787833074973,
+  "t" : 1787924610418,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 60224,
+  "size" : 261512,
   "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 }, {
-  "t" : 1787833074973,
+  "t" : 1787924610418,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "java.util.HashMap$KeyIterator",
+  "class" : "java.util.HashMap",
   "thread" : "main",
-  "size" : 48,
+  "size" : 64,
   "stackId" : "stk_0004",
   "category" : "JVM_NOISE"
 } ]
