@@ -137,6 +137,35 @@ turns an operator's configuration error into what looks like a client error, onc
   every stream instead of none, and a test that does not hold its slots open passes either way.
 - The four `System.getProperty` reads that bypass `ConfigProvider` entirely.
 
+  *Amendment 2026-08-28 — this slice has landed, and the count above was wrong in a way worth
+  keeping.* There are **six** operational property reads, not four: a `System.getProperty` grep
+  misses `Integer.getInteger`, which is how `transport.acceptedSendBufferBytes` and
+  `http.stream.creditWindowBytes` are read. Both of those were already documented in `config.md` as
+  deliberate direct-`-D` knobs, so the number of *undocumented* ones was four — the count was right
+  about the gap and wrong about the set, which is the kind of error a grep-derived inventory makes.
+
+  Of the four, **two are promoted**: `transport.socket.backend` and `memory.jfr.sampleEvery` now
+  resolve through `ConfigProvider` first and fall back to the published property ladder, so nothing
+  that worked stops working. Neither needed SPI surface — Community reads the generic provider, the
+  same route `transport.paqs.maxActiveStreams` takes, so no SPI record grows a driver-specific
+  field.
+
+  **Two are refused, and the reason is lifecycle rather than taste.**
+  `transport.maxTlsRecordsPerRead` and `transport.queueBackpressureEnabled` are `static final`
+  fields resolved when their class loads — before any `ConfigProvider` exists, and once per JVM for
+  whatever touches the class first. Reading the provider *at class initialisation* would not make
+  them configurable; it would freeze whatever happened to be bound at that instant, which is worse
+  than an honest `-D` because it looks configurable and is not. Making them properly configurable
+  means moving them to instance state on the ingress path — a hot-path change owing a measurement,
+  and therefore a separate decision rather than a rename. They join the documented direct-`-D`
+  category in `config.md`, with the reason recorded there.
+
+  *Recorded with the disposition, because a default is part of a limit's meaning:* at
+  `queueBackpressureEnabled`'s default `false` the TLS ingress queue is **count-unbounded**, not
+  merely large — the alternative to the bound is no bound. That is defensible rather than a defect,
+  since every entry is an off-heap loan the watermark arbiter accounts for and PAQS still sheds
+  under memory pressure, but it is not something an operator should have to discover.
+
 ## Cross-references
 
 - `docs/subsystems/http.md` — the HTTP contract these bounds belong to.

@@ -23,10 +23,12 @@ import java.nio.channels.ServerSocketChannel;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import java.util.Map;
 
 @DisplayName("Community: NativeTcpCarrier backend selection seam")
 class NativeTcpCarrierBackendSelectionTest {
 
+    private static final String SOCKET_BACKEND_KEY = "transport.socket.backend";
     private static final String SOCKET_BACKEND_PROPERTY = "exeris.community.transport.socket.backend";
     private static final String SOCKET_BACKEND_ALIAS_PROPERTY = "SOCKET_BACKEND_ENV";
     private static final String SOCKET_BACKEND_AUTO = "auto";
@@ -187,6 +189,50 @@ class NativeTcpCarrierBackendSelectionTest {
 
     private static NativeTcpCarrier createCarrier(TransportMode mode) {
         return createCarrier(mode, 128);
+    }
+
+    @Test
+    @DisplayName("transport.socket.backend from the config provider selects the backend")
+    void configProviderSelectsBackend() {
+        // Until v0.12 this choice was reachable only through -D or an env var, so it was invisible
+        // to a config file and absent from docs/subsystems/config.md. The ladder below it is
+        // unchanged; what is new is that the provider is consulted first.
+        MapConfigProvider config = new MapConfigProvider(
+                Map.of(SOCKET_BACKEND_KEY, SOCKET_BACKEND_NIO), Map.of());
+        ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
+            try (NativeTcpCarrier carrier = createCarrier(TransportMode.SERVER)) {
+                assertThat(carrier.requestedSocketBackend()).isEqualTo(SOCKET_BACKEND_NIO);
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("the config provider outranks the legacy -D, which is what makes the key primary")
+    void configProviderOutranksProperty() {
+        System.setProperty(SOCKET_BACKEND_PROPERTY, SOCKET_BACKEND_POSIX_HYBRID);
+        MapConfigProvider config = new MapConfigProvider(
+                Map.of(SOCKET_BACKEND_KEY, SOCKET_BACKEND_NIO), Map.of());
+        ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
+            try (NativeTcpCarrier carrier = createCarrier(TransportMode.SERVER)) {
+                assertThat(carrier.requestedSocketBackend())
+                        .as("a provider value must win; otherwise the key is documented but powerless")
+                        .isEqualTo(SOCKET_BACKEND_NIO);
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("a provider without the key falls through to the published -D, not to auto")
+    void absentKeyFallsThroughToProperty() {
+        System.setProperty(SOCKET_BACKEND_PROPERTY, SOCKET_BACKEND_NIO);
+        MapConfigProvider config = new MapConfigProvider(Map.of(), Map.of());
+        ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
+            try (NativeTcpCarrier carrier = createCarrier(TransportMode.SERVER)) {
+                assertThat(carrier.requestedSocketBackend())
+                        .as("the -D and env ladder was the published surface and must keep working")
+                        .isEqualTo(SOCKET_BACKEND_NIO);
+            }
+        });
     }
 
     private static NativeTcpCarrier createCarrier(TransportMode mode, int maxConnections) {
