@@ -577,11 +577,28 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /**
+     * The configured idle timeout in milliseconds, {@code 0} when reclamation is disabled.
+     *
+     * <p>Read once per reactor at construction to build its {@link NativeTcpIdleReaper}. It comes
+     * straight off {@code TransportConfig}, which is where {@code transport.idleTimeoutMillis}
+     * and {@code http.idleTimeoutMillis} both land.
+     *
+     * @return the timeout carried on this carrier's transport configuration
+     */
+    /* default */ long idleTimeoutMillis() {
+        return config.idleTimeoutMillis();
+    }
+
     /* default */ void closeKeyStream(SelectionKey key) {
-        // Reached only from the reactor select-loop catch(RuntimeException) (NativeTcpReactor), i.e.
-        // on the reactor thread, after a per-key dispatch (read-ingress or flush) faulted — most
-        // often an unwrap-on-closed TlsDecryptException once the stream's TLS engine is already
-        // closed. The connection is unrecoverable, so tear it down ABORTIVELY:
+        // Two callers, both on the reactor thread, and both wanting the same teardown. First, the
+        // select-loop catch(RuntimeException) (NativeTcpReactor) after a per-key dispatch
+        // (read-ingress or flush) faulted — most often an unwrap-on-closed TlsDecryptException once
+        // the stream's TLS engine is already closed. Second, NativeTcpIdleReaper, when a connection
+        // has moved no bytes for transport.idleTimeoutMillis. The first connection is unrecoverable
+        // and the second is unattended; neither can be waited on, so both tear down ABORTIVELY.
+        // Point 2 below is why the idle path in particular must not take a graceful close: a peer
+        // quiet enough to be reclaimed is a peer that may never drain the queue that close waits on.
         //  1. cancel the key synchronously — removes it from this reactor's selector so the
         //     level-triggered dead channel cannot re-fire (read OR write) and busy-spin the reactor
         //     while teardown completes. Direct cancel honours the single-consumer key protocol

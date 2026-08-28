@@ -231,7 +231,7 @@ not listed here.
 | `telemetry.region`                                 | `string`  | `default`           | ❌ IMMUTABLE | ✅ WIRED    | Deployment region for distributed tracing (`TelemetrySettings.region`) |
 | `bootstrap.healthPort`                             | `int`     | `9090`              | ❌ IMMUTABLE | 🔲 planned  | HTTP health probe port — not yet in `KernelSettings`     |
 | `bootstrap.failFast`                               | `boolean` | `true`              | ❌ IMMUTABLE | 🔲 planned  | FAIL_FAST vs DEGRADE on subsystem init failure           |
-| `network.idleTimeoutMillis`                        | `long`    | `30000`             | ✅ DYNAMIC   | 🔲 planned  | Connection idle timeout (ms)                             |
+| `network.idleTimeoutMillis`                        | `long`    | `30000`             | ✅ DYNAMIC   | 🔲 planned  | Legacy name; nothing reads it. The wired key is `transport.idleTimeoutMillis` |
 | `network.proxyProtocolEnabled`                     | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Enable Proxy Protocol v2 parsing                         |
 | `network.proxyProtocolRequired`                    | `boolean` | `false`             | ❌ IMMUTABLE | 🔲 planned  | Reject connections without PP2 header                    |
 | `network.paqs.warningThreshold`                    | `float`   | `0.70`              | ✅ DYNAMIC   | 🔲 planned  | WM `WARNING` level (fraction of off-heap budget)         |
@@ -240,6 +240,7 @@ not listed here.
 | `network.paqs.endpointPriority.<path>`             | `string`  | `NORMAL`            | ✅ DYNAMIC   | 🔲 planned  | Static `StreamPriority` for path prefix                  |
 | `http.stream.creditWindowBytes`                    | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | SSE server-push (ADR-043) egress credit window: outstanding bytes before `emit()` parks the streaming VT. Direct `-D` system property (see note ⁑) |
 | `transport.paqs.maxActiveStreams`                  | `int`     | `5000`              | ❌ IMMUTABLE | ✅ WIRED    | PAQS ceiling on concurrently admitted streams (per engine). `-1` = no ceiling — memory-pressure shedding still applies; `0` and other negatives are refused at startup (ADR-071) |
+| `transport.idleTimeoutMillis`                      | `long`    | `30000`             | ❌ IMMUTABLE | ✅ WIRED    | Reclaim a connection that has moved no bytes for this long. `0` disables reclamation (ADR-071 capacity/timeout class); negatives are refused. `http.idleTimeoutMillis` is the same limit reaching the same carrier through `HttpConfig`. Enforced by a per-reactor sweep since 0.12.0 — **carried but enforced by nothing before that** |
 | `transport.acceptedSendBufferBytes`                | `int`     | `0` (OS default)    | ❌ IMMUTABLE | ✅ WIRED    | Optional `SO_SNDBUF` override on accepted sockets; `0` leaves the OS default. Tightens egress backpressure (smaller window ⇒ earlier `emit()` park). Direct `-D` system property (see note ⁑) |
 | `memory.watermarkPollIntervalMs`                   | `int`     | `50`                | ✅ DYNAMIC   | 🔲 planned  | `WatermarkManager` sampling interval                     |
 | `memory.leakDetection`                             | `string`  | `SAMPLED`           | ❌ IMMUTABLE | 🔲 planned  | `DISABLED`, `SAMPLED`, `PARANOID`                        |

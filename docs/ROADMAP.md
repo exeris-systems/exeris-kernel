@@ -2680,6 +2680,26 @@ The policy half is open and deliberately unbundled: whether an accept-time cap i
 
 ---
 
+### Transport: `idleTimeoutMillis` Was Carried and Enforced By Nothing (surfaced by T1-4 sweep, 2026-08-28)
+
+**Gap:** `http.idleTimeoutMillis` / `transport.idleTimeoutMillis` was read by both config resolvers, validated by `HttpConfigValidation.validateConnectionLimits` against `>= 0`, carried into `HttpConfig`, copied into `TransportConfig`, and rendered by `toString()`. It was **never compared to anything**: outside construction and that `toString()`, no code in SPI, Core or Community read `TransportConfig.idleTimeoutMillis()`. No connection was ever closed for idleness, at any setting.
+
+This is a sharper defect than an unimplemented feature, and the sharpness is in the feedback. The operator who sets the key gets no error, sees the value echoed in diagnostics, and reasonably concludes it took effect — so a connection leak from abandoned keep-alives presents as a capacity problem and gets diagnosed against `maxConnections`, which *is* enforced. A missing knob is discoverable on the first grep; a carried one is not. `HttpConfig`'s own javadoc had been documenting the semantics of a limit that did not exist since the field was introduced — *"connection idle timeout in ms (0 = no timeout)"* — which is the strongest form of the trap, because the contract is stated precisely and is precisely false.
+
+It is the same shape #342 named for the header limits and #372 for the PAQS ceiling: **a name treated as evidence of a consumer.** Three instances in one milestone makes it the cycle's characteristic defect rather than three accidents, and it is worth stating why the shape survives review — every artefact that would reveal it (the key, the validation, the record component, the `toString()`) is present and correct. Only the absence of a *reader* is the defect, and absence is what a diff does not show.
+
+**Owner:** Community transport.
+
+**Resolution:** Enforce it where the reactor already wakes. `NativeTcpIdleReaper`, one instance per reactor, sweeps that reactor's selector keys after dispatch and closes streams whose last read or queued write is older than the configured span, gated to `idleTimeout / 4` clamped to [250 ms, 5 s] so an O(keys) walk never lands on the hot path. Reclamation reuses `NativeTcpCarrier.closeKeyStream` rather than inventing a second lifecycle, and is abortive for the reason that method's contract already gives: a graceful close waits on queued egress, and a peer quiet enough to be reclaimed may never drain it.
+
+**Merge Gate:** `transport.idleTimeoutMillis` closes an idle connection and emits `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` carrying both the observed idle span and the configured limit; `0` provably reclaims nothing; **a connection that keeps reading is provably not reclaimed** — the last is not optional, since a carrier that reclaimed every connection on a timer satisfies the first two.
+
+**1.0 disposition:** 1.0-blocking as part of the operational-limit configuration path (ADR-071).
+
+**Status (v0.12): DELIVERED.** Enforcement, the JFR event, and `docs/subsystems/{transport,config}.md` landed together; the config table now carries a `transport.idleTimeoutMillis` row and marks `network.idleTimeoutMillis` as the legacy name nothing reads. Recorded here rather than only in the milestone plan because the ROADMAP had **no entry for this gap at all** — the sweep that found it was looking for hardcoded constants, and this was the opposite failure: a limit that was configurable all along and enforced nowhere.
+
+---
+
 ### Graph: Heterogeneous Multi-Hop Traversal (surfaced by dogfooding, 2026-07-31)
 
 **Gap:** `GraphTraversal` (`exeris-kernel-spi/.../graph/model/GraphTraversal.java:28`) carries exactly **one** `GraphEdgeDescriptor`, and every `GraphSession` entry point that consumes a traversal takes that single-edge shape: `traverseBreadthFirst(GraphTraversal)`, `streamBfsJson(GraphTraversal)`, and `findShortestPath(GraphEdgeDescriptor, source, target)`. There is no method accepting a heterogeneous path. A two-hop query over different relationship types — `User -[PURCHASED]-> Product -[SIMILAR_TO]-> Product` — is therefore not expressible as one request; a caller must issue hop one, materialise the intermediate node set, and issue hop two per node.

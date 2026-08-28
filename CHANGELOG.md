@@ -388,6 +388,42 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   branch silently runs a path it never declared. Keyed by `(name, version)` now, pinned by a TCK case
   whose declared edge skips a step, because a sequential one cannot observe the loss.
 
+### Fixed
+
+- **`transport.idleTimeoutMillis` reclaims idle connections, which it had never done.** The key was
+  read by both config resolvers, validated against `>= 0`, carried into `HttpConfig`, copied into
+  `TransportConfig` and printed by `toString()` — and compared to nothing. No code outside
+  construction read `TransportConfig.idleTimeoutMillis()`, so no connection was ever closed for
+  idleness at any setting, while `HttpConfig`'s javadoc documented the semantics of the limit in
+  detail (*"0 = no timeout"*). A carried knob is worse than a missing one: the operator sets it,
+  sees it echoed back, and diagnoses the resulting connection leak against `maxConnections`, which
+  is enforced.
+
+  `NativeTcpIdleReaper` now sweeps each reactor's own selector keys after dispatch — one instance
+  per reactor, no timer thread, no scheduled task, no shared state — closing streams whose last
+  read or queued write is older than the configured span. The sweep is gated to `idleTimeout / 4`
+  clamped to [250 ms, 5 s], the same cadence shape `CommunityTenantPoolRegistry` uses and for the
+  same reason: a reactor returns from `select` thousands of times a second under load, and an
+  ungated O(keys) walk would put a scan of every connection on the hot path to enforce a limit
+  measured in seconds.
+
+  **Activity means an attempted read or a queued write, not bytes on the wire** — so the same stamp
+  that expires an idle keep-alive also bounds a slow-loris hold, because a handler parked in
+  `read()` for a body that never arrives has not refreshed it since the read began. Teardown reuses
+  `closeKeyStream` and is abortive, for the reason that method's contract already states: a
+  graceful close waits on queued egress, and a peer quiet enough to be reclaimed may never drain
+  it.
+
+  `0` still means no timeout (ADR-071's capacity/timeout class), and negatives are still refused by
+  `HttpConfig`. New JFR event `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` carries
+  the observed idle span *and* the configured limit, because the ratio is what tells an operator
+  whether a fleet is being trimmed on a threshold or is reclaiming dead peers.
+
+  Coverage: `NativeTcpIdleTimeoutTest` — reclamation with the event asserted, `0` reclaiming
+  nothing, and **a connection reading every 166 ms under a 500 ms timeout surviving**. The third is
+  the case that makes the first two mean anything: a carrier reclaiming every connection on a timer
+  passes both of them, and only the third fails when the activity stamp is removed.
+
 ### Security
 
 - **The four dependencies carrying published advisories are bumped, and one of them was not
