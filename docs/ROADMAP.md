@@ -2453,7 +2453,7 @@ See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the 
 
 ### Persistence: `RowCursor` Has a Ruling and No Executable Half (ADR-080, surfaced 2026-08-28)
 
-**Gap:** ADR-080 — accepted, and landing in #379 ahead of this entry — states what every `RowCursor` accessor returns, what it does with SQL NULL and an out-of-range index, and, for the converting accessors, the type domain it accepts. None of it is asserted. `AbstractRowCursorTck` checks three values and calls `getString` on **one** column whose SQL type each binding chooses for itself, which is precisely the hole the two implementations diverged into.
+**Gap:** ADR-080 states what every `RowCursor` accessor returns, what it does with SQL NULL and an out-of-range index, and, for the converting accessors, the type domain it accepts. None of it is asserted. `AbstractRowCursorTck` checks three values and calls `getString` on **one** column whose SQL type each binding chooses for itself, which is precisely the hole the two implementations diverged into.
 
 The fixture is a second obstacle, and it is the one that shapes the work. The only binding of that TCK, `CommunityRowCursorTckTest`, runs against **H2 in PostgreSQL compatibility mode** — an in-memory engine chosen so the suite runs in the default build. The measured type set is PostgreSQL 17 server behaviour: `bool` rendering as `t`, `bpchar` retaining its padding, `enum_send` as a text passthrough, `tsvector` and `pg_lsn` arriving as structured binary. H2 answers for a handful of those and has no opinion on the rest. **The type-set half of this contract is not reachable from the fixture that exists.**
 
@@ -2465,7 +2465,7 @@ The fixture is a second obstacle, and it is the one that shapes the work. The on
 
 **1.0 disposition:** 1.0-blocking. `spi.persistence` is declared stable, and this is the contract whose silence let two implementations answer differently without either being wrong.
 
-**Status (v0.12):** RFC-2026-08-28 **ACCEPTED**. ADR-080 carries the ruling and the measured type set (`docs/rowcursor-type-set.md`); both land in #379, which is open at the time of writing — until it merges, neither file is on this branch and the paragraphs above describe a decision rather than a document. Implementation **NOT STARTED**.
+**Status (v0.12):** ADR-080 **ACCEPTED** (#379), closing RFC-2026-08-28; the measured type set is in-repo as `docs/rowcursor-type-set.md`. Implementation **NOT STARTED**.
 
 ---
 
