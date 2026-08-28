@@ -28,6 +28,8 @@ import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
+import org.junit.jupiter.api.io.TempDir;
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -37,6 +39,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @DisplayName("Community TCP: client-server e2e")
 class NativeTcpClientServerE2eIntegrationTest {
+
+    @TempDir
+    /* default */ static Path tlsMaterialDir;
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
@@ -138,10 +143,10 @@ class NativeTcpClientServerE2eIntegrationTest {
         assumeTrue(isSocketFdAccessible(),
             "SocketChannel FileDescriptor field access is unavailable without --add-opens java.base/sun.nio.ch=ALL-UNNAMED and --add-opens java.base/java.io=ALL-UNNAMED");
 
-        Path certPath = Path.of("..", "native-libs", "certs", "server.crt").normalize();
-        Path keyPath = Path.of("..", "native-libs", "certs", "server.key").normalize();
-        assumeTrue(Files.isRegularFile(certPath) && Files.isRegularFile(keyPath),
-                "TLS test cert/key not found — skipping test");
+        // Generated per run rather than read from ../native-libs/certs, which is in no commit, no
+        // .gitignore, no script and no workflow — so the old assumeTrue never held and this test
+        // skipped in every build while the summary line read as a pass.
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
 
         KernelCryptoProvider cryptoProvider;
         try {
@@ -163,8 +168,8 @@ class NativeTcpClientServerE2eIntegrationTest {
                             "127.0.0.1",
                             port,
                             1,
-                            certPath.toString(),
-                            keyPath.toString(),
+                            certificate.certPath(),
+                            certificate.keyPath(),
                             1024,
                             30_000
                     ));
@@ -240,10 +245,10 @@ class NativeTcpClientServerE2eIntegrationTest {
         assumeTrue(isSocketFdAccessible(),
             "SocketChannel FileDescriptor field access is unavailable without --add-opens java.base/sun.nio.ch=ALL-UNNAMED and --add-opens java.base/java.io=ALL-UNNAMED");
 
-        Path certPath = Path.of("..", "native-libs", "certs", "server.crt").normalize();
-        Path keyPath = Path.of("..", "native-libs", "certs", "server.key").normalize();
-        assumeTrue(Files.isRegularFile(certPath) && Files.isRegularFile(keyPath),
-                "TLS test cert/key not found — skipping test");
+        // Generated per run rather than read from ../native-libs/certs, which is in no commit, no
+        // .gitignore, no script and no workflow — so the old assumeTrue never held and this test
+        // skipped in every build while the summary line read as a pass.
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
 
         KernelCryptoProvider cryptoProvider;
         try {
@@ -262,7 +267,7 @@ class NativeTcpClientServerE2eIntegrationTest {
                 .run(() -> {
                     serverHolder[0] = provider.createEngine(new TransportConfig(
                             TransportMode.SERVER, "127.0.0.1", port, 1,
-                            certPath.toString(), keyPath.toString(), 1024, 30_000));
+                            certificate.certPath(), certificate.keyPath(), 1024, 30_000));
                     clientHolder[0] = provider.createEngine(new TransportConfig(
                             TransportMode.CLIENT, "127.0.0.1", 0, 1, null, null, 1024, 30_000));
                 });
