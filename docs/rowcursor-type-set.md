@@ -12,6 +12,10 @@ those bytes through untouched. Zero mismatches on the implemented set.
 This file is open-core because its content is **server behaviour**, not any driver's internals. What
 measured it is not the subject; what PostgreSQL renders is.
 
+**On the word "Tier".** Capitalised and lettered — Tier A through Tier D — it always partitions
+*column types* below. The unrelated Community/Enterprise sense is written out in full wherever it
+appears.
+
 ## Do not use `::text` as the oracle
 
 `::text` resolves a `pg_cast` entry, not `<type>_out`, and it disagrees exactly where a driver is
@@ -93,11 +97,11 @@ Correct and worth asserting; each needs a stated precondition or a server-versio
 
 ## Tier C — policy
 
-**No tier implements these, and that is the point.** Every entry has a perfectly good `<type>_out`
-form the server will produce, and every one arrives as a structured binary datum a naive driver
-mis-decodes into mojibake. The assertion is not the rendered value — it is that **for a type the
-driver does not implement, `getString` fails with a typed exception rather than returning one**.
-That is testable without implementing a single one of them, and it is what closes the
+**Neither implementation renders these, and that is the point.** Every entry has a perfectly good
+`<type>_out` form the server will produce, and every one arrives as a structured binary datum a
+naive driver mis-decodes into mojibake. The assertion is not the rendered value — it is that **for a
+type the driver does not implement, `getString` fails with a typed exception rather than returning
+one**. That is testable without implementing a single one of them, and it is what closes the
 silent-corruption class permanently.
 
 | Type | OID | Server `_out` | Note |
@@ -116,7 +120,7 @@ silent-corruption class permanently.
 | `tsvector` | 3614 | `'a' 'b'` | |
 | `pg_lsn` | 3220 | `0/16B3748` | |
 
-### Domains are not in this tier
+### Domains are not in Tier C
 
 Measured: PostgreSQL reports the **base type OID** in `RowDescription`, so a domain over `int4`
 arrives as OID 23 and one over `text` as OID 25. They render correctly with no special handling.
@@ -144,7 +148,7 @@ The type set is half the widening. The divergence that motivated ADR-080 was rea
 type. For every Tier A row, the widened TCK asserts:
 
 1. **`getString` works on every type** — the JDBC-shaped contract a driver-agnostic application
-   relies on, and the one assertion that makes the tiers comparable at all.
+   relies on, and the one assertion that makes the implementations comparable at all.
 2. **The matching typed accessor agrees** — `getInt` on `int4`, `getBoolean` on `bool`,
    `getInstant` on `timestamptz`.
 3. **A mismatched typed accessor obeys ADR-080 §3** — `getInt` on a two-byte `int2` must not read
@@ -155,7 +159,7 @@ type. For every Tier A row, the widened TCK asserts:
 ## Using this file
 
 A cross-driver TCK cannot use the simple-query protocol — that is available to a harness testing one
-driver against its own server, not to a contract test comparing tiers. The expectations here are
-therefore the fixed strings above.
+driver against its own server, not to a contract test comparing implementations. The expectations
+here are therefore the fixed strings above.
 
 Changing an expectation in this file is a change to ADR-080, not a test edit.

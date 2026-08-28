@@ -12,15 +12,16 @@
 
 ## Context and Problem Statement
 
-`RowCursor.getString(int)` had no stated contract. Two tiers implemented it and answered differently
-for column types outside the obvious text set, and nothing in the repository said which was right.
+`RowCursor.getString(int)` had no stated contract. The two distribution tiers implemented it and
+answered differently for column types outside the obvious text set, and nothing in the repository
+said which was right.
 
 The absence is wider than one method. Across `RowCursor`'s thirteen accessors, **eleven declare no
 `@throws` at all** — `getInt` and `getSegment` are the only two that do. So `getString`'s silence is
 not a decision expressed by omission; it is an unwritten contract that happens to have been noticed
-at the one method where the tiers diverged. The executable contract is silent in the same place:
-`AbstractRowCursorTck` asserts three types and checks `getString` on a single column whose SQL type
-each binding chooses for itself.
+at the one method where the two implementations diverged. The executable contract is silent in the
+same place: `AbstractRowCursorTck` asserts three types and checks `getString` on a single column
+whose SQL type each binding chooses for itself.
 
 `spi.persistence` is classified **stable since 0.5.0**. What makes this a decision rather than a
 patch is that the divergence at issue — a total function narrowed to a partial one — is **invisible
@@ -43,31 +44,34 @@ Each `RowCursor` accessor states, in its Javadoc and in the TCK:
 - **Type domain**, for the converting accessors — what the accessor accepts, and what it does
   outside that set.
 
-The first two are transcription: the tiers already agree, and writing them down costs nothing but
-closes the reading that `getString`'s silence invited. Only the third is a ruling.
+The first two are transcription: both implementations already agree, and writing them down costs
+nothing but closes the reading that `getString`'s silence invited. Only the third is a ruling.
 
 ### 2. `getString` is total over a measured set, and refuses outside it
 
 `getString` returns the server's `<type>_out` rendering for every type in **Tier A** and **Tier B**
 of the measured type set, and throws a typed exception for any type it does not implement.
+Throughout this ADR, a capitalised lettered **Tier** partitions *column types*; the
+Community/Enterprise sense is always written out in full.
 
 It **does not** decode unknown bytes as UTF-8. Returning mojibake for a structured binary datum is
 the silent-corruption class this decision exists to close, and a refusal is strictly better than a
 plausible wrong answer on a data path.
 
 The type set is not enumerated in this ADR by transcription. It is
-[`docs/rowcursor-type-set.md`](../rowcursor-type-set.md) — carried in this repository because
-the TCK that asserts it lands here, and because its content is server behaviour rather than any
-driver's internals. Its authority rests on how it was produced: **79 expressions measured against a running PostgreSQL 17, each run twice through one
-connection** — once extended-binary, once simple-query — with the server's own answer recorded as
-the expectation. Not reconstructed from `<type>_out` sources.
+[`docs/rowcursor-type-set.md`](../rowcursor-type-set.md) — carried in this repository because the
+TCK that asserts it lands here, and because its content is server behaviour rather than any driver's
+internals. Its authority rests on how it was produced: **79 expressions measured against a running
+PostgreSQL 17, each run twice through one connection** — once extended-binary, once simple-query —
+with the server's own answer recorded as the expectation. Not reconstructed from `<type>_out`
+sources.
 
 Three properties of that set are load-bearing here rather than incidental:
 
-- **Tier C is a policy tier, not a backlog.** Its thirteen entries are types no tier implements, and
-  the assertion is not "render it" but *"an unimplemented type fails with a typed exception rather
-  than returning a value"*. That is testable without implementing any of them, which is what makes
-  the refusal contract enforceable on day one rather than aspirationally.
+- **Tier C is a policy group, not a backlog.** Its thirteen entries are types neither implementation
+  renders, and the assertion is not "render it" but *"an unimplemented type fails with a typed
+  exception rather than returning a value"*. That is testable without implementing any of them,
+  which is what makes the refusal contract enforceable on day one rather than aspirationally.
 - **`enum` is the trap that names the rule.** `enum_send` is a text passthrough, so a naive UTF-8
   wrap is *accidentally correct* — and a driver that generalises from that to an OID-range heuristic
   silently corrupts ranges and composites, which share the user OID range and have genuinely binary
@@ -110,8 +114,8 @@ state its session zone cannot be asserted against `timestamptz` at all. The TCK 
 session itself or requires the provider to declare it.
 
 **A cross-driver TCK cannot use the simple-query protocol.** The measurement harness may, because it
-tests one driver against its own server; a contract test compares tiers, so its expectations are the
-fixed strings in the set.
+tests one driver against its own server; a contract test compares implementations, so its
+expectations are the fixed strings in the set.
 
 ### 5. What the widened TCK asserts
 
@@ -132,11 +136,12 @@ implementing PR confirms that rather than assuming it.
 
 ## Consequences
 
-**Both tiers change.** Community must refuse Tier C types where the JDBC driver would happily produce
-something — that is the price of the contract being the same on both sides, and it is the one place
-this decision takes away a behaviour that works today. It is deliberate: a Community application
-reading a native `enum` column through `getString` gets a value that the enterprise tier cannot
-promise, and leaving that working is what made the tiers non-swappable in the first place.
+**Both implementations change.** Community must refuse Tier C types where the JDBC driver would
+happily produce something — that is the price of the contract being the same on both sides, and it
+is the one place this decision takes away a behaviour that works today. It is deliberate: a
+Community application reading a native `enum` column through `getString` gets a value that the
+enterprise tier cannot promise, and leaving that working is what made the two non-swappable in the
+first place.
 
 **Nothing in the kernel's own persistence is affected.** `JdbcFlowSnapshotCodec` reads `FlowState`
 through `getString`, but `V0.7.0__create_saga_state.sql` declares that column `TEXT` — Tier A. The
