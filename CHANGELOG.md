@@ -435,6 +435,64 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   unexercised by data movement — which is exactly how the plaintext `write()` gap survived the
   first cut of this change.
 
+### Fixed — verification
+
+- **Four carrier-level TLS tests had never run, anywhere, and reported success by skipping.**
+  `NativeTcpClientServerE2e{,MultiReactor2,MultiReactor4}IntegrationTest` read their server
+  certificate from `../native-libs/certs/server.{crt,key}` behind an `assumeTrue`. That directory is
+  **in no commit, no `.gitignore`, no script, no document and no workflow** — it was one developer's
+  local path that never entered the repository, so the assumption never held for anyone. The classes
+  carry no `@Tag`, so they run in the default `mvn clean install`: every build executed them, every
+  build skipped them, and every build reported green. A skip is the one outcome that reads like a
+  pass in a summary line.
+
+  The material is now generated per run by `TlsTestCertificate` (BouncyCastle `bcpkix-jdk18on`,
+  **test scope only**, pinned to the `bcprov` version already managed by the BOM) into a JUnit
+  `@TempDir`. Generating beats committing on two counts: a checked-in `PRIVATE KEY` block trips
+  secret scanners for no benefit, and a checked-in certificate expires — turning a passing suite
+  into a dated time bomb. The seven tests in those three classes now run with **zero skips**.
+
+- **The established-callback one-shot is guarded for the first time**
+  (`NativeTcpTlsEstablishedOnceIntegrationTest`). `NativeTcpStream.fireEstablishedOnce()` is
+  CAS-guarded, and the guard was untested because of a path asymmetry: on plaintext the method is
+  reached from `markRegistrationReady()`, once per connection, so the CAS is unreachable a second
+  time; on TLS it is reached from `readTlsIngressFromFd()`, which the reactor calls per drained
+  record. `NativeTcpCarrierIngressIntegrationTest` asserts "exactly once" but runs plaintext, so
+  **deleting the CAS leaves that entire class green** — the assertion could not fail. The new test
+  drives spaced TLS records and reddens under the same mutation with `expected: 1 but was: 3`,
+  which is one connection announcing itself three times to a `ConnectionHandler`.
+### Changed
+
+- **Two operational knobs stop being reachable only by `-D`, and two are refused with a reason**
+  (T1-4, ADR-071). `transport.socket.backend` and `memory.jfr.sampleEvery` now resolve through
+  `ConfigProvider` first, falling back to the system properties that were the published surface —
+  `-Dexeris.community.transport.socket.backend` (with its two env aliases) and
+  `-Dexeris.community.memory.jfr.sampleEvery` — so nothing that worked stops working. What changes
+  is that the keys are reachable from a config file and the environment at all, and that they
+  appear in `config.md`, which had never listed either. Both objects are built inside the boot
+  scope, so `CURRENT_CONFIG` is bound where they read it; a driver constructed outside a boot
+  falls through to the property exactly as before.
+
+  **`transport.maxTlsRecordsPerRead` and `transport.queueBackpressureEnabled` are not promoted, and
+  the reason is lifecycle rather than taste.** They are `static final` fields on `NativeTcpCarrier`
+  and `NativeTcpStream`, resolved when the class loads — before any `ConfigProvider` exists, and
+  once per JVM for whatever touches the class first. Reading the provider at class initialisation
+  would not fix that; it would freeze whatever happened to be bound at that moment, which is worse
+  than an honest `-D` because it looks configurable and is not. Doing it properly means moving them
+  to instance state on the ingress path, which is a hot-path change owing a measurement. They join
+  `http.stream.creditWindowBytes` and `transport.acceptedSendBufferBytes` in the documented
+  direct-`-D` category instead, where their siblings already were.
+
+  Recorded while cataloguing them: with `queueBackpressureEnabled` at its default `false` the TLS
+  ingress queue is **count-unbounded**, not merely large. That is defensible rather than a defect —
+  every entry is an off-heap loan the watermark arbiter accounts for, so PAQS still sheds under
+  memory pressure — but the default deserves to be stated rather than discovered.
+
+  Coverage: `CommunityMemoryJfrSamplingConfigTest` (provider wins over `-D`, absent key falls
+  through to `-D`, neither set yields the default, and no provider bound still resolves `-D`) and
+  three cases in `NativeTcpCarrierBackendSelectionTest`. Both promotions are mutation-checked: with
+  the provider read disabled, exactly the provider-dependent cases redden and the fallback cases
+  stay green.
 ### Added
 
 - **The SQL translation cache gets a bound an operator can raise, and the other three constants get

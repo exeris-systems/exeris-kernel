@@ -2680,6 +2680,19 @@ The policy half is open and deliberately unbundled: whether an accept-time cap i
 
 ---
 
+### Config: The Operational Knobs `ConfigProvider` Cannot See (T1-4 residue, 2026-08-28)
+
+**Gap:** six operational settings were read straight from system properties, bypassing `ConfigProvider` entirely — so each was reachable by `-D` and by nothing else: not a config file, not the environment, and not `docs/subsystems/config.md`. Two of the six (`http.stream.creditWindowBytes`, `transport.acceptedSendBufferBytes`) were already documented as deliberate direct-`-D` knobs; four were not documented anywhere.
+
+**Owner:** Community transport + memory.
+
+**Resolution, per knob, because they are not one kind of thing.** `transport.socket.backend` and `memory.jfr.sampleEvery` are resolved at construction inside the boot scope, so they now read `ConfigProvider` first and fall back to the published property ladder. `transport.maxTlsRecordsPerRead` and `transport.queueBackpressureEnabled` are **not promoted**: they are `static final` and resolved at class load, before any provider exists and once per JVM for whatever touches the class first. Reading a provider at class initialisation would freeze whatever was bound at that instant — configurable-looking and not configurable, which is worse than an honest `-D`. Promoting them properly means moving them to instance state on the ingress path, a hot-path change owing a measurement; until then they join the documented direct-`-D` category with the reason written down.
+
+**Merge Gate:** the two promoted keys resolve from a bound `ConfigProvider`, outrank the legacy property, and fall through to it when absent — each arm mutation-checked; `config.md` carries a row for all four and states why two of them are `-D`-only.
+
+**1.0 disposition:** part of the 1.0-blocking operational-limit configuration path (ADR-071).
+
+**Status (v0.12): DELIVERED.** Also recorded while cataloguing: with `transport.queueBackpressureEnabled` at its default `false`, the TLS ingress queue is **count-unbounded** rather than merely large. Defensible — entries are off-heap loans the watermark arbiter accounts for, so PAQS sheds under memory pressure — but stated rather than left to be discovered.
 ### Config: The Four Hardcoded Constants, and Why Only One Became a Key (T1-4 close, 2026-08-28)
 
 **Gap:** four constants were catalogued as "hardcoded operational limits needing a configuration path". Read at their call sites, three of them are not that, and promoting all four would have published knobs an operator cannot use or a driver refuses.
