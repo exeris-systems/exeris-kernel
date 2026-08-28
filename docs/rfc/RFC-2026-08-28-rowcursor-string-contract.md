@@ -2,10 +2,10 @@
 
 |                   |                                                                                                |
 |-------------------|------------------------------------------------------------------------------------------------|
-| **Status**        | **DRAFT**                                                                                      |
+| **Status**        | **ACCEPTED**                                                                                      |
 | **Author(s)**     | Arkadiusz Przychocki                                                                           |
 | **Date Opened**   | 2026-08-28                                                                                     |
-| **Date Closed**   | —                                                                                              |
+| **Date Closed**   | 2026-08-28                                                                                              |
 | **Target ADR(s)** | ADR-080 (reserved)                                                                             |
 | **Affected Repos**| `exeris-kernel` (authoritative), enterprise tier (stub)                                        |
 | **Reviewers**     | —                                                                                              |
@@ -75,19 +75,20 @@ outside its handled set rather than returning bytes decoded as though they were 
 defensible engineering choice in isolation: mis-decoded bytes are worse than a refusal. It is also a
 narrowing of a total function to a partial one, and it was taken for one tier.
 
-### The kernel's own usage, and what it does *not* prove
+### The kernel's own usage locates the divergence
 
 `JdbcFlowSnapshotCodec:208` reads a `FlowState` back as `FlowState.valueOf(row.getString(4))` — the
-kernel is itself a `getString` consumer on an enum-shaped value, on the saga recovery path.
+kernel is itself a `getString` consumer on an enum-shaped value, on the saga recovery path. The
+column is `state TEXT NOT NULL` (`V0.7.0__create_saga_state.sql:20`), so the kernel round-trips its
+enum through text and **both tiers agree on it**.
 
-**This does not establish an in-kernel break, and the first draft of this document was wrong to
-assume it would.** `V0.7.0__create_saga_state.sql:20` declares `state TEXT NOT NULL`, so the kernel
-round-trips its enum through a text column and both tiers agree on it. What the usage does establish
-is the **idiom the kernel itself follows** — enum-as-`TEXT` — which is a data point for what the
-contract should recommend, not evidence of a defect.
+That is worth stating because it bounds the blast radius, and because the idiom is the kernel's own
+recommendation in executable form: enum-as-`TEXT`. Nothing in the kernel's persistence depends on
+`getString` handling a native `enum` type.
 
 The divergence therefore lands on **application** schemas that use a native `enum`, `json`, or array
-column and read it with `getString`. Those applications work on Community today.
+column and read it with `getString`. Those applications work on Community today, which is what makes
+the type domain a decision rather than a clarification.
 
 ### Constraints the options must respect
 
@@ -166,10 +167,17 @@ Two things are worth separating in the ADR:
 2. **The `getString` type domain**, which is the one place a tier has to change behaviour, and the
    only part that is a genuine decision rather than a transcription.
 
-**What I cannot settle from this repository.** The enterprise decoder's handled type set is not
-readable here, so Option C's named set is proposed on Community's behaviour and PostgreSQL's type
-system, not on both implementations. The set is the part of the ADR that needs the other tier's
-input, and it should not be fixed in this document.
+**Where the named type set gets fixed, and why not here.** Option C's set is proposed from
+Community's behaviour and PostgreSQL's type system. It is deliberately not enumerated in this
+document: a public open-core RFC is the wrong place to publish the closed tier's decoder internals,
+and a set stated from one tier would be the same one-sided ruling this RFC exists to replace. The
+enumeration belongs in ADR-080, written against both implementations.
+
+### Decision
+
+**Option C, scope widened to `RowCursor`** — accepted 2026-08-28, single-decider, per this
+repository's accepted-on-merge convention. ADR-080 carries the ruling and the enumerated type
+domain.
 
 **Residual uncertainty worth stating.** Nobody has counted how many applications read a native
 `enum` or `json` column through `getString`; the case against Option B rests on the shape of the
