@@ -435,6 +435,32 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   unexercised by data movement — which is exactly how the plaintext `write()` gap survived the
   first cut of this change.
 
+### Fixed — verification
+
+- **Four carrier-level TLS tests had never run, anywhere, and reported success by skipping.**
+  `NativeTcpClientServerE2e{,MultiReactor2,MultiReactor4}IntegrationTest` read their server
+  certificate from `../native-libs/certs/server.{crt,key}` behind an `assumeTrue`. That directory is
+  **in no commit, no `.gitignore`, no script, no document and no workflow** — it was one developer's
+  local path that never entered the repository, so the assumption never held for anyone. The classes
+  carry no `@Tag`, so they run in the default `mvn clean install`: every build executed them, every
+  build skipped them, and every build reported green. A skip is the one outcome that reads like a
+  pass in a summary line.
+
+  The material is now generated per run by `TlsTestCertificate` (BouncyCastle `bcpkix-jdk18on`,
+  **test scope only**, pinned to the `bcprov` version already managed by the BOM) into a JUnit
+  `@TempDir`. Generating beats committing on two counts: a checked-in `PRIVATE KEY` block trips
+  secret scanners for no benefit, and a checked-in certificate expires — turning a passing suite
+  into a dated time bomb. The seven tests in those three classes now run with **zero skips**.
+
+- **The established-callback one-shot is guarded for the first time**
+  (`NativeTcpTlsEstablishedOnceIntegrationTest`). `NativeTcpStream.fireEstablishedOnce()` is
+  CAS-guarded, and the guard was untested because of a path asymmetry: on plaintext the method is
+  reached from `markRegistrationReady()`, once per connection, so the CAS is unreachable a second
+  time; on TLS it is reached from `readTlsIngressFromFd()`, which the reactor calls per drained
+  record. `NativeTcpCarrierIngressIntegrationTest` asserts "exactly once" but runs plaintext, so
+  **deleting the CAS leaves that entire class green** — the assertion could not fail. The new test
+  drives spaced TLS records and reddens under the same mutation with `expected: 1 but was: 3`,
+  which is one connection announcing itself three times to a `ConnectionHandler`.
 ### Changed
 
 - **Two operational knobs stop being reachable only by `-D`, and two are refused with a reason**

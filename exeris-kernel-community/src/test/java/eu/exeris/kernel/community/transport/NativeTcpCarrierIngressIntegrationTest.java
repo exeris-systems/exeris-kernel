@@ -47,8 +47,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code readTlsIngressFromFd()} calls it per ingress read; on plaintext it is reached from
  * {@code markRegistrationReady()}, once per connection. Every engine in this class is plaintext,
  * so removing the CAS leaves the whole class green — measured, not assumed. Nothing anywhere else
- * asserts on the established count either, so the one-shot is currently unguarded on the only path
- * where it does work. Closing that needs a TLS-bound case and is a separate slice.
+ * asserts on the established count either. <b>Closed by
+ * {@link NativeTcpTlsEstablishedOnceIntegrationTest}</b>, which drives the TLS path and reddens
+ * (expected 1, was 3) under exactly the mutation that leaves this class green.
  */
 @Tag("integration")
 @Timeout(30)
@@ -337,7 +338,7 @@ class NativeTcpCarrierIngressIntegrationTest {
                 // mutation). What this case actually pins is the ORDERING — established before
                 // dispatch — plus the count on a path that only reaches the site once.
                 // The CAS is load-bearing on the TLS path, where readTlsIngressFromFd() calls it
-                // per ingress read, and NOTHING covers it there. See the class javadoc.
+                // per ingress read; NativeTcpTlsEstablishedOnceIntegrationTest covers it there.
                 client.write(ByteBuffer.wrap("a".getBytes(StandardCharsets.UTF_8)));
                 client.write(ByteBuffer.wrap("b".getBytes(StandardCharsets.UTF_8)));
                 client.write(ByteBuffer.wrap("c".getBytes(StandardCharsets.UTF_8)));

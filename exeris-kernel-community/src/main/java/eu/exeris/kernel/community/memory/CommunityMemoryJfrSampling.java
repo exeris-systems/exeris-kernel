@@ -60,9 +60,6 @@ final class CommunityMemoryJfrSampling {
     }
 
     private static int resolveSampleEvery() {
-        // The allocator is constructed inside the boot scope, so CURRENT_CONFIG is bound here.
-        // Defensive read regardless: a driver constructed outside a boot (tests, tooling) must
-        // still resolve, and falling through to the property is exactly the old behaviour.
         Integer configured = fromConfigProvider();
         if (configured != null) {
             return configured > 0 ? configured : MIN_SAMPLE_EVERY;

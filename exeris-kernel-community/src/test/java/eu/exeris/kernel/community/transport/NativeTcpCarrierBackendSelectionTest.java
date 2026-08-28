@@ -23,6 +23,7 @@ import java.nio.channels.ServerSocketChannel;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import java.util.Map;
 
 @DisplayName("Community: NativeTcpCarrier backend selection seam")
 class NativeTcpCarrierBackendSelectionTest {
@@ -197,7 +198,7 @@ class NativeTcpCarrierBackendSelectionTest {
         // to a config file and absent from docs/subsystems/config.md. The ladder below it is
         // unchanged; what is new is that the provider is consulted first.
         MapConfigProvider config = new MapConfigProvider(
-                java.util.Map.of(SOCKET_BACKEND_KEY, SOCKET_BACKEND_NIO), java.util.Map.of());
+                Map.of(SOCKET_BACKEND_KEY, SOCKET_BACKEND_NIO), Map.of());
         ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
             try (NativeTcpCarrier carrier = createCarrier(TransportMode.SERVER)) {
                 assertThat(carrier.requestedSocketBackend()).isEqualTo(SOCKET_BACKEND_NIO);
@@ -210,7 +211,7 @@ class NativeTcpCarrierBackendSelectionTest {
     void configProviderOutranksProperty() {
         System.setProperty(SOCKET_BACKEND_PROPERTY, SOCKET_BACKEND_POSIX_HYBRID);
         MapConfigProvider config = new MapConfigProvider(
-                java.util.Map.of(SOCKET_BACKEND_KEY, SOCKET_BACKEND_NIO), java.util.Map.of());
+                Map.of(SOCKET_BACKEND_KEY, SOCKET_BACKEND_NIO), Map.of());
         ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
             try (NativeTcpCarrier carrier = createCarrier(TransportMode.SERVER)) {
                 assertThat(carrier.requestedSocketBackend())
@@ -224,7 +225,7 @@ class NativeTcpCarrierBackendSelectionTest {
     @DisplayName("a provider without the key falls through to the published -D, not to auto")
     void absentKeyFallsThroughToProperty() {
         System.setProperty(SOCKET_BACKEND_PROPERTY, SOCKET_BACKEND_NIO);
-        MapConfigProvider config = new MapConfigProvider(java.util.Map.of(), java.util.Map.of());
+        MapConfigProvider config = new MapConfigProvider(Map.of(), Map.of());
         ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
             try (NativeTcpCarrier carrier = createCarrier(TransportMode.SERVER)) {
                 assertThat(carrier.requestedSocketBackend())
