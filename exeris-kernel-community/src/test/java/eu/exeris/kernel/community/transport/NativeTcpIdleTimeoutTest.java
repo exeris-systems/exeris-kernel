@@ -159,6 +159,70 @@ class NativeTcpIdleTimeoutTest {
                             + "of idle; reclaiming it would make the knob a connection lifetime")
                     .isNull();
         }
+
+        @Test
+        @DisplayName("a connection the server keeps WRITING to is not reclaimed — the read-driven case does not cover this")
+        void writesAloneKeepTheConnectionAlive() throws Exception {
+            // Found by review of #374, not by this suite: write() reaches queueWrite only on the
+            // TLS branch, so on a plaintext stream — CommunityHttpExchange's path, and the default
+            // one — responding to a request moved bytes without stamping activity. The suite missed
+            // it because its other surviving case drives read() alone, so the egress half of the
+            // contract was never exercised by data movement at all.
+            AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+            TransportEngine engine = null;
+            Socket socket = null;
+
+            try (RecordingStream stream = new RecordingStream()) {
+                stream.enable(IDLE_TIMEOUT);
+                stream.onEvent(IDLE_TIMEOUT, event -> captured.compareAndSet(null, event));
+                stream.startAsync();
+
+                int port = CommunityTransportTestHarness.nextFreePort();
+                engine = startWritingEngine(port, IDLE_TIMEOUT_MILLIS);
+                socket = openQuietly(port);
+                socket.setSoTimeout((int) QUIET_WINDOW_MILLIS);
+
+                // The client sends NOTHING for the whole window — any inbound byte would risk
+                // stamping through the read path and hide the defect this case exists for. It only
+                // consumes, so egress never stalls on a full socket buffer.
+                long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(QUIET_WINDOW_MILLIS);
+                int received = 0;
+                boolean resetByPeer = false;
+                while (System.nanoTime() < deadline) {
+                    try {
+                        int b = socket.getInputStream().read();
+                        if (b < 0) {
+                            break;
+                        }
+                    } catch (IOException reset) {
+                        // Reclamation reaches the client as a reset on the read. Caught so the
+                        // failure reads as the assertion below rather than as a stack trace.
+                        resetByPeer = true;
+                        break;
+                    }
+                    received++;
+                }
+
+                assertThat(resetByPeer)
+                        .as("the server reset a connection it was itself writing to every %d ms "
+                                + "under a %d ms timeout", IDLE_TIMEOUT_MILLIS / 3L, IDLE_TIMEOUT_MILLIS)
+                        .isFalse();
+                assertThat(received)
+                        .as("the server must still have been writing at the end of a window five "
+                                + "times the timeout")
+                        .isPositive();
+            } finally {
+                closeQuietly(socket);
+                if (engine != null) {
+                    engine.stop();
+                }
+            }
+
+            assertThat(captured.get())
+                    .as("a connection the server is actively writing to is not idle; reclaiming it "
+                            + "would cut a slow client off mid-response")
+                    .isNull();
+        }
     }
 
     @Nested
@@ -247,6 +311,34 @@ class NativeTcpIdleTimeoutTest {
                     }
                 } catch (RuntimeException e) {
                     // Reclaimed or torn down — the assertions read the recording, not this thread.
+                }
+            });
+            holder[0].start();
+        });
+        return holder[0];
+    }
+
+    private static TransportEngine startWritingEngine(int port, long idleTimeoutMillis) {
+        TransportEngine[] holder = new TransportEngine[1];
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() -> {
+            holder[0] = new NativeTcpTransportProvider().createEngine(new TransportConfig(
+                    TransportMode.SERVER, "127.0.0.1", port, 1, null, null, 16, idleTimeoutMillis));
+            // Writes only, and never reads: egress is the whole subject, so a read here would stamp
+            // activity through the path the other case already covers and mask the defect.
+            holder[0].setStreamHandler(stream -> {
+                try (LoanedBuffer outbound = ALLOCATOR.allocateNetwork(READ_CHUNK_BYTES)) {
+                    long deadline = System.nanoTime()
+                            + TimeUnit.MILLISECONDS.toNanos(QUIET_WINDOW_MILLIS * 2L);
+                    while (System.nanoTime() < deadline) {
+                        outbound.segment().set(java.lang.foreign.ValueLayout.JAVA_BYTE, 0, (byte) '.');
+                        outbound.setSize(1);
+                        stream.write(outbound.segment(), 1);
+                        Thread.sleep(IDLE_TIMEOUT_MILLIS / 3L);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (RuntimeException e) {
+                    // Reclaimed or torn down — the recording carries the assertion.
                 }
             });
             holder[0].start();

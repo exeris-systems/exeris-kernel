@@ -407,12 +407,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   ungated O(keys) walk would put a scan of every connection on the hot path to enforce a limit
   measured in seconds.
 
-  **Activity means an attempted read or a queued write, not bytes on the wire** — so the same stamp
-  that expires an idle keep-alive also bounds a slow-loris hold, because a handler parked in
-  `read()` for a body that never arrives has not refreshed it since the read began. Teardown reuses
-  `closeKeyStream` and is abortive, for the reason that method's contract already states: a
-  graceful close waits on queued egress, and a peer quiet enough to be reclaimed may never drain
-  it.
+  **What counts as activity is asymmetric between the directions, deliberately.** On ingress only
+  an attempted `read()` counts, never bytes merely arriving — which is what makes the same stamp
+  bound a slow-loris hold, since dribbling a byte a second is precisely what defeats a timeout that
+  trusts arrival. On egress both the attempted write and bytes actually leaving the socket count,
+  so a large response draining to a slow client keeps its own connection alive instead of being cut
+  off mid-transfer. The first cut of this had the egress half wrong in a way worth recording,
+  because it is this entry's own subject one layer down: `write()` reaches `queueWrite` **only on
+  the TLS branch**, so on a plaintext stream — `CommunityHttpExchange`'s path, and the default one —
+  answering a request moved bytes without counting as activity, and idle reclamation silently
+  became a property of whether TLS was configured. Found in review of the PR that fixes it.
+
+  Teardown reuses `closeKeyStream` and is abortive, for the reason that method's contract already
+  states: a graceful close waits on queued egress, and a peer quiet enough to be reclaimed may
+  never drain it.
 
   `0` still means no timeout (ADR-071's capacity/timeout class), and negatives are still refused by
   `HttpConfig`. New JFR event `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` carries
@@ -420,9 +428,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   whether a fleet is being trimmed on a threshold or is reclaiming dead peers.
 
   Coverage: `NativeTcpIdleTimeoutTest` — reclamation with the event asserted, `0` reclaiming
-  nothing, and **a connection reading every 166 ms under a 500 ms timeout surviving**. The third is
-  the case that makes the first two mean anything: a carrier reclaiming every connection on a timer
-  passes both of them, and only the third fails when the activity stamp is removed.
+  nothing, **a connection reading every 166 ms under a 500 ms timeout surviving**, and **a
+  connection the server only writes to surviving**. The last two are what make the first two mean
+  anything: a carrier reclaiming every connection on a timer passes reclamation-and-disabled
+  identically, and the read-driven case alone leaves the entire egress half of the contract
+  unexercised by data movement — which is exactly how the plaintext `write()` gap survived the
+  first cut of this change.
 
 ### Security
 

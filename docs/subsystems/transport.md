@@ -109,10 +109,25 @@ reaching the same carrier through `HttpConfig`, default `HttpConfig.DEFAULT_IDLE
 | `0` | reclamation disabled — connections are held until the peer or the application closes them |
 | negatives | **refused at startup** by `HttpConfig` validation |
 
-**Activity means an attempted read or a queued write, not bytes seen on the wire.** A peer that
-opens a connection and then sends nothing never causes either, so the same stamp that expires an
-idle keep-alive also bounds a slow-loris hold: a handler parked in `read()` waiting for a request
-body that never arrives has not refreshed its stamp since the read began.
+**What counts as activity is deliberately asymmetric between the two directions**, and the
+asymmetry is the point rather than an oversight:
+
+| Direction | Refreshes the stamp | Does not |
+|:--|:--|:--|
+| ingress | the application calling `read()` | bytes merely *arriving* in the inbound queue |
+| egress | `write()` / `queueWrite()`, **and** bytes actually leaving the socket — the direct write, the reactor's deferred drain, and the TLS drain | — |
+
+On ingress, only an attempted read counts. A peer that opens a connection and sends nothing never
+causes one, so the same stamp that expires an idle keep-alive also bounds a slow-loris hold: a
+handler parked in `read()` for a body that never arrives has not refreshed its stamp since the read
+began. **Stamping on arrival would defeat exactly that** — dribbling one byte per second is what a
+slow-loris does, and a connection nobody is reading is not doing work.
+
+On egress the opposite is required: bytes leaving *are* the server doing work for this connection,
+so a large response draining to a slow client keeps its own connection alive rather than being cut
+off mid-transfer. `write()` reaching `queueWrite` only on the TLS branch is what made this wrong in
+the first cut — plaintext responses, which is `CommunityHttpExchange`'s path and the default one,
+moved bytes without counting, and idle reclamation became a property of whether TLS was configured.
 
 **The sweep is per reactor and rides a wake-up that was going to happen anyway.**
 `NativeTcpIdleReaper` runs inside the reactor's select loop after the selected keys are dispatched
