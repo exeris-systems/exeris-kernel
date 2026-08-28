@@ -452,7 +452,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private void initPaqs() {
         WatermarkManager watermarkManager = new WatermarkManager(allocator);
         ResourceArbiter arbiter = new ResourceArbiter(watermarkManager);
-        AdmissionController admissionController = new AdmissionController(arbiter);
+        AdmissionController admissionController =
+                new AdmissionController(arbiter, config.maxActiveStreams());
         StreamLoadShedder shedder = new StreamLoadShedder(engineName());
         this.paqs = new PaqsScheduler(
                 admissionController,

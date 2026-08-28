@@ -55,6 +55,46 @@ Whether an accept-time cap is the right mechanism — as opposed to admitting an
 level, where the response can carry a status — and whether 1000 is the right default, are open
 questions tracked in `docs/ROADMAP.md`. The behaviour above is unchanged; only its visibility is new.
 
+## Stream admission ceiling
+
+`TransportConfig.maxActiveStreams()` (`transport.paqs.maxActiveStreams`, default
+`TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS` = 5000) is a hard cap on **concurrently admitted
+streams per engine**, enforced by `AdmissionController.admit` after the memory-pressure decision and
+before a virtual thread is spawned. Over the cap the decision becomes `SHED_CAPACITY` whatever the
+priority and whatever the watermark says.
+
+This is a different bound from the connection ceiling above, and one is not derivable from the
+other: an HTTP/1 connection carries one stream, an HTTP/2 connection carries many.
+
+What a client observes: `StreamLoadShedder` closes the stream and emits
+`eu.exeris.kernel.transport.StreamShed` carrying the priority, the decision (`SHED_CAPACITY` rather
+than `SHED_MEMORY`) and the active count — so a capacity shed is distinguishable in JFR from a
+memory-pressure shed, which is the distinction that says whether raising the ceiling is the right
+response.
+
+**What the values mean** (the classification is ADR-071's):
+
+| Value | Meaning |
+|:--|:--|
+| `> 0` | the ceiling, as given |
+| `-1` (`TransportConfig.UNBOUNDED_ACTIVE_STREAMS`) | no stream-count ceiling |
+| `0`, other negatives | **refused at startup**, by `TransportConfig` and again by `AdmissionController` |
+
+`-1` removes the count cap, not admission control: the memory-pressure arbiter still decides every
+stream first, so an engine configured this way still sheds under watermark pressure. What it gives
+up is the ceiling that sheds *regardless* of memory pressure — the point for a JVM-controlled
+deployment measuring where saturation actually falls, and a foot-gun for a shared one. `0` is
+refused rather than read as "off" because an engine that admits nothing serves nothing.
+
+Both construction sites read the key: the transport subsystem and the HTTP listener, which builds
+its own `TransportConfig`. A key honoured on only one of them would apply to a standalone carrier
+and not to the server most deployments run.
+
+**Not a knob:** `PaqsScheduler.SPIN_THRESHOLD` has twice been catalogued as a PAQS operational
+limit. It is reachable only from `close()`, decides nothing about which streams are served, and
+bounds only how the drain spends CPU while it waits — under a drain deadline that is itself
+deliberately fixed. It stays a constant.
+
 ## Accept-path failure modes
 
 There are two ways an accepted connection ends without being served, and they look identical from the

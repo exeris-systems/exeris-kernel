@@ -38,6 +38,13 @@ package eu.exeris.kernel.spi.transport;
  *                          is worse than one that is documented as absent. A driver is free to honour
  *                          it;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
+ * @param maxActiveStreams  hard cap on streams admitted concurrently by the scheduler, across all
+ *                          connections on this engine. One connection carries one stream on HTTP/1
+ *                          and many on HTTP/2, which is why this is a separate bound from
+ *                          {@code maxConnections} rather than derivable from it.
+ *                          {@link #UNBOUNDED_ACTIVE_STREAMS} removes the ceiling — see that
+ *                          constant for what remains protecting the engine when it is set;
+ *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @see TransportProvider
  * @see TransportEngine
  * @since 0.5.0
@@ -50,7 +57,8 @@ public record TransportConfig(
         String certPath,
         String keyPath,
         int maxConnections,
-        long idleTimeoutMillis
+        long idleTimeoutMillis,
+        int maxActiveStreams
 ) {
 
     /**
@@ -70,6 +78,25 @@ public record TransportConfig(
             TransportConfigSupport.computeDefaultReactorCount("exeris.transport.defaultMaxReactors");
 
     /**
+     * Default cap on concurrently admitted streams per engine: 5 000, the queue-saturation
+     * threshold the performance contract is stated against.
+     */
+    public static final int DEFAULT_MAX_ACTIVE_STREAMS = 5_000;
+
+    /**
+     * Sentinel for {@link #maxActiveStreams()}: admit without a stream-count ceiling.
+     *
+     * <p>Removing the ceiling does <b>not</b> remove admission control. The count cap is the
+     * second of two gates: every stream is still decided by the memory-pressure arbiter first,
+     * and a saturated engine sheds on watermark pressure whatever this value is. What an operator
+     * gives up is the fixed ceiling that sheds "regardless of memory pressure" — which is the
+     * point for a JVM-controlled deployment measuring where saturation actually falls, and a
+     * foot-gun for a shared one. {@code 0} is refused rather than read as "off", because an
+     * engine that admits nothing serves nothing.
+     */
+    public static final int UNBOUNDED_ACTIVE_STREAMS = -1;
+
+    /**
      * Compact constructor — validates invariants eagerly (fail-fast bootstrap).
      */
     public TransportConfig {
@@ -83,9 +110,39 @@ public record TransportConfig(
                     port,
                     reactorCount,
                     maxConnections,
-                    idleTimeoutMillis
+                    idleTimeoutMillis,
+                    maxActiveStreams
             );
         }
+    }
+
+    /**
+     * Bridge constructor for callers written before the stream-admission cap became configurable.
+     *
+     * <p>Applies {@link #DEFAULT_MAX_ACTIVE_STREAMS}, which is the value the scheduler enforced
+     * unconditionally before it had a key — so a caller that does not pass one gets exactly the
+     * behaviour it had.
+     *
+     * @param mode              operational mode
+     * @param bindAddress       listener bind address
+     * @param port              listener port
+     * @param reactorCount      carrier reactor threads
+     * @param certPath          TLS certificate path, or {@code null}
+     * @param keyPath           TLS private key path, or {@code null}
+     * @param maxConnections    concurrent connection ceiling
+     * @param idleTimeoutMillis idle timeout in milliseconds
+     * @since 0.12.0
+     */
+    public TransportConfig(TransportMode mode,
+                           String bindAddress,
+                           int port,
+                           int reactorCount,
+                           String certPath,
+                           String keyPath,
+                           int maxConnections,
+                           long idleTimeoutMillis) {
+        this(mode, bindAddress, port, reactorCount, certPath, keyPath, maxConnections,
+                idleTimeoutMillis, DEFAULT_MAX_ACTIVE_STREAMS);
     }
 
     /**
@@ -104,7 +161,8 @@ public record TransportConfig(
                 "certPath=" + (certPath != null ? "***REDACTED***" : "null") + ", " +
                 "keyPath=" + (keyPath != null ? "***REDACTED***" : "null") + ", " +
                 "maxConnections=" + maxConnections + ", " +
-                "idleTimeoutMillis=" + idleTimeoutMillis + ']';
+                "idleTimeoutMillis=" + idleTimeoutMillis + ", " +
+                "maxActiveStreams=" + maxActiveStreams + ']';
     }
 
     /**
@@ -120,6 +178,8 @@ public record TransportConfig(
      *   <li>{@code maxConnections} — {@code -1} (no connection cap applies)</li>
      *   <li>{@code certPath}, {@code keyPath} — {@code null} (no TLS)</li>
      *   <li>{@code idleTimeoutMillis} — {@code -1} (not validated, not used)</li>
+     *   <li>{@code maxActiveStreams} — {@link #UNBOUNDED_ACTIVE_STREAMS} (no ceiling;
+     *       moot here, since DISABLED admits nothing regardless)</li>
      * </ul>
      *
      * @return config with {@link TransportMode#DISABLED}
@@ -133,7 +193,8 @@ public record TransportConfig(
                 null,
                 null,
                 -1,
-                -1
+                -1,
+                UNBOUNDED_ACTIVE_STREAMS
         );
     }
 
@@ -152,7 +213,8 @@ public record TransportConfig(
                 null,
                 null,
                 4096,
-                30_000
+                30_000,
+                DEFAULT_MAX_ACTIVE_STREAMS
         );
     }
 }

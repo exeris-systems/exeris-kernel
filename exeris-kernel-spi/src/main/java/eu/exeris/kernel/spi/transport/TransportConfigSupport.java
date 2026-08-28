@@ -21,7 +21,8 @@ final class TransportConfigSupport {
             int port,
             int reactorCount,
             int maxConnections,
-            long idleTimeoutMillis
+            long idleTimeoutMillis,
+            int maxActiveStreams
     ) {
         TransportNonDisabledValidator.validateNonDisabled(
                 mode,
@@ -29,7 +30,8 @@ final class TransportConfigSupport {
                 port,
                 reactorCount,
                 maxConnections,
-                idleTimeoutMillis
+                idleTimeoutMillis,
+                maxActiveStreams
         );
     }
 }

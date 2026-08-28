@@ -95,6 +95,16 @@ import java.util.function.Function;
 public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
+    /**
+     * Spins to take before the drain loop starts yielding instead.
+     *
+     * <p>Not configurable, and named here because it has twice been catalogued as a PAQS
+     * operational limit alongside the admission ceiling. It is not one. It is reachable only from
+     * {@link #close()}, it decides nothing about which streams are served, and its whole effect is
+     * how a shutdown that is already waiting spends the CPU it is waiting on — bounded above by
+     * {@link #DRAIN_DEADLINE_NANOS}, which is itself deliberately fixed. A key here would publish a
+     * knob whose only setting is how hot the last few milliseconds of shutdown run.
+     */
     private static final long SPIN_THRESHOLD = 10_000L;
 
     /**

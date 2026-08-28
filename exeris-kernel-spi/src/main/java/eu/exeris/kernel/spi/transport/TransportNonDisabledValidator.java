@@ -8,6 +8,7 @@ final class TransportNonDisabledValidator {
 
     private static final int MIN_REACTOR_COUNT = 1;
     private static final int MIN_CONNECTIONS = 1;
+    private static final int MIN_ACTIVE_STREAMS = 1;
     private static final int MIN_PORT = 1;
     private static final int MAX_PORT = 65_535;
 
@@ -21,10 +22,11 @@ final class TransportNonDisabledValidator {
             int port,
             int reactorCount,
             int maxConnections,
-            long idleTimeoutMillis
+            long idleTimeoutMillis,
+            int maxActiveStreams
     ) {
         validateServerDualFields(mode, bindAddress, port);
-        validateSharedFields(reactorCount, maxConnections, idleTimeoutMillis);
+        validateSharedFields(reactorCount, maxConnections, idleTimeoutMillis, maxActiveStreams);
     }
 
     private static void validateServerDualFields(TransportMode mode, String bindAddress, int port) {
@@ -48,7 +50,10 @@ final class TransportNonDisabledValidator {
         }
     }
 
-    private static void validateSharedFields(int reactorCount, int maxConnections, long idleTimeoutMillis) {
+    private static void validateSharedFields(int reactorCount,
+                                             int maxConnections,
+                                             long idleTimeoutMillis,
+                                             int maxActiveStreams) {
         if (reactorCount < MIN_REACTOR_COUNT) {
             throw new IllegalArgumentException(
                     "reactorCount must be >= " + MIN_REACTOR_COUNT + ", got: " + reactorCount);
@@ -60,6 +65,19 @@ final class TransportNonDisabledValidator {
         if (idleTimeoutMillis < 0) {
             throw new IllegalArgumentException(
                     "idleTimeoutMillis must be >= 0 (0 = no timeout), got: " + idleTimeoutMillis);
+        }
+        validateActiveStreams(maxActiveStreams);
+    }
+
+    // Refused where the value is named, so a ceiling an operator mistyped fails the boot rather than
+    // every request. 0 is not a way to switch the cap off: it admits nothing.
+    private static void validateActiveStreams(int maxActiveStreams) {
+        if (maxActiveStreams < MIN_ACTIVE_STREAMS
+                && maxActiveStreams != TransportConfig.UNBOUNDED_ACTIVE_STREAMS) {
+            throw new IllegalArgumentException(
+                    "maxActiveStreams must be >= " + MIN_ACTIVE_STREAMS + ", or "
+                            + TransportConfig.UNBOUNDED_ACTIVE_STREAMS
+                            + " for no ceiling, got: " + maxActiveStreams);
         }
     }
 }
