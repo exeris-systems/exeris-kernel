@@ -178,7 +178,8 @@ public record TransportConfig(
      *   <li>{@code maxConnections} — {@code -1} (no connection cap applies)</li>
      *   <li>{@code certPath}, {@code keyPath} — {@code null} (no TLS)</li>
      *   <li>{@code idleTimeoutMillis} — {@code -1} (not validated, not used)</li>
-     *   <li>{@code maxActiveStreams} — {@link #UNBOUNDED_ACTIVE_STREAMS} (nothing is admitted)</li>
+     *   <li>{@code maxActiveStreams} — {@link #UNBOUNDED_ACTIVE_STREAMS} (no ceiling;
+     *       moot here, since DISABLED admits nothing regardless)</li>
      * </ul>
      *
      * @return config with {@link TransportMode#DISABLED}

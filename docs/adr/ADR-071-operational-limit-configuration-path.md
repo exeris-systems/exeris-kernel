@@ -107,11 +107,16 @@ turns an operator's configuration error into what looks like a client error, onc
 
   *Amendment 2026-08-27 — this slice has landed, and it took ONE key rather than the two constants
   named above.* `transport.paqs.maxActiveStreams` carries the admission ceiling on
-  `TransportConfig`, under the `transport.*` namespace every wired transport key already uses
-  (`network.*` is the legacy fallback the resolver consults second, and the `network.paqs.*` block
-  in `config.md` remains what it was: planned, unwired, and mostly watermark thresholds rather than
-  PAQS). It falls in this decision's **third class** — protective, with a viable unbounded setting —
-  so `-1` means no ceiling, following `maxRequestBodyBytes`, and `0` is refused. The reason `0` is
+  `TransportConfig`, under the `transport.*` namespace every wired transport key already uses.
+  It has no `network.*` twin, and that is a decision rather than an omission. `network.*` is a
+  legacy namespace a resolver consults second only where a `network.*` key had already shipped —
+  `CommunityReactorCountResolver` reads `network.reactorCount` for exactly that reason. Nothing has
+  ever published `network.paqs.maxActiveStreams`, so a fallback would invent a second name for a key
+  that has only ever had one: the duplicate operator-facing surface this decision exists to prevent.
+  The `network.paqs.*` block in `config.md` remains what it was: planned, unwired, and mostly
+  watermark thresholds rather than PAQS. It falls in this decision's **third class** — protective,
+  with a viable unbounded setting — so `-1` means no ceiling, following `maxRequestBodyBytes`, and
+  `0` is refused. The reason `0` is
   refused is the mechanism §3 insists on stating accurately: a ceiling of zero admits nothing, so it
   fails closed and catastrophically rather than open.
 
