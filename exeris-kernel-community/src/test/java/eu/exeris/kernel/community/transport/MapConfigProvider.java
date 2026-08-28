@@ -14,6 +14,9 @@ import java.util.function.Supplier;
 /**
  * Test support: a {@link ConfigProvider} backed by two literal maps.
  *
+ * <p>Public only so the memory-subsystem tests can reach it too; still test scope, and still
+ * not the published testkit.
+ *
  * <p>Bootstrap resolution is read-once and typed per key, so the tests that assert which keys a
  * boot path honours need nothing more than this. Test scope only — the testkit module is published,
  * and a stub this narrow does not belong on a consumer-facing surface.
