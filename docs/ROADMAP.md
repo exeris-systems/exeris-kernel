@@ -2451,6 +2451,118 @@ See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the 
 
 ---
 
+### Persistence: `RowCursor` Has a Ruling and No Executable Half (ADR-080, surfaced 2026-08-28)
+
+**Gap:** ADR-080 states what every `RowCursor` accessor returns, what it does with SQL NULL and an out-of-range index, and, for the converting accessors, the type domain it accepts. None of it is asserted. `AbstractRowCursorTck` checks three values and calls `getString` on **one** column whose SQL type each binding chooses for itself, which is precisely the hole the two implementations diverged into.
+
+The fixture is a second obstacle, and it is the one that shapes the work. The only binding of that TCK, `CommunityRowCursorTckTest`, runs against **H2 in PostgreSQL compatibility mode** — an in-memory engine chosen so the suite runs in the default build. The measured type set is PostgreSQL 17 server behaviour: `bool` rendering as `t`, `bpchar` retaining its padding, `enum_send` as a text passthrough, `tsvector` and `pg_lsn` arriving as structured binary. H2 answers for a handful of those and has no opinion on the rest. **The type-set half of this contract is not reachable from the fixture that exists.**
+
+**Owner:** TCK + Community persistence.
+
+**Resolution:** split the widening by what each fixture can actually witness. The type-agnostic clauses — NULL per accessor, out-of-range uniformity, the undescribed-column path, flyweight identity — stay on the H2 binding and in the default build, because they hold for any engine. The type-set clauses (ADR-080 §5 items 1–3) need a PostgreSQL binding over Testcontainers, `@Tag("integration")`, in the persistence gate. Register `EX-PERS-5008` in `KernelErrorCodes` with its `rawArgs` layout for the refusal; add the accessor contracts to `docs/subsystems/persistence.md` and the behavioural note to `docs/stability-matrix.md`, since `spi.persistence` is `stable` and the API-diff gate compares signatures — a total function narrowed to partial has the same one.
+
+**Merge Gate:** every Tier A row asserted through `getString` and its matching typed accessor; a mismatched typed accessor proven to widen where lossless and throw where not — `getInt` on `int2` must not return `809500672`; **at least one Tier C type proven to refuse rather than return**, which is the clause the whole decision rests on and the one that needs no implementation to test. Each assertion mutation-checked: an implementation that decodes unknown bytes as UTF-8 must redden the Tier C case, not just fail to be exercised by it.
+
+**1.0 disposition:** 1.0-blocking. `spi.persistence` is declared stable, and this is the contract whose silence let two implementations answer differently without either being wrong.
+
+**Status (v0.12):** ADR-080 **ACCEPTED** (#379), closing RFC-2026-08-28; the measured type set is in-repo as `docs/rowcursor-type-set.md`. Implementation **NOT STARTED**.
+
+---
+
+### Security: A Route Policy Cannot Say "Not Mine" — the Missing Abstention and Combinator (ADR-061 follow-up, surfaced 2026-08-28)
+
+**Gap:** `HttpRoutePolicy` occupies one provider slot, and `requirementFor` is contractually **total** — every `(method, path)` pair gets a non-null answer, with `null` treated as a policy defect that denies. That totality is right for a single policy and it is exactly what prevents two from coexisting. Whichever policy is bound must answer for the entire URL space, including the routes it knows nothing about, and there is no combinator to fold two answers.
+
+The consumer this blocks is `exeris-tooling`. A generated policy derived from route and authorization annotations can describe the generated routes and nothing else; to be bindable at all it would have to take ownership of every hand-written route in the application and guess a stance for each. The available guesses are the same fail-open/fail-closed pair `unmatched()` already forces the application to choose — so the generated policy would answer a question the application had already answered, and silently overrule it.
+
+**Owner:** SPI http + Core security. Consumer: `exeris-tooling`.
+
+**Resolution:** an abstention — a `Kind` variant or a distinct sentinel requirement meaning *"this policy does not describe this route"* — plus a documented fold over an ordered list of policies. The fold's rules are the substance, not the sentinel: first non-abstaining answer wins, and **an all-abstain fold resolves to the application's declared `unmatched()` stance rather than to any default of its own**, so the choice stays made in one place. Requires an ADR-061 amendment, because it changes what "total" means in a contract whose totality is currently load-bearing.
+
+**Merge Gate:** TCK case per fold outcome, including all-abstain proven equivalent to the declared unmatched stance and *not* to permit-all; a policy that abstains everywhere provably changes nothing about admission; the allocation-free property preserved across the fold.
+
+**1.0 disposition:** 1.0-blocking for the generated-application story — the tooling half of ADR-061 cannot ship without it.
+
+**Status (v0.12): NOT STARTED.**
+
+---
+
+### Security: Every 401 Looks the Same, Including the One That Means "You Forgot to Bind a Provider" (surfaced 2026-08-28)
+
+**Gap:** `RouteAuthorizationEnforcer` returns `RouteDecision.UNAUTHENTICATED` whenever the principal is absent. Three unrelated situations reach that branch and are indistinguishable afterwards:
+
+- **no identity provider bound at all** — a deployment misconfiguration, in which *every* request to *every* authenticated route is denied;
+- **the request carried no credential** — an ordinary client error;
+- **a credential was presented and rejected** — expired, malformed, wrong issuer, or a JWKS endpoint that could not be reached.
+
+The first is the one that matters, and it is the one the shared shape hides. A deployment that never bound a `TokenValidator` denies its whole authenticated surface, and on the wire and in the logs that is identical to a fleet of clients that all forgot their tokens — so it gets diagnosed against the clients. The third hides a different failure with the same trick: an unreachable JWKS endpoint degrades to "all tokens rejected", which reads as a credential problem rather than an outbound-connectivity one.
+
+**Owner:** Core security.
+
+**Resolution:** carry the reason on the decision — provider absent / credential absent / credential rejected — and keep it strictly kernel-side. The wire response must stay one 401 with one body, because telling an unauthenticated caller *why* they failed is a probe oracle. The reason belongs in JFR and in the diagnostics surface, where an operator can see it and a client cannot.
+
+**Merge Gate:** a case per reason; the HTTP response proven byte-identical across all three; the emitted event proven different across all three. The second assertion is not optional — a fix that distinguishes the reasons by leaking them to the caller is worse than the collapse it replaces.
+
+**1.0 disposition:** 1.0-recommended (operability).
+
+**Status (v0.12): NOT STARTED.**
+
+---
+
+### Test Coverage: Fourteen Skip Gates That Report Green (residue of #375, surfaced 2026-08-28)
+
+**Gap:** eleven Community test files carry fourteen `assumeTrue` gates that skip on OpenSSL absence or a missing certificate/key pair. #375 closed the sharpest instance — four TLS carrier tests gated on a certificate directory that existed in no commit, no `.gitignore`, no script and no workflow, so the assumption never held and the tests had never executed anywhere, while reporting as passing in every build since they were written. The remaining gates are the same mechanism with a more defensible trigger: on a host without `libssl`, the test is genuinely unrunnable.
+
+Defensible or not, the reporting is the defect. `assumeTrue` turns an environment gap into a passing summary line, so the build says the same thing whether the coverage ran or not — and TLS is a published capability, which makes "we do not know whether it was verified" the wrong answer.
+
+**Owner:** Community crypto/transport tests + CI.
+
+**Resolution:** two kinds, two treatments. Where the fixture can produce what it needs, produce it — `TlsTestCertificate` (#375) generates a self-signed RSA-2048 cert with an `IP:127.0.0.1` SAN into a `@TempDir` and removes the gate entirely. Where the gate is genuinely environmental, the test belongs behind a tag and a CI gate that **fails** when the environment is missing, rather than a skip that passes on a developer laptop and in CI alike.
+
+**Merge Gate:** no Community test reports success on an assumption that silently failed; the TLS matrix asserts a **minimum count of executed tests** rather than a green summary, so a gate that starts skipping is a build failure and not a quieter build.
+
+**1.0 disposition:** 1.0-blocking for the TLS claim. A skipped test is not evidence, and the OpenSSL/FFM path is a headline capability.
+
+**Status (v0.12): PARTIALLY DELIVERED** — #375 recovered four tests and added the first guard for the established-callback CAS. The fourteen remaining gates are untouched.
+
+---
+
+### Quality: Thirty CodeQL Alerts, None Triaged (T1-16 residue, surfaced 2026-08-28)
+
+**Gap:** thirty open alerts on the default branch — twenty-six `note`, four `warning`, none carrying a security severity. By rule: `java/unused-parameter` ×9, `java/uncaught-number-format-exception` ×8, `java/local-variable-is-never-read` ×5, `java/constant-comparison` ×3, `java/ignored-error-status-of-call` ×3, `java/dereferenced-value-may-be-null` ×1, `java/internal-representation-exposure` ×1.
+
+The count is the smaller problem. None of the thirty has been triaged to *fix* or *dismiss with a reason*, so the number carries no information — an alert nobody has read and an alert deliberately accepted are the same row, and the next genuinely interesting finding arrives into a list already at thirty.
+
+Read first, and not because of severity: the eight `uncaught-number-format-exception` are **cron-expression parsing** in `CommunityCronSchedule` (4) and **migration-version parsing** in `CommunityPersistenceMigrationRunner` (3), plus one test. Both parse externally supplied text — an application's schedule string, a migration filename — and both would surface a raw `NumberFormatException` where this kernel's exception policy says a coded `ExerisKernelException` with a `rawArgs` layout belongs. That is a contract question wearing a lint finding's clothes.
+
+**Owner:** cross-cutting; the parsing pair is Community scheduling + persistence.
+
+**Resolution:** triage all thirty to fix-or-dismiss-with-written-reason. One dismissal is already known and recorded in this document (v0.7 §"Cross-Cutting: v0.6.0 PR Review Follow-ups", PERF-063: `CLQ.offer` is always-true by contract, and the ignored return is deliberate) — it should be dismissed in the tool with that reason rather than re-derived by the next reader.
+
+**Merge Gate:** zero untriaged alerts; every dismissal carries a reason a reader can check; the parsing findings resolved as a contract decision (typed exception or documented pass-through), not silenced.
+
+**1.0 disposition:** 1.0-recommended.
+
+**Status (v0.12): NOT STARTED.**
+
+---
+
+### Repo Hygiene: Fifty-Six Remote Branches (Stream A residue, surfaced 2026-08-28)
+
+**Gap:** fifty-six branches on the remote, the large majority merged feature branches from v0.9 through v0.12 that were never deleted after their PR landed. The cost is not storage — it is that `git branch -r` no longer answers "what is in flight", and the repository's own rule that a merged branch is never reused is enforced by nothing but the reader's memory of which ones are merged.
+
+**Owner:** repo maintenance.
+
+**Resolution:** delete every remote branch whose tip is an ancestor of `main`, `development/0.12.0` or `preview`; enumerate the remainder with a one-line disposition each, since a branch that is neither merged nor explained is the case worth finding. Note that several long-lived local worktrees track branches in this set — prune those in the same pass so the working tree and the remote agree.
+
+**Merge Gate:** every remaining remote branch has an open PR or a written reason.
+
+**1.0 disposition:** not blocking; hygiene.
+
+**Status (v0.12): NOT STARTED.**
+
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.
