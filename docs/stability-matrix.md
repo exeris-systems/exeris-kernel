@@ -58,7 +58,7 @@ this is informational and **not** a dependency of the open-core surface.
 | SPI package | Level | Since | Anchor ADR | TCK coverage | Enterprise overlay |
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
-| `…spi.persistence` | **stable** | 0.5.0 | ADR-022 | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, +6 | yes (slab/FFM tier) |
+| `…spi.persistence` | **stable** | 0.5.0 | ADR-022, ADR-080 [^rowcursor] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, +6 | yes (slab/FFM tier) |
 | `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +3 | v0.11 record-component note below |
 
 > **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
@@ -194,3 +194,12 @@ maturity change here.
 - `docs/subsystems/*.md` — per-subsystem SPI status tags.
 - `docs/ROADMAP.md` §"SPI Stability Declaration" — the originating gap entry.
 - `CHANGELOG.md` — release history with pre-1.0 semver caveat.
+
+[^rowcursor]: **Behavioural note, 0.12 (ADR-080).** `RowCursor.getString` narrows from "whatever the
+    driver returns" to "the server's rendering for a measured type set, and a typed refusal
+    (`EX-PERS-5008`) outside it". No signature changes, so the API-diff gate sees nothing — a total
+    function narrowed to a partial one has the same signature, which is why this is recorded here
+    rather than left to the gate. On PostgreSQL, reading a Tier C column (arrays, ranges, `inet`,
+    `tsvector`, native `enum`, composites) through `getString` now throws where it previously
+    returned a value. Other engines are unaffected: the guarantee is scoped to the server the set was
+    measured on.

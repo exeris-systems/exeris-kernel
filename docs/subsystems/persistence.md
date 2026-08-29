@@ -116,12 +116,33 @@ on a value that is not an error, and the fix is a different call, not a catch.
 **Type domain.** What a converting accessor accepts, and what it does outside that set, is ruled by
 [ADR-080](../adr/ADR-080-rowcursor-value-contract.md) over the measured set in
 [`docs/rowcursor-type-set.md`](../rowcursor-type-set.md). `getString` is total over Tiers A and B and
-refuses outside them; a mismatched typed accessor widens where widening is lossless and throws where
-it is not. Asserted by the type-set half of the TCK, which needs a PostgreSQL fixture — the default
-`AbstractRowCursorTck` binding runs on H2, where most of the set has no defined answer.
+refuses outside them with `EX-PERS-5008`; a mismatched typed accessor widens where widening is
+lossless and throws where it is not.
 
-**TCK:** `AbstractRowCursorTck` (`eu.exeris.kernel.tck.contract.persistence`) — the index and NULL
-groups run against every binding in the default build.
+The refusal reads the **declared type name**, never a JDBC type code and never an OID range. That is
+not a stylistic preference — measured through pgjdbc, `bool` (rendered) and `bit` (refused) are both
+reported as `Types.BIT`, so the code cannot separate them, and a native `enum` arrives as
+`Types.VARCHAR` under the application's own type name, so only the name catches it. It is also a
+property of the **column, not the row**: a SQL NULL in an unsupported column refuses, because `null`
+would report "no value here" when the truth is "this column cannot be rendered".
+
+### The rendering guarantee is scoped to PostgreSQL
+
+ADR-080 §2 contracts *the server's* `<type>_out` rendering, over a set measured on PostgreSQL. That
+does not travel: H2 in PostgreSQL compatibility mode renders `bool` as `TRUE` where PostgreSQL
+renders `t`, and names its types in SQL-standard spellings (`CHARACTER VARYING`) sharing no
+vocabulary with the measured set. So the Community driver applies the guarantee — and the refusal
+that gives it an edge — on PostgreSQL connections, detected once per result set. On any other engine
+`getString` remains the JDBC pass-through it has always been, with no §2 promise attached.
+
+Stated here rather than left implicit, because the alternative readings are both worse: enforcing the
+allow-list everywhere would refuse every column on an engine whose names were never enumerated, and
+promising the rendering everywhere would be a guarantee the driver provably cannot keep.
+
+**TCK:** `AbstractRowCursorTck` — index and NULL groups, every binding, default build.
+`AbstractRowCursorTypeSetTck` — the rendering and refusal contract, bound only against PostgreSQL 17
+(`CommunityRowCursorTypeSetIT`, `@Tag("integration")`), since two rows of the set are gated above
+PostgreSQL 16.
 
 ---
 
