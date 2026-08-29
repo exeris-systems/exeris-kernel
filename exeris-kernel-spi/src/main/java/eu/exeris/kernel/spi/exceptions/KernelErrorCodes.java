@@ -560,6 +560,31 @@ public final class KernelErrorCodes {
      */
     public static final String EX_PERS_5007 = "EX-PERS-5007";
 
+    /**
+     * A converting accessor was asked for a column type it does not implement (ADR-080 §2).
+     *
+     * <p>Refusal rather than a rendering: decoding an unimplemented type's bytes as text produces a
+     * plausible wrong answer on a data path, which is the silent-corruption class ADR-080 exists to
+     * close. The decision is made from the <em>declared</em> column type, never from an OID range —
+     * a native {@code enum} is a text passthrough on the wire and would be rendered correctly by a
+     * range heuristic that then corrupts ranges and composites sharing that range.
+     *
+     * <p>The refusal is a property of the column, not of the row: a SQL NULL in an unsupported
+     * column still refuses, because {@code null} would report "no value here" when the truth is
+     * "this column cannot be rendered".
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} declaredTypeName (the driver's name for the column type,
+     *                                as reported by the result metadata)</li>
+     *   <li>index 1 – {@code Integer} columnIndex (zero-based)</li>
+     *   <li>index 2 – {@code String} accessor (the SPI method that refused, e.g. {@code "getString"})</li>
+     * </ul>
+     *
+     * @since 0.12.0
+     */
+    public static final String EX_PERS_5008 = "EX-PERS-5008";
+
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
     // -----------------------------------------------------------------------
