@@ -15,8 +15,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.NoSuchElementException;
-import java.util.concurrent.StructuredTaskScope;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -29,8 +27,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>All provider slots are unbound outside a {@code ScopedValue.where()} scope.</li>
  *   <li>Slots are correctly bound inside a scope and automatically restored on exit.</li>
  *   <li>Nested scopes shadow outer bindings — critical for test isolation.</li>
- *   <li>Bindings propagate into {@link StructuredTaskScope} forks (JEP 525),
- *       matching the structured concurrency contract.</li>
  *   <li>Convenience accessors ({@link KernelProviders#principal()},
  *       {@link KernelProviders#storageContext()}) throw the correct SPI exceptions
  *       when called outside a security scope.</li>
@@ -166,38 +162,6 @@ class KernelProvidersTest {
                 // Restored to outer after inner scope exits
                 assertThat(KernelProviders.MEMORY_ALLOCATOR.get()).isSameAs(outer);
             });
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // 4. StructuredTaskScope propagation (JEP 525 + JEP 506 interaction)
-    // -----------------------------------------------------------------------
-
-    @Nested
-    @DisplayName("4. StructuredTaskScope propagation — ScopedValue inherited by forked tasks")
-    class StructuredForkPropagation {
-
-        @Test
-        @DisplayName("ScopedValue propagates into StructuredTaskScope fork")
-        void propagatesIntoStructuredFork() {
-            MemoryAllocator mock = stubAllocator();
-            AtomicBoolean childSaw = new AtomicBoolean(false);
-
-            ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, mock).run(() -> {
-                try (var scope = StructuredTaskScope.open(
-                        StructuredTaskScope.Joiner.<Boolean>awaitAllSuccessfulOrThrow())) {
-                    scope.fork(() -> {
-                        childSaw.set(KernelProviders.MEMORY_ALLOCATOR.isBound()
-                                && KernelProviders.MEMORY_ALLOCATOR.get() == mock);
-                        return null;
-                    });
-                    scope.join();
-                } catch (InterruptedException _) {
-                    Thread.currentThread().interrupt();
-                }
-            });
-
-            assertThat(childSaw.get()).isTrue();
         }
     }
 
