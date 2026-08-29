@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.memory.AllocationHint;
@@ -13,6 +14,7 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.reflect.InaccessibleObjectException;
@@ -32,6 +34,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 @Timeout(value = 20, unit = TimeUnit.SECONDS)
 class CommunityTlsFdOwnerContractTckTest {
 
+    @TempDir
+    private Path tlsMaterialDir;
+
     @Test
     @DisplayName("runtime probe recognizes direct channel FD accessor when available")
     void runtimeProbeRecognizesDirectChannelFdAccessorWhenAvailable() throws Exception {
@@ -46,7 +51,7 @@ class CommunityTlsFdOwnerContractTckTest {
     @Test
     @DisplayName("bindFileDescriptor before beginHandshake allows handshake progression")
     void bindFileDescriptorBeforeBeginHandshakeAllowsHandshakeProgression() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = resolveCertKey();
         assumeSocketFdAccessOnLoopbackOrSkip();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
@@ -84,7 +89,7 @@ class CommunityTlsFdOwnerContractTckTest {
     @Test
     @DisplayName("bindFileDescriptor is idempotent for same descriptor")
     void bindFileDescriptorIsIdempotentForSameDescriptor() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = resolveCertKey();
         assumeSocketFdAccessOnLoopbackOrSkip();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
@@ -117,18 +122,15 @@ class CommunityTlsFdOwnerContractTckTest {
         }
     }
 
-    private static CertKeyPaths resolveCertKeyOrSkip() {
-        Path cwd = Path.of("").toAbsolutePath().normalize();
-        Path moduleDir = "exeris-kernel-community".equals(String.valueOf(cwd.getFileName()))
-                ? cwd
-                : cwd.resolve("exeris-kernel-community").normalize();
-        Path cert = moduleDir.resolve("../native-libs/certs/server.crt").normalize();
-        Path key = moduleDir.resolve("../native-libs/certs/server.key").normalize();
-
-        assumeTrue(Files.isRegularFile(cert) && Files.isRegularFile(key),
-                "TLS cert/key not found under ../native-libs/certs - skipping FD-owner contract test");
-
-        return new CertKeyPaths(cert, key);
+    /**
+     * Generates the material rather than hunting for it. The directory this used to walk up to —
+     * {@code ../native-libs/certs} — is in no commit, no {@code .gitignore}, no script and no
+     * workflow, so the assumption never held and this contract test had never executed anywhere
+     * while reporting as passing. Same fix as #375, which introduced the generator for exactly this.
+     */
+    private CertKeyPaths resolveCertKey() {
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+        return new CertKeyPaths(certificate.certificate(), certificate.privateKey());
     }
 
     private static void assumeSocketFdAccessOnLoopbackOrSkip() {

@@ -2523,7 +2523,17 @@ Defensible or not, the reporting is the defect. `assumeTrue` turns an environmen
 
 **1.0 disposition:** 1.0-blocking for the TLS claim. A skipped test is not evidence, and the OpenSSL/FFM path is a headline capability.
 
-**Status (v0.12): PARTIALLY DELIVERED** — #375 recovered four tests and added the first guard for the established-callback CAS. The fourteen remaining gates are untouched.
+**Status (v0.12): PARTIALLY DELIVERED — three more gates removed, and removing them found the point of the exercise.**
+
+#375 recovered four carrier tests. The same dead path — `../native-libs/certs`, in no commit, no `.gitignore`, no script and no workflow — gated **three further classes**: `CommunityTlsEngineBindTest`, `CommunityTlsFdOwnerContractTckTest` and `CommunityHttpBootstrapIntegrationTest`. On this machine the directory exists and is **empty**, which is how the gate can look plausible locally and still never hold anywhere. Reactor skips 21 → 18.
+
+Two are recovered and green: five assertions that had never executed anywhere. **The third failed the moment it could run, and that is what a recovered test is for.** It had slept through two contract changes it could not be told about — ADR-074 made request authority mandatory, and it does not successfully speak TLS to its own server. Reverted out of this slice rather than disabled: a `@Disabled` would have converted a silent skip into a quieter one.
+
+**What the follow-up starts from, so it does not start from scratch.** `CommunityHttpClientEngine` carries no TLS code of its own; TLS reaches it through `CommunityHttpTransportFactory`, which does read `transport.certPath` / `transport.keyPath` — the properties this test sets. `NativeTcpCarrier.createTlsEngineIfEnabled()` returns `null` unless the carrier holds both a `cryptoProvider` and a `cryptoConfig`, and that binding is a different path from the properties. So the premise is reachable and the gap is in crypto-to-carrier wiring on the client side, which may be a product gap rather than a test defect. That is its own PR.
+
+**Still open:** the remaining gates are the genuinely environmental ones (OpenSSL probes) plus `AbstractSecurityProviderTck$JwksKeyRotationContract`, where a binding declines a TCK contract by returning a null harness — a contract that a provider can opt out of silently is the same shape one level up.
+
+**Worth recording as correct rather than fixed:** the three skips in `CoreOffHeapTlsEngineTckTest` name `OffHeapTlsEngineLoopbackIT` as where they are covered, and that test really runs — 5 tests, 0 skipped, in the default build, plus a dedicated failsafe step in CI. A skip that names its replacement is only as good as the replacement running; this one checks out and is the pattern to copy.
 
 ---
 

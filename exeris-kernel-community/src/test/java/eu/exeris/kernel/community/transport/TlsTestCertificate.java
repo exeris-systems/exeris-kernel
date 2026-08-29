@@ -45,7 +45,7 @@ import java.util.Date;
  * <p>RSA-2048 with SHA-256, ~1 s to generate on a laptop, done once per test class rather than per
  * test. The SAN carries {@code IP:127.0.0.1} because every one of these suites binds the loopback.
  */
-final class TlsTestCertificate {
+public final class TlsTestCertificate {
 
     private static final int KEY_BITS = 2_048;
     private static final Duration VALIDITY = Duration.ofDays(1);
@@ -58,6 +58,16 @@ final class TlsTestCertificate {
     private TlsTestCertificate(Path certificatePath, Path privateKeyPath) {
         this.certificatePath = certificatePath;
         this.privateKeyPath = privateKeyPath;
+    }
+
+    /** PEM certificate path, for callers taking a {@link Path} (e.g. {@code CryptoProviderConfig}). */
+    public Path certificate() {
+        return certificatePath;
+    }
+
+    /** PEM private-key path, for callers taking a {@link Path}. */
+    public Path privateKey() {
+        return privateKeyPath;
     }
 
     /** PEM certificate path, for {@code TransportConfig.certPath}. */
@@ -80,7 +90,7 @@ final class TlsTestCertificate {
      *         worth surfacing rather than a reason to skip. That distinction is the whole point:
      *         the previous shape turned every fault into a silent skip.
      */
-    /* default */ static TlsTestCertificate generateInto(Path directory) {
+    public static TlsTestCertificate generateInto(Path directory) {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
             generator.initialize(KEY_BITS, SecureRandom.getInstanceStrong());
