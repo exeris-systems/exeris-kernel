@@ -129,10 +129,38 @@ Tier C asserts the refusal only.
 An unimplemented type raises a `PersistenceProviderException` carrying a new error code,
 **`EX-PERS-5008`**, registered in `KernelErrorCodes` by the implementing change with its `rawArgs`
 layout. The message names the column index and the declared type OID and nothing else — a value the
-driver could not decode is not a value it should put in a message.
+driver could not decode is not a value it should put in a message. *(Superseded on the OID point by
+Amendment A1 below: the refusal names the declared type name. The rest of the sentence stands.)*
 
 `EX-PERS-5008` is the next free code in the persistence family at the time of writing; the
 implementing PR confirms that rather than assuming it.
+
+## Amendment A1 (settled during implementation, v0.12) — the refusal names the type, not its OID
+
+§6 above says the refusal "names the column index and the declared type OID". It names the declared
+**type name** instead, and this ADR was wrong rather than the implementation.
+
+The reason is the same measurement that decided §2, arriving after this ADR was written. Probing
+PostgreSQL 17 through the JDBC driver before the refusal was coded: `bool` — which the set renders —
+and `bit` — which it refuses — are both reported as `Types.BIT`, so a type code cannot separate them;
+and a native `enum` arrives as `Types.VARCHAR` carrying the *application's own* type name, so neither
+a code nor an OID range catches it. Only the declared name does. §2's rule — *per declared type,
+never per OID range* — therefore has to reach the exception too: an error naming an OID the decision
+never consulted would describe a resolution path that does not exist, and would invite the next
+reader to implement the range heuristic §2 exists to forbid.
+
+The OID is also not reliably available. §2's rule is implemented against `ResultSetMetaData`, which
+exposes a type *name* as portable API and an OID only through driver-specific internals — so naming
+the OID in the contract would have required the generic driver to reach into one vendor's classes to
+satisfy a message.
+
+`EX-PERS-5008`'s `rawArgs` layout is therefore `[declaredTypeName, columnIndex, accessor]`. The
+accessor is a third element §6 did not anticipate: §3 makes the typed accessors refuse on their own
+terms, so a reader of the failure needs to know which method declined.
+
+Recorded as an amendment rather than an edit to §6, because the original sentence was a reasonable
+inference from the type-set document — which lists OIDs — and the reason it does not survive contact
+with a JDBC driver is worth keeping visible.
 
 ## Consequences
 

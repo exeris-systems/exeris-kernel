@@ -122,6 +122,35 @@ public abstract class AbstractRowCursorTypeSetTck {
     };
 
     /**
+     * Tier B — rendered, but each row needs a stated precondition or a server-version gate. The
+     * gates are why these are a separate group: asserted carelessly they either fail on an older
+     * server or, worse, pass against a session that happens to be pinned the way the author's was.
+     *
+     * <p>{@code timestamptz} is not here — it needs a zone the session default cannot provide, and
+     * gets its own test below.
+     */
+    private static final String[][] TIER_B = {
+        // The wire zone is seconds WEST of UTC and the printed offset is its negation. A sign error
+        // yields a plausible string off by exactly twice the offset — 09:00:00-05:30 reads fine.
+        {"'14:30:00+05:30'::timetz", "14:30:00+05:30"},
+        // IntervalStyle=postgres. Note the plural on -1: "-1 days", not "-1 day".
+        {"'1 year -1 day'::interval", "1 year -1 days"},
+        // The + latch: interval_out signs a positive part that follows a negative one. Nothing else
+        // in the type space exercises it.
+        {"'-1 year 3 days'::interval", "-1 years +3 days"},
+        // Gate: PostgreSQL >= 17. The binding pins 17 for this row and the one below.
+        {"'infinity'::interval", "infinity"},
+        // Gate: PostgreSQL >= 14.
+        {"'Infinity'::numeric", "Infinity"},
+        // Use the DataRow length, never the declared 64-byte width, or NUL padding appears.
+        {"'nm'::name", "nm"},
+        // Gate: a server built with libxml.
+        {"'<a>1</a>'::xml", "<a>1</a>"},
+        // One byte, not char(1). Easy to confuse with bpchar, which pads.
+        {"'x'::\"char\"", "x"},
+    };
+
+    /**
      * Tier C — no implementation renders these. Every one has a perfectly good server rendering and
      * arrives as a structured binary datum a naive driver turns into mojibake.
      */
@@ -162,6 +191,49 @@ public abstract class AbstractRowCursorTypeSetTck {
     // =========================================================================
     // Tier C — refusal, and the direction that keeps it honest
     // =========================================================================
+
+    @Nested
+    @DisplayName("Tier B — gated rendering")
+    class TierBRendering {
+
+        @Test
+        @DisplayName("getString renders every Tier B type, each under its stated gate")
+        void rendersEveryTierBRow() {
+            withPinnedConnection(conn -> {
+                SoftAssertions softly = new SoftAssertions();
+                for (String[] row : TIER_B) {
+                    softly.assertThat(renderOne(conn, row[0]))
+                            .as("getString of %s", row[0])
+                            .isEqualTo(row[1]);
+                }
+                softly.assertAll();
+            });
+        }
+
+        /**
+         * The gate {@link #pinSession} cannot supply: a zone that actually changes offset.
+         *
+         * <p>One instant proves nothing here. An implementation that applies the zone's <em>raw</em>
+         * offset — ignoring daylight saving — renders the January instant correctly and the July one
+         * an hour early, so a single-instant test passes against exactly the bug this row exists to
+         * catch. Both, or neither.
+         */
+        @Test
+        @DisplayName("timestamptz follows the session zone across a DST boundary, not its raw offset")
+        void timestamptzHonoursDaylightSaving() {
+            withPinnedConnection(conn -> {
+                conn.executeUpdate("SET TimeZone TO 'Europe/Warsaw'");
+                SoftAssertions softly = new SoftAssertions();
+                softly.assertThat(renderOne(conn, "'2000-01-01 00:00:00+00'::timestamptz"))
+                        .as("January — Warsaw is UTC+1")
+                        .isEqualTo("2000-01-01 01:00:00+01");
+                softly.assertThat(renderOne(conn, "'2000-07-01 00:00:00+00'::timestamptz"))
+                        .as("July — Warsaw is UTC+2, and a raw-offset implementation says 01:00+01")
+                        .isEqualTo("2000-07-01 02:00:00+02");
+                softly.assertAll();
+            });
+        }
+    }
 
     @Nested
     @DisplayName("Tier C — refusal")
