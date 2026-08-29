@@ -142,6 +142,11 @@ public abstract class AbstractRowCursorTypeSetTck {
         {"'infinity'::interval", "infinity"},
         // Gate: PostgreSQL >= 14.
         {"'Infinity'::numeric", "Infinity"},
+        // Gate: PostgreSQL >= 12, where the server switched to shortest-round-trip. Below it — or at
+        // extra_float_digits < 1 — it emits DBL_DIG+3 digits and this renders 0.100000001. The float8
+        // half of this row is the 0.1+0.2 case in Tier A above; only float4 needs its own, because
+        // that Tier A pair tests the fixed/scientific cutoff rather than the digit count.
+        {"0.1::float4", "0.1"},
         // Use the DataRow length, never the declared 64-byte width, or NUL padding appears.
         {"'nm'::name", "nm"},
         // Gate: a server built with libxml.
