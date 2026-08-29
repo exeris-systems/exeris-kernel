@@ -1,6 +1,6 @@
 {
   "meta" : {
-    "generated" : "2026-08-28T13:55:31.632723367Z",
+    "generated" : "2026-08-29T08:45:27.256961504Z",
     "jdk" : "25.0.4",
     "commit" : "70beb386f22cdb23a069477d60a02f79703d42b3",
     "branch" : "main"
@@ -8,28 +8,28 @@
   "core" : {
     "security" : {
       "verdict" : "VERIFIED",
-      "total_events" : 4,
+      "total_events" : 6,
       "exeris_alloc_count" : 0,
       "exeris_production_alloc_count" : 0,
       "exeris_test_harness_count" : 0
     },
     "bootstrap" : {
       "verdict" : "VERIFIED",
-      "total_events" : 605,
+      "total_events" : 607,
       "exeris_alloc_count" : 0,
       "exeris_production_alloc_count" : 0,
       "exeris_test_harness_count" : 0
     },
     "flowengine" : {
       "verdict" : "WARNING",
-      "total_events" : 249,
-      "exeris_alloc_count" : 70,
-      "exeris_production_alloc_count" : 32,
-      "exeris_test_harness_count" : 38
+      "total_events" : 245,
+      "exeris_alloc_count" : 50,
+      "exeris_production_alloc_count" : 21,
+      "exeris_test_harness_count" : 29
     },
     "crypto" : {
       "verdict" : "VERIFIED",
-      "total_events" : 14,
+      "total_events" : 9,
       "exeris_alloc_count" : 0,
       "exeris_production_alloc_count" : 0,
       "exeris_test_harness_count" : 0
@@ -50,7 +50,7 @@
     },
     "unknown" : {
       "verdict" : "VERIFIED",
-      "total_events" : 452,
+      "total_events" : 432,
       "exeris_alloc_count" : 0,
       "exeris_production_alloc_count" : 0,
       "exeris_test_harness_count" : 0
@@ -66,45 +66,45 @@
     },
     "eventbus" : {
       "verdict" : "VERIFIED",
-      "total_events" : 1779,
-      "exeris_alloc_count" : 9,
+      "total_events" : 875,
+      "exeris_alloc_count" : 11,
       "exeris_production_alloc_count" : 0,
-      "exeris_test_harness_count" : 9
+      "exeris_test_harness_count" : 11
     },
     "graph" : {
       "verdict" : "VERIFIED",
-      "total_events" : 10,
+      "total_events" : 9,
       "exeris_alloc_count" : 0,
       "exeris_production_alloc_count" : 0,
       "exeris_test_harness_count" : 0
     },
     "flowengine" : {
       "verdict" : "VERIFIED",
-      "total_events" : 183,
-      "exeris_alloc_count" : 61,
-      "exeris_production_alloc_count" : 28,
+      "total_events" : 701,
+      "exeris_alloc_count" : 168,
+      "exeris_production_alloc_count" : 135,
       "exeris_test_harness_count" : 33
     },
     "persistence" : {
       "verdict" : "VERIFIED",
-      "total_events" : 295,
-      "exeris_alloc_count" : 6,
+      "total_events" : 199,
+      "exeris_alloc_count" : 11,
       "exeris_production_alloc_count" : 0,
-      "exeris_test_harness_count" : 6
+      "exeris_test_harness_count" : 11
     },
     "transport" : {
       "verdict" : "VERIFIED",
-      "total_events" : 84,
-      "exeris_alloc_count" : 7,
+      "total_events" : 73,
+      "exeris_alloc_count" : 4,
       "exeris_production_alloc_count" : 0,
-      "exeris_test_harness_count" : 7
+      "exeris_test_harness_count" : 4
     },
     "memory" : {
       "verdict" : "VERIFIED",
-      "total_events" : 108,
-      "exeris_alloc_count" : 36,
+      "total_events" : 101,
+      "exeris_alloc_count" : 34,
       "exeris_production_alloc_count" : 0,
-      "exeris_test_harness_count" : 36
+      "exeris_test_harness_count" : 34
     },
     "storagecontext" : {
       "verdict" : "VERIFIED",
@@ -115,10 +115,10 @@
     },
     "unknown" : {
       "verdict" : "VERIFIED",
-      "total_events" : 507,
+      "total_events" : 480,
       "exeris_alloc_count" : 2,
-      "exeris_production_alloc_count" : 2,
-      "exeris_test_harness_count" : 0
+      "exeris_production_alloc_count" : 1,
+      "exeris_test_harness_count" : 1
     }
   }
 }
