@@ -439,6 +439,29 @@ public abstract class AbstractHttpRoutePolicyTck {
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
+        /**
+         * The guards are documented as {@code @throws}, so each needs a case — a declared exception
+         * nothing exercises is the same unasserted promise as an allow-list entry nothing renders.
+         */
+        @Test
+        @DisplayName("the composition refuses null arguments rather than failing at request time")
+        void nullArgumentsAreRefusedAtCompositionTime() {
+            RouteRequirement stance = RouteRequirement.permitAll();
+            List<HttpRoutePolicy> withNullElement =
+                    java.util.Arrays.asList(HttpRoutePolicy.permitAll(), null);
+
+            assertThatThrownBy(() -> HttpRoutePolicy.firstDeclared(null, stance))
+                    .as("a null policy list")
+                    .isInstanceOf(NullPointerException.class);
+            assertThatThrownBy(() -> HttpRoutePolicy.firstDeclared(List.of(), null))
+                    .as("a null unmatched stance — the argument that exists to be stated")
+                    .isInstanceOf(NullPointerException.class);
+            assertThatThrownBy(() -> HttpRoutePolicy.firstDeclared(withNullElement, stance))
+                    .as("a null element, caught at composition rather than on the first request "
+                            + "that happens to reach it")
+                    .isInstanceOf(NullPointerException.class);
+        }
+
         @Test
         @DisplayName("an abstention cannot be marked long-running — it declares no execution facet")
         void abstentionCarriesNoExecutionFacet() {

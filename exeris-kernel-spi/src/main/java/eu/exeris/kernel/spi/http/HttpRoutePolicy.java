@@ -116,6 +116,10 @@ public interface HttpRoutePolicy {
      * @throws NullPointerException     if any argument or element is {@code null}
      * @since 0.12.0
      */
+    // Scope: composition time, not a runtime path. A policy list is folded once when the application
+    // declares it, so the concatenated messages below are outside the rawArgs[] discipline that
+    // governs exception construction on runtime failure paths — the fold's own returned lambda, which
+    // is the part that runs per request, builds no message and throws nothing.
     static HttpRoutePolicy firstDeclared(List<HttpRoutePolicy> policies,
                                          RouteRequirement whenNoneDeclares) {
         Objects.requireNonNull(policies, "policies");
