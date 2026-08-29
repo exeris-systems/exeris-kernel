@@ -2604,6 +2604,24 @@ is the same: check the side effect, not the exit code.
 
 ---
 
+### HTTP: Outbound TLS Was a Consequence of Another Subsystem Starting (surfaced 2026-08-29)
+
+**Gap:** the server decides TLS from material it was given — certificate and key present means TLS. The client decided it from its surroundings: `NativeTcpTransportProvider.resolveCryptoConfig` handed **every** `CLIENT`-mode transport a `CryptoProviderConfig.tcpClient()`, unconditionally, and the carrier armed whenever a crypto provider happened to be bound. So a kernel that booted the crypto subsystem to serve HTTPS **could not make a plaintext outbound call at all**, and nothing reported it — the request simply never completed.
+
+Two things kept it invisible. Nothing in the tree makes an outbound call from a crypto-booted kernel, and `AbstractHttpProviderLoopbackTck` — the suite that would seem to cover the client — never touches crypto, so the client it exercises is plaintext and its green says nothing about this path.
+
+**Owner:** Community transport.
+
+**Resolution:** `exeris.transport.tls` as an opt-out for every mode, and **each side keeps the signal it actually has**. Keying both on crypto material was tried first and the tree refused it: the TLS end-to-end tests build the server with a certificate and the client with `null, null`, and both speak TLS. A client holding no server material is the normal shape, not a gap — so material gates a server and cannot gate a client, and the attempt broke three previously-green suites, which is a clearer statement of the rule than any argument. TLS therefore stays on wherever the transport can do it, and what changes is that the client's answer is a stated default with a way out instead of a consequence of another subsystem starting that nothing could override. `-D`-only, with the reason at the site: the provider is handed a `TransportConfig` and no `ConfigProvider`, and adding a component to that SPI record for a boolean costs more than the knob is worth mid-milestone — the category ADR-071 already named for its siblings.
+
+**Merge Gate:** both directions in one test, because either alone proves nothing — the opt-out reaches a plaintext peer and returns `200`, **and** the default still arms TLS so the same peer yields nothing. The second assertion also pins the default the TLS end-to-end tests depend on. Half-configured material stays a boot failure whatever the override says.
+
+**Follow-on, and it is a decision rather than a patch.** The better mechanism is a **scheme on the dial address** (`https://host:port`), opt-in, giving per-request choice and letting one engine call an HTTPS peer and a plaintext one — covering the server too, and plausibly per-route rather than per-transport, which is where it would meet the route-policy surface (ADR-061). It stays out of this fix because it changes the authority format on `HttpRequest`, which is `stable`, and touches `Host` derivation, SNI and ADR-074 §4. Keeping it opt-in is what lets the default path above stay as it is.
+
+**Status (v0.12): DELIVERED.**
+
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.
