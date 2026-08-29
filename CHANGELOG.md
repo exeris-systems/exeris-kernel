@@ -8,6 +8,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Fixed
+
+- **Outbound TLS is a decision, not a consequence of crypto booting.** A `CLIENT`-mode transport armed TLS whenever a crypto provider happened to be bound, so a kernel that booted crypto to serve HTTPS could not make a plaintext outbound call at all. `exeris.transport.tls` is the opt-out that was missing, and it covers **server, client and dual**: a listener holding valid certificate and key can now decline TLS, for deployments terminating it at a sidecar. Half-configured material stays a boot failure regardless. A listener that declines while holding material emits `eu.exeris.kernel.transport.TransportTlsDeclined`, because that is the one outcome indistinguishable from any other plaintext socket. Defaults are unchanged.
+
 ### Added
 
 - **The PAQS admission ceiling becomes configurable, and the constant beside it is documented as
