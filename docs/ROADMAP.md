@@ -2553,6 +2553,27 @@ Read first, and not because of severity: the eight `uncaught-number-format-excep
 
 **Method note worth keeping.** Alerts are computed on `refs/heads/main`, so their line numbers belong to that commit and not to the development line. Reading `CommunityPathFinder` on `development/0.12.0` pointed at unrelated lines and would have produced a confident wrong verdict; the same trap the Dependabot sweep recorded. Read the flagged file at the alert's own `commit_sha`.
 
+**The whole thirty, by rule, because this entry is the record.** The GitHub dismissal comment is capped
+at 280 characters, so a reason that does not appear here does not appear anywhere a reader can check.
+
+| Rule | Count | Why it was dismissed |
+|---|---:|---|
+| `java/unused-parameter` | 9 | Two are unnamed lambda parameters (`(_, throwable) ->`); seven sit on declarations with no body — interface methods, an abstract TCK hook, a no-op default, a test stub — where a parameter is contract surface precisely because nothing reads it |
+| `java/uncaught-number-format-exception` | 8 | Four gated by `JobTrigger.Cron`'s canonical constructor; three bounded by a digits-only regex; one a test parsing its own fixture (above) |
+| `java/local-variable-is-never-read` | 5 | Record deconstruction patterns with unnamed components (`case JobTrigger.FixedInterval(Duration _, Duration interval)`) — JEP 456 again |
+| `java/constant-comparison` | 3 | The `Condition` wait loop (above) |
+| `java/ignored-error-status-of-call` | 3 | `frontier.offer(...)` ×2 and `candidates.offer(...)` in `CommunityPathFinder`, all on **unbounded** queues, where `offer` never returns `false` — the boolean exists for the bounded contract. Same disposition PERF-063 recorded for `CLQ.offer`, now stated for these three sites rather than inherited from a cross-reference to a different one |
+| `java/dereferenced-value-may-be-null` | 1 | `CommunityS3DownloadHandle`: `remaining` is `0` when `body` is null and the method returns `-1` on `remaining <= 0` before the dereference. The correlation runs through a local, which is what the analysis does not carry — and a future guard loosened to `< 0` would make the path live, which is the one thing worth remembering about it |
+| `java/internal-representation-exposure` | 1 | `FlowSnapshot` defends both directions — the compact constructor copies all three array components in, and all three accessors copy out |
+
+**One withdrawn finding, kept because the method failure is the lesson.** I first read that last row as a
+real defect: `opaqueState` not defensively copied, immutability guaranteed on the way out and not on the
+way in. It came from a `grep … | head -12` that cut the output one line before the third
+`Arrays.copyOf`, and I read the truncation as absence. The duplicate line my "fix" produced is what
+exposed it. Three instances of that shape landed in one milestone — a `git checkout` restoring an
+unstaged file, a field-extraction pattern silently matching nothing, and this — and the common defence
+is the same: check the side effect, not the exit code.
+
 **Zero code changes, and that is the outcome rather than an omission.** The triage's product is that the count now carries information: an alert nobody has read and an alert deliberately accepted are no longer the same row. The GitHub dismissal comment is capped at 280 characters, so the reasoning lives here and the comment points at it.
 
 ---
