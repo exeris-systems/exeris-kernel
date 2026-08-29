@@ -38,6 +38,7 @@ fails CI. See §"How to read a failure" below.
 | `v0.9.0` → `v0.10.0` | `1.0.0` | 0 | 2 | breaking on `preview` only — §3 |
 | `v0.10.0` → `v0.10.1` | `0.0.1` | 0 | 0 | no API change |
 | `v0.10.1` → `v0.10.2` | `0.0.1` | 0 | 0 | no API change |
+| `v0.10.2` → `v0.11.0` | `1.0.0` | 0 | 1 | breaking on `preview` only — §4 |
 
 ### The declaration line
 
@@ -107,6 +108,27 @@ Events log-ordering and OCC boundary (ADR-049) and binding-agnostic topic (ADR-0
 Both on `eu.exeris.kernel.spi.events` — `preview`, so permitted without a major bump. The
 `EventTypeSpec.of(...)` / `ofPersistent(...)` factories were preserved; only direct constructor
 calls break. Migration: [`upgrade-0.5-to-0.10.md`](./upgrade-0.5-to-0.10.md) §3.
+
+---
+
+## §4 — `v0.10.2` → `v0.11.0` (`preview` surface)
+
+Shared-scope isolation tier (ADR-012 amendment): `StorageContext` gained a component, so the record's
+generated all-args constructor changed shape.
+
+```
+***! MODIFIED CLASS: eu.exeris.kernel.spi.security.ImmutableStorageContext
+       ---! REMOVED CONSTRUCTOR: ImmutableStorageContext(Optional<String>, IsolationStrategy, Optional<String>, Optional<String>, Map<String,String>)
+```
+
+`eu.exeris.kernel.spi.security` is `preview`, so this is permitted without a major bump. It is the
+canonical shape of a record break: adding a component removes the previous canonical constructor,
+and only direct constructor callers break — factory and builder callers do not.
+
+**This row was published late.** The gate produced it at the v0.11.0 cut; only the publication step
+was skipped, which left `stability-matrix.md`'s claim that "every release transition is diffed at the
+bytecode level and published in `release/spi-api-history.md`" false for one transition. The row above
+is the gate's own output for `--old v0.10.2 --new v0.11.0`, not a reconstruction.
 
 ---
 

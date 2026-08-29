@@ -25,13 +25,15 @@ flowchart LR
 
 | Setting | Value |
 |:--------|:------|
-| **JDK** | Java 26, `--enable-preview` (Loom VTs, Panama FFM, `ScopedValue`, `StructuredTaskScope`) |
+| **JDK** | Java 25 LTS or newer — **no `--enable-preview`** (Loom VTs, Panama FFM and `ScopedValue` are all GA). Pass `--enable-native-access=ALL-UNNAMED` for the FFM transport/crypto paths. |
 | **Profile** | `kernel.profile=PROD` (opaque error codes; DEV exposes stack traces — keep PROD in deployment) |
 | **TLS** | OpenSSL 3.0 – 4.x (fd-owner engine); 3.x floor retained for FIPS-provider compatibility (ADR-008) |
 | **HTTP** | HTTP/1.1 + HTTP/2 (h2 + h2c), TLS 1.2 / 1.3 |
 | **GC** | G1 is the safe default; size the heap to the working set (see envelope). |
 
-Run the kernel JVM (and Maven, if building on the box) on **JDK 26** — the build plugin is class v70 and a lower JDK fails with an opaque classworlds trace.
+Run the kernel JVM on **JDK 25 LTS or newer**. The distributed artifact is preview-clean since 0.11 (ADR-066), so the flag this document previously mandated is not merely unnecessary — passing it is not what the shipped jar is built for. The separate `-preview` artifact tracks the newest JDK and does require the flag; it is a different coordinate, chosen deliberately, and this deployment is not it. See [`support-matrix.md`](../support-matrix.md), which this table must agree with.
+
+If you build on the box, Maven needs a JDK matching the build's own baseline; a lower one fails with an opaque classworlds trace.
 
 ## Resource envelope (reference baseline — validate per workload)
 
@@ -68,7 +70,7 @@ Validated by the v0.9 operational-continuity suite (the `recovery-continuity-gat
 - **Server push is SSE-only** — one-directional `HttpStreamExchange` since 0.10 ([ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)); no WebSocket, so full-duplex clients still poll. The SSE body is HTTP/1.1 close-delimited today, which matters for reverse proxies that buffer length-unknown responses — see [`subsystems/http.md`](../subsystems/http.md).
 - **Events do not cross the node boundary on the default driver** — the in-heap bus is single-node and the Outbox is durable *emission*, not cross-node delivery; fanning out to peers means running the Kafka driver. See [`subsystems/events.md`](../subsystems/events.md) → *Delivery Boundary*.
 - **No cross-node coordination seam** — distributed lock / leader election / singleton execution are the host application's concern today.
-- **Caffeine** in-process cache only; no distributed cache provider.
+- **No cache of any kind ships with the kernel** — no in-process cache dependency is declared anywhere in the reactor, and there is no `CacheProvider` SPI. An application that needs caching brings its own.
 
 ## See also
 - [`../support-matrix.md`](../support-matrix.md) — supported runtime, SPI status, Community vs Enterprise scope, deferred capabilities.
