@@ -104,8 +104,22 @@ public final class SecurityJfrEvents {
         public String errorCode;
 
         @Label("Drop Reason")
-        @Description("Short reason code: 'NO_PROVIDER', 'TOKEN_MISSING', 'TOKEN_INVALID'")
+        @Description("One of SecurityDenialReason: NO_PROVIDER, TOKEN_MISSING, TOKEN_INVALID, "
+                + "PROVIDER_ERROR, PRE_AUTH_BRIDGE_ERROR")
         public String dropReason;
+    }
+
+    /**
+     * Emits a {@link SecurityContextMissingEvent} for a denial whose reason is enumerated.
+     *
+     * <p>The error code comes from the reason rather than from the caller, because the two had
+     * already drifted apart in the javadoc that described them.
+     *
+     * @param reason why no security context could be established
+     * @since 0.12.0
+     */
+    public static void emitContextMissing(SecurityDenialReason reason) {
+        emitContextMissing(reason.errorCode(), reason.name());
     }
 
     /**
@@ -114,7 +128,7 @@ public final class SecurityJfrEvents {
      * @param errorCode  canonical EX-SEC-* code
      * @param dropReason short, safe-for-telemetry reason code
      */
-    public static void emitContextMissing(String errorCode, String dropReason) {
+    private static void emitContextMissing(String errorCode, String dropReason) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
