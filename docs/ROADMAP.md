@@ -2604,6 +2604,51 @@ is the same: check the side effect, not the exit code.
 
 ---
 
+### HTTP: The Kernel's Client Has Never Reached the Kernel's Server Across a Process Boundary (surfaced 2026-08-29)
+
+**Gap:** every HTTP test in this repository runs in one JVM. Three use `ProcessBuilder`: two spawn `openssl req` to *generate a certificate*, and the third — `DiagnosticsCliShadedJarIT` — spawns a **child JVM** and talks NDJSON to it over stdio, to prove the shaded CLI artefact runs. None stands up an HTTP peer, so the combination an operator actually deploys, two kernels on a socket, is asserted nowhere here. That third one is worth knowing rather than dismissing: the mechanics of launching a kernel in a child process and driving it from the test already exist in this tree, so the missing test needs a fixture pattern that is present, not one that has to be invented.
+
+The coverage is asymmetric in a way that explains how this survived. A kernel **server** against an external driver is well covered — the benchmark harness drives it with `wrk`/`h2load` and has published TLS cost figures, which is what makes the server path credible. A kernel **client** against a kernel **server** is covered too, but only *in-process*, by `AbstractHttpProviderLoopbackTck`. The diagonal — kernel client, kernel server, separate processes — has no coverage of any kind, and it is the one where a defect could hide behind shared JVM state: one allocator, one reactor pool, one `ScopedValue` scope, no real socket teardown between peers.
+
+**Owner:** Community http + testkit.
+
+**Resolution:** an integration test that boots a server in a child JVM and drives it from the kernel's own client in the parent, over plaintext and TLS. Multi-peer belongs in the same test rather than a separate one: ADR-074 made one client dial several peers, and *that* case is already asserted in-process (`AbstractHttpProviderLoopbackTck` runs a default and an addressed server and dials the second by authority), so the cross-process version is about the socket and lifecycle, not about the addressing contract.
+
+**Merge Gate:** the child process is a real kernel boot, not a stub server; the test fails rather than skips when the child cannot start; plaintext and TLS both asserted, since the in-process control shows they fail differently.
+
+**1.0 disposition:** 1.0-recommended. The server path's credibility rests on the benchmark harness, which is outside this repository and does not gate merges.
+
+**Status (v0.12): NOT STARTED.**
+
+---
+
+### HTTP: A Client Built Through `KernelBootstrap` Is Not Covered, and One Test Found It (surfaced 2026-08-29)
+
+**Gap:** `CommunityHttpBootstrapIntegrationTest.httpSubsystemServesHealthEndpointOverTls` fails, and it fails for a reason no other test can reach. It had been dark since it was written — gated on `../native-libs/certs`, a path in no commit — and #387 removed that gate for its two siblings while leaving this one out, because recovering it exposed a live failure rather than a stale assertion.
+
+What is ruled out, empirically rather than by reading:
+
+- **Not TLS.** The same test with plaintext on both sides also fails, with `Transport receive timeout` instead of `empty HTTP response`.
+- **Not the path.** `/health` is served by `CommunityHttpHealthRoutes`, and a sibling test in the same file fetches it from the same server with a raw socket and gets `200`.
+- **Not addressing.** ADR-074's `defaultAuthority` was missing and is a real defect in the test — `AbstractHttpProviderLoopbackTck` carries a comment describing exactly this trap — but supplying it does not fix the failure.
+- **Not the client in general.** `AbstractHttpProviderLoopbackTck` drives the same client against the same server successfully, including the multi-peer case.
+
+What is left is the one structural difference: the loopback TCK builds engines directly through `provider.createServerEngine` / `createClientEngine`, while this test builds the client **inside `KernelBootstrap.boot(...)`**. That path differs concretely — with the kernel booted, `KernelProviders.MEMORY_ALLOCATOR` is bound, so `resolveDeps` hands the client the kernel's allocator and sets `closeAllocatorOnClose = false`; outside a boot the client creates its own. So the untested combination is *client-through-bootstrap*, not *client against server*.
+
+**Owner:** Community http.
+
+**Calibration — and the reassuring half of it does not hold.** The natural read was "the loopback TCK passes, so a client defect is unlikely". Measured: `CommunityHttpProviderLoopbackTckTest` never touches crypto, so `KernelProviders.CRYPTO_PROVIDER` is unbound there and the client it exercises is **plaintext**. The TCK has never run a TLS client at all, so its passing says nothing about the path that fails here. A client defect is therefore *more* plausible than the TCK's green suggested, not less.
+
+**And the client cannot be asked for plaintext.** `NativeTcpTransportProvider.resolveCryptoConfig` returns `CryptoProviderConfig.tcpClient()` for **every** `CLIENT`-mode transport, unconditionally, and `createTlsEngineIfEnabled()` arms whenever a crypto provider is bound. So a kernel that booted the crypto subsystem makes every outbound HTTP call TLS, whatever the peer speaks — there is no knob and no per-request choice. That is a finding in its own right, and it also invalidated this entry's first control experiment: removing the server's cert did not produce a plaintext pair, it produced a TLS client against a plaintext server, which is why that run timed out instead of failing the way the TLS run does.
+
+Two subordinate hypotheses were tested and excluded: the client running inside the boot `ScopedValue` scope (it fails identically on a detached thread), and the client sharing the kernel's bound `MemoryAllocator` (same).
+
+**Merge Gate:** the recovered test passes over TLS and plaintext without a skip gate, or the client defect it exposes is fixed with its own TCK case for the bound-allocator path.
+
+**Status (v0.12): NOT STARTED** — the cert gate in that one file is still live, and is the last of the four #375 identified.
+
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.
