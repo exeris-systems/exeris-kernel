@@ -5,10 +5,10 @@
 package eu.exeris.kernel.community.metrics;
 
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
+import eu.exeris.kernel.tck.support.TckScope;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.util.concurrent.StructuredTaskScope;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -120,7 +120,7 @@ class PrometheusMetricsSinkTest {
         int threads = 16;
         int perThread = 1_000;
 
-        try (var scope = StructuredTaskScope.open(StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+        try (var scope = TckScope.openFailFast()) {
             for (int t = 0; t < threads; t++) {
                 scope.fork(() -> {
                     for (int j = 0; j < perThread; j++) {

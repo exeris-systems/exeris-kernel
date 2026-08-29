@@ -9,12 +9,12 @@ import eu.exeris.kernel.spi.memory.LeakDetectionMode;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import eu.exeris.kernel.tck.support.TckScope;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.util.concurrent.StructuredTaskScope;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -206,9 +206,7 @@ class WatermarkManagerTest {
             var stub = allocatorWith(850_000, 1_000_000);
             var mgr = new WatermarkManager(stub);
 
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner
-                            .<WatermarkLevel>awaitAllSuccessfulOrThrow())) {
+            try (var scope = TckScope.openFailFast()) {
                 for (int i = 0; i < 100; i++) {
                     scope.fork(mgr::refresh);
                 }
