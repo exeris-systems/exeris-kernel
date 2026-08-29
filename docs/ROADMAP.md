@@ -2543,7 +2543,17 @@ Read first, and not because of severity: the eight `uncaught-number-format-excep
 
 **1.0 disposition:** 1.0-recommended.
 
-**Status (v0.12): NOT STARTED.**
+**Status (v0.12): DELIVERED — thirty triaged, thirty dismissed with a written reason, zero code changes.**
+
+**The entry's own reading of the parsing alerts was wrong, and that is the useful part.** It called the eight `uncaught-number-format-exception` findings "a contract question wearing a lint finding's clothes". Read at the sites, they are not one group and none is a contract gap. The four in `CommunityCronSchedule` are enforced where it cannot be bypassed: `JobTrigger.Cron`'s **canonical constructor** calls `CronSyntax.requireValid`, which reaches `CronFieldBounds.parseNumber` for every numeric position `fillTerm` later re-parses, and `parseNumber` rejects empty, over-two-digit and non-digit input *before* its own `Integer.parseInt` — so the value `fillTerm` sees is one or two digits and can neither fail to parse nor overflow. The three in `CommunityPersistenceMigrationRunner` take their groups from `V(\d+)\.(\d+)\.(\d+)__`, so only overflow could throw and a filename would need a nineteen-digit version component. The eighth is a test parsing its own fixture.
+
+**Seven of the thirty had a single cause, and it is about the analyser rather than the code:** CodeQL does not model **unnamed variables** (JEP 456). Five are record deconstruction patterns (`case JobTrigger.FixedInterval(Duration _, Duration interval)`) and two are lambda parameters (`(_, throwable) ->`); `_` is the language's way of saying *deliberately unused*, so acting on them would mean naming a variable in order not to use it. Expect the count to regrow as the codebase uses the feature more.
+
+**Two more groups were correct code the analysis cannot see through.** The three `constant-comparison` findings are the canonical `Condition` wait loop — `signals` is guarded by the class's `ReentrantLock`, which `await()` releases and reacquires, so another thread mutates it between the comparison and the re-check; the comparison is constant only to an analysis that does not model that release. Seven `unused-parameter` findings sit on declarations with no body — interface methods, an abstract TCK hook, a no-op default, a test stub — where a parameter is contract surface precisely because nothing reads it.
+
+**Method note worth keeping.** Alerts are computed on `refs/heads/main`, so their line numbers belong to that commit and not to the development line. Reading `CommunityPathFinder` on `development/0.12.0` pointed at unrelated lines and would have produced a confident wrong verdict; the same trap the Dependabot sweep recorded. Read the flagged file at the alert's own `commit_sha`.
+
+**Zero code changes, and that is the outcome rather than an omission.** The triage's product is that the count now carries information: an alert nobody has read and an alert deliberately accepted are no longer the same row. The GitHub dismissal comment is capped at 280 characters, so the reasoning lives here and the comment points at it.
 
 ---
 
