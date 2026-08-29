@@ -2465,7 +2465,7 @@ The fixture is a second obstacle, and it is the one that shapes the work. The on
 
 **1.0 disposition:** 1.0-blocking. `spi.persistence` is declared stable, and this is the contract whose silence let two implementations answer differently without either being wrong.
 
-**Status (v0.12):** ADR-080 **ACCEPTED** (#379), closing RFC-2026-08-28; the measured type set is in-repo as `docs/rowcursor-type-set.md`. Implementation **NOT STARTED**.
+**Status (v0.12): DELIVERED.** ADR-080 accepted in #379; the engine-independent half — NULL and column-index contracts across all thirteen accessors, in the javadoc and in `AbstractRowCursorTck` — in #381; the type set, the refusal and `EX-PERS-5008` in #382. **The fixture obstacle above turned out to be the smaller of two.** Probing pgjdbc before writing the refusal killed the intended design: `bool` (rendered) and `bit` (refused) are both reported as `Types.BIT`, so a JDBC type code cannot separate them, and a native `enum` arrives as `Types.VARCHAR` under the application's own type name, so no code and no OID range catches it — only a name set does, which is what ADR-080 had already ruled and what the measurement then justified. The larger finding was that the guarantee is not engine-portable at all: H2 renders `bool` as `TRUE` where PostgreSQL renders `t`, so §2 is scoped to the server the set was measured on, detected per result set, and stated in `persistence.md` rather than implied. Recorded because the entry above predicted a fixture problem and the real constraint was a contract-portability one.
 
 ---
 
