@@ -393,6 +393,13 @@ forgot their tokens — so it gets diagnosed against the clients. Read `NO_PROVI
 `PROVIDER_ERROR` carries the same warning in smaller print. An unreachable JWKS endpoint degrades to
 "every token fails", which reads as a credential problem and is an outbound-connectivity one.
 
+**Emitting the reason is a per-transport obligation.** The decision layer is shared — Core owns
+`SecurityInterceptor` and `RouteAuthorizationEnforcer`, so every transport inherits one admission
+rule — but the two reasons a *dispatcher* determines (`NO_PROVIDER`, `TOKEN_MISSING`) are known only
+where the request is decoded, and each transport has to emit them at its own sites. A transport that
+does not is not wrong on the wire and is dark in the recording, which is exactly the failure this
+section describes.
+
 **Until 0.12 two of these were advertised and never emitted.** The JFR event's own description named
 `NO_PROVIDER` and `TOKEN_MISSING`, and nothing produced either — so an operator filtering on
 `NO_PROVIDER` got an empty result and could reasonably conclude no deployment had ever been
