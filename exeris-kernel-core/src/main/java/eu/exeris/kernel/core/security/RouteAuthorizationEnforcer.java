@@ -61,7 +61,11 @@ public final class RouteAuthorizationEnforcer {
      * @return the decision
      */
     public static RouteDecision decide(RouteRequirement requirement, PrincipalContext principal) {
-        if (requirement == null) {
+        if (requirement == null || requirement.isAbstention()) {
+            // An abstention here means a policy declared "not mine" with nothing behind it to
+            // answer — the application bound a composable policy without composing it. Same class of
+            // defect as a null answer, same treatment, for the same reason: reading it as "no
+            // requirement" would admit every route its author declined to describe (ADR-061 A2).
             return deny(principal);
         }
         if (requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
@@ -85,6 +89,9 @@ public final class RouteAuthorizationEnforcer {
             case PERMIT_ALL, AUTHENTICATED -> true;
             case ANY_SCOPE -> hasAny(requirement, principal);
             case ALL_SCOPES -> hasAll(requirement, principal);
+            // Unreachable while decide() guards above, and false rather than true precisely so a
+            // future caller reaching this method without the guard fails closed.
+            case ABSTAIN -> false;
         };
     }
 

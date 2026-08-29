@@ -54,6 +54,12 @@ public final class RouteRequirement {
 
     private static final RouteRequirement PERMIT_ALL =
             new RouteRequirement(Kind.PERMIT_ALL, Set.of(), Execution.PROMPT);
+    /**
+     * Execution is {@code PROMPT} because an abstention has no execution facet to declare; the value
+     * is inert and never read by an admitted request, since an abstention never admits one.
+     */
+    private static final RouteRequirement ABSTAIN =
+            new RouteRequirement(Kind.ABSTAIN, Set.of(), Execution.PROMPT);
     private static final RouteRequirement AUTHENTICATED =
             new RouteRequirement(Kind.AUTHENTICATED, Set.of(), Execution.PROMPT);
     // Shared too, so longRunning() on the scope-free shapes stays allocation-free on a path the
@@ -72,7 +78,20 @@ public final class RouteRequirement {
         /** Verified identity holding at least one of the declared scopes. */
         ANY_SCOPE,
         /** Verified identity holding every declared scope. */
-        ALL_SCOPES
+        ALL_SCOPES,
+        /**
+         * This policy does not describe the route (ADR-061 amendment A2).
+         *
+         * <p>Not a requirement, and deliberately not one of the answers above: {@code PERMIT_ALL}
+         * describes a route as public, while this describes nothing at all. It exists so a policy
+         * composed with others can decline a route instead of guessing a stance for it.
+         *
+         * <p>Reaching a decision point unfolded is a defect, not a permission — see
+         * {@link #abstain()}.
+         *
+         * @since 0.12.0
+         */
+        ABSTAIN
     }
 
     /**
@@ -111,6 +130,38 @@ public final class RouteRequirement {
      */
     public static RouteRequirement permitAll() {
         return PERMIT_ALL;
+    }
+
+    /**
+     * States that this policy does not describe the route, leaving the answer to another (ADR-061
+     * amendment A2).
+     *
+     * <p><b>Only meaningful inside a composition.</b> {@link HttpRoutePolicy#firstDeclared} folds an
+     * ordered list of policies and takes the first non-abstaining answer; abstention is how a policy
+     * says "keep looking". A policy bound directly to the provider slot is still contractually total,
+     * because nothing downstream will fold for it — an abstention that reaches the decision point is
+     * treated as the defect it is and denies, in the same shape a {@code null} answer does.
+     *
+     * <p>This is not {@link #permitAll()}. That describes a route as public; this describes nothing,
+     * and the difference is the whole point: a generated policy that answered {@code permitAll()} for
+     * routes it did not generate would silently overrule the stance the application already chose for
+     * its unmatched routes.
+     *
+     * @return the shared abstention
+     * @since 0.12.0
+     */
+    public static RouteRequirement abstain() {
+        return ABSTAIN;
+    }
+
+    /**
+     * Whether this is an abstention rather than a requirement.
+     *
+     * @return {@code true} if this policy declined to describe the route
+     * @since 0.12.0
+     */
+    public boolean isAbstention() {
+        return kind == Kind.ABSTAIN;
     }
 
     /**
@@ -190,6 +241,12 @@ public final class RouteRequirement {
             case PERMIT_ALL -> PERMIT_ALL_LONG_RUNNING;
             case AUTHENTICATED -> AUTHENTICATED_LONG_RUNNING;
             case ANY_SCOPE, ALL_SCOPES -> new RouteRequirement(kind, scopes, Execution.LONG_RUNNING);
+            // An abstention declares nothing about the route, its execution mode included. Returning
+            // `this` would hand back a non-declaration the caller believes is marked long-running —
+            // a plausible wrong answer, which is worse here than a loud one at composition time.
+            case ABSTAIN -> throw new IllegalStateException(
+                    "abstain() declares nothing about a route, so it cannot be marked LONG_RUNNING; "
+                            + "declare the requirement in the policy that owns the route");
         };
     }
 

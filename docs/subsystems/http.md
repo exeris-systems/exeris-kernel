@@ -215,6 +215,31 @@ The policy answers `RouteRequirement` (`permitAll` / `authenticated` / `requirin
 `PrincipalContext` into admit / `401` / `403`. Roles are not expressible here — see
 [`security.md`](security.md) for why the edge checks scopes and `@RequiresRole` stays at the method.
 
+**A policy may decline a route, so two authors can share the URL space (since 0.12, ADR-061 A2).**
+`requirementFor` is total, which is right for one policy and is exactly what stopped two from
+coexisting: whichever was bound had to answer for every route, including those it knew nothing about,
+and its only options were the fail-open/fail-closed pair the application had already chosen. Build-time
+tooling hit this first — a generated policy can describe generated routes and nothing else.
+
+`RouteRequirement.abstain()` says *"this policy does not describe this route"*, which is neither
+`permitAll()` (that describes it as public) nor `null` (that is a defect).
+`HttpRoutePolicy.firstDeclared(policies, whenNoneDeclares)` folds an ordered list and takes the first
+non-abstaining answer. Three properties are load-bearing:
+
+- **Totality moves to the fold.** A composed policy is total over its own routes; the composition is
+  what is total. A policy bound directly to the slot is still total alone, because nothing folds for
+  it — an abstention reaching the enforcer is a defect and denies, exactly as `null` does.
+- **`whenNoneDeclares` has no default.** It is the unmatched stance, and giving it a default would
+  re-create the problem abstention solves: a second author answering a question the application had
+  already answered. Passing an abstention there is refused at composition time.
+- **Order is the declaration.** With two policies claiming one route the earlier wins and the later
+  never runs, so composing a generated policy *after* a hand-written one is how an application keeps
+  the last word on a route it wrote.
+
+Abstention covers the whole carrier, execution facet included — `abstain().longRunning()` throws
+rather than returning a non-declaration marked long-running. Two policies cannot each contribute half
+a route's answer; splitting the facets would be a different decision and ADR-061 A2 does not take it.
+
 **A route also declares how it executes (since 0.12, ADR-077).** `RouteRequirement` carries an
 execution facet — `PROMPT` by default, `LONG_RUNNING` via `longRunning()`. It is about the route, not
 about a connection: this SPI stays blind to what a driver holds, and the Community dispatcher is what

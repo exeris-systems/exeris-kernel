@@ -315,6 +315,167 @@ public abstract class AbstractHttpRoutePolicyTck {
         }
     }
 
+    @Nested
+    @DisplayName("Composition (ADR-061 amendment A2) — a policy may decline to answer")
+    class Composition {
+
+        private static final String OWNED = "/owned";
+        private static final String OTHER = "/other";
+
+        /** Declares one route and abstains everywhere else — the shape a composed policy has. */
+        private HttpRoutePolicy declaring(String path, RouteRequirement requirement) {
+            return (method, requested) ->
+                    path.equals(requested) ? requirement : RouteRequirement.abstain();
+        }
+
+        @Test
+        @DisplayName("each policy answers for its own routes and abstains for the others")
+        void eachPolicyAnswersItsOwnRoutes() {
+            HttpRoutePolicy composed = HttpRoutePolicy.firstDeclared(
+                    List.of(declaring(OWNED, RouteRequirement.requiringAnyScope(Set.of(READ))),
+                            declaring(OTHER, RouteRequirement.permitAll())),
+                    RouteRequirement.authenticated());
+
+            assertThat(decide(composed, HttpMethod.GET, OWNED, principalWith(READ)))
+                    .as("the first policy's route")
+                    .isEqualTo(Decision.ADMIT);
+            assertThat(decide(composed, HttpMethod.GET, OWNED, principalWith(WRITE)))
+                    .as("and its requirement is really applied, not merely found")
+                    .isEqualTo(Decision.FORBIDDEN);
+            assertThat(decide(composed, HttpMethod.GET, OTHER, null))
+                    .as("the second policy's route, reached only because the first abstained")
+                    .isEqualTo(Decision.ADMIT);
+        }
+
+        /**
+         * Order is the resolution rule, so it has to be observable. Both policies claim the route and
+         * answer differently; if the fold consulted the later one the decision would flip.
+         */
+        @Test
+        @DisplayName("on a route two policies claim, the earlier one wins")
+        void earlierPolicyWinsAContestedRoute() {
+            // The fallback is permitAll() on purpose: with authenticated() here, a fold that skipped
+            // the policies entirely would answer the same denial as the winning policy and the test
+            // would pass without the fold ever having resolved anything.
+            HttpRoutePolicy composed = HttpRoutePolicy.firstDeclared(
+                    List.of(declaring(OWNED, RouteRequirement.requiringAnyScope(Set.of(READ))),
+                            declaring(OWNED, RouteRequirement.permitAll())),
+                    RouteRequirement.permitAll());
+
+            assertThat(decide(composed, HttpMethod.GET, OWNED, null))
+                    .as("the later permitAll() must not be reached, nor the fallback")
+                    .isEqualTo(Decision.UNAUTHENTICATED);
+            assertThat(decide(composed, HttpMethod.GET, OWNED, principalWith(READ)))
+                    .as("and the earlier policy's scope is the one applied")
+                    .isEqualTo(Decision.ADMIT);
+        }
+
+        /**
+         * The case that keeps the group honest in the other direction: a fold that always answered
+         * the first policy — abstention and all — passes the two above and fails here.
+         */
+        @Test
+        @DisplayName("when every policy abstains, the declared stance answers — fail-closed")
+        void allAbstainResolvesToTheDeclaredStanceFailClosed() {
+            HttpRoutePolicy composed = HttpRoutePolicy.firstDeclared(
+                    List.of(declaring(OWNED, RouteRequirement.permitAll()),
+                            declaring(OTHER, RouteRequirement.permitAll())),
+                    HttpRoutePolicy.unmatched());
+
+            assertThat(decide(composed, HttpMethod.GET, "/described-by-nobody", null))
+                    .as("the application's fail-closed stance, not an admission")
+                    .isEqualTo(Decision.UNAUTHENTICATED);
+        }
+
+        /** The same fold with the opposite stance, because one direction proves only half a choice. */
+        @Test
+        @DisplayName("when every policy abstains, the declared stance answers — fail-open")
+        void allAbstainResolvesToTheDeclaredStanceFailOpen() {
+            HttpRoutePolicy composed = HttpRoutePolicy.firstDeclared(
+                    List.of(declaring(OWNED, RouteRequirement.authenticated())),
+                    RouteRequirement.permitAll());
+
+            assertThat(decide(composed, HttpMethod.GET, "/described-by-nobody", null))
+                    .as("a fold that ignored whenNoneDeclares would deny here")
+                    .isEqualTo(Decision.ADMIT);
+        }
+
+        @Test
+        @DisplayName("an abstention reaching the decision point is a defect and denies")
+        void unfoldedAbstentionDenies() {
+            assertThat(decide(RouteRequirement.abstain(), null))
+                    .as("no identity — denied as unauthenticated, exactly as a null answer is")
+                    .isEqualTo(Decision.UNAUTHENTICATED);
+            assertThat(decide(RouteRequirement.abstain(), principalWith(READ, WRITE)))
+                    .as("identity present — forbidden, not admitted, however many scopes it carries")
+                    .isEqualTo(Decision.FORBIDDEN);
+        }
+
+        /**
+         * A {@code null} is a defect, not a quieter abstention. Reading it as "keep looking" would
+         * let a broken policy hand its routes to the next one instead of denying them.
+         */
+        @Test
+        @DisplayName("a null answer from a composed policy denies rather than falling through")
+        void nullFromAComposedPolicyStaysADefect() {
+            HttpRoutePolicy composed = HttpRoutePolicy.firstDeclared(
+                    List.of((method, path) -> null,
+                            declaring(OWNED, RouteRequirement.permitAll())),
+                    RouteRequirement.permitAll());
+
+            assertThat(decide(composed, HttpMethod.GET, OWNED, null))
+                    .as("the following policy would have admitted; the defect must win")
+                    .isEqualTo(Decision.UNAUTHENTICATED);
+        }
+
+        @Test
+        @DisplayName("an abstaining fallback is refused at composition time")
+        void abstainingFallbackIsRefused() {
+            List<HttpRoutePolicy> policies = List.of(HttpRoutePolicy.permitAll());
+
+            assertThatThrownBy(() ->
+                    HttpRoutePolicy.firstDeclared(policies, RouteRequirement.abstain()))
+                    .as("a composition answering abstain() denies every undeclared route")
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        /**
+         * The guards are documented as {@code @throws}, so each needs a case — a declared exception
+         * nothing exercises is the same unasserted promise as an allow-list entry nothing renders.
+         */
+        @Test
+        @DisplayName("the composition refuses null arguments rather than failing at request time")
+        void nullArgumentsAreRefusedAtCompositionTime() {
+            RouteRequirement stance = RouteRequirement.permitAll();
+            List<HttpRoutePolicy> withNullElement =
+                    java.util.Arrays.asList(HttpRoutePolicy.permitAll(), null);
+
+            assertThatThrownBy(() -> HttpRoutePolicy.firstDeclared(null, stance))
+                    .as("a null policy list")
+                    .isInstanceOf(NullPointerException.class);
+            assertThatThrownBy(() -> HttpRoutePolicy.firstDeclared(List.of(), null))
+                    .as("a null unmatched stance — the argument that exists to be stated")
+                    .isInstanceOf(NullPointerException.class);
+            assertThatThrownBy(() -> HttpRoutePolicy.firstDeclared(withNullElement, stance))
+                    .as("a null element, caught at composition rather than on the first request "
+                            + "that happens to reach it")
+                    .isInstanceOf(NullPointerException.class);
+        }
+
+        @Test
+        @DisplayName("an abstention cannot be marked long-running — it declares no execution facet")
+        void abstentionCarriesNoExecutionFacet() {
+            RouteRequirement abstention = RouteRequirement.abstain();
+
+            assertThat(abstention.isAbstention()).isTrue();
+            assertThat(RouteRequirement.permitAll().isAbstention())
+                    .as("and a real requirement is not one")
+                    .isFalse();
+            assertThatThrownBy(abstention::longRunning)
+                    .isInstanceOf(IllegalStateException.class);
+        }
+    }
+
     private static PrincipalContext principalWith(String... scopes) {
         return ImmutablePrincipal.ofScopes(UUID.randomUUID(), Set.of(scopes));
     }
