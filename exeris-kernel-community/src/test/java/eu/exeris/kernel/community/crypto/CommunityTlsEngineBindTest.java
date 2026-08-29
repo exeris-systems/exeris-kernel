@@ -4,14 +4,15 @@
  */
 package eu.exeris.kernel.community.crypto;
 
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -20,6 +21,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 @DisplayName("L2: CommunityTlsEngine FD bind")
 class CommunityTlsEngineBindTest {
+
+    @TempDir
+    private Path tlsMaterialDir;
 
     @Test
     @DisplayName("client mode: bindFileDescriptor(-1) fails with TlsHandshakeException")
@@ -47,10 +51,12 @@ class CommunityTlsEngineBindTest {
     void serverBindInvalidFdFails() {
         CommunityKernelCryptoProvider provider = createProviderOrSkip();
 
-        Path certPath = Path.of("..", "native-libs", "certs", "server.crt").normalize();
-        Path keyPath = Path.of("..", "native-libs", "certs", "server.key").normalize();
-        assumeTrue(Files.isRegularFile(certPath) && Files.isRegularFile(keyPath),
-                "TLS test cert/key not found — skipping server bind test");
+        // Generated, not located. The path this used to probe — ../native-libs/certs — is in no
+        // commit, no .gitignore, no script and no workflow, so the assumption never held and this
+        // test had never run anywhere while reporting as passing. Same fix as #375.
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+        Path certPath = certificate.certificate();
+        Path keyPath = certificate.privateKey();
 
         TlsEngine tlsEngine = provider.createTlsEngine(CryptoProviderConfig.httpsServer(certPath, keyPath));
         assertThat(tlsEngine)
