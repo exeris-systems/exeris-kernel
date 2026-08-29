@@ -250,6 +250,16 @@ public abstract class AbstractRowCursorTck {
          * The direction that makes the group non-vacuous: a cursor answering "NULL" to everything
          * would satisfy every assertion above. These prove the same accessors return the value on a
          * row that has one, so the NULL behaviour is a response to the datum and not a constant.
+         *
+         * <p>Every accessor asserted to throw or to return a sentinel on NULL needs its counterpart
+         * here, or that accessor's NULL case is satisfied by an implementation that always throws.
+         * {@code getSegment} and {@code getBytes} are the two that reach for the raw bytes, and both
+         * are reachable on the text column.
+         *
+         * <p>{@code getUuid} and {@code getInstant} are deliberately absent: their behaviour on a
+         * text column is the type-domain question ADR-080 §3 rules on, asserted by the type-set half
+         * of this TCK against a fixture where the column types are known. Asserting them here would
+         * pin driver-specific coercion as though it were the contract.
          */
         @Test
         @DisplayName("the same accessors return values on a non-NULL row")
@@ -260,7 +270,11 @@ public abstract class AbstractRowCursorTck {
                 RowCursor row = result.row();
                 assertThat(row.isNull(0)).as("isNull on a populated column").isFalse();
                 assertThat(row.getString(2)).isEqualTo(expectedString());
+                assertThat(row.getBytes(2)).as("getBytes on a populated column").isNotNull();
                 assertThat(row.getLength(2)).as("getLength on a populated column").isNotEqualTo(-1);
+                assertThat(row.getSegment(2).byteSize())
+                        .as("getSegment must span exactly the bytes getLength reports")
+                        .isEqualTo(row.getLength(2));
                 assertThat(row.getInt(0)).isEqualTo(expectedInt());
             }
         }
