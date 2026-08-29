@@ -215,7 +215,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `RouteExecutionEvent` *(implemented, community module; `eu.exeris.kernel.community.http.RouteExecutionEvent`; since 0.12.0, ADR-077)* | A route declared `LONG_RUNNING` finishes — the duration is what reveals a declaration that has gone stale. **Carries a request path**, the first kernel event that does; see the class Javadoc for why and what it exposes | `method`, `path`, `declaredExecution`, `handlerDurationNs` |
 | `AsyncTelemetryDropEvent` *(eu.exeris.kernel.core.telemetry; since 0.7.0)* | Emitted on every drop by `AsyncTelemetrySink` when the bounded ring is full | `sinkName`, `eventCode`, `totalDrops`, `ringCapacity` |
 | `CommunityTlsHandshakeEvent` *(implemented, community module; present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
-| `TlsPhaseTransitionEvent` | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
+| `TlsPhaseTransitionEvent` | Every `TlsStateMachine` phase transition | `fromPhase`, `toPhase` |
 | `TlsEngineCloseEvent` | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
 | `TlsHandshakeEvent` | Start and end of TLS handshake | `sslPtr`, `mode`, `protocol`, `cipher`, `negotiatedAlpn`, `durationNanos` |
 | `TlsHandshakeFailureEvent` | Handshake exception | `sslPtr`, `mode`, `errorCode`, `failureReason`, `sslErrorCode` |
@@ -244,7 +244,9 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 > since 0.5.0.** `TlsHandshakeEvent` carries `@since 0.5.0`; all four are committed from
 > `TlsStateMachine` / `OffHeapTlsEngine`, with `CommunityTlsHandshakeEvent` on the Community path.
 > Their field lists were wrong too — `TlsHandshakeEvent` was documented with a `sessionId` that does
-> not exist, and without `sslPtr`, `mode` and `negotiatedAlpn`. Glass-Box is this project's headline
+> not exist and without `sslPtr`, `mode` and `negotiatedAlpn`, and `TlsPhaseTransitionEvent` with an
+> `sslPtr` it does not carry: it names the transition, and the state machine's identity is the
+> engine's, not a field on every phase change. Glass-Box is this project's headline
 > observability claim, so a contract document under-reporting which of its events exist is a defect
 > in the claim rather than in the prose. `ConfigHotReloadEvent`, `OutboxDlqTransferEvent` and
 > `SagaLifecycleEvent` are genuinely absent.
