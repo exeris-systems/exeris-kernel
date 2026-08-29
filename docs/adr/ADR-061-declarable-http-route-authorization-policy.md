@@ -154,6 +154,52 @@ presenting a valid token. That is correct for a route with no requirement — `a
 `RouteRequirement.Kind` that asks for an identity without demanding a scope — but it is not what the
 trade-off described.
 
+## Amendment A2 (v0.12) — a policy may decline to answer, and the contract says what that costs
+
+Obligation 1 put one policy behind one slot, and `requirementFor` is contractually **total**: every
+`(method, path)` pair gets a non-null answer, with `null` read as a defect that denies. That totality
+is right for a single policy and is exactly what stops two from coexisting.
+
+The consumer it blocks is build-time tooling. A generated policy can describe the routes it
+generated and nothing else; to be bindable at all it would have to answer for every hand-written
+route in the application and guess a stance for each. The available guesses are the fail-open and
+fail-closed pair `unmatched()` already names — so a generated policy would re-answer a question the
+application had already answered, and silently overrule it. Obligation 1 did not anticipate a second
+author.
+
+**`RouteRequirement.abstain()` is added, together with a fold.** Abstention means *"this policy does
+not describe this route"* — distinct from `permitAll()`, which describes it as public, and from
+`null`, which is a defect. `HttpRoutePolicy.firstDeclared(policies, whenNoneDeclares)` folds an
+ordered list: the first non-abstaining answer wins.
+
+Three things make this an amendment rather than an addition, and each is a narrowing of something
+obligation 1 stated:
+
+**Totality now belongs to the fold, not to each policy.** A policy in a composition is total over
+*its own* routes and abstains elsewhere; the composition is total. A policy bound directly to the
+slot is still total on its own, because nothing downstream will fold for it.
+
+**The all-abstain answer is a required argument, not a default.** `whenNoneDeclares` has no default
+value, so the fail-open/fail-closed choice `unmatched()` names is made once, at the composition seam,
+by the application. A default here would have re-created the exact problem the abstention exists to
+solve: a second author answering the unmatched question.
+
+**An abstention that reaches the enforcer is a defect, and denies.** It means a policy declared "not
+mine" with nothing behind it to answer — so it is treated exactly as `null` is: `401` with no
+identity, `403` with one. `RouteAuthorizationEnforcer` owns that rule, and the exhaustive `switch`
+over `Kind` is what forces every future consumer to decide rather than fall through to admission.
+
+**Scope limit, stated rather than discovered.** `RouteRequirement` carries two facets — the
+authorization requirement and ADR-077's execution mode. Abstention is on the **whole carrier**: a
+policy that abstains declares nothing about the route, its execution mode included. Two policies
+cannot each contribute half a route's answer, and `abstain().longRunning()` therefore throws instead
+of returning a plausible non-declaration marked long-running. Splitting the facets would be a
+different decision, and this one does not take it.
+
+Obligation 6 is untouched: no new status code, no new error code. Obligation 8 extends — the TCK
+gains the fold cases, including the all-abstain one, because a fold that resolved all-abstain to
+anything other than the declared stance would pass a suite that only checked first-match.
+
 ## Consequences
 
 ### ✅ Positive Outcomes

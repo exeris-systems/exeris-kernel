@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.spi.http;
 
+import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -78,6 +80,67 @@ public interface HttpRoutePolicy {
      */
     static RouteRequirement unmatched() {
         return RouteRequirement.authenticated();
+    }
+
+    /**
+     * Folds an ordered list of policies, taking the first that declares a requirement for the route
+     * (ADR-061 amendment A2).
+     *
+     * <h2>Why the fallback has no default</h2>
+     * <p>{@code whenNoneDeclares} is a required argument because it is the fail-open/fail-closed
+     * choice {@link #unmatched()} names, and the whole reason abstention exists is that a second
+     * author must not answer it. A default here would re-create the problem it solves: a composed
+     * policy silently overruling the stance the application already chose.
+     *
+     * <h2>What each policy owes</h2>
+     * <p>Inside a composition a policy is total over <em>its own</em> routes and abstains elsewhere;
+     * the composition is what is total. A policy bound directly to the provider slot is still total
+     * on its own, because nothing will fold for it — an abstention reaching the decision point is a
+     * defect and denies.
+     *
+     * <p>Order is the resolution rule and therefore part of the application's declaration: with two
+     * policies claiming one route, the earlier wins and the later never runs. Composing a generated
+     * policy after a hand-written one is how an application keeps the last word on a route it wrote.
+     *
+     * <p>A {@code null} from a composed policy stays a defect and ends the fold — it is not read as a
+     * quieter abstention, which would let a broken policy hand its routes to the next one instead of
+     * denying them.
+     *
+     * <p>Allocation: the list is copied once here, so a request-time call allocates nothing.
+     *
+     * @param policies         the policies to consult, in order; must be non-null with no null element
+     * @param whenNoneDeclares the answer when every policy abstains — the application's unmatched
+     *                         stance, stated once; must be non-null and not itself an abstention
+     * @return a policy answering the first declared requirement, else {@code whenNoneDeclares}
+     * @throws IllegalArgumentException if {@code whenNoneDeclares} is an abstention
+     * @throws NullPointerException     if any argument or element is {@code null}
+     * @since 0.12.0
+     */
+    static HttpRoutePolicy firstDeclared(List<HttpRoutePolicy> policies,
+                                         RouteRequirement whenNoneDeclares) {
+        Objects.requireNonNull(policies, "policies");
+        Objects.requireNonNull(whenNoneDeclares, "whenNoneDeclares");
+        if (whenNoneDeclares.isAbstention()) {
+            throw new IllegalArgumentException(
+                    "whenNoneDeclares must be a requirement, not an abstention — a composition that "
+                            + "answers abstain() denies every undeclared route as a policy defect");
+        }
+        HttpRoutePolicy[] ordered = policies.toArray(new HttpRoutePolicy[0]);
+        for (HttpRoutePolicy policy : ordered) {
+            Objects.requireNonNull(policy, "policies element");
+        }
+        return (method, path) -> {
+            for (HttpRoutePolicy policy : ordered) {
+                RouteRequirement answer = policy.requirementFor(method, path);
+                if (answer == null) {
+                    return null;
+                }
+                if (!answer.isAbstention()) {
+                    return answer;
+                }
+            }
+            return whenNoneDeclares;
+        };
     }
 
     /**
