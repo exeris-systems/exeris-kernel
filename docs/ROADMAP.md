@@ -2505,7 +2505,7 @@ The first is the one that matters, and it is the one the shared shape hides. A d
 
 **1.0 disposition:** 1.0-recommended (operability).
 
-**Status (v0.12): NOT STARTED.**
+**Status (v0.12): DELIVERED.** **The premise above was wrong in a way worth keeping.** The reasons did not merely go unrecorded — the JFR event's own `@Description` named `NO_PROVIDER` and `TOKEN_MISSING`, and nothing in the kernel emitted either, while the two it did emit (`PROVIDER_ERROR`, `PRE_AUTH_BRIDGE_ERROR`) were undocumented. `SecurityInterceptor`'s javadoc advertised a third pairing again, with a different error code than the one emitted. So this was not a missing distinction but an **advertised and undelivered** one, the same shape as the carried-and-unenforced `idleTimeoutMillis` earlier in this milestone: a name treated as evidence of a consumer. `SecurityDenialReason` now binds each reason to its error code (`EX-SEC-2001` = nothing to validate, `EX-SEC-2002` = validation attempted and failed), and the two dark sites emit. One of them was dark for a specific reason worth recording: the call site read `securityInterceptor != null && interceptRequest(...)`, so the method that knows why the denial happened never ran in the `NO_PROVIDER` case — an emit added inside it would have stayed dead.
 
 ---
 

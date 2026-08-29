@@ -7,6 +7,8 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.security.RouteAuthorizationEnforcer;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
+import eu.exeris.kernel.core.security.jfr.SecurityDenialReason;
+import eu.exeris.kernel.core.security.jfr.SecurityJfrEvents;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -183,8 +185,11 @@ final class CommunityHttpRequestDispatcher {
         }
         // Identity is required — or the policy returned null, which is a defect the enforcer
         // turns into a denial rather than an admission.
-        boolean intercepted = securityInterceptor != null
-                && interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
+        // The null check that used to guard this call has moved inside interceptRequest. Left here it
+        // short-circuited the method that knows why the denial happened, so the NO_PROVIDER case
+        // could never reach its own emit site — the reason the event advertised it and never carried it.
+        boolean intercepted =
+                interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
         if (!intercepted) {
             exchange.get().respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
             return false;
@@ -192,13 +197,26 @@ final class CommunityHttpRequestDispatcher {
         return true;
     }
 
+    /**
+     * Establishes a security context, reporting why when it cannot.
+     *
+     * <p>Each denial emits at the site that knows the reason. The interceptor emits its own
+     * ({@code TOKEN_INVALID}, {@code PROVIDER_ERROR}); the two this method owns were dark until 0.12
+     * even though the JFR event's description named them, so an operator filtering on
+     * {@code NO_PROVIDER} saw nothing and could read a misconfigured deployment as a client problem.
+     *
+     * <p>The response is identical for every reason — one {@code 401}, no body. Telling an
+     * unauthenticated caller which of the three applies would hand them a probe oracle.
+     */
     private boolean interceptRequest(HttpRequest request, Runnable admittedHandler) {
         if (securityInterceptor == null) {
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.NO_PROVIDER);
             return false;
         }
 
         LoanedBuffer tokenBuffer = createBearerTokenBuffer(request.headers());
         if (tokenBuffer == null) {
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.TOKEN_MISSING);
             return false;
         }
 

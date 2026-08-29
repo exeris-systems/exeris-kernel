@@ -48,7 +48,7 @@ Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically
 
 1. **spi** has zero Exeris dependencies — it is the immutable foundation.
 2. **core** depends only on **spi**.
-3. **community** depends on **spi** and **core** (for shared TLS/memory infrastructure — `AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`). As of `0.6.0`, `exeris-kernel-community` contains full subsystem driver implementations (bootstrap, crypto, events, flow, graph, HTTP dispatch, memory, persistence, security, telemetry, transport) and declares compile dependencies on `exeris-kernel-spi`, `exeris-kernel-core`, `slf4j-api`, and `jctools-core`.
+3. **community** depends on **spi** and **core**, for two distinct reasons: shared TLS/memory infrastructure (`AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`) and the **driver-agnostic decision layer** a driver must not re-implement per transport (`SecurityInterceptor`, `RouteAuthorizationEnforcer`, `SecurityJfrEvents`). The second is the placement ADR-061 obligation 2 fixed: one decision layer every transport inherits, rather than each driver growing its own and disagreeing. As of `0.6.0`, `exeris-kernel-community` contains full subsystem driver implementations (bootstrap, crypto, events, flow, graph, HTTP dispatch, memory, persistence, security, telemetry, transport) and declares compile dependencies on `exeris-kernel-spi`, `exeris-kernel-core`, `slf4j-api`, and `jctools-core`.
 4. **enterprise** depends on **spi** and **core** (same shared infrastructure).
 5. **community** and **enterprise** never depend on each other.
 6. Applications depend on **core** and **one** selected driver (community *or* enterprise).

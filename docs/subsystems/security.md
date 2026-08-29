@@ -362,8 +362,48 @@ For mTLS requirements, operate an mTLS-terminating proxy (e.g., Envoy, Nginx) in
 
 | Event | When Emitted | Key Fields |
 |:------|:-------------|:-----------|
-| `SecurityContextMissingEvent` | Token rejection in `SecurityInterceptor.intercept()` (EX-SEC-2001) | `errorCode`, `component` |
+| `SecurityContextMissingEvent` | Any denial where no security context could be established | `errorCode`, `dropReason` |
 | `InsufficientPrivilegesEvent` | `CitadelGuard` RBAC gate denial (EX-SEC-2003) | `errorCode`, `requiredRole` |
+
+### Why a denial names its reason (since 0.12)
+
+Three unrelated situations produce the same `401`, and the response has to stay the same for all
+three — telling an unauthenticated caller *which* one applies hands them a probe oracle. The reason
+therefore lives in telemetry, where the operator can read it and the caller cannot.
+
+`dropReason` is a `SecurityDenialReason`, and the code travels with it rather than beside it:
+
+| Reason | Error code | Meaning |
+|:---|:---|:---|
+| `NO_PROVIDER` | `EX-SEC-2001` | No security provider bound — the whole authenticated surface denies |
+| `TOKEN_MISSING` | `EX-SEC-2001` | A provider is bound; the request carried no bearer credential |
+| `TOKEN_INVALID` | `EX-SEC-2002` | A credential was presented and rejected |
+| `PROVIDER_ERROR` | `EX-SEC-2002` | The provider failed without calling it a rejection |
+| `PRE_AUTH_BRIDGE_ERROR` | `EX-SEC-2002` | Storage-context derivation failed after identity was accepted |
+
+The split between the two codes is the point: **`2001` means there was nothing to validate, `2002`
+means validation was attempted and failed.** That is what separates a misconfigured deployment from a
+rejected caller.
+
+`NO_PROVIDER` is the one worth alerting on. A deployment that never bound a provider denies every
+authenticated route, and on the wire that is indistinguishable from a fleet of clients that all
+forgot their tokens — so it gets diagnosed against the clients. Read `NO_PROVIDER` against
+`TOKEN_MISSING`: the second rising is a client change, the first rising is yours.
+
+`PROVIDER_ERROR` carries the same warning in smaller print. An unreachable JWKS endpoint degrades to
+"every token fails", which reads as a credential problem and is an outbound-connectivity one.
+
+**Emitting the reason is a per-transport obligation.** The decision layer is shared — Core owns
+`SecurityInterceptor` and `RouteAuthorizationEnforcer`, so every transport inherits one admission
+rule — but the two reasons a *dispatcher* determines (`NO_PROVIDER`, `TOKEN_MISSING`) are known only
+where the request is decoded, and each transport has to emit them at its own sites. A transport that
+does not is not wrong on the wire and is dark in the recording, which is exactly the failure this
+section describes.
+
+**Until 0.12 two of these were advertised and never emitted.** The JFR event's own description named
+`NO_PROVIDER` and `TOKEN_MISSING`, and nothing produced either — so an operator filtering on
+`NO_PROVIDER` got an empty result and could reasonably conclude no deployment had ever been
+misconfigured. Both now emit at the site that knows the reason.
 
 ---
 
