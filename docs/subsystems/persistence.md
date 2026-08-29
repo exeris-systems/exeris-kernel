@@ -89,6 +89,42 @@ Java-side logic and serialization waste.
 
 ---
 
+## `RowCursor` value contract (ADR-080, since 0.12)
+
+Every accessor answers three questions, and until ADR-080 most of them answered none of the three
+out loud: eleven of the thirteen declared no exception at all. Two of the answers are stated and
+asserted here; the third is the type domain, which ADR-080 rules and a later change makes executable.
+
+**Column index.** An index outside `[0, columnCount())` throws `IndexOutOfBoundsException` — all
+thirteen accessors, uniformly. Only `getInt` and `getSegment` said so before; the rest behaved this
+way without declaring it, which is a coincidence and not something an implementor can rely on.
+
+**SQL NULL.** The answer follows the return type rather than the column:
+
+| Accessor | On SQL NULL |
+|---|---|
+| `getInt`, `getLong`, `getShort`, `getFloat`, `getDouble`, `getBoolean` | throws `NullPointerException` — a primitive has no null to return |
+| `getString`, `getBytes`, `getUuid`, `getInstant` | returns `null` |
+| `getSegment` | throws `NullPointerException` — a read-only view of nothing is not a segment |
+| `getLength` | returns `-1` |
+| `isNull` | returns `true` |
+
+`isNull` is the intended pre-check for the primitive accessors, and the reason the NULL rule is worth
+stating rather than inferring: a caller reading a nullable column through `getLong` gets an exception
+on a value that is not an error, and the fix is a different call, not a catch.
+
+**Type domain.** What a converting accessor accepts, and what it does outside that set, is ruled by
+[ADR-080](../adr/ADR-080-rowcursor-value-contract.md) over the measured set in
+[`docs/rowcursor-type-set.md`](../rowcursor-type-set.md). `getString` is total over Tiers A and B and
+refuses outside them; a mismatched typed accessor widens where widening is lossless and throws where
+it is not. Asserted by the type-set half of the TCK, which needs a PostgreSQL fixture — the default
+`AbstractRowCursorTck` binding runs on H2, where most of the set has no defined answer.
+
+**TCK:** `AbstractRowCursorTck` (`eu.exeris.kernel.tck.contract.persistence`) — the index and NULL
+groups run against every binding in the default build.
+
+---
+
 ## Multi-Tenancy Isolation Strategies
 
 Exeris supports three levels of physical isolation, resolved transparently through the `StorageContext`:
