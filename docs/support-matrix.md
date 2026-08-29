@@ -33,6 +33,8 @@ Mirrors [`stability-matrix.md`](./stability-matrix.md) — that document is the 
 | `http` — `HttpStreamExchange`/`HttpStreamHandler`/`StreamEvent`, SSE server-push (ADR-043) | **preview** | 0.10.0 |
 | `security.identity` — `IdentityProvider`/`TokenValidator`/`VerifiedClaims` (ADR-040) | **preview** | 0.10.0 |
 | `events`, `graph`, `security`, `crypto` | **preview** | 0.5.0 |
+| `scheduling` — `JobScheduler` (ADR-057) | **preview** | 0.11.0 |
+| `storage.blob` — `BlobStorageProvider` (ADR-056) | **preview** | 0.11.0 |
 | `util` | _internal_ | — |
 
 ¹ `config` — the core provider/registry contract is **stable**; the v0.9 `@Immutable` annotation + watcher-refusal semantics (Sprint 5) are **preview** (see [`stability-matrix.md`](./stability-matrix.md)).
@@ -44,7 +46,7 @@ transport in Enterprise):
 
 - **Single-node only** — no built-in clustering/discovery; horizontal scale is the host application's concern.
 - **NIO transport carrier** — `java.nio` selector reactors, not `io_uring`; OpenSSL fd-owner TLS.
-- **Caffeine** is the only in-process cache; no pluggable `CacheProvider` yet.
+- **No in-process cache ships at all** — no cache dependency is declared anywhere in the reactor, and there is no `CacheProvider` SPI. An application that needs one supplies its own.
 - **Server push is SSE-only** — one-directional `HttpStreamExchange` since 0.10 (ADR-043); no WebSocket, so a full-duplex client still polls or opens a second request.
 - **Events are single-node by default** — the in-heap bus does not cross the node boundary and the Outbox is durable *emission*, not cross-node delivery; that needs the Kafka driver. See [`subsystems/events.md`](./subsystems/events.md) → *Delivery Boundary*.
 - Best-effort performance contract (No Waste Compute on hot paths, but not the Enterprise zero-copy native tier).
@@ -63,7 +65,6 @@ These are deliberately **not** in the Community kernel and live behind the Enter
 | Capability | Target | Driver |
 |:-----------|:-------|:-------|
 | WebSocket (full duplex) | after SSE | follows the SSE primitive (shipped 0.10); separately justified, not milestone-pinned |
-| `BlobStorageProvider`, `JobScheduler` SPI | v0.11 | new-SPI roadmap |
 | `CacheProvider` SPI | RFC-stage | new-SPI roadmap |
 | OTLP metrics export + distributed tracing | ~v0.12 | ADR-031 (kernel-gated) — no tracing logic in the kernel today |
 

@@ -215,10 +215,10 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `RouteExecutionEvent` *(implemented, community module; `eu.exeris.kernel.community.http.RouteExecutionEvent`; since 0.12.0, ADR-077)* | A route declared `LONG_RUNNING` finishes — the duration is what reveals a declaration that has gone stale. **Carries a request path**, the first kernel event that does; see the class Javadoc for why and what it exposes | `method`, `path`, `declaredExecution`, `handlerDurationNs` |
 | `AsyncTelemetryDropEvent` *(eu.exeris.kernel.core.telemetry; since 0.7.0)* | Emitted on every drop by `AsyncTelemetrySink` when the bounded ring is full | `sinkName`, `eventCode`, `totalDrops`, `ringCapacity` |
 | `CommunityTlsHandshakeEvent` *(implemented, community module; present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
-| `TlsPhaseTransitionEvent` *(planned, TRL‑4 target; not yet implemented)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
-| `TlsEngineCloseEvent` *(planned, TRL‑4 target; not yet implemented)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
-| `TlsHandshakeEvent` *(planned, TRL‑4 target; not yet implemented)* | Start and end of TLS handshake | `sessionId`, `protocol`, `cipher`, `durationNanos` |
-| `TlsHandshakeFailureEvent` *(planned, TRL‑4 target; not yet implemented)* | Handshake exception | `errorCode`, `peerAddress`, `failureReason` |
+| `TlsPhaseTransitionEvent` | Every `TlsStateMachine` phase transition | `fromPhase`, `toPhase` |
+| `TlsEngineCloseEvent` | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
+| `TlsHandshakeEvent` | Start and end of TLS handshake | `sslPtr`, `mode`, `protocol`, `cipher`, `negotiatedAlpn`, `durationNanos` |
+| `TlsHandshakeFailureEvent` | Handshake exception | `sslPtr`, `mode`, `errorCode`, `failureReason`, `sslErrorCode` |
 | `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
 | `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
 | `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |
@@ -239,6 +239,17 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `FlowProgressDisabledEvent` *(eu.exeris.kernel.flow.ProgressDisabled; core module, pkg-private, since v0.12)* | `FlowProgressPublisher` could not claim an event ordinal within its probe window and disabled progress publication for the life of the process. It is the only trace of that: `publishProgress` afterwards returns on a cached sentinel, so a subscriber to `FlowProgress` simply never receives anything — indistinguishable from a system in which no flow ever terminated. Emitted once, on the transition, not per call. | `eventTypeName`, `baseOrdinal`, `probeLimit` |
 | `CommunityConnectionIdleTimeoutEvent` *(eu.exeris.kernel.transport.CommunityConnectionIdleTimeout; community module, pkg-private, since v0.12)* | `NativeTcpIdleReaper` reclaimed a connection that moved no bytes for `transport.idleTimeoutMillis`. It is the **only** signal that the timeout did anything: no handler runs, and at the peer the reset is indistinguishable from any other — so without it an operator who lowers the limit cannot tell whether it took effect or the traffic changed. Both the observed idle span and the configured limit are carried, because the ratio is the diagnostic: spans clustered just past the limit mean a fleet trimmed on a threshold, spans far past it mean dead peers. No threshold is baked in. One event per reclaimed connection; no peer identity. | `streamId`, `reactorIndex`, `idleMillis`, `configuredTimeoutMillis` |
 | `CommunityKernelDiagnosticsEvent` *(eu.exeris.kernel.diagnostics.KernelDiagnostics; community module, pkg-private, since v0.9 — ADR-033 §EP step 8)* | One INFO audit event per out-of-process `KernelDiagnostics` call (codes `EX-DIAG-1001..1005`, where `EX-DIAG-1005` is the `getJvmErgonomics()` runtime-ergonomics snapshot), so operators can audit who introspected the kernel. Cold path, `@StackTrace(false)`, single-phase commit. | `errorCode`, `method` |
+
+> **Four of the TLS rows above were marked "not yet implemented" until 0.12, and have been emitted
+> since 0.5.0.** `TlsHandshakeEvent` carries `@since 0.5.0`; all four are committed from
+> `TlsStateMachine` / `OffHeapTlsEngine`, with `CommunityTlsHandshakeEvent` on the Community path.
+> Their field lists were wrong too — `TlsHandshakeEvent` was documented with a `sessionId` that does
+> not exist and without `sslPtr`, `mode` and `negotiatedAlpn`, and `TlsPhaseTransitionEvent` with an
+> `sslPtr` it does not carry: it names the transition, and the state machine's identity is the
+> engine's, not a field on every phase change. Glass-Box is this project's headline
+> observability claim, so a contract document under-reporting which of its events exist is a defect
+> in the claim rather than in the prose. `ConfigHotReloadEvent`, `OutboxDlqTransferEvent` and
+> `SagaLifecycleEvent` are genuinely absent.
 ### JFR Event Pattern (Zero-Allocation)
 
 ```java
