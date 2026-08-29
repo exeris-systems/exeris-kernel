@@ -166,11 +166,11 @@ class KernelProvidersTest {
     }
 
     // -----------------------------------------------------------------------
-    // 5. Convenience accessor guard methods
+    // 4. Convenience accessor guard methods
     // -----------------------------------------------------------------------
 
     @Nested
-    @DisplayName("5. Convenience accessor guard methods — throw SPI exceptions when unbound")
+    @DisplayName("4. Convenience accessor guard methods — throw SPI exceptions when unbound")
     class ConvenienceAccessorGuards {
 
         @Test
