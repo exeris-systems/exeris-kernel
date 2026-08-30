@@ -27,14 +27,32 @@ public final class MapConfigProvider implements ConfigProvider {
 
     private final Map<String, String> strings;
     private final Map<String, Integer> ints;
+    private final Map<String, Long> longs;
 
     public MapConfigProvider(Map<String, String> strings, Map<String, Integer> ints) {
+        this(strings, ints, Map.of());
+    }
+
+    /**
+     * @param strings string-typed keys
+     * @param ints    int-typed keys
+     * @param longs   long-typed keys — {@code getLong} returned empty unconditionally until 0.12,
+     *                so no test could assert that a boot path honours a long key at all, and every
+     *                body-size and timeout limit is one
+     */
+    public MapConfigProvider(Map<String, String> strings, Map<String, Integer> ints,
+                             Map<String, Long> longs) {
         this.strings = Map.copyOf(strings);
         this.ints = Map.copyOf(ints);
+        this.longs = Map.copyOf(longs);
     }
 
     public static MapConfigProvider ofInts(Map<String, Integer> ints) {
-        return new MapConfigProvider(Map.of(), ints);
+        return new MapConfigProvider(Map.of(), ints, Map.of());
+    }
+
+    public static MapConfigProvider ofLongs(Map<String, Long> longs) {
+        return new MapConfigProvider(Map.of(), Map.of(), longs);
     }
 
     @Override
@@ -54,7 +72,7 @@ public final class MapConfigProvider implements ConfigProvider {
 
     @Override
     public Optional<Long> getLong(String key) {
-        return Optional.empty();
+        return Optional.ofNullable(longs.get(key));
     }
 
     @Override

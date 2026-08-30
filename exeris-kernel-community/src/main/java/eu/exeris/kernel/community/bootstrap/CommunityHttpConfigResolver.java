@@ -72,6 +72,13 @@ final class CommunityHttpConfigResolver {
             .orElse(HttpConfig.DEFAULT_MAX_HEADER_SIZE);
         long maxBodyBytes = configProvider.getLong("http.maxRequestBodyBytes")
             .orElse(HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES);
+
+        // Resolved independently of http.maxRequestBodyBytes, which is the point (ADR-071 amendment):
+        // one bounds what this server accepts, the other what this client reads back from someone
+        // else's server. Sharing a key made a deployment tuning its ingress retune its outbound
+        // client, and neither name said so.
+        long maxResponseBodyBytes = configProvider.getLong("http.maxResponseBodyBytes")
+            .orElse(HttpConfig.DEFAULT_MAX_RESPONSE_BODY_BYTES);
         boolean h2cUpgradeEnabled = configProvider.getBoolean("http.h2cUpgradeEnabled")
             .orElse(true);
         HttpVersion maxVersion = resolveMaxVersion(configProvider);
@@ -111,7 +118,8 @@ final class CommunityHttpConfigResolver {
             defaultAuthority,
             maxHeaderBlockSize,
             maxHeaderListSize,
-            maxStringLiteralSize
+            maxStringLiteralSize,
+            maxResponseBodyBytes
         );
     }
 

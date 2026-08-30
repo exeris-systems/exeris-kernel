@@ -168,4 +168,19 @@ final class HttpConfigValidation {
                     "maxRequestBodyBytes must be >= -1 (-1 = unlimited), got: " + maxRequestBodyBytes);
         }
     }
+
+    /**
+     * Validates the client's response ceiling.
+     *
+     * <p>Separate from {@link #validateRequestLimits} because it bounds a different direction on a
+     * different socket, and the message has to name the key an operator would actually set.
+     *
+     * @param maxResponseBodyBytes the client response ceiling in bytes, {@code -1} for unlimited
+     */
+    /* default */ static void validateResponseLimits(long maxResponseBodyBytes) {
+        if (maxResponseBodyBytes < -1) {
+            throw new IllegalArgumentException(
+                    "maxResponseBodyBytes must be >= -1 (-1 = unlimited), got: " + maxResponseBodyBytes);
+        }
+    }
 }

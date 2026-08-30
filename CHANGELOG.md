@@ -8,6 +8,29 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Added
+
+- **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**
+  ([ADR-071](docs/adr/ADR-071-operational-limit-configuration-path.md) amendment). The client sized
+  every response read from `maxRequestBodyBytes`, so one key bounded two unrelated things: what this
+  server accepts from callers, and what this application reads back from someone else's server. A
+  deployment tightening ingress shrank its outbound client; one loosening it grew the buffer every
+  response allocates. Neither name said so.
+
+  Both limits default to **10 MiB**, so an untuned deployment sees no change, and `-1` still means
+  unlimited on either. The pre-0.12 constructor shape keeps delegating its single ceiling into both —
+  a caller who passed one number for an engine they built themselves is not silently lowered to a
+  default they never named, which would turn an upgrade into a run-time truncation. The
+  configuration keys resolve independently, because an operator setting an ingress limit said
+  something narrower than that.
+
+  `HttpConfig` gains the component appended, with the 14-argument shape retained: the SPI gate
+  reports an addition on a `stable` surface, `stable-breaks=0`.
+
+  **What this does not do:** the aggregate is still sized from the ceiling rather than from what the
+  response declares, so a `HEAD` against a 10 MiB ceiling still allocates 10 MiB. That half is a No
+  Waste Compute change owing a measurement and stays open in the ROADMAP.
+
 ### Changed
 
 - **The connection cap gets one default, and the question it was left open on could not have been
