@@ -58,6 +58,12 @@ public abstract class AbstractJobSchedulerTck {
 
     private static final String TENANT = "tenant-alpha";
 
+    /** Interval for the refusal cases; any value works, since time is advanced rather than waited. */
+    private static final Duration REFUSAL_INTERVAL = Duration.ofMinutes(1);
+
+    /** Intervals stepped past a refusal — a job still due would come round this many more times. */
+    private static final int REFUSAL_INTERVALS = 3;
+
     /** A second close() must return promptly; the first one is what drains. */
     private static final int SECOND_CLOSE_TIMEOUT_SECONDS = 5;
 
@@ -378,6 +384,40 @@ public abstract class AbstractJobSchedulerTck {
                     .isFalse();
             assertThat(handle.state()).isEqualTo(JobState.FAILED);
         }
+
+        /**
+         * The repeating half of the same refusal, and the half a provider can get wrong on its own.
+         *
+         * <p>Context is captured once at submission, so a refusal for want of it is a permanent
+         * property of the job rather than a bad run. A provider that settles the refusal as an
+         * ordinary failure re-queues the job, re-refuses on the next interval, and does so forever:
+         * a failure event per interval on work that can never dispatch, and a handle that never
+         * reaches a terminal state. Nothing the body can observe distinguishes the two — the body
+         * never runs either way — so the contract is expressed where it is visible, on the state.
+         */
+        @Test
+        @DisplayName("a repeating job refused for want of context retires, instead of coming due every interval")
+        void contextlessRepeatingJobRetires() {
+            AtomicInteger runs = new AtomicInteger();
+            JobHandle handle = scheduler.submit(new JobDescriptor(
+                    "unscoped-repeating",
+                    new JobTrigger.FixedInterval(Duration.ZERO, REFUSAL_INTERVAL),
+                    runs::incrementAndGet));
+
+            awaitState(handle, JobState.FAILED);
+
+            // Advanced repeatedly rather than once: a provider may set the state before it computes
+            // the next deadline, so a single advance can slip through the window between the two and
+            // never witness the re-queue it is looking for.
+            for (int interval = 0; interval < REFUSAL_INTERVALS; interval++) {
+                advanceTime(REFUSAL_INTERVAL);
+                assertStaysAt(handle, JobState.FAILED);
+            }
+
+            assertThat(runs)
+                    .as("and the body never ran — the refusal is the point, not a failed attempt")
+                    .hasValue(0);
+        }
     }
 
     // =========================================================================
@@ -493,6 +533,24 @@ public abstract class AbstractJobSchedulerTck {
             Thread.onSpinWait();
         }
         assertThat(latch.getCount()).isLessThanOrEqualTo(remaining);
+    }
+
+    /**
+     * Asserts a handle holds {@code expected} for the silence window.
+     *
+     * <p>The counterpart of {@link #assertStaysAt(AtomicInteger, int)} for a state rather than a
+     * count, and it samples for the same reason: a job that has been wrongly re-queued spends almost
+     * all of its time waiting for the next interval, so a single sample taken at the wrong moment
+     * reads the terminal state the contract asks for.
+     */
+    private static void assertStaysAt(JobHandle handle, JobState expected) {
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SILENCE_MILLIS);
+        while (System.nanoTime() < deadline) {
+            assertThat(handle.state())
+                    .as("a job that can never dispatch must stop being due")
+                    .isEqualTo(expected);
+            Thread.onSpinWait();
+        }
     }
 
     /**
