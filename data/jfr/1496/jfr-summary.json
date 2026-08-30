@@ -1,0 +1,192 @@
+{
+  "core" : {
+    "topThreads" : [ {
+      "thread" : "main",
+      "count" : 1025
+    }, {
+      "thread" : "JFR Shutdown Hook",
+      "count" : 11
+    }, {
+      "thread" : "JFR Periodic Tasks",
+      "count" : 3
+    }, {
+      "thread" : "exeris-flow-5631993309414043780--5035344793226599555",
+      "count" : 3
+    }, {
+      "thread" : "exeris-flow-6880686778779709473--8332603893285822382",
+      "count" : 2
+    }, {
+      "thread" : "exeris-flow--7257356562884841304--9061858183326514152",
+      "count" : 2
+    }, {
+      "thread" : "exeris-flow-3454225339197046254--8937954318154983803",
+      "count" : 2
+    }, {
+      "thread" : "exeris-flow-3302042905104300052--5606219654167539535",
+      "count" : 2
+    }, {
+      "thread" : "exeris-flow--8333480813058312875--5577574810046241966",
+      "count" : 2
+    }, {
+      "thread" : "exeris-flow-4296069824226737989--6631130085670281677",
+      "count" : 2
+    } ],
+    "topClasses" : [ {
+      "class" : "java.util.HashMap$Node",
+      "count" : 274
+    }, {
+      "class" : "[Ljava.util.HashMap$Node;",
+      "count" : 122
+    }, {
+      "class" : "[B",
+      "count" : 119
+    }, {
+      "class" : "java.util.ImmutableCollections$ListItr",
+      "count" : 115
+    }, {
+      "class" : "[Ljava.lang.Object;",
+      "count" : 63
+    }, {
+      "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+      "count" : 52
+    }, {
+      "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+      "count" : 50
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+      "count" : 36
+    }, {
+      "class" : "java.lang.VirtualThread",
+      "count" : 36
+    }, {
+      "class" : "eu.exeris.kernel.core.flow.FlowKey",
+      "count" : 22
+    }, {
+      "class" : "[I",
+      "count" : 20
+    }, {
+      "class" : "org.jacoco.agent.rt.internal_29a6edd.asm.SymbolTable$Entry",
+      "count" : 19
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap",
+      "count" : 18
+    }, {
+      "class" : "java.lang.String",
+      "count" : 16
+    }, {
+      "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+      "count" : 15
+    }, {
+      "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+      "count" : 12
+    }, {
+      "class" : "java.util.ArrayList",
+      "count" : 11
+    }, {
+      "class" : "org.jacoco.agent.rt.internal_29a6edd.asm.Type",
+      "count" : 10
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+      "count" : 9
+    }, {
+      "class" : "org.jacoco.agent.rt.internal_29a6edd.asm.Label",
+      "count" : 9
+    } ],
+    "phaseBoundaries" : [ ]
+  },
+  "community" : {
+    "topThreads" : [ {
+      "thread" : "main",
+      "count" : 1323
+    }, {
+      "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
+      "count" : 174
+    }, {
+      "thread" : "community-event-loop",
+      "count" : 69
+    }, {
+      "thread" : "carrier/native-tcp/acceptor",
+      "count" : 16
+    }, {
+      "thread" : "JFR Shutdown Hook",
+      "count" : 11
+    }, {
+      "thread" : "carrier/native-tcp/reactor/0",
+      "count" : 6
+    }, {
+      "thread" : "exeris-flow-6149288849799721016--8334359187368567046",
+      "count" : 4
+    }, {
+      "thread" : "exeris-flow-569309062592934055--5160532691574801713",
+      "count" : 3
+    }, {
+      "thread" : "exeris-pin-Transport-101",
+      "count" : 3
+    }, {
+      "thread" : "tck064-client-recv-2",
+      "count" : 3
+    } ],
+    "topClasses" : [ {
+      "class" : "jdk.internal.vm.StackChunk",
+      "count" : 255
+    }, {
+      "class" : "[Ljava.lang.Object;",
+      "count" : 195
+    }, {
+      "class" : "java.lang.VirtualThread",
+      "count" : 193
+    }, {
+      "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+      "count" : 169
+    }, {
+      "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+      "count" : 150
+    }, {
+      "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+      "count" : 137
+    }, {
+      "class" : "[B",
+      "count" : 124
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap",
+      "count" : 97
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+      "count" : 94
+    }, {
+      "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+      "count" : 79
+    }, {
+      "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+      "count" : 48
+    }, {
+      "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+      "count" : 47
+    }, {
+      "class" : "java.util.ArrayList",
+      "count" : 38
+    }, {
+      "class" : "[I",
+      "count" : 31
+    }, {
+      "class" : "java.lang.String",
+      "count" : 30
+    }, {
+      "class" : "org.jacoco.agent.rt.internal_29a6edd.asm.SymbolTable$Entry",
+      "count" : 26
+    }, {
+      "class" : "[Ljava.util.HashMap$Node;",
+      "count" : 24
+    }, {
+      "class" : "java.lang.VirtualThread$VThreadContinuation",
+      "count" : 23
+    }, {
+      "class" : "java.util.ArrayList$Itr",
+      "count" : 23
+    }, {
+      "class" : "eu.exeris.kernel.core.flow.FlowKey",
+      "count" : 21
+    } ],
+    "phaseBoundaries" : [ ]
+  }
+}
