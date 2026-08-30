@@ -19,8 +19,7 @@ import java.util.concurrent.TimeUnit;
  * Base JMH harness for all Exeris Kernel performance benchmarks.
  *
  * <h2>JVM Configuration</h2>
- * <p>Enforces {@code --enable-preview} for JEP 401 (Valhalla) and JEP 454 (FFM/Panama).
- * Uses ZGC ({@code -XX:+UseZGC}) to ensure consistent sub-millisecond GC pauses that
+ * <p>Uses ZGC ({@code -XX:+UseZGC}) to ensure consistent sub-millisecond GC pauses that
  * do not skew throughput measurements. Without ZGC, stop-the-world G1 pauses would
  * introduce artificial latency spikes in the 5-second measurement windows, masking
  * true implementation performance differences between Community and Enterprise tiers.
@@ -49,7 +48,6 @@ import java.util.concurrent.TimeUnit;
 @Warmup(iterations = 3, time = 2, timeUnit = TimeUnit.SECONDS)
 @Measurement(iterations = 5, time = 5, timeUnit = TimeUnit.SECONDS)
 @Fork(value = 1, jvmArgsAppend = {
-        "--enable-preview",
         "-XX:+UseZGC",
     "-XX:+UnlockExperimentalVMOptions",
     "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",

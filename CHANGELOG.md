@@ -8,6 +8,27 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Changed
+
+- **The GA line no longer builds with `--enable-preview`, in any scope** (ADR-066 Amendment A1).
+  The ten remaining fixtures that used `StructuredTaskScope` moved to `TckScope`, and the flag is
+  gone from the POMs, the surefire JVMs, the JMH forks, `MAVEN_OPTS` in both workflows, and the SPI
+  API-diff tool. No source in this repository uses a preview API.
+
+  **No published artifact changed.** The TCK test-jar — the only one built from test sources —
+  already measured 0 preview-stamped classes of 467; the 56 stamped ones sat in core and community
+  test-classes, which nothing publishes. What changes is the build: `--enable-preview` is legal
+  only when `--release` equals the running JDK, so the repository could be built by JDK 25 and
+  nothing else. It now builds on JDK 25 LTS **or newer** — verified by building the full reactor on
+  JDK 26, which fails on the unconverted tree with `invalid source release 25 with
+  --enable-preview`.
+
+  Three TLS fixtures share the new `BlockingPeerPair`: they drive two blocking OpenSSL peers, which
+  must run on platform threads under a deadline, and they report failure in three different
+  vocabularies. One security fixture asserted `ScopedValue` inheritance across a fork — a property
+  of the preview API rather than of the kernel — and now asserts the explicit carrier rebinding the
+  GA line actually offers.
+
 ### Fixed
 
 - **Outbound TLS is a decision, not a consequence of crypto booting.** A `CLIENT`-mode transport armed TLS whenever a crypto provider happened to be bound, so a kernel that booted crypto to serve HTTPS could not make a plaintext outbound call at all. `exeris.transport.tls` is the opt-out that was missing, and it covers **server, client and dual**: a listener holding valid certificate and key can now decline TLS, for deployments terminating it at a sidecar. Half-configured material stays a boot failure regardless. A listener that declines while holding material emits `eu.exeris.kernel.transport.TransportTlsDeclined`, because that is the one outcome indistinguishable from any other plaintext socket. Defaults are unchanged.

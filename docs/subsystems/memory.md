@@ -79,13 +79,15 @@ try (LoanedBuffer buffer = allocator.allocate(AllocationHint.MEDIUM)) {
 }
 ```
 
-### Async Ownership Transfer (StructuredTaskScope)
+### Async Ownership Transfer (forked subtasks)
 
-When passing a `LoanedBuffer` to a subtask forked inside a `StructuredTaskScope`, you **MUST** explicitly retain
-ownership before forking. The scope's `join()` barrier does not manage buffer lifetimes.
+When passing a `LoanedBuffer` to a forked subtask, you **MUST** explicitly retain ownership before
+forking. A scope's `join()` barrier does not manage buffer lifetimes. The scope below is
+`core.concurrent.StructuredScope`, the GA-line seam; on the `preview` branch the same rule holds for
+`StructuredTaskScope`, and it is the retain/close pairing that matters, not which type owns the fork.
 
 ```java
-try (var scope = StructuredTaskScope.open(Joiner.awaitAllSuccessfulOrThrow())) {
+try (StructuredScope scope = StructuredScope.openWithoutBindings()) {
     try (LoanedBuffer buffer = allocator.allocate(AllocationHint.NETWORK_FRAME)) {
         buffer.retain();
 
@@ -125,7 +127,7 @@ sequenceDiagram
 ```
 
 > **JMM Contract:** Visibility of `closeAction` slots across threads is guaranteed by standard Java
-> safe publication semantics — e.g., passing the `LoanedBuffer` reference via `StructuredTaskScope`
+> safe publication semantics — e.g., passing the `LoanedBuffer` reference through a forked subtask
 > or a concurrent queue — rather than explicit memory fences. Thread B is guaranteed to observe every
 > `closeAction` slot written by Thread A as long as the buffer reference itself is published safely.
 > **Community transport handoff note:** Community transport commonly hands off `LoanedBuffer`

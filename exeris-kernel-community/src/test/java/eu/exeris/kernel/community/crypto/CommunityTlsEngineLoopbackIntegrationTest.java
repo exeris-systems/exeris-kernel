@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.tck.support.BlockingPeerPair;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -32,7 +33,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -310,35 +310,24 @@ class CommunityTlsEngineLoopbackIntegrationTest {
             LoanedBuffer clientOutbound) {
         Instant deadline = Instant.now().plus(HANDSHAKE_TIMEOUT);
 
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.awaitAll(),
-                config -> config
-                        .withThreadFactory(Thread.ofPlatform().daemon(true).factory())
-                        .withTimeout(HANDSHAKE_TIMEOUT))) {
-
-            var serverTask = scope.fork(() -> {
-                driveSingleEngine(serverEngine, serverOutbound, deadline);
-                return null;
-            });
-            var clientTask = scope.fork(() -> {
-                driveSingleEngine(clientEngine, clientOutbound, deadline);
-                return null;
-            });
-
-            scope.join();
-
-            if (Instant.now().isAfter(deadline) || scope.isCancelled()) {
-                throw new AssertionError("TLS handshake timed out after " + HANDSHAKE_TIMEOUT.getSeconds() + "s");
-            }
-            if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Server handshake failed", serverTask.exception());
-            }
-            if (clientTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Client handshake failed", clientTask.exception());
-            }
+        BlockingPeerPair.Outcome outcome;
+        try {
+            outcome = BlockingPeerPair.drive(HANDSHAKE_TIMEOUT,
+                    () -> driveSingleEngine(serverEngine, serverOutbound, deadline),
+                    () -> driveSingleEngine(clientEngine, clientOutbound, deadline));
         } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();
             throw new AssertionError("TLS handshake interrupted", interruptedException);
+        }
+
+        if (outcome.timedOut() || Instant.now().isAfter(deadline)) {
+            throw new AssertionError("TLS handshake timed out after " + HANDSHAKE_TIMEOUT.getSeconds() + "s");
+        }
+        if (outcome.serverFailure() != null) {
+            throw new AssertionError("Server handshake failed", outcome.serverFailure());
+        }
+        if (outcome.clientFailure() != null) {
+            throw new AssertionError("Client handshake failed", outcome.clientFailure());
         }
 
         assertThat(serverEngine.isHandshakeComplete()).isTrue();

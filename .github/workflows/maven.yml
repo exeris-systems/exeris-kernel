@@ -21,14 +21,17 @@ on:
 env:
   # ADR-066 — the build baselines on JDK 25 LTS.
   #
-  # --enable-preview stays because TEST and TCK fixtures still use StructuredTaskScope and are
-  # compiled with it (they are not distributed); main sources are preview-clean, which the
-  # Preview-Bytecode Gate below asserts against the shipped class files rather than the sources.
+  # --enable-preview is GONE, from the whole line: no source under this repository uses a preview
+  # API any more, test fixtures included. This changed no published artifact — the TCK test-jar,
+  # the only one built from test sources, measured 0 preview-stamped classes of 467 already, and
+  # the 56 that were stamped sat in core/community test-classes, which are never published. What
+  # it buys is the build itself: --enable-preview is legal only when --release equals the running
+  # JDK, so the GA line could be built by JDK 25 and nothing else. Now any JDK >= 25 can build it.
   #
   # --enable-final-field-mutation was REMOVED, not overlooked: it is a JDK 26 flag (JEP 500
   # integrity-by-default) and JDK 25 refuses to start with it. There is nothing to re-enable on
   # 25, since that is the release the restriction has not reached yet.
-  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  MAVEN_OPTS: "--enable-native-access=ALL-UNNAMED"
   JDK_URL: "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_7.tar.gz"
   JDK_SHA256: "e58fcdcd637b25c03ca84cbbcefc70d11efb8f4b4cbd05decc9f661769d77f94"
   JDK_CACHE_KEY: "jdk-25.0.4-7-linux-x64"
@@ -117,8 +120,10 @@ jobs:
         # stamp is what a consumer trips over, it survives generated and processor-emitted code
         # that a grep would miss, and it cannot be satisfied by a comment claiming compliance.
         #
-        # Test and TCK fixtures are out of scope by design — 26 of them still use
-        # StructuredTaskScope, compile with --enable-preview, and are never published.
+        # Test and TCK fixtures used to be out of scope, because they compiled with
+        # --enable-preview and the shipped classes did not. They no longer use a preview API at
+        # all, so the flag is gone from the build and there is nothing left for the scope to
+        # exclude — the gate now describes the whole line rather than half of it.
         run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
 
       - name: Supply-Chain Gate

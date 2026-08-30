@@ -9,6 +9,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import eu.exeris.kernel.tck.support.TckScope;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -23,7 +24,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -311,8 +311,7 @@ class CommunityMemoryAllocatorTest {
     void concurrentAllocationStatsConsistency() throws Exception {
         int threadCount = 1_000;
 
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+        try (TckScope scope = TckScope.openFailFast()) {
             for (int i = 0; i < threadCount; i++) {
                 scope.fork(() -> {
                     try (var buf = allocator.allocate(AllocationHint.MICRO)) {
@@ -568,8 +567,7 @@ class CommunityMemoryAllocatorTest {
         assertThat(buffer.isAlive()).isTrue();
 
         try {
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 scope.fork(() -> {
                     handoffQueue.put(buffer);
                     return null;

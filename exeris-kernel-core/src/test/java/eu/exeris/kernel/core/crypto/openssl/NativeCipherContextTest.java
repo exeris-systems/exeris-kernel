@@ -10,6 +10,7 @@ import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import eu.exeris.kernel.tck.support.TckScope;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingStream;
 import org.junit.jupiter.api.DisplayName;
@@ -20,7 +21,6 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,7 +43,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * @since 0.5.0
  */
 @DisplayName("L1: NativeCipherContext (Lock-Free Memory Shield)")
-@SuppressWarnings("preview") // StructuredTaskScope (JEP 525) is --enable-preview in JDK 26
 class NativeCipherContextTest {
 
     // =========================================================================
@@ -168,11 +167,9 @@ class NativeCipherContextTest {
         FREES.set(0);
         NativeCipherContext ctx = new NativeCipherContext(createDummyHandles(), 0x1234L, STUB_ALLOC);
 
-        // StructuredTaskScope ensures all virtual threads finish before we proceed.
-        // awaitAllSuccessfulOrThrow provides fail-fast semantics: any subtask exception
-        // propagates to the main thread, avoiding silent failures.
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+        // The scope joins every virtual thread before we proceed, and openFailFast rethrows the
+        // first failure rather than letting a silent one pass.
+        try (TckScope scope = TckScope.openFailFast()) {
             for (int i = 0; i < 100; i++) {
                 scope.fork(() -> {
                     long ptr = ctx.retainSslPointer(); // CAS increment: RefCount → N+1

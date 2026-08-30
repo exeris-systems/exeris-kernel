@@ -5,13 +5,13 @@
 package eu.exeris.kernel.core.memory;
 
 import eu.exeris.kernel.spi.memory.LeakDetectionMode;
+import eu.exeris.kernel.tck.support.TckScope;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.ref.Reference;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
 
@@ -239,8 +239,7 @@ class LeakTrackerTest {
             var tracker = new LeakTracker(LeakDetectionMode.PARANOID);
             var errorFlag = new AtomicLong(0);
 
-            try (var scope = StructuredTaskScope.open(
-                    StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < 1_000; i++) {
                     scope.fork(() -> {
                         Object referent = new Object();
