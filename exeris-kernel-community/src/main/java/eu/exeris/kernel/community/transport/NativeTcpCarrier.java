@@ -353,7 +353,8 @@ public final class NativeTcpCarrier implements TransportEngine {
                 totalAccepted.get(),
                 rejected,
                 0,
-                0
+                0,
+                acceptFaults.get()
         );
     }
 

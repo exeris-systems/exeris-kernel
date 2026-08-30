@@ -31,12 +31,32 @@ off-heap `LoanedBuffer` slabs via Panama FFM — no JVM heap contact on the ingr
 
 ## Connection ceiling
 
-`TransportConfig.maxConnections()` (`http.maxConnections`, default `HttpConfig.DEFAULT_MAX_CONNECTIONS`
-= 1000) is a hard cap on **concurrent connections across all reactors**, enforced at accept time. When
-it is reached, `NativeTcpCarrier` accepts the connection at TCP level and immediately closes it.
+`TransportConfig.maxConnections()` is a hard cap on **concurrent connections across all reactors**,
+enforced at accept time in one place, `NativeTcpCarrier.tryReserveConnectionSlot`. When it is reached,
+the carrier accepts the connection at TCP level and immediately closes it.
+
+**Which key sets it depends on which carrier you are running, and setting the wrong one is silent**
+(ADR-081):
+
+| Carrier | Key | Default | When it exists |
+|---|---|---|---|
+| HTTP listener | `http.maxConnections` | 4096 | whenever the HTTP subsystem is enabled — the carrier almost every deployment runs |
+| Standalone transport | `transport.maxConnections` | 4096 | only when `transport.mode` is set; the subsystem resolves to `DISABLED` otherwise |
+
+The two defaults were 1000 and 4096 until v0.12 — one field, one enforcement point, two numbers, no
+stated reason. ADR-081 unified them at 4096, the value the project's own benchmark runs had to raise
+the HTTP side to.
+
+**Check `ulimit -n` against this number.** The cap can only refuse cleanly while it is the ceiling
+reached *first*. Above the process file-descriptor limit — commonly 1024, below this default — the
+operating system's limit is reached first, and its failure mode is worse: see §"Accept-path failure
+modes".
 
 What a client observes: the socket opens and then dies, with no HTTP response — a transport-level
-failure, not a status code. There is no way for the client to distinguish this from a network fault.
+failure, not a status code, and indistinguishable from a network fault. **The stream admission
+ceiling below behaves the same way**: a shed stream is closed (FIN/RST on TCP, `STOP_SENDING` on
+QUIC), not answered. No server path in the kernel refuses with a status; if that is ever wanted it is
+a third mechanism above the connection layer, not a replacement for either of these (ADR-081 §2).
 
 Two properties make the ceiling easy to reach at a request rate that feels comfortable. It counts
 **concurrent connections, not rate**, so a client whose connection pool overlaps with a draining
@@ -50,10 +70,6 @@ Refusals are visible in two places, and were visible in neither before v0.11:
   healthy, look elsewhere".
 - `eu.exeris.kernel.transport.CommunityConnectionRefused` is emitted per refusal, carrying the active
   count, the configured ceiling, and a cumulative total whose slope distinguishes a blip from a wall.
-
-Whether an accept-time cap is the right mechanism — as opposed to admitting and shedding at request
-level, where the response can carry a status — and whether 1000 is the right default, are open
-questions tracked in `docs/ROADMAP.md`. The behaviour above is unchanged; only its visibility is new.
 
 ## Stream admission ceiling
 
@@ -163,15 +179,26 @@ client: the socket opens and dies. They are different in kind, and the kernel no
 | Cause | the connection ceiling was reached | something threw while configuring the channel, resolving the peer, building the stream, or registering it |
 | Nature | a **policy** decision at a known limit | a **defect** — allocator failure, TLS engine that would not initialise, registry inconsistency |
 | In `totalRejected` | yes | **no** |
+| Counted on `TransportStats` | `totalRejected` | `acceptFaults` (since 0.12.0) |
 
 A setup fault is deliberately **not** counted as a refusal. `totalRejected` means work the engine
 *declined*, and a setup that broke declined nothing. Folding the two together would leave an operator
 reading a spike unable to tell a capacity problem from a bug — the one distinction that changes what
-they do next.
+they do next. Until 0.12.0 the fault count reached an operator only inside the JFR payload, so the two
+modes were documented together but not *observable* together; `TransportStats.acceptFaults` closes
+that (ADR-081 §5). A driver with no accept-setup path reports `0`.
 
 Both paths recover: the accept loop continues. That is correct for a per-connection failure, and
 making a setup fault fatal would trade a silent drop for an outage. What changed is only that neither
 is silent.
+
+**A third mode is neither of these, and it is not recoverable today.** An `IOException` from
+`accept()` itself — how file-descriptor exhaustion (`EMFILE`) surfaces — is caught by
+`runAcceptorLoop`, which calls `handleAsyncFailure` and returns: `running` is cleared and the server
+channel closed. The listener stops accepting **permanently**, from a condition that is transient.
+This is why the connection ceiling above asks you to check `ulimit -n`: the cap refusing is the good
+outcome, and the OS limit winning the race is the bad one. Tracked as an open entry in
+`docs/ROADMAP.md`.
 
 The fault event carries the exception **class** and never its message, matching
 `CommunityReactorDispatchFault` — a message can carry request-derived text.

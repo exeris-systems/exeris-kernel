@@ -94,8 +94,19 @@ public record HttpConfig(
     /** Default server port. */
     public static final int DEFAULT_PORT = 8080;
 
-    /** Default maximum concurrent connections. */
-    public static final int DEFAULT_MAX_CONNECTIONS = 1_000;
+    /**
+     * Default maximum concurrent connections (ADR-081).
+     *
+     * <p>Matches the standalone carrier's {@code transport.maxConnections} default. It is one field
+     * on one record enforced at one point, so two defaults for it were an accident rather than a
+     * policy — and 4 096 is the side the evidence pointed to: the project's own benchmark runs had
+     * to raise the previous 1 000 to get through.
+     *
+     * <p><b>Check the process file-descriptor limit against this.</b> The cap can only refuse
+     * cleanly while it is the ceiling that is reached first; above {@code ulimit -n} the failure
+     * mode is the operating system's, not the kernel's, and it is worse — see ADR-081 §Consequences.
+     */
+    public static final int DEFAULT_MAX_CONNECTIONS = 4_096;
 
     /** Default idle timeout: 30 seconds. */
     public static final long DEFAULT_IDLE_TIMEOUT_MS = 30_000L;
