@@ -23,7 +23,7 @@ env:
   # Identical pins to maven.yml. A release must be built by the same JDK every gate ran against;
   # a different patch release changes bytecode and the manifest's Build-Jdk-Spec, which would make
   # the published artifact one that nothing in CI ever verified.
-  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  MAVEN_OPTS: "--enable-native-access=ALL-UNNAMED"
   JDK_URL: "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_7.tar.gz"
   JDK_SHA256: "e58fcdcd637b25c03ca84cbbcefc70d11efb8f4b4cbd05decc9f661769d77f94"
   JDK_CACHE_KEY: "jdk-25.0.4-7-linux-x64"

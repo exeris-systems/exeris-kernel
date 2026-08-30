@@ -64,14 +64,14 @@ Authoritative references:
 ## Requirements
 
 - Linux, macOS, or Windows
-- JDK 25 LTS — the distributed artifact is preview-clean and needs no `--enable-preview`
+- JDK 25 LTS or newer — nothing here uses a preview API, so no `--enable-preview` anywhere
 - Maven 3.9+
 
-The build baselines on JDK 25 LTS and native-access flags in [pom.xml](pom.xml). Main sources compile
-without `--enable-preview`, and so does the TCK's test-jar — the one published artifact built from
-test sources (ADR-066). Other test sources still compile and run with the flag; they are not
-distributed, so nothing a consumer downloads carries preview bytecode. This is checkable rather than
-asserted: `tools/preview-bytecode-scan/preview-bytecode-scan.sh` reads the shipped class files, and
+The build baselines on JDK 25 LTS and native-access flags in [pom.xml](pom.xml). Nothing compiles
+with `--enable-preview` — main sources, test sources and the TCK's fixtures alike (ADR-066 and its
+Amendment A1). The flag is legal only when `--release` equals the running JDK, so removing it also
+lifts the pin: the reactor builds on JDK 25 and on anything newer. Preview-cleanliness is checkable
+rather than asserted: `tools/preview-bytecode-scan/preview-bytecode-scan.sh` reads the shipped class files, and
 preview bytecode is stamped (`minor_version = 0xFFFF`), so a scan of the published jars answers it
 without trusting this paragraph. A second artifact ships from the `preview` branch on the newest JDK,
 with preview features on.

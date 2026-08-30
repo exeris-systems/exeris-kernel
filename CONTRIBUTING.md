@@ -57,10 +57,12 @@ because those two are the instruments that need one.
 
 ### Java Version
 
-**JDK 25 LTS is required on this line.** The distributed artifact is preview-clean (ADR-066): main
-sources compile without `--enable-preview`, and since the TCK's test-jar is the one published
-artifact built from test sources, its fixtures are preview-clean too. The `preview` branch is the
-opposite — newest JDK, preview features on — and ships separately as `1.0-preview`.
+**JDK 25 LTS is the baseline on this line; a newer JDK also works.** The line is preview-clean
+throughout (ADR-066 and its Amendment A1): nothing compiles with `--enable-preview`, main sources,
+test sources and TCK fixtures alike. That is what makes a newer JDK usable — the flag is legal only
+when `--release` equals the running JDK, so while it was set anywhere, JDK 25 was the only JDK that
+could build the repository. The `preview` branch is the opposite — newest JDK, preview features on —
+and ships separately as `1.0-preview`.
 
 | Feature                            | JEP       | Status in JDK              | Used in Kernel                                    |
 |:-----------------------------------|:----------|:---------------------------|:--------------------------------------------------|
@@ -72,15 +74,13 @@ opposite — newest JDK, preview features on — and ships separately as `1.0-pr
 | Valhalla Value Classes (prep)      | JEP 401   | Early Access preview       | **Not yet used.** All data carriers (`record`, `final class`) are designed to be migration-ready: no `synchronized`, no `System.identityHashCode()`, no identity `==` on domain objects. C2 JIT Escape Analysis scalarises them on hot-paths today. |
 | Lazy Constants                     | JEP 526   | Delivered in JDK 26 — **not available on this line** | Not used on `main`; the JDK 25 baseline predates it |
 
-The root POM enables preview features for **test** sources only — `--enable-preview` on every
-module's `default-testCompile` and on the surefire JVM ([pom.xml](pom.xml) lines 70, 91-94, 105) —
-and never for main sources. Do not add it to a module's main sources on this line: the
-Preview-Bytecode Gate reads the published jars and fails on any class stamped
-`minor_version 0xFFFF`, which is exactly what a consumer would trip over.
-
-The TCK is the exception that needs stating, because its test-jar *is* a published artifact: its
-fixtures were moved off `StructuredTaskScope` so they carry no stamp. Other modules' test sources
-still use it and still need the flag.
+The root POM sets `--enable-preview` nowhere — not on main sources, not on `default-testCompile`,
+not on a surefire or JMH JVM. Do not reintroduce it in any scope on this line. In main sources the
+Preview-Bytecode Gate will catch it: it reads the published jars and fails on any class stamped
+`minor_version 0xFFFF`, which is exactly what a consumer would trip over. In test sources nothing
+would catch it, and the cost is quieter — the whole repository becomes buildable by one exact JDK
+again, and the GA line reacquires a dependency on an API that is still changing shape across
+previews.
 
 **Recommended toolchain:**
 ```

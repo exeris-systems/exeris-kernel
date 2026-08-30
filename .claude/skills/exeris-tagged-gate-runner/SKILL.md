@@ -27,7 +27,7 @@ description: Run the tagged test gates (integration / continuity / stress) that 
 
 1. **Confirm coverage.** For each touched module: `git grep -l '@Tag("<tag>")' -- '<module>/src/test'`. If a touched area appears in the map above, its gate is required.
 
-2. **Preconditions.** Docker running (Testcontainers pulls Postgres/Kafka); JDK 26 with `--enable-preview` active. Tagged runs are slower than the default suite — expect minutes, not seconds.
+2. **Preconditions.** Docker running (Testcontainers pulls Postgres/Kafka); JDK 25 LTS or newer, no flags. Tagged runs are slower than the default suite — expect minutes, not seconds.
 
 3. **Run each required gate exactly as CI does** (install deps first, then the tagged run; the empty `-DexcludedGroups=` is REQUIRED — without it Surefire keeps the default exclusion and silently runs nothing):
 

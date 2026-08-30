@@ -112,13 +112,6 @@
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
 
-        <!--
-            ADR-066: the DISTRIBUTED artifact is preview-clean, so main sources compile without
-            this flag. Test and TCK fixtures still use StructuredTaskScope (26 files) and are not
-            distributed, so it is applied to the test-compile execution only, and to the surefire
-            JVM below because preview-stamped test classes will not load without it.
-        -->
-        <jdk.preview.enable>--enable-preview</jdk.preview.enable>
         <coverage.argLine/>
 
         <!--
@@ -146,7 +139,6 @@
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
             -XX:-ZUncommit
-            --enable-preview
             --enable-native-access=ALL-UNNAMED
             -XX:FlightRecorderOptions=stackdepth=256
             -XX:StartFlightRecording=disk=true,filename=target/surefire.jfr,maxsize=256m,maxage=10m,settings=profile
@@ -182,16 +174,6 @@
                     <configuration>
                         <release>${maven.compiler.release}</release>
                     </configuration>
-                    <executions>
-                        <execution>
-                            <id>default-testCompile</id>
-                            <configuration>
-                                <compilerArgs>
-                                    <arg>${jdk.preview.enable}</arg>
-                                </compilerArgs>
-                            </configuration>
-                        </execution>
-                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

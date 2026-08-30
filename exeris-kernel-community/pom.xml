@@ -356,7 +356,6 @@
                                     <executable>java</executable>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
-                                        <argument>--enable-preview</argument>
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>${benchmark.jvm.gc}</argument>
                                         <argument>-Dbenchmark.jvmArgs=${benchmark.jvmArgs}</argument>

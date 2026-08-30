@@ -3,9 +3,10 @@
 # Preview-bytecode gate (ADR-066).
 #
 # Asserts that nothing the project DISTRIBUTES carries preview bytecode, and that every shipped
-# class targets the declared LTS class-file major. Test and TCK fixtures are deliberately out of
-# scope: they still use StructuredTaskScope, they compile with --enable-preview, and they are not
-# published.
+# class targets the declared LTS class-file major. Since v0.12 no source in the repository uses a
+# preview API in any scope and the build sets no --enable-preview, so there is nothing for this
+# gate's published-only scope to exclude — it stays scoped to what ships because that is what a
+# consumer trips over, not because fixtures are exempt.
 #
 # Why bytecode rather than a source grep: `--enable-preview` stamps a class with
 # minor_version 0xFFFF, and the JVM then refuses to load it on any other major release EVEN WITH
