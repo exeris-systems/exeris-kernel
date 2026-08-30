@@ -8,6 +8,33 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Added
+
+- **Two owed test cases from the v0.11 sweep, both mutation-checked rather than merely green.**
+
+  `AbstractJobSchedulerTck` gains the repeating half of the fail-closed refusal: a job submitted
+  with no context and a fixed interval must **retire**, not come due every interval forever. The
+  behaviour was fixed in Community only, so a second `JobScheduler` provider could reproduce the
+  original defect — a failure event per interval on work that can never dispatch — while passing the
+  contract suite. Nothing the body can observe separates the two cases (the body never runs either
+  way), so the contract is asserted on the handle's state, sampled across several advances because a
+  wrongly re-queued job spends nearly all its time waiting rather than failed. Restoring the pre-fix
+  settle path reddens exactly this case and no other.
+
+- **`CommunitySeparatedSchemaPoolRecycleIT`** — the integration half of ADR-012's pool-recycle
+  isolation. The existing unit test asserts the SQL the interceptor *emits* against a mock; this
+  asserts what a live PostgreSQL does with it when one physical connection is handed between
+  tenants. The pool is one connection deep on purpose: `persistence.perTenantPooling` defaults to
+  `false`, so tenants share connections, and a deeper pool would let the two tenants land on
+  separate ones and pass while the republish did nothing. Three cases, each covering a direction the
+  others do not — tenant to tenant and back, `current_schema()` following the acquire, and a SHARED
+  acquire resetting the path a SEPARATED_SCHEMA acquire left set.
+
+  Not a row-visibility hole, stated precisely: RLS keys on `exeris.tenant_id`, republished on the
+  same acquire, so a stale `search_path` misdirects **name resolution** rather than exposing another
+  tenant's rows. Two mutations prove the split: removing the RESET arm reddens only the shared case;
+  making SEPARATED_SCHEMA stop setting its own path reddens only the other two.
+
 ### Changed
 
 - **The GA line no longer builds with `--enable-preview`, in any scope** (ADR-066 Amendment A1).
