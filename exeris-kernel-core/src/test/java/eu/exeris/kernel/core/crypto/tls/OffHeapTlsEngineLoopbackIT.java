@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import eu.exeris.kernel.tck.support.BlockingPeerPair;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -36,7 +37,6 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -659,52 +659,31 @@ class OffHeapTlsEngineLoopbackIT {
     // =========================================================================
 
     /**
-     * Drives the TLS 1.3 handshake by running server and client on two concurrent
-     * platform threads inside a {@link StructuredTaskScope}.
-     *
-     * <h2>Why platform threads</h2>
-     * <p>OpenSSL's {@code SSL_accept} and {@code SSL_connect} are blocking FFM (Panama)
-     * downcalls. Unlike Java NIO I/O, FFM calls block the carrier thread and prevent the
-     * JVM from unmounting the virtual thread. On single-CPU CI runners, two virtual threads
-     * sharing one carrier would deadlock: {@code SSL_accept} occupies the carrier while
-     * {@code SSL_connect} can never run. Platform threads are preempted by the OS scheduler
-     * independently, so both blocking calls complete.
-     *
-     * <h2>Deadlock guard</h2>
-     * <p>{@code withTimeout(Duration.ofSeconds(15))} cancels the scope after 15 s and sends
-     * {@link Thread#interrupt()} to both platform threads. On Linux, interrupting a thread
-     * blocked in {@code read()} delivers {@code EINTR} to the syscall, which causes OpenSSL
-     * to return {@code SSL_ERROR_SYSCALL}. This converts a pipeline hang into a test abort.
+     * Drives the TLS 1.3 handshake by running server and client concurrently on platform threads,
+     * under a deadline — see {@link BlockingPeerPair} for why neither half is negotiable here.
      */
     private static void driveHandshake(OffHeapTlsEngine server, LoanedBuffer serverBuf,
                                        OffHeapTlsEngine client, LoanedBuffer clientBuf) {
         Instant deadline = Instant.now().plusSeconds(15);
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.awaitAll(),
-                config -> config
-                        .withThreadFactory(Thread.ofPlatform().daemon(true).factory())
-                        .withTimeout(Duration.ofSeconds(15)))) {
-
-            StructuredTaskScope.Subtask<Void> serverTask =
-                    scope.fork(() -> { driveSingleEngine(server, serverBuf); return null; });
-            StructuredTaskScope.Subtask<Void> clientTask =
-                    scope.fork(() -> { driveSingleEngine(client, clientBuf); return null; });
-
-            scope.join();
-
-            if (Instant.now().isAfter(deadline) || scope.isCancelled()) {
-                throw new org.opentest4j.TestAbortedException(
-                        "driveHandshake timed out after 15 s — SSL_accept/SSL_connect deadlock suspected");
-            }
-            if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Server handshake thread failed", serverTask.exception());
-            }
-            if (clientTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Client handshake thread failed", clientTask.exception());
-            }
+        BlockingPeerPair.Outcome outcome;
+        try {
+            outcome = BlockingPeerPair.drive(Duration.ofSeconds(15),
+                    () -> driveSingleEngine(server, serverBuf),
+                    () -> driveSingleEngine(client, clientBuf));
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             throw new org.opentest4j.TestAbortedException("driveHandshake interrupted");
+        }
+
+        if (outcome.timedOut() || Instant.now().isAfter(deadline)) {
+            throw new org.opentest4j.TestAbortedException(
+                    "driveHandshake timed out after 15 s — SSL_accept/SSL_connect deadlock suspected");
+        }
+        if (outcome.serverFailure() != null) {
+            throw new AssertionError("Server handshake thread failed", outcome.serverFailure());
+        }
+        if (outcome.clientFailure() != null) {
+            throw new AssertionError("Client handshake thread failed", outcome.clientFailure());
         }
 
         assertThat(server.phase() == TlsPhase.ACTIVE && client.phase() == TlsPhase.ACTIVE)

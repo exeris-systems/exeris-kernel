@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.tck.perf.AbstractExerisBenchmark;
+import eu.exeris.kernel.tck.support.BlockingPeerPair;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Level;
@@ -33,7 +34,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -239,33 +239,24 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 
 	private void driveHandshakeToActive() {
 		Instant deadline = Instant.now().plus(HANDSHAKE_TIMEOUT);
-		try (var scope = StructuredTaskScope.open(
-				StructuredTaskScope.Joiner.awaitAll(),
-				config -> config
-						.withThreadFactory(Thread.ofPlatform().daemon(true).factory())
-						.withTimeout(HANDSHAKE_TIMEOUT))) {
-			var serverTask = scope.fork(() -> {
-				driveSingleHandshakeEngine(serverEngine, serverHandshakeOutbound, deadline);
-				return null;
-			});
-			var clientTask = scope.fork(() -> {
-				driveSingleHandshakeEngine(clientEngine, clientHandshakeOutbound, deadline);
-				return null;
-			});
-			scope.join();
-
-			if (Instant.now().isAfter(deadline) || scope.isCancelled()) {
-				throw new IllegalStateException("TLS handshake timed out in benchmark setup");
-			}
-			if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-				throw new IllegalStateException("Server handshake failed", serverTask.exception());
-			}
-			if (clientTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-				throw new IllegalStateException("Client handshake failed", clientTask.exception());
-			}
+		BlockingPeerPair.Outcome outcome;
+		try {
+			outcome = BlockingPeerPair.drive(HANDSHAKE_TIMEOUT,
+					() -> driveSingleHandshakeEngine(serverEngine, serverHandshakeOutbound, deadline),
+					() -> driveSingleHandshakeEngine(clientEngine, clientHandshakeOutbound, deadline));
 		} catch (InterruptedException interruptedException) {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("Benchmark handshake interrupted", interruptedException);
+		}
+
+		if (outcome.timedOut() || Instant.now().isAfter(deadline)) {
+			throw new IllegalStateException("TLS handshake timed out in benchmark setup");
+		}
+		if (outcome.serverFailure() != null) {
+			throw new IllegalStateException("Server handshake failed", outcome.serverFailure());
+		}
+		if (outcome.clientFailure() != null) {
+			throw new IllegalStateException("Client handshake failed", outcome.clientFailure());
 		}
 
 		if (!serverEngine.isHandshakeComplete() || !clientEngine.isHandshakeComplete()) {
