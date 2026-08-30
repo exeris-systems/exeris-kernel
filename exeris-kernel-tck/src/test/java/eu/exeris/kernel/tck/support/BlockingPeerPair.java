@@ -69,8 +69,14 @@ public final class BlockingPeerPair {
         Thread serverThread = start("peer-server", server, serverFailure);
         Thread clientThread = start("peer-client", client, clientFailure);
 
+        // ONE absolute deadline for the pair, not a budget each. This is what the scope-level
+        // withTimeout() it replaces did, and it is what a handshake needs: the two peers are halves
+        // of one exchange, so the question is whether the exchange completed in time, never whether
+        // each side did. A per-peer budget would let a pair take twice the timeout and still pass.
         long deadline = System.nanoTime() + timeout.toNanos();
         // Both joins run: the second peer's fate is as much a part of the outcome as the first's.
+        // If the first consumed the whole deadline the second is not waited on — by then the answer
+        // is already "not in time", and waiting past a deadline is the hang this exists to end.
         boolean serverFinished = joinBy(serverThread, deadline);
         boolean clientFinished = joinBy(clientThread, deadline);
         boolean bothFinished = serverFinished && clientFinished;
