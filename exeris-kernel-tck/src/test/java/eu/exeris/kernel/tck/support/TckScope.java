@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Fan-out / join-all for TCK fixtures, on GA APIs only.
@@ -99,15 +100,19 @@ public final class TckScope implements AutoCloseable {
     /**
      * Runs {@code task} on a virtual thread owned by this scope.
      *
-     * <p>A fork after cancellation is a no-op: the scope has already decided to tear down.
+     * <p>A fork after cancellation is a no-op: the scope has already decided to tear down, and the
+     * handle it returns never finishes — reading it says so rather than returning a fabricated value.
      *
-     * @param task the body; its return value is discarded, as no fixture here reads one
+     * @param <T> the task's result type
+     * @param task the body
+     * @return a handle on the result, readable after {@link #join()}
      */
-    public void fork(Callable<?> task) {
+    public <T> Forked<T> fork(Callable<T> task) {
+        Forked<T> handle = new Forked<>();
         if (cancelled.get()) {
-            return;
+            return handle;
         }
-        Thread thread = Thread.ofVirtual().unstarted(() -> runCapturing(task));
+        Thread thread = Thread.ofVirtual().unstarted(() -> runCapturing(task, handle));
         forked.add(thread);
         // Re-checked after publishing: a cancellation between the check above and here would
         // otherwise start a thread the cascade has already walked past.
@@ -115,18 +120,74 @@ public final class TckScope implements AutoCloseable {
             thread.interrupt();
         }
         thread.start();
+        return handle;
     }
 
-    private void runCapturing(Callable<?> task) {
+    /**
+     * A forked task's result, readable once {@link #join()} has returned.
+     *
+     * <p>Exists because the preview API this scope replaces returned a subtask handle, and the
+     * fixtures that read one would otherwise each carry their own {@code AtomicReference} — the same
+     * pattern re-derived per fixture, and one chance each to drop a result on the failure path.
+     *
+     * <p>Deliberately not a future: there is no {@code cancel}, no timeout and no completion
+     * callback. A scope that grew those would be re-implementing the API it exists to avoid.
+     *
+     * @param <T> the task's result type
+     */
+    public static final class Forked<T> {
+
+        private final AtomicReference<T> value = new AtomicReference<>();
+        private final AtomicReference<Throwable> failure = new AtomicReference<>();
+        private volatile boolean finished;
+
+        private Forked() {
+            // Handed out by fork() only.
+        }
+
+        /**
+         * The task's result.
+         *
+         * @return what the task returned
+         * @throws IllegalStateException if called before the task finished, or if it failed — the
+         *         cause carries the failure, so a fixture reading a result never silently gets null
+         */
+        public T get() {
+            if (!finished) {
+                throw new IllegalStateException("get() before the task finished — join() first");
+            }
+            Throwable cause = failure.get();
+            if (cause != null) {
+                throw new IllegalStateException("task did not succeed", cause);
+            }
+            return value.get();
+        }
+
+        /**
+         * Whether the task threw.
+         *
+         * @return {@code true} if it completed by throwing
+         */
+        public boolean failed() {
+            return finished && failure.get() != null;
+        }
+    }
+
+    private <T> void runCapturing(Callable<T> task, Forked<T> handle) {
         try {
-            task.call();
+            handle.value.set(task.call());
         } catch (Throwable t) { // a fixture must report what escaped, whatever it was
+            handle.failure.set(t);
             synchronized (failures) {
                 failures.add(t);
             }
             if (cancelOnFailure) {
                 cancelSiblings();
             }
+        } finally {
+            // In a finally, and last: a reader that sees finished must see the value or the failure
+            // that goes with it, never a half-written handle.
+            handle.finished = true;
         }
     }
 
