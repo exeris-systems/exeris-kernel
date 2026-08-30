@@ -536,10 +536,6 @@ public abstract class AbstractJobSchedulerTck {
     }
 
     /**
-     * Asserts a counter holds its value for the silence window. A single read would pass even if the
-     * dispatcher were about to fire again, which is the failure this guards.
-     */
-    /**
      * Asserts a handle holds {@code expected} for the silence window.
      *
      * <p>The counterpart of {@link #assertStaysAt(AtomicInteger, int)} for a state rather than a
@@ -557,6 +553,10 @@ public abstract class AbstractJobSchedulerTck {
         }
     }
 
+    /**
+     * Asserts a counter holds its value for the silence window. A single read would pass even if the
+     * dispatcher were about to fire again, which is the failure this guards.
+     */
     private static void assertStaysAt(AtomicInteger counter, int expected) {
         long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(SILENCE_MILLIS);
         while (System.nanoTime() < deadline) {
