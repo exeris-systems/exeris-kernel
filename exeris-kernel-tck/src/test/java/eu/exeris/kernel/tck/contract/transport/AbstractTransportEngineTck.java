@@ -215,6 +215,41 @@ public abstract class AbstractTransportEngineTck {
                 bounded.close();
             }
         }
+
+        /**
+         * A refusal is not a fault, and the two counters must not be the same counter.
+         *
+         * <p>Asserted from the side an operator reads rather than by injecting a defect, which no
+         * provider-neutral fixture can do: drive the ceiling until refusals are counted, then require
+         * that the fault count has not moved. A driver that folded the two together, or that counted
+         * a refusal as a setup failure, fails here — and the distinction is the one that decides
+         * whether the operator is looking at a capacity problem or a bug.
+         */
+        @Test
+        @DisplayName("a refusal at the ceiling is not counted as an accept fault")
+        void ceilingRefusalIsNotAnAcceptFault() throws Exception {
+            int port = freePort();
+            TransportEngine bounded = createEngineWithConnectionCeiling(CEILING, port);
+            List<Socket> clients = new ArrayList<>();
+            try {
+                bounded.start();
+                // Held open, not opened and dropped: a client that disconnects immediately frees the
+                // slot it took, and the ceiling is then never actually reached.
+                for (int i = 0; i < CEILING + OVER_CEILING; i++) {
+                    clients.add(connectQuietly(port));
+                }
+                awaitRejection(bounded);
+
+                assertThat(bounded.stats().acceptFaults())
+                        .as("declining work at a configured ceiling is a policy decision, not a "
+                                + "setup failure — an operator who cannot tell them apart cannot "
+                                + "tell a capacity problem from a defect")
+                        .isZero();
+            } finally {
+                clients.forEach(AbstractTransportEngineTck::closeQuietly);
+                bounded.close();
+            }
+        }
     }
 
     /**

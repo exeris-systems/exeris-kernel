@@ -30,6 +30,7 @@ flowchart LR
 | **TLS** | OpenSSL 3.0 – 4.x (fd-owner engine); 3.x floor retained for FIPS-provider compatibility (ADR-008) |
 | **HTTP** | HTTP/1.1 + HTTP/2 (h2 + h2c), TLS 1.2 / 1.3 |
 | **GC** | G1 is the safe default; size the heap to the working set (see envelope). |
+| **File descriptors** | `ulimit -n` **above `http.maxConnections`** (default 4096) plus headroom for JDBC pools, JFR files and the listener itself — 8192 is a safe starting point. The connection cap can only refuse cleanly while it is the ceiling reached *first*; the common default of 1024 is below the connection cap, and when the OS limit wins the race the listener stops accepting **permanently** rather than refusing (ADR-081 §Consequences). |
 
 Run the kernel JVM on **JDK 25 LTS or newer**. The distributed artifact is preview-clean since 0.11 (ADR-066), so the flag this document previously mandated is not merely unnecessary — passing it is not what the shipped jar is built for. The separate `-preview` artifact tracks the newest JDK and does require the flag; it is a different coordinate, chosen deliberately, and this deployment is not it. See [`support-matrix.md`](../support-matrix.md), which this table must agree with.
 

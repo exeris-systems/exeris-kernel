@@ -1822,9 +1822,27 @@ The asymmetry is local and visible: the sibling paths in the same file close the
 
 One gate clause remains **not** met, and it is not cosmetic:
 - ~~**No driver-local JFR test.**~~ *Met — see the correction above. The original wording, kept for the record: nothing forces a setup failure and asserts the event, in the Community suite or the TCK. Same gap as the refusal event under §"Road to 1.0".*
-- **The fault count is not exposed alongside the refusal count.** `acceptFaults` is a private counter that reaches an operator only inside the JFR event payload; `TransportStats` has no field for it, and it is deliberately *excluded* from `totalRejected` because a setup fault is not declined work. So the two accept-path failure modes are documented together but not *observable* together, which is the half of the gate that matters to the operator the section was written for.
+- ~~**The fault count is not exposed alongside the refusal count.**~~ **Met (v0.12, ADR-081 §5).** `TransportStats` gains `acceptFaults`, appended rather than grouped beside `totalRejected` so no positional call changes meaning, and deliberately still *excluded* from `totalRejected` because a setup fault is not declined work. The TCK asserts the separation from the side an operator reads — a ceiling refusal must leave the fault count at zero — and the Community driver test asserts the positive half after forcing a fault. **The gate is now 3 of 3.**
 
 `docs/subsystems/transport.md` §"Accept-path failure modes" does record both together, with a per-event comparison table — that clause is met.
+
+---
+
+### Transport: File-Descriptor Exhaustion Stops The Listener Permanently (surfaced 2026-08-30)
+
+**Gap:** `NativeTcpCarrier.runAcceptorLoop` catches `IOException` from `acceptPendingConnections()`, calls `handleAsyncFailure("acceptor", e)` and **returns**. `handleAsyncFailure` clears `running` and closes the server channel. So an `IOException` from `accept()` — which is how `EMFILE`/`ENFILE` surface when the process runs out of file descriptors — takes the listener down for the lifetime of the JVM. The condition is transient and recoverable: descriptors are freed as connections close, and the standard response is to retry the accept after a brief pause. The kernel instead treats it as terminal, and the only signal is the async-failure log line.
+
+**Why it surfaced now:** [ADR-081](adr/ADR-081-accept-time-connection-cap.md) unified the connection cap at 4096, which is **above** the common `ulimit -n` of 1024. The cap is the mechanism that is supposed to refuse first, cleanly and observably; where the descriptor limit is lower, the OS wins the race and the failure mode is this one instead. The hazard is not created by the default change — at 1000 the two ceilings were already close enough to race — but the band in which the OS wins is now wider, which is why `reference-deployment.md` carries the descriptor requirement explicitly.
+
+**Not fixed in ADR-081's change, deliberately.** Distinguishing transient accept errors (`EMFILE`, `ENFILE`, `ECONNABORTED`) from genuinely fatal ones is a behaviour change that needs its own tests — including a guard against hot-spinning on a condition that does not clear — and this stream's own rule is not to change behaviour and observability in the same commit.
+
+**Resolution:** classify accept-loop `IOException`s. Transient causes retry after a bounded backoff and emit a JFR event carrying the cause and the retry count; anything else keeps today's fatal path. A test must drive the transient path to recovery rather than asserting the classification in isolation — the defect is that the loop *ends*, so the assertion has to be that it does not.
+
+**Merge Gate:** an accept loop that has hit the descriptor limit resumes accepting once descriptors are available, asserted end-to-end; the retry path is bounded and emits an event; `docs/subsystems/transport.md` §"Accept-path failure modes" records the third mode as recoverable.
+
+**1.0 disposition:** 1.0-recommended. Transport is in the 1.0 core, and a listener that dies permanently from a recoverable condition is an availability defect rather than a diagnosability one.
+
+**Status (v0.12): OPEN.** Recorded when ADR-081 measured the interaction; the entry exists so the descriptor requirement in `reference-deployment.md` is a mitigation with something to point at rather than a standing workaround.
 
 ---
 
@@ -2892,7 +2910,9 @@ Two properties make this cap easy to hit unexpectedly: it counts **concurrent co
 
 What is on `development/*`: `CommunityConnectionRefusedEvent` and `CommunityAcceptFaultEvent`, both emitted from `NativeTcpCarrier`, and `TransportStats.totalRejected` now summing the accept-time refusals (`refusedConnections`) together with PAQS load-sheds instead of counting only the latter. One deliberate asymmetry is recorded in the event's own javadoc: an accept **fault** is excluded from `totalRejected`, because that field means work the engine *declined*, and a setup failure is not a decision. **Covered by `CommunityConnectionRefusalTest` and `CommunityAcceptFaultTest`**, both driver-local JFR tests present since the v0.11.0 integration — the refusal one over a live `RecordingStream`, the fault one over a `Recording` dumped to a file and read back with `RecordingFile`. This sentence previously read "Not covered by any test", which was wrong when written — see the correction under §"Transport: a connection refused at the cap is invisible" for how a search for the event *class names* missed tests that name the events by their JFR **name string**.
 
-The policy half is open and deliberately unbundled: whether an accept-time cap is the right mechanism against request-level shedding that can answer with a status, and whether 1000 is the right default for the reference deployment.
+**Status (v0.12): policy half CLOSED under [ADR-081](adr/ADR-081-accept-time-connection-cap.md), and the question it was posed as could not have been answered as posed.** The comparison was "an accept-time cap versus admitting and shedding at request level, *where the response can carry a status*". Measured rather than assumed: `StreamLoadShedder` **closes** the stream (FIN/RST on TCP, `STOP_SENDING` on QUIC) and no server path in any `*/src/main` produces a 503 — the only two occurrences in the tree are the `HttpStatus` constant and the client-side retry policy treating a *peer's* 503 as retryable. So the alternative did not exist, and the property being compared on was held by neither option.
+
+What the ADR rules instead: the two mechanisms are **layers** — the cap bounds connection slots before any bytes, shedding bounds concurrent stream work after the stream exists — so neither substitutes for the other, and a status-bearing refusal would be a *third* mechanism above the connection layer rather than a replacement for either. On the default: `TransportConfig.maxConnections` is one field with one enforcement point that had **two** defaults, 1000 via `http.maxConnections` and 4096 via `transport.maxConnections`, with nothing stating the difference. Unified at **4096** on the only operational evidence available — the project's own benchmark runs had to raise the HTTP value. Which key governs which carrier is now documented, because the standalone carrier is `DISABLED` unless `transport.mode` is set, and setting the transport key on an HTTP deployment therefore changes nothing and reports nothing.
 
 ---
 

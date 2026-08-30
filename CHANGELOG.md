@@ -8,7 +8,43 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Changed
+
+- **The connection cap gets one default, and the question it was left open on could not have been
+  answered as posed** ([ADR-081](docs/adr/ADR-081-accept-time-connection-cap.md)).
+  `HttpConfig.DEFAULT_MAX_CONNECTIONS` moves from **1 000 to 4 096**, matching the standalone
+  carrier's `transport.maxConnections`. It is one field enforced in one place; two defaults for it
+  were an accident, and 4 096 is the side the evidence pointed to — the project's own benchmark runs
+  had to raise the HTTP value to get through.
+
+  The open question asked whether an accept-time cap is right "as opposed to admitting and shedding
+  at request level, **where the response can carry a status**". That alternative does not exist here:
+  `StreamLoadShedder` closes the stream, and no server path in the kernel produces a 503 at all. The
+  two mechanisms are **layers** — connection slots before any bytes, concurrent stream work after the
+  stream exists — so neither substitutes for the other, and a status-bearing refusal would be a third
+  mechanism rather than a replacement.
+
+  **Check `ulimit -n` against the new default.** The cap refuses cleanly only while it is the ceiling
+  reached first; the common limit of 1024 sits below it. `reference-deployment.md` now carries the
+  requirement, and the failure mode it guards against — an `IOException` from `accept()` stopping the
+  listener permanently — is recorded as an open ROADMAP entry rather than fixed here, since it is a
+  behaviour change needing its own tests.
+
+  Which key governs which carrier is now documented: `http.maxConnections` for the HTTP listener,
+  `transport.maxConnections` for the standalone carrier, which is `DISABLED` unless `transport.mode`
+  is set. Setting the transport key on an HTTP deployment changes nothing and reports nothing.
+
 ### Added
+
+- **`TransportStats.acceptFaults`** — the last open clause of v0.11's accept-fault merge gate. A
+  setup fault reached an operator only inside the JFR payload, so the two accept-path failure modes
+  were documented together but not *observable* together. It stays deliberately out of
+  `totalRejected`, which means work the engine *declined*: a setup that broke declined nothing, and
+  folding them removes the distinction between a capacity problem and a defect. Appended rather than
+  grouped beside `totalRejected`, with the six-argument constructor retained, so no existing
+  positional call changes meaning. `AbstractTransportEngineTck` asserts the separation from the side
+  an operator reads — a ceiling refusal must leave the fault count at zero — and the Community driver
+  test asserts the positive half after forcing a fault.
 
 - **Two owed test cases from the v0.11 sweep, both mutation-checked rather than merely green.**
 
