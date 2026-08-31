@@ -44,7 +44,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class CommunityHttpClientEngine implements HttpClientEngine {
 
     private static final String ENGINE_NAME = "community-http-client";
-    private static final int READ_CHUNK_BYTES = 8 * 1024;
 
     private final HttpConfig config;
     private final MemoryAllocator allocator;
@@ -223,48 +222,26 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
 
     private HttpResponse readResponse(TransportStream stream, HttpVersion requestVersion,
                                       boolean bodyless) {
-        try (LoanedBuffer aggregate = allocator.allocateNetwork(resolveAggregateCapacity())) {
-            long total = 0;
-            long headerTerminator = -1;
-            long expectedTotal = -1;
-            boolean endOfStream = false;
-            boolean responseComplete = false;
-            while (total < aggregate.capacity() && !endOfStream && !responseComplete) {
-                int remaining = (int) (aggregate.capacity() - total);
-                int chunk = Math.min(READ_CHUNK_BYTES, remaining);
-                int read = stream.read(aggregate.segment().asSlice(total, chunk), chunk);
-                if (read != 0) {
-                    if (read < 0) {
-                        endOfStream = true;
-                    } else {
-                        total += read;
-                        aggregate.setSize(total);
-                        headerTerminator = CommunityHttpClientResponseDecoder.resolveHeaderTerminator(
-                                headerTerminator, aggregate.segment(), total);
-                        expectedTotal = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
-                                expectedTotal, aggregate.segment(), total, headerTerminator, bodyless);
-                        responseComplete = CommunityHttpClientResponseDecoder.isResponseComplete(total, expectedTotal);
-                    }
-                }
-            }
-
-            if (total == 0) {
-                throw new IllegalStateException("Remote peer returned an empty HTTP response");
-            }
-
-            return CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, aggregate, total, requestVersion, bodyless);
+        try (CommunityHttpClientResponseReader reader = new CommunityHttpClientResponseReader(
+                allocator, resolveAggregateCapacity(), bodyless)) {
+            reader.readFrom(stream);
+            return reader.decode(requestVersion);
         }
     }
 
     /**
-     * The read buffer size for one response.
+     * The largest a response read may become — the CEILING, not the size it starts at.
+     *
+     * <p>Until 0.12 the two were the same number and this value was allocated up front for every
+     * response. {@link CommunityHttpClientResponseReader} now starts small and grows to what the
+     * response declares; this bounds that growth, and reaching it still ends the read and leaves
+     * the decoder to refuse the overrun.
      *
      * <p>Package-private so the ceiling it derives can be asserted without opening a socket, the
      * same reason {@code CommunityHttpTransportFactory.buildTransportConfig} is: the value an
      * operator configures is worth a test that does not depend on a live peer to reach it.
      *
-     * @return the aggregate capacity in bytes
+     * @return the aggregate ceiling in bytes
      */
     /* default */ int resolveAggregateCapacity() {
         // The RESPONSE ceiling, not the request one. Reading a response against the limit that
@@ -272,7 +249,12 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         // (ADR-071 amendment); they are opposite directions on different sockets.
         long configured = config.maxResponseBodyBytes();
         long bounded = configured < 0 ? 64L * 1024L : configured + 8L * 1024L;
-        return (int) Math.max(bounded, 8L * 1024L);
+        // Clamped, not cast. A ceiling near Integer.MAX_VALUE is a legal setting and the header
+        // allowance pushes it past the int range, where a bare cast lands on a negative number and
+        // the allocator refuses it — the first response of a deployment that set a large limit
+        // failed on the limit itself. Free to clamp now that this value is only a bound: nothing
+        // allocates it, so a ceiling nobody reaches costs nothing.
+        return Math.clamp(bounded, 8 * 1024, Integer.MAX_VALUE);
     }
 
     private static MemoryAllocator resolveAllocator(HttpConfig config) {

@@ -1892,12 +1892,66 @@ ADR, because the ruling it needed was that ADR's own: **a key can be present, ty
 still be a configuration defect, when what it governs is not what its name says** — which is a class
 no missing-key inventory can find.
 
-Problem 1, the waste, is **untouched**: the aggregate is still sized from the ceiling rather than from
-what the response declares, so a `HEAD` against a 10 MiB ceiling still allocates 10 MiB. The merge
-gate above is therefore still open on its first clause, and it is the clause that needs a measurement
-(allocator stats before and after) rather than a knob. Splitting it out was deliberate — the knob is
-the 1.0 item, since a limit an operator cannot set independently is a limit they cannot reason about,
-while per-response sizing is a No Waste Compute improvement that can follow without blocking it.
+**Status (v0.12): DELIVERED, both halves.** Problem 1 is closed too. The read moved into
+`CommunityHttpClientResponseReader`: the buffer starts at 8 KiB and grows to what
+`Content-Length` declares, so the ceiling bounds growth instead of sizing every allocation.
+Measured on `MemoryStats.peakAllocatedBytes()`, one exchange on a fresh allocator, 10 MiB ceiling:
+
+| response | before | after |
+|---|---|---|
+| `HEAD`, declaring a 10 MiB body | 10 493 952 | **8 192** |
+| 200-byte `GET` | 10 494 152 | **8 392** |
+| 100 KiB `GET` | 10 596 352 | **204 843** |
+| 30 KiB, no `Content-Length` | 10 524 672 | **63 488** |
+
+The `HEAD` is the case that names the defect: it declares 10 MiB and carries nothing, and it used to
+allocate the 10 MiB anyway. The overrun refusal is unchanged, mutation-checked in both directions —
+restoring the up-front allocation reddens all four sizing cases and leaves the refusal green.
+
+Two things surfaced while measuring, both recorded rather than folded in. A ceiling near the int
+range wrapped negative and the allocator refused it, so a deployment that set a large limit failed
+on its first response; that one is fixed here, because clamping is free once the value is only a
+bound. The other is `-1`, below.
+
+**What is left on this path, and it is now the larger item.** After right-sizing, the dominant
+allocation is the decoder's: `decodeResponse` copies the body out of the aggregate into its own
+buffer, so a 100 KiB response peaks at ~200 KiB — two live copies of the same bytes. Handing the
+caller a slice of the aggregate instead would remove it, at the cost of the response owning a buffer
+that also holds the headers. That is an ownership decision, not a sizing one.
+
+---
+
+### HTTP Client: `-1` on the Response Ceiling Is the Smallest Setting, Not the Absence of One (surfaced 2026-08-31)
+
+**Gap:** `HttpConfig.maxResponseBodyBytes` documented `-1` as unlimited and
+`CommunityHttpClientEngine.resolveAggregateCapacity` resolves it to **64 KiB** — below the 10 MiB
+default, and the smallest value the whole range can produce. An operator asking for no limit gets
+the tightest one there is, and a response past it is refused as truncated. The docs now say what
+actually happens, which is a stopgap: a key whose documented meaning is the opposite of its
+behaviour was corrected by changing the documentation.
+
+**Why it was defensible and no longer is.** The 64 KiB was a consequence of eager allocation — when
+the ceiling was allocated up front for every response, `-1` could not mean `Integer.MAX_VALUE`
+without allocating 2 GiB per request, so it was clamped to something survivable. The per-response
+sizing above removed that constraint: nothing allocates the ceiling any more, so an unreached
+ceiling costs nothing and the value could honestly be unbounded.
+
+**Owner:** HTTP subsystem.
+
+**Resolution:** a ruling, not a patch, which is why it is not folded into the sizing change. Making
+`-1` mean `Integer.MAX_VALUE` is one line and hands an untrusted peer the ability to drive a 2 GiB
+off-heap allocation by streaming without ever sending `Content-Length` — the 64 KiB is silently
+protecting against that today. The alternatives are to keep a bound and refuse `-1` at validation
+(saying so honestly), or to make unlimited mean unbounded and require the operator to accept what
+they asked for. Either is defensible; the current state, where the documentation and the code
+disagreed, was not.
+
+**1.0 disposition:** 1.0. A configuration value that does the opposite of what it says is a
+correctness problem in the operator's model, and this key is on the 1.0 surface.
+
+**Merge Gate:** whichever semantics wins, a test asserts it against a peer that sends more than the
+resolved ceiling, and the SPI javadoc, the operator guide and the validator message agree on one
+sentence.
 
 ---
 

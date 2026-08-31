@@ -17,8 +17,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   deployment tightening ingress shrank its outbound client; one loosening it grew the buffer every
   response allocates. Neither name said so.
 
-  Both limits default to **10 MiB**, so an untuned deployment sees no change, and `-1` still means
-  unlimited on either. The pre-0.12 constructor shape keeps delegating its single ceiling into both —
+  Both limits default to **10 MiB**, so an untuned deployment sees no change. The pre-0.12
+  constructor shape keeps delegating its single ceiling into both —
   a caller who passed one number for an engine they built themselves is not silently lowered to a
   default they never named, which would turn an upgrade into a run-time truncation. The
   configuration keys resolve independently, because an operator setting an ingress limit said
@@ -27,9 +27,22 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `HttpConfig` gains the component appended, with the 14-argument shape retained: the SPI gate
   reports an addition on a `stable` surface, `stable-breaks=0`.
 
-  **What this does not do:** the aggregate is still sized from the ceiling rather than from what the
-  response declares, so a `HEAD` against a 10 MiB ceiling still allocates 10 MiB. That half is a No
-  Waste Compute change owing a measurement and stays open in the ROADMAP.
+  `-1` is accepted on the response key for symmetry and does **not** mean unlimited there — it
+  resolves to a 64 KiB ceiling, below the default. The documentation now says so; the semantics need
+  a ruling and have a ROADMAP entry.
+
+- **The HTTP client stops paying for the largest response it might ever read.** The response read
+  moved into `CommunityHttpClientResponseReader`, which starts at 8 KiB and grows to what
+  `Content-Length` declares, so `http.maxResponseBodyBytes` bounds growth instead of sizing every
+  allocation. Measured on `MemoryStats.peakAllocatedBytes()` against a 10 MiB ceiling: a `HEAD`
+  declaring a 10 MiB body went from **10 493 952 bytes to 8 192**, a 200-byte `GET` from
+  **10 494 152 to 8 392**, a 100 KiB `GET` from **10 596 352 to 204 843**. The overrun refusal is
+  unchanged — a response past the ceiling is still refused rather than truncated — so an engine
+  sized deliberately, as the S3 blob driver is, behaves as before.
+
+  A ceiling near the int range no longer wraps negative: the header allowance pushed it past
+  `Integer.MAX_VALUE` and the allocator refused the result, so a deployment that set a large limit
+  failed on its first response. Clamping is free now that the value is only a bound.
 
 ### Changed
 

@@ -53,6 +53,21 @@ class CommunityHttpClientResponseCeilingTest {
     }
 
     @Test
+    @DisplayName("a ceiling near the int range still yields a usable capacity, not a negative one")
+    void largeCeilingsAreClampedNotWrapped() {
+        // 2 GiB is a legal value for the key. The header allowance pushes it past Integer.MAX_VALUE,
+        // and a bare cast lands on a negative number the allocator refuses — so a deployment that
+        // set a large limit failed on its first response, on the limit itself.
+        try (CommunityHttpClientEngine engine = new CommunityHttpClientEngine(
+                clientConfig(REQUEST_CEILING, 2L * 1024 * 1024 * 1024))) {
+
+            assertThat(engine.resolveAggregateCapacity())
+                    .as("clamped to the largest allocatable capacity")
+                    .isEqualTo(Integer.MAX_VALUE);
+        }
+    }
+
+    @Test
     @DisplayName("the pre-0.12 constructor shape keeps its single ceiling, so an old caller is unchanged")
     void bridgeKeepsTheOldCoupling() {
         HttpConfig bridged = new HttpConfig(
