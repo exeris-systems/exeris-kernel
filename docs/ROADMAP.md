@@ -2700,6 +2700,34 @@ Two things kept it invisible. Nothing in the tree makes an outbound call from a 
 
 **Status (v0.12): DELIVERED.**
 
+### TCK: The HTTP Limit Family Is Enforced by Community Tests Only (surfaced 2026-08-31)
+
+**Gap:** seven of `HttpConfig`'s limit components — `maxRequestBodyBytes`, `maxResponseBodyBytes`,
+`maxRequestHeaderCount`, `maxRequestHeaderSize`, `maxHeaderBlockSize`, `maxHeaderListSize`,
+`maxStringLiteralSize` — are SPI surface asserted **nowhere in `exeris-kernel-tck`**.
+`AbstractHttpClientEngineTck` and `AbstractHttpServerEngineTck` both already take an `HttpConfig`,
+and both cover only engine identity, lifecycle and (client-side) peer addressing. Nothing obligates a
+second implementation of either engine to honour a ceiling an operator set. The Community engines do
+honour them and are tested for it, so the behaviour is correct today and unowned tomorrow.
+
+This is not the settled pattern it resembles. The eighth limit, `maxConnections`, got exactly this
+coverage one PR earlier — `AbstractTransportEngineTck.createEngineWithConnectionCeiling`, T1-7 —
+at the transport layer where ADR-081 put its enforcement. The repo's most recent precedent is
+therefore the opposite of this gap, which makes the HTTP family the deviation rather than the norm.
+
+**Why T1-8 did not close it:** the assertion needs a peer that serves an oversize response, and
+neither engine TCK has a server fixture — `AbstractHttpProviderLoopbackTck` is where one lives.
+Adding one for a single key would leave the other six behind it, so the unit of work is the family.
+
+**Owner:** TCK.
+
+**Merge Gate:** a limit case in each engine TCK, mutation-checked against an implementation that
+reads its ceiling and never applies it — that is the shape a green suite must be able to redden.
+Per direction, not per key: request-side truncation and response-side truncation are different code
+in every implementation, and a case proving one says nothing about the other.
+
+---
+
 ---
 
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
