@@ -34,6 +34,11 @@ import java.util.Objects;
  * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard); must be
  *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
+ * @param maxResponseBodyBytes  maximum size of a response the <em>client</em> will read, in bytes
+ *                              ({@code -1} = unlimited). Separate from {@code maxRequestBodyBytes},
+ *                              which bounds what the <em>server</em> accepts: the two describe
+ *                              opposite directions on different sockets, and a deployment tuning
+ *                              its ingress limit should not thereby retune its outbound client.
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;
  *                              {@link HttpVersion#HTTP_3} requires Enterprise provider
@@ -84,7 +89,8 @@ public record HttpConfig(
         String defaultAuthority,
         int maxHeaderBlockSize,
         int maxHeaderListSize,
-        int maxStringLiteralSize
+        int maxStringLiteralSize,
+        long maxResponseBodyBytes
 ) {
 
     /** Default bind address: all interfaces. */
@@ -146,6 +152,15 @@ public record HttpConfig(
     /** Default max request body: 10 MiB. */
     public static final long DEFAULT_MAX_REQUEST_BODY_BYTES = 10L * 1_024 * 1_024;
 
+    /**
+     * Default max response body the client will read: 10 MiB.
+     *
+     * <p>The same number as {@link #DEFAULT_MAX_REQUEST_BODY_BYTES} so an untuned deployment sees no
+     * change, and a <em>separate</em> constant because they are separate limits — one bounds what
+     * this server accepts, the other what this client reads back from someone else's.
+     */
+    public static final long DEFAULT_MAX_RESPONSE_BODY_BYTES = 10L * 1_024 * 1_024;
+
 
     public HttpConfig {
         Objects.requireNonNull(mode,       "mode must not be null");
@@ -154,6 +169,7 @@ public record HttpConfig(
             HttpConfigValidation.validateConnectionLimits(maxConnections, idleTimeoutMillis);
             HttpConfigValidation.validateRequestLimits(
                     maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
+            HttpConfigValidation.validateResponseLimits(maxResponseBodyBytes);
             HttpConfigValidation.validatePort(mode, port, bindHost);
             HttpConfigValidation.validateDefaultAuthority(defaultAuthority);
             HttpConfigValidation.validateHeaderBlockSize(maxHeaderBlockSize);
@@ -196,6 +212,54 @@ public record HttpConfig(
                 maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion, null,
                 DEFAULT_MAX_HEADER_BLOCK_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE,
                 DEFAULT_MAX_STRING_LITERAL_SIZE);
+    }
+
+    /**
+     * Creates a configuration whose client response ceiling is its request ceiling.
+     *
+     * <p>The canonical constructor as it stood before {@link #maxResponseBodyBytes()} existed,
+     * retained as a compatibility bridge. It delegates {@code maxRequestBodyBytes} into the response
+     * ceiling rather than the new default, and that asymmetry with the configuration keys is
+     * deliberate: a caller who wrote this shape passed <em>one</em> number for an engine they built
+     * themselves, and lowering their client silently to a default they never named would turn an
+     * upgrade into a run-time truncation. An operator setting {@code http.maxRequestBodyBytes} said
+     * something narrower — bound this server's ingress — so the key resolves the two independently.
+     *
+     * @param mode                  operating mode
+     * @param bindHost              listener bind address for SERVER / DUAL modes
+     * @param port                  listener port for SERVER / DUAL modes
+     * @param maxConnections        maximum concurrent connections
+     * @param idleTimeoutMillis     idle connection timeout, {@code 0} disables
+     * @param maxRequestHeaderCount maximum request header count
+     * @param maxRequestHeaderSize  maximum single request header size in bytes
+     * @param maxRequestBodyBytes   maximum request body size in bytes, and the client response ceiling
+     * @param h2cUpgradeEnabled     whether cleartext h2c upgrade is honoured
+     * @param maxVersion            highest negotiable HTTP version
+     * @param defaultAuthority      default client peer, or {@code null}
+     * @param maxHeaderBlockSize    maximum HPACK header block size
+     * @param maxHeaderListSize     maximum decoded header list size
+     * @param maxStringLiteralSize  maximum HPACK string literal size
+     * @since 0.12.0
+     */
+    @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
+    public HttpConfig(HttpMode mode,
+                      String bindHost,
+                      int port,
+                      int maxConnections,
+                      long idleTimeoutMillis,
+                      int maxRequestHeaderCount,
+                      int maxRequestHeaderSize,
+                      long maxRequestBodyBytes,
+                      boolean h2cUpgradeEnabled,
+                      HttpVersion maxVersion,
+                      String defaultAuthority,
+                      int maxHeaderBlockSize,
+                      int maxHeaderListSize,
+                      int maxStringLiteralSize) {
+        this(mode, bindHost, port, maxConnections, idleTimeoutMillis, maxRequestHeaderCount,
+                maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion,
+                defaultAuthority, maxHeaderBlockSize, maxHeaderListSize, maxStringLiteralSize,
+                maxRequestBodyBytes);
     }
 
     /**

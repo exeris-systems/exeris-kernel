@@ -257,8 +257,20 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         }
     }
 
-    private int resolveAggregateCapacity() {
-        long configured = config.maxRequestBodyBytes();
+    /**
+     * The read buffer size for one response.
+     *
+     * <p>Package-private so the ceiling it derives can be asserted without opening a socket, the
+     * same reason {@code CommunityHttpTransportFactory.buildTransportConfig} is: the value an
+     * operator configures is worth a test that does not depend on a live peer to reach it.
+     *
+     * @return the aggregate capacity in bytes
+     */
+    /* default */ int resolveAggregateCapacity() {
+        // The RESPONSE ceiling, not the request one. Reading a response against the limit that
+        // bounds what this server accepts made an ingress setting retune an outbound client
+        // (ADR-071 amendment); they are opposite directions on different sockets.
+        long configured = config.maxResponseBodyBytes();
         long bounded = configured < 0 ? 64L * 1024L : configured + 8L * 1024L;
         return (int) Math.max(bounded, 8L * 1024L);
     }

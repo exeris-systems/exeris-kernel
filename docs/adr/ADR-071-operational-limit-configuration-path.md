@@ -166,6 +166,26 @@ turns an operator's configuration error into what looks like a client error, onc
   since every entry is an off-heap loan the watermark arbiter accounts for and PAQS still sheds
   under memory pressure, but it is not something an operator should have to discover.
 
+*Amendment 2026-08-30 — a limit that was configurable all along, and still could not be reasoned
+about.* `http.maxRequestBodyBytes` was wired, documented and honoured, so no inventory of missing
+keys ever flagged it. It was nonetheless unreasonable in this ADR's own sense: the HTTP **client**
+sized every response read from it, so one key bounded two unrelated things — what this server
+accepts from callers, and what this application reads back from someone else's server. An operator
+tightening ingress shrank their outbound client; one loosening it grew the buffer every response
+allocates, including a `HEAD`. Neither name said so.
+
+`http.maxResponseBodyBytes` splits them, defaulting to the same 10 MiB so an untuned deployment sees
+no change. The general point is worth keeping beside the missing-key inventory that produced this
+ADR: **a key can be present, typed, defaulted and still be a configuration defect, when what it
+governs is not what its name says.** A grep for unwired constants cannot find that class; only
+reading the consumer can.
+
+One asymmetry is deliberate. The pre-0.12 constructor shape keeps delegating its single ceiling into
+both, because a caller who wrote that shape passed one number for an engine they built themselves,
+and silently lowering their client to a default they never named would turn an upgrade into a
+run-time truncation. The configuration keys resolve independently, because an operator setting an
+ingress limit said something narrower than that.
+
 ## Cross-references
 
 - `docs/subsystems/http.md` — the HTTP contract these bounds belong to.

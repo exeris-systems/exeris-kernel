@@ -263,9 +263,16 @@ Inside your application, read config with `KernelProviders.CURRENT_CONFIG.get()`
 
 `http.mode`, `http.bindHost`, `http.port` (falls back to `network.port`), `http.maxConnections`,
 `http.idleTimeoutMillis`, `http.maxRequestHeaderCount`, `http.maxRequestHeaderSize`,
-`http.maxRequestBodyBytes`, `http.h2cUpgradeEnabled`, `http.maxVersion`,
-`http.client.defaultAuthority`, `http.maxHeaderBlockSize`, `http.maxHeaderListSize`,
-`http.maxStringLiteralSize`.
+`http.maxRequestBodyBytes`, `http.maxResponseBodyBytes`, `http.h2cUpgradeEnabled`,
+`http.maxVersion`, `http.client.defaultAuthority`, `http.maxHeaderBlockSize`,
+`http.maxHeaderListSize`, `http.maxStringLiteralSize`.
+
+The two body limits are **separate keys because they bound opposite directions on different
+sockets**: `http.maxRequestBodyBytes` is what this server accepts from callers,
+`http.maxResponseBodyBytes` is what this application's HTTP client will read back from someone
+else's server. Until 0.12 the client borrowed the request key, so tightening ingress also shrank
+what the outbound client could read, and loosening it grew the buffer every response allocates.
+Both default to 10 MiB and `-1` means unlimited.
 
 The last three are HTTP/2 only, and they are three keys because they bound three different
 quantities — the COMPRESSED header block on the wire, the CUMULATIVE DECODED field section, and a

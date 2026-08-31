@@ -1882,6 +1882,23 @@ Compute improvement that can follow.
 (assert on allocator stats, not on timing); the overrun refusal still fires at the configured limit; the
 S3 driver's ceiling stops being the engine's ceiling.
 
+**Status (v0.12): the knob is DELIVERED; the per-response sizing is not.** Problem 2 of the two above
+is closed — `http.maxResponseBodyBytes` is a separate key on `HttpConfig`, resolved independently of
+`http.maxRequestBodyBytes`, and `CommunityHttpClientEngine.resolveAggregateCapacity` reads it. Both
+default to 10 MiB, so an untuned deployment sees no change, and the pre-0.12 constructor shape keeps
+delegating its single ceiling into both so a programmatic caller is not silently lowered. Recorded
+under the [ADR-071](adr/ADR-071-operational-limit-configuration-path.md) amendment rather than a new
+ADR, because the ruling it needed was that ADR's own: **a key can be present, typed, defaulted and
+still be a configuration defect, when what it governs is not what its name says** — which is a class
+no missing-key inventory can find.
+
+Problem 1, the waste, is **untouched**: the aggregate is still sized from the ceiling rather than from
+what the response declares, so a `HEAD` against a 10 MiB ceiling still allocates 10 MiB. The merge
+gate above is therefore still open on its first clause, and it is the clause that needs a measurement
+(allocator stats before and after) rather than a knob. Splitting it out was deliberate — the knob is
+the 1.0 item, since a limit an operator cannot set independently is a limit they cannot reason about,
+while per-response sizing is a No Waste Compute improvement that can follow without blocking it.
+
 ---
 
 ### HTTP/2: The Peer's Advertised Header Limit Is Parsed And Never Read (surfaced 2026-08-27)
@@ -2682,6 +2699,34 @@ Two things kept it invisible. Nothing in the tree makes an outbound call from a 
 **Follow-on, and it is a decision rather than a patch.** The better mechanism is a **scheme on the dial address** (`https://host:port`), opt-in, giving per-request choice and letting one engine call an HTTPS peer and a plaintext one — covering the server too, and plausibly per-route rather than per-transport, which is where it would meet the route-policy surface (ADR-061). It stays out of this fix because it changes the authority format on `HttpRequest`, which is `stable`, and touches `Host` derivation, SNI and ADR-074 §4. Keeping it opt-in is what lets the default path above stay as it is.
 
 **Status (v0.12): DELIVERED.**
+
+### TCK: The HTTP Limit Family Is Enforced by Community Tests Only (surfaced 2026-08-31)
+
+**Gap:** seven of `HttpConfig`'s limit components — `maxRequestBodyBytes`, `maxResponseBodyBytes`,
+`maxRequestHeaderCount`, `maxRequestHeaderSize`, `maxHeaderBlockSize`, `maxHeaderListSize`,
+`maxStringLiteralSize` — are SPI surface asserted **nowhere in `exeris-kernel-tck`**.
+`AbstractHttpClientEngineTck` and `AbstractHttpServerEngineTck` both already take an `HttpConfig`,
+and both cover only engine identity, lifecycle and (client-side) peer addressing. Nothing obligates a
+second implementation of either engine to honour a ceiling an operator set. The Community engines do
+honour them and are tested for it, so the behaviour is correct today and unowned tomorrow.
+
+This is not the settled pattern it resembles. The eighth limit, `maxConnections`, got exactly this
+coverage one PR earlier — `AbstractTransportEngineTck.createEngineWithConnectionCeiling`, T1-7 —
+at the transport layer where ADR-081 put its enforcement. The repo's most recent precedent is
+therefore the opposite of this gap, which makes the HTTP family the deviation rather than the norm.
+
+**Why T1-8 did not close it:** the assertion needs a peer that serves an oversize response, and
+neither engine TCK has a server fixture — `AbstractHttpProviderLoopbackTck` is where one lives.
+Adding one for a single key would leave the other six behind it, so the unit of work is the family.
+
+**Owner:** TCK.
+
+**Merge Gate:** a limit case in each engine TCK, mutation-checked against an implementation that
+reads its ceiling and never applies it — that is the shape a green suite must be able to redden.
+Per direction, not per key: request-side truncation and response-side truncation are different code
+in every implementation, and a case proving one says nothing about the other.
+
+---
 
 ---
 

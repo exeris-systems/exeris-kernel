@@ -19,12 +19,20 @@ package eu.exeris.kernel.spi.http;
  * than published.
  *
  * <p>The class carries a {@code CyclomaticComplexity} suppression, and it is the one place it
- * belongs. Extracting these validators did not reduce the metric, it MOVED it: {@code HttpConfig}
- * measured 36 with them and {@code HttpConfigValidation} measures 35 without anything else, so the
- * ~35 branches were always the validation itself. Splitting them further to get under a threshold
- * of 30 would be complexity theatre — validating eleven configuration fields, each with its own
- * refusal message, is legitimately that many decisions. Suppressing it HERE keeps the record itself
+ * belongs. Extracting these validators did not reduce the metric, it MOVED it: at extraction
+ * {@code HttpConfig} measured 36 with them and this class measured 35 without anything else, so the
+ * branches were always the validation itself. Splitting them further to get under the class
+ * threshold of 30 would be complexity theatre — each configuration field owns its own refusal
+ * message, and that is legitimately that many decisions. Suppressing it HERE keeps the record itself
  * gated, so {@code HttpConfig} growing new logic still trips the rule.
+ *
+ * <p>Re-measure rather than trust that number, because it moves with every key and this sentence
+ * does not: 35 at extraction, 46 once the HTTP/2 header limits landed, 52 with the decoder bound,
+ * 55 with {@code maxResponseBodyBytes}. Delete the annotation and run
+ * {@code mvn -pl exeris-kernel-spi pmd:check}, which also reports what a CLASS-level suppression
+ * necessarily hides: {@code validateDefaultAuthority} is itself at 14 against a method threshold of
+ * 10. That one is a candidate for splitting on its own merits — a single validator carrying a
+ * seventh of the class is not the same claim as "validation is legitimately many decisions".
  *
  * @since 0.12.0
  */
@@ -166,6 +174,21 @@ final class HttpConfigValidation {
         if (maxRequestBodyBytes < -1) {
             throw new IllegalArgumentException(
                     "maxRequestBodyBytes must be >= -1 (-1 = unlimited), got: " + maxRequestBodyBytes);
+        }
+    }
+
+    /**
+     * Validates the client's response ceiling.
+     *
+     * <p>Separate from {@link #validateRequestLimits} because it bounds a different direction on a
+     * different socket, and the message has to name the key an operator would actually set.
+     *
+     * @param maxResponseBodyBytes the client response ceiling in bytes, {@code -1} for unlimited
+     */
+    /* default */ static void validateResponseLimits(long maxResponseBodyBytes) {
+        if (maxResponseBodyBytes < -1) {
+            throw new IllegalArgumentException(
+                    "maxResponseBodyBytes must be >= -1 (-1 = unlimited), got: " + maxResponseBodyBytes);
         }
     }
 }
