@@ -34,11 +34,14 @@ import java.util.Objects;
  * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard); must be
  *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
- * @param maxResponseBodyBytes  maximum size of a response the <em>client</em> will read, in bytes
- *                              ({@code -1} = unlimited). Separate from {@code maxRequestBodyBytes},
- *                              which bounds what the <em>server</em> accepts: the two describe
- *                              opposite directions on different sockets, and a deployment tuning
- *                              its ingress limit should not thereby retune its outbound client.
+ * @param maxResponseBodyBytes  maximum size of a response the <em>client</em> will read, in bytes.
+ *                              Separate from {@code maxRequestBodyBytes}, which bounds what the
+ *                              <em>server</em> accepts: the two describe opposite directions on
+ *                              different sockets, and a deployment tuning its ingress limit should
+ *                              not thereby retune its outbound client. {@code -1} is accepted for
+ *                              symmetry with the request limit but does <strong>not</strong> mean
+ *                              unlimited here — the client resolves it to a 64 KiB ceiling, which
+ *                              is below the default, so name the size you want instead.
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;
  *                              {@link HttpVersion#HTTP_3} requires Enterprise provider
