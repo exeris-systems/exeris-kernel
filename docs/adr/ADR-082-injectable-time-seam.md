@@ -153,3 +153,13 @@ binding, so the source is resolved at construction — during security bootstrap
 scope — exactly as the flow runtime resolves it in `start()`. That is now three independent
 components reaching the same conclusion, which makes it the seam's usage rule rather than a flow
 quirk.
+
+**Two corrections from review of the amendment itself.** The `Clock` view's `withZone` first returned
+`this`, so a caller asking for a zone silently kept UTC — harmless for the kernel's two consumers,
+which compare instants, and wrong on a *public* SPI `Clock` where a future caller may build something
+zone-shaped on it. It now returns a re-zoned view on the same source, so the zone changes and the
+delegation survives. And the security wiring shipped with **no test of the wiring**: the existing
+provider TCK never binds a `TimeSource`, so it exercised the unbound fallback and would have reported
+green whether or not the change worked. That gap is closed by a test binding a parked source in
+**both** directions — a wall-clock-valid token refused, and a wall-clock-expired token accepted —
+because either direction alone passes against a validator that answers the same way every time.

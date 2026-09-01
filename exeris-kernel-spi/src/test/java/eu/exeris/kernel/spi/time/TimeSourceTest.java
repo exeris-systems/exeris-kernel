@@ -61,6 +61,17 @@ class TimeSourceTest {
 
             assertThat(zoned.instant()).isEqualTo(before.plusSeconds(60));
         }
+
+        @Test
+        @DisplayName("withZone actually changes the zone — this is a public Clock, not a kernel-only one")
+        void withZoneHonoursTheZone() {
+            // The first version returned `this`, so getZone() still said UTC after a caller asked
+            // for something else. Harmless for the kernel's two consumers, which compare instants,
+            // and wrong for anything zone-shaped a future caller builds on a public SPI Clock.
+            ZoneOffset plusTwo = ZoneOffset.ofHours(2);
+
+            assertThat(new MovableSource().asClock().withZone(plusTwo).getZone()).isEqualTo(plusTwo);
+        }
     }
 
     @Nested
