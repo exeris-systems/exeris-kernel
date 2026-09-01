@@ -2136,6 +2136,117 @@ are.
 
 ## Known Gaps / Future Work planned for v0.12
 
+### Graph: The Churn-to-Data SLO Was A Coin Flip, And The Path Has Two Regimes (surfaced 2026-08-27)
+
+**Gap:** `GraphChurnRatioTck` is the executable half of graph.md's "Zero-BS Performance Metric" — the
+`< 20x` Community / `< 1x` Enterprise churn-to-data contract. It failed intermittently in local runs
+and never in CI. Neither observation was evidence about the graph path: the number it compared
+against the threshold was not a byte measurement of anything.
+
+Three defects composed, and the third is why the first two stayed invisible:
+
+1. **The numerator was a Poisson count, not a byte count.** It summed `allocationSize` where JFR
+   provides it and `weight` where it does not. `jdk.ObjectAllocationSample` — which dominates the
+   recording — provides only `weight`, the sampler's extrapolation, and it arrives in a
+   near-constant ~261 KB quantum. Across repetitions the count of sampled `eu.exeris.*` events was
+   0, 2, 4, 5, 6 and 10, so the reported ratio could take only the values 0.00, 4.09, 8.17, 10.22,
+   12.26 … 20.44.
+2. **The denominator spanned different work from the numerator.** `measurementIterations()` (1 000)
+   fed the denominator while the workload ran `Config.ofDefaults().hotPathIterations()` (10 000).
+   That factor of ten is exactly what scaled one sampler hit to 2.04 ratio units, and so put the
+   20.0 threshold between the ninth hit and the tenth. **The test failed when the sampler drew ten.**
+   At a mean of ~4.6 that is a few percent per run — which is what "flakes locally, never in CI"
+   actually was: a low-rate draw, not a property of either machine.
+3. **A numerator filtered to `eu.exeris.*` cannot observe the documented quantity.** graph.md
+   attributes the ~15x to the driver — "standard Bolt/JDBC drivers exhibit a ~15x
+   allocation-to-data ratio" — and the filter excludes the driver by construction. On the Community
+   Bolt path the kernel's own share is ~1% of the total. On a realistic result set the filtered
+   signal is **empty**: three consecutive measurements of a 500-id traversal sampled zero
+   `eu.exeris.*` events, which the shipped arithmetic reports as a perfect `0.00x`.
+
+**A fourth defect sat in the workload, not the instrument.** The ratio is defined per byte of data
+transferred, and the traversal returned one id — 16 bytes of payload for ~11.7 KB of allocation.
+Measured honestly that workload reports ~730x, and what it measures is session and protocol setup
+rather than churn per data byte.
+
+**Owner:** Graph subsystem, TCK.
+
+**Resolution (this change):** the numerator is the exact per-thread allocated-bytes delta, driver
+included; the denominator derives from the iteration count actually run and the result-set size
+actually returned; the traversal carries a 500-id fan-out so the fixed per-round-trip cost
+amortises.
+
+**What the corrected instrument found immediately — the substantive item.** The Community Bolt
+traversal path has **two allocation regimes**, and the choice is made once per JVM and then holds:
+
+| Regime | Bytes / traversal | Ratio | Against graph.md's 20x |
+|---|---|---|---|
+| fast | ~142 000 | 17.4 – 18.0x | inside |
+| slow | ~166 000 | 20.5 – 20.8x | **breached** |
+
+They are separated by a flat 17%, and nothing mixes them: three JVMs ran six windows of 300
+traversals each — 4 200 traversals per process, warm-up included — and every window in a process
+landed in the same regime. Roughly two runs in seven take the slow one (4 of 14 observed
+processes). So the documented `< 20x` is
+met in one regime and breached in the other, and **that is a property of the driver path, not of the
+change under review** — which is why the TCK's Community bound is set at 23x as a *regression*
+bound, with graph.md's 20x kept as the contract it reports against. Deciding which number is the
+honest one to publish, or removing the slow regime, is open work.
+
+**What is also still open:**
+
+- **Cold traversals exceed the contract, and graph.md does not say it is a steady-state figure.** On
+  a fresh JVM, allocation is 18.0–18.3x over the first hundred traversals and **19.9–20.6x over the
+  second** — a C2 recompilation transient above the 20x bound — before settling from traversal ~200
+  onward (fifty consecutive windows across five JVMs, none above 18.0). The TCK warms past the knee,
+  which is right for measuring the contract and silent about the fact that a cold process does not
+  meet it.
+- **`EX-GRPH-5005` has no emission site.** `ExcessiveAllocationException` is declared in the SPI and
+  its `rawArgs` layout is tested, but nothing throws it. graph.md claimed the TCK emitted it under
+  `LeakDetectionMode.PARANOID`; the TCK never did, and the doc has been corrected. Either a driver
+  self-reports a breach through it, or the code is dead.
+- **Only the Bolt path is measured.** graph.md documents ~15x for PGQ/JDBC too, and there is no
+  churn binding for the SQL path — it needs a `ScopedValue`-bound persistence engine, which is why
+  the Cypher backend was chosen for the one binding that exists.
+- **The denominator counts semantic bytes (16 per UUID), not transferred bytes** — the wire encodes
+  each id as a 36-character string. The conservative choice, stated in the TCK Javadoc, and a
+  different quantity from graph.md's literal wording.
+
+**Merge Gate:** the churn TCK passes across repeated **fresh JVMs**, not repeated windows inside one
+— the distinction that hid both the regime split and the warm-up transient through a first round of
+verification; proven non-vacuous by a mutation adding per-row allocation to the traversal and
+watching the ratio cross the bound from either regime. Then: a decision on the regime split (fix,
+or publish the slow figure), and a binding for the PGQ path or a recorded decision that the SQL
+path's churn stays unmeasured.
+
+**1.0 disposition:** the instrument fix is not 1.0-blocking. The regime split is **1.0-blocking as a
+claims matter**: graph.md's churn figures are a public performance claim, nothing in the repository
+measured them until now, and what the measurement says is that the published number holds about five
+times in seven.
+
+**On this line the numbers are different, and that is the reason this entry is here rather than only
+on the GA line.** The instrument was ported to `preview` on 2026-09-01 — it had stayed on the broken
+version and failed a CI run at 24.56x, which decomposes as 3 144 008 / 12 = 262 001: twelve sampler
+draws, not a byte count. Re-measured here across four fresh JVMs on JDK 28 against live Neo4j:
+
+| run | Ratio | Bytes / traversal |
+|---|---:|---:|
+| 1 | 13.79x | 110 289 |
+| 2 | 13.88x | 111 041 |
+| 3 | 13.80x | 110 434 |
+| 4 | 13.55x | 108 433 |
+
+**One regime, 22–35% below the GA line's fast one, no breach of the published 20x in any process.**
+No attribution is offered and none is available from this data: four processes cannot rule out a rare
+second regime where the GA-line evidence took fourteen, and **two** variables differ on this line —
+JDK 28 rather than 25, and the JEP 401 value-class carriers. What it does is turn "the slow regime is
+a property of the Bolt path" into a hypothesis with a counter-example, which is the cheapest available
+lead on the 1.0-blocking claims question above. Separating the two variables — JDK 28 with the
+carriers reverted, or JDK 25 with them — is the next step, and it belongs to whoever takes that
+decision.
+
+---
+
 ### HTTP: `WebSocketProvider` SPI (or SSE-Only Commitment)
 
 **Gap:** The `realTimeApi` flag on `DomainMetadata` (SDK) exists in v0.8 but no generator emits real-time wire code, and the kernel has no WebSocket primitive. Real-time delivery splits into two distinct wire shapes: **Server-Sent Events** (pure HTTP/1.1 chunked streaming, runs on existing `HttpServerEngine` with no new SPI), and **WebSocket** (RFC 6455 handshake + frame codec, wire-protocol territory equivalent to HTTP/2 — requires kernel SPI). Without a decision, the `realTimeApi` flag remains aspirational and downstream applications hand-roll incompatible solutions.
