@@ -1842,7 +1842,32 @@ One gate clause remains **not** met, and it is not cosmetic:
 
 **1.0 disposition:** 1.0-recommended. Transport is in the 1.0 core, and a listener that dies permanently from a recoverable condition is an availability defect rather than a diagnosability one.
 
-**Status (v0.12): OPEN.** Recorded when ADR-081 measured the interaction; the entry exists so the descriptor requirement in `reference-deployment.md` is a mitigation with something to point at rather than a standing workaround.
+**Status (v0.12): DELIVERED.** `acceptorLoop` retries a failed accept with a bounded backoff
+(`25ms × streak`, capped at 1s) and emits `CommunityAcceptRetry` carrying the streak and the pause;
+64 consecutive failures are retried and the 65th takes the fatal path.
+
+**One deviation from the Resolution above, and it inverts its mechanism.** That text says to
+*classify* accept-loop `IOException`s and retry the transient ones. Java offers no typed signal —
+`EMFILE` is a plain `IOException` — so classifying means matching on a message, and a message that
+does not match on some JDK, OS or locale reinstates exactly the defect being fixed. The two mistakes
+are not symmetric: retrying a fatal condition costs a bounded delay before the same outcome, while
+declining to retry a transient one loses the listener for the life of the process. So everything is
+retried and the **bound** does the work classification would have done.
+
+The test drives the loop rather than asserting the classification, as the Resolution required, and
+the seam is the accept pass itself — which also reports whether it accepted anything, because that
+is what ends a streak. Mutation-checked: restoring the pre-0.12 fatal path reddens all four cases,
+and removing the streak reset reddens exactly the one that asserts it. Worth recording that the
+fatal-path case was expected to survive the first mutation and did not — it asserts the pass count,
+so it discriminates on the same axis rather than only on the outcome.
+
+**Review found a hole in the mechanism itself, and it was the shape the fix exists to survive.** The
+first cut read progress from what the accept pass *returned*. A pass that accepts a connection and
+then throws while probing for the next leaves by the throw, so nothing it could return reaches the
+loop — and descriptors freeing one at a time is exactly that shape. Sixty-five such passes, each
+having served a connection, would have tripped the ceiling the fix exists to avoid. Progress is now
+read from a counter incremented at each accept, so it survives the throw; the case that pins it
+reddens under a streak blind to progress and nothing else.
 
 ---
 
