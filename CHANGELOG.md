@@ -8,6 +8,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Fixed
+
+- **A listener that ran out of file descriptors no longer stays down.** An `IOException` from
+  `accept()` — how `EMFILE`/`ENFILE` surface — called `handleAsyncFailure` and returned, clearing
+  `running` and closing the server channel, so a process that touched its `ulimit -n` once needed a
+  restart to serve again. The acceptor now pauses (`25ms × streak`, capped at 1s) and tries again,
+  emitting `CommunityAcceptRetry` with the streak and the pause; 64 consecutive failures with no
+  accept in between still take the fatal path. Every `IOException` is retried rather than a
+  classified subset: Java gives no typed signal, so classification means matching a message, and a
+  message that fails to match reinstates the defect — while retrying a genuinely fatal condition
+  only costs a bounded delay before the same outcome.
+
 ### Added
 
 - **An in-flight saga is now proven to survive a schema upgrade** (ADR-073 merge gate,

@@ -58,7 +58,18 @@ import java.util.concurrent.atomic.AtomicLong;
 })
 public final class NativeTcpCarrier implements TransportEngine {
 
+    /**
+     * Accepts that may fail in a row before the listener is given up on. With the backoff below the
+     * streak spans roughly a minute, which is long enough for descriptors to come back under any
+     * load that is actually draining and short enough that a condition which never clears does not
+     * hold a dead listener open forever.
+     */
+    /* default */ static final int MAX_CONSECUTIVE_ACCEPT_FAILURES = 64;
+
     private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
+
+    private static final long ACCEPT_RETRY_BASE_MILLIS = 25L;
+    private static final long ACCEPT_RETRY_MAX_MILLIS = 1_000L;
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
@@ -511,19 +522,88 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void runAcceptorLoop() {
+        acceptorLoop(this::acceptPendingConnections);
+    }
+
+    /**
+     * One pass over the listener — accepts until it would block on nothing, or throws.
+     *
+     * <p>A seam, so a test can drive the loop below with a pass that fails and then recovers. The
+     * defect this loop had was that it <em>ended</em>, and only running it proves it no longer does;
+     * asserting a classification in isolation would test the judgement and not the consequence.
+     */
+    /* default */ @FunctionalInterface
+    interface AcceptPass {
+        /**
+         * @return {@code true} if at least one connection was accepted, which is what ends a
+         *         failure streak — a pass that returned without accepting anything has not shown
+         *         the listener to be working again
+         */
+        boolean run() throws IOException;
+    }
+
+    /**
+     * Runs accept passes until the carrier stops, retrying a failed accept instead of ending.
+     *
+     * <p>Until 0.12.0 any {@link IOException} from {@code accept()} took the listener down for the
+     * lifetime of the JVM. That is how descriptor exhaustion surfaces — {@code EMFILE} is an
+     * {@code IOException} with nothing in its type to distinguish it — and it is transient by
+     * nature: descriptors come back as connections close. A listener that dies of it needs a
+     * restart to serve again.
+     *
+     * <p><b>Every {@code IOException} is retried, rather than a list of transient ones.</b> Java
+     * gives no typed signal here, so classifying means matching on the message, and a message that
+     * does not match reinstates exactly the defect being fixed — on a different JDK, OS or locale.
+     * The two directions are not symmetric: retrying a fatal condition costs a bounded delay before
+     * the same outcome, while refusing to retry a transient one loses the listener. So the bound
+     * does the work classification would have: {@link #MAX_CONSECUTIVE_ACCEPT_FAILURES} accepts in a
+     * row that all fail is a condition that is not clearing, and the fatal path is taken then.
+     *
+     * @param pass one accept pass
+     */
+    /* default */ void acceptorLoop(AcceptPass pass) {
+        int consecutiveFailures = 0;
         while (running.get()) {
             try {
-                acceptPendingConnections();
+                if (pass.run()) {
+                    consecutiveFailures = 0;
+                }
             } catch (AsynchronousCloseException ignored) {
                 // shutdown path
                 return;
             } catch (IOException e) {
-                if (running.get()) {
-                    handleAsyncFailure("acceptor", e);
+                if (!running.get()) {
+                    return;
                 }
-                return;
+                consecutiveFailures++;
+                if (!retryAccept(e, consecutiveFailures)) {
+                    return;
+                }
             }
         }
+    }
+
+    /**
+     * Decides whether the acceptor pauses and tries again, and pauses if so.
+     *
+     * @return {@code false} when the loop must end — the streak passed the ceiling, or the pause was
+     *         interrupted
+     */
+    private boolean retryAccept(IOException failure, int streak) {
+        if (streak > MAX_CONSECUTIVE_ACCEPT_FAILURES) {
+            handleAsyncFailure("acceptor", failure);
+            return false;
+        }
+        long backoffMillis = Math.min(ACCEPT_RETRY_BASE_MILLIS * streak, ACCEPT_RETRY_MAX_MILLIS);
+        CommunityAcceptRetryEvent.emit(config.bindAddress(), config.port(),
+                failure.getClass().getName(), streak, backoffMillis);
+        try {
+            Thread.sleep(backoffMillis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+        return true;
     }
 
     /* default */ void handleAsyncFailure(String stage, Exception error) {
@@ -624,8 +704,9 @@ public final class NativeTcpCarrier implements TransportEngine {
         stream.reset(DISPATCH_FAULT_RESET_CODE);
     }
 
-    private void acceptPendingConnections() throws IOException {
+    private boolean acceptPendingConnections() throws IOException {
         SocketChannel acceptedChannel = serverChannel.accept();
+        boolean acceptedAny = acceptedChannel != null;
         while (acceptedChannel != null && running.get()) {
             SocketChannel currentChannel = acceptedChannel;
             NativeTcpConnection connection = null;
@@ -665,6 +746,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             }
             acceptedChannel = serverChannel.accept();
         }
+        return acceptedAny;
     }
 
     private static void configureAcceptedChannel(SocketChannel channel) throws IOException {

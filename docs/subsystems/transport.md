@@ -192,13 +192,31 @@ Both paths recover: the accept loop continues. That is correct for a per-connect
 making a setup fault fatal would trade a silent drop for an outage. What changed is only that neither
 is silent.
 
-**A third mode is neither of these, and it is not recoverable today.** An `IOException` from
-`accept()` itself — how file-descriptor exhaustion (`EMFILE`) surfaces — is caught by
-`runAcceptorLoop`, which calls `handleAsyncFailure` and returns: `running` is cleared and the server
-channel closed. The listener stops accepting **permanently**, from a condition that is transient.
-This is why the connection ceiling above asks you to check `ulimit -n`: the cap refusing is the good
-outcome, and the OS limit winning the race is the bad one. Tracked as an open entry in
-`docs/ROADMAP.md`.
+**A third mode is neither of these, and since 0.12.0 it recovers.** An `IOException` from `accept()`
+itself — how file-descriptor exhaustion (`EMFILE`) surfaces — is the *listener* failing to produce a
+connection, not one connection failing to be set up. Until 0.12.0 it was fatal: `runAcceptorLoop`
+called `handleAsyncFailure` and returned, so a process that touched its `ulimit -n` once needed a
+restart to serve again, from a condition that clears on its own as connections close.
+
+| | Accept retry |
+|---|---|
+| Event | `CommunityAcceptRetry` |
+| Cause | `accept()` itself threw — descriptor exhaustion, an aborted connection |
+| Nature | a **transient** condition affecting the listener rather than a connection |
+| Response | pause and try again; `25ms × streak`, capped at 1s |
+| Bound | 64 consecutive failures with no accept in between, then the fatal path |
+
+**Every `IOException` is retried rather than a list of transient ones**, and that is deliberate. Java
+offers no typed signal — `EMFILE` arrives as a plain `IOException` — so classifying means matching on
+a message, and a message that does not match on some JDK, OS or locale reinstates the defect. The two
+mistakes are not symmetric: retrying a fatal condition costs a bounded delay before the same outcome,
+while declining to retry a transient one loses the listener. The ceiling does the work classification
+would have done, and the event's streak is what separates one retry from a process that is not
+recovering.
+
+The connection ceiling above still asks you to check `ulimit -n`. The cap refusing is the good
+outcome, and the OS limit winning the race is now survivable rather than terminal — but it is still
+the worse of the two.
 
 The fault event carries the exception **class** and never its message, matching
 `CommunityReactorDispatchFault` — a message can carry request-derived text.
