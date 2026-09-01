@@ -13,7 +13,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -41,8 +40,6 @@ class CommunityTokenExpiryClockTest {
     @DisplayName("a token the wall clock accepts is refused once the bound clock passes its expiry")
     void boundClockExpiresAnOtherwiseValidToken() {
         // Wall-clock valid for five minutes. On a source parked an hour ahead it is long gone.
-        AtomicReference<SecurityAuthenticationException> refusal = new AtomicReference<>();
-
         ScopedValue.where(KernelProviders.TIME_SOURCE, parkedAt(Instant.now().plusSeconds(3_600)))
                 .run(() -> {
                     CommunityOidcTokenValidator validator = boundValidator();
@@ -52,18 +49,18 @@ class CommunityTokenExpiryClockTest {
                                 .as("the bound clock is an hour past this token's expiry, so a "
                                         + "validator reading it MUST refuse — reading the wall clock "
                                         + "instead accepts, which is the whole defect")
-                                .isInstanceOfSatisfying(SecurityAuthenticationException.class, refusal::set);
+                                .isInstanceOfSatisfying(SecurityAuthenticationException.class,
+                                        // rawArgs[1], not the message: this repo keeps failure-path
+                                        // messages constant and puts the reason in the primitive
+                                        // layout. An earlier draft asserted getMessage() and read
+                                        // "Token validation failed".
+                                        refused -> assertThat(refused.rawArgs()[1])
+                                                .as("refused for expiry specifically, not for some "
+                                                        + "other validation fault that would make "
+                                                        + "this pass for the wrong reason")
+                                                .isEqualTo("expired"));
                     }
                 });
-
-        assertThat(refusal.get()).isNotNull();
-        // rawArgs[1], not the message: this repo puts the reason in the primitive layout and keeps
-        // failure-path messages constant, so asserting the message tests the wrong thing — the
-        // first draft of this assertion did exactly that and read "Token validation failed".
-        assertThat(refusal.get().rawArgs()[1])
-                .as("refused for expiry specifically, not for some other validation fault that "
-                        + "would make this test pass for the wrong reason")
-                .isEqualTo("expired");
     }
 
     @Test
