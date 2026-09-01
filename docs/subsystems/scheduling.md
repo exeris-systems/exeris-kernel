@@ -202,3 +202,15 @@ Both slots are bound: `KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProvid
 
 Durable job stores, leader election, distributed coordination, retry and back-off policy, job
 priorities, and dispatch-time re-validation of a captured identity.
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is classified **preview** since
+0.11.0 in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
+[ADR-057](../adr/ADR-057-job-scheduler-spi.md) and the contract tests are
+`AbstractJobSchedulerTck`. See the matrix for the semver policy this label commits to.
+
+Thirteen of the fifteen subsystem docs carried this section and this one did not, so a reader
+checking how far they could lean on `JobScheduler` had to find the matrix themselves — which is the
+gap, not the label.
+
