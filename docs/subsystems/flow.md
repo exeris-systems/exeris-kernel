@@ -136,6 +136,31 @@ Flow can be driven by external events through the choreography bridge:
 
 ## Known Constraints
 
+### A flow is a linear chain, and the checkpoint is why
+
+`FlowDefinition` carries an **ordered `List<FlowStepDescriptor>`** with distinct names, and
+`FlowStepDescriptor` is `(stepId, name, action, compensation)`. There is no grouping, no fan-out, no
+join. **Steps cannot run in parallel, and the constraint is deeper than the model that expresses
+them:**
+
+- **Resume is a single integer cursor.** `FlowSnapshot.currentStep` is one position, and
+  `RuntimeFlowInstance` advances it by one. A parallel group has no single position — resuming one
+  needs the *set* of steps already done, which is a different checkpoint, not a wider field.
+- **Compensation is a stack of positions.** `compensationStack` is plan positions unwound in reverse
+  order (with `compensationStepNames` beside it since ADR-064 A5). Compensating a fan-out is not a
+  reverse-order pop: the branches have no order relative to each other, and a partial failure inside
+  the group has no defined unwind.
+
+So parallelism is not a missing field on `FlowDefinition`. It is a different durability contract,
+and both halves of ADR-062/ADR-064's fail-closed resume are built on the linear one.
+
+**This is what a downstream generator is up against.** `@SagaStep` in the SDK declares `parallel`,
+`waitForAll` and `failFast`, with semantics the kernel has no model for — *"steps with the same
+`order` can execute in parallel"*, *"cancel other parallel steps immediately"*. A generator compiling
+those to anything other than a linear chain would be inventing a contract the runtime does not offer,
+so **emitting the linear chain is the correct compilation**, and the unread attributes record a
+kernel gap rather than a generator omission. Tracked in `docs/ROADMAP.md`.
+
 ### Terminal-State Catalog Retention
 
 `CoreFlowRuntime` maintains a `terminalStateCatalog` map that records every flow that reaches a terminal state (`COMPLETED`, `FAILED_ROLLEDBACK`). This map serves as an in-process idempotency fence — it prevents re-scheduling or re-waking already-terminal flows within a single runtime lifetime.

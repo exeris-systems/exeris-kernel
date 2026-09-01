@@ -3218,6 +3218,54 @@ That is not merely inconvenient. It moves the join into application code, which 
 
 ---
 
+### Flow: Parallel Steps Cannot Be Expressed, and Four SDK Attributes Are Waiting On It (surfaced 2026-09-01)
+
+**Gap:** `@SagaStep` in the SDK declares `parallel`, `waitForAll` and `failFast`, and `@Saga` declares
+`compensationStrategy` and `compensationOrder`. The kernel has no model for any of the first three:
+`FlowDefinition` is an ordered `List<FlowStepDescriptor>` with distinct names, and
+`FlowStepDescriptor` is `(stepId, name, action, compensation)` — no grouping, no fan-out, no join.
+
+**The constraint is the checkpoint, not the definition.** Two things make this bigger than adding a
+field:
+
+- `FlowSnapshot.currentStep` is **one integer**, advanced by one. A parallel group has no single
+  position — resuming one needs the *set* of steps already done, which is a different checkpoint
+  rather than a wider one.
+- `compensationStack` is **plan positions unwound in reverse**. Compensating a fan-out is not a
+  reverse-order pop: branches have no order relative to each other, and a partial failure inside a
+  group has no defined unwind.
+
+Both are load-bearing for ADR-062/ADR-064's fail-closed resume, which is the correctness property
+this milestone spent three PRs on.
+
+**Why this entry exists rather than a generator ticket.** A downstream report attributed the unread
+attributes to the annotation processor. Emitting a linear chain is the *correct* compilation of
+`parallel = true` while the runtime offers nothing else — a generator that emitted anything else
+would be inventing a contract. Filing them as generator omissions would record the absence of a
+kernel contract as someone else's negligence. Two of the six attributes in that report do belong to
+tooling (`compensationStrategy`, `compensationOrder` — the kernel already has compensation
+semantics), and one is not a gap at all (`order` is read by both producers).
+
+**Owner:** Flow subsystem.
+
+**Resolution:** an RFC, not an ADR — the shape is genuinely unsettled and the options differ in their
+durability contract, which is the expensive part. It has to answer at least: what a checkpoint for a
+partially-complete group is; what compensation means when a branch fails and its siblings are still
+running; whether `failFast` cancellation is expressible at all given that a step action is an opaque
+`FlowStepAction`; and whether a group is a step-list nesting or a first-class node type. Until that
+exists, `docs/subsystems/flow.md` states the linear constraint so the SDK attributes have something
+authoritative to point at.
+
+**1.0 disposition:** post-1.0 as a runtime capability. The *statement* of the constraint is 1.0 — an
+SDK annotation whose declared semantics the runtime silently ignores is a documentation defect on the
+1.0 surface, and that half is delivered here.
+
+**Status (v0.12): the constraint is recorded; the capability is not.** Verified rather than assumed:
+`FlowDefinition`, `FlowStepDescriptor`, `RuntimeFlowInstance.currentStep` and `FlowSnapshot` were all
+read before this entry was written, and nothing in SPI or Core names parallelism.
+
+---
+
 ### Flow: No Way to Await a Flow (surfaced by dogfooding, 2026-07-31)
 
 **Gap:** `FlowScheduler` exposes `schedule(FlowExecutionPlan, FlowContext)` returning `void`, plus `park`, `wake`, and `lookupParked`. Neither it nor `FlowEngine` offers any completion surface — no handle, no join, no completion callback, no terminal-state future. A caller that starts a flow has no supported way to learn that it finished, short of polling a snapshot store or subscribing to an event the flow itself must be written to emit.
