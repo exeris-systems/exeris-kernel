@@ -1953,6 +1953,26 @@ correctness problem in the operator's model, and this key is on the 1.0 surface.
 resolved ceiling, and the SPI javadoc, the operator guide and the validator message agree on one
 sentence.
 
+**Status (v0.12): DELIVERED — `-1` is refused.** The ruling went to the option that keeps a bound:
+`validateResponseLimits` requires `(0, Integer.MAX_VALUE]`, and the refusal message says why this
+key is not the request key. Unbounded was the alternative and was rejected on what the ceiling is
+*for* — it bounds how much a remote peer can make this client allocate, so "no limit" asks for the
+absence of the protection the key exists to provide. The asymmetry with `maxRequestBodyBytes` is
+the point rather than an oversight: a server may accept unbounded requests because it controls its
+own callers, a client is exposed to someone else's behaviour.
+
+The upper bound closes the quiet half of the same defect. A ceiling past `Integer.MAX_VALUE` used
+to be clamped silently, leaving an operator under a limit they never set; it is now refused with a
+message naming the reason — a response is assembled into one buffer, and `allocateNetwork` takes an
+`int`. The engine's unlimited branch went with it: `resolveAggregateCapacity` no longer has a case
+for a value validation does not admit.
+
+**One compatibility consequence, and it is the discriminating test.** The pre-0.12 constructor
+feeds its single body limit into both ceilings, and `-1` is still legal for the server half — so
+without a mapping a previously valid config would now throw. The bridge sends `-1` to the response
+default instead: the server stays unlimited, the client takes 10 MiB. Mutation-checked — removing
+the mapping reddens exactly that case, and reverting the validator reddens the other three.
+
 ---
 
 ### HTTP/2: The Peer's Advertised Header Limit Is Parsed And Never Read (surfaced 2026-08-27)

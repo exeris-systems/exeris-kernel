@@ -53,6 +53,43 @@ class HttpConfigTest {
                 HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
     }
 
+    private static HttpConfig withResponseCeiling(long maxResponseBodyBytes) {
+        return new HttpConfig(
+                HttpMode.CLIENT,
+                null,
+                -1,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                false,
+                HttpVersion.HTTP_1_1,
+                null,
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE,
+                maxResponseBodyBytes);
+    }
+
+    private static HttpConfig bridgedWithRequestLimit(long maxRequestBodyBytes) {
+        return new HttpConfig(
+                HttpMode.CLIENT,
+                null,
+                -1,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                maxRequestBodyBytes,
+                false,
+                HttpVersion.HTTP_1_1,
+                null,
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
+    }
+
     private static HttpConfig withHeaderBlock(int maxHeaderBlockSize) {
         return withHttp2Bounds(maxHeaderBlockSize,
                 HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE, HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
@@ -255,6 +292,68 @@ class HttpConfigTest {
             assertThatThrownBy(() -> client("::1:8080"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("bracketed");
+        }
+    }
+
+    @Nested
+    @DisplayName("Response ceiling — the one limit with no unlimited, and the reason is the direction")
+    class ResponseCeiling {
+
+        @Test
+        @DisplayName("-1 is refused, and the message says why this key is not the request key")
+        void unlimitedIsRefused() {
+            // It resolved to a 64 KiB ceiling — BELOW the default, and the smallest value the range
+            // could produce — so an operator asking for no limit got the tightest one there is.
+            // Refused rather than fixed: a response ceiling bounds what a remote peer can make this
+            // client allocate, so "no limit" asks for the protection the key exists to provide.
+            assertThatThrownBy(() -> withResponseCeiling(-1L))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maxResponseBodyBytes")
+                    .hasMessageContaining("must be > 0")
+                    .hasMessageContaining("remote peer");
+        }
+
+        @Test
+        @DisplayName("zero is refused too — it would refuse every response")
+        void zeroIsRefused() {
+            assertThatThrownBy(() -> withResponseCeiling(0L))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maxResponseBodyBytes");
+        }
+
+        @Test
+        @DisplayName("a ceiling past the int range is refused loudly, not clamped quietly")
+        void aboveTheIntRangeIsRefused() {
+            // A response is assembled into ONE buffer and allocateNetwork takes an int, so a larger
+            // ceiling cannot be honoured. Clamping it would leave an operator running under a limit
+            // they never set and could not see.
+            assertThatThrownBy(() -> withResponseCeiling(Integer.MAX_VALUE + 1L))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maxResponseBodyBytes")
+                    .hasMessageContaining("one buffer");
+        }
+
+        @Test
+        @DisplayName("the largest honourable ceiling is accepted, so the bound is inclusive")
+        void theIntRangeItselfIsAccepted() {
+            assertThatCode(() -> withResponseCeiling(Integer.MAX_VALUE))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("the pre-0.12 shape with an unlimited request limit still constructs")
+        void theBridgeSurvivesAnUnlimitedRequestLimit() {
+            // The discriminating case. -1 remains legal for the SERVER limit, and the bridge feeds
+            // its single number into both ceilings — so tightening the response key without this
+            // mapping would make a previously valid config throw at construction.
+            HttpConfig bridged = bridgedWithRequestLimit(-1L);
+
+            assertThat(bridged.maxRequestBodyBytes())
+                    .as("the server still accepts unbounded requests, which it may")
+                    .isEqualTo(-1L);
+            assertThat(bridged.maxResponseBodyBytes())
+                    .as("the client takes the default, because a response ceiling has no unlimited")
+                    .isEqualTo(HttpConfig.DEFAULT_MAX_RESPONSE_BODY_BYTES);
         }
     }
 

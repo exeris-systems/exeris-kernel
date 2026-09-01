@@ -272,14 +272,20 @@ sockets**: `http.maxRequestBodyBytes` is what this server accepts from callers,
 `http.maxResponseBodyBytes` is what this application's HTTP client will read back from someone
 else's server. Until 0.12 the client borrowed the request key, so tightening ingress also shrank
 what the outbound client could read. Both default to 10 MiB, and `-1` disables the server-side
-request limit.
+request limit — only the server-side one.
 
 `http.maxResponseBodyBytes` is a **ceiling, not a reservation**: the client reads into a buffer that
 starts at 8 KiB and grows to what the response's `Content-Length` declares, so raising it does not
 make a small response cost more. Raise it when you fetch large objects; it bounds the largest single
-response the client will assemble, and one past it is refused rather than truncated. `-1` on this
-key does **not** mean unlimited today — it currently yields a 64 KiB ceiling, which is smaller than
-the default, so set the size you want rather than asking for no limit.
+response the client will assemble, and one past it is refused rather than truncated.
+
+**`-1` is refused on this key**, and it is the one limit with no unlimited setting. The ceiling
+bounds how much a remote peer can make your client allocate, so "no limit" asks for the protection
+the key exists to provide to be absent — a server may accept unbounded requests because it controls
+its callers, a client is exposed to someone else's behaviour. The upper bound is `Integer.MAX_VALUE`
+(a response is assembled into one buffer), and a value past it is refused rather than quietly
+lowered. Configs built through the pre-0.12 constructor with an unlimited request limit still work:
+the server side stays unlimited and the client ceiling takes the 10 MiB default.
 
 The last three are HTTP/2 only, and they are three keys because they bound three different
 quantities — the COMPRESSED header block on the wire, the CUMULATIVE DECODED field section, and a

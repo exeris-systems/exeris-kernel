@@ -28,7 +28,8 @@ package eu.exeris.kernel.spi.http;
  *
  * <p>Re-measure rather than trust that number, because it moves with every key and this sentence
  * does not: 35 at extraction, 46 once the HTTP/2 header limits landed, 52 with the decoder bound,
- * 55 with {@code maxResponseBodyBytes}. Delete the annotation and run
+ * 55 with {@code maxResponseBodyBytes}, 57 once that key stopped accepting {@code -1}. Delete the
+ * annotation and run
  * {@code mvn -pl exeris-kernel-spi pmd:check}, which also reports what a CLASS-level suppression
  * necessarily hides: {@code validateDefaultAuthority} is itself at 14 against a method threshold of
  * 10. That one is a candidate for splitting on its own merits — a single validator carrying a
@@ -183,12 +184,29 @@ final class HttpConfigValidation {
      * <p>Separate from {@link #validateRequestLimits} because it bounds a different direction on a
      * different socket, and the message has to name the key an operator would actually set.
      *
-     * @param maxResponseBodyBytes the client response ceiling in bytes, {@code -1} for unlimited
+     * <p>Bounded on BOTH sides, and neither bound is symmetric with the request limit. {@code -1}
+     * is refused rather than read as unlimited: this ceiling is the bound on how much a remote peer
+     * can make this client allocate, so asking for no limit is asking for the protection the key
+     * exists to provide to be absent. A server may legitimately accept unbounded requests because
+     * it controls its own callers; a client is exposed to someone else's behaviour. The upper bound
+     * is {@link Integer#MAX_VALUE} because a response is assembled into ONE buffer and
+     * {@code MemoryAllocator.allocateNetwork} takes an {@code int} — a larger ceiling could not be
+     * honoured, and silently clamping it would leave an operator with a limit they never set.
+     *
+     * @param maxResponseBodyBytes the client response ceiling in bytes
      */
     /* default */ static void validateResponseLimits(long maxResponseBodyBytes) {
-        if (maxResponseBodyBytes < -1) {
+        if (maxResponseBodyBytes <= 0) {
             throw new IllegalArgumentException(
-                    "maxResponseBodyBytes must be >= -1 (-1 = unlimited), got: " + maxResponseBodyBytes);
+                    "maxResponseBodyBytes must be > 0; -1 (unlimited) is not accepted for a response "
+                    + "ceiling, which bounds what a remote peer can make this client allocate — name "
+                    + "the size you are willing to read, got: " + maxResponseBodyBytes);
+        }
+        if (maxResponseBodyBytes > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "maxResponseBodyBytes must be <= " + Integer.MAX_VALUE
+                    + "; a response is assembled into one buffer and cannot exceed a single "
+                    + "allocation, got: " + maxResponseBodyBytes);
         }
     }
 }

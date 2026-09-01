@@ -27,9 +27,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `HttpConfig` gains the component appended, with the 14-argument shape retained: the SPI gate
   reports an addition on a `stable` surface, `stable-breaks=0`.
 
-  `-1` is accepted on the response key for symmetry and does **not** mean unlimited there — it
-  resolves to a 64 KiB ceiling, below the default. The documentation now says so; the semantics need
-  a ruling and have a ROADMAP entry.
+  **`-1` is refused on the response key** — the one limit with no unlimited setting. It used to
+  resolve to a 64 KiB ceiling, below the default and the smallest value the range could produce, so
+  an operator asking for no limit got the tightest one there is. Refused rather than made unbounded,
+  because the ceiling bounds how much a remote peer can make this client allocate: a server may
+  accept unbounded requests since it controls its callers, a client is exposed to someone else's
+  behaviour. A value past `Integer.MAX_VALUE` is refused too, rather than silently clamped — a
+  response is assembled into one buffer. Configs built through the pre-0.12 constructor with an
+  unlimited request limit still construct: the server half stays unlimited, the client ceiling takes
+  the 10 MiB default.
 
 - **The HTTP client stops paying for the largest response it might ever read.** The response read
   moved into `CommunityHttpClientResponseReader`, which starts at 8 KiB and grows to what

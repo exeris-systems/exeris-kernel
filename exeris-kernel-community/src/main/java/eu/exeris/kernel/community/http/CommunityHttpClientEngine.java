@@ -36,7 +36,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @since 0.5.0
  */
-// CyclomaticComplexity: the multi-state response read loop is intrinsically cohesive.
+// CyclomaticComplexity: 32 against a class ceiling of 30, and more than half of it is ONE
+// method — Peer.parse measures 17 against a method ceiling of 10, parsing the authority
+// forms ADR-074 admits. The multi-state read loop this line used to name is no longer here;
+// it moved to CommunityHttpClientResponseReader. Re-measure by deleting the annotation and
+// running `mvn -pl exeris-kernel-community pmd:check` on a BUILT tree — on an unbuilt one
+// PMD has no auxclasspath and the type-resolution rules produce false positives.
 // TooManyMethods: SPI contract surface — the count is intrinsic. Every method here but
 // resolvePeer/sendRequest/readResponse implements HttpClientEngine, and ADR-074 added
 // defaultAuthority() to that interface; PersistenceConnection carries the same disposition.
@@ -247,13 +252,12 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         // The RESPONSE ceiling, not the request one. Reading a response against the limit that
         // bounds what this server accepts made an ingress setting retune an outbound client
         // (ADR-071 amendment); they are opposite directions on different sockets.
-        long configured = config.maxResponseBodyBytes();
-        long bounded = configured < 0 ? 64L * 1024L : configured + 8L * 1024L;
-        // Clamped, not cast. A ceiling near Integer.MAX_VALUE is a legal setting and the header
-        // allowance pushes it past the int range, where a bare cast lands on a negative number and
-        // the allocator refuses it — the first response of a deployment that set a large limit
-        // failed on the limit itself. Free to clamp now that this value is only a bound: nothing
-        // allocates it, so a ceiling nobody reaches costs nothing.
+        // HttpConfig refuses anything outside (0, Integer.MAX_VALUE], so there is no unlimited
+        // branch to handle here: -1 does not reach this method.
+        long bounded = config.maxResponseBodyBytes() + 8L * 1024L;
+        // Clamped, not cast. The header allowance pushes a ceiling near the int range past it,
+        // where a bare cast lands on a negative number the allocator refuses — the first response
+        // of a deployment that set a large limit failed on the limit itself.
         return Math.clamp(bounded, 8 * 1024, Integer.MAX_VALUE);
     }
 

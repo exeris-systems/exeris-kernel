@@ -34,14 +34,14 @@ import java.util.Objects;
  * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard); must be
  *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
- * @param maxResponseBodyBytes  maximum size of a response the <em>client</em> will read, in bytes.
- *                              Separate from {@code maxRequestBodyBytes}, which bounds what the
- *                              <em>server</em> accepts: the two describe opposite directions on
- *                              different sockets, and a deployment tuning its ingress limit should
- *                              not thereby retune its outbound client. {@code -1} is accepted for
- *                              symmetry with the request limit but does <strong>not</strong> mean
- *                              unlimited here — the client resolves it to a 64 KiB ceiling, which
- *                              is below the default, so name the size you want instead.
+ * @param maxResponseBodyBytes  maximum size of a response the <em>client</em> will read, in bytes;
+ *                              must be in {@code (0, Integer.MAX_VALUE]}. Separate from
+ *                              {@code maxRequestBodyBytes}, which bounds what the <em>server</em>
+ *                              accepts: the two describe opposite directions on different sockets,
+ *                              and a deployment tuning its ingress limit should not thereby retune
+ *                              its outbound client. {@code -1} is <strong>refused</strong> here
+ *                              rather than read as unlimited — this ceiling is the bound on what a
+ *                              remote peer can make the client allocate.
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;
  *                              {@link HttpVersion#HTTP_3} requires Enterprise provider
@@ -235,7 +235,10 @@ public record HttpConfig(
      * @param idleTimeoutMillis     idle connection timeout, {@code 0} disables
      * @param maxRequestHeaderCount maximum request header count
      * @param maxRequestHeaderSize  maximum single request header size in bytes
-     * @param maxRequestBodyBytes   maximum request body size in bytes, and the client response ceiling
+     * @param maxRequestBodyBytes   maximum request body size in bytes, and the client response
+     *                              ceiling — except {@code -1}, which stays unlimited for the
+     *                              server and becomes {@link #DEFAULT_MAX_RESPONSE_BODY_BYTES} for
+     *                              the client, because a response ceiling has no unlimited
      * @param h2cUpgradeEnabled     whether cleartext h2c upgrade is honoured
      * @param maxVersion            highest negotiable HTTP version
      * @param defaultAuthority      default client peer, or {@code null}
@@ -262,7 +265,7 @@ public record HttpConfig(
         this(mode, bindHost, port, maxConnections, idleTimeoutMillis, maxRequestHeaderCount,
                 maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion,
                 defaultAuthority, maxHeaderBlockSize, maxHeaderListSize, maxStringLiteralSize,
-                maxRequestBodyBytes);
+                maxRequestBodyBytes < 0 ? DEFAULT_MAX_RESPONSE_BODY_BYTES : maxRequestBodyBytes);
     }
 
     /**
