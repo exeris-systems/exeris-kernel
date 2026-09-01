@@ -3003,6 +3003,45 @@ The sequencing constraint that put this stream early is now discharged: signing 
 
 **1.0 disposition:** **1.0-BLOCKING** (correctness) — minimally a schema-version ledger + apply-once ordering; full in-flight row transforms can ride the Flow versioning epic.
 
+**Status (v0.12): the ledger shipped with [ADR-073](adr/ADR-073-schema-history-ledger.md); the merge
+gate's first clause is now met too.** Double-application-is-a-no-op was already covered
+(`CommunitySchemaHistoryLedgerTest`, against a deliberately non-idempotent fixture migration, because
+an `IF NOT EXISTS` migration cannot fail an apply-once test and therefore cannot prove one).
+
+What was missing is the clause the entry is actually about. **Every migration test in the repository
+started from an empty database** — the one case that cannot break an in-flight saga, because there is
+no row to break. `CommunitySchemaUpgradeTest` writes a `PARKED` saga under the `V0.7.0` shape, runs
+the **shipped** `MIGRATION_RESOURCES` over it, and reads the row back: it survives intact,
+`definition_version` backfills to `VERSION_ABSENT` and `compensation_step_names` to `NULL` — the two
+migrations' *opposite* choices, each asserted, because "both columns backfill" would pass against
+either. A second upgrade changes nothing.
+
+Mutation-checked: changing `V0.11.1`'s `DEFAULT 0` to `DEFAULT 1` — the wrong choice that migration's
+own comment warns against — reddens the two cases that assert the sentinel and nothing else. Removing
+an `IF NOT EXISTS` guard reddens all five, which is the suite saying what it is: every case starts
+from schema that already exists.
+
+**The pre-ledger upgrade path is the one that makes the guards load-bearing, and it is now covered.**
+A database migrated before ADR-073 carries no history rows, so the first boot on the new runner
+replays every resource over schema that is already there. Nothing had tested that against the real
+files.
+
+**A consequence of ADR-073 nobody had stated, found while trying to fix a stale comment.** The
+checksum is SHA-256 over the whole resource with only CRLF normalised — comments included, by
+explicit decision ("an edit is an edit whether or not it changed the parse"). The corollary is that
+**a shipped migration's comments are immutable**: correcting one refuses the boot of every database
+that recorded it. `V0.11.1` and `V0.11.2` both still describe a runner that "replays every resource
+on every boot with no applied-migration ledger", which the ledger made false while leaving their
+conclusion — the DDL must stay idempotent — true for the pre-ledger path above. Those comments were
+left stale deliberately rather than corrected quietly, because correcting them is a boot-refusing
+change and that is a decision, not a cleanup. Whoever takes it should decide whether the checksum
+ought to cover comments at all.
+
+**Remaining on this entry:** the merge gate's third clause, a cross-version case on
+`AbstractSagaRecoveryTck`. The behaviour it names is covered — `AbstractFlowDefinitionVersioningTck`
+asserts `DEFINITION_VERSION_ABSENT` fails closed — but on a different TCK from the one the gate
+names, so this is a placement question rather than a coverage hole.
+
 ---
 
 ### Table-Stakes: `SecretProvider` SPI

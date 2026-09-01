@@ -10,6 +10,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **An in-flight saga is now proven to survive a schema upgrade** (ADR-073 merge gate,
+  1.0-blocking). Every migration test started from an empty database — the one case that cannot
+  break an in-flight saga, because there is no row to break. `CommunitySchemaUpgradeTest` parks a
+  saga under the `V0.7.0` shape, runs the shipped migration set over it, and reads it back:
+  `definition_version` backfills to `VERSION_ABSENT` rather than to the first version, and
+  `compensation_step_names` to `NULL` — the two migrations' opposite choices, each asserted. It also
+  covers the pre-ledger upgrade path, where a database with no history rows replays every resource
+  over schema that already exists, which is what makes the `IF NOT EXISTS` guards load-bearing.
+
+
 - **The storage subsystem boots, and the operator says which driver** (ADR-056). Two Community blob
   drivers — `blob-fs-community` and `blob-s3-community` — register at the same priority and nothing
   loaded them, so a deployment got whichever it constructed by hand. `StorageBootstrap` in Core now
