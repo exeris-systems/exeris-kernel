@@ -24,6 +24,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **A saga's parked definition version now survives a restart, not only a wake** (ADR-073 merge gate,
+  clause 3). `AbstractFlowDefinitionVersioningTck` covers version-bound resume exhaustively and never
+  rebuilds an engine; `AbstractSagaRecoveryTck` rebuilds constantly and was version-blind — so the
+  upgrade case, where the process that parked the saga is gone and the one that finds the row runs
+  different code, was uncovered. `CrossVersionUpgrade` adds both directions: parked-under-v1 resumes
+  on v1 across a rebuild that also hosts v2, and an upgrade that drops v1 refuses with
+  `DEFINITION_VERSION_UNRESOLVED` while leaving the row recoverable.
+
+
 - **An in-flight saga is now proven to survive a schema upgrade** (ADR-073 merge gate,
   1.0-blocking). Every migration test started from an empty database — the one case that cannot
   break an in-flight saga, because there is no row to break. `CommunitySchemaUpgradeTest` parks a
