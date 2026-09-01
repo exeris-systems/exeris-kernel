@@ -206,3 +206,30 @@ ingress limit said something narrower than that.
   unbounded cases; and dropping the key read from the HTTP listener alone reddens *only* the
   listener's wiring case. The first mutation is what caught the original unbounded TCK case letting
   its handlers return immediately, which passed under any ceiling at all.
+
+## Amendment A1 (v0.12) — the two passes became one, and the bound is now structural
+
+ADR-071's Context describes **two** HTTP/1 read paths, `CommunityHttp1RequestReader`'s codec pass and
+its header-collection pass, and the decision made both carry the operator's bound. That was the right
+fix for the bound and it left the duplication in place: the reader kept parsing the header block
+twice, so the guarantee "the configured limit is the enforced limit" held only for as long as someone
+remembered to hand the same numbers to both calls. A comment at the second call site said exactly
+that, which is a fair description of a hazard being managed rather than removed.
+
+Measurement is what turned it from a tidiness question into a decision. A 16-header request allocated
+**~9.9 KB of heap to read ~500 B off the wire**, and the second parse — every field name and value
+materialised a second time — was a little under half of it (`docs/research/`,
+`RESEARCH-2026-09-01-http1-header-allocation.md`).
+
+`Http1Codec.parseHeaders` now takes an optional `HeaderVisitor`, so connection state and the caller's
+header list come off **one** traversal under **one** bound. Two consequences, and the second is the
+one this ADR cares about:
+
+1. The read path allocates **5 520 B** for that request instead of 9 904 — 44%, of which the collapsed
+   parse is 41% and dropping a no-longer-needed defensive list copy is the rest.
+2. **The failure mode this ADR was written about can no longer be expressed.** A limit that depends on
+   which of two passes reaches it first requires two passes. There is one, so the bound is enforced by
+   the structure rather than by a comment asking the next editor to keep two call sites in agreement.
+
+The Context above is left as it stood — it records the shape at the time of the decision, which is
+what makes the amendment legible.
