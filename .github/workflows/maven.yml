@@ -255,7 +255,13 @@ jobs:
           # adding `value` binary-compatible, so the sweep that most distinguishes the two lines
           # moves no signature — working by a property of the feature rather than by design. Which
           # baseline this branch's gate ought to use is a decision, tracked in the GA line's ROADMAP.
-          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          # `|| true` is load-bearing under `set -euo pipefail`, not defensive noise. grep exits 1
+          # when it matches nothing, pipefail makes that the pipeline's status, and an assignment
+          # from a failing command substitution aborts under -e — so without it the friendly
+          # "no release tag found" branch three lines down is UNREACHABLE and the job hard-fails
+          # instead. The two-stage form this replaced never had the hazard: `head -1` exits 0 on an
+          # empty stream. Adding a third stage is what introduced it.
+          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
           if [ -z "$BASELINE" ]; then
             echo "no release tag found — nothing to compare against"; exit 0
           fi
