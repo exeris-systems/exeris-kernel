@@ -5,7 +5,7 @@
 | **Branch** | `research/http1-header-allocation` |
 | **Date** | 2026-09-01 |
 | **Driver** | v0.12 T2-10 — *"the HTTP/1 header path materializes a `String` per token"* |
-| **Status** | Measured. Gates the fix; the fix is not in this branch. |
+| **Status** | `concluded` — measured, disposition **Promote to Feature**. The fix is not in this branch. |
 
 ## Hypothesis
 
@@ -39,17 +39,28 @@ what a request actually goes through.
 
 | headers | one parser pass | full read path | ratio |
 |---:|---:|---:|---:|
-| 0 | 281 B | 434 B | 1.54× |
-| 4 | 1 320 B | 2 848 B | 2.16× |
-| 8 | 2 312 B | 5 024 B | 2.17× |
-| 16 | 4 392 B | 9 904 B | 2.26× |
+| 0 | 281 B | 389 B | 1.38× |
+| 4 | 1 320 B | 2 800 B | 2.12× |
+| 8 | 2 312 B | 4 976 B | 2.15× |
+| 16 | 4 392 B | 9 848 B | 2.24× |
 
 Per header: **~260 B** in one pass, **~600 B** on the real path.
 
-Fresh-JVM repeats, 16 headers: parser `4392 / 4392 / 4392`; read path `9904 / 9904 / 9896` — 0.08%
-spread. Allocation is a counting measurement, so the run-to-run variance the perf discipline exists
-to catch does not arise here. Stated rather than glossed: this is not evidence that a *throughput*
+Fresh-JVM repeats, 16 headers: parser `4392 / 4392 / 4392`; read path `9848 / 9848 / 9856 / 9848`
+— 0.08% spread, one run in four differing by a single 8-byte object. Allocation is a counting
+measurement, so the run-to-run variance the perf discipline exists to catch does not arise at the
+scale it exists to catch it. Stated rather than glossed: this is not evidence that a *throughput*
 claim would be stable.
+
+**Correction (review of the research PR).** The read-path figures above are the second set. The first
+harness built a `new Http1Codec()` inside the measured loop, on the stated belief that the reader
+gets a fresh codec per request. It does not: `CommunityHttpRequestProcessor.process` builds **one
+codec per connection** and reuses it across the keep-alive/pipelined loop, calling `reset()` at the
+top of each read. So a per-request figure is a steady-state figure, and charging every request for a
+per-connection object inflated the read path by ~50 B — 9 904 where the honest number is 9 848. The
+harness now mirrors the processor. **No conclusion moves**: the inflation is a constant, so it never
+touched the per-header slope the findings rest on, and it is corrected here because a number that
+gets quoted downstream should be the one production would produce.
 
 ## Finding
 
@@ -106,6 +117,21 @@ zero-copy machinery.
 
 Only then is the zero-copy header representation worth designing, and it should be scoped to the
 pattern above rather than to `readAscii` alone.
+
+**Done (v0.12).** `Http1Codec.parseHeaders` took an optional `HeaderVisitor`, so connection state and
+the header list come off one traversal; the list is handed on as a view rather than a copy. The
+16-header request went **9 848 B → 5 784 B** on the collapsed parse alone (41%) and **→ 5 472 B** with
+the copy dropped (44%), stable across three fresh JVMs. It also removed a hazard: with two passes the
+enforced header limit depended on which reached it first unless both were handed identical bounds,
+which is why `Http1Codec` no longer exposes its bounds at all (ADR-071, amendment of 2026-09-01).
+
+**Still open, and this is where the remaining cost is.** At ~345 B per header, token materialisation
+now dominates what is left, and the four other sites in the sweep are untouched. The client response
+decoder is the one that matters for sequencing: it materialises `String`s from wire bytes exactly as
+the server did, so a representation change would rewrite it, and collapsing its copies first would
+mean editing it twice. The representation needs an RFC rather than a patch, because its hard question
+is not the shape but the **lifetime** — header slices point into a `LoanedBuffer` that is recycled
+after the request, and `HttpRequest.headers()` is SPI.
 
 **Not measured here, and not claimed:** the CPU share. T2-10's own text says the allocation count is
 known and its share of the 51 µs CPU/req is not — that remains true. Bytes are not microseconds, and
