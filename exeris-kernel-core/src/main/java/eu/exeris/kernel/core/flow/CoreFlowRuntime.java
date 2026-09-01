@@ -5,6 +5,7 @@
 package eu.exeris.kernel.core.flow; // NOPMD
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowEngineStats;
@@ -75,6 +76,7 @@ final class CoreFlowRuntime { // NOPMD
     private final AtomicInteger queueDepth = new AtomicInteger();
     private volatile FlowSnapshotStore snapshotStore;
     private volatile IdempotencyGuard guard;
+    private volatile TimeSource timeSource = TimeSource.SYSTEM;
     private volatile boolean started;
     private volatile boolean closed;
     private volatile boolean shutdownFinalized;
@@ -129,6 +131,11 @@ final class CoreFlowRuntime { // NOPMD
             snapshotStore = store.get();
         }
         guard = KernelProviders.idempotencyGuard().orElseGet(CoreIdempotencyGuard::new);
+        // Captured here, not read at use (ADR-082). A flow runs on a bare virtual thread, which
+        // inherits no ScopedValue binding — so a slot read on that thread always finds the system
+        // clock, and the seam would look applied while remaining undrivable. start() is inside the
+        // carrier scope, which is exactly why snapshotStore and guard are captured here too.
+        timeSource = KernelProviders.timeSource();
         lifecycleGeneration.incrementAndGet();
         resetLifecycleTotals();
         closed = false;
@@ -258,7 +265,7 @@ final class CoreFlowRuntime { // NOPMD
             RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan, null, false);
             return restored != null
                     ? restored
-                    : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get());
+                    : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get(), timeSource);
         });
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
@@ -431,7 +438,7 @@ final class CoreFlowRuntime { // NOPMD
                     persisted.definitionVersion(), migrated.definitionVersion());
         }
         RuntimeFlowInstance instance =
-                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
+                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get(), timeSource);
         if (migrationPersisted) {
             // ADR-013 §5, as on every other save. The migrated snapshot is built from the loaded one
             // and carries ITS schemaVersion, so the instance seeds the version the row held BEFORE
@@ -1002,7 +1009,8 @@ final class CoreFlowRuntime { // NOPMD
             FlowStepDescriptor step = instance.plan().stepAt(stepIndex);
 
             // DIST-303: timeoutNanos == Long.MAX_VALUE encodes Instant.MAX (no timeout).
-            long now = System.nanoTime();
+            // The deciding read (ADR-082): this comparison chooses timedOut, so it must be drivable.
+            long now = timeSource.nanoTime();
             long deadline = instance.timeoutNanos();
             if (deadline != Long.MAX_VALUE && deadline < now) {
                 return StepPlan.timedOut(step, now - deadline);

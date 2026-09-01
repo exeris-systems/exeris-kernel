@@ -24,6 +24,21 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **`TimeSource` — the kernel's seam for time it decides on** ([ADR-082](docs/adr/ADR-082-injectable-time-seam.md)).
+  `eu.exeris.kernel.spi.time.TimeSource` carries `nanoTime()` and `wallTime()`, is bound through
+  `KernelProviders.TIME_SOURCE`, and is read through `KernelProviders.timeSource()`, which falls back
+  to the platform clock when unbound. The method names come from `CommunitySchedulerClock` rather
+  than being invented, so the scheduler's clock becomes this seam plus its waiting primitives.
+
+  Migrated: the saga TTL path — the expiry comparison in `CoreFlowRuntime` and the wall↔monotonic
+  conversions in `RuntimeFlowInstance`. **Not** migrated: reads that measure rather than decide,
+  where virtualising would make JFR durations lie. Of 148 time reads in main sources, five are
+  comparisons.
+
+  A saga timeout is now drivable: `CoreFlowTimeSourceTest` advances a manual clock and asserts the
+  timeout in **0.79s against a 30-second deadline**, with no sleeping.
+
+
 - **A saga's parked definition version now survives a restart, not only a wake** (ADR-073 merge gate,
   clause 3). `AbstractFlowDefinitionVersioningTck` covers version-bound resume exhaustively and never
   rebuilds an engine; `AbstractSagaRecoveryTck` rebuilds constantly and was version-blind — so the

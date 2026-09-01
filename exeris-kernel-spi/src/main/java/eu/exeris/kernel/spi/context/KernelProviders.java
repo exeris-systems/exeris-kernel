@@ -30,6 +30,7 @@ import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
 import eu.exeris.kernel.spi.storage.blob.BlobStore;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.kernel.spi.transport.TransportEngine;
@@ -537,6 +538,17 @@ public final class KernelProviders {
     public static final ScopedValue<BlobStore> BLOB_STORE = ScopedValue.newInstance();
 
     /**
+     * Where the kernel reads time it will decide on (ADR-082).
+     *
+     * <p>Bound once at bootstrap. Read it through {@link #timeSource()} rather than directly: an
+     * unbound kernel must still tell the time, and a call site that forgets its own {@code orElse}
+     * looks migrated while remaining undrivable.
+     *
+     * @since 0.12.0
+     */
+    public static final ScopedValue<TimeSource> TIME_SOURCE = ScopedValue.newInstance();
+
+    /**
      * The authenticated {@link PrincipalContext} for the current request scope.
      *
      * <p>Re-bound per request by the transport/security interceptor. Every virtual
@@ -800,6 +812,20 @@ public final class KernelProviders {
      * @apiNote Bootstrap / system tasks only. Do NOT call from request handlers or
      *          {@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} implementations.
      */
+    /**
+     * Returns the bound {@link TimeSource}, or the platform clock when none is bound.
+     *
+     * <p>Unbound is the ordinary case for anything running outside a kernel scope — a test, a
+     * standalone driver — so this returns a default rather than throwing. Deciding reads call this;
+     * measuring reads call {@link System#nanoTime()} directly, which ADR-082 rules on.
+     *
+     * @return the bound source, or {@link TimeSource#SYSTEM}; never {@code null}
+     * @since 0.12.0
+     */
+    public static TimeSource timeSource() {
+        return TIME_SOURCE.orElse(TimeSource.SYSTEM);
+    }
+
     public static StorageContext storageContextOrSystem() {
         return STORAGE_CONTEXT.orElse(ImmutableStorageContext.GLOBAL);
     }
