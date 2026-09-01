@@ -39,6 +39,9 @@ public final class BlobStorageException extends ExerisKernelException {
     private static final String UPLOAD_MSG = "Blob upload contract violation";
     private static final String TOO_LARGE_MSG = "Blob exceeds the driver's configured ceiling";
     private static final String REMOTE_MSG = "Remote blob store refused the request";
+    private static final String NO_PROVIDER_MSG = "No BlobStorageProvider on the classpath";
+    private static final String UNRESOLVED_MSG = "Blob provider selection did not resolve to one driver";
+    private static final String MISSING_KEY_MSG = "Blob storage is configured and a key it needs is unset";
 
     private BlobStorageException(String errorCode, String message, Throwable cause, Object... rawArgs) {
         super(errorCode, message, cause, rawArgs);
@@ -137,5 +140,49 @@ public final class BlobStorageException extends ExerisKernelException {
         return new BlobStorageException(
                 KernelErrorCodes.EX_BLOB_8006, REMOTE_MSG, null,
                 providerName, container, statusCode);
+    }
+
+    /**
+     * Blob storage was asked for and no driver is present to serve it.
+     *
+     * @param component the bootstrap component that looked
+     * @return exception with rawArgs: [component]
+     */
+    public static BlobStorageException noProvider(String component) {
+        return new BlobStorageException(
+                KernelErrorCodes.EX_BLOB_8007, NO_PROVIDER_MSG, null, component);
+    }
+
+    /**
+     * The configured provider id does not name exactly one discovered driver.
+     *
+     * <p>Carries the key as well as the value on purpose: a refusal an operator cannot act on is a
+     * refusal that costs them a search, and the key is the one thing they need and do not have.
+     *
+     * @param configKey    the configuration key that selects the driver
+     * @param configuredId the value that was set, or the empty string when it was not
+     * @param availableIds comma-joined provider ids actually discovered
+     * @return exception with rawArgs: [configKey, configuredId, availableIds]
+     */
+    public static BlobStorageException selectionUnresolved(String configKey, String configuredId,
+                                                           String availableIds) {
+        return new BlobStorageException(
+                KernelErrorCodes.EX_BLOB_8008, UNRESOLVED_MSG, null,
+                configKey, configuredId, availableIds);
+    }
+
+    /**
+     * Blob storage is on and a key it needs was not set.
+     *
+     * <p>Refused here rather than deeper in a driver, where the message would name a constructor
+     * parameter or a property rather than the key an operator has to write.
+     *
+     * @param configKey the key that is unset
+     * @param expected  what a value for it looks like
+     * @return exception with rawArgs: [configKey, expected]
+     */
+    public static BlobStorageException missingConfiguration(String configKey, String expected) {
+        return new BlobStorageException(
+                KernelErrorCodes.EX_BLOB_8009, MISSING_KEY_MSG, null, configKey, expected);
     }
 }

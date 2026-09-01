@@ -10,6 +10,28 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **The storage subsystem boots, and the operator says which driver** (ADR-056). Two Community blob
+  drivers — `blob-fs-community` and `blob-s3-community` — register at the same priority and nothing
+  loaded them, so a deployment got whichever it constructed by hand. `StorageBootstrap` in Core now
+  selects **by configured id**, `CommunityStorageSubsystem` binds the result into
+  `KernelProviders.BLOB_STORAGE_PROVIDER` / `BLOB_STORE`, and the choice is recorded on the
+  `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event.
+
+  This is the one bootstrap that does not rank by `priority()`: the two drivers are not
+  interchangeable — one needs a writable directory, the other credentials and an endpoint — so
+  ranking would decide where a tenant's objects land by ServiceLoader order.
+
+  **`storage.blob.provider` is both the switch and the selector.** Unset means blob storage is off
+  and nothing binds, which is what every deployment to date has been doing; set means the choice has
+  been stated. An id matching no driver fails at boot with `EX-BLOB-8008`, carrying the key, the
+  value and the ids that were available; a classpath with no driver at all is `EX-BLOB-8007`. Also
+  reads `storage.blob.location` (required once storage is on) and
+  `storage.blob.maxSignedUrlTtlSeconds`. For the S3 driver, `storage.blob.location` is the
+  **endpoint** and `storage.blob.s3.bucket` / `.accessKey` / `.secretKey` (plus optional `.region`
+  and `.maxObjectBytes`) are forwarded into the driver's properties. The subsystem declares
+  `dependsOn("memory")`, because the S3 store stages transfers through the kernel allocator.
+
+
 - **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**
   ([ADR-071](docs/adr/ADR-071-operational-limit-configuration-path.md) amendment). The client sized
   every response read from `maxRequestBodyBytes`, so one key bounded two unrelated things: what this

@@ -1039,6 +1039,52 @@ public final class KernelErrorCodes {
      */
     public static final String EX_BLOB_8006 = "EX-BLOB-8006";
 
+    /**
+     * Blob storage was configured, and no {@code BlobStorageProvider} is on the classpath to serve
+     * it. Distinct from {@link #EX_BLOB_8008}: nothing is ambiguous, there is simply nothing to
+     * choose from, and the fix is a dependency rather than a key.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} component — the bootstrap component that looked</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8007 = "EX-BLOB-8007";
+
+    /**
+     * The configured blob provider id does not resolve to exactly one provider on the classpath.
+     *
+     * <p>One code rather than two for "no such id" and "the id is ambiguous", because the operator
+     * action is the same in both: write a different value for one key. The message distinguishes
+     * them; the code is what an alert routes on, and both route to the same person.
+     *
+     * <p>Thrown at boot, never per request — a store nobody could choose is not a runtime condition.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} configKey — the key to set, so a refusal names its own remedy</li>
+     *   <li>index 1 – {@code String} configuredId — what was set, or the empty string when unset</li>
+     *   <li>index 2 – {@code String} availableIds — comma-joined provider ids actually discovered</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8008 = "EX-BLOB-8008";
+
+    /**
+     * Blob storage is switched on and a configuration key it needs is unset.
+     *
+     * <p>Separate from {@link #EX_BLOB_8008} because the rawArgs mean different things and Glass-Box
+     * tooling reads them positionally: 8008's last slot is the list of provider ids that were
+     * available, and a free-text hint in that position would be parsed as ids. Different failure,
+     * different layout, different code.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} configKey — the key that is unset</li>
+     *   <li>index 1 – {@code String} expected — what a value for it looks like</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8009 = "EX-BLOB-8009";
+
     // -----------------------------------------------------------------------
     // Scheduling (EX-JOB-9xxx) — ADR-057
     // -----------------------------------------------------------------------
