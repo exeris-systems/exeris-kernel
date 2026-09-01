@@ -287,7 +287,14 @@ jobs:
           # against a tree that is not its ancestor: value classes, StructuredTaskScope signatures,
           # a baseline that is garbage in either direction. The preview line tags `preview/vX.Y.Z`
           # for that reason, but a naming convention nobody can enforce is not a guard — this is.
-          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)"
+          # `|| true` is load-bearing under `set -euo pipefail`, not defensive noise. grep exits 1
+          # when it matches nothing, pipefail makes that the pipeline's status, and an assignment
+          # from a failing command substitution aborts under -e — so without it the friendly
+          # "no release tag found" branch below is UNREACHABLE and the job hard-fails instead. The
+          # two-stage form the strict filter replaced never had the hazard: `head -1` exits 0 on an
+          # empty stream. Adding grep as a third stage is what introduced it, in the same v0.12
+          # change that added the filter.
+          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
           if [ -z "$BASELINE" ]; then
             echo "no release tag found — nothing to compare against"; exit 0
           fi
