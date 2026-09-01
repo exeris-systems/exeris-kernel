@@ -5,6 +5,7 @@
 package eu.exeris.kernel.core.http.http1;
 
 import java.lang.foreign.MemorySegment;
+import java.util.Objects;
 
 /**
  * RFC 9112 — HTTP/1.1 Connection Codec.
@@ -75,6 +76,9 @@ public final class Http1Codec {
     private static final String UPGRADE_H2C             = "h2c";
     private static final String NO_H2C_SETTINGS         = "";
 
+    /** Visitor for callers that want only the connection state this codec derives. */
+    private static final Http1RequestParser.HeaderVisitor DISCARD_HEADERS = (name, value) -> { };
+
     private boolean keepAlive;
     private long pendingContentLength;
     private UpgradeState upgradeState;
@@ -122,17 +126,6 @@ public final class Http1Codec {
     public Http1Codec() {
         this(Http1RequestParser.DEFAULT_MAX_HEADERS, Http1RequestParser.DEFAULT_MAX_HEADER_SIZE);
     }
-
-    /** The header-count bound this codec enforces. */
-    public int maxHeaders() {
-        return maxHeaders;
-    }
-
-    /** The single-header size bound this codec enforces. */
-    public int maxHeaderSize() {
-        return maxHeaderSize;
-    }
-
 
     /**
      * Resets connection state to HTTP/1.1 defaults, ready for the next request.
@@ -206,13 +199,48 @@ public final class Http1Codec {
      * <p>After this method returns a positive value, callers MUST check
      * {@link #upgradeState()} before proceeding with HTTP/1.1 processing.
      *
+     * <p>A caller that also needs the header fields themselves should use
+     * {@link #parseHeaders(MemorySegment, long, long, Http1RequestParser.HeaderVisitor)}
+     * rather than parsing the same block a second time.
+     *
      * @param seg     inbound data segment
      * @param offset  offset to first header line (after the request-line CRLF)
      * @param length  available bytes
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
      */
     public long parseHeaders(MemorySegment seg, long offset, long length) {
-        HeaderParseState state = new HeaderParseState();
+        return parseHeaders(seg, offset, length, DISCARD_HEADERS);
+    }
+
+    /**
+     * Parses header fields in a single pass, updating connection state, detecting h2c upgrade,
+     * and handing each field to {@code visitor}.
+     *
+     * <p>One pass, not two. The connection state this codec tracks and the header list a server
+     * builds are both derived from the same bytes under the same bounds, so deriving them together
+     * removes a full re-materialisation of every field. It also removes a hazard rather than only a
+     * cost: with two passes the enforced limit depended on which pass reached it first unless both
+     * were handed identical bounds (ADR-071), and a single pass cannot express that mistake.
+     *
+     * <p>{@code visitor} is invoked <em>after</em> the field has updated connection state, so a
+     * field this codec rejects — a malformed {@code Content-Length}, say — never reaches it. Fields
+     * seen before a limit violation or an incomplete block do reach it; the return value is what
+     * says whether the block is usable, and a caller that gets {@code -1} must discard what it
+     * collected.
+     *
+     * <p>The visitor is not retained beyond this call, so a caller may hand over one that closes
+     * over a collection it intends to publish as immutable.
+     *
+     * @param seg     inbound data segment
+     * @param offset  offset to first header line (after the request-line CRLF)
+     * @param length  available bytes
+     * @param visitor callback for each parsed header field; non-null
+     * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
+     */
+    public long parseHeaders(MemorySegment seg, long offset, long length,
+                             Http1RequestParser.HeaderVisitor visitor) {
+        Objects.requireNonNull(visitor, "visitor must not be null");
+        HeaderParseState state = new HeaderParseState(visitor);
         long end = Http1RequestParser.parseHeaders(seg, offset, length,
                 maxHeaders, maxHeaderSize, state::processHeader);
 
@@ -287,8 +315,18 @@ public final class Http1Codec {
         private long pendingContentLength = NO_BODY;
         private String h2cSettingsPayload;
         private final H2cDetectionContext h2c = new H2cDetectionContext();
+        private final Http1RequestParser.HeaderVisitor delegate;
+
+        private HeaderParseState(Http1RequestParser.HeaderVisitor delegate) {
+            this.delegate = delegate;
+        }
 
         private void processHeader(String name, String value) {
+            updateConnectionState(name, value);
+            delegate.onHeader(name, value);
+        }
+
+        private void updateConnectionState(String name, String value) {
             if (HEADER_CONTENT_LENGTH.equalsIgnoreCase(name)) {
                 pendingContentLength = parseContentLength(value);
                 return;

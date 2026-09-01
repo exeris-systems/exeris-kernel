@@ -8,6 +8,24 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Changed
+
+- **The HTTP/1 read path parses each request's headers once, not twice.**
+  `CommunityHttp1RequestReader` ran `Http1Codec.parseHeaders` for connection state and h2c
+  detection, then ran the parser again to build the `List<HttpHeader>` — every field name and value
+  materialised twice — and then copied the finished list a third time. `Http1Codec.parseHeaders` now
+  accepts an optional `HeaderVisitor`, so connection state and the header list come off one
+  traversal. Measured on the read path, exact per-thread bytes: a 16-header request allocated
+  **9 848 B and now allocates 5 472 B**, a 44% reduction, of which the collapsed parse is 41%
+  (5 784 B) and the dropped list copy the rest. Header order, values, bounds and the `-1` incomplete
+  signal are unchanged.
+
+  It also removes a hazard rather than only a cost. Under two passes the enforced header limit
+  depended on which pass reached it first unless both were handed identical bounds, which
+  [ADR-071](docs/adr/ADR-071-operational-limit-configuration-path.md) fixed and a comment then asked
+  future editors to preserve. One pass cannot express that mistake. See ADR-071's amendment of
+  2026-09-01.
+
 ### Fixed
 
 - **A listener that ran out of file descriptors no longer stays down.** An `IOException` from
