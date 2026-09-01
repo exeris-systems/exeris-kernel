@@ -16,9 +16,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   materialised twice — and then copied the finished list a third time. `Http1Codec.parseHeaders` now
   accepts an optional `HeaderVisitor`, so connection state and the header list come off one
   traversal. Measured on the read path, exact per-thread bytes: a 16-header request allocated
-  **9 904 B and now allocates 5 520 B**, a 44% reduction, of which the collapsed parse is 41% and
-  the dropped list copy the rest. Header order, values, bounds and the `-1` incomplete signal are
-  unchanged.
+  **9 848 B and now allocates 5 472 B**, a 44% reduction, of which the collapsed parse is 41%
+  (5 784 B) and the dropped list copy the rest. Header order, values, bounds and the `-1` incomplete
+  signal are unchanged.
 
   It also removes a hazard rather than only a cost. Under two passes the enforced header limit
   depended on which pass reached it first unless both were handed identical bounds, which
