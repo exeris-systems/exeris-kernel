@@ -18,7 +18,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -49,6 +48,8 @@ class CommunitySchemaUpgradeTest {
     private static final String DEFINITION = "checkout-saga";
     private static final long ID_MOST = 0x0123456789ABCDEFL;
     private static final long ID_LEAST = 0x76543210FEDCBA98L;
+    /** Two live entries, packed big-endian as the codec writes them. */
+    private static final byte[] PARKED_STACK = {0, 0, 0, 0, 0, 0, 0, 1};
 
     /** The saga table exactly as {@code V0.7.0} left it — before step names, version or identities. */
     private static final String V07_SAGA_STATE = """
@@ -74,19 +75,28 @@ class CommunitySchemaUpgradeTest {
         @Test
         @DisplayName("survives the upgrade with every value it was parked with")
         void rowSurvivesTheUpgrade() throws SQLException {
-            DataSource ds = databaseAtV07();
+            Database ds = databaseAtV07();
 
             upgrade(ds);
 
-            try (Connection c = ds.getConnection();
+            try (Connection c = ds.dataSource().getConnection();
                  Statement s = c.createStatement();
-                 ResultSet r = s.executeQuery("SELECT definition_name, current_step, state, "
-                         + "stack_pointer FROM " + SAGA_TABLE)) {
+                 ResultSet r = s.executeQuery("SELECT instance_id_most, instance_id_least, "
+                         + "definition_name, current_step, state, compensation_stack, "
+                         + "stack_pointer, schema_version FROM " + SAGA_TABLE)) {
                 assertThat(r.next()).as("the parked saga MUST still be there").isTrue();
+                // Every column the row was written with, including the primary key and the packed
+                // stack. A representative subset would read as a spot-check while the claim being
+                // made is that nothing moved — and an ALTER that rewrote the PK or the BYTEA is
+                // exactly the kind of migration this suite exists to catch.
+                assertThat(r.getLong("instance_id_most")).isEqualTo(ID_MOST);
+                assertThat(r.getLong("instance_id_least")).isEqualTo(ID_LEAST);
                 assertThat(r.getString("definition_name")).isEqualTo(DEFINITION);
                 assertThat(r.getInt("current_step")).isEqualTo(3);
                 assertThat(r.getString("state")).isEqualTo("PARKED");
+                assertThat(r.getBytes("compensation_stack")).isEqualTo(PARKED_STACK);
                 assertThat(r.getInt("stack_pointer")).isEqualTo(2);
+                assertThat(r.getLong("schema_version")).isEqualTo(1L);
                 assertThat(r.next()).as("and MUST NOT have been duplicated").isFalse();
             }
         }
@@ -99,11 +109,11 @@ class CommunitySchemaUpgradeTest {
             // DEFAULT 1 would instead assert that every saga parked before the column existed
             // belongs to the first version — the guess ADR-064 exists to stop making, applied
             // silently to rows nobody looked at.
-            DataSource ds = databaseAtV07();
+            Database ds = databaseAtV07();
 
             upgrade(ds);
 
-            assertThat(intColumn(ds, "definition_version"))
+            assertThat(intColumn(ds.dataSource(), "definition_version"))
                     .as("a pre-0.11.1 row records no version, and says so")
                     .isEqualTo(FlowSnapshot.VERSION_ABSENT);
         }
@@ -115,11 +125,11 @@ class CommunitySchemaUpgradeTest {
             // represent NULL, so absence is carried by the read rather than by a sentinel. Asserted
             // because "both columns backfill" would pass against either choice, and the two
             // migrations disagreeing is what makes each one deliberate.
-            DataSource ds = databaseAtV07();
+            Database ds = databaseAtV07();
 
             upgrade(ds);
 
-            try (Connection c = ds.getConnection();
+            try (Connection c = ds.dataSource().getConnection();
                  Statement s = c.createStatement();
                  ResultSet r = s.executeQuery(
                          "SELECT compensation_step_names FROM " + SAGA_TABLE)) {
@@ -145,17 +155,17 @@ class CommunitySchemaUpgradeTest {
             // again — over tables that already exist and a row that is already there. Only the
             // IF NOT EXISTS guards make that survivable, and nothing tested them against the real
             // files until now.
-            DataSource ds = databaseAtV07();
+            Database ds = databaseAtV07();
 
             upgrade(ds);
 
-            assertThat(ledgerVersions(ds))
+            assertThat(ledgerVersions(ds.dataSource()))
                     .as("every shipped migration recorded — order is not asserted because the "
                             + "ledger's version column is TEXT, so a SQL sort gives 0.10.0 before "
                             + "0.5.0. Apply order is the runner's job and has its own test; what "
                             + "this one is about is that nothing was skipped")
                     .containsExactlyInAnyOrder("0.5.0", "0.7.0", "0.10.0", "0.11.0", "0.11.1", "0.11.2");
-            assertThat(rowCount(ds, SAGA_TABLE))
+            assertThat(rowCount(ds.dataSource(), SAGA_TABLE))
                     .as("re-applying over an existing row must not duplicate or drop it")
                     .isEqualTo(1);
         }
@@ -163,17 +173,17 @@ class CommunitySchemaUpgradeTest {
         @Test
         @DisplayName("a second upgrade is a no-op, and the parked saga is untouched by it")
         void secondUpgradeChangesNothing() throws SQLException {
-            DataSource ds = databaseAtV07();
+            Database ds = databaseAtV07();
             upgrade(ds);
-            List<String> afterFirst = ledgerVersions(ds);
+            List<String> afterFirst = ledgerVersions(ds.dataSource());
 
             upgrade(ds);
 
-            assertThat(ledgerVersions(ds))
+            assertThat(ledgerVersions(ds.dataSource()))
                     .as("the ledger MUST NOT grow a second row per version")
                     .isEqualTo(afterFirst);
-            assertThat(rowCount(ds, SAGA_TABLE)).isEqualTo(1);
-            assertThat(intColumn(ds, "definition_version"))
+            assertThat(rowCount(ds.dataSource(), SAGA_TABLE)).isEqualTo(1);
+            assertThat(intColumn(ds.dataSource(), "definition_version"))
                     .as("and the backfilled value MUST NOT be rewritten by the re-run")
                     .isEqualTo(FlowSnapshot.VERSION_ABSENT);
         }
@@ -185,10 +195,11 @@ class CommunitySchemaUpgradeTest {
      * A database holding the saga table as {@code V0.7.0} created it, with one parked saga in it and
      * no ledger — the state a deployment running an older kernel is actually in.
      */
-    private static DataSource databaseAtV07() throws SQLException {
+    private static Database databaseAtV07() throws SQLException {
+        String url = "jdbc:h2:mem:upgrade_" + System.nanoTime()
+                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         JdbcDataSource ds = new JdbcDataSource();
-        ds.setURL("jdbc:h2:mem:upgrade_" + System.nanoTime()
-                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+        ds.setURL(url);
         ds.setUser("sa");
         ds.setPassword("");
 
@@ -206,19 +217,28 @@ class CommunitySchemaUpgradeTest {
             p.setString(3, DEFINITION);
             p.setInt(4, 3);
             p.setString(5, "PARKED");
-            // Two live entries, packed big-endian as the codec writes them.
-            p.setBytes(6, new byte[] {0, 0, 0, 0, 0, 0, 0, 1});
+            p.setBytes(6, PARKED_STACK);
             p.setInt(7, 2);
             p.setLong(8, 1L);
             p.executeUpdate();
         }
-        return ds;
+        return new Database(ds, url);
     }
 
-    private static void upgrade(DataSource dataSource) {
+    /**
+     * The database and the URL it was opened on.
+     *
+     * <p>The URL is carried rather than re-derived because the runner embeds it in the exception a
+     * bootstrap failure throws. A hardcoded stand-in would point a failing case at a database nobody
+     * opened — harmless until the day it is the only clue.
+     */
+    private record Database(DataSource dataSource, String url) {
+    }
+
+    private static void upgrade(Database database) {
         CommunityPersistenceMigrationRunner.runIfEnabled(
-                true, dataSource, CommunityPersistenceEngine.MIGRATION_RESOURCES,
-                PROVIDER, "jdbc:h2:mem:upgrade");
+                true, database.dataSource(), CommunityPersistenceEngine.MIGRATION_RESOURCES,
+                PROVIDER, database.url());
     }
 
     private static int intColumn(DataSource dataSource, String column) throws SQLException {
@@ -246,7 +266,7 @@ class CommunitySchemaUpgradeTest {
                      "SELECT version FROM " + SchemaHistoryLedger.TABLE)) {
             List<String> out = new ArrayList<>();
             while (r.next()) {
-                out.add(r.getString(1).toLowerCase(Locale.ROOT));
+                out.add(r.getString(1));
             }
             return out;
         }
