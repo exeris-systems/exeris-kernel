@@ -170,11 +170,17 @@ public final class Http1RequestParser {
                 throw new Http1ParseException(MSG_TOO_MANY_HEADERS, headerCount, maxHeaders);
             }
 
-            String rawName = readAscii(seg, pos, colonPos);
-            if (!isValidToken(rawName)) {
-                throw new Http1ParseException(MSG_INVALID_HEADER_NAME, rawName);
+            // SPIKE (RFC-2026-09-01 Option B): a known spelling resolves to a shared constant with
+            // no allocation, and is a valid token by construction so the check is skipped too.
+            // A miss is exactly today's path.
+            String name = CanonicalHeaderNames.resolve(seg, pos, colonPos);
+            if (name == null) {
+                String rawName = readAscii(seg, pos, colonPos);
+                if (!isValidToken(rawName)) {
+                    throw new Http1ParseException(MSG_INVALID_HEADER_NAME, rawName);
+                }
+                name = rawName;
             }
-            String name = rawName;
             String rawValue = readAscii(seg, colonPos + 1, lineEnd);
             String value = trimOws(rawValue);
             visitor.onHeader(name, value);
