@@ -10,6 +10,30 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **Known HTTP field-names are resolved from a shared table instead of being materialised per
+  request** ([RFC-2026-09-01](docs/rfc/RFC-2026-09-01-http-header-representation.md), ACCEPTED).
+  `CanonicalHeaderNames` matches a field-name's wire bytes against known spellings and returns a
+  constant, allocating nothing on a hit; a miss materialises the name exactly as before. Measured on
+  the read path, exact per-thread bytes, three fresh JVMs:
+
+  | request shape | before | after |
+  |---|---:|---:|
+  | browser GET (15 fields) | 5 792 B | **4 352 B** — 24.9% |
+  | service POST (9 fields) | 3 976 B | **3 144 B** — 20.9% |
+  | health probe (4 fields) | 1 712 B | **1 360 B** — 20.6% |
+
+  **Correctness-neutral by construction.** Matching is byte-wise and case-**sensitive**, so a hit
+  returns exactly the characters the wire carried and no field changes case; an unknown spelling —
+  including an unknown casing — falls through to today's path. A stale or incomplete table is a
+  performance question, never a correctness one. Every entry is registered in its conventional
+  spelling *and* in lowercase, because HTTP/2 requires lowercase field names and current browsers
+  already send some HTTP/1 fields that way.
+
+  RFC-2026-09-01 also records what was **rejected**: handing header fields out as slices into the
+  request buffer. `CommunityArenaShardPool` recycles segments without closing their arena, so a
+  retained field would not throw — it would return another request's bytes, silently. That is the
+  reason, not effort.
+
 - **The HTTP/1 read path parses each request's headers once, not twice.**
   `CommunityHttp1RequestReader` ran `Http1Codec.parseHeaders` for connection state and h2c
   detection, then ran the parser again to build the `List<HttpHeader>` — every field name and value
