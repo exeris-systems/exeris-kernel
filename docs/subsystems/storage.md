@@ -246,10 +246,33 @@ reports what `HEAD` said, so a caller that reads to end-of-stream can tell the t
 signing, session tokens, and signing arbitrary caller-supplied `x-amz-*` headers — each serves a
 capability this driver does not have, so implementing it would be signing for requests it cannot make.
 
-**Provider selection is an open gap.** Both providers are registered at the same Community priority, and
-nothing in this repository loads `BlobStorageProvider` through `ServiceLoader` yet, so a deployment gets
-the store whose provider it constructs. When a storage subsystem does bootstrap the SPI, two providers at
-one priority will need a configured choice rather than a discovery order.
+## Bootstrap and provider selection
+
+`CommunityStorageSubsystem` (phase `SERVICES`, no dependencies) boots the subsystem, and
+`StorageBootstrap` in Core selects the driver. Selection is **by configured id, not by ranking** —
+the one bootstrap in the kernel that does not rank by `priority()`, because both Community drivers
+register at the same priority and are not interchangeable: one needs a writable directory, the other
+credentials and a reachable endpoint. Ranking them would decide where a tenant's objects land by
+ServiceLoader order and a class-name tie-break.
+
+| Key | Meaning |
+|---|---|
+| `storage.blob.provider` | The driver id: `blob-fs-community` or `blob-s3-community`. **Unset means blob storage is off.** |
+| `storage.blob.location` | Driver-interpreted root — a directory for the filesystem driver, a bucket for S3. Required once the provider key is set. |
+| `storage.blob.maxSignedUrlTtlSeconds` | Signed-URL ceiling; defaults to `BlobStorageConfig`'s. |
+
+**Absent configuration is not ambiguous configuration.** With `storage.blob.provider` unset the
+subsystem binds nothing and reports running, exactly as a kernel with no storage behaves; both
+drivers sit on every Community classpath, so refusing to boot without the key would stop every
+deployment that never wanted blob storage. What is refused is asking for storage *without saying
+which*: an id naming no discovered driver fails at boot with `EX-BLOB-8008`, carrying the key, the
+value that was set and the ids that were available. An empty classpath is `EX-BLOB-8007` instead —
+nothing is ambiguous there, and the fix is a dependency rather than a key.
+
+Which driver won is recorded on the `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event.
+The provider slots are `KernelProviders.BLOB_STORAGE_PROVIDER` and `BLOB_STORE` — named `BLOB_*`
+rather than `STORAGE_*` because `STORAGE_CONTEXT` is ADR-012's tenant-isolation carrier and has
+nothing to do with object storage.
 
 ## Not in this subsystem
 

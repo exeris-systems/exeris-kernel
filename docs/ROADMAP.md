@@ -2028,6 +2028,26 @@ names the key an operator has to set, since a refusal that does not say what to 
 they cannot act on; `docs/subsystems/storage.md` loses its "provider selection is an open gap"
 paragraph.
 
+**Status (v0.12): DELIVERED**, with one correction to this entry's own wording. `StorageBootstrap`
+in Core selects by `storage.blob.provider` and never ranks; `CommunityStorageSubsystem` binds the
+result into `KernelProviders.BLOB_STORAGE_PROVIDER` / `BLOB_STORE`, and the choice is recorded on
+`eu.exeris.kernel.storage.StorageBootstrapSelected`.
+
+**The correction: "an unset key with more than one provider present is a startup failure" cannot be
+implemented as written.** Both Community drivers are on every Community classpath, so a literal
+reading fails *every existing deployment* at boot — including the ones that have never touched blob
+storage — which is not the defect this entry exists to prevent. The key is therefore the **opt-in**
+as well as the selector: unset means storage is off and nothing binds; set means the choice has been
+stated and an id matching no driver fails at boot. Silently picking remains impossible, which was
+the point. That inversion is pinned by its own test, because it is the rule a later reader following
+this entry's original wording would "fix" back.
+
+Two error codes rather than one: `EX-BLOB-8008` when the configured id resolves to nothing (carrying
+the key, the value and the available ids) and `EX-BLOB-8007` when the classpath holds no driver at
+all — different remedies, a key versus a dependency. Mutation-checked in four directions: selecting
+by list order reddens the second-id and order-independence cases while leaving the first-id case
+green, and the two subsystem rules each redden exactly one case.
+
 The generated-application half is deliberately **not** in this gate — it is a code-generation
 concern and belongs to whichever slice teaches the emitter about the key. It is stated in the
 amendment below so that slice inherits a requirement rather than rediscovering it.

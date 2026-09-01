@@ -28,6 +28,8 @@ import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
+import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
+import eu.exeris.kernel.spi.storage.blob.BlobStore;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.kernel.spi.transport.TransportEngine;
@@ -507,6 +509,32 @@ public final class KernelProviders {
      * @since 0.11.0
      */
     public static final ScopedValue<JobScheduler> JOB_SCHEDULER = ScopedValue.newInstance();
+
+    /**
+     * The selected {@link eu.exeris.kernel.spi.storage.blob.BlobStorageProvider} (ADR-056).
+     *
+     * <p>Bound once at bootstrap, and only when blob storage is configured — the two Community
+     * drivers register at the same priority, so nothing is selected until an operator names one.
+     *
+     * @since 0.12.0
+     */
+    public static final ScopedValue<BlobStorageProvider> BLOB_STORAGE_PROVIDER =
+            ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link eu.exeris.kernel.spi.storage.blob.BlobStore} created from
+     * {@link #BLOB_STORAGE_PROVIDER}.
+     *
+     * <p>Named {@code BLOB_*} rather than {@code STORAGE_*} deliberately: {@link #STORAGE_CONTEXT}
+     * is ADR-012's tenant-isolation carrier and has nothing to do with object storage. Two things
+     * called storage that mean different things is a naming collision worth one extra word.
+     *
+     * <p>Unbound in a deployment that has not configured blob storage, which is the normal case —
+     * read it with {@code orElse}, not {@code get}, unless the caller already knows storage is on.
+     *
+     * @since 0.12.0
+     */
+    public static final ScopedValue<BlobStore> BLOB_STORE = ScopedValue.newInstance();
 
     /**
      * The authenticated {@link PrincipalContext} for the current request scope.
