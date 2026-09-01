@@ -107,6 +107,14 @@ mvn clean install
 mvn -pl <changed-modules> pmd:check checkstyle:check
 ```
 
+**Run that on a tree you have already built.** PMD's type-resolution rules need the auxclasspath
+that only exists after `compile`, so on a fresh worktree the same command reports violations that
+are not there — measured on an untouched `development/0.12.0`: **16 `PMD Failure` lines and
+`BUILD FAILURE` before compiling, 0 and `BUILD SUCCESS` after**, same commit and same ruleset. It
+cries wolf rather than missing anything, but a phantom `LawOfDemeter` finding has cost time before.
+Compile first (`mvn -pl <changed-modules> -am install -DskipTests -Dpmd.skip=true
+-Dcheckstyle.skip=true`), or just re-check after a full build.
+
 **Architecture guard:** run the Wall guard yourself — do not assume CI covers it (it has historically been `@ArchIgnore`'d):
 
 ```bash

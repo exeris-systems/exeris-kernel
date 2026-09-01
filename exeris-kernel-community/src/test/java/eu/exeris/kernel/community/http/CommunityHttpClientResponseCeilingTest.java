@@ -55,11 +55,12 @@ class CommunityHttpClientResponseCeilingTest {
     @Test
     @DisplayName("a ceiling near the int range still yields a usable capacity, not a negative one")
     void largeCeilingsAreClampedNotWrapped() {
-        // 2 GiB is a legal value for the key. The header allowance pushes it past Integer.MAX_VALUE,
-        // and a bare cast lands on a negative number the allocator refuses — so a deployment that
-        // set a large limit failed on its first response, on the limit itself.
+        // Integer.MAX_VALUE is the largest ceiling validation admits, and the 8 KiB header
+        // allowance still pushes it past the int range — a bare cast lands on -2 147 475 457 and
+        // the allocator refuses it, so a deployment that set the largest legal limit failed on its
+        // first response, on the limit itself.
         try (CommunityHttpClientEngine engine = new CommunityHttpClientEngine(
-                clientConfig(REQUEST_CEILING, 2L * 1024 * 1024 * 1024))) {
+                clientConfig(REQUEST_CEILING, Integer.MAX_VALUE))) {
 
             assertThat(engine.resolveAggregateCapacity())
                     .as("clamped to the largest allocatable capacity")
