@@ -815,4 +815,118 @@ public abstract class AbstractSagaRecoveryTck {
                     TimeUnit.SECONDS.toNanos(1));
         }
     }
+
+    // =========================================================================
+    // Cross-version upgrade — a saga parked before the upgrade meets the engine after it
+    // =========================================================================
+
+    /**
+     * The version a saga parked under has to survive a <b>restart</b>, not only a wake (ADR-073
+     * merge gate; ADR-064).
+     *
+     * <p>Two suites already stand either side of this and neither crosses it.
+     * {@code AbstractFlowDefinitionVersioningTck} covers version-bound resume exhaustively and
+     * <b>never rebuilds an engine</b> — every case runs inside one runtime, so the version is read
+     * back from a store the same process wrote. This suite rebuilds constantly and is
+     * version-blind. An upgrade is exactly the intersection: the process that parked the saga is
+     * gone, and the one that finds the row is running different code.
+     *
+     * <p>That is also the path the schema-column backfills reach production by. A row written before
+     * {@code V0.11.1} carries {@code definition_version = 0}, and what makes it safe is a refusal on
+     * resume — which only a rebuilt engine reading someone else's row can actually exercise.
+     */
+    @Nested
+    @DisplayName("Cross-version upgrade — the parked version survives a restart")
+    class CrossVersionUpgrade {
+
+        private static final String DEFINITION = "upgrade-saga";
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("a saga parked under v1 resumes on v1 after a rebuild that also hosts v2")
+        void parkedVersionSurvivesRebuild() {
+            AtomicInteger v1Resumed = new AtomicInteger();
+            AtomicInteger v2Resumed = new AtomicInteger();
+
+            FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), DEFINITION);
+            engine.scheduler().schedule(engine.plans().compile(versioned(engine, 1, v1Resumed)), ctx);
+
+            assertThat(awaitCondition(() -> snapshotExists(ctx), 5))
+                    .as("the saga MUST park before the engine is killed")
+                    .isTrue();
+            engine.close();
+            engine = null;
+
+            // The upgrade: the new process hosts both, and the newest is the one an application
+            // would naturally have compiled last.
+            engine = rebuildEngine();
+            engine.start();
+            engine.plans().compile(versioned(engine, 1, v1Resumed));
+            engine.plans().compile(versioned(engine, 2, v2Resumed));
+
+            engine.scheduler().wake(ctx);
+
+            assertThat(awaitCondition(() -> v1Resumed.get() >= 1, 5))
+                    .as("the saga parked under v1 MUST resume on v1 across the restart")
+                    .isTrue();
+            assertThat(v2Resumed.get())
+                    .as("v2 is hosted and newer, and resuming on it would be the silent mis-replay "
+                            + "ADR-064 exists to stop — reached here through a restart rather than "
+                            + "through a wake inside one runtime")
+                    .isZero();
+        }
+
+        @Test
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        @DisplayName("an upgrade that drops v1 refuses the parked saga and leaves the row recoverable")
+        void upgradeWithoutTheParkedVersionRefuses() {
+            AtomicInteger v1Resumed = new AtomicInteger();
+            AtomicInteger v2Resumed = new AtomicInteger();
+
+            FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), DEFINITION);
+            engine.scheduler().schedule(engine.plans().compile(versioned(engine, 1, v1Resumed)), ctx);
+            assertThat(awaitCondition(() -> snapshotExists(ctx), 5)).isTrue();
+            engine.close();
+            engine = null;
+
+            // The ordinary upgrade an operator performs: deploy the new definition, stop shipping
+            // the old one. The in-flight saga is now unservable and MUST say so.
+            engine = rebuildEngine();
+            engine.start();
+            engine.plans().compile(versioned(engine, 2, v2Resumed));
+
+            assertThatThrownBy(() -> engine.scheduler().wake(ctx))
+                    .as("the engine hosts this definition and not that version — the saga is ours "
+                            + "and unservable, which is a refusal rather than another node's work")
+                    .isInstanceOfSatisfying(FlowEngineException.class, ex ->
+                            assertThat(ex.rawArgs()[2])
+                                    .isEqualTo(FlowEngineException.REASON_DEFINITION_VERSION_UNRESOLVED));
+
+            assertThat(v2Resumed.get())
+                    .as("refused, not resumed on the version that happened to be deployed")
+                    .isZero();
+            assertThat(snapshotExists(ctx))
+                    .as("a refusal must leave the row recoverable — an operator redeploying v1 has "
+                            + "to be able to finish the saga, so a refusal that consumed it would "
+                            + "turn an upgrade mistake into data loss")
+                    .isTrue();
+        }
+
+        /**
+         * A two-step definition at {@code version}, parking on the first step so the row exists to
+         * be found after the restart, and counting resumes of the second so the suite can tell
+         * <em>which</em> version ran.
+         */
+        private FlowDefinition versioned(FlowEngine target, int version, AtomicInteger resumed) {
+            return target.plans().newDefinition(DEFINITION)
+                    .step("park-here", _ -> FlowOutcome.PARK, null)
+                    .step("resumed-step", _ -> {
+                        resumed.incrementAndGet();
+                        return FlowOutcome.PARK;
+                    }, null)
+                    .transition(0, 1)
+                    .version(version)
+                    .build();
+        }
+    }
 }

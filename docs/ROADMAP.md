@@ -3062,10 +3062,23 @@ left stale deliberately rather than corrected quietly, because correcting them i
 change and that is a decision, not a cleanup. Whoever takes it should decide whether the checksum
 ought to cover comments at all.
 
-**Remaining on this entry:** the merge gate's third clause, a cross-version case on
-`AbstractSagaRecoveryTck`. The behaviour it names is covered — `AbstractFlowDefinitionVersioningTck`
-asserts `DEFINITION_VERSION_ABSENT` fails closed — but on a different TCK from the one the gate
-names, so this is a placement question rather than a coverage hole.
+**The third clause is closed too, and it was not the duplication it looked like.** The previous note
+called it a placement question, on the grounds that `AbstractFlowDefinitionVersioningTck` already
+covers version-bound resume. Measured: that suite **never rebuilds an engine** — every one of its
+forty-odd cases runs inside a single runtime, so the version is read back from a store the same
+process wrote. `AbstractSagaRecoveryTck` rebuilds in five places and was version-blind. **The two
+axes had never been crossed**, which is exactly what an upgrade is: the process that parked the saga
+is gone, and the one that finds the row is running different code.
+
+`CrossVersionUpgrade` adds both directions. A saga parked under v1 resumes on v1 after a rebuild that
+hosts v1 *and* v2 — the newest being what an application would naturally have compiled last. An
+upgrade that drops v1 refuses with `DEFINITION_VERSION_UNRESOLVED` and **leaves the row recoverable**,
+because an operator redeploying v1 has to be able to finish the saga: a refusal that consumed it
+would turn an upgrade mistake into data loss.
+
+This is also the path the schema-column backfills reach production by. A row written before
+`V0.11.1` carries `definition_version = 0`, and what makes that safe is a refusal on resume — which
+only a rebuilt engine reading a row it did not write can actually exercise.
 
 ---
 
