@@ -1844,7 +1844,7 @@ One gate clause remains **not** met, and it is not cosmetic:
 
 **Status (v0.12): DELIVERED.** `acceptorLoop` retries a failed accept with a bounded backoff
 (`25ms × streak`, capped at 1s) and emits `CommunityAcceptRetry` carrying the streak and the pause;
-64 consecutive failures with no accept in between still take the fatal path.
+64 consecutive failures are retried and the 65th takes the fatal path.
 
 **One deviation from the Resolution above, and it inverts its mechanism.** That text says to
 *classify* accept-loop `IOException`s and retry the transient ones. Java offers no typed signal —
@@ -1860,6 +1860,14 @@ is what ends a streak. Mutation-checked: restoring the pre-0.12 fatal path redde
 and removing the streak reset reddens exactly the one that asserts it. Worth recording that the
 fatal-path case was expected to survive the first mutation and did not — it asserts the pass count,
 so it discriminates on the same axis rather than only on the outcome.
+
+**Review found a hole in the mechanism itself, and it was the shape the fix exists to survive.** The
+first cut read progress from what the accept pass *returned*. A pass that accepts a connection and
+then throws while probing for the next leaves by the throw, so nothing it could return reaches the
+loop — and descriptors freeing one at a time is exactly that shape. Sixty-five such passes, each
+having served a connection, would have tripped the ceiling the fix exists to avoid. Progress is now
+read from a counter incremented at each accept, so it survives the throw; the case that pins it
+reddens under a streak blind to progress and nothing else.
 
 ---
 

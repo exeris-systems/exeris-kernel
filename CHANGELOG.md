@@ -14,8 +14,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `accept()` — how `EMFILE`/`ENFILE` surface — called `handleAsyncFailure` and returned, clearing
   `running` and closing the server channel, so a process that touched its `ulimit -n` once needed a
   restart to serve again. The acceptor now pauses (`25ms × streak`, capped at 1s) and tries again,
-  emitting `CommunityAcceptRetry` with the streak and the pause; 64 consecutive failures with no
-  accept in between still take the fatal path. Every `IOException` is retried rather than a
+  emitting `CommunityAcceptRetry` with the streak and the pause; 64 consecutive failures are retried
+  and the 65th takes the fatal path. What ends a streak is an accept that returned a socket, counted
+  at the accept — so a pass that serves a connection and then fails probing for the next, which is
+  what descriptor pressure actually looks like, does not accumulate toward the ceiling. Every `IOException` is retried rather than a
   classified subset: Java gives no typed signal, so classification means matching a message, and a
   message that fails to match reinstates the defect — while retrying a genuinely fatal condition
   only costs a bounded delay before the same outcome.

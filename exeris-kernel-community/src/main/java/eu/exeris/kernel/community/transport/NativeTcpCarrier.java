@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 /**
  * Community native TCP carrier with FD-owner reactor and VT-per-stream dispatch via PAQS.
@@ -110,6 +111,13 @@ public final class NativeTcpCarrier implements TransportEngine {
     };
 
     private volatile ServerSocketChannel serverChannel;
+    /**
+     * Accepts that returned a socket, including ones the connection cap then refused — what it
+     * witnesses is the listener working, which is a different question from whether the connection
+     * was served. Acceptor-thread-confined: the loop and the pass it runs share one platform thread,
+     * so this needs no atomic.
+     */
+    private long acceptsObserved;
     private volatile Thread acceptorThread;
     private volatile PaqsScheduler paqs;
     private final List<NativeTcpReactor> reactors = new ArrayList<>();
@@ -522,7 +530,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void runAcceptorLoop() {
-        acceptorLoop(this::acceptPendingConnections);
+        acceptorLoop(this::acceptPendingConnections, () -> acceptsObserved);
     }
 
     /**
@@ -534,12 +542,7 @@ public final class NativeTcpCarrier implements TransportEngine {
      */
     /* default */ @FunctionalInterface
     interface AcceptPass {
-        /**
-         * @return {@code true} if at least one connection was accepted, which is what ends a
-         *         failure streak — a pass that returned without accepting anything has not shown
-         *         the listener to be working again
-         */
-        boolean run() throws IOException;
+        void run() throws IOException;
     }
 
     /**
@@ -561,13 +564,21 @@ public final class NativeTcpCarrier implements TransportEngine {
      *
      * @param pass one accept pass
      */
-    /* default */ void acceptorLoop(AcceptPass pass) {
+    /* default */ void acceptorLoop(AcceptPass pass, LongSupplier acceptsObserved) {
+        acceptorLoop(pass, acceptsObserved, MAX_CONSECUTIVE_ACCEPT_FAILURES);
+    }
+
+    /**
+     * @param ceiling consecutive failures tolerated before the fatal path; a parameter so a test can
+     *                reach the bound without spending the real backoff of the shipped one
+     */
+    /* default */ void acceptorLoop(AcceptPass pass, LongSupplier acceptsObserved, int ceiling) {
         int consecutiveFailures = 0;
         while (running.get()) {
+            long acceptsBefore = acceptsObserved.getAsLong();
             try {
-                if (pass.run()) {
-                    consecutiveFailures = 0;
-                }
+                pass.run();
+                consecutiveFailures = 0;
             } catch (AsynchronousCloseException ignored) {
                 // shutdown path
                 return;
@@ -575,8 +586,15 @@ public final class NativeTcpCarrier implements TransportEngine {
                 if (!running.get()) {
                     return;
                 }
-                consecutiveFailures++;
-                if (!retryAccept(e, consecutiveFailures)) {
+                // Progress is read from the counter rather than from how the pass returned, and the
+                // difference is not cosmetic: a pass that accepts a connection and then throws while
+                // probing for the next one leaves by the THROW, skipping any return value. Under the
+                // pressure this fix exists to survive — descriptors freeing one at a time — that is
+                // the normal shape, and a streak built from return values would climb to the ceiling
+                // while the listener was demonstrably still serving.
+                boolean served = acceptsObserved.getAsLong() > acceptsBefore;
+                consecutiveFailures = served ? 1 : consecutiveFailures + 1;
+                if (!retryAccept(e, consecutiveFailures, ceiling)) {
                     return;
                 }
             }
@@ -589,8 +607,8 @@ public final class NativeTcpCarrier implements TransportEngine {
      * @return {@code false} when the loop must end — the streak passed the ceiling, or the pause was
      *         interrupted
      */
-    private boolean retryAccept(IOException failure, int streak) {
-        if (streak > MAX_CONSECUTIVE_ACCEPT_FAILURES) {
+    private boolean retryAccept(IOException failure, int streak, int ceiling) {
+        if (streak > ceiling) {
             handleAsyncFailure("acceptor", failure);
             return false;
         }
@@ -601,6 +619,9 @@ public final class NativeTcpCarrier implements TransportEngine {
             Thread.sleep(backoffMillis);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+            // Symmetric with the ceiling above rather than a quiet return: the acceptor thread is
+            // ending either way, and leaving `running` true would advertise a listener that is gone.
+            handleAsyncFailure("acceptor", failure);
             return false;
         }
         return true;
@@ -704,9 +725,8 @@ public final class NativeTcpCarrier implements TransportEngine {
         stream.reset(DISPATCH_FAULT_RESET_CODE);
     }
 
-    private boolean acceptPendingConnections() throws IOException {
-        SocketChannel acceptedChannel = serverChannel.accept();
-        boolean acceptedAny = acceptedChannel != null;
+    private void acceptPendingConnections() throws IOException {
+        SocketChannel acceptedChannel = acceptOne();
         while (acceptedChannel != null && running.get()) {
             SocketChannel currentChannel = acceptedChannel;
             NativeTcpConnection connection = null;
@@ -717,7 +737,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 if (!slotReserved) {
                     recordRefusal();
                     closeQuietly(currentChannel);
-                    acceptedChannel = serverChannel.accept();
+                    acceptedChannel = acceptOne();
                     continue;
                 }
                 configureAcceptedChannel(currentChannel);
@@ -744,9 +764,23 @@ public final class NativeTcpCarrier implements TransportEngine {
                     activeConnections.decrementAndGet();
                 }
             }
-            acceptedChannel = serverChannel.accept();
+            acceptedChannel = acceptOne();
         }
-        return acceptedAny;
+    }
+
+    /**
+     * One {@code accept()}, counted.
+     *
+     * <p>Every probe goes through here, not only the first: the counter is what tells the loop the
+     * listener is alive, and a probe that succeeds after an earlier one in the same pass is exactly
+     * as much evidence of that as the first was.
+     */
+    private SocketChannel acceptOne() throws IOException {
+        SocketChannel accepted = serverChannel.accept();
+        if (accepted != null) {
+            acceptsObserved++;
+        }
+        return accepted;
     }
 
     private static void configureAcceptedChannel(SocketChannel channel) throws IOException {

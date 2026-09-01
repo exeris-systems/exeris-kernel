@@ -35,7 +35,7 @@ import jdk.jfr.StackTrace;
 @Description("The listener failed to accept and the acceptor backed off instead of stopping")
 @Category({"Exeris Kernel", "Transport"})
 @StackTrace(false)
-public final class CommunityAcceptRetryEvent extends Event {
+final class CommunityAcceptRetryEvent extends Event {
 
     @Label("Bind Address")
     /* default */ String bindAddress;
@@ -61,7 +61,7 @@ public final class CommunityAcceptRetryEvent extends Event {
      * @param consecutiveFailures how many accepts have failed in a row without one succeeding
      * @param backoffMillis       how long the acceptor is about to pause
      */
-    public static void emit(String bindAddress, int port, String failureClass,
+    /* default */ static void emit(String bindAddress, int port, String failureClass,
                             int consecutiveFailures, long backoffMillis) {
         if (!FlightRecorder.isInitialized()) {
             return;

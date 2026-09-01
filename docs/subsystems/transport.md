@@ -204,7 +204,7 @@ restart to serve again, from a condition that clears on its own as connections c
 | Cause | `accept()` itself threw — descriptor exhaustion, an aborted connection |
 | Nature | a **transient** condition affecting the listener rather than a connection |
 | Response | pause and try again; `25ms × streak`, capped at 1s |
-| Bound | 64 consecutive failures with no accept in between, then the fatal path |
+| Bound | 64 consecutive failures are retried; the 65th takes the fatal path |
 
 **Every `IOException` is retried rather than a list of transient ones**, and that is deliberate. Java
 offers no typed signal — `EMFILE` arrives as a plain `IOException` — so classifying means matching on
@@ -213,6 +213,14 @@ mistakes are not symmetric: retrying a fatal condition costs a bounded delay bef
 while declining to retry a transient one loses the listener. The ceiling does the work classification
 would have done, and the event's streak is what separates one retry from a process that is not
 recovering.
+
+**What ends a streak is an accept that returned a socket**, counted at the accept itself rather than
+inferred from how a pass finished. The distinction is the one descriptor pressure actually produces:
+descriptors free one at a time, so a pass accepts a connection and then throws probing for the next.
+It leaves by the throw, so a streak built from what the pass *returned* would climb to the ceiling
+while the listener was demonstrably still serving. An accept the connection cap then refuses counts
+too — what it witnesses is the listener working, which is a different question from whether the
+connection was served.
 
 The connection ceiling above still asks you to check `ulimit -n`. The cap refusing is the good
 outcome, and the OS limit winning the race is now survivable rather than terminal — but it is still

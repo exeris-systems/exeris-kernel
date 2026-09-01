@@ -24,6 +24,7 @@ import java.net.ServerSocket;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -67,6 +68,7 @@ class CommunityAcceptorRecoveryTest {
             NativeTcpCarrier carrier = carrier(tmp);
             AtomicInteger passes = new AtomicInteger();
 
+            AtomicLong accepts = new AtomicLong();
             carrier.start();
             carrier.acceptorLoop(() -> {
                 int pass = passes.incrementAndGet();
@@ -74,8 +76,7 @@ class CommunityAcceptorRecoveryTest {
                     throw new IOException("Too many open files");
                 }
                 carrier.stop();
-                return true;
-            });
+            }, accepts::get);
 
             assertThat(passes.get())
                     .as("the loop MUST have run again after the failures; before the fix it ended "
@@ -94,6 +95,7 @@ class CommunityAcceptorRecoveryTest {
             NativeTcpCarrier carrier = carrier(tmp);
             Path jfr = tmp.resolve("streak.jfr");
             AtomicInteger passes = new AtomicInteger();
+            AtomicLong accepts = new AtomicLong();
 
             try (Recording recording = new Recording()) {
                 recording.enable(RETRY_EVENT);
@@ -105,11 +107,11 @@ class CommunityAcceptorRecoveryTest {
                     if (pass == 1 || pass == 3) {
                         throw new IOException("Too many open files");
                     }
+                    accepts.incrementAndGet();
                     if (pass >= 4) {
                         carrier.stop();
                     }
-                    return true;
-                });
+                }, accepts::get);
 
                 recording.dump(jfr);
             }
@@ -117,6 +119,48 @@ class CommunityAcceptorRecoveryTest {
             assertThat(streaks(jfr))
                     .as("the accept between them resets the count; without the reset this is 1, 2")
                     .containsExactly(1, 1);
+        }
+    }
+
+    @Nested
+    @DisplayName("Partial progress")
+    class PartialProgress {
+
+        @Test
+        @Timeout(30)
+        @DisplayName("a pass that accepts one connection and then fails does not build a streak")
+        void acceptThenThrowDoesNotAccumulate(@TempDir Path tmp) throws Exception {
+            // The shape descriptor pressure actually produces: descriptors free one at a time, so a
+            // pass accepts a connection and then throws probing for the next. The pass leaves by the
+            // THROW, so nothing it could have returned reaches the loop — which is why progress is
+            // read from a counter. Built from return values, this streak climbs to the ceiling while
+            // the listener is demonstrably still serving, and the fix defeats itself.
+            NativeTcpCarrier carrier = carrier(tmp);
+            Path jfr = tmp.resolve("partial.jfr");
+            AtomicInteger passes = new AtomicInteger();
+            AtomicLong accepts = new AtomicLong();
+
+            try (Recording recording = new Recording()) {
+                recording.enable(RETRY_EVENT);
+                recording.start();
+
+                carrier.start();
+                carrier.acceptorLoop(() -> {
+                    int pass = passes.incrementAndGet();
+                    if (pass > 4) {
+                        carrier.stop();
+                        return;
+                    }
+                    accepts.incrementAndGet();
+                    throw new IOException("Too many open files");
+                }, accepts::get);
+
+                recording.dump(jfr);
+            }
+
+            assertThat(streaks(jfr))
+                    .as("every pass served a connection, so no failure is consecutive with another")
+                    .containsExactly(1, 1, 1, 1);
         }
     }
 
@@ -131,21 +175,24 @@ class CommunityAcceptorRecoveryTest {
             // Retrying without a bound would trade a dead listener for a live one that never serves
             // and never says so. The ceiling is what makes "retry everything" safe enough to do
             // without classifying the exception.
+            // A small ceiling, passed in: walking the shipped 64 would spend ~45s of real backoff
+            // in every build to assert a property that does not depend on the number.
             NativeTcpCarrier carrier = carrier(tmp);
             AtomicInteger passes = new AtomicInteger();
+            AtomicLong accepts = new AtomicLong();
 
             carrier.start();
             carrier.acceptorLoop(() -> {
                 passes.incrementAndGet();
                 throw new IOException("Too many open files");
-            });
+            }, accepts::get, 3);
 
             assertThat(carrier.isRunning())
                     .as("the fatal path MUST still exist for a condition that does not clear")
                     .isFalse();
             assertThat(passes.get())
                     .as("bounded: the ceiling plus the pass that trips it")
-                    .isEqualTo(NativeTcpCarrier.MAX_CONSECUTIVE_ACCEPT_FAILURES + 1);
+                    .isEqualTo(4);
         }
     }
 
@@ -166,13 +213,13 @@ class CommunityAcceptorRecoveryTest {
 
                 carrier.start();
                 AtomicInteger passes = new AtomicInteger();
+                AtomicLong accepts = new AtomicLong();
                 carrier.acceptorLoop(() -> {
                     if (passes.incrementAndGet() <= 2) {
                         throw new IOException("Too many open files");
                     }
                     carrier.stop();
-                    return true;
-                });
+                }, accepts::get);
 
                 recording.dump(jfr);
             }
