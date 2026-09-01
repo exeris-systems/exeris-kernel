@@ -5,6 +5,7 @@
 package eu.exeris.kernel.core.flow;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngineCapabilities;
@@ -131,7 +132,8 @@ class CoreFlowRuntimeTest {
             RuntimeFlowInstance instance = RuntimeFlowInstance.fromContext(
                     plan,
                     context("parked-reschedule-does-not-block-wake-instance", definition.name(), 0, FlowState.PARKED),
-                    1L
+                    1L,
+                    TimeSource.SYSTEM
             );
 
             int scheduleResult = instance.beginScheduleForSchedule();
@@ -163,7 +165,8 @@ class CoreFlowRuntimeTest {
             RuntimeFlowInstance instance = RuntimeFlowInstance.fromContext(
                     plan,
                     context("deferred-wake-bookkeeping-instance", definition.name(), 0, FlowState.PARKED),
-                    1L
+                    1L,
+                    TimeSource.SYSTEM
             );
 
             assertThat(instance.claimPendingWake())

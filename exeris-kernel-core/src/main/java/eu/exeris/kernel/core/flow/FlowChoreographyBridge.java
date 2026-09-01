@@ -63,6 +63,11 @@ final class FlowChoreographyBridge implements EventHandler {
                     }
                 }
                 case ChoreographyDecision.Start(FlowExecutionPlan plan, long most, long least) -> {
+                    // NOT migrated (ADR-082). This runs on whichever thread drives the
+                    // choreography bridge, and that thread's binding state is not established —
+                    // a slot read here would silently return the system clock, which is the
+                    // "looks migrated, is not drivable" failure the ADR names. Threading a
+                    // captured source in belongs with the rest of the choreography path.
                     long timeoutNanos = System.nanoTime() + plan.timeoutDurationNanos();
                     scheduler.schedule(
                             plan,

@@ -2995,6 +2995,34 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 
 **1.0 disposition:** **1.0-RECOMMENDED** — cheap, fixes a real consistency gap, de-risks the DST moat. High value-per-effort, not a hard GA gate.
 
+**Status (v0.12): the seam ships and the saga TTL is drivable; the rest of the migration is not.**
+[ADR-082](adr/ADR-082-injectable-time-seam.md) rules `TimeSource` (`nanoTime()` + `wallTime()`) in
+`spi.time`, bound through `KernelProviders.TIME_SOURCE` and read through `KernelProviders.timeSource()`,
+which falls back to the platform clock. The names are taken from `CommunitySchedulerClock` rather than
+invented, so the scheduler's clock becomes the seam plus waiting instead of a second definition.
+
+**The migration rule is decide-versus-measure, and it is what keeps this finite.** Re-measured here:
+148 sites (122 `System.nanoTime`, 20 `Instant.now`, 3 `currentTimeMillis`, 3 `Clock.system`) — but
+only **five** `nanoTime` reads sit in a comparison. The rest are instrumentation, where a seam would
+make JFR durations lie and add an indirection on a hot path for no determinism.
+
+**A `ScopedValue` slot alone is not a seam, and the gate's test is what proved it.** A flow runs on a
+bare `Thread.ofVirtual()`, which inherits no binding — so a slot read on the flow thread always finds
+the system clock. `CoreFlowRuntime` therefore *captures* the source in `start()`, where the carrier
+scope is still bound and where `snapshotStore` and `guard` are captured for the same reason, and the
+flow thread reads the field. Mutation-checked: reading the slot at use instead reddens **both** cases,
+and the standing-clock one is the sharper signal — a deadline built on the virtual clock compared
+against a `SYSTEM` reading expires instantly, which is mixed-clock corruption rather than a missed
+binding.
+
+`CoreFlowTimeSourceTest` runs in **0.79s against a 30-second timeout**. Before the seam that test
+could not be written: it would have had to sleep for the real deadline.
+
+**Still open, and named rather than implied:** `FlowChoreographyBridge`'s deadline construction is
+left on `System.nanoTime()` with the reason at the site — its thread's binding state is not
+established, and a slot read there would be the "looks migrated, is not drivable" failure the ADR
+names. The security and persistence deciding reads (token expiry, `CitadelGuard`) are the second PR.
+
 ---
 
 ### Cross-Cutting: Systemic Flow-Control Contract (subsystems are islands)

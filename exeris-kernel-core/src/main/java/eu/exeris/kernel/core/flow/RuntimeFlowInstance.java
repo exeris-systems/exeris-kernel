@@ -10,6 +10,8 @@ import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowState;
 
+import eu.exeris.kernel.spi.time.TimeSource;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -40,6 +42,14 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     /** A wake refused because a run still held the instance; guarded by {@code monitor}. */
     private boolean wakePending;
     private volatile boolean checkpointDirty;
+    /**
+     * The source this instance decides time on (ADR-082). Held as a field rather than read from
+     * {@code KernelProviders} at use: a flow runs on a bare virtual thread, which inherits no
+     * {@code ScopedValue} binding, so a slot read here would always find the system clock and the
+     * seam would look applied while being undrivable.
+     */
+    private final TimeSource timeSource;
+
     private volatile int currentStep;
     private volatile long timeoutNanos;
     private int[] compensationStack;
@@ -88,7 +98,8 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                         int stackPointer,
                         long schemaVersion) { }
 
-    private RuntimeFlowInstance(Seed seed) {
+    private RuntimeFlowInstance(Seed seed, TimeSource timeSource) {
+        this.timeSource = timeSource;
         this.key = seed.key();
         this.definitionName = seed.definitionName();
         this.definitionVersion = seed.definitionVersion();
@@ -103,14 +114,19 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         this.schemaVersion = new AtomicLong(seed.schemaVersion());
     }
 
+    private static RuntimeFlowInstance newInstance(TimeSource time, Seed seed) {
+        return new RuntimeFlowInstance(seed, time);
+    }
+
     public static RuntimeFlowInstance fromContext(
             CoreFlowExecutionPlan plan,
             FlowContext context,
-            long lifecycleGeneration) {
+            long lifecycleGeneration,
+            TimeSource time) {
         long timeoutNanos = context.timeoutNanos() > 0
                 ? context.timeoutNanos()
-                : System.nanoTime() + plan.timeoutDurationNanos();
-        return new RuntimeFlowInstance(new Seed(
+                : time.nanoTime() + plan.timeoutDurationNanos();
+        return newInstance(time, new Seed(
                 FlowKey.from(context),
                 context.definitionName(),
                 plan.definitionVersion(),
@@ -128,19 +144,23 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     public static RuntimeFlowInstance fromSnapshot(
             CoreFlowExecutionPlan plan,
             FlowSnapshot snapshot,
-            long lifecycleGeneration) {
+            long lifecycleGeneration,
+            TimeSource time) {
         long timeoutNanos;
         if (Instant.MAX.equals(snapshot.timeout())) {
             timeoutNanos = Long.MAX_VALUE;
         } else {
-            long remainingNanos = Duration.between(Instant.now(), snapshot.timeout()).toNanos();
-            timeoutNanos = System.nanoTime() + Math.max(0L, remainingNanos);
+            // Both reads come from ONE source (ADR-082): this converts a persisted calendar
+            // deadline into a monotonic one, and a virtual clock that moved only one of them would
+            // make the conversion drift instead of advancing the saga's remaining time.
+            long remainingNanos = Duration.between(time.wallTime(), snapshot.timeout()).toNanos();
+            timeoutNanos = time.nanoTime() + Math.max(0L, remainingNanos);
         }
         int[] snapshotStack = snapshot.compensationStack();
         int[] compensationStack = snapshotStack.length == 0
                 ? new int[Math.max(4, plan.stepCount())]
                 : snapshotStack;
-        return new RuntimeFlowInstance(new Seed(
+        return newInstance(time, new Seed(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
                 plan.definitionVersion(),
@@ -327,7 +347,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 Math.max(0, stepIndex),
                 stepNameAt(Math.max(0, stepIndex)),
                 snapshotState,
-                Instant.now(),
+                timeSource.wallTime(),
                 timeoutInstant(),
                 stack,
                 compensationStepNames(),
@@ -427,7 +447,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         if (timeoutNanos == Long.MAX_VALUE) {
             return Instant.MAX;
         }
-        long remainingNanos = Math.max(0L, timeoutNanos - System.nanoTime());
-        return Instant.now().plusNanos(remainingNanos);
+        long remainingNanos = Math.max(0L, timeoutNanos - timeSource.nanoTime());
+        return timeSource.wallTime().plusNanos(remainingNanos);
     }
 }

@@ -185,6 +185,14 @@ The actual deadline carried by the engine is the absolute `timeoutNanos` on the 
 
 The check is binding-agnostic — both Community (heap) and Enterprise (off-heap) implementations are obliged via `AbstractFlowEngineTck.SagaTimeoutContract`.
 
+**Which clock the deadline is decided on (ADR-082, since 0.12.0).** Both the comparison and the
+wall↔monotonic conversions read a `TimeSource`, so a saga TTL can be driven by a test instead of
+waited out. `CoreFlowRuntime` **captures** that source in `start()` rather than reading
+`KernelProviders.timeSource()` at use: a flow runs on a bare `Thread.ofVirtual()`, which inherits no
+`ScopedValue` binding, so a read on the flow thread would always find the system clock. Anything
+binding a clock for a flow must therefore do so **around `start()`** — binding it afterwards has no
+effect, and the seam would look applied while remaining undrivable.
+
 ### FlowEngine Restart Semantics (since 0.7.0)
 
 `AbstractFlowEngineTck.RestartAwareSemantics` lifts three cross-restart obligations into the binding-agnostic TCK:
