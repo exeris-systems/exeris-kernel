@@ -1069,6 +1069,22 @@ public final class KernelErrorCodes {
      */
     public static final String EX_BLOB_8008 = "EX-BLOB-8008";
 
+    /**
+     * Blob storage is switched on and a configuration key it needs is unset.
+     *
+     * <p>Separate from {@link #EX_BLOB_8008} because the rawArgs mean different things and Glass-Box
+     * tooling reads them positionally: 8008's last slot is the list of provider ids that were
+     * available, and a free-text hint in that position would be parsed as ids. Different failure,
+     * different layout, different code.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} configKey — the key that is unset</li>
+     *   <li>index 1 – {@code String} expected — what a value for it looks like</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8009 = "EX-BLOB-8009";
+
     // -----------------------------------------------------------------------
     // Scheduling (EX-JOB-9xxx) — ADR-057
     // -----------------------------------------------------------------------

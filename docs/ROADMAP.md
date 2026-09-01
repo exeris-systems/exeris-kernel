@@ -2042,11 +2042,31 @@ stated and an id matching no driver fails at boot. Silently picking remains impo
 the point. That inversion is pinned by its own test, because it is the rule a later reader following
 this entry's original wording would "fix" back.
 
-Two error codes rather than one: `EX-BLOB-8008` when the configured id resolves to nothing (carrying
-the key, the value and the available ids) and `EX-BLOB-8007` when the classpath holds no driver at
-all — different remedies, a key versus a dependency. Mutation-checked in four directions: selecting
-by list order reddens the second-id and order-independence cases while leaving the first-id case
-green, and the two subsystem rules each redden exactly one case.
+Three error codes rather than one: `EX-BLOB-8008` when the configured id resolves to nothing
+(carrying the key, the value and the available ids), `EX-BLOB-8007` when the classpath holds no
+driver at all, and `EX-BLOB-8009` when a key blob storage needs is unset. The last one exists
+because Glass-Box tooling reads `rawArgs` positionally: 8008's final slot is the list of available
+provider ids, and a free-text hint in that position would be parsed as ids.
+
+**Review caught the half this entry is actually about.** The first cut wired the filesystem driver
+end to end and left the S3 one unbootable: the subsystem passed an empty property map, and
+`CommunityS3Settings` requires `s3.bucket`, `s3.accessKey` and `s3.secretKey` out of it, so naming
+the S3 driver failed at boot every time. The tests did not see it because both suites used the S3 id
+only in refusal cases and never bound it — selection was tested in both directions, *binding* in one.
+The subsystem also declared no dependencies while the S3 driver refuses to be created without
+`MEMORY_ALLOCATOR` bound; it now declares `memory`, because a subsystem declares what the drivers it
+*may* select need, not what the one it happened to select does.
+
+**One limitation is structural and worth naming.** `storage.blob.s3.*` keys are forwarded under an
+enumerated list rather than swept from the prefix, because `ConfigProvider` exposes `getString(key)`
+and no way to enumerate. A driver growing a property gets it read only once that list grows; the
+driver's own refusal of a missing required property is what keeps that from being silent. The fix
+one level up — a `BlobStorageProvider` declaring the keys it reads — is SPI surface with a TCK
+obligation behind it, and belongs to whoever next opens that interface.
+
+Mutation-checked per case: selecting by list order reddens the second-id and order-independence
+cases while leaving the first-id case green; the unset-key rule, the missing-location refusal and
+the property forwarding each redden exactly one case, the last being the defect review found.
 
 The generated-application half is deliberately **not** in this gate — it is a code-generation
 concern and belongs to whichever slice teaches the emitter about the key. It is stated in the

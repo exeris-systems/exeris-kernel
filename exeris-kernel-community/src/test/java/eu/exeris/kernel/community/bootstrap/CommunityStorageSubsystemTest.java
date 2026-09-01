@@ -4,11 +4,15 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.MapConfigProvider;
 import eu.exeris.kernel.core.storage.StorageBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -51,18 +55,20 @@ class CommunityStorageSubsystemTest {
     class Contract {
 
         @Test
-        @DisplayName("declares no dependencies — neither driver takes a subsystem as input")
+        @DisplayName("depends on memory, because one of the two drivers it may select does")
         void declaresPlacement() {
             CommunityStorageSubsystem subsystem = new CommunityStorageSubsystem();
 
             assertThat(subsystem.name()).isEqualTo("storage");
             assertThat(subsystem.phase()).isEqualTo(BootstrapPhase.SERVICES);
             assertThat(subsystem.dependsOn())
-                    .as("the filesystem driver needs a directory and the S3 driver an endpoint it "
-                            + "reaches over a client it builds itself; declaring http for the S3 "
-                            + "case would constrain the boot graph for a driver that may not be the "
-                            + "one selected")
-                    .isEmpty();
+                    .as("CommunityS3BlobStorageProvider.createStore refuses outright unless "
+                            + "MEMORY_ALLOCATOR is bound — it stages transfers off-heap. The "
+                            + "filesystem driver needs nothing of the sort, but the dependency "
+                            + "cannot be conditional on a config value read after the boot graph is "
+                            + "built, so a subsystem declares what the drivers it MAY select need. "
+                            + "Not http: the S3 driver builds its own client.")
+                    .containsExactly("memory");
         }
     }
 
@@ -122,6 +128,46 @@ class CommunityStorageSubsystemTest {
         }
 
         @Test
+        @DisplayName("the S3 driver binds too — the half a filesystem-only suite cannot see")
+        void s3DriverIsBound() {
+            // The whole point of this subsystem is a tie between two drivers, so proving one of them
+            // boots proves half of it. This case was absent on the first pass and the S3 path was
+            // broken end-to-end underneath it: the subsystem forwarded no properties, and
+            // CommunityS3Settings requires s3.bucket, s3.accessKey and s3.secretKey out of them, so
+            // naming the S3 driver failed at boot every time. No live endpoint is needed — the store
+            // parses settings and constructs a client without connecting.
+            CommunityStorageSubsystem subsystem = new CommunityStorageSubsystem();
+
+            withAllocator(() -> ScopedValue.where(KernelProviders.CURRENT_CONFIG, s3Config()).run(() -> {
+                subsystem.initialize();
+                subsystem.start();
+                subsystem.providerBindings()
+                        .apply(ScopedValue.where(KernelProviders.CURRENT_CONFIG, s3Config()))
+                        .run(() -> assertThat(KernelProviders.BLOB_STORAGE_PROVIDER.get().providerId())
+                                .isEqualTo(S3_PROVIDER));
+                subsystem.stop();
+            }));
+        }
+
+        @Test
+        @DisplayName("a driver property that is not forwarded is the driver's own refusal, not silence")
+        void unforwardedPropertyIsRefusedByTheDriver() {
+            // Bucket omitted. The subsystem cannot validate what a driver needs — it does not know —
+            // so the contract is that the driver refuses loudly rather than starting half-configured.
+            CommunityStorageSubsystem subsystem = new CommunityStorageSubsystem();
+            MapConfigProvider config = config(Map.of(
+                    StorageBootstrap.PROVIDER_KEY, S3_PROVIDER,
+                    LOCATION_KEY, "http://127.0.0.1:9000",
+                    "storage.blob.s3.accessKey", "key",
+                    "storage.blob.s3.secretKey", "secret"));
+
+            withAllocator(() -> ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() ->
+                    assertThatThrownBy(subsystem::initialize)
+                            .isInstanceOf(IllegalArgumentException.class)
+                            .hasMessageContaining("s3.bucket")));
+        }
+
+        @Test
         @DisplayName("the selection is recorded, so which driver won is not reconstructed later")
         void selectionIsRecorded(@TempDir Path root, @TempDir Path recordingDir) throws Exception {
             Path dump = recordingDir.resolve("storage-bootstrap.jfr");
@@ -177,11 +223,43 @@ class CommunityStorageSubsystemTest {
                     StorageBootstrap.PROVIDER_KEY, FS_PROVIDER))).run(() ->
                     assertThatThrownBy(subsystem::initialize)
                             .isInstanceOf(BlobStorageException.class)
-                            .extracting(thrown -> ((BlobStorageException) thrown).rawArgs()[0])
-                            .as("BlobStorageConfig would refuse this too, naming a constructor "
-                                    + "parameter — which is not what an operator has to write")
-                            .isEqualTo(LOCATION_KEY));
+                            .extracting(thrown -> ((BlobStorageException) thrown).errorCode())
+                            .as("EX-BLOB-8009, not 8008: 8008's last rawArg is the list of provider "
+                                    + "ids, and Glass-Box tooling reads those positions — a hint "
+                                    + "string in that slot would be parsed as ids")
+                            .isEqualTo(KernelErrorCodes.EX_BLOB_8009));
+
+            ScopedValue.where(KernelProviders.CURRENT_CONFIG, config(Map.of(
+                    StorageBootstrap.PROVIDER_KEY, FS_PROVIDER))).run(() ->
+                    assertThatThrownBy(subsystem::initialize)
+                            .extracting(thrown -> ((BlobStorageException) thrown).rawArgs())
+                            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.ARRAY)
+                            .as("the key an operator has to write, and what a value looks like — "
+                                    + "BlobStorageConfig would refuse this too, naming a constructor "
+                                    + "parameter instead")
+                            .containsExactly(LOCATION_KEY,
+                                    "a directory for the filesystem driver, http://host:port for S3"));
         }
+    }
+
+    /**
+     * Runs {@code action} with a real allocator bound: the S3 driver refuses to be created without
+     * one, because it stages transfers off-heap.
+     */
+    private static void withAllocator(Runnable action) {
+        try (MemoryAllocator allocator =
+                     new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults())) {
+            ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator).run(action);
+        }
+    }
+
+    private static MapConfigProvider s3Config() {
+        return config(Map.of(
+                StorageBootstrap.PROVIDER_KEY, S3_PROVIDER,
+                LOCATION_KEY, "http://127.0.0.1:9000",
+                "storage.blob.s3.bucket", "objects",
+                "storage.blob.s3.accessKey", "key",
+                "storage.blob.s3.secretKey", "secret"));
     }
 
     private static MapConfigProvider filesystemConfig(Path root) {

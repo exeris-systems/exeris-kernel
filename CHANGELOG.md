@@ -26,7 +26,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   been stated. An id matching no driver fails at boot with `EX-BLOB-8008`, carrying the key, the
   value and the ids that were available; a classpath with no driver at all is `EX-BLOB-8007`. Also
   reads `storage.blob.location` (required once storage is on) and
-  `storage.blob.maxSignedUrlTtlSeconds`.
+  `storage.blob.maxSignedUrlTtlSeconds`. For the S3 driver, `storage.blob.location` is the
+  **endpoint** and `storage.blob.s3.bucket` / `.accessKey` / `.secretKey` (plus optional `.region`
+  and `.maxObjectBytes`) are forwarded into the driver's properties. The subsystem declares
+  `dependsOn("memory")`, because the S3 store stages transfers through the kernel allocator.
 
 
 - **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**

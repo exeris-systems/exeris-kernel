@@ -258,8 +258,20 @@ ServiceLoader order and a class-name tie-break.
 | Key | Meaning |
 |---|---|
 | `storage.blob.provider` | The driver id: `blob-fs-community` or `blob-s3-community`. **Unset means blob storage is off.** |
-| `storage.blob.location` | Driver-interpreted root — a directory for the filesystem driver, a bucket for S3. Required once the provider key is set. |
+| `storage.blob.location` | Driver-interpreted root. A **directory** for the filesystem driver; the **endpoint** `http://host:port` for S3 — not the bucket, which is a property. Required once the provider key is set. |
 | `storage.blob.maxSignedUrlTtlSeconds` | Signed-URL ceiling; defaults to `BlobStorageConfig`'s. |
+| `storage.blob.s3.bucket` | S3 only, **required**. |
+| `storage.blob.s3.accessKey`, `storage.blob.s3.secretKey` | S3 only, **required**. |
+| `storage.blob.s3.region`, `storage.blob.s3.maxObjectBytes` | S3 only, optional; the driver's defaults apply. |
+
+The `storage.blob.s3.*` keys are forwarded into `BlobStorageConfig.properties()` under the driver's
+own names (`s3.bucket`, …). They are **enumerated in the subsystem rather than swept from a prefix**,
+because `ConfigProvider` answers `getString(key)` and nothing else — there is no way to ask it for
+every key beneath a prefix. A driver that grows a property therefore gets it read only once that
+list grows too; what stops that being silent is that the driver refuses a missing required property
+at construction rather than starting half-configured. The alternative — a provider declaring its own
+keys through the SPI — is a `BlobStorageProvider` change with a TCK obligation behind it, and is
+recorded in the ROADMAP rather than taken.
 
 **Absent configuration is not ambiguous configuration.** With `storage.blob.provider` unset the
 subsystem binds nothing and reports running, exactly as a kernel with no storage behaves; both

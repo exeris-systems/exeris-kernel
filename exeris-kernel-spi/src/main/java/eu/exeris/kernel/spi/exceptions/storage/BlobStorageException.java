@@ -41,6 +41,7 @@ public final class BlobStorageException extends ExerisKernelException {
     private static final String REMOTE_MSG = "Remote blob store refused the request";
     private static final String NO_PROVIDER_MSG = "No BlobStorageProvider on the classpath";
     private static final String UNRESOLVED_MSG = "Blob provider selection did not resolve to one driver";
+    private static final String MISSING_KEY_MSG = "Blob storage is configured and a key it needs is unset";
 
     private BlobStorageException(String errorCode, String message, Throwable cause, Object... rawArgs) {
         super(errorCode, message, cause, rawArgs);
@@ -168,5 +169,20 @@ public final class BlobStorageException extends ExerisKernelException {
         return new BlobStorageException(
                 KernelErrorCodes.EX_BLOB_8008, UNRESOLVED_MSG, null,
                 configKey, configuredId, availableIds);
+    }
+
+    /**
+     * Blob storage is on and a key it needs was not set.
+     *
+     * <p>Refused here rather than deeper in a driver, where the message would name a constructor
+     * parameter or a property rather than the key an operator has to write.
+     *
+     * @param configKey the key that is unset
+     * @param expected  what a value for it looks like
+     * @return exception with rawArgs: [configKey, expected]
+     */
+    public static BlobStorageException missingConfiguration(String configKey, String expected) {
+        return new BlobStorageException(
+                KernelErrorCodes.EX_BLOB_8009, MISSING_KEY_MSG, null, configKey, expected);
     }
 }
