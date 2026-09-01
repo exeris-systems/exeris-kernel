@@ -2869,6 +2869,39 @@ in every implementation, and a case proving one says nothing about the other.
 
 ---
 
+### Build: The SPI Gate's Baseline Is Hardened On One Line And Not The Other (surfaced 2026-09-01)
+
+**Gap:** the GA line picks its `spi-api-diff` baseline with a strict
+`^v[0-9]+\.[0-9]+\.[0-9]+$` filter and `sort -V`, and carries a long comment saying why: the bare
+`v*` glob it replaced sorts `v0.11.0-preview` **above** `v0.11.0` under `--sort=-v:refname`
+(measured), so one suffixed tag would have made this line diff its SPI against a tree that is not its
+ancestor. The `preview` branch still runs the unhardened form — `git tag --sort=-v:refname --list
+'v*' | head -1`.
+
+**It is not failing today, and that is the whole hazard.** Both forms currently select `v0.11.0`,
+because the preview line tags `preview/vX.Y.Z`, which `--list 'v*'` does not match. The GA line's own
+comment names that convention and then says the quiet part: *"a naming convention nobody can enforce
+is not a guard — this is."* The preview line has the convention and not the guard.
+
+**A second question the port does not answer.** Preview's gate compares preview's SPI against the
+**GA** tag, not against `preview/v0.11.1`. A preview PR is therefore gated on the convergence delta
+rather than on whether it broke the preview line's own published surface — which is the question
+`--fail-on-stable` is being asked to decide on that branch. It reports `stable-breaks=0` today only
+because JEP 401 makes adding `value` binary-compatible, so the sweep that most distinguishes the two
+lines happens not to move any signature. That is working by a property of the feature, not by design.
+
+**Owner:** build/CI.
+
+**Resolution:** port the strict filter to `preview` (mechanical, and the same class of drift as the
+churn instrument and the action pins — a fix made on one line and not carried). Then decide,
+separately, which baseline that line's gate should use; both readings are defensible and the gate can
+only fail on one.
+
+**Merge Gate:** the two branches' baseline selection is either identical or differs for a reason
+stated at the call site.
+
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.

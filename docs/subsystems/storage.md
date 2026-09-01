@@ -309,3 +309,15 @@ shared-scope row visibility for blobs are excluded by contract, not merely unimp
   implementation amendments.
 - ADR-012 — the isolation model this subsystem resolves against.
 - `docs/subsystems/memory.md`, `CONTRIBUTING.md` §"Off-Heap Memory" — `LoanedBuffer` lifecycle.
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.storage.blob.*`) is classified **preview** since
+0.11.0 in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
+[ADR-056](../adr/ADR-056-blob-storage-provider-spi.md) and the contract tests are
+`AbstractBlobStorageTck`. See the matrix for the semver policy this label commits to.
+
+The `KernelProviders.BLOB_STORAGE_PROVIDER` / `BLOB_STORE` slots and the `storage.blob.*`
+configuration keys arrived in 0.12.0 and inherit that label: the SPI they bind is the one the matrix
+classifies, and a bootstrap path does not stabilise a surface.
+
