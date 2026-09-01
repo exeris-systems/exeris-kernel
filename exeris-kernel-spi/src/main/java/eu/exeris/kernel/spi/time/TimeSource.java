@@ -4,7 +4,10 @@
  */
 package eu.exeris.kernel.spi.time;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 /**
  * SPI: where the kernel reads time it will <em>decide</em> on (ADR-082).
@@ -73,4 +76,48 @@ public interface TimeSource {
      * @return the current instant; never {@code null}
      */
     Instant wallTime();
+
+    /**
+     * This source as a {@link Clock}, for consumers shaped around the JDK's abstraction.
+     *
+     * <p><b>Live, not a snapshot.</b> The returned clock delegates every {@code instant()} call, so
+     * a virtual source the caller later advances is visible through it. {@code Clock.fixed(wallTime(),
+     * …)} is the tempting one-liner and it is wrong: it freezes at the moment the adapter was built,
+     * which for a virtual clock means the consumer never sees it move — a seam that compiles,
+     * type-checks, and silently does not work.
+     *
+     * <p>Fixed at UTC, which is what {@code Clock.systemUTC()} gives and what every consumer of this
+     * in the kernel wants: these are instants compared against token and rotation deadlines, where
+     * a local zone would add an offset nobody asked for.
+     *
+     * @return a clock reading this source; never {@code null}
+     */
+    default Clock asClock() {
+        TimeSource self = this;
+        return new Clock() {
+
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                // The kernel's consumers compare instants, so a zone change would alter nothing an
+                // instant carries. Returning this keeps the delegation live rather than handing back
+                // a Clock that has stopped following the source.
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return self.wallTime();
+            }
+
+            @Override
+            public String toString() {
+                return "TimeSource.asClock[" + self + ']';
+            }
+        };
+    }
 }

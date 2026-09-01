@@ -116,3 +116,40 @@ whose names the tree already uses.
 - ADR-064 (flow definition versioning) — the saga timeout that migrates here is persisted state whose
   resume path that ADR governs.
 - ROADMAP §"Differentiator: Deterministic Simulation Testing (DST) Harness" — the consumer.
+
+---
+
+## Amendment A1 (2026-09-01) — what the migration found when it was finished
+
+The second half of T2-1 changed two of this ADR's own claims and confirmed the rest.
+
+**`asClock()` was added to the seam, and the obvious implementation of it is wrong.** Two kernel
+consumers are shaped around `java.time.Clock` (`CommunityOidcTokenValidator`,
+`CommunityRotatingKeySet`), so the adapter belongs on the seam rather than duplicated per consumer.
+`Clock.fixed(wallTime(), UTC)` is the tempting one-liner and it **freezes at construction** — a
+consumer holding it never sees a virtual source move, so the seam compiles, type-checks and silently
+does nothing for the only case it exists to serve. The view delegates every `instant()` call instead.
+Mutation-checked: freezing it reddens both liveness cases and leaves the zone case green.
+
+**Two sites in the original 148-count survey were not migration candidates, and neither reason was
+visible from a grep.**
+
+- `CitadelGuard` matched `Instant.now` **inside a comment** stating that it deliberately reads no
+  clock. A false positive from counting matches rather than reads.
+- `FairnessTracker` buckets by time and computes a ratio over a window — it **measures**. Its
+  `LongSupplier` is a local seam for its own unit tests, not a competitor to this one. The decide/
+  measure rule says leave it, so the "two idioms" complaint that motivated this ADR is answered by
+  the *policy* rather than by converging every seam: a measuring site is entitled to a local one.
+
+**What converged.** `CommunitySchedulerClock` now extends `TimeSource` (the substitution its own doc
+had been anticipating), and the token validator's two no-clock constructors default to the bound
+source instead of `Clock.systemUTC()` — those are what `CommunityOidcIdentityProvider`'s simple
+factories use, so before this a bound `TimeSource` did nothing for token expiry. The explicit-`Clock`
+constructors are untouched: a caller passing a clock has said something more specific, and
+`overJwksEndpoint` passes one clock to both rotation and expiry precisely so the two cannot skew.
+
+**The capture rule held at every site.** Token validation runs on a request thread that inherits no
+binding, so the source is resolved at construction — during security bootstrap, inside the carrier
+scope — exactly as the flow runtime resolves it in `start()`. That is now three independent
+components reaching the same conclusion, which makes it the seam's usage rule rather than a flow
+quirk.

@@ -19,6 +19,9 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -49,9 +52,18 @@ final class CommunityOidcTokenValidator implements TokenValidator {
     private final String expectedAudience;
     private final Clock clock;
 
+    /**
+     * Defaults to the kernel's bound {@link TimeSource} rather than {@code Clock.systemUTC()}
+     * (ADR-082) — these no-clock constructors are what {@code CommunityOidcIdentityProvider}'s
+     * simple factories use, so before this a bound source did nothing for token expiry.
+     *
+     * <p>Resolved at CONSTRUCTION: a validator is built during security bootstrap, inside the
+     * carrier scope, while validation runs on a request thread that inherits no {@code ScopedValue}
+     * binding. The adapter is live, so a virtual source advanced after construction is still seen.
+     */
     /* default */ CommunityOidcTokenValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience) {
-        this(keysByKid, expectedIssuer, expectedAudience, Clock.systemUTC());
+        this(keysByKid, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
@@ -62,7 +74,7 @@ final class CommunityOidcTokenValidator implements TokenValidator {
 
     /* default */ CommunityOidcTokenValidator(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
-        this(keyResolver, expectedIssuer, expectedAudience, Clock.systemUTC());
+        this(keyResolver, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
