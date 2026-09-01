@@ -2,7 +2,7 @@
 
 |                    |                                                                          |
 |--------------------|--------------------------------------------------------------------------|
-| **Status**         | **DRAFT**                                                                |
+| **Status**         | **IN-REVIEW** — spike complete, recommendation now measured             |
 | **Author(s)**      | Arkadiusz Przychocki                                                     |
 | **Date Opened**    | 2026-09-01                                                               |
 | **Date Closed**    | —                                                                        |
@@ -111,6 +111,42 @@ that still produces a `String` for that token.** The only way below it is to not
 That observation is what makes the middle option viable: header *names* are drawn from a small,
 highly repetitive set, while values are not.
 
+### Spike outcomes
+
+Option B was prototyped on `research/http-header-name-table` and measured before this RFC left
+DRAFT, because the recommendation was explicitly gated on it. Exact per-thread bytes, one codec per
+connection with `reset()` per read, three fresh JVMs per state.
+
+The fixtures carry **the names real traffic carries with the values real traffic carries**. That
+second half cuts *against* the option — a long `Cookie` or `Authorization` value dilutes whatever the
+name half is worth — and it is present on purpose. The old synthetic fixture is kept as a control.
+
+| fixture | fields | baseline | with table | saved |
+|---|---:|---:|---:|---:|
+| browser GET (Chrome navigation) | 15 | 5 792 B | 4 352 B | **1 440 B — 24.9%** |
+| service POST (bearer + tracing) | 9 | 3 976 B | 3 144 B | **832 B — 20.9%** |
+| minimal GET (health probe) | 4 | 1 712 B | 1 360 B | **352 B — 20.6%** |
+| synthetic `X-Request-Header-N` | 16 | 5 472 B | 5 392 B | control — within run noise |
+
+**~90 B per resolved name**, consistent across fixtures. The control barely moves, which is the
+expected result and precisely why the RFC asked for realistic names before believing any number.
+
+**The premise needed correcting, and the direction did not.** The reasoning above says names are
+"the repetitive half". Repetitive they are; *half the bytes* they are not — a name costs ~90 B of the
+~386–442 B a field costs, roughly **a quarter**. The option remains worth taking at a fifth to a
+quarter of the whole request for a change nothing downstream can detect, but "the repetitive half"
+would have oversold it, and the measurement is what says so.
+
+**Title case alone is not enough — the fixture caught it.** Chrome sends `sec-ch-ua` lowercase, which
+missed a title-case-only table; HTTP/2 *requires* lowercase field names (RFC 9113 §8.2.1), so
+applying the same table to HPACK literals later would otherwise miss every field. Carrying both
+spellings costs nothing at lookup time and recovered another 96 B on the browser fixture. Any
+implementation must do this from the start.
+
+Correctness was checked rather than assumed: matching is byte-wise and case-sensitive, so a hit
+returns exactly the characters the wire carried, and Core (1 271) plus Community (1 616) test suites
+are green with the table active.
+
 ### Prior art
 
 - **Netty** exposes `AsciiString`/`CharSequence` header names and interns common ones, rather than
@@ -210,12 +246,15 @@ observable byte, and nothing downstream can detect it. That means it needs no AD
 if the measurement disappoints. It is also the only option that generalises across HTTP/1 requests,
 client responses, and HPACK literals without forking the carrier by protocol.
 
-Residual uncertainty is stated plainly: **Option B's benefit is not measured.** The argument that
-names are the repetitive half is sound and matches how HPACK's static table was designed, but "sound"
-is not a number, and this repository's standard is that a perf claim names the run that proves it.
-The recommendation is therefore to accept B *as the direction* and gate the implementation on the
-spike in Open questions — if the spike shows the name half is a small fraction of the ~345 B, the
-honest outcome is Option D and this RFC closes as REJECTED with the measurement recorded.
+**The spike has since supplied the number the recommendation was gated on: 21–25% of the whole
+request**, across three realistic fixtures, for a change nothing downstream can detect. That is above
+the bar this RFC set for itself, so B stands and Option D falls away.
+
+It also corrected the premise it was gated on, which is worth keeping visible: names are the
+repetitive half of a header but only about **a quarter** of what a field costs, because real values
+are long. The recommendation survives its own correction — a fifth of the request at zero contract
+risk is worth taking — but the argument now rests on a measurement rather than on an analogy to
+HPACK's static table.
 
 ### Why not the alternatives?
 
@@ -227,8 +266,8 @@ honest outcome is Option D and this RFC closes as REJECTED with the measurement 
 
 ### Risks of the recommendation
 
-- **The win may be small.** If real traffic is dominated by long values rather than repeated names,
-  B buys little. The spike is designed to find this out before any code lands.
+- ~~The win may be small~~ — retired by the spike: 21–25% on realistic fixtures. The related effect
+  is real but priced in: long values *do* dilute the win, which is why it is a quarter and not a half.
 - **Table drift.** A name table is a list of strings that can fall behind reality; it must be
   correctness-neutral by construction — a miss costs a comparison, never a wrong answer.
 - **It leaves the value half unaddressed**, so this RFC does not close the zero-copy question. It
@@ -249,10 +288,12 @@ honest outcome is Option D and this RFC closes as REJECTED with the measurement 
 
 ## Open questions / follow-ups
 
-- **Spike, and it gates the recommendation:** measure the name/value split of the remaining
-  ~345 B/header, then measure Option B against a fixture whose names are drawn from real traffic
-  rather than the synthetic `X-Request-Header-N` pattern the research fixture used — that pattern is
-  adversarial to a name table and would understate B. Fresh JVMs, exact `ThreadMXBean` bytes.
+- ~~Spike gating the recommendation~~ — **done**, see §Spike outcomes. Branch
+  `research/http-header-name-table` is the record; it patches the parser directly to take the
+  measurement and is not a merge candidate.
+- **Where the table belongs.** The spike put it in `eu.exeris.kernel.core.http.http1` next to its one
+  caller. The client response decoder and any future HPACK literal path want it too, so an
+  implementation should place it where all three reach it without widening a boundary.
 - **The body is copied out of the aggregate on every request with a body.**
   `CommunityHttpRequestProcessor.handleRequest` allocates a `LoanedBuffer` and `MemorySegment.copy`s
   the body into it. The research sweep did not list this because it swept the *header* path. It is
