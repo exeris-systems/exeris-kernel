@@ -308,8 +308,11 @@ entries have to satisfy it.
 - ~~Where the table belongs~~ — **settled by the implementation**: `eu.exeris.kernel.core.http`, the
   package all three future callers already sit under. `Http1RequestParser`'s token validation moved
   with it, for the same reason.
-- **The client response decoder still mirrors the server's old defect** — two passes plus per-token
-  materialisation. Now unblocked: the representation question is answered, so it can be fixed once.
+- ~~The client response decoder still mirrors the server's old defect~~ — **done in v0.12**, once
+  rather than twice, which is what sequencing it behind this RFC was for. It was worse than the
+  server's: two list-building parses per response, one of them purely to read `Content-Length`, plus
+  a whole-line `String`, two substrings and two `trim()` calls per field. 7 624 → 1 952 B on an API
+  JSON response, 10 216 → 2 384 B on a page response with cookies.
 - **The body is copied out of the aggregate on every request with a body.**
   `CommunityHttpRequestProcessor.handleRequest` allocates a `LoanedBuffer` and `MemorySegment.copy`s
   the body into it. The research sweep did not list this because it swept the *header* path. It is

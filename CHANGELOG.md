@@ -10,6 +10,29 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **The HTTP client stops decoding every response header twice, and stops materialising a line per
+  field.** `resolveExpectedTotal` — which the read loop consults to learn when to stop reading —
+  built a full `List<HttpHeader>` to read one field, `Content-Length`, and threw the list away;
+  `decodeResponse` then built it again. Each field cost a whole-line `String`, two substrings and two
+  `trim()` calls. Field boundaries are now found on the segment, only the value is materialised,
+  known names resolve from `CanonicalHeaderNames`, the read loop reads `Content-Length` without a
+  list, and the finished list is a view rather than a copy. Measured, exact per-thread bytes, three
+  fresh JVMs:
+
+  | response shape | before | after |
+  |---|---:|---:|
+  | API JSON 200 (7 fields) | 7 624 B | **1 952 B** — 74% |
+  | page 200 + cookies (10 fields) | 10 216 B | **2 384 B** — 77% |
+  | 204 No Content (3 fields) | 3 672 B | **1 184 B** — 68% |
+
+  **Behaviour-preserving, and checked that way rather than asserted**: the new tests were run against
+  the *old* decoder and all ten pass, so they describe behaviour both implementations share. That
+  includes the subtle half — decoding stays US-ASCII, so a high-bit byte remains the replacement
+  character and is not whitespace, which byte-level trimming reproduces by comparing unsigned.
+
+  Header-block reading moved to `CommunityHttpHeaderBlock`, because a block is read for two reasons
+  and only one of them wants a list.
+
 - **Known HTTP field-names are resolved from a shared table instead of being materialised per
   request** ([RFC-2026-09-01](docs/rfc/RFC-2026-09-01-http-header-representation.md), ACCEPTED).
   `CanonicalHeaderNames` matches a field-name's wire bytes against known spellings and returns a
