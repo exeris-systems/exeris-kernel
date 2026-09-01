@@ -3018,10 +3018,22 @@ binding.
 `CoreFlowTimeSourceTest` runs in **0.79s against a 30-second timeout**. Before the seam that test
 could not be written: it would have had to sleep for the real deadline.
 
-**Still open, and named rather than implied:** `FlowChoreographyBridge`'s deadline construction is
-left on `System.nanoTime()` with the reason at the site — its thread's binding state is not
-established, and a slot read there would be the "looks migrated, is not drivable" failure the ADR
-names. The security and persistence deciding reads (token expiry, `CitadelGuard`) are the second PR.
+**Status (v0.12): DELIVERED.** The second half converged the competing seams. `TimeSource` gained a
+live `asClock()` view — two kernel consumers are shaped around `java.time.Clock`, so the adapter
+belongs on the seam; `Clock.fixed(...)` freezes at construction and would have made the seam
+compile, type-check and do nothing. The token validator's no-clock constructors now default to the
+bound source rather than `Clock.systemUTC()`.
+
+**Two of the survey's sites were not candidates, and a grep could not have told you.**
+`CitadelGuard` matched inside a comment saying it deliberately reads no clock. `FairnessTracker`
+measures — it buckets by time and computes a ratio — so the decide/measure rule leaves it, and its
+`LongSupplier` is a local test seam rather than a competing idiom. The consistency complaint that
+motivated this entry is answered by the policy, not by converging every seam.
+
+**Still open, named rather than implied:** `FlowChoreographyBridge`'s deadline construction stays on
+`System.nanoTime()` — its thread's binding state is not established, and a slot read there is the
+"looks migrated, is not drivable" failure the ADR names. It needs a captured source threaded through
+the choreography path, which is its own change.
 
 ---
 

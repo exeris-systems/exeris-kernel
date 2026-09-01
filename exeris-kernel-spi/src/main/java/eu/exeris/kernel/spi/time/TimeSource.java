@@ -4,7 +4,10 @@
  */
 package eu.exeris.kernel.spi.time;
 
+import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 
 /**
  * SPI: where the kernel reads time it will <em>decide</em> on (ADR-082).
@@ -73,4 +76,52 @@ public interface TimeSource {
      * @return the current instant; never {@code null}
      */
     Instant wallTime();
+
+    /**
+     * This source as a {@link Clock}, for consumers shaped around the JDK's abstraction.
+     *
+     * <p><b>Live, not a snapshot.</b> The returned clock delegates every {@code instant()} call, so
+     * a virtual source the caller later advances is visible through it. {@code Clock.fixed(wallTime(),
+     * …)} is the tempting one-liner and it is wrong: it freezes at the moment the adapter was built,
+     * which for a virtual clock means the consumer never sees it move — a seam that compiles,
+     * type-checks, and silently does not work.
+     *
+     * <p>UTC by default, which is what {@code Clock.systemUTC()} gives and what the kernel's own
+     * consumers want: these are instants compared against token and rotation deadlines, where a
+     * local zone would add an offset nobody asked for. {@link Clock#withZone(ZoneId)} is honoured
+     * rather than ignored — this is a public {@code Clock}, and a caller that asks for a zone and
+     * silently keeps UTC would get wrong answers from anything zone-shaped built on it.
+     *
+     * @return a clock reading this source, at UTC; never {@code null}
+     */
+    default Clock asClock() {
+        return zonedClock(this, ZoneOffset.UTC);
+    }
+
+    private static Clock zonedClock(TimeSource source, ZoneId zone) {
+        return new Clock() {
+
+            @Override
+            public ZoneId getZone() {
+                return zone;
+            }
+
+            @Override
+            public Clock withZone(ZoneId other) {
+                // A new view on the SAME source, not a snapshot: the zone changes and the delegation
+                // survives, so a re-zoned clock still follows a source the caller later advances.
+                return other.equals(zone) ? this : zonedClock(source, other);
+            }
+
+            @Override
+            public Instant instant() {
+                return source.wallTime();
+            }
+
+            @Override
+            public String toString() {
+                return "TimeSource.asClock[" + source + ", " + zone + ']';
+            }
+        };
+    }
 }
