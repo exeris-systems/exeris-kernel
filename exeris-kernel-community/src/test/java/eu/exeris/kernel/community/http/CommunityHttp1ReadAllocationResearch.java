@@ -61,15 +61,16 @@ class CommunityHttp1ReadAllocationResearch {
         try (LoanedBuffer buffer = allocator.allocateNetwork(Math.max(request.length, 64))) {
             MemorySegment.copy(request, 0, buffer.segment(), ValueLayout.JAVA_BYTE, 0, request.length);
             buffer.setSize(request.length);
+            Http1Codec codec = new Http1Codec();
 
             for (int i = 0; i < WARMUP; i++) {
-                readOnce(buffer, request.length);
+                readOnce(codec, buffer, request.length);
             }
             long[] samples = new long[3];
             for (int window = 0; window < samples.length; window++) {
                 long before = THREADS.getCurrentThreadAllocatedBytes();
                 for (int i = 0; i < MEASURED; i++) {
-                    readOnce(buffer, request.length);
+                    readOnce(codec, buffer, request.length);
                 }
                 samples[window] = (THREADS.getCurrentThreadAllocatedBytes() - before) / MEASURED;
             }
@@ -79,12 +80,15 @@ class CommunityHttp1ReadAllocationResearch {
     }
 
     /**
-     * A fresh codec per request, which is what the reader gets per connection-state reset — using
-     * one across iterations would let h2c/keep-alive state accumulate and measure something else.
+     * The production shape, and it is not the obvious one. {@code CommunityHttpRequestProcessor}
+     * builds ONE codec per connection and reuses it across the keep-alive/pipelined loop, calling
+     * {@code reset()} at the top of each read — so a per-request figure is a steady-state figure,
+     * not a first-request-on-a-fresh-connection one. A codec per iteration instead charges every
+     * request for a per-connection cost, which is what an earlier revision of this harness did.
      */
-    private static void readOnce(LoanedBuffer buffer, int total) {
-        Object result = CommunityHttp1RequestReader.tryParseRequest(
-                new Http1Codec(), buffer, total);
+    private static void readOnce(Http1Codec codec, LoanedBuffer buffer, int total) {
+        codec.reset();
+        Object result = CommunityHttp1RequestReader.tryParseRequest(codec, buffer, total);
         if (result == null) {
             throw new IllegalStateException("request did not parse — the fixture is wrong");
         }
