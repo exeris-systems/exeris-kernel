@@ -848,7 +848,6 @@ public abstract class AbstractSagaRecoveryTck {
             AtomicInteger v1Resumed = new AtomicInteger();
             AtomicInteger v2Resumed = new AtomicInteger();
 
-            engine.plans().compile(versioned(engine, 1, v1Resumed));
             FlowContext ctx = TestFlowContexts.create(UUID.randomUUID().toString(), DEFINITION);
             engine.scheduler().schedule(engine.plans().compile(versioned(engine, 1, v1Resumed)), ctx);
 
