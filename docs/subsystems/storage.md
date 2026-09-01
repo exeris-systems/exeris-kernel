@@ -248,7 +248,7 @@ capability this driver does not have, so implementing it would be signing for re
 
 ## Bootstrap and provider selection
 
-`CommunityStorageSubsystem` (phase `SERVICES`, no dependencies) boots the subsystem, and
+`CommunityStorageSubsystem` (phase `SERVICES`, depends on `memory`) boots the subsystem, and
 `StorageBootstrap` in Core selects the driver. Selection is **by configured id, not by ranking** —
 the one bootstrap in the kernel that does not rank by `priority()`, because both Community drivers
 register at the same priority and are not interchangeable: one needs a writable directory, the other
@@ -279,7 +279,18 @@ drivers sit on every Community classpath, so refusing to boot without the key wo
 deployment that never wanted blob storage. What is refused is asking for storage *without saying
 which*: an id naming no discovered driver fails at boot with `EX-BLOB-8008`, carrying the key, the
 value that was set and the ids that were available. An empty classpath is `EX-BLOB-8007` instead —
-nothing is ambiguous there, and the fix is a dependency rather than a key.
+nothing is ambiguous there, and the fix is a dependency rather than a key. A key the selected driver
+needs but nobody set is `EX-BLOB-8009`, carrying that key and what a value for it looks like.
+
+Three codes rather than one because `rawArgs` is read positionally by Glass-Box tooling and the
+layouts differ: 8008's last slot is the list of provider ids that were available, so a free-text
+hint in that position would be parsed as ids.
+
+The `memory` dependency belongs to the S3 driver, not to the subsystem's own needs: its store stages
+transfers off-heap through `KernelProviders.MEMORY_ALLOCATOR` and refuses to be created without one.
+A subsystem declares what the drivers it *may* select require, because the boot graph is built before
+any configuration is read — there is no point at which the dependency could be made conditional on
+which driver was named.
 
 Which driver won is recorded on the `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event.
 The provider slots are `KernelProviders.BLOB_STORAGE_PROVIDER` and `BLOB_STORE` — named `BLOB_*`
