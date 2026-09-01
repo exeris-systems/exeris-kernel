@@ -812,6 +812,10 @@ public final class KernelProviders {
      * @apiNote Bootstrap / system tasks only. Do NOT call from request handlers or
      *          {@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} implementations.
      */
+    public static StorageContext storageContextOrSystem() {
+        return STORAGE_CONTEXT.orElse(ImmutableStorageContext.GLOBAL);
+    }
+
     /**
      * Returns the bound {@link TimeSource}, or the platform clock when none is bound.
      *
@@ -824,10 +828,6 @@ public final class KernelProviders {
      */
     public static TimeSource timeSource() {
         return TIME_SOURCE.orElse(TimeSource.SYSTEM);
-    }
-
-    public static StorageContext storageContextOrSystem() {
-        return STORAGE_CONTEXT.orElse(ImmutableStorageContext.GLOBAL);
     }
 
     /**

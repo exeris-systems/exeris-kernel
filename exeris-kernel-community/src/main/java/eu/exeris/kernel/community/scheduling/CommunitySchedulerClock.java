@@ -4,7 +4,8 @@
  */
 package eu.exeris.kernel.community.scheduling;
 
-import java.time.Instant;
+import eu.exeris.kernel.spi.time.TimeSource;
+
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -24,18 +25,15 @@ import java.util.concurrent.locks.ReentrantLock;
  * so a submission that moves the earliest deadline cannot slip between the dispatcher's check and its
  * park — the lost-wakeup this design is most exposed to.
  *
- * <p>Deliberately subsystem-local. The kernel has no unified clock abstraction yet; this SPI is
- * shaped so that migrating onto one is a substitution rather than a redesign.
+ * <p><strong>This is {@link TimeSource} plus waiting.</strong> The two reads below are inherited,
+ * not redeclared: an earlier version of this file said the kernel had no unified clock abstraction
+ * and that this interface was shaped so migrating onto one would be a substitution rather than a
+ * redesign. ADR-082 added the abstraction and this is that substitution — the wait primitives stay
+ * here, because a {@code ReentrantLock} has no business in the SPI.
  *
  * @since 0.11.0
  */
-interface CommunitySchedulerClock {
-
-    /** @return monotonic nanoseconds, for deadlines; comparable only against itself */
-    long nanoTime();
-
-    /** @return calendar time, for cron fields */
-    Instant wallTime();
+interface CommunitySchedulerClock extends TimeSource {
 
     /** @return the lock guarding scheduler state and the wait condition */
     ReentrantLock lock();
