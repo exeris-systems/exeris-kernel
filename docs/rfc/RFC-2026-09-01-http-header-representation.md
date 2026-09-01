@@ -2,11 +2,11 @@
 
 |                    |                                                                          |
 |--------------------|--------------------------------------------------------------------------|
-| **Status**         | **IN-REVIEW** — spike complete, recommendation now measured             |
+| **Status**         | **ACCEPTED** — Option B, implemented in v0.12                           |
 | **Author(s)**      | Arkadiusz Przychocki                                                     |
 | **Date Opened**    | 2026-09-01                                                               |
-| **Date Closed**    | —                                                                        |
-| **Target ADR(s)**  | TBD — per repo convention a number is reserved when an implementing change reaches its build gate, not at RFC acceptance |
+| **Date Closed**    | 2026-09-01                                                               |
+| **Target ADR(s)**  | **None** — see Decision Record. Option B changes no boundary and no contract meaning, so there is nothing for an ADR to fix |
 | **Affected Repos** | `exeris-kernel` (authoritative); enterprise tier consumes Core unchanged |
 | **Reviewers**      | —                                                                        |
 
@@ -281,19 +281,35 @@ HPACK's static table.
 
 | Field                | Value |
 |:---------------------|:------|
-| **Outcome**          | —     |
-| **Date**             | —     |
-| **Resulting ADR(s)** | —     |
-| **Notes**            | —     |
+| **Outcome**          | **ACCEPTED** — Option B |
+| **Date**             | 2026-09-01 |
+| **Resulting ADR(s)** | **None**, deliberately |
+| **Notes**            | See below. |
+
+**No ADR, and that is the point of the option that won.** The repo convention is that a number is
+reserved when an implementing change reaches its build gate. This change reached it and still needs
+none: `CanonicalHeaderNames` changes no boundary, no SPI, no lifetime and no observable byte, so
+there is no architectural intent for an ADR to record. An ADR here would document an implementation
+detail as though it were a decision — which is the class of thing the registry's own scope rules
+exclude. The decision that *was* made — that Option A is unavailable while buffers are recycled — is
+recorded here, in this RFC, which is where a rejected option belongs.
+
+**Implemented in v0.12**, measured on the merged implementation rather than the spike: browser GET
+5 792 → 4 352 B, service POST 3 976 → 3 144 B, health probe 1 712 → 1 360 B, byte-identical across
+three fresh JVMs and to the spike's figures. Token validation moved to `CanonicalHeaderNames`
+alongside the table, because a field name is a field name on every HTTP version and the table's own
+entries have to satisfy it.
 
 ## Open questions / follow-ups
 
 - ~~Spike gating the recommendation~~ — **done**, see §Spike outcomes. Branch
   `research/http-header-name-table` is the record; it patches the parser directly to take the
   measurement and is not a merge candidate.
-- **Where the table belongs.** The spike put it in `eu.exeris.kernel.core.http.http1` next to its one
-  caller. The client response decoder and any future HPACK literal path want it too, so an
-  implementation should place it where all three reach it without widening a boundary.
+- ~~Where the table belongs~~ — **settled by the implementation**: `eu.exeris.kernel.core.http`, the
+  package all three future callers already sit under. `Http1RequestParser`'s token validation moved
+  with it, for the same reason.
+- **The client response decoder still mirrors the server's old defect** — two passes plus per-token
+  materialisation. Now unblocked: the representation question is answered, so it can be fixed once.
 - **The body is copied out of the aggregate on every request with a body.**
   `CommunityHttpRequestProcessor.handleRequest` allocates a `LoanedBuffer` and `MemorySegment.copy`s
   the body into it. The research sweep did not list this because it swept the *header* path. It is
