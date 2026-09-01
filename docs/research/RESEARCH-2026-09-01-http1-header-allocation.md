@@ -123,7 +123,7 @@ the header list come off one traversal; the list is handed on as a view rather t
 16-header request went **9 848 B → 5 784 B** on the collapsed parse alone (41%) and **→ 5 472 B** with
 the copy dropped (44%), stable across three fresh JVMs. It also removed a hazard: with two passes the
 enforced header limit depended on which reached it first unless both were handed identical bounds,
-which is why `Http1Codec` no longer exposes its bounds at all (ADR-071 Amendment A1).
+which is why `Http1Codec` no longer exposes its bounds at all (ADR-071, amendment of 2026-09-01).
 
 **Still open, and this is where the remaining cost is.** At ~345 B per header, token materialisation
 now dominates what is left, and the four other sites in the sweep are untouched. The client response

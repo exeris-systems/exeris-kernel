@@ -328,8 +328,8 @@ Outcome:
 Final decision:
 - primary disposition: **Promote to Feature**
 - delivered in v0.12: the double parse was collapsed to one pass and the list copy dropped —
-  9 848 B to 5 472 B for that request, 44%, with ADR-071 gaining Amendment A1 because the change
-  also made the configured header bound structural rather than maintained by convention,
+  9 848 B to 5 472 B for that request, 44%, with ADR-071 gaining a 2026-09-01 amendment because
+  the change also made the configured header bound structural rather than maintained by convention,
 - follow-up: the zero-copy header representation is **not** promoted from here. It needs an RFC
   first, because its hard question is lifetime — header slices would point into a `LoanedBuffer`
   that is recycled after the request, and `HttpRequest.headers()` is SPI surface.
