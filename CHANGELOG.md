@@ -23,7 +23,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   It also removes a hazard rather than only a cost. Under two passes the enforced header limit
   depended on which pass reached it first unless both were handed identical bounds, which
   [ADR-071](docs/adr/ADR-071-operational-limit-configuration-path.md) fixed and a comment then asked
-  future editors to preserve. One pass cannot express that mistake. See ADR-071 Amendment A1.
+  future editors to preserve. One pass cannot express that mistake. See ADR-071's amendment of
+  2026-09-01.
 
 ### Fixed
 

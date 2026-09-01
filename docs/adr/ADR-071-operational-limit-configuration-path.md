@@ -207,7 +207,7 @@ ingress limit said something narrower than that.
   listener's wiring case. The first mutation is what caught the original unbounded TCK case letting
   its handlers return immediately, which passed under any ceiling at all.
 
-## Amendment A1 (v0.12) — the two passes became one, and the bound is now structural
+## Amendment 2026-09-01 — the two passes became one, and the bound is now structural
 
 ADR-071's Context describes **two** HTTP/1 read paths, `CommunityHttp1RequestReader`'s codec pass and
 its header-collection pass, and the decision made both carry the operator's bound. That was the right
