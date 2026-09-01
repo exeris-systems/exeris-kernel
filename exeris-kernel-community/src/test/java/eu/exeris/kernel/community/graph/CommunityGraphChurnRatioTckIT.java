@@ -10,7 +10,6 @@ package eu.exeris.kernel.community.graph;
 
 import eu.exeris.kernel.spi.graph.GraphConfig;
 import eu.exeris.kernel.spi.graph.GraphEngine;
-import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.tck.contract.graph.GraphChurnRatioTck;
 import org.junit.jupiter.api.DisplayName;
@@ -28,9 +27,12 @@ import java.util.UUID;
  *
  * <h2>What this proves for Community tier</h2>
  * <p>The Community traversal hot path
- * {@code openSession() → traverseBreadthFirst(1-hop) → close()} stays below the
- * documented churn-to-data SLO ({@code < 20x} of {@code eu.exeris.*} allocated
- * bytes per useful data byte). The Cypher backend is used deliberately: it builds
+ * {@code openSession() → traverseBreadthFirst(1-hop, 500 ids) → close()} stays within the
+ * regression bound the TCK enforces on allocated bytes per useful data byte, driver
+ * included. It does <em>not</em> prove graph.md's published {@code < 20x} contract: this
+ * path runs in one of two per-JVM allocation regimes and the slower one breaches that
+ * figure — see the TCK Javadoc for the measurement and for why the numerator is not
+ * filtered to {@code eu.exeris.*}. The Cypher backend is used deliberately: it builds
  * its helper from an explicit {@link CommunityNeo4jClient} passed via
  * {@link GraphConfig}, so no {@code ScopedValue}-bound persistence engine is
  * required to drive the traversal (unlike the SQL/PGQ path).
@@ -71,12 +73,8 @@ class CommunityGraphChurnRatioTckIT extends GraphChurnRatioTck {
 
     @Override
     protected GraphEngine createEngine() {
-        CommunityGraphEngine engine = new CommunityGraphEngine(neo4jConfig());
-        // Seed one edge startNode -> target so the measured 1-hop BFS returns a node.
-        try (GraphSession session = engine.openSession()) {
-            session.upsertEdge(FOLLOWS, startNode, UUID.randomUUID(), 1.0, "{}");
-        }
-        return engine;
+        // The traversal fan-out is seeded by the TCK, from the same count its denominator uses.
+        return new CommunityGraphEngine(neo4jConfig());
     }
 
     @Override
