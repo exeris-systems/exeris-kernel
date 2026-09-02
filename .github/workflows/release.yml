@@ -64,12 +64,21 @@ jobs:
 
       - name: Resolve the version and refuse an unreleasable one
         id: rel
+        # Every `${{ }}` this step needs is bound here and read as a shell variable below, rather
+        # than substituted into the script text. `github.ref` is constrained to the git ref charset
+        # and `github.event_name` is an enum, so neither is a vector — but `inputs.version` is
+        # free-form text a dispatcher types, and textual substitution would place it inside the
+        # script rather than pass it to it. Binding all of them keeps the rule one rule instead of a
+        # judgement per expression.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          IN_UPLOAD: ${{ inputs.upload }}
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" = "push" ]; then
+          if [ "$EVENT_NAME" = "push" ]; then
             tag="${GITHUB_REF#refs/tags/}"
             # The strict half of the permissive trigger filter. A release tag is exactly
             # vMAJOR.MINOR.PATCH: `v0.12.0-rc1` and the preview line's own tags are not releases and
@@ -81,8 +90,8 @@ jobs:
             version="${tag#v}"
             upload=true
           else
-            version="${{ inputs.version }}"
-            upload="${{ inputs.upload }}"
+            version="${IN_VERSION:-}"
+            upload="${IN_UPLOAD:-}"
           fi
 
           case "$version" in
@@ -94,7 +103,7 @@ jobs:
           # Comparing against main answers the question that actually matters, and `behind` and
           # `identical` are exactly the two answers that mean "yes, this commit is on main".
           if [ "$upload" = "true" ]; then
-            if [ "${{ github.event_name }}" = "push" ]; then
+            if [ "$EVENT_NAME" = "push" ]; then
               contained="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)"
               case "$contained" in
                 identical|behind) echo "tag $tag points at a commit on main ($contained)" ;;
@@ -102,8 +111,8 @@ jobs:
                    echo "::error::Delete the tag, cut it from main, tag again. Nothing was uploaded." >&2
                    exit 1 ;;
               esac
-            elif [ "${{ github.ref }}" != "refs/heads/main" ]; then
-              echo "::error::Upload from a dispatch is allowed on main only; this ref is ${{ github.ref }}." >&2
+            elif [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Upload from a dispatch is allowed on main only; this ref is $GITHUB_REF." >&2
               echo "::error::Re-run with upload unchecked to exercise the release path from here." >&2
               exit 1
             fi
@@ -129,6 +138,8 @@ jobs:
         # then dies several minutes later inside a shell step with "No such file or directory" — a
         # message that names a script and not the cause. This refuses in the first ten seconds and
         # says which half is missing.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           missing=""
@@ -145,8 +156,16 @@ jobs:
           done
 
           if [ -n "$missing" ]; then
-            echo "::error::Ref ${{ github.ref }} cannot build a release — missing: $missing" >&2
-            echo "::error::Dispatch against a branch that carries the release machinery." >&2
+            echo "::error::Ref $GITHUB_REF cannot build a release — missing: $missing" >&2
+            # The remediation differs by trigger, and the tag one is the case this step exists for:
+            # the machinery has to be on the branch BEFORE a release tag is cut from it, so "dispatch
+            # somewhere else" is not advice a tag push can act on.
+            if [ "$EVENT_NAME" = "push" ]; then
+              echo "::error::The tagged commit does not carry the release machinery. Delete the tag," >&2
+              echo "::error::land the release tooling on that branch, and cut the tag again." >&2
+            else
+              echo "::error::Dispatch against a branch that carries the release machinery." >&2
+            fi
             exit 1
           fi
           echo "ok — this ref carries the release profile and all three gate scripts"
@@ -187,10 +206,13 @@ jobs:
         # is a tag on the wrong commit — and `versions:set` would overwrite precisely the evidence
         # of that. Read rather than resolved through a plugin: no network, no plugin version to
         # guess, and the root pom carries its own <version>.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          WANT: ${{ steps.rel.outputs.version }}
         run: |
           set -euo pipefail
-          want='${{ steps.rel.outputs.version }}'
-          if [ "${{ github.event_name }}" = "push" ]; then
+          want="$WANT"
+          if [ "$EVENT_NAME" = "push" ]; then
             have="$(python3 -c "import xml.etree.ElementTree as E; print(E.parse('pom.xml').getroot().find('{http://maven.apache.org/POM/4.0.0}version').text.strip())")"
             if [ "$have" != "$want" ]; then
               echo "::error::tag says $want, the pom at this commit says $have — the tag is on the wrong commit." >&2
