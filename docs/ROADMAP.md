@@ -2582,6 +2582,41 @@ That is a sound design for a handler that returns promptly. For one that blocks 
 
 **Status (RFC opened 2026-06-18 — shifted earlier than v0.12):** the RFC is `docs/rfc/RFC-2026-06-18-http-streaming-spi.md`. Preferred direction = a variant of option (a): **SSE-first** over a **sibling `HttpStreamExchange`** (not a streaming mode on `HttpExchange`; respond-once invariant preserved), with WebSocket deferred to a later, separately-justified decision. **ADR-043 reserved.** Implementation **brought earlier to v0.10/v0.11** (not v0.12) to unblock the SDK `realTimeApi` / `@Action(streaming)` chain. The eight load-bearing design questions for ADR-043 (exchange surface + disconnect-as-throw, park-the-VT `emit()`, `LoanedBuffer` transfer ownership, streaming-lifecycle JFR, `EX-HTTP-*` taxonomy, router extension, PAQS accounting, JWT-expiry-mid-stream fail-closed) are enumerated in the RFC.
 
+**1.0 disposition — REVISED 2026-09-02: 1.0-BLOCKING.** In 1.0, with the full package —
+ADR, SPI, TCK and a Community binding — landing in v0.12 and shipping `preview`. Ruled by
+[ADR-084](adr/ADR-084-websocket-provider-spi.md). The
+deferral above rested on a premise that has stopped holding. RFC-2026-06-18 chose SSE-only
+explicitly because "the dominant use case is unidirectional server push", listing full duplex as
+"a larger surface for a use case that doesn't need it yet", and recorded WebSocket as "a later,
+separately-justified addition". **Platform LSP is that separate justification, and it differs
+structurally rather than by preference:** the Language Server Protocol is bidirectional
+request/response, and SSE is one-directional by construction, so LSP cannot ride it. Studio sits on
+the same connection. Those are first-party consumers, which is what moves this from "nice to have
+at some point" into the release they depend on.
+
+**Requirements are the consumer's, not inferred** (Platform, 2026-09-02): an embeddable duplex
+engine in the same shape as `HttpProvider.createServerEngine(HttpConfig)` — `setHandler` + `start()`
+— so an endpoint costs no kernel boot; text frames only, since LSP is JSON as text; session identity
+per connection, which the one-server-instance-per-session model keys on; a configurable maximum
+message size, because the 8 KB default measured on Jetty is orders of magnitude too small for an
+`exeris/applyMutation` carrying a serialised `DomainMetadata` baseline; backpressure per ADR-043
+obligation 4, parking the virtual thread and never queueing on the heap; and close codes, so an exit
+without a shutdown is reportable as a protocol error the way stdio does it with exit code 1.
+
+**Ships `preview` at v0.12, deliberately, and that is not a hedge.** The merge gate below is a TCK
+and a binding, and a contract test proves the shape is *honoured*, not that it *survives* — a
+duplex, long-lived, per-connection protocol is exactly where a shape looks right under a TCK and
+wrong under load. Promotion to `stable` is gated on benchmark evidence in `exeris-benchmarks`
+(concurrent connection count, frame throughput, backpressure behaviour under a slow reader,
+teardown of a dead peer), not on the TCK going green. Until that exists the label stays `preview`
+and the stability matrix says so, so a consumer building on it in 1.0 knows what it is building on.
+
+**Consequence recorded rather than discovered later:** LSP and Studio are therefore first-party
+consumers of a `preview` surface for at least one release. That is the situation
+[RFC-2026-09-02](rfc/RFC-2026-09-02-preview-spi-promotion.md) catalogues for seven Tier 2
+capabilities, and it is worse here only in that the consumers are ours — which also makes the
+migration ours to absorb rather than a customer's.
+
 ---
 
 ### Runtime: `CacheProvider` SPI — RFC Track Only
