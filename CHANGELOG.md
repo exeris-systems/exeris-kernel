@@ -10,6 +10,30 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **The typed HTTP client can read a collection, and a body decoder no longer needs an allocator it
+  does not use.** Two gaps on the client-facing surface, both of which bite code that binds to it
+  rather than the kernel itself.
+
+  `KernelWebClient` had no way to express a typed collection read. Its only type handle is a
+  `Class`, and `List.class` is raw — it tells the decoder nothing about the element type, so a JSON
+  array decodes to the driver's default mapping per element and the caller's first field access
+  fails with a `ClassCastException` naming a type it never wrote. An array class carries its
+  component type, so the new `getList(path, elementType)` decodes into `T[]` — a handle the existing
+  decoder registry already honours — and hands back an unmodifiable view over it, without a copy and
+  without a `@SuppressWarnings` at the call site. Framing is unchanged from `get`: an empty body is
+  an error, not an empty list.
+
+  `HttpRequestDecodingContext` and `HttpResponseDecodingContext` required a non-null `MemoryAllocator`.
+  **No decoder in the kernel reads it** — the allocator earns its place on the *encoding* contexts,
+  where an encoder must produce an off-heap body, while a decoder is handed a `LoanedBuffer` that is
+  already allocated. Requiring it coupled every decode site to a bound `MEMORY_ALLOCATOR`, and an
+  unbound slot then surfaced *inside* a handler as a failure to build the context — which reads as a
+  malformed body rather than as missing wiring. Both records now accept a three-argument form with no
+  allocator; the four-argument constructor is unchanged, so nothing that supplies one has to move. A
+  decoder that genuinely needs auxiliary off-heap memory should take an allocator at construction, the
+  way it takes its object mapper — a per-request context is the wrong place for a per-decoder
+  dependency. The decoder TCKs now drive `decode` with an allocator-less context on both sides, so the
+  rule is executable rather than documented.
 - **The router stops splitting the request path, and the HTTP/2 decoded request stops copying its
   header list** — closing the materialise-and-copy sweep that
   [RFC-2026-09-01](docs/rfc/RFC-2026-09-01-http-header-representation.md) sequenced. Path-template
