@@ -57,6 +57,42 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse a ref that cannot build a release
+        # This step exists because of where the workflow FILE has to live, not because of anything a
+        # caller is likely to type. `workflow_dispatch` only registers a workflow that is present on
+        # the DEFAULT branch: while this file existed on the development line alone, GitHub had no
+        # record of it — `GET /actions/workflows` listed six workflows and not this one — so no ref
+        # could dispatch it, including the no-upload dry run the header offers as "useful from any
+        # branch". The file therefore lands on `main` ahead of the release that needs it, and `main`
+        # at that point carries neither the `release` profile nor the gate scripts.
+        #
+        # A dispatch from such a ref does not fail cleanly on its own. Maven treats `-P release` for
+        # an absent profile as a WARNING and builds on, so the run produces unsigned artifacts and
+        # then dies several minutes later inside a shell step with "No such file or directory" — a
+        # message that names a script and not the cause. This refuses in the first ten seconds and
+        # says which half is missing.
+        run: |
+          set -euo pipefail
+          missing=""
+          add() { missing="${missing:+$missing; }$1"; }
+
+          grep -q '<id>release</id>' pom.xml || add "the 'release' profile in pom.xml"
+          for t in tools/release-readiness/release-readiness.sh \
+                   tools/sbom-gate/sbom-gate.sh \
+                   tools/preview-bytecode-scan/preview-bytecode-scan.sh; do
+            # -x rather than -e: the scripts are committed 100755, and a mode that did not survive
+            # (core.fileMode=false hides a chmod locally) is exit 126 at the point of use, which is
+            # the same class of late, unattributable failure this step exists to move forward.
+            [ -x "$t" ] || add "$t (absent or not executable)"
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::Ref ${{ github.ref }} cannot build a release — missing: $missing" >&2
+            echo "::error::Dispatch against a branch that carries the release machinery." >&2
+            exit 1
+          fi
+          echo "ok — this ref carries the release profile and all three gate scripts"
+
       - name: Cache JDK tarball
         id: jdk-cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
