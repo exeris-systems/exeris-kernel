@@ -214,6 +214,36 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>3.5.0</version>
+                    <!--
+                        Automatic-Module-Name pins the JPMS name of every jar this reactor publishes.
+                        Without it a consumer on the module path gets a name derived from the FILE
+                        NAME, which becomes a de-facto contract from the first release and cannot be
+                        changed afterwards without breaking every `requires` that used it.
+
+                        It lives here rather than in exeris-kernel-parent so it reaches
+                        exeris-kernel-build-config too, which parents directly to this POM and
+                        publishes a jar of its own. Here it also cannot drift from the version pin
+                        above: a second pluginManagement entry lower down would silently override
+                        that pin, which is exactly what an earlier draft of this change did.
+
+                        `exeris.module.name` is intentionally undefaulted, and what that buys was
+                        measured rather than assumed. It does NOT fail the build: with the config
+                        inherited from here and no local plugin declaration, an unset property leaves
+                        the property unresolved and maven-archiver simply OMITS the entry, so the jar
+                        ships nameless and green. (maven-jar-plugin does reject an empty name, but
+                        only when a module declares the plugin itself, which is what made the
+                        stronger claim look true.) Nothing here is a guarantee; the guarantee is
+                        tools/module-name-check, which is why that script discovers every jar the
+                        reactor produces instead of checking a list somebody has to remember to
+                        extend.
+                    -->
+                    <configuration>
+                        <archive>
+                            <manifestEntries>
+                                <Automatic-Module-Name>${exeris.module.name}</Automatic-Module-Name>
+                            </manifestEntries>
+                        </archive>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

@@ -10,6 +10,36 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **Every published jar names its own JPMS module.** A jar with no `Automatic-Module-Name` is still
+  usable on the module path — the JDK derives a name from the **file name** — and that derived name
+  becomes a de-facto contract from the first release a consumer compiles against, breaking every
+  `requires` clause if it is later changed. Ahead of the first Maven Central release, that is a
+  one-way door left open by a missing manifest line.
+
+  All eight jar-producing modules now carry a name matching their root package — including
+  `exeris-kernel-build-config`, which parents directly to the root POM and publishes a jar of its
+  own, so it inherits nothing from the reactor's shared parent. The manifest wiring therefore lives
+  next to the root's plugin version pin rather than in `exeris-kernel-parent`, where a second
+  `pluginManagement` entry would have silently overridden that pin.
+  `tools/module-name-check/module-name-check.sh` runs in CI against the built artifacts — nine of
+  them, because `exeris-kernel-tck` publishes two and the one that matters is the classifier-`tests`
+  jar: the module has no `src/main`, so its default jar is metadata only, while core, community,
+  community-kafka and the BOM all depend on the `tests` jar to reach the `Abstract*Tck` classes.
+
+  **This is the cheap half of module support, and the expensive half is not blocked**: a scan for
+  packages split across modules — the constraint that makes a real `module-info.java` hard to add
+  later — found **none**. So naming now costs a manifest line and buys the right to add module
+  descriptors afterwards without renaming anything.
+
+  **The gate is the guarantee, and that was measured rather than assumed.** An unset
+  `exeris.module.name` does *not* fail the build: with the configuration inherited and no local
+  plugin declaration, the property goes unresolved and the manifest entry is simply omitted, so the
+  jar ships nameless and green. (The jar plugin does reject an *empty* name, but only where a module
+  declares the plugin itself, which is what made the stronger claim look true.) So the check
+  discovers every jar the reactor produced instead of consulting a list somebody must remember to
+  extend. The shade plugin **preserves** the entry through the diagnostics CLI's shaded artifact,
+  checked on the built jar rather than guessed at from transformer behaviour.
+
 - **A kernel exception now says whose fault it is** ([ADR-083](docs/adr/ADR-083-exception-fault-origin.md)).
   An error code says *what* failed; nothing said *who has to change something* — the question a
   protocol adapter must answer before it can pick a status. The kernel stated it in exactly one

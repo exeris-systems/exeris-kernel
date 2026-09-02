@@ -23,6 +23,7 @@
     <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.community.kafka</exeris.module.name>
         <includedGroups/>
         <!--
             Integration tests with Testcontainers Kafka run only when explicitly enabled:
@@ -132,6 +133,7 @@
 
     <build>
         <plugins>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>

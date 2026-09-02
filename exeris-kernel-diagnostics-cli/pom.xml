@@ -23,6 +23,7 @@
     <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.diagnostics.cli</exeris.module.name>
         <!-- Thin executable harness: main()/serve() are integration-shaped (stdio + in-process
              kernel boot); the request-dispatch logic (handle) is unit-tested. -->
         <jacoco.line.minimum>0.0</jacoco.line.minimum>
