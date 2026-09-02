@@ -74,7 +74,7 @@ this is informational and **not** a dependency of the open-core surface.
 > **`spi.flow` in v0.12 — `FlowDefinitionBuilder.version(int)`.** Same shape, same reason: a `default` method rather than an abstract one, so out-of-tree builders keep both linking and compiling. The default *throws* instead of returning a value, which is the deliberate difference from `registerMigration`'s and `FlowExecutionPlan.definitionVersion()`'s: a builder that silently ignored a requested version would produce a v1 definition claiming to be v3 — the exact confusion ADR-064 exists to prevent. Additive in both senses the gate asks, so it passes clean; the note is here because the *behaviour* of the default is the contract, and no diff reports that.
 | `…spi.memory` | **stable** | 0.5.0 | — (foundational) | `AbstractMemoryAllocatorTck`, `…LoanedBufferTck`, `…MemoryGovernorTck`, +5 | yes (slab pools) |
 | `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
-| `…spi.exceptions` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK) | — |
+| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
 | `…spi.telemetry` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractTelemetryProviderTck`, `…SinkTck`, `…RingBufferTck`, `…JfrTelemetrySinkTck` | yes (binary glass-box sink) |
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +5 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
@@ -89,6 +89,15 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.time` | **preview** | 0.12.0 | ADR-082 | — (no provider contract; `TimeSource` is bound, not discovered) | — |
 | `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
+
+² `exceptions`: ADR-083 (0.12.0) added `FaultOrigin` and a non-final `ExerisKernelException.faultOrigin()`
+to this `stable` surface. Both are **additive**: the method carries a default, so every existing
+subclass compiles and behaves exactly as before, and the compatibility gate reports
+**`stable-breaks=0` / `stable-src-breaks=0`** against `v0.11.0`. The residual risk the gate cannot
+see is source-level and out-of-tree, in the same way ADR-074's was: an out-of-repo subclass that
+already declares its own `faultOrigin()` with an incompatible return type would stop compiling.
+Nothing in this repository does — checked, not assumed. The Glass-Box contract itself (error code,
+`rawArgs`, disclosure) is unchanged and remains ADR-less by design.
 
 ¹ `config`: `ConfigProvider` / `KernelProfile` / `Dynamic` are mature 0.5.0 contracts and treated
 as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.0, v0.9 Sprint 5) are

@@ -4,8 +4,8 @@
  */
 package eu.exeris.kernel.tck.contract.http;
 
-import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.FaultOrigin;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoder;
