@@ -3051,6 +3051,37 @@ the choreography path, which is its own change.
 
 ---
 
+### Table-Stakes: JPMS Module Naming (`Automatic-Module-Name`)
+
+**Gap:** the reactor published jars with no `Automatic-Module-Name`. A jar without one is still
+usable on the module path — the JDK derives a name from the **file name** — and that derived name
+becomes a de-facto contract from the first release a consumer compiles against, so changing it
+afterwards breaks every `requires` clause that used it. The omission is silent at build time and
+irreversible at the far end, and Maven Central is the point after which it stops being fixable.
+
+Recorded here because its absence from this file *was* the defect it now documents: JPMS naming was
+called a P0 GA blocker in the v0.8 readiness audit, appeared in no roadmap section afterwards, and
+resurfaced only because somebody remembered it. An item with a disposition and no section is an item
+that can vanish without trace.
+
+**Owner:** build/CI.
+
+**Resolution:** `Automatic-Module-Name` per jar module, wired once beside the root POM's jar-plugin
+version pin so it cannot drift from it, with `exeris.module.name` set per module. Verified by
+`tools/module-name-check/`, which discovers every jar the reactor produces rather than consulting a
+list — measured: an unset property does **not** fail the build, it silently omits the manifest entry,
+so the gate is the guarantee rather than a second opinion.
+
+**1.0 disposition:** **1.0-BLOCKING** — a name that becomes permanent at the first Central release
+is not something a later milestone can revisit.
+
+**Merge Gate:** every jar the reactor publishes carries a legal `Automatic-Module-Name`, including
+`exeris-kernel-tck`'s classifier-`tests` jar, which is the TCK artifact other modules actually
+consume.
+
+**Status (v0.12):** **DELIVERED** — eight modules named across nine published jars; the gate runs in
+CI against the built artifacts.
+
 ### Table-Stakes: Supply-Chain Integrity (SBOM, signed releases, provenance)
 
 **Gap:** Zero supply-chain integrity in the build — audit found no CycloneDX SBOM, no cosign/Sigstore signing, no SLSA provenance, no reproducible-build config, no GPG. The only release step is an unsigned, unattested `mvn deploy` (the `Publish to GitHub Packages` step in `.github/workflows/maven.yml`). PR-time dependency-review + CodeQL exist, but those are vulnerability scanning, not artifact integrity; Sonar/PMD/JaCoCo are code quality. This is the gap most aligned with the EU/FENG digital-sovereignty narrative — an *argument*, not just hygiene — and it is low-cost.
