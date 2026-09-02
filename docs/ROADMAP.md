@@ -2603,6 +2603,18 @@ message size, because the 8 KB default measured on Jetty is orders of magnitude 
 obligation 4, parking the virtual thread and never queueing on the heap; and close codes, so an exit
 without a shutdown is reportable as a protocol error the way stdio does it with exit code 1.
 
+**Two shape questions settled with the consumer (2026-09-02), because Studio needs more than LSP
+does.** LSP is a local process, one client, dying with its session; Studio is a browser — many tabs,
+a network in between, and a client that cannot set request headers. (1) **Session identity stays per
+connection and resumption is the consumer's**, because a kernel-owned resumable session concentrates
+its cost in buffering the disconnect window, which is the on-heap queue obligation 4 forbids, and
+without that buffer it resumes identity rather than the stream. (2) **The handshake is visible,
+refusable, and refuses by default** — a WebSocket handshake is not subject to CORS, so a server that
+ignores `Origin` is open to cross-site hijacking, and a browser cannot set headers, leaving `Origin`,
+cookies, the subprotocol and the query as the only channels a consumer has. The two resolve together:
+consumer-side resumption is possible only because the handshake is visible. TLS, keepalive and
+`permessage-deflate` are configuration rather than contract and can move later.
+
 **Ships `preview` at v0.12, deliberately, and that is not a hedge.** The merge gate below is a TCK
 and a binding, and a contract test proves the shape is *honoured*, not that it *survives* — a
 duplex, long-lived, per-connection protocol is exactly where a shape looks right under a TCK and

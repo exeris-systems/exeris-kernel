@@ -63,7 +63,7 @@ that fragments a large message is speaking the protocol correctly. What the SPI 
 *binary* opcode: a binary frame is a protocol error the connection closes on, not a payload the
 handler is offered.
 
-### 4. Session identity is per connection
+### 4. Session identity is per connection, and resumption is the consumer's
 
 Each accepted connection carries a `WebSocketSession` with a stable identity for the connection's
 lifetime. The platform's model is one server instance per session, so the identity is what the
@@ -73,6 +73,26 @@ socket the SPI does not expose.
 Scoping across tenants rides the existing mechanism rather than inventing one: a connection's
 isolation key comes from the established `StorageContext`, so a socket opened under one tenant is
 not addressable from another.
+
+**The identity does not survive a reconnect, and that is a decision rather than a limitation.** A
+browser tab that sleeps or a network that flaps produces a new connection and a new identity. The
+consumer that wants continuity across that builds it on §6: the handshake is visible, so a returning
+client presents its own token and the consumer maps it back to its own session object.
+
+The reason the kernel does not own this is that **the cost of resumption concentrates in one place —
+buffering — and it is the one place we have already ruled out.** Resumption without buffering resumes
+*identity, not the stream*: messages sent during the disconnect window are gone, so the consumer
+still has to reconcile state on return. It would therefore buy a session store, an expiry policy, a
+grace window and the question of who may claim a session, in exchange for only part of the work it
+was meant to remove. Buffering the gap is what would make it whole, and that is the on-heap queue
+ADR-043 obligation 4 forbids — unbounded, on a connection held for the length of an editing session.
+
+This is also the house pattern rather than a new one. ADR-013 gives durable saga state a *seam*
+(`FlowSnapshotStore`) and leaves the store to the application, explicitly rejecting a coordinator
+process; a kernel-owned session store would be that coordinator under another name. And LSP and
+Studio want different continuity semantics — an editor reconnecting to a language server is not the
+same event as a second browser tab attaching to a model — so one kernel-owned policy would be a
+compromise for both rather than a fit for either.
 
 ### 5. A configurable maximum message size, defaulted from a measurement
 
@@ -86,7 +106,41 @@ exceeds is a limit that gets raised in a hurry by whoever hits it first, which i
 exists to prevent: every operational limit carries a configuration path, and the default is chosen,
 not inherited.
 
-### 6. Backpressure parks the virtual thread — never an on-heap queue
+### 6. The handshake is visible, refusable, and refuses by default
+
+The handler receives a handshake callback carrying the request as an `HttpRequest` and returns either
+acceptance — optionally naming the negotiated subprotocol — or refusal with an `HttpStatus`.
+
+**Reused rather than minted.** A WebSocket handshake *is* an HTTP GET: `HttpRequest` already carries
+the headers, path and authority a consumer needs, it is a `stable` carrier, and a refusal is an HTTP
+response, so the status comes from the same set. The wart is stated rather than hidden: `body` is
+meaningless for a handshake and will be null. A parallel carrier duplicating headers and path to
+avoid one null component would be the worse trade.
+
+**Why this is not optional for a browser client.** A WebSocket handshake is not subject to CORS, so a
+server that ignores `Origin` is open to cross-site WebSocket hijacking — any page the user visits can
+open a connection that carries their cookies. LSP over a local socket never meets this; Studio does,
+on every page its users have open. A browser also cannot set request headers on a WebSocket, so the
+only channels a consumer has for authenticating are `Origin`, cookies, `Sec-WebSocket-Protocol` and
+the query string — all of which are in the request and none of which are reachable without this
+callback.
+
+**The default decides the failure mode, so the default refuses.** `WebSocketConfig` carries an origin
+allowlist and the engine rejects an unlisted origin before the callback runs; the callback can widen
+or narrow from there. The alternative — a callback defaulting to acceptance — means a consumer who
+never writes one is open, and the cost of forgetting lands on their users rather than on their build.
+Inverted this way, forgetting produces a refusal somebody notices immediately.
+
+Fail-closed-by-default is this kernel's existing idiom, not a new posture for this SPI:
+`SecurityInterceptor` drops an unauthenticated request with no anonymous fallback, a blob store
+terminally denies a context with no isolation key, and a stream closes fail-closed on token expiry
+(ADR-012 §5).
+
+This callback is also where §4's session identity is established and the isolation key bound, which
+is why the two questions resolve together: consumer-side resumption is only possible because the
+handshake is visible.
+
+### 7. Backpressure parks the virtual thread — never an on-heap queue
 
 ADR-043 obligation 4, verbatim, extended to the duplex direction: when the egress window is full,
 `send()` blocks the calling virtual thread until credit is available. A queue would convert
@@ -96,7 +150,7 @@ with a timer on it.
 As in ADR-043, a backpressure *timeout* is deliberately undefined here. A park-deadline is a policy
 decision, not part of this contract.
 
-### 7. Close codes are surfaced
+### 8. Close codes are surfaced
 
 RFC 6455 close codes reach the handler and can be sent by it. The driving case is specific: the
 consumer needs an exit without a prior shutdown to be reportable as a protocol error, the way a
@@ -107,14 +161,14 @@ different operator responses.
 Errors extend the existing `EX-HTTP-` family rather than minting a new one, contiguous with the
 streaming and request-decode faults that already live at `EX-HTTP-4007…4013`.
 
-### 8. Placement across the Wall
+### 9. Placement across the Wall
 
 SPI carries the contracts — provider, engine, exchange, session, config — and no wire detail. The
 RFC 6455 frame codec lives in **Core**, next to the HTTP/1 codec that is already there, because a
 frame codec is driver-agnostic parsing. The **Community** binding supplies the transport and the
 handshake over the existing TCP carrier.
 
-### 9. It ships `preview` at v0.12, and that is a decision
+### 10. It ships `preview` at v0.12, and that is a decision
 
 The merge gate is a TCK and a binding. **A contract test proves a shape is honoured, not that it
 survives.** A duplex, long-lived, per-connection protocol is precisely where those diverge: the TCK
@@ -131,6 +185,24 @@ consumers of a `preview` surface for at least one release. That is the situation
 capabilities, and it is worse here only in that the consumers are ours — which also makes any
 migration ours to absorb rather than a customer's.
 
+### 11. Configuration, not contract: TLS, keepalive, and what is left additive
+
+Three items the consumers need that do not shape the handler surface, so they are settled as
+configuration and can move without a contract change:
+
+- **TLS.** A browser on `https://` cannot open `ws://`, so `wss://` has to work. `HttpConfig` carries
+  no TLS flag — termination lives in the crypto subsystem — so `WebSocketConfig` needs the same seam
+  rather than inheriting one that does not exist. Whether a deployment terminates in the kernel or at
+  a proxy in front is the deployment's call; the config has to admit both.
+- **Keepalive is the kernel's job, not the handler's.** Intermediaries drop idle connections, commonly
+  around a minute, and a handler that must remember to ping is a handler that forgets. The engine
+  sends pings on a configurable interval; `idleTimeoutMillis` follows the shape `HttpConfig` already
+  established rather than inventing a second spelling.
+- **`permessage-deflate` is deferred, not rejected.** It is negotiated at the handshake and does not
+  touch the handler surface, so it is additive later. Worth measuring rather than assuming: the
+  payload argument that set §5's limit — `domainDescribe` returning a full projection — weighs
+  differently over the internet to a browser than it did over a local socket.
+
 ## Consequences
 
 - The platform gets an embeddable duplex endpoint without a kernel boot, which is the requirement
@@ -143,6 +215,24 @@ migration ours to absorb rather than a customer's.
 - `preview` for at least one release, with named promotion criteria rather than a milestone.
 
 ## Alternatives Considered
+
+**A kernel-owned resumable session.** Rejected in §4: the cost concentrates in buffering the
+disconnect window, which is the on-heap queue obligation 4 forbids, and resumption without it
+resumes identity rather than the stream — so the consumer reconciles anyway and the session store
+buys only part of the work it was meant to remove.
+
+**A handshake with no callback — an origin allowlist and nothing more.** Rejected: it solves the
+cross-site half and leaves the rest. A token is per-request, not per-configuration, so a
+config-only surface cannot authenticate, cannot negotiate a subprotocol, and cannot let the consumer
+recognise a returning client — which would make §4's consumer-side resumption impossible.
+
+**A callback that accepts by default.** Rejected on the failure mode rather than the mechanism. It
+is the same callback; the difference is who pays when somebody forgets it, and with an
+accepting default that is the consumer's users rather than their build.
+
+**A purpose-built handshake carrier.** Rejected as duplication: `HttpRequest` already carries
+headers, path and authority, and a WebSocket handshake is an HTTP GET. One meaningless `body`
+component is a smaller cost than a parallel carrier that has to be kept in step with it.
 
 **Upgrade on the existing HTTP stream seam.** Rejected on requirement 1: it makes a socket cost a
 kernel boot and an HTTP router for a protocol that stops being HTTP after the handshake.
@@ -162,6 +252,11 @@ connection turns a bounded-looking queue into an unbounded one.
 - `AbstractWebSocketExchangeTck` pins the contract: handshake, text round-trip, fragmented message
   reassembly, oversize message refused with the configured limit, binary frame refused, close code
   round-trip, disconnect surfacing on `send`.
+- The handshake contract is pinned in both directions, because §6's value is in the refusal: an
+  unlisted origin is refused **with no callback written**, a callback may refuse with a status the
+  client receives, a callback may accept and name a subprotocol, and the session identity established
+  at handshake is the one the exchange reports. A test that only proves acceptance would pass against
+  an engine that accepts everything.
 - A Community binding test drives it over a real loopback socket.
 - **The TCK is explicitly not the promotion gate.** The benchmark campaign named in §9 is, and until
   it exists the matrix row reads `preview`.
