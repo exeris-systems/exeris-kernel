@@ -33,13 +33,16 @@ import java.util.Optional;
  */
 final class CommunityWebSocketUpgrade {
 
-    /** RFC 6455 §4.2.2: the GUID the key is concatenated with before hashing. */
+    /** RFC 6455 §4.2.2 step 5.4: the GUID the key is concatenated with before hashing. */
     private static final String ACCEPT_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
     private static final int SUPPORTED_VERSION = 13;
 
     private static final String CRLF = "\r\n";
 
+    // One constant for both uses, because they are the same token rather than two that happen to
+    // match: RFC 9110 §7.6.1 defines `Connection` as a list of HEADER FIELD NAMES, so `Connection:
+    // Upgrade` literally names the `Upgrade` header this also reads.
     private static final String UPGRADE_TOKEN = "Upgrade";
 
     private CommunityWebSocketUpgrade() {
@@ -117,7 +120,7 @@ final class CommunityWebSocketUpgrade {
     private static boolean isUpgradeRequest(HttpRequest request) {
         // Both header values are token-based and case-insensitive per RFC 9110; Connection is a
         // comma-separated LIST, so a browser sending "keep-alive, Upgrade" must still match.
-        boolean upgrade = request.firstHeader("Upgrade")
+        boolean upgrade = request.firstHeader(UPGRADE_TOKEN)
                 .map(value -> "websocket".equalsIgnoreCase(value.trim()))
                 .orElse(false);
         boolean connection = request.firstHeader("Connection")
@@ -173,9 +176,14 @@ final class CommunityWebSocketUpgrade {
 
     private static String acceptToken(String key) {
         try {
-            // SHA-1 here is RFC 6455 §4.2.2 and is not a security control: the token proves the
-            // server understood the handshake, not that anyone is who they say. Substituting a
-            // stronger digest would simply fail every conforming client.
+            // SHA-1 here is mandated by RFC 6455 §4.2.2 STEP 5.4 -- the numbered steps 1-4 of that
+            // section never mention it, which makes a bare "§4.2.2" citation easy to read as wrong.
+            // Step 5.4 is explicit: concatenate /key/ with the GUID above, "taking the SHA-1 hash of
+            // this concatenated value" and base64-encoding the result.
+            //
+            // It is not a security control: the token proves the server understood the handshake,
+            // not that anyone is who they say. Substituting a stronger digest would simply fail
+            // every conforming client.
             @SuppressWarnings("java:S4790") // see the paragraph above: RFC-mandated, not a security control
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
             byte[] hashed = digest.digest((key.trim() + ACCEPT_GUID)

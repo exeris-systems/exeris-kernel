@@ -99,10 +99,11 @@ final class CommunityWebSocketUpgradeRequest {
     }
 
     private static long findHeaderStart(MemorySegment segment, int length) {
-        // `i + 1L` rather than `i + 1`: the comparison is against an int length so the addition
-        // cannot actually overflow here, but writing the widening explicitly keeps the analyser and
-        // the next reader from having to re-derive that.
-        for (int i = 0; i + 1L < length; i++) {
+        // Long throughout: the method returns a long offset and MemorySegment indexes in longs, so
+        // computing in int and widening at the return was the wrong way round even where the values
+        // cannot overflow. Doing the arithmetic in the type the result is used at removes the
+        // question instead of answering it in a comment.
+        for (long i = 0; i + 1 < length; i++) {
             if (segment.get(ValueLayout.JAVA_BYTE, i) == '\r'
                     && segment.get(ValueLayout.JAVA_BYTE, i + 1) == '\n') {
                 return i + 2;

@@ -47,6 +47,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   seam. Measured both ways: **one `IllegalArgumentException: Heap segment not allowed` per write
   before, zero after.**
 
+  **CONTRIBUTING.md Rule 2 was wrong, and two green tests had been saying so.** It stated that a
+  second `LoanedBuffer.close()` decrements `refCount` below zero into a use-after-free;
+  `AbstractLoanedBuffer.close()` opens its CAS loop with `if (prev <= 0) { return; }`, the SPI javadoc
+  requires idempotence, and `AbstractLoanedBufferTest` and `CommunityLoanedBufferTest` have both been
+  pinning it all along. The rule now says what the real constraint is — **balance, not repetition**:
+  every `retain()` needs its own `close()`, and the use-after-free comes from forking without
+  retaining first.
+
   A **close-ordering race** surfaced in CI and not locally. The echoed close frame went out before
   the connection stopped being writable, so a peer could observe the close and still get a successful
   `send()`. Ordering corrected; proven by widening the window rather than by repetition — with the

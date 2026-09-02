@@ -157,9 +157,18 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
     /**
      * Releases the connection's off-heap buffers, at most once.
      *
-     * <p>The CAS is not defensive padding: a handler that calls {@code close()} itself and then
-     * falls out of the engine's try-with-resources reaches here twice, and a second
-     * {@code LoanedBuffer.close()} is a double-free rather than a no-op.
+     * <p>A handler that calls {@code close()} itself and then falls out of the engine's
+     * try-with-resources reaches here twice. That is <em>not</em> a double-free: the SPI requires
+     * {@code LoanedBuffer.close()} to be idempotent and {@code AbstractLoanedBuffer} honours it with
+     * an explicit {@code prev <= 0} early return, which {@code AbstractLoanedBufferTest} and
+     * {@code CommunityLoanedBufferTest} have both been pinning all along. An earlier revision of
+     * this comment claimed the opposite, repeating a rule in CONTRIBUTING.md that contradicted the
+     * contract, the code and those two tests at once; that rule is corrected in the same change.
+     *
+     * <p>The CAS stays because this exchange holds buffers from whatever {@code MemoryAllocator} was
+     * bound, and a driver's own implementation is the one thing here that cannot be read from this
+     * repository. Guarding costs one boolean; the failure it would otherwise permit is a
+     * use-after-free.
      */
     private void releaseBuffers() {
         if (released.compareAndSet(false, true)) {
