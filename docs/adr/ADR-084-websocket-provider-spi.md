@@ -133,12 +133,14 @@ Inverted this way, forgetting produces a refusal somebody notices immediately.
 
 Fail-closed-by-default is this kernel's existing idiom, not a new posture for this SPI:
 `SecurityInterceptor` drops an unauthenticated request with no anonymous fallback, a blob store
-terminally denies a context with no isolation key, and a stream closes fail-closed on token expiry
-(ADR-012 §5).
+terminally denies a context with no isolation key, and a stream whose principal expires mid-stream is
+closed fail-closed (`EX-HTTP-4012`).
 
-This callback is also where §4's session identity is established and the isolation key bound, which
-is why the two questions resolve together: consumer-side resumption is only possible because the
-handshake is visible.
+This callback is also where §4's session identity is established, and where the ambient
+`StorageContext` is captured into the session for the connection's lifetime. It is a capture, not a
+second source: §4 remains where the isolation key comes from, and the handshake is only the point at
+which it stops being ambient and becomes the connection's. That is why the two questions resolve
+together — consumer-side resumption is possible only because the handshake is visible.
 
 ### 7. Backpressure parks the virtual thread — never an on-heap queue
 
@@ -258,5 +260,5 @@ connection turns a bounded-looking queue into an unbounded one.
   at handshake is the one the exchange reports. A test that only proves acceptance would pass against
   an engine that accepts everything.
 - A Community binding test drives it over a real loopback socket.
-- **The TCK is explicitly not the promotion gate.** The benchmark campaign named in §9 is, and until
+- **The TCK is explicitly not the promotion gate.** The benchmark campaign named in §10 is, and until
   it exists the matrix row reads `preview`.
