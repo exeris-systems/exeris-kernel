@@ -87,6 +87,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.scheduling` | **preview** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
 | `…spi.storage.blob` | **preview** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
 | `…spi.time` | **preview** | 0.12.0 | ADR-082 | — (no provider contract; `TimeSource` is bound, not discovered) | — |
+| `…spi.websocket`³ | **preview** | 0.12.0 | ADR-084 | `AbstractWebSocketExchangeTck` | — |
 | `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
 
@@ -98,6 +99,14 @@ see is source-level and out-of-tree, in the same way ADR-074's was: an out-of-re
 already declares its own `faultOrigin()` with an incompatible return type would stop compiling.
 Nothing in this repository does — checked, not assumed. The Glass-Box contract itself (error code,
 `rawArgs`, disclosure) is unchanged and remains ADR-less by design.
+
+³ `websocket`: `preview` for a stated reason rather than a default one. The merge gate is a
+TCK and a binding, and **a contract test proves a shape is honoured, not that it survives** — for a
+long-lived duplex protocol that is exactly where the two diverge. Promotion to `stable` is gated on
+benchmark evidence (concurrent connections, frame throughput, backpressure under a slow reader,
+teardown of a dead peer), not on the TCK going green (ADR-084 §10). Its first-party consumers —
+Platform LSP and Studio — are therefore building on a surface declared to move, which is recorded
+rather than left to be discovered.
 
 ¹ `config`: `ConfigProvider` / `KernelProfile` / `Dynamic` are mature 0.5.0 contracts and treated
 as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.0, v0.9 Sprint 5) are
