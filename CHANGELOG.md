@@ -8,6 +8,34 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+- **The RFC 6455 frame codec** (Core, [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9):
+  frame parser, writer and the message assembler over them. Driver-agnostic — it sees a
+  `MemorySegment` and offsets, never a socket — and the payload stays where it is, described by
+  offset and length, so a frame costs one header record and the copy happens once, when a completed
+  message becomes a `String`.
+
+  **Incomplete input returns `null` rather than raising.** A reader holding half a header has read
+  too little, which is the normal state of a stream and not a fault; treating it as one would close
+  connections for being slow. Only a genuine violation raises, and it carries the close code the
+  violation maps to so the caller does not re-derive it.
+
+  Three enforcement decisions are worth stating. **The size limit is checked as fragments arrive**,
+  not on the completed message — otherwise a peer could exhaust memory with a message it never
+  finishes. **UTF-8 is decoded strictly**: RFC 6455 §8.1 requires closing on invalid input, and
+  `new String(bytes, UTF_8)` would substitute U+FFFD and hand the handler something the peer did not
+  send. And **a close frame's reason is truncated on a character boundary**, because cutting
+  mid-sequence would make the close frame itself invalid UTF-8 — a violation committed while
+  reporting one.
+
+  `WebSocketCloseCode` gained **1007** (`INVALID_PAYLOAD_DATA`): writing the codec showed the enum
+  could not express a case the specification mandates.
+
+  Nineteen tests, written against the wire rather than the implementation — every frame is either
+  hand-assembled byte by byte or produced by the writer, so a bug moving both sides together is
+  still caught. Four mutations run against them, all four caught: a mask index that stops cycling
+  (passes for payloads up to four bytes), the size limit checked only on the final fragment, the
+  substituting decoder in place of the strict one, and a close reason cut on a byte boundary.
+
 ### Changed
 
 - **A duplex wire: the WebSocket SPI and its contract tests**
