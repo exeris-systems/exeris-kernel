@@ -155,6 +155,17 @@ jobs:
         # Docs-only, so it needs no build artifact; it sits here rather than in its own job because
         # a second checkout would cost more than the check.
         run: tools/scope-register-check/scope-register-check.sh
+      - name: Error-Code Registry Gate
+        # Keeps KernelErrorCodes and docs/subsystems/exceptions.md in agreement, both directions,
+        # plus the single-source-of-truth rule the registry rests on.
+        #
+        # Nothing connected the two before, and the drift was not marginal: TWENTY of 84 codes had
+        # no doc row, including four whole domains, and two main-source classes stamped an EX- code
+        # as a bare string literal -- one of them a sentinel that was in no registry at all. None of
+        # that failed anything; it was found by chasing a single missing row.
+        #
+        # Docs-and-sources only, so it needs no build artifact -- same reasoning as the gate above.
+        run: tools/error-code-registry-check/error-code-registry-check.sh
 
       - name: Supply-Chain Gate
         # v0.12 Stream B. Two checks, deliberately at different ends of the build.

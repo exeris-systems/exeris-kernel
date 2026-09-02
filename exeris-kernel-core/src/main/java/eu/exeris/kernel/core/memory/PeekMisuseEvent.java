@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.memory;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
@@ -54,7 +55,7 @@ import jdk.jfr.StackTrace;
         }
         PeekMisuseEvent evt = new PeekMisuseEvent();
         if (evt.isEnabled()) {
-            evt.errorCode = "EX-MEM-1003";
+            evt.errorCode = KernelErrorCodes.EX_MEM_1003;
             evt.callerMethod = method;
             evt.commit();
         }

@@ -144,6 +144,7 @@ formatting. It implements:
 | `EX-PERS-5005` | Persistence Transport Failure  | `[0] String transportName, [1] long fd, [2] int errno`               |
 | `EX-PERS-5006` | Interceptor Init Failure       | `[0] String interceptorClass, [1] String isolationKey`               |
 | `EX-PERS-5007` | No Provider on Classpath       | `[0] String message`                                                 |
+| `EX-PERS-5008` | Unsupported Column Type (ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
 
 ### Graph (`EX-GRPH-`)
 
@@ -166,6 +167,7 @@ formatting. It implements:
 | `EX-EVENT-6005` | Outbox Dead-Letter Queue | `rawArgs[0]: String eventType, rawArgs[1]: String reason, rawArgs[2]: int retryCount` |
 | `EX-EVENT-6006` | Projection Handler Threw | `rawArgs[0]: String projectionName, rawArgs[1]: int eventTypeOrdinal` |
 | `EX-EVENT-6007` | Event-Loop VT Uncaught Exception | `rawArgs[0]: String loopName, rawArgs[1]: String exceptionType` |
+| `EX-EVENT-6008` | Append Version Conflict (ADR-049) | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion` |
 
 ### Flow / Saga (`EX-FLOW-`)
 
@@ -183,6 +185,56 @@ formatting. It implements:
 | `EX-CFG-1001` | Missing Property         | `[0] String missingKey, [1] String providerName`                              |
 | `EX-CFG-1002` | Type Mismatch            | `[0] String key, [1] String expectedType, [2] String actualValue` ⚠️ redact  |
 | `EX-CFG-1003` | Hot-Reload Read Error    | `[0] String filename, [1] String reason`                                      |
+| `EX-CFG-1004` | Immutable Key Reload Refused | `[0] String filename, [1] String key`                                     |
+
+### Blob Storage (`EX-BLOB-`)
+
+| Code            | Description                          | Glass-Box Payload                                                              |
+|:----------------|:-------------------------------------|:--------------------------------------------------------------------------------|
+| `EX-BLOB-8001` | Object Not Found                     | `[0] String providerName, [1] String container`                                 |
+| `EX-BLOB-8002` | No Isolation Key (ADR-056 §5)        | `[0] String providerName, [1] String denyReason`                                |
+| `EX-BLOB-8003` | Transfer I/O Failure                 | `[0] String providerName, [1] String container`                                 |
+| `EX-BLOB-8004` | Declared/Actual Length Mismatch      | `[0] String providerName, [1] long declaredLength, [2] long actualLength`       |
+| `EX-BLOB-8005` | Single-Object Ceiling Exceeded       | `[0] String providerName, [1] long declaredBytes, [2] long ceilingBytes`        |
+| `EX-BLOB-8006` | Remote Store Refused                 | `[0] String providerName, [1] String container, [2] int statusCode`             |
+| `EX-BLOB-8007` | No Provider on Classpath             | `[0] String component`                                                          |
+| `EX-BLOB-8008` | Provider Id Does Not Resolve         | `[0] String configKey, [1] String configuredId, [2] String availableIds`        |
+| `EX-BLOB-8009` | Required Configuration Key Unset     | `[0] String configKey, [1] String expected`                                     |
+
+### Job Scheduling (`EX-JOB-`)
+
+`9001` and `9003` are **JFR-only**: a dispatched job runs on its own thread and has no caller to
+throw to, so both are recorded on `eu.exeris.kernel.scheduling.JobFailure` rather than carried on an
+exception, and neither has a `rawArgs` layout.
+
+| Code           | Description                                | Glass-Box Payload                              |
+|:---------------|:-------------------------------------------|:------------------------------------------------|
+| `EX-JOB-9001` | Dispatch Refused — No Identity (ADR-057 §5) | *(JFR-only — no rawArgs)*                      |
+| `EX-JOB-9002` | Submission to a Closed Scheduler            | `[0] String schedulerName, [1] String jobName` |
+| `EX-JOB-9003` | Job Body Threw                              | *(JFR-only — no rawArgs)*                      |
+| `EX-JOB-9004` | No Provider on Classpath                    | `[0] String component`                         |
+
+### Diagnostics audit (`EX-DIAG-`, ADR-033)
+
+**Not exceptions.** Each out-of-process `KernelDiagnostics` call emits one INFO-level JFR event so
+operators can audit who introspected the kernel; the codes exist to name those events in the same
+namespace as failures. Cold path, so emission allocation is acceptable (ADR-033 Obligation 2).
+
+| Code            | Description                    | Glass-Box Payload |
+|:----------------|:-------------------------------|:--------------------|
+| `EX-DIAG-1001` | `listProviders()` invoked      | *(no rawArgs)*     |
+| `EX-DIAG-1003` | `getBootstrapDag()` invoked    | *(no rawArgs)*     |
+| `EX-DIAG-1004` | `describeSubsystem()` invoked  | *(no rawArgs)*     |
+| `EX-DIAG-1005` | `getJvmErgonomics()` invoked   | *(no rawArgs)*     |
+
+`EX-DIAG-1002` is a **reserved gap**, not an omission: the `listCapabilities()` method it audited was
+removed pre-1.0 and the number was left rather than renumbered, so `1003..1005` stay stable.
+
+### Unclassified (`EX-UNK-`)
+
+| Code           | Description                                | Glass-Box Payload |
+|:---------------|:-------------------------------------------|:--------------------|
+| `EX-UNK-0000` | Telemetry record carried no code of its own | *(no rawArgs)*     |
 
 ---
 
