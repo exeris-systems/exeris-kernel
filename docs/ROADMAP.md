@@ -2363,12 +2363,16 @@ are.
 ### Diagnostics: The Provider Inventory Reports Nine Of Fifteen Provider SPIs (surfaced 2026-08-27)
 
 **Gap:** `CommunityProviderInventory.discover` makes nine `discover(...)` calls — memory, crypto,
-telemetry, persistence, events, flow, transport, graph, security. Community registers **fifteen**
-provider SPIs in `META-INF/services`. Diffing the two mechanically:
+telemetry, persistence, events, flow, transport, graph, security. Community registers **sixteen**
+provider SPIs in `META-INF/services` — fifteen when this entry was written, plus `WebSocketProvider`
+since ADR-084 landed in the same milestone, which is the hand-maintained list falling behind exactly
+as the paragraph below predicts, once, in one milestone, in the direction predicted. Diffing the two
+mechanically:
 
 | Registered but never swept | Kind |
 |---|---|
 | `HttpProvider` | ordinary driver, and one of the ten bootable subsystems |
+| `WebSocketProvider` | ordinary driver (v0.12, ADR-084); embeddable rather than bootstrapped |
 | `JobSchedulerProvider` | ordinary driver (v0.11, ADR-057) |
 | `BlobStorageProvider` | ordinary driver (v0.11, ADR-056) |
 | `SubsystemProvider`, `ConfigProvider`, `KernelDiagnosticsProvider` | bootstrap/meta — plausibly deliberate, but nothing says so |
@@ -2493,6 +2497,10 @@ path's churn stays unmeasured.
 claims matter**: graph.md's churn figures are a public performance claim, nothing in the repository
 measured them until now, and what the measurement says is that the published number holds about five
 times in seven.
+
+**Status (v0.12): the instrument is DELIVERED; the claims question it exposed is OPEN.** The corrected `GraphChurnRatioTck` shipped in v0.12 — an exact per-thread allocated-bytes delta for the numerator, a denominator derived from the iterations actually run and the result set actually returned, and a 500-id fan-out so the fixed per-round-trip cost amortises. Everything between the third defect and this line is the finding rather than the plan.
+
+What remains is not instrument work: the regime split (the slow regime breaches the published `< 20x` in 4 of 14 observed processes), the cold-traversal transient the published figure does not scope itself against, `EX-GRPH-5005` still having no emission site, and the PGQ/JDBC path having no churn binding at all. The TCK's 23x Community bound is deliberately a **regression** bound and not the published contract; deciding which number is honest to publish is the open work.
 
 ---
 
@@ -2629,6 +2637,12 @@ consumers of a `preview` surface for at least one release. That is the situation
 capabilities, and it is worse here only in that the consumers are ours — which also makes the
 migration ours to absorb rather than a customer's.
 
+**Status (v0.12): DELIVERED — the full package, and it shipped `preview`.** [ADR-084](adr/ADR-084-websocket-provider-spi.md) ACCEPTED; `eu.exeris.kernel.spi.websocket` with `AbstractWebSocketExchangeTck`; the RFC 6455 frame codec (parser, writer, message assembler) in Core; and a Community binding — provider, embeddable server engine, HTTP/1.1 Upgrade handshake with an origin pre-filter, and a per-connection exchange running one virtual thread per connection with no queue in either direction. `docs/stability-matrix.md` carries the `…spi.websocket` row at `preview` since 0.12.0.
+
+**Three limits the delivery does not hide**, all named in ADR-084 and now in `docs/support-matrix.md` and `docs/subsystems/transport.md` so an operator meets them before deploying: the engine is **embeddable, not bootstrapped** — `KernelBootstrap` starts no WebSocket subsystem; `keepAliveIntervalMillis` is validated by `WebSocketConfig` and read by nothing, and the read path parks without a timeout, so a server-originated ping has nothing to ride; and the handshake is **HTTP/1.1 Upgrade only** — Extended CONNECT (RFC 8441) appears nowhere in main sources, so an h2-to-kernel proxy has no upgrade path.
+
+**What the milestone still owes it:** ADR-084 §10 gates promotion out of `preview` on benchmark evidence that lives in `exeris-benchmarks` and does not exist yet, and the provider is registered in `META-INF/services` while `CommunityProviderInventory` does not sweep it — so `listProviders` reports the kernel as having no WebSocket capability (see *Diagnostics: The Provider Inventory* above, whose denominator this delivery moved).
+
 ---
 
 ### Runtime: `CacheProvider` SPI — RFC Track Only
@@ -2706,7 +2720,9 @@ The consumer this blocks is `exeris-tooling`. A generated policy derived from ro
 
 **1.0 disposition:** 1.0-blocking for the generated-application story — the tooling half of ADR-061 cannot ship without it.
 
-**Status (v0.12): NOT STARTED.**
+**Status (v0.12): DELIVERED.** `RouteRequirement.abstain()` is the sentinel and `HttpRoutePolicy.firstDeclared(policies, whenNoneDeclares)` is the fold; [ADR-061](adr/ADR-061-declarable-http-route-authorization-policy.md) amendment A2 records the change to what "total" means, and `docs/subsystems/http.md` and `security.md` carry the contract. `AbstractHttpRoutePolicyTck` covers the fold outcomes, all-abstain included, resolving to the application's declared unmatched stance.
+
+**Two mutation findings kept, because both are about the test rather than the code.** A fold that never consults its policies reddened three cases only after the ordering case's fallback was changed from `authenticated()` to `permitAll()` — with `authenticated()` there, skipping every policy produced the same denial the winning policy would have, so the suite passed without the fold resolving anything. And removing the enforcer's abstention guard on its own reddens nothing: the switch arm returns the same outcome, so the two sites are redundant by design and the defect has to be mutated at both.
 
 ---
 
@@ -2823,7 +2839,11 @@ is the same: check the side effect, not the exit code.
 
 **1.0 disposition:** not blocking; hygiene.
 
-**Status (v0.12): NOT STARTED.**
+**Status (v0.12): PARTIALLY DELIVERED — and the Resolution above would not have done it.** Re-counted rather than re-quoted: `git ls-remote --heads origin` returns **20**, of which six are permanent (`main`, `preview`, `gh-pages`, `development/0.12.0`, plus `development/0.11.0` and `development/0.7.1`) and three are research branches kept deliberately. The heading keeps its number because 56 was the count on the day it was surfaced.
+
+**The Resolution's rule is unexecutable in this repository, which is worth more than the count.** It says to delete every remote branch whose tip is an ancestor of `main`, `development/0.12.0` or `preview` — and every PR here squash-merges, so a merged branch's tip is **never** an ancestor of its target. `git branch -r --merged origin/development/0.12.0` returns **one** branch out of twenty. Applied literally the rule deletes almost nothing and reports the repository clean, which is the same trap this document already records one section over for counting commits ahead: compare by content or read PR state, never by ancestry.
+
+**The half the entry did anticipate has drifted the other way.** It asks to prune the long-lived local worktrees in the same pass. There are now **49 of them against 20 remote branches**, nearly all clean and sitting on branches whose PRs have merged — so the disagreement between the working tree and the remote is now larger than the remote-side mess the entry was opened about.
 
 ---
 
@@ -3024,6 +3044,8 @@ So the seams — the architecturally risky part — are done. What remains is **
 
 **Merge Gate:** a seeded run reproduces an identical event/transition trace across two executions of the same seed; a fault-injection scenario (e.g. persistence partition mid-saga) is replayable from its seed; the in-memory SPI bindings pass the same Abstract*Tck suites as the real bindings.
 
+**Status (v0.12): NOT STARTED — one prerequisite landed.** The RFC stays DRAFT and the harness is untouched; the total-order-versus-placement question was deliberately left closed. What v0.12 contributed is the first item on this entry's own prerequisite list: the injectable time seam shipped under [ADR-082](adr/ADR-082-kernel-time-source.md) (`TimeSource` in `spi.time`, bootstrap-constructed and `ScopedValue`-threaded), so a simulation has a seam to displace. It is not a completed migration — the Clock-seam entry below names what still reads the platform clock directly.
+
 **1.0 disposition:** **POST-1.0** — the largest long-term moat, but not a GA gate. Cost/benefit has tilted sharply *toward* it now that the seam removed the most expensive leg. Land the **prerequisites** (unified Clock, seeded-RNG discipline, in-memory SPI bindings) opportunistically so the harness is a small later step, not a rewrite.
 
 See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the default line); research `research/loom-continuation-locality` (locality NO_GO is **config-scoped** — Enterprise io_uring + custom-scheduler re-test still open); "Road to 1.0" §"Cross-Cutting: Unified Injectable Clock Seam".
@@ -3086,7 +3108,7 @@ the choreography path, which is its own change.
 
 ### Cross-Cutting: Systemic Flow-Control Contract (subsystems are islands)
 
-**Gap:** Each subsystem has its **own** backpressure — Transport `ResourceArbiter`/`WatermarkManager` + `AdmissionController` net-counter, Persistence admission (`FairnessTracker`, ADR-035), Events `EventQueue` — all confirmed independent. There is **no systemic flow-control contract**: when persistence sheds load, HTTP admission never hears about it, so backpressure does not propagate to where upstream load enters. The only cross-subsystem edge is a transport-local memory→admission wire built inside `NativeTcpCarrier`, never shared. Tellingly, `ResourceArbiter.Context` already enumerates `TRANSPORT_IO` **and** `KERNEL_LOGIC`, but `KERNEL_LOGIC` is wired to nothing — a **latent seam for exactly this**. Under "bounded resource by design + deterministic," end-to-end load propagation + a per-subsystem/per-tenant memory budget is both a consistency fix and a differentiator. (Per-tenant memory budget is also absent — only a per-provider `totalOffHeapBytes` watermark exists.)
+**Gap:** Each subsystem has its **own** backpressure — Transport `ResourceArbiter`/`WatermarkManager` + `AdmissionController` net-counter, Persistence admission (`FairnessTracker`, ADR-035), Events `EventQueue` — all confirmed independent. There is **no systemic flow-control contract**: when persistence sheds load, HTTP admission never hears about it, so backpressure does not propagate to where upstream load enters. The only cross-subsystem edge is a transport-local memory→admission wire built inside `NativeTcpCarrier`, never shared. Tellingly, `ResourceArbiter.Context` already enumerates `TRANSPORT_IO` **and** `KERNEL_LOGIC` — a **latent seam for exactly this**. (This sentence used to end "but `KERNEL_LOGIC` is wired to nothing", and that was false: see Status.) Under "bounded resource by design + deterministic," end-to-end load propagation + a per-subsystem/per-tenant memory budget is both a consistency fix and a differentiator. (Per-tenant memory budget is also absent — only a per-provider `totalOffHeapBytes` watermark exists.)
 
 **Owner:** Memory / Runtime (cross-subsystem).
 
@@ -3095,6 +3117,8 @@ the choreography path, which is its own change.
 **Merge Gate:** RFC accepted with one shape; if implemented, an integration test shows persistence shed → HTTP admission pushback under sustained load; `AbstractAdmissionTck` extended with a cross-subsystem propagation case; constrained-benchmark guard unregressed.
 
 **1.0 disposition:** **POST-1.0** (RFC may open pre-1.0) — the per-subsystem mechanisms already hold; systemic propagation is a differentiator, not a GA blocker.
+
+**Status (v0.12): NOT STARTED, and one clause of the Gap is corrected in place.** `KERNEL_LOGIC` was described here as "wired to nothing". It is wired: `ResourceArbiterPolicy` gives it a **stricter** shed threshold than `TRANSPORT_IO` — it sheds at `CRITICAL` — and `ResourceArbiter`'s own javadoc documents the asymmetry. What is actually absent is any production caller using it as the *cross-subsystem* pressure channel, which is a narrower claim than the entry made and a narrower thing for the work to close. No v0.12 slice was cut; the RFC is unwritten.
 
 ---
 
@@ -3155,7 +3179,7 @@ The sequencing constraint that put this stream early is now discharged: signing 
 
 ### Table-Stakes: SPI Binary-Compatibility Gate (revapi / japicmp in CI)
 
-**Gap:** API stability is asserted only in the manual `docs/stability-matrix.md`; there is **no automated API-diff** (no revapi, japicmp, animal-sniffer, bnd-baseline). With out-of-repo Enterprise bindings depending on the SPI, an accidental binary-incompatible change ships undetected. Low-cost, high-value once 1.0 declares SPI stability.
+**Gap (written 2026-06-22; closed in v0.11 — see Status below, and read the Gap as history):** API stability is asserted only in the manual `docs/stability-matrix.md`; there is **no automated API-diff** (no revapi, japicmp, animal-sniffer, bnd-baseline). With out-of-repo Enterprise bindings depending on the SPI, an accidental binary-incompatible change ships undetected. Low-cost, high-value once 1.0 declares SPI stability.
 
 **Owner:** Build / SPI.
 
@@ -3164,6 +3188,10 @@ The sequencing constraint that put this stream early is now discharged: signing 
 **Merge Gate:** CI fails on an unannotated binary-incompatible SPI change; the gate's baseline is the published 1.0 SPI; the stability matrix is cross-checked against tool output.
 
 **1.0 disposition:** **1.0-BLOCKING** — declaring SPI stability without automated enforcement is a promise you can't keep.
+
+**Status (v0.12): DELIVERED in v0.11 — and this entry has read as an open 1.0 blocker ever since.** `tools/spi-api-diff/spi-api-diff.sh` runs japicmp against the previous release tag and fails on a binary-incompatible change to any surface `docs/stability-matrix.md` declares `stable`; it runs as the `SPI Compatibility Gate` job in `.github/workflows/maven.yml`, `--verify-surfaces` refuses an SPI class carrying no maturity row, and `docs/release/spi-api-history.md` is its generated per-release record. Anchored by [ADR-065](adr/ADR-065-spi-compatibility-gate.md).
+
+**Why the false reading survived, stated because the next such entry will hide the same way.** The gate is a shell tool invoked from the workflow, not a Maven plugin, so the natural check — grepping the reactor's poms for japicmp or revapi — returns nothing and reads as confirmation that the Gap is current. The [1.0 scope register](release/1.0-scope.md) reached the opposite verdict (`delivered`, evidence named) from the same tree in the same week, which is the whole argument for keeping a second index over these dispositions.
 
 ---
 
@@ -3245,6 +3273,8 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **1.0 disposition:** **1.0-RECOMMENDED** (B2B production blocker) — stage-able if 1.0 docs explicitly state "secrets via config + external injection" as the supported 1.0 posture, with the SPI in v0.11.
 
+**Status (v0.12): NOT STARTED — and the disposition above can no longer be satisfied as written.** No `SecretProvider` type exists in SPI, Core or Community; the name appears only in this document and in [RFC-2026-09-02](rfc/RFC-2026-09-02-preview-spi-promotion.md)'s inventory of what 1.0 owes. That is the point rather than the finding: the disposition makes staging conditional on **both** halves — the 1.0 docs declaring the config-plus-external-injection posture **and** the SPI landing in v0.11. The SPI did not land in v0.11 and has not landed in v0.12, so no future work can make that sentence true; only rewriting it can. One of the two has to move — schedule the SPI, or rest the staging on the documented posture alone and say so. Recorded rather than quietly read as satisfied, which is what a conditional nobody re-checks becomes.
+
 ---
 
 ### Table-Stakes: Per-Tenant Rate Limiting / Quota
@@ -3257,7 +3287,9 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **Merge Gate:** `AbstractTenantQuotaTck` covers per-tenant limit enforcement + fairness across tenants under contention; integration test shows one tenant's burst does not shed another's traffic.
 
-**1.0 disposition:** **POST-1.0** (v0.11) — important for the B2B story, not a kernel-correctness GA gate; document the absence explicitly in the 1.0 support matrix.
+**1.0 disposition:** **POST-1.0** — important for the B2B story, not a kernel-correctness GA gate; document the absence explicitly in the 1.0 support matrix. *(This line read "**POST-1.0** (v0.11)" through two milestones in which nothing was scheduled; a version that has passed is not a disposition, so the tag is dropped.)*
+
+**Status (v0.12): NOT STARTED; the cheap half the Resolution asks for is now done.** There is still no token bucket and no per-tenant counter — admission is global, and one tenant's burst sheds against the same counters as every other tenant's. What the disposition itself instructed and nobody had carried out — "document the absence explicitly in the 1.0 support matrix" — is now in `docs/support-matrix.md`, both as a Community-tier limit and as a `post-1.0` row.
 
 ---
 
@@ -3274,6 +3306,10 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 **Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement is a post-1.0 gated track); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate gated track (post-1.0): reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
 
 **1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is a **post-1.0** gated track.
+
+**Status (v0.12): both Actions are discharged; one example in the section is overtaken.** Action 1 — pinning the zero-allocation and per-core throughput SLOs to HotSpot/C2 — is `performance-contract.md` §2.2.1. Action 2 — declaring the 1.0 native-image stance — was outstanding until v0.12 and is now a row in `docs/support-matrix.md`, which is where this document's own 1.0 requirements list asks for it and where silence had been reading as "unknown".
+
+**Overtaken, and stated so the ruling is not read as broken:** the opening paragraph lists `WebSocketProvider` among the new SPIs whose bundling into 1.0 is scope-explosion risk. That one was revised into 1.0 on 2026-09-02 and shipped in the same milestone under [ADR-084](adr/ADR-084-websocket-provider-spi.md) — as a **`preview`** surface, which is the form that leaves the ruling intact: 1.0 is unbreakable on the narrow core, and a `preview` SPI makes no semver promise to be unbreakable about. The stance stands; the example no longer illustrates it.
 
 ### Transport: Connection Cap Refuses Silently (surfaced by load-test triage, 2026-07-31)
 
@@ -3444,6 +3480,8 @@ This is a genuine product-SPI gap rather than a stylistic one. Request/response 
 
 **1.0 disposition:** 1.0-recommended. Flow *is* in the 1.0 core, and "replaces the orchestration layer" is one of the two load-bearing product claims — a flow nobody can wait on weakens it. Sequenced behind the v0.11 flow-versioning and continuity work rather than ahead of it.
 
+**Status (v0.12): NOT STARTED — and no longer blocked.** The sequencing condition above is discharged: the flow-versioning and continuity work it waited on shipped in v0.11 (ADR-062, ADR-064 with amendments A4/A5), so this is ripe rather than deferred. What has not happened is the decision — `docs/rfc/` carries no flow-await document, and `FlowScheduler.schedule` still returns `void`, so there is no completion surface for anything to await on. Carried to v0.13 as a decision-only slice: the RFC is one PR and it gates every shape an implementation could take.
+
 ---
 
 ### Cross-Cutting: Operational Limits With No Configuration Path (surfaced 2026-07-31)
@@ -3586,7 +3624,7 @@ Community 1.0 requires:
 - **supply-chain integrity** — published artifacts carry CycloneDX SBOM + verifiable signature + provenance attestation; a "1.0 GA" on Maven Central cannot ship unsigned (see "Table-Stakes: Supply-Chain Integrity").
 - **automated SPI binary-compatibility gate** — revapi/japicmp baselined at the 1.0 SPI surface, enforcing the stability declaration in CI (see "Table-Stakes: SPI Binary-Compatibility Gate").
 - **a declared native-image / GraalVM stance** in the support matrix (`supported` / `explicitly-not-supported` / `post-1.0`) rather than silence.
-- **a narrowed, deep core** — the new v0.11/v0.12 SPIs (Blob, Job, Cache, WebSocket, ServiceResolver, coordination) are explicitly **post-1.0**; 1.0 is unbreakable on `transport / http / security / persistence / flow / events` (+ `memory`) rather than shallow across fifteen surfaces.
+- **a narrowed, deep core** — the new v0.11/v0.12 SPIs (Blob, Job, Cache, WebSocket, ServiceResolver, coordination) are explicitly **post-1.0** *for the stable core*; three of them (`storage.blob`, `scheduling`, `websocket`) ship as `preview` surfaces, which promise nothing semver-binding and so do not widen what 1.0 must hold; 1.0 is unbreakable on `transport / http / security / persistence / flow / events` (+ `memory`) rather than shallow across fifteen surfaces.
 
 ---
 
