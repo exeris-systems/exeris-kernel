@@ -126,6 +126,22 @@ jobs:
         # exclude — the gate now describes the whole line rather than half of it.
         run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
 
+      - name: Module-Name Gate
+        # Every published jar must carry an Automatic-Module-Name. A jar without one is still
+        # usable on the module path — the JDK derives a name from the FILE NAME — and that derived
+        # name becomes a de-facto contract from the first release a consumer compiles against.
+        # So the failure is silent here and expensive at the far end, which is what makes it a gate
+        # rather than a convention.
+        #
+        # Narrower than it looks, and deliberately so: Maven's own jar plugin already rejects an
+        # EMPTY name, so a module that declares the plugin without setting `exeris.module.name`
+        # fails the build before this step. What this catches is the case Maven cannot see — a new
+        # module that never declares the plugin, and therefore ships a nameless jar with no error.
+        #
+        # Placed in the job that already built the reactor, for the same reason the preview gate is:
+        # it reads the artifacts rather than rebuilding them.
+        run: tools/module-name-check/module-name-check.sh
+
       - name: Supply-Chain Gate
         # v0.12 Stream B. Two checks, deliberately at different ends of the build.
         #

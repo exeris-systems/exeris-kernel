@@ -10,6 +10,29 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **Every published jar names its own JPMS module.** A jar with no `Automatic-Module-Name` is still
+  usable on the module path — the JDK derives a name from the **file name** — and that derived name
+  becomes a de-facto contract from the first release a consumer compiles against, breaking every
+  `requires` clause if it is later changed. Ahead of the first Maven Central release, that is a
+  one-way door left open by a missing manifest line.
+
+  All seven jar-producing modules now carry a name matching their root package
+  (`eu.exeris.kernel.spi`, `.core`, `.community`, `.community.kafka`, `.community.testkit`, `.tck`,
+  `.diagnostics.cli`), and `tools/module-name-check/module-name-check.sh` runs in CI against the
+  built artifacts.
+
+  **This is the cheap half of module support, and the expensive half is not blocked**: a scan for
+  packages split across modules — the constraint that makes a real `module-info.java` hard to add
+  later — found **none**. So naming now costs a manifest line and buys the right to add module
+  descriptors afterwards without renaming anything.
+
+  Two things about the gate were measured rather than assumed. Maven's jar plugin already rejects an
+  *empty* name, so a module declaring the plugin without the property fails the build before the
+  gate runs — which narrows the gate to the case Maven cannot see, a module that never declares the
+  plugin and ships a nameless jar silently. And the shade plugin **preserves** the entry through the
+  diagnostics CLI's shaded artifact, checked on the built jar, so the CLI is covered rather than
+  excluded on a guess about transformers.
+
 - **A kernel exception now says whose fault it is** ([ADR-083](docs/adr/ADR-083-exception-fault-origin.md)).
   An error code says *what* failed; nothing said *who has to change something* — the question a
   protocol adapter must answer before it can pick a status. The kernel stated it in exactly one

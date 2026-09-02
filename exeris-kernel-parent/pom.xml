@@ -93,6 +93,30 @@
                     <artifactId>exec-maven-plugin</artifactId>
                     <version>${exec.maven.plugin.version}</version>
                 </plugin>
+                <!--
+                    Automatic-Module-Name pins the JPMS name of every published library jar.
+                    Without it a consumer on the module path gets a name derived from the FILE NAME,
+                    which becomes a de-facto contract from the first release and cannot be changed
+                    afterwards without breaking every `requires` clause that used it. Declaring it is
+                    the cheap half of module support: it costs a manifest line and buys the right to
+                    add a real module-info later without renaming anything.
+
+                    Set `exeris.module.name` in each library module and declare this plugin there.
+                    A module that declares the plugin without the property emits the unresolved
+                    literal, which `tools/module-name-check/module-name-check.sh` fails on.
+                -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.4.1</version>
+                    <configuration>
+                        <archive>
+                            <manifestEntries>
+                                <Automatic-Module-Name>${exeris.module.name}</Automatic-Module-Name>
+                            </manifestEntries>
+                        </archive>
+                    </configuration>
+                </plugin>
             </plugins>
         </pluginManagement>
         <plugins>

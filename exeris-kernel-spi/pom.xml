@@ -17,6 +17,7 @@
     <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.spi</exeris.module.name>
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the SPI bundle.
             Current measurement: ~36% (records / enums / interface skeletons inflate
@@ -48,4 +49,13 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>

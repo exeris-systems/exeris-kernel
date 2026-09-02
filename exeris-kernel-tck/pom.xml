@@ -19,6 +19,11 @@
     </description>
     <url>https://github.com/exeris-systems/exeris-kernel</url>
 
+
+    <properties>
+        <exeris.module.name>eu.exeris.kernel.tck</exeris.module.name>
+    </properties>
+
     <dependencies>
         <!-- SPI contracts — TCK tests only against interfaces, never implementations -->
         <dependency>

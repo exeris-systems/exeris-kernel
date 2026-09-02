@@ -17,6 +17,11 @@
     <description>Reusable fixtures that boot the real kernel for tests across modules and for downstream consumers.</description>
     <url>https://github.com/exeris-systems/exeris-kernel</url>
 
+
+    <properties>
+        <exeris.module.name>eu.exeris.kernel.community.testkit</exeris.module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>eu.exeris</groupId>
@@ -43,4 +48,13 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>
