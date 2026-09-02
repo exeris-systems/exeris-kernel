@@ -10,6 +10,35 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **The Community WebSocket binding** (`eu.exeris.kernel.community.websocket`,
+  [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9) — provider, embeddable server engine, the
+  HTTP upgrade with its origin pre-filter, and the per-connection exchange. It runs the Core RFC 6455
+  codec over the community TCP carrier, **one virtual thread per connection with no queue in either
+  direction**: `receive()` reads and parses inline, `send()` writes inline under a lock, so
+  backpressure is the socket's and a full egress window parks the thread rather than growing a heap
+  queue (ADR-043 obligation 4, extended to duplex).
+
+  `AbstractWebSocketExchangeTck` is bound over a **real loopback socket**, driven by a client that
+  frames by hand rather than through the kernel codec — two ends sharing a codec also share its
+  mistakes.
+
+  **The TCK gained a case because a mutation survived it.** Skipping the origin pre-filter whenever a
+  handshake callback is set — precisely the "the callback may widen" reading ADR-084 §6 was corrected
+  to forbid — passed all eleven existing tests: the refusal test writes no callback, and every test
+  that writes one uses an allowed origin. The missing case now asserts that an unlisted origin is
+  refused *and that the callback never runs*.
+
+  Two further origin behaviours are pinned at the binding: an **empty allowlist fails closed** rather
+  than admitting everything (the subsystem doc says so, and the first implementation had it
+  inverted), and a request with **no `Origin` is admitted** as a non-browser client, because CSWSH
+  needs a browser's ambient cookies and refusing header-less clients would break every non-browser
+  consumer while stopping nobody.
+
+  **`keepAliveIntervalMillis` is not honoured by this binding** — no server-initiated pings. Dead-peer
+  detection still works, through the carrier's idle reaper; what is missing is holding a NAT path
+  open. Client pings are answered. Recorded in `docs/subsystems/http.md` and the provider's javadoc
+  rather than left for a consumer to discover.
+
 - **The RFC 6455 frame codec** (Core, [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9):
   frame parser, writer and the message assembler over them. Driver-agnostic — it sees a
   `MemorySegment` and offsets, never a socket — and the payload stays where it is, described by
