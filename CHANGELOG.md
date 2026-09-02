@@ -344,6 +344,21 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The documents an operator reads said WebSocket was absent, in five places, after it shipped.**
+  `docs/support-matrix.md` said it three times (the HTTP baseline row, a Community-tier limit, and a
+  *Deferred* row), `docs/operations/reference-deployment.md` listed it as a known limit, and
+  `docs/subsystems/transport.md` carried it as *"Deferred — separately-justified follow-up"*. All
+  five now describe what shipped **and** what did not: the engine is `ServiceLoader`-discoverable but
+  **embeddable rather than bootstrapped**, `keepAliveIntervalMillis` is validated and read by
+  nothing, and the handshake is **HTTP/1.1 Upgrade only** — no Extended CONNECT (RFC 8441). Three
+  other gaps in the same document are closed with it: the native-image stance the 1.0 requirements
+  ask this file for and it did not carry, the per-tenant quota absence its own roadmap entry
+  instructs it to declare, and an OTLP row whose `~v0.12` target has passed unmet. `docs/ROADMAP.md`
+  and `docs/release/1.0-scope.md` get the matching corrections — three roadmap entries stated
+  something untrue (the route-policy abstention and the SPI binary-compatibility gate both read as
+  open after shipping; `KERNEL_LOGIC` was described as wired to nothing), and the scope register
+  carried two `not started` rows for work already in `src/main`.
+
 - **A listener that ran out of file descriptors no longer stays down.** An `IOException` from
   `accept()` — how `EMFILE`/`ENFILE` surface — called `handleAsyncFailure` and returned, clearing
   `running` and closing the server channel, so a process that touched its `ulimit -n` once needed a
