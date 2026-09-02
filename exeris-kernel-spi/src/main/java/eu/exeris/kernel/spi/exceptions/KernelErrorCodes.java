@@ -486,6 +486,27 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4014 = "EX-HTTP-4014";
 
+    /**
+     * A WebSocket peer broke RFC 6455 and the connection is being closed for it — a reserved bit
+     * set, a fragmented control frame, an oversize control payload, a continuation with no message
+     * in progress, a message past the configured ceiling, a binary opcode on a text-only contract,
+     * or a text payload that is not valid UTF-8.
+     *
+     * <p>Caller fault by construction: every case is something the peer put on the wire. The
+     * distinction matters to an operator, who should not page for a malformed client.
+     *
+     * <p>Secret-safe, and deliberately more so than most: the offending frame is exactly the input
+     * most likely to be hostile, so neither the message nor the rawArgs quote any of it. The
+     * diagnostic value is in <em>which rule</em> broke and how the connection was closed, which the
+     * close code carries on its own.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 &ndash; {@code int} closeCode (the RFC 6455 code the connection closes with)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4015 = "EX-HTTP-4015";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------

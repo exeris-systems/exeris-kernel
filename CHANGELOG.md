@@ -8,6 +8,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Added
+
 - **The RFC 6455 frame codec** (Core, [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9):
   frame parser, writer and the message assembler over them. Driver-agnostic — it sees a
   `MemorySegment` and offsets, never a socket — and the payload stays where it is, described by
@@ -29,6 +31,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
   `WebSocketCloseCode` gained **1007** (`INVALID_PAYLOAD_DATA`): writing the codec showed the enum
   could not express a case the specification mandates.
+
+  **`EX-HTTP-4015`** is minted for the violation, and the exception is an `ExerisKernelException`
+  like every other wire-format violation in Core. Core placement decides who can catch it; it does
+  not exempt it from the registry or from `ExceptionDisclosure`, which envelopes only kernel
+  exceptions — a plain `RuntimeException` would have surfaced its detail verbatim in `PROD`. It is
+  `FaultOrigin.CALLER`, because every case is something the peer put on the wire. `EX-HTTP-4014`,
+  minted with the SPI, gained the `exceptions.md` row it was missing.
 
   Nineteen tests, written against the wire rather than the implementation — every frame is either
   hand-assembled byte by byte or produced by the writer, so a bug moving both sides together is

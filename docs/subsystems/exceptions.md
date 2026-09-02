@@ -121,6 +121,8 @@ formatting. It implements:
 | `EX-HTTP-4011` | Stream Emit After Close (ADR-043)            | `rawArgs[0]: long eventsEmitted`        |
 | `EX-HTTP-4012` | Stream Principal Expired Mid-Stream (ADR-012 §5) | `rawArgs[0]: long streamAgeMillis, rawArgs[1]: long eventsEmitted` |
 | `EX-HTTP-4013` | Request Body Decode Failure (caller fault → 400, ADR-036) | `rawArgs[0]: String targetTypeName, rawArgs[1]: long bodySize` |
+| `EX-HTTP-4014` | WebSocket Send After Close (ADR-084 §8)      | `rawArgs[0]: long connectionAgeMillis, rawArgs[1]: long messagesSent, rawArgs[2]: int closeCode` |
+| `EX-HTTP-4015` | WebSocket Protocol Violation (caller fault, RFC 6455) | `rawArgs[0]: int closeCode`             |
 
 ### Security (`EX-SEC-`)
 

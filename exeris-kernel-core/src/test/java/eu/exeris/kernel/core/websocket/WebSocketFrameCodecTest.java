@@ -4,6 +4,11 @@
  */
 package eu.exeris.kernel.core.websocket;
 
+import eu.exeris.kernel.spi.config.KernelProfile;
+import eu.exeris.kernel.spi.exceptions.ExceptionDisclosure;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.websocket.WebSocketCloseCode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -27,6 +32,12 @@ class WebSocketFrameCodecTest {
 
     private static MemorySegment segmentOf(byte... bytes) {
         return MemorySegment.ofArray(bytes);
+    }
+
+    private static String feed(WebSocketMessageAssembler assembler, byte[] frame) {
+        MemorySegment seg = MemorySegment.ofArray(frame);
+        WebSocketFrameHeader header = WebSocketFrameParser.parse(seg, 0, seg.byteSize());
+        return assembler.accept(seg, header);
     }
 
     /** Builds a client-to-server frame: FIN set, masked, with the mask applied to the payload. */
@@ -221,12 +232,6 @@ class WebSocketFrameCodecTest {
     @DisplayName("assembler")
     class Assembler {
 
-        private String feed(WebSocketMessageAssembler assembler, byte[] frame) {
-            MemorySegment seg = MemorySegment.ofArray(frame);
-            WebSocketFrameHeader header = WebSocketFrameParser.parse(seg, 0, seg.byteSize());
-            return assembler.accept(seg, header);
-        }
-
         /** A client data frame, optionally non-final, always masked as RFC 6455 §5.3 requires. */
         private byte[] dataFrame(int opcode, boolean fin, String payload) {
             byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
@@ -324,6 +329,58 @@ class WebSocketFrameCodecTest {
                         .satisfies(t -> assertThat(((WebSocketProtocolException) t).closeCode())
                                 .isEqualTo(WebSocketCloseCode.INVALID_PAYLOAD_DATA));
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("violation reporting")
+    class ViolationReporting {
+
+        @Test
+        @DisplayName("a violation is a kernel exception carrying EX-HTTP-4015 and the close code")
+        void carriesTheRegisteredCode() {
+            // A plain RuntimeException would satisfy every closeCode() assertion above and still
+            // miss the registry, so this asserts the base type rather than only the payload.
+            WebSocketMessageAssembler assembler = new WebSocketMessageAssembler(1024);
+            byte[] binary = maskedFrame(0x2, "x".getBytes(StandardCharsets.UTF_8), 0x11223344);
+
+            assertThatThrownBy(() -> feed(assembler, binary))
+                    .isInstanceOf(ExerisKernelException.class)
+                    .satisfies(t -> {
+                        ExerisKernelException kernel = (ExerisKernelException) t;
+                        assertThat(kernel.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4015);
+                        assertThat(kernel.rawArgs())
+                                .containsExactly(WebSocketCloseCode.UNSUPPORTED_DATA.code());
+                        assertThat(kernel.faultOrigin()).isEqualTo(FaultOrigin.CALLER);
+                    });
+        }
+
+        @Test
+        @DisplayName("PROD disclosure envelopes the violation instead of surfacing its detail")
+        void prodDisclosureIsOpaque() {
+            // The consequence of the base type, stated as a test: ExceptionDisclosure only accepts
+            // an ExerisKernelException, so a plain RuntimeException would have reached an operator
+            // with its message verbatim.
+            WebSocketProtocolException violation = new WebSocketProtocolException(
+                    WebSocketCloseCode.PROTOCOL_ERROR, "continuation frame with no message in progress");
+
+            assertThat(ExceptionDisclosure.discloseMessage(violation, KernelProfile.PROD))
+                    .startsWith(KernelErrorCodes.EX_HTTP_4015)
+                    .doesNotContain("continuation");
+            assertThat(ExceptionDisclosure.discloseRawArgs(violation, KernelProfile.PROD)).isEmpty();
+            assertThat(ExceptionDisclosure.discloseMessage(violation, KernelProfile.DEV))
+                    .isEqualTo("continuation frame with no message in progress");
+        }
+
+        @Test
+        @DisplayName("a ceiling larger than a byte[] is refused at construction, not wrapped at use")
+        void oversizeCeilingRefused() {
+            // Accepting it would narrow to a negative int on the first frame past 2 GiB, skip the
+            // grow entirely and fail inside the copy — a config error reported as an index fault.
+            assertThatThrownBy(() -> new WebSocketMessageAssembler((long) Integer.MAX_VALUE + 1))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("byte[]");
+            assertThat(new WebSocketMessageAssembler(Integer.MAX_VALUE)).isNotNull();
         }
     }
 }

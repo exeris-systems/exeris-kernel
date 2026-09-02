@@ -4,6 +4,9 @@
  */
 package eu.exeris.kernel.core.websocket;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.websocket.WebSocketCloseCode;
 
 /**
@@ -13,22 +16,29 @@ import eu.exeris.kernel.spi.websocket.WebSocketCloseCode;
  * catches it and closes the connection with {@link #closeCode()} — so putting it on the SPI would
  * publish a type nothing outside the codec can throw or usefully catch.
  *
+ * <p>An {@link ExerisKernelException} nonetheless, like every other wire-format violation in Core
+ * ({@code Http1ParseException}, {@code HpackDecodingException}, {@code ContinuationViolationException}).
+ * Core placement decides who can catch it; it does not exempt it from the error-code registry or
+ * from {@code ExceptionDisclosure}, which only envelopes kernel exceptions — a plain
+ * {@code RuntimeException} would surface its detail verbatim in {@code PROD}.
+ *
  * <p>Carries no payload content. A frame that violated the protocol is exactly the input most likely
  * to be hostile, and the diagnostic value is in <em>which rule</em> broke, not in the bytes.
  */
-public final class WebSocketProtocolException extends RuntimeException {
+public final class WebSocketProtocolException extends ExerisKernelException {
 
     private static final long serialVersionUID = 1L;
 
-    private final transient WebSocketCloseCode closeCode;
+    private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4015;
+
+    private final WebSocketCloseCode closeCode;
 
     /**
      * @param closeCode the code to close the connection with; must not be null
      * @param message   a static description of the rule that was broken
      */
     public WebSocketProtocolException(WebSocketCloseCode closeCode, String message) {
-        super(message);
-        this.closeCode = closeCode;
+        this(closeCode, message, null);
     }
 
     /**
@@ -40,7 +50,7 @@ public final class WebSocketProtocolException extends RuntimeException {
      */
     public WebSocketProtocolException(WebSocketCloseCode closeCode, String message,
                                       Throwable cause) {
-        super(message, cause);
+        super(ERROR_CODE, message, cause, closeCode.code());
         this.closeCode = closeCode;
     }
 
@@ -49,5 +59,16 @@ public final class WebSocketProtocolException extends RuntimeException {
      */
     public WebSocketCloseCode closeCode() {
         return closeCode;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Always {@link FaultOrigin#CALLER}: every case this is thrown for is something the peer put
+     * on the wire, so an operator should not be paged for a malformed client.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }

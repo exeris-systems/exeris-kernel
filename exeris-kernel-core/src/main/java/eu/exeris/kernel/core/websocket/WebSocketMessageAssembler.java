@@ -45,12 +45,24 @@ public final class WebSocketMessageAssembler {
     private boolean fragmentInProgress;
 
     /**
-     * @param maxMessageBytes the configured ceiling on a reassembled message; must be positive
+     * @param maxMessageBytes the configured ceiling on a reassembled message; must be positive and
+     *                        must fit a {@code byte[]}
+     * @throws IllegalArgumentException if the ceiling is not positive, or exceeds what this
+     *                                  implementation can hold
      */
     public WebSocketMessageAssembler(long maxMessageBytes) {
         if (maxMessageBytes <= 0) {
             throw new IllegalArgumentException(
                     "maxMessageBytes must be positive: " + maxMessageBytes);
+        }
+        // Rejected at construction rather than narrowed at use: this implementation reassembles on
+        // a byte[], so a larger ceiling is a configuration error, and one whose only other outcome
+        // is a silent int wrap mid-connection. The SPI deliberately does not carry this bound — it
+        // is a limit of the heap-array assembler, not of the contract, and an off-heap
+        // implementation would not share it.
+        if (maxMessageBytes > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException(
+                    "maxMessageBytes exceeds what a byte[] can hold: " + maxMessageBytes);
         }
         this.maxMessageBytes = maxMessageBytes;
         // REPORT on both malformed and unmappable input: the point is to refuse, and the default
