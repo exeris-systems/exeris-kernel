@@ -1,20 +1,40 @@
 name: Release to Maven Central
 
-# Manual only, deliberately. A tag-triggered release is the right shape once one release has gone
-# through by hand — but a Maven Central release version is IMMUTABLE, and a `push: tags` trigger on
-# a project that has never published there turns a mistyped tag into a permanent artifact. The
-# upload itself is also held: `autoPublish=false` in the root POM's `release` profile means this
-# workflow uploads a deployment that a human still has to Publish in the portal, and that can be
-# DROPPED until they do.
+# Two triggers, and the split is about what each one is for.
+#
+# **A tag is the release.** `v0.12.0` on a commit that is on `main` builds, signs, gates, attests
+# and uploads. That makes the release a property of the tag rather than of somebody remembering to
+# fill in a form — and nothing else fires it, because a push to a BRANCH triggers this workflow not
+# at all: a CI fix landing on `main` releases nothing.
+#
+# **The dispatch is the dry run.** With `upload` unchecked it builds, signs and runs every gate
+# while touching nothing remote, from any branch. That is the cheap way to find out whether a change
+# broke the release path *before* a tag depends on it.
+#
+# This header used to argue that a tag trigger was wrong until one release had gone through by hand,
+# because "a `push: tags` trigger on a project that has never published there turns a mistyped tag
+# into a permanent artifact". **That argument did not survive its own next sentence.**
+# `autoPublish=false` in the root POM's `release` profile means this workflow uploads a DEPLOYMENT
+# that a human still has to Publish in the portal, and that can be DROPPED until they do. A mistyped
+# tag costs a dropped deployment, not a permanent artifact. What actually needs guarding is *which
+# commit a tag points at* and *whether its version agrees with the pom* — both checked below rather
+# than assumed.
 on:
+  push:
+    tags:
+      # Deliberately permissive: the strict check is a step, not this filter. The opposite
+      # arrangement already cost this repository once — the SPI gate selected its baseline with
+      # `--list 'v*'`, which sorts `v0.11.0-preview` ABOVE `v0.11.0`, and the fix was to stop
+      # trusting the pattern. A filter decides what runs; it is not a guard.
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 0.12.0) — must not end in -SNAPSHOT'
+        description: 'Version to build for a DRY RUN (e.g. 0.12.0) — must not end in -SNAPSHOT'
         required: true
         type: string
       upload:
-        description: 'Upload to Central. Unchecked = build, sign and gate only, touching nothing remote.'
+        description: 'Upload to Central. Normally leave UNCHECKED — a real release is a tag.'
         required: true
         type: boolean
         default: false
@@ -42,20 +62,58 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Refuse an unreleasable input
+      - name: Resolve the version and refuse an unreleasable one
+        id: rel
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          case "${{ inputs.version }}" in
-            *-SNAPSHOT) echo "Central refuses SNAPSHOT release versions." >&2; exit 1 ;;
-          esac
-          # A dry run is useful from any branch — it touches nothing remote and is the cheapest way
-          # to find out whether a change breaks the release path. An upload is not: releases are cut
-          # from main, and a Central version is spent the moment it is published.
-          if [ "${{ inputs.upload }}" = "true" ] && [ "${{ github.ref }}" != "refs/heads/main" ]; then
-            echo "Upload is allowed from main only; this ref is ${{ github.ref }}." >&2
-            echo "Re-run with upload unchecked to exercise the release path from here." >&2
-            exit 1
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            tag="${GITHUB_REF#refs/tags/}"
+            # The strict half of the permissive trigger filter. A release tag is exactly
+            # vMAJOR.MINOR.PATCH: `v0.12.0-rc1` and the preview line's own tags are not releases and
+            # must not become one by matching a glob.
+            if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::$tag is not a release tag (expected vMAJOR.MINOR.PATCH). Nothing released." >&2
+              exit 1
+            fi
+            version="${tag#v}"
+            upload=true
+          else
+            version="${{ inputs.version }}"
+            upload="${{ inputs.upload }}"
           fi
+
+          case "$version" in
+            *-SNAPSHOT) echo "::error::Central refuses SNAPSHOT release versions." >&2; exit 1 ;;
+          esac
+
+          # Releases are cut from main. On a dispatch that is a branch check; on a tag it cannot be,
+          # because a tag ref is refs/tags/... and says nothing about which branch its commit is on.
+          # Comparing against main answers the question that actually matters, and `behind` and
+          # `identical` are exactly the two answers that mean "yes, this commit is on main".
+          if [ "$upload" = "true" ]; then
+            if [ "${{ github.event_name }}" = "push" ]; then
+              contained="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$GITHUB_SHA" --jq .status)"
+              case "$contained" in
+                identical|behind) echo "tag $tag points at a commit on main ($contained)" ;;
+                *) echo "::error::tag $tag points at a commit that is NOT on main (compare: $contained)." >&2
+                   echo "::error::Delete the tag, cut it from main, tag again. Nothing was uploaded." >&2
+                   exit 1 ;;
+              esac
+            elif [ "${{ github.ref }}" != "refs/heads/main" ]; then
+              echo "::error::Upload from a dispatch is allowed on main only; this ref is ${{ github.ref }}." >&2
+              echo "::error::Re-run with upload unchecked to exercise the release path from here." >&2
+              exit 1
+            fi
+          fi
+
+          {
+            echo "version=$version"
+            echo "upload=$upload"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved: version=$version upload=$upload"
 
       - name: Refuse a ref that cannot build a release
         # This step exists because of where the workflow FILE has to live, not because of anything a
@@ -122,8 +180,26 @@ jobs:
           # here produces a build that looks configured and hangs waiting for a passphrase prompt
           # that will never be answered. It is passed as `env:` on the build steps below.
 
-      - name: Set the release version
-        run: mvn -B versions:set -DnewVersion=${{ inputs.version }} -DgenerateBackupPoms=false
+      - name: Set the release version — or, on a tag, check it
+        # On a dispatch the tree is a -SNAPSHOT development line and setting the version is the
+        # whole point of the dry run. On a tag it is the opposite: the release ritual bumps the poms
+        # on `main` and tags THAT commit, so a tag whose version disagrees with the pom it points at
+        # is a tag on the wrong commit — and `versions:set` would overwrite precisely the evidence
+        # of that. Read rather than resolved through a plugin: no network, no plugin version to
+        # guess, and the root pom carries its own <version>.
+        run: |
+          set -euo pipefail
+          want='${{ steps.rel.outputs.version }}'
+          if [ "${{ github.event_name }}" = "push" ]; then
+            have="$(python3 -c "import xml.etree.ElementTree as E; print(E.parse('pom.xml').getroot().find('{http://maven.apache.org/POM/4.0.0}version').text.strip())")"
+            if [ "$have" != "$want" ]; then
+              echo "::error::tag says $want, the pom at this commit says $have — the tag is on the wrong commit." >&2
+              exit 1
+            fi
+            echo "pom version $have matches the tag"
+          else
+            mvn -B versions:set -DnewVersion="$want" -DgenerateBackupPoms=false
+          fi
 
       - name: Build, sign, and run every gate
         # verify, not deploy: this produces and signs everything Central will receive without
@@ -183,7 +259,7 @@ jobs:
             !exeris-kernel-*/target/*-tests.jar
 
       - name: Upload the deployment to Central
-        if: ${{ inputs.upload }}
+        if: ${{ steps.rel.outputs.upload == 'true' }}
         # autoPublish=false, so this uploads a deployment and stops. Review the validation results
         # in the portal and press Publish there. Until you do, the deployment can be Dropped; after
         # you do, nothing can be changed, ever.
@@ -201,7 +277,7 @@ jobs:
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
 
       - name: Assert the uploaded artifacts are the gated artifacts
-        if: ${{ inputs.upload }}
+        if: ${{ steps.rel.outputs.upload == 'true' }}
         # Closes the gap the step above describes. If a jar, pom or SBOM changed between the gated
         # build and the deploying build, then the readiness gate and the provenance attestation
         # describe something other than what Central received — and the deployment must be DROPPED
@@ -221,7 +297,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-${{ inputs.version }}
+          name: release-${{ steps.rel.outputs.version }}
           path: |
             exeris-kernel-*/target/*.jar
             exeris-kernel-*/target/*.asc
