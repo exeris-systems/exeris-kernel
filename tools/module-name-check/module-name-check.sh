@@ -16,40 +16,31 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# Every jar-producing module. Only the pom-packaging ones (bom, parent) and the build-time
-# ruleset module are outside this, because they publish no jar to name.
+# The module list is DISCOVERED from the reactor's build output, not transcribed here. That is the
+# whole safety property, and it was arrived at by measurement rather than design:
 #
-# Two things about the coverage here were measured rather than assumed. Maven's own jar plugin
-# rejects an EMPTY Automatic-Module-Name ("Invalid automatic module name: ''"), so a module that
-# declares the plugin without setting the property fails the build before this script runs — which
-# narrows the script's job to the case Maven cannot see: a module that never declares the plugin at
-# all, and so ships a jar with no entry and no error. And the shade plugin PRESERVES the entry
-# through `exeris-kernel-diagnostics-cli`'s shaded artifact, checked on the built jar, so the CLI is
-# in the list rather than excluded on a guess about transformers.
-MODULES=(
-  exeris-kernel-spi
-  exeris-kernel-tck
-  exeris-kernel-core
-  exeris-kernel-community
-  exeris-kernel-community-kafka
-  exeris-kernel-community-testkit
-  exeris-kernel-diagnostics-cli
-)
+# An earlier draft claimed that a jar module which does not set `exeris.module.name` fails the
+# build, because maven-jar-plugin rejects an empty automatic module name. That is true only when a
+# module DECLARES the plugin explicitly — which is how the claim came to be believed, since two
+# modules do. With the configuration inherited from the root pluginManagement and no local
+# declaration, the property simply goes unresolved and the manifest entry is OMITTED: the build
+# succeeds and ships a nameless jar. Measured, not reasoned about.
+#
+# So nothing upstream of this script guarantees anything, which makes this script the guarantee —
+# and a guarantee behind a hand-maintained list is only as good as somebody remembering to extend
+# it. Every jar the reactor produces is checked instead.
+#
+# Excluded by name: `-sources`, `-javadoc`, `-tests` (not the published artifact) and `original-*`
+# (the shade plugin's pre-shading copy, left beside the jar it replaced — without this the CLI
+# matches twice and the check could inspect the copy that is not published).
 
 NAME_RE='^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$'
 
 failures=0
 checked=0
 
-for module in "${MODULES[@]}"; do
-  jar="$(find "$ROOT/$module/target" -maxdepth 1 -name '*.jar' \
-        ! -name '*-sources.jar' ! -name '*-javadoc.jar' ! -name '*-tests.jar' 2>/dev/null | head -1)"
-
-  if [ -z "$jar" ]; then
-    echo "FAIL  $module — no jar in target/; run a build first"
-    failures=$((failures + 1))
-    continue
-  fi
+while IFS= read -r jar; do
+  module="$(basename "$(dirname "$(dirname "$jar")")")"
 
   name="$(unzip -p "$jar" META-INF/MANIFEST.MF 2>/dev/null \
           | tr -d '\r' | sed -n 's/^Automatic-Module-Name: *//p' | head -1)"
@@ -65,18 +56,21 @@ for module in "${MODULES[@]}"; do
   else
     echo "ok    $module — $name"
   fi
-done
+done < <(find "$ROOT" -mindepth 3 -maxdepth 3 -path '*/target/*.jar' \
+           ! -name '*-sources.jar' ! -name '*-javadoc.jar' ! -name '*-tests.jar' \
+           ! -name 'original-*.jar' | sort)
 
 if [ "$checked" -eq 0 ]; then
-  echo "FAIL  nothing was checked — a gate that inspects no artifact is not a gate"
+  echo "FAIL  no jars found under */target/ — run a build first; a gate that inspects no artifact"
+  echo "      is not a gate"
   exit 1
 fi
 
 if [ "$failures" -gt 0 ]; then
   echo
-  echo "$failures of ${#MODULES[@]} library jars lack a usable Automatic-Module-Name."
+  echo "$failures of $checked published jars lack a usable Automatic-Module-Name."
   exit 1
 fi
 
 echo
-echo "All ${#MODULES[@]} library jars carry a usable Automatic-Module-Name."
+echo "All $checked published jars carry a usable Automatic-Module-Name."

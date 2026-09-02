@@ -133,10 +133,12 @@ jobs:
         # So the failure is silent here and expensive at the far end, which is what makes it a gate
         # rather than a convention.
         #
-        # Narrower than it looks, and deliberately so: Maven's own jar plugin already rejects an
-        # EMPTY name, so a module that declares the plugin without setting `exeris.module.name`
-        # fails the build before this step. What this catches is the case Maven cannot see — a new
-        # module that never declares the plugin, and therefore ships a nameless jar with no error.
+        # This step IS the guarantee, which was established by measurement rather than assumed: an
+        # unset `exeris.module.name` does not fail the build. With the config inherited from the
+        # root pluginManagement and no local plugin declaration, the property goes unresolved and
+        # the manifest entry is simply omitted — the jar ships nameless and green. So the script
+        # discovers every jar the reactor produced rather than checking a hand-maintained list,
+        # because a new module would otherwise be uncovered by default.
         #
         # Placed in the job that already built the reactor, for the same reason the preview gate is:
         # it reads the artifacts rather than rebuilding them.
