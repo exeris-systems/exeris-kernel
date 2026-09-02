@@ -143,6 +143,18 @@ jobs:
         # Placed in the job that already built the reactor, for the same reason the preview gate is:
         # it reads the artifacts rather than rebuilding them.
         run: tools/module-name-check/module-name-check.sh
+      - name: Scope-Register Gate
+        # Keeps docs/release/1.0-scope.md and docs/ROADMAP.md from drifting. The roadmap owns the
+        # analysis and carries a `**1.0 disposition:**` per item; the register owns the state.
+        # Nothing connected them, which is how an item can be dispositioned and then never tracked.
+        #
+        # Checks set equality of headings, not correctness of a recorded state -- nothing can check
+        # the latter, and the register puts every state behind a named check or the word
+        # `unverified` for exactly that reason.
+        #
+        # Docs-only, so it needs no build artifact; it sits here rather than in its own job because
+        # a second checkout would cost more than the check.
+        run: tools/scope-register-check/scope-register-check.sh
 
       - name: Supply-Chain Gate
         # v0.12 Stream B. Two checks, deliberately at different ends of the build.
