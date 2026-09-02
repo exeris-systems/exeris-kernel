@@ -21,7 +21,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   own, so it inherits nothing from the reactor's shared parent. The manifest wiring therefore lives
   next to the root's plugin version pin rather than in `exeris-kernel-parent`, where a second
   `pluginManagement` entry would have silently overridden that pin.
-  `tools/module-name-check/module-name-check.sh` runs in CI against the built artifacts.
+  `tools/module-name-check/module-name-check.sh` runs in CI against the built artifacts — nine of
+  them, because `exeris-kernel-tck` publishes two and the one that matters is the classifier-`tests`
+  jar: the module has no `src/main`, so its default jar is metadata only, while core, community,
+  community-kafka and the BOM all depend on the `tests` jar to reach the `Abstract*Tck` classes.
 
   **This is the cheap half of module support, and the expensive half is not blocked**: a scan for
   packages split across modules — the constraint that makes a real `module-info.java` hard to add

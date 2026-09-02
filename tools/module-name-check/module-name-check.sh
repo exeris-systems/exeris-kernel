@@ -30,9 +30,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # and a guarantee behind a hand-maintained list is only as good as somebody remembering to extend
 # it. Every jar the reactor produces is checked instead.
 #
-# Excluded by name: `-sources`, `-javadoc`, `-tests` (not the published artifact) and `original-*`
+# Excluded by name: `-sources`, `-javadoc` (not code a consumer compiles against) and `original-*`
 # (the shade plugin's pre-shading copy, left beside the jar it replaced — without this the CLI
 # matches twice and the check could inspect the copy that is not published).
+#
+# `-tests` jars are deliberately NOT excluded, though the obvious reading is that a test jar is not
+# a published artifact. For exeris-kernel-tck it is the ONLY artifact anyone consumes: the module
+# has no src/main, so its default jar holds seven files of metadata and nothing else, while
+# core, community, community-kafka and the BOM all depend on the classifier-`tests` jar to reach the
+# Abstract*Tck classes. Excluding it left the gate validating the jar nobody uses and skipping the
+# one two modules put on their classpath. It passes today only because the manifest config sits in
+# pluginManagement and so applies to both executions — incidental, not verified, which is the exact
+# shape of the assumption this gate exists to refuse. No other module declares a test-jar goal, so
+# admitting them adds no noise.
 
 NAME_RE='^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$'
 
@@ -40,7 +50,10 @@ failures=0
 checked=0
 
 while IFS= read -r jar; do
-  module="$(basename "$(dirname "$(dirname "$jar")")")"
+  # Labelled by jar, not by module: exeris-kernel-tck publishes two (its empty default jar and the
+  # classifier-`tests` one everything actually consumes), and a failure message naming only the
+  # module would not say which.
+  module="$(basename "$jar")"
 
   name="$(unzip -p "$jar" META-INF/MANIFEST.MF 2>/dev/null \
           | tr -d '\r' | sed -n 's/^Automatic-Module-Name: *//p' | head -1)"
@@ -57,7 +70,7 @@ while IFS= read -r jar; do
     echo "ok    $module — $name"
   fi
 done < <(find "$ROOT" -mindepth 3 -maxdepth 3 -path '*/target/*.jar' \
-           ! -name '*-sources.jar' ! -name '*-javadoc.jar' ! -name '*-tests.jar' \
+           ! -name '*-sources.jar' ! -name '*-javadoc.jar' \
            ! -name 'original-*.jar' | sort)
 
 if [ "$checked" -eq 0 ]; then
