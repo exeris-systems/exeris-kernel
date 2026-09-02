@@ -126,8 +126,11 @@ the query string — all of which are in the request and none of which are reach
 callback.
 
 **The default decides the failure mode, so the default refuses.** `WebSocketConfig` carries an origin
-allowlist and the engine rejects an unlisted origin before the callback runs; the callback can widen
-or narrow from there. The alternative — a callback defaulting to acceptance — means a consumer who
+allowlist, the engine rejects an unlisted origin **before** the callback runs, and the callback can
+therefore only **narrow** it. An earlier draft of this section said the callback could "widen or
+narrow", which cannot both be true of a pre-filter; the fail-closed reading is the one worth keeping.
+A consumer that genuinely needs a wider set widens the allowlist — a visible, reviewable act — rather
+than re-opening it inside a callback nobody re-reads. The alternative — a callback defaulting to acceptance — means a consumer who
 never writes one is open, and the cost of forgetting lands on their users rather than on their build.
 Inverted this way, forgetting produces a refusal somebody notices immediately.
 
