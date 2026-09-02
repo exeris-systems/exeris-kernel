@@ -300,10 +300,12 @@ final class CommunityHttpRequestDispatcher {
         // FOUNDATION carrier binding around the boot callback, and the reactor threads are started
         // with Thread.ofPlatform(), which does not inherit a ScopedValue — so kernel code that needs
         // it on a request captures it at construction instead (NativeTcpTransportProvider does
-        // exactly that). Generated application code cannot: HttpRequestDecodingContext mandates an
-        // allocator, and the generated parseBody resolves one from this slot per request. Unbound, it
-        // raised NoSuchElementException inside the handler's try, which the handler reported as
-        // 400 Bad Request — a server-side missing binding blamed on the caller's body.
+        // exactly that). Application code running inside a request cannot, and resolves this slot:
+        // the graph helpers do it on the kernel side, and so does anything building an off-heap body.
+        // Unbound, that surfaced as NoSuchElementException inside the handler's try — which a handler
+        // that classifies by exception type reports as 400, blaming the caller's body for a
+        // server-side omission. The decoding contexts no longer mandate an allocator (0.12), which
+        // removes one such site; the binding stays because the others remain.
         ScopedValue.Carrier carrier = ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator);
         if (box != null) {
             carrier = carrier.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box);

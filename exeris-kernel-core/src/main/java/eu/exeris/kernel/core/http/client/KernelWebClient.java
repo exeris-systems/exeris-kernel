@@ -273,6 +273,13 @@ public final class KernelWebClient {
         return decoded == null ? List.of() : Collections.unmodifiableList(Arrays.asList(decoded));
     }
 
+    // Diagnostics only. getName() renders an array as its JVM encoding ([Lcom.example.Widget;),
+    // which is the shape getList() puts on this path; the canonical name reads as Widget[]. It is
+    // null for an anonymous or local class, so the JVM name remains the fallback.
+    private static String typeName(Class<?> type) {
+        return Objects.requireNonNullElse(type.getCanonicalName(), type.getName());
+    }
+
     // Array.newInstance is the only way to name T[] from a Class<T>; the cast is sound because
     // a zero-length array of T has exactly Class<T[]> as its class.
     @SuppressWarnings("unchecked")
@@ -426,7 +433,7 @@ public final class KernelWebClient {
             }
             if (responseBytes.length == 0) {
                 throw new WebClientException(status, "",
-                        "Empty response body cannot deserialize to " + responseType.getName(), null);
+                        "Empty response body cannot deserialize to " + typeName(responseType), null);
             }
             return decodeSuccessBody(response, body, responseBytes, responseType, status);
         } finally {
@@ -452,7 +459,7 @@ public final class KernelWebClient {
         if (decoder == null) {
             throw new WebClientException(status,
                     new String(responseBytes, StandardCharsets.UTF_8),
-                    "No response body decoder for type " + responseType.getName()
+                    "No response body decoder for type " + typeName(responseType)
                             + " (content-type=" + contentType + ")", null);
         }
         // SPI decoder is intentionally generics-free; cast confined to this single site (ADR-034 §3).
@@ -465,7 +472,7 @@ public final class KernelWebClient {
         } catch (RuntimeException ex) {
             throw new WebClientException(status,
                     new String(responseBytes, StandardCharsets.UTF_8),
-                    "Failed to deserialize response of type " + responseType.getName(), ex);
+                    "Failed to deserialize response of type " + typeName(responseType), ex);
         }
     }
 

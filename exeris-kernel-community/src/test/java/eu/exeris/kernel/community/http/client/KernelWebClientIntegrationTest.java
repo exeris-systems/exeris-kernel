@@ -247,6 +247,21 @@ class KernelWebClientIntegrationTest {
     }
 
     @Test
+    @DisplayName("getList returns an empty list for a literal null JSON body")
+    void getListLiteralNullBody() {
+        // Not the same case as an empty body, which finishAttempt rejects before any decoder runs:
+        // "null" is four bytes on the wire, reaches the decoder, and decodes to null. This is the
+        // only way the decoded == null branch is reachable, and pinning it is what keeps that branch
+        // from reading as dead code to the next person.
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) -> respondWithBytes(exchange, HttpStatus.OK,
+                    "null".getBytes(StandardCharsets.UTF_8), "application/json"));
+
+            assertThat(client.getList("/widgets", Widget.class)).isEmpty();
+        });
+    }
+
+    @Test
     @DisplayName("getList hands back an unmodifiable list")
     void getListIsUnmodifiable() {
         runScopedTest(client -> {
@@ -255,9 +270,9 @@ class KernelWebClientIntegrationTest {
 
             List<Widget> widgets = client.getList("/widgets", Widget.class);
 
-            // Both, and for different reasons: add() would also be refused by a bare
-            // Arrays.asList view, while set() is the one that reaches through it into the
-            // decoded array. Asserting only add() would accept a list that is not immutable.
+            // Both, and for different reasons: a bare Arrays.asList view refuses add() as well,
+            // but honours set() straight into the decoded array. Asserting only add() would
+            // therefore accept a list that is not immutable.
             assertThatThrownBy(() -> widgets.add(new Widget("2", "Sprocket")))
                     .isInstanceOf(UnsupportedOperationException.class);
             assertThatThrownBy(() -> widgets.set(0, new Widget("2", "Sprocket")))
