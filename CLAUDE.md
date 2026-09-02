@@ -21,7 +21,7 @@ Reactor modules (root `pom.xml`) and their import rules:
 |---|---|---|
 | `exeris-kernel-spi` | Contracts + carriers ("The Constitution") | **only `java.*` / `jdk.*`** |
 | `exeris-kernel-core` | Driver-agnostic orchestration, bootstrap; HTTP codec/runtime currently lives here | SPI. **Never** community/enterprise |
-| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI only. **Never** core internals |
+| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI, plus the **published** Core surface it is meant to reuse — `AbstractLoanedBuffer`, the HTTP/1 and RFC 6455 codecs, Core JFR event types (ADR-084 §9 designs the WebSocket binding this way). **Never** Core orchestration or bootstrap internals. This row previously read "SPI only", which the reactor has never matched: the pom declares `exeris-kernel-core` and Community main sources carry ~100 Core imports |
 | `exeris-kernel-community-kafka` | Kafka/Redpanda event/flow bindings | SPI, community |
 | `exeris-kernel-community-testkit` | Shared test fixtures | — |
 | `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) + `ExerisArchitectureTest` (ArchUnit Wall guard, **SPI reach only** — the Core/Community half is `KernelTierBanArchitectureTest` in Community) | SPI |

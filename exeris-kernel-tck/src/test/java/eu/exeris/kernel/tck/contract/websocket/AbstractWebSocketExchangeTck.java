@@ -320,6 +320,35 @@ public abstract class AbstractWebSocketExchangeTck {
         }
 
         @Test
+        @DisplayName("an unlisted origin is refused even when a callback would accept it")
+        void allowlistIsAPreFilterTheCallbackCannotWiden() {
+            // The other half of ADR-084 §6, and the half a binding gets wrong silently. The rule is
+            // not "the allowlist refuses when nobody wrote a callback" -- it is that the allowlist
+            // is a HARD pre-filter and a callback can only narrow it. An engine that consults the
+            // callback first, or that treats a callback's presence as permission to skip the
+            // allowlist, passes every other test in this class: the refusal test writes no callback,
+            // and every test that writes one uses an allowed origin.
+            //
+            // A WebSocket handshake is not subject to CORS, so the failure this catches is a server
+            // any page the victim has visited can open, carrying their cookies.
+            Captured captured = new Captured();
+            AtomicReference<Boolean> callbackRan = new AtomicReference<>(false);
+            WebSocketHandshakeHandler acceptAnything = request -> {
+                callbackRan.set(true);
+                return WebSocketHandshake.accept();
+            };
+            try (WebSocketScenario scenario =
+                         connect(config(), echo(captured), acceptAnything, UNLISTED_ORIGIN)) {
+                assertThat(scenario.handshakeStatus())
+                        .as("the allowlist is a pre-filter; a callback must not be able to widen it")
+                        .isPresent();
+                assertThat(callbackRan.get())
+                        .as("the callback must not even run for an origin the allowlist rejected")
+                        .isFalse();
+            }
+        }
+
+        @Test
         @DisplayName("a callback may refuse, and the client receives its status")
         void callbackRefusalReachesTheClient() {
             Captured captured = new Captured();

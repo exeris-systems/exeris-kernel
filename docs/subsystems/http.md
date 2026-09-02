@@ -299,6 +299,36 @@ and the optional `WebSocketHandshakeHandler` can only **narrow** it; an empty al
 browser origin rather than any. Forgetting to write a callback therefore produces a refusal somebody
 notices, not a hole nobody does.
 
+A request carrying **no `Origin` at all is not a browser**, and the allowlist does not apply to it.
+That is deliberate: the attack being defended against is CSWSH, which works because the victim's own
+browser attaches ambient cookies, and a client that chooses its own headers has none to abuse.
+Refusing header-less clients would break every non-browser consumer — an LSP over a plain socket
+among them — while stopping an attacker who need only omit one header.
+
+**The Community binding (since 0.12.0)** is `eu.exeris.kernel.community.websocket`:
+`CommunityWebSocketProvider`, `CommunityWebSocketServerEngine`, `CommunityWebSocketUpgrade` (the
+HTTP upgrade and the origin pre-filter), `CommunityWebSocketExchange` and a JFR lifecycle event. It
+runs the Core RFC 6455 codec over the community TCP carrier, one virtual thread per connection, and
+binds `AbstractWebSocketExchangeTck` over a real loopback socket.
+
+**Both directions use `LoanedBuffer`, one per connection**, and the reason is mechanical rather than
+stylistic. `TransportStream` documents its segments as off-heap; the community carrier hands them to
+a POSIX `send()` downcall built without `Linker.Option.critical`, which **rejects a heap segment**,
+and that rejection is absorbed by a `catch (Throwable)` that falls back to NIO. A heap buffer here
+therefore does not fail — it throws and is caught on every frame, leaving the fast seam permanently
+unused. One buffer for the connection's life, grown when a frame does not fit, rather than one
+allocation per frame: a duplex connection sends many small messages over a long life.
+
+**One thing it does not do, stated rather than left to be found: `keepAliveIntervalMillis` is not
+honoured — no server-initiated pings are sent.** The function a keepalive usually serves here *is*
+served, by a different mechanism: the carrier receives `idleTimeoutMillis` and the transport's idle
+reaper reclaims a connection that has moved no bytes for that long, so a dead peer is detected and
+released. What is missing is the other use — holding a NAT or proxy path open through a quiet period,
+which only an outbound frame can do. A client that sends its own pings is answered: a `PING` is
+always replied to with a `PONG` carrying the same payload (RFC 6455 §5.5.2). The knob stays on the
+SPI because an enterprise engine with its own timer wheel can honour it; this is one of the gaps the
+benchmark evidence gating promotion (ADR-084 §10) has to close.
+
 **Session identity is per connection and does not survive a reconnect.** A consumer wanting
 continuity builds it on the handshake — a returning client presents its own token. The kernel does
 not own resumption because the cost concentrates in buffering the disconnect window, which is the

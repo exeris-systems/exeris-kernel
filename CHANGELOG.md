@@ -10,6 +10,56 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **The Community WebSocket binding** (`eu.exeris.kernel.community.websocket`,
+  [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9) — provider, embeddable server engine, the
+  HTTP upgrade with its origin pre-filter, and the per-connection exchange. It runs the Core RFC 6455
+  codec over the community TCP carrier, **one virtual thread per connection with no queue in either
+  direction**: `receive()` reads and parses inline, `send()` writes inline under a lock, so
+  backpressure is the socket's and a full egress window parks the thread rather than growing a heap
+  queue (ADR-043 obligation 4, extended to duplex).
+
+  `AbstractWebSocketExchangeTck` is bound over a **real loopback socket**, driven by a client that
+  frames by hand rather than through the kernel codec — two ends sharing a codec also share its
+  mistakes.
+
+  **The TCK gained a case because a mutation survived it.** Skipping the origin pre-filter whenever a
+  handshake callback is set — precisely the "the callback may widen" reading ADR-084 §6 was corrected
+  to forbid — passed all eleven existing tests: the refusal test writes no callback, and every test
+  that writes one uses an allowed origin. The missing case now asserts that an unlisted origin is
+  refused *and that the callback never runs*.
+
+  Two further origin behaviours are pinned at the binding: an **empty allowlist fails closed** rather
+  than admitting everything (the subsystem doc says so, and the first implementation had it
+  inverted), and a request with **no `Origin` is admitted** as a non-browser client, because CSWSH
+  needs a browser's ambient cookies and refusing header-less clients would break every non-browser
+  consumer while stopping nobody.
+
+  **`keepAliveIntervalMillis` is not honoured by this binding** — no server-initiated pings. Dead-peer
+  detection still works, through the carrier's idle reaper; what is missing is holding a NAT path
+  open. Client pings are answered. Recorded in `docs/subsystems/http.md` and the provider's javadoc
+  rather than left for a consumer to discover.
+
+  **Both directions run on `LoanedBuffer`, and review found out why that is not a style point.**
+  `TransportStream` documents its segments as off-heap, and the community carrier passes them
+  straight to a POSIX `send()` downcall built without `Linker.Option.critical` — which rejects a heap
+  segment and has that rejection swallowed by a `catch (Throwable)` that falls back to NIO. A first
+  revision used `MemorySegment.ofArray`, so nothing failed and every frame silently left the fast
+  seam. Measured both ways: **one `IllegalArgumentException: Heap segment not allowed` per write
+  before, zero after.**
+
+  **CONTRIBUTING.md Rule 2 was wrong, and two green tests had been saying so.** It stated that a
+  second `LoanedBuffer.close()` decrements `refCount` below zero into a use-after-free;
+  `AbstractLoanedBuffer.close()` opens its CAS loop with `if (prev <= 0) { return; }`, the SPI javadoc
+  requires idempotence, and `AbstractLoanedBufferTest` and `CommunityLoanedBufferTest` have both been
+  pinning it all along. The rule now says what the real constraint is — **balance, not repetition**:
+  every `retain()` needs its own `close()`, and the use-after-free comes from forking without
+  retaining first.
+
+  A **close-ordering race** surfaced in CI and not locally. The echoed close frame went out before
+  the connection stopped being writable, so a peer could observe the close and still get a successful
+  `send()`. Ordering corrected; proven by widening the window rather than by repetition — with the
+  old order and a 300 ms delay the contract test fails 3 of 3, with the fix it passes 3 of 3.
+
 - **An error-code registry gate** (`tools/error-code-registry-check/`, wired into CI). `KernelErrorCodes`
   is the declared single source of truth for `EX-` codes and `docs/subsystems/exceptions.md` is what an
   operator reads when one turns up in a log. **Nothing connected the two**, and the drift was not

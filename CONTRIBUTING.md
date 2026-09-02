@@ -446,11 +446,27 @@ try (LoanedBuffer buffer = allocator.allocate(AllocationHint.MEDIUM)) {
 }  // close() called automatically — ref-count decremented
 ```
 
-### Rule 2: Double-Free Causes SIGSEGV
+### Rule 2: One Close Per Acquire — Not Per Reference
 
-Calling `LoanedBuffer.close()` twice decrements `refCount` below zero. The allocator may re-issue
-the same slab. The old holder's `MemorySegment` address is now reused — the next `segment().address()`
-call is a use-after-free. On Enterprise tier: `SIGSEGV`. Write all tests with `LeakDetectionMode.PARANOID`.
+**Corrected against the implementation.** This rule previously said that calling
+`LoanedBuffer.close()` twice decrements `refCount` below zero and yields a use-after-free. It does
+not, and it never did: `AbstractLoanedBuffer.close()` opens with `if (prev <= 0) { return; }` inside
+its CAS loop, so a close on an already-released buffer is a no-op. That matches the SPI contract —
+`LoanedBuffer.close()`'s javadoc requires idempotence in so many words — and it is **executable**,
+not merely documented: `AbstractLoanedBufferTest` ("Double close is idempotent — does not release
+twice") and `CommunityLoanedBufferTest` ("double close() after single allocate() does not throw")
+have both been green this whole time. This document was contradicting the contract, the code and two
+passing tests at once.
+
+The real rule is about **balance, not repetition**: every `retain()` needs its own `close()`, because
+`close()` releases only when the count reaches zero. Hand a buffer to a subtask without retaining
+first and the parent's `close()` frees it while the subtask still reads — *that* is the
+use-after-free, and on the Enterprise tier a `SIGSEGV`. Write all tests with
+`LeakDetectionMode.PARANOID`.
+
+An SPI implementation that is *not* idempotent would be violating the contract, so a caller need not
+guard against double close — but a caller that cannot see which implementation it holds may still
+choose to, and should say that is why rather than citing a decrement that does not happen.
 
 ### Rule 3: `retain()` Before Any `fork()`
 
