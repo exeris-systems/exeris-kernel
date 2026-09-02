@@ -547,18 +547,19 @@ idle connections that used to hold shutdown open.
 
 ## WebSocket / SSE — Design Stance
 
-**Server-Sent Events (SSE) is the kernel's first server-push primitive — decided in [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED), implemented in v0.10.** WebSocket remains unsupported and is a separately-justified follow-up. No server-push existed at TRL-3; this was a deliberate scope constraint, now being lifted SSE-first.
+**Server-Sent Events (SSE) is the kernel's first server-push primitive — decided in [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED), implemented in v0.10.** No server-push existed at TRL-3; this was a deliberate scope constraint, lifted SSE-first and then extended to full duplex by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) in v0.12.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
 | **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. The delivered wire framing is a close-delimited HTTP/1.1 response, not chunked transfer as sketched here before it landed; per-event chunked framing and an HTTP/2 `DATA` path are follow-ups. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
-| **WebSocket** | Deferred — separately-justified follow-up (not milestone-pinned) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Decided separately once a bidirectional/low-latency client-streaming use case is proven; may precede 1.0 but is not pinned to a release milestone (see ADR-043 §What is NOT in scope). |
+| **WebSocket** | ✅ Shipped v0.12 — ratified by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) (ACCEPTED) | Full duplex over the RFC 6455 HTTP/1.1 Upgrade handshake, surfaced as the sibling `WebSocketExchange` SPI. `preview` surface; text frames only on the application side; one virtual thread per connection with no queue in either direction, so backpressure is the socket's. **Extended CONNECT (H2, RFC 8441) is not implemented** — the upgrade is HTTP/1.1 only. The engine is embeddable, not bootstrapped. |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
-Full-duplex traffic still has no kernel primitive: until WebSocket is decided, a bidirectional
-use case pairs SSE downstream with ordinary requests upstream, or falls back to the **Events
-subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler handles
-priority-based delivery.
+Full-duplex traffic has a kernel primitive since v0.12, on HTTP/1.1 only. A deployment behind a
+proxy that speaks h2 to the kernel has no upgrade path until Extended CONNECT lands, and for that
+case the pre-0.12 shape still applies: SSE downstream with ordinary requests upstream, or the
+**Events subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler
+handles priority-based delivery.
 
 ---
 
