@@ -215,6 +215,35 @@ rather than leaving each driver to guess how much it may assume.
 - **System-scope (`GLOBAL`) blob storage.** Obligation 5 denies it. Kernel-internal artefacts that need
   durable bytes have no such requirement today, and inventing a system namespace before there is a
   consumer would be target-state invention.
+
+  **What an application should do instead** (added 2026-09-02, after the question arrived from
+  outside). The exclusion above says what is refused and not what to reach for, which leaves every
+  application improvising the same answer. Rows have three scopes and blobs have one, so an
+  application that models a `GLOBAL` entity has nowhere to put that entity's binary content — and the
+  gap is real enough to name, even though the tier stays out.
+
+  Sort the content by **who authors it**, because that decides the answer more reliably than who
+  reads it:
+
+  - **Authored by the developer, identical for every tenant, versioned with the code** — product
+    imagery, icons, fonts, seed documents, catalogue art. This is a *build artefact*, not stored
+    content. It belongs in the deployment artifact or behind a CDN, where it is cached, served
+    without an isolation check that would mean nothing, and — the part that decides it — **rolled
+    back with the code that references it**. Putting it in object storage buys nothing and adds a
+    deployment coupling: the bytes and the code that names them start versioning separately.
+  - **Authored by a tenant, owned by one, read by many** — a published document, a shared export, a
+    public profile image. This is the genuinely uncovered case, and it is the one that would justify
+    a tier. It is not covered today and an application needing it must carry its own store.
+
+  Almost everything that presents as "shared assets" is the first kind. That is why this exclusion
+  has cost so little in practice, and why a tier is gated on the second kind appearing rather than on
+  the argument being made — the shape it would take is already known (widen the read, pin the write
+  to the owner, as the shared-scope row tier does), so the missing input is a consumer, not a design.
+
+  The reason to keep refusing until then is not effort. This subsystem's strongest property is that a
+  cross-tenant reference is **not expressible**; a tier makes it expressible, and every safety
+  argument here becomes conditional on the tier being set correctly. The blast radius is also
+  asymmetric with the row tier: a mis-scoped row leaks a record, a mis-scoped blob leaks a file.
 - **Shared-scope row visibility for blobs (ADR-012 §4b).** The shared-scope tier widens a *read
   predicate over rows*; a blob has no predicate to widen. Cross-tenant blob sharing is a separate
   question needing its own mechanism and its own decision. The two axes compose in the sense that a

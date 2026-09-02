@@ -303,6 +303,15 @@ Multipart upload, the full SigV4 signing grid, vendor drivers beyond S3-compatib
 policy (retention, expiry, versioning), content inspection, and CDN integration. System-scope blobs and
 shared-scope row visibility for blobs are excluded by contract, not merely unimplemented — see ADR-056.
 
+**Where non-tenant binary content goes instead.** Rows have three scopes and blobs have one, so an
+application modelling a `GLOBAL` entity has nowhere here to put that entity's bytes. Sort by who
+authors the content: anything the *developer* authors and ships identically to every tenant —
+imagery, icons, fonts, catalogue art — is a **build artefact**, and belongs in the deployment
+artifact or behind a CDN, where it is rolled back with the code that references it rather than
+versioned separately from it. Content one *tenant* authors and many read is the genuinely uncovered
+case; ADR-056's "What an application should do instead" states why the tier is gated on that case
+appearing rather than on the argument being made.
+
 ## References
 
 - `docs/adr/ADR-056-blob-storage-provider-spi.md` — the decision, its obligations, and its two
