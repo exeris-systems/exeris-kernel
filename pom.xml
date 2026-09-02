@@ -476,15 +476,27 @@
 
                     <!--
                         Central verifies a detached GPG signature on every file it accepts — jar,
-                        sources, javadoc and pom alike. The loopback pinentry argument is what lets
-                        the passphrase arrive from the environment instead of a terminal prompt,
-                        which is the difference between a release job that runs unattended and one
-                        that hangs forever with no output.
+                        sources, javadoc and pom alike.
 
-                        maven-gpg-plugin 3.1.0+ reads MAVEN_GPG_PASSPHRASE from the ENVIRONMENT and
-                        ignores the `gpg.passphrase` that actions/setup-java writes into
-                        settings.xml. The release workflow therefore passes it as `env:` and does
-                        NOT set setup-java's gpg-passphrase input.
+                        No `gpgArguments` here, and the absence is the point. This block used to
+                        pass a loopback pinentry argument, described as "what lets the passphrase
+                        arrive from the environment instead of a terminal prompt". The first dry run
+                        of the release workflow showed, in the plugin's own debug output, that it was
+                        dead in both directions. With a passphrase available the plugin ALREADY
+                        emits the loopback pinentry argument and a passphrase file descriptor of its
+                        own accord, so ours was a duplicate. Without one it appends its own pinentry
+                        mode of `error` AFTER our argument, and gpg honours the last occurrence, so
+                        ours was overridden by the very failure it claimed to prevent.
+
+                        Configuration that is redundant when it works and ignored when it does not
+                        is worse than none, because it reads as the thing that makes signing work.
+
+                        What actually carries the passphrase is the environment variable named by
+                        `passphraseEnvName`, and that name is chosen by actions/setup-java's
+                        `gpg-passphrase` input, not by this POM. See the comment on that input in
+                        .github/workflows/release.yml: the two have to agree, and when they did not,
+                        the failure surfaced as "gpg: signing failed: No pinentry" — a message about
+                        the agent that says nothing about a name mismatch.
                     -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
@@ -499,12 +511,6 @@
                                 </goals>
                             </execution>
                         </executions>
-                        <configuration>
-                            <gpgArguments>
-                                <arg>--pinentry-mode</arg>
-                                <arg>loopback</arg>
-                            </gpgArguments>
-                        </configuration>
                     </plugin>
 
                     <!--
