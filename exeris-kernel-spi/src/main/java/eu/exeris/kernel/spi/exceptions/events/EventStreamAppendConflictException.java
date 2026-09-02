@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.spi.exceptions.events;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.events.EventStreamAppender;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
@@ -95,5 +96,16 @@ public class EventStreamAppendConflictException extends ExerisKernelException {
             String streamType, long expectedVersion, long actualVersion, Throwable cause) {
         return new EventStreamAppendConflictException(KernelErrorCodes.EX_EVENT_6008, MSG_VERSION_CONFLICT, cause,
                 streamType, expectedVersion, actualVersion);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the caller's expected version did not match the stream. Re-reading
+     * and re-appending succeeds; nothing about the deployment is wrong.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }

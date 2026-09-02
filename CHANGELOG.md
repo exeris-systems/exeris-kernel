@@ -10,6 +10,39 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **A kernel exception now says whose fault it is** ([ADR-083](docs/adr/ADR-083-exception-fault-origin.md)).
+  An error code says *what* failed; nothing said *who has to change something* — the question a
+  protocol adapter must answer before it can pick a status. The kernel stated it in exactly one
+  place, ADR-036 §2, and stated it by naming two exception **types**: a body that will not bind is a
+  `400`, a decoder that is not registered is a `5xx`. That is only usable by a caller who already
+  knows both names. `RequestBodyDecodeException` extends `ExerisKernelException`, so it is in neither
+  JDK hierarchy a handler reaches for — `catch (IllegalArgumentException) → 400` never matches it, and
+  the defensive `catch (RuntimeException) → 500` turns every malformed request into a server error.
+
+  `ExerisKernelException.faultOrigin()` returns `FaultOrigin.CALLER` or `FaultOrigin.SYSTEM`, and
+  `FaultOrigin.classify(throwable)` applies the same rule to anything that is not a kernel exception
+  — the case every handler has:
+
+  ```java
+  } catch (RuntimeException failure) {
+      respond(FaultOrigin.classify(failure) == FaultOrigin.CALLER
+              ? HttpStatus.BAD_REQUEST
+              : HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+  ```
+
+  **`SYSTEM` is the default**, which is what the runtime already did — so classifying more subclasses
+  later adds information rather than changing behaviour, and the asymmetry points the safe way: a
+  caller's mistake reported as a server error is a worse message, while a broken deployment reported
+  as the caller's mistake hides an outage behind a `4xx` nobody pages on. Four subclasses declare
+  `CALLER` — malformed request body, failed authentication, insufficient privileges, event-stream
+  append conflict. The other thirty keep the default deliberately: classifying an exception is a
+  judgement about its contract, and thirty judgements in one pass is how a safe default becomes a
+  wrong one.
+
+  The origin is **not** a status code — HTTP picks between `400`, `401`, `403` and `409` from the
+  exception itself, and the SPI stays protocol-blind. Both additions are binary- and
+  source-compatible on the `stable` `…spi.exceptions` surface.
 - **The typed HTTP client can read a collection, and a body decoder no longer needs an allocator it
   does not use.** Two gaps on the client-facing surface, both of which bite code that binds to it
   rather than the kernel itself.

@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.spi.exceptions.http;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
@@ -87,5 +88,17 @@ public final class RequestBodyDecodeException extends ExerisKernelException {
     public static RequestBodyDecodeException malformedBody(String targetTypeName, long bodySize, Throwable cause) {
         return new RequestBodyDecodeException(
                 KernelErrorCodes.EX_HTTP_4013, MSG_MALFORMED, cause, targetTypeName, bodySize);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the offered bytes are not a valid encoding of the target type. The
+     * caller sent them, and sending them again unchanged fails identically. This is the classification
+     * ADR-036 §2 always intended and could previously express only by naming this type.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }

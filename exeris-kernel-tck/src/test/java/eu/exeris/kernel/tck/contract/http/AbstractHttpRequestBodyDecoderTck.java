@@ -5,6 +5,7 @@
 package eu.exeris.kernel.tck.contract.http;
 
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoder;
@@ -389,7 +390,12 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
                 assertThatThrownBy(() -> decoder.decode(body, validTargetType(), context()))
                         .as("a body that will not bind is the caller's fault and must be typed as one")
                         .isInstanceOf(RequestBodyDecodeException.class)
-                        .isNotInstanceOf(IllegalStateException.class);
+                        .isNotInstanceOf(IllegalStateException.class)
+                        // The same classification, readable without knowing the type by name
+                        // (ADR-083). A handler that catches broadly can only be as accurate as what
+                        // it is handed, and matching on two remembered types is what this replaces.
+                        .satisfies(thrown -> assertThat(FaultOrigin.classify(thrown))
+                                .isEqualTo(FaultOrigin.CALLER));
             }
         }
 
