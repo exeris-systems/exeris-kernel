@@ -10,6 +10,32 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **An error-code registry gate** (`tools/error-code-registry-check/`, wired into CI). `KernelErrorCodes`
+  is the declared single source of truth for `EX-` codes and `docs/subsystems/exceptions.md` is what an
+  operator reads when one turns up in a log. **Nothing connected the two**, and the drift was not
+  marginal: **20 of 84 codes had no documentation row**, including four entire domains (`EX-BLOB`,
+  `EX-DIAG`, `EX-JOB`, and the `EX-UNK` sentinel). All 20 rows are backfilled here.
+
+  Two main-source classes also stamped an `EX-` code as a **bare string literal** rather than the
+  constant — a second source of truth that no rename would follow. One of them was worse than a
+  duplicate: the telemetry sink's `"EX-UNK-0000"` fallback was **in no registry at all**, so every
+  record that carried no code of its own was stamped with an identifier a scraper could not look up
+  and this document did not explain. `EX-UNK-0000` is now a registered code with a row, and both
+  literals are gone.
+
+  Four checks, each because the failure it catches is silent: a code with no row is an identifier
+  nothing explains; a row with no code is a promise nothing keeps (the v0.8 sweep found five of
+  those); a constant whose name and value disagree ships the wrong code with a green build; a
+  literal outside the registry survives a rename. **Whether every code has a *thrower* is
+  deliberately not checked** — several are emitted by an orchestrator or a JFR event rather than an
+  exception (`EX-DIAG-*` are audit records, `EX-JOB-9001`/`9003` are JFR-only because a dispatched
+  job has no caller to throw to), so that check would report them all as dead and teach everyone to
+  ignore it.
+
+  Five mutations run against the gate itself, all five caught — including one where the doc's table
+  format changes underneath it, which initially exited non-zero **with no message at all**, because
+  `pipefail` killed the script before the guard written for that case could run.
+
 - **The RFC 6455 frame codec** (Core, [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9):
   frame parser, writer and the message assembler over them. Driver-agnostic — it sees a
   `MemorySegment` and offsets, never a socket — and the payload stays where it is, described by

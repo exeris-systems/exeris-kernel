@@ -1173,6 +1173,21 @@ public final class KernelErrorCodes {
     public static final String EX_JOB_9004 = "EX-JOB-9004";
 
     // -----------------------------------------------------------------------
+    // EX-UNK – no code of its own
+    // -----------------------------------------------------------------------
+
+    /**
+     * Stamped on a telemetry record that carried no error code — the sink needs something for the
+     * code field and inventing a domain-specific one would be a guess.
+     *
+     * <p>Registered rather than left as a sink-local literal because a scraper meets it in the same
+     * position as every other code and has to be able to look it up. It is the one code that means
+     * "the emitter did not say", and an operator seeing it should look at the emitter, not at this
+     * table.
+     */
+    public static final String EX_UNK_0000 = "EX-UNK-0000";
+
+    // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation
     // -----------------------------------------------------------------------
 
