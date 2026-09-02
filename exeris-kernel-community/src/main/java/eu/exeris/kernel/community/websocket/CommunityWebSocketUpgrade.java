@@ -7,6 +7,8 @@ package eu.exeris.kernel.community.websocket;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.spi.websocket.WebSocketConfig;
 import eu.exeris.kernel.spi.websocket.WebSocketHandshake;
@@ -51,23 +53,24 @@ final class CommunityWebSocketUpgrade {
     }
 
     /* default */ static Outcome negotiate(TransportStream stream, WebSocketConfig config,
-                                           WebSocketHandshakeHandler handshakeHandler) {
+                                           WebSocketHandshakeHandler handshakeHandler,
+                                           MemoryAllocator allocator) {
         CommunityWebSocketUpgradeRequest.Parsed parsed =
-                CommunityWebSocketUpgradeRequest.read(stream);
+                CommunityWebSocketUpgradeRequest.read(stream, allocator);
         if (parsed.request() == null) {
             // Nothing usable arrived. A request that never completed within the cap gets NO status:
             // a peer that did not finish a request line is not owed a response, and answering an
             // unparsed stream is how a scanner gets a reply worth measuring. A request that WAS
             // complete but is not a GET is well-formed and gets its 400.
             if (parsed.malformed()) {
-                respondRefusal(stream, HttpStatus.BAD_REQUEST);
+                respondRefusal(stream, HttpStatus.BAD_REQUEST, allocator);
             }
             return Outcome.refused();
         }
         HttpRequest request = parsed.request();
         String key = request.firstHeader("Sec-WebSocket-Key").orElse(null);
         if (!isUpgradeRequest(request) || key == null || key.isBlank()) {
-            respondRefusal(stream, HttpStatus.BAD_REQUEST);
+            respondRefusal(stream, HttpStatus.BAD_REQUEST, allocator);
             return Outcome.refused();
         }
 
@@ -85,15 +88,16 @@ final class CommunityWebSocketUpgrade {
         // attacker who need only omit one header.
         String origin = request.firstHeader("Origin").orElse(null);
         if (origin != null && !config.allowedOrigins().contains(origin)) {
-            respondRefusal(stream, HttpStatus.FORBIDDEN);
+            respondRefusal(stream, HttpStatus.FORBIDDEN, allocator);
             return Outcome.refused();
         }
 
-        return applyCallback(stream, request, key, handshakeHandler);
+        return applyCallback(stream, request, key, handshakeHandler, allocator);
     }
 
     private static Outcome applyCallback(TransportStream stream, HttpRequest request, String key,
-                                         WebSocketHandshakeHandler handshakeHandler) {
+                                         WebSocketHandshakeHandler handshakeHandler,
+                                         MemoryAllocator allocator) {
         WebSocketHandshake decision = handshakeHandler == null
                 ? WebSocketHandshake.accept()
                 : handshakeHandler.decide(request);
@@ -103,10 +107,10 @@ final class CommunityWebSocketUpgrade {
             HttpStatus status = decision == null
                     ? HttpStatus.FORBIDDEN
                     : decision.refusalStatus().orElse(HttpStatus.FORBIDDEN);
-            respondRefusal(stream, status);
+            respondRefusal(stream, status, allocator);
             return Outcome.refused();
         }
-        respondAccept(stream, key, decision.subprotocol().orElse(null));
+        respondAccept(stream, key, decision.subprotocol().orElse(null), allocator);
         return new Outcome(true, decision.subprotocol());
     }
 
@@ -130,7 +134,7 @@ final class CommunityWebSocketUpgrade {
                 .map(value -> {
                     try {
                         return Integer.parseInt(value.trim()) == SUPPORTED_VERSION;
-                    } catch (NumberFormatException notANumber) {
+                    } catch (NumberFormatException _) {
                         return false;
                     }
                 })
@@ -142,27 +146,29 @@ final class CommunityWebSocketUpgrade {
 
 
 
-    private static void respondAccept(TransportStream stream, String key, String subprotocol) {
+    private static void respondAccept(TransportStream stream, String key, String subprotocol,
+                                      MemoryAllocator allocator) {
         StringBuilder response = new StringBuilder(160)
                 .append("HTTP/1.1 101 Switching Protocols" + CRLF
                         + "Upgrade: websocket" + CRLF
-                        + "Connection: Upgrade" + CRLF
+                        + "Connection: " + UPGRADE_TOKEN + CRLF
                         + "Sec-WebSocket-Accept: ")
                 .append(acceptToken(key)).append(CRLF);
         if (subprotocol != null) {
             response.append("Sec-WebSocket-Protocol: ").append(subprotocol).append(CRLF);
         }
         response.append(CRLF);
-        writeAscii(stream, response.toString());
+        writeAscii(stream, response.toString(), allocator);
     }
 
-    private static void respondRefusal(TransportStream stream, HttpStatus status) {
+    private static void respondRefusal(TransportStream stream, HttpStatus status,
+                                       MemoryAllocator allocator) {
         // Connection: close, and no body. A refused upgrade has nothing to say that is not already
         // in the status, and a body on a connection the client expects to become a WebSocket would
         // be read as frames.
         writeAscii(stream, "HTTP/1.1 " + status.code() + " " + status.reasonPhrase() + CRLF
                 + "Connection: close" + CRLF
-                + "Content-Length: 0" + CRLF + CRLF);
+                + "Content-Length: 0" + CRLF + CRLF, allocator);
     }
 
     private static String acceptToken(String key) {
@@ -170,6 +176,7 @@ final class CommunityWebSocketUpgrade {
             // SHA-1 here is RFC 6455 §4.2.2 and is not a security control: the token proves the
             // server understood the handshake, not that anyone is who they say. Substituting a
             // stronger digest would simply fail every conforming client.
+            @SuppressWarnings("java:S4790") // see the paragraph above: RFC-mandated, not a security control
             MessageDigest digest = MessageDigest.getInstance("SHA-1");
             byte[] hashed = digest.digest((key.trim() + ACCEPT_GUID)
                     .getBytes(StandardCharsets.US_ASCII));
@@ -180,8 +187,16 @@ final class CommunityWebSocketUpgrade {
         }
     }
 
-    private static void writeAscii(TransportStream stream, String text) {
+    // Off-heap for the reason recorded on CommunityWebSocketEgress: TransportStream.write documents
+    // an off-heap source, and a heap segment is rejected by the POSIX send() downcall and swallowed
+    // into the NIO fallback rather than failing. The handshake response is written once per
+    // connection, so a scoped allocation is right here where the frame path reuses one buffer.
+    private static void writeAscii(TransportStream stream, String text, MemoryAllocator allocator) {
         byte[] bytes = text.getBytes(StandardCharsets.US_ASCII);
-        stream.write(MemorySegment.ofArray(bytes), bytes.length);
+        try (LoanedBuffer outbound = allocator.allocateNetwork(bytes.length)) {
+            MemorySegment.copy(MemorySegment.ofArray(bytes), 0, outbound.segment(), 0, bytes.length);
+            outbound.setSize(bytes.length);
+            stream.write(outbound.segment(), bytes.length);
+        }
     }
 }

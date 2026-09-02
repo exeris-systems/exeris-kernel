@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.websocket;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.spi.websocket.WebSocketConfig;
@@ -29,6 +30,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
 
     private final WebSocketConfig config;
+    // Not closed by this engine, and not a leak: the allocator is resolved from the ambient binding
+    // and owned by whoever bound it. Closing another component's allocator is the failure this
+    // deliberately does not risk.
+    private final MemoryAllocator allocator;
     private final TransportEngine transport;
     private final int listenPort;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -43,10 +48,9 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
                 ? CommunityWebSocketTransportFactory.nextFreePort()
                 : nonNull.port();
         this.config = nonNull;
-        // The allocator is not held: it is resolved from the ambient binding and owned by whoever
-        // bound it, so a field here would only invite something to close another component's.
+        this.allocator = CommunityWebSocketTransportFactory.resolveAllocator();
         this.transport = CommunityWebSocketTransportFactory.buildTransport(nonNull, resolvedPort,
-                CommunityWebSocketTransportFactory.resolveAllocator());
+                this.allocator);
         this.listenPort = resolvedPort;
     }
 
@@ -92,7 +96,7 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
 
     private void serve(TransportStream stream) {
         CommunityWebSocketUpgrade.Outcome outcome =
-                CommunityWebSocketUpgrade.negotiate(stream, config, handshakeHandler);
+                CommunityWebSocketUpgrade.negotiate(stream, config, handshakeHandler, allocator);
         if (!outcome.accepted()) {
             stream.close();
             return;
@@ -105,7 +109,8 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
         // before the carrier goes, which is the difference between a clean close and a reset.
         try (TransportStream carrier = stream;
              CommunityWebSocketExchange exchange =
-                     new CommunityWebSocketExchange(carrier, session, config.maxMessageBytes())) {
+                     new CommunityWebSocketExchange(carrier, session, allocator,
+                             config.maxMessageBytes())) {
             handler.handle(exchange);
         }
     }

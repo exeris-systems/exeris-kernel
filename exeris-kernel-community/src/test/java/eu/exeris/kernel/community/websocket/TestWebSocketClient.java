@@ -182,7 +182,7 @@ final class TestWebSocketClient implements AutoCloseable {
             }
             out.write(masked);
             out.flush();
-        } catch (IOException gone) {
+        } catch (IOException _) {
             running = false;
         }
     }
@@ -218,7 +218,7 @@ final class TestWebSocketClient implements AutoCloseable {
                     return;
                 }
             }
-        } catch (IOException ended) {
+        } catch (IOException _) {
             // A closed socket ends the loop; the test asserts on what arrived before it.
             running = false;
         }
@@ -227,7 +227,7 @@ final class TestWebSocketClient implements AutoCloseable {
     String receive(long timeout, TimeUnit unit) {
         try {
             return inbound.poll(timeout, unit);
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             return null;
         }
@@ -251,7 +251,7 @@ final class TestWebSocketClient implements AutoCloseable {
         running = false;
         try {
             socket.close();
-        } catch (IOException alreadyGone) {
+        } catch (IOException _) {
             // Closing an already-dead socket is the normal end of a scenario.
         }
     }

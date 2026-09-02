@@ -39,6 +39,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   open. Client pings are answered. Recorded in `docs/subsystems/http.md` and the provider's javadoc
   rather than left for a consumer to discover.
 
+  **Both directions run on `LoanedBuffer`, and review found out why that is not a style point.**
+  `TransportStream` documents its segments as off-heap, and the community carrier passes them
+  straight to a POSIX `send()` downcall built without `Linker.Option.critical` — which rejects a heap
+  segment and has that rejection swallowed by a `catch (Throwable)` that falls back to NIO. A first
+  revision used `MemorySegment.ofArray`, so nothing failed and every frame silently left the fast
+  seam. Measured both ways: **one `IllegalArgumentException: Heap segment not allowed` per write
+  before, zero after.**
+
+  A **close-ordering race** surfaced in CI and not locally. The echoed close frame went out before
+  the connection stopped being writable, so a peer could observe the close and still get a successful
+  `send()`. Ordering corrected; proven by widening the window rather than by repetition — with the
+  old order and a 300 ms delay the contract test fails 3 of 3, with the fix it passes 3 of 3.
+
 - **An error-code registry gate** (`tools/error-code-registry-check/`, wired into CI). `KernelErrorCodes`
   is the declared single source of truth for `EX-` codes and `docs/subsystems/exceptions.md` is what an
   operator reads when one turns up in a log. **Nothing connected the two**, and the drift was not

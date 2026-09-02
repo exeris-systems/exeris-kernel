@@ -25,9 +25,17 @@ final class CommunityWebSocketControlFrames {
     private CommunityWebSocketControlFrames() {
     }
 
-    /** What the exchange must do next: nothing, or close having observed {@code closeCode}. */
-    /* default */ record Reaction(boolean closing, int closeCode) {
-        /* default */ static final Reaction NONE = new Reaction(false, 0);
+    /**
+     * What the exchange must do next: nothing, or close having observed {@code closeCode} and echo
+     * {@code echoCode}.
+     *
+     * <p>The echo is <em>reported</em> rather than sent here so the exchange can flip its state
+     * first. Sending the close and then marking the connection closed lets a peer observe the echo
+     * and still get a successful {@code send()} back — a race CI found and a fast machine hides.
+     */
+    /* default */ record Reaction(boolean closing, int closeCode, WebSocketCloseCode echoCode) {
+        /* default */ static final Reaction NONE =
+                new Reaction(false, 0, WebSocketCloseCode.NORMAL_CLOSURE);
     }
 
     /* default */ static Reaction handle(MemorySegment segment, WebSocketFrameHeader header,
@@ -51,8 +59,7 @@ final class CommunityWebSocketControlFrames {
                 // point of ADR-084 §8: answering a peer that said GOING_AWAY with "1000, fine"
                 // destroys exactly the distinction a transport exists to carry, and leaves an
                 // operator unable to tell a client that left from one that was pushed.
-                egress.sendCloseOnce(echoable(observed), "");
-                yield new Reaction(true, observed);
+                yield new Reaction(true, observed, echoable(observed));
             }
             default -> throw new IllegalStateException(
                     "not a control opcode: " + header.opcode());

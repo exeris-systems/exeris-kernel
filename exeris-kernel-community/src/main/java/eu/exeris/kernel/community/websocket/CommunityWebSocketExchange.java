@@ -8,6 +8,7 @@ import eu.exeris.kernel.core.websocket.WebSocketFrameHeader;
 import eu.exeris.kernel.core.websocket.WebSocketMessageAssembler;
 import eu.exeris.kernel.core.websocket.WebSocketProtocolException;
 import eu.exeris.kernel.spi.exceptions.http.WebSocketClosedException;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.spi.websocket.WebSocketCloseCode;
 import eu.exeris.kernel.spi.websocket.WebSocketExchange;
@@ -45,17 +46,19 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
 
     private final CommunityWebSocketEgress egress;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicBoolean released = new AtomicBoolean(false);
 
     private long messagesSent;
     private int observedCloseCode;
 
     /* default */ CommunityWebSocketExchange(TransportStream stream, WebSocketSession session,
-                                             long maxMessageBytes) {
+                                             MemoryAllocator allocator, long maxMessageBytes) {
         this.stream = Objects.requireNonNull(stream, "stream must not be null");
         this.session = Objects.requireNonNull(session, "session must not be null");
+        Objects.requireNonNull(allocator, "allocator must not be null");
         this.assembler = new WebSocketMessageAssembler(maxMessageBytes);
-        this.frames = new CommunityWebSocketFrameStream(this.stream, maxMessageBytes);
-        this.egress = new CommunityWebSocketEgress(this.stream);
+        this.frames = new CommunityWebSocketFrameStream(this.stream, allocator, maxMessageBytes);
+        this.egress = new CommunityWebSocketEgress(this.stream, allocator);
     }
 
     @Override
@@ -109,8 +112,15 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
                 CommunityWebSocketControlFrames.Reaction reaction =
                         CommunityWebSocketControlFrames.handle(segment, header, egress);
                 if (reaction.closing()) {
+                    // Ordered deliberately: the connection stops being writable BEFORE the echo goes
+                    // out. CI caught the reverse -- the client observed the echoed close, called
+                    // send() and got no throw, because `closed` had not flipped yet. A machine under
+                    // load opens that window; a fast one hides it. Announcing a close and only then
+                    // refusing to write is backwards, and the echo is now sent from here so the
+                    // ordering is visible in one place.
                     observedCloseCode = reaction.closeCode();
                     markClosed();
+                    egress.sendCloseOnce(reaction.echoCode(), "");
                 }
             } else {
                 message = assembler.accept(segment, header);
@@ -144,19 +154,35 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
         close(WebSocketCloseCode.NORMAL_CLOSURE, "");
     }
 
+    /**
+     * Releases the connection's off-heap buffers, at most once.
+     *
+     * <p>The CAS is not defensive padding: a handler that calls {@code close()} itself and then
+     * falls out of the engine's try-with-resources reaches here twice, and a second
+     * {@code LoanedBuffer.close()} is a double-free rather than a no-op.
+     */
+    private void releaseBuffers() {
+        if (released.compareAndSet(false, true)) {
+            frames.close();
+            egress.close();
+        }
+    }
+
     @Override
     public void close(WebSocketCloseCode code, String reason) {
         Objects.requireNonNull(code, "code must not be null");
         Objects.requireNonNull(reason, "reason must not be null");
-        egress.sendCloseOnce(code, reason);
         markClosed();
+        egress.sendCloseOnce(code, reason);
         stream.close();
+        releaseBuffers();
     }
 
     private void closeOnViolation(WebSocketCloseCode code) {
-        egress.sendCloseOnce(code, "");
         markClosed();
+        egress.sendCloseOnce(code, "");
         stream.close();
+        releaseBuffers();
     }
 
 
@@ -166,6 +192,8 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
         closed.set(true);
         assembler.reset();
     }
+
+
 
     private long ageMillis() {
         return (System.nanoTime() - openedAtNanos) / 1_000_000L;

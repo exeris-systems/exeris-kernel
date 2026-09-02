@@ -311,6 +311,14 @@ HTTP upgrade and the origin pre-filter), `CommunityWebSocketExchange` and a JFR 
 runs the Core RFC 6455 codec over the community TCP carrier, one virtual thread per connection, and
 binds `AbstractWebSocketExchangeTck` over a real loopback socket.
 
+**Both directions use `LoanedBuffer`, one per connection**, and the reason is mechanical rather than
+stylistic. `TransportStream` documents its segments as off-heap; the community carrier hands them to
+a POSIX `send()` downcall built without `Linker.Option.critical`, which **rejects a heap segment**,
+and that rejection is absorbed by a `catch (Throwable)` that falls back to NIO. A heap buffer here
+therefore does not fail — it throws and is caught on every frame, leaving the fast seam permanently
+unused. One buffer for the connection's life, grown when a frame does not fit, rather than one
+allocation per frame: a duplex connection sends many small messages over a long life.
+
 **One thing it does not do, stated rather than left to be found: `keepAliveIntervalMillis` is not
 honoured — no server-initiated pings are sent.** The function a keepalive usually serves here *is*
 served, by a different mechanism: the carrier receives `idleTimeoutMillis` and the transport's idle
