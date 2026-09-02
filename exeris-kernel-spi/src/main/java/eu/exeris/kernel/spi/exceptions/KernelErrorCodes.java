@@ -466,6 +466,26 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4013 = "EX-HTTP-4013";
 
+    /**
+     * A WebSocket send was attempted on a connection that is no longer writable — the handler
+     * closed it, the peer went away, or the engine closed it on a protocol fault.
+     *
+     * <p>The receive direction deliberately does <em>not</em> raise this: a closed connection is the
+     * ordinary end of a receive loop and returns {@code null}, while a send that cannot happen means
+     * the handler had something to say and could not, which it has to see.
+     *
+     * <p>Secret-safe: carries counters and the close code, never message content — the text a
+     * handler was trying to send is exactly the kind of payload most likely to be sensitive.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code long} connectionAgeMillis (how long the connection had been open)</li>
+     *   <li>index 1 – {@code long} messagesSent (messages successfully sent before this attempt)</li>
+     *   <li>index 2 – {@code int}  closeCode (RFC 6455 close code observed, 0 when none was seen)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4014 = "EX-HTTP-4014";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------

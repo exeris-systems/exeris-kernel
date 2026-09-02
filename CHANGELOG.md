@@ -10,6 +10,38 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **A duplex wire: the WebSocket SPI and its contract tests**
+  ([ADR-084](docs/adr/ADR-084-websocket-provider-spi.md)). `eu.exeris.kernel.spi.websocket` —
+  provider, server engine, per-connection exchange and session, handshake decision, close codes and
+  configuration — plus `AbstractWebSocketExchangeTck`. Ships **`preview`**; the Community binding and
+  the Core frame codec follow.
+
+  Its own package rather than an extension of `…spi.http`: only the handshake is HTTP, and the matrix
+  already carries `…spi.http` as `mixed` with a per-surface breakdown that a new family would muddy.
+
+  Four decisions carry the shape. The provider mirrors `HttpProvider` — `createServerEngine` +
+  `setHandler` + `start()` — so a consumer gets an endpoint **without booting the kernel**, which is
+  what an editor tool starting per session needs. The handler is text-only on its surface while the
+  codec still handles control and continuation frames, because a peer fragmenting a large message is
+  speaking the protocol correctly. `send` parks the virtual thread and never queues on the heap
+  (ADR-043 obligation 4), and it serialises across threads because RFC 6455 forbids interleaving two
+  messages' frames — so a slow peer blocks every sender on that connection, which is stated rather
+  than discovered. And the two directions end differently on purpose: `receive()` returns `null` at
+  close because that is the ordinary end of a loop, while `send` throws, because a handler that had
+  something to say and could not has to see it.
+
+  **The handshake refuses by default.** A WebSocket handshake is not subject to CORS, so a server
+  ignoring `Origin` can be opened by any page the user has visited, carrying their cookies — and a
+  browser cannot set request headers, leaving `Origin`, cookies, the subprotocol and the query as the
+  only channels a consumer has. The origin allowlist is a hard pre-filter and the optional callback
+  can only narrow it, so forgetting to write one produces a refusal somebody notices rather than a
+  hole nobody does.
+
+  **`AbstractWebSocketExchangeTck` is explicitly not the promotion gate.** A contract test proves a
+  shape is honoured, not that it survives; promotion to `stable` is gated on benchmark evidence.
+  Because it is abstract and no binding exists yet, the SPI also ships fourteen executable value
+  tests — a surface with no runnable coverage is a surface nobody has exercised.
+
 - **Every published jar names its own JPMS module.** A jar with no `Automatic-Module-Name` is still
   usable on the module path — the JDK derives a name from the **file name** — and that derived name
   becomes a de-facto contract from the first release a consumer compiles against, breaking every

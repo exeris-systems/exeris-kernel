@@ -265,6 +265,51 @@ allocate one.
 
 ---
 
+### Duplex: WebSocket (since 0.12, [ADR-084](../adr/ADR-084-websocket-provider-spi.md)) — `preview`
+
+**A separate package, not an extension of this one.** `eu.exeris.kernel.spi.websocket` carries the
+provider, engine, per-connection exchange and session, handshake decision, close codes and config.
+Only the handshake is HTTP, and it reuses `HttpRequest` and `HttpStatus` rather than minting parallel
+carriers — the handshake *is* an HTTP GET and its refusal *is* an HTTP response. The record's `body`
+is meaningless there and is `null`.
+
+**Why it exists at all.** SSE (ADR-043) is one-directional by construction, so a bidirectional
+request/response protocol cannot ride it. That is the whole justification, and it is structural
+rather than a preference: RFC-2026-06-18 deferred WebSocket precisely because "the dominant use case
+is unidirectional server push", and recorded it as a later, separately-justified addition.
+
+**The engine is embeddable.** `WebSocketProvider.createServerEngine(config)` → `setHandler` →
+`start()`, deliberately the same lifecycle as `HttpServerEngine`, so a consumer obtains an endpoint
+**without booting the kernel**. A tool that starts per editing session should not pay for a runtime
+it does not use.
+
+**Three contract properties worth knowing before writing a handler:**
+
+| Property | What it means |
+|---|---|
+| Text-only on the surface | `send(String)` / `receive()`. Control and continuation frames are the codec's — a peer fragmenting a large message is speaking the protocol correctly and the handler sees one message. The *binary opcode* is declined and closes the connection. |
+| `send` parks and serialises | Parks the virtual thread under backpressure, never queues on the heap (ADR-043 obligation 4). RFC 6455 forbids interleaving two messages' frames, so concurrent senders are ordered rather than rejected — and **a slow peer therefore blocks every sender on that connection**. |
+| The directions end differently | `receive()` returns `null` at close, because that is the ordinary end of a loop; `send()` throws `WebSocketClosedException` (`EX-HTTP-4014`), because a handler that had something to say and could not has to see it. |
+
+**The handshake refuses by default.** A WebSocket handshake is not subject to CORS, so a server that
+ignores `Origin` can be opened by any page the user has visited, carrying their cookies — and a
+browser cannot set request headers, which leaves `Origin`, cookies, `Sec-WebSocket-Protocol` and the
+query as the only channels a consumer has. `WebSocketConfig.allowedOrigins` is a **hard pre-filter**
+and the optional `WebSocketHandshakeHandler` can only **narrow** it; an empty allowlist accepts no
+browser origin rather than any. Forgetting to write a callback therefore produces a refusal somebody
+notices, not a hole nobody does.
+
+**Session identity is per connection and does not survive a reconnect.** A consumer wanting
+continuity builds it on the handshake — a returning client presents its own token. The kernel does
+not own resumption because the cost concentrates in buffering the disconnect window, which is the
+on-heap queue obligation 4 forbids, and without that buffer resumption restores identity rather than
+the stream.
+
+**`preview`, on stated criteria.** The TCK is not the promotion gate: a contract test proves a shape
+is honoured, not that it survives, and for a long-lived duplex protocol that is where the two
+diverge. `stable` is gated on benchmark evidence — concurrent connections, frame throughput,
+backpressure under a slow reader, teardown of a dead peer.
+
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 
 `Http2SessionContext.admitClientStreamId(int)` enforces two RFC 7540 invariants that the Community h2c session previously did not validate:
