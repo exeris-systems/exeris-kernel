@@ -25,8 +25,11 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -234,6 +237,47 @@ public final class KernelWebClient {
      */
     public <T> T get(String path, Class<T> responseType) {
         return execute(HttpMethod.GET, path, null, responseType);
+    }
+
+    /**
+     * Issues an HTTP {@code GET} against {@code path} and deserialises a JSON array
+     * response as a {@code List<T>}.
+     *
+     * <p>{@link #get(String, Class)} cannot express this. Its only type handle is a
+     * {@link Class}, and {@code List.class} is raw — it tells the decoder nothing about the
+     * element type, so a JSON array comes back as a list of whatever the decoder's default
+     * mapping produces (a {@code LinkedHashMap} per element, for the JSON driver) and the
+     * first element access fails with a {@link ClassCastException} that names a type the
+     * caller never wrote. An array class carries its component type, so
+     * {@code T[].class} is a handle the existing decoder registry can honour: this method
+     * decodes into an array and wraps it.
+     *
+     * <p>The returned list wraps the decoded array rather than copying it — nothing else
+     * holds that array — and is unmodifiable. Element order is the wire order. A
+     * {@code null} element is passed through rather than rejected: what the peer sent is
+     * what the caller is told it sent.
+     *
+     * <p>Body framing is unchanged from {@link #get(String, Class)}: an empty response body
+     * is an error, not an empty list. A peer with no items is expected to send {@code []}.
+     *
+     * @param <T>         element type
+     * @param path        request-target path, relative to the addressed peer (see {@link #withAuthority(String)})
+     * @param elementType the array's component type; must not be null
+     * @return the decoded elements; never {@code null}, possibly empty
+     * @throws WebClientException on any non-2xx response, or when the body does not decode
+     * @since 0.12.0
+     */
+    public <T> List<T> getList(String path, Class<T> elementType) {
+        Objects.requireNonNull(elementType, "elementType must not be null");
+        T[] decoded = execute(HttpMethod.GET, path, null, arrayTypeOf(elementType));
+        return decoded == null ? List.of() : Collections.unmodifiableList(Arrays.asList(decoded));
+    }
+
+    // Array.newInstance is the only way to name T[] from a Class<T>; the cast is sound because
+    // a zero-length array of T has exactly Class<T[]> as its class.
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T[]> arrayTypeOf(Class<T> elementType) {
+        return (Class<T[]>) Array.newInstance(elementType, 0).getClass();
     }
 
     /**

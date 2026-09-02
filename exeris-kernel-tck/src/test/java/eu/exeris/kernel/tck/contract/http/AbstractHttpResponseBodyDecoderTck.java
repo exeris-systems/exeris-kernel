@@ -145,6 +145,11 @@ public abstract class AbstractHttpResponseBodyDecoderTck {
         return new HttpResponseDecodingContext(200, List.of(), allocator);
     }
 
+    /** The allocator-less shape: what a caller with nothing to offer builds (0.12). */
+    private static HttpResponseDecodingContext contextWithoutAllocator() {
+        return new HttpResponseDecodingContext(200, List.of());
+    }
+
     private LoanedBuffer bufferOf(byte[] bytes) {
         LoanedBuffer buf = allocator.allocateNetwork(Math.max(1, bytes.length));
         if (bytes.length > 0) {
@@ -215,6 +220,22 @@ public abstract class AbstractHttpResponseBodyDecoderTck {
                 assertThat(validTargetType().isInstance(decoded))
                         .as("decoded value must be an instance of validTargetType()")
                         .isTrue();
+            }
+        }
+
+        @Test
+        @DisplayName("decode works when the context carries no allocator")
+        void decodeWithoutAllocator() {
+            // Mirrors the request-side rule: no decoder reads the context's allocator, so requiring
+            // one coupled every decode site to a binding it did not need. A decoder that wants
+            // auxiliary off-heap memory takes an allocator at construction.
+            HttpResponseBodyDecoder decoder = createDecoder();
+            try (LoanedBuffer body = bufferOf(validEncodedBytes())) {
+                Object decoded = decoder.decode(body, validTargetType(), contextWithoutAllocator());
+                assertThat(decoded)
+                        .as("decode must not depend on the context carrying an allocator")
+                        .isNotNull();
+                assertThat(validTargetType().isInstance(decoded)).isTrue();
             }
         }
 

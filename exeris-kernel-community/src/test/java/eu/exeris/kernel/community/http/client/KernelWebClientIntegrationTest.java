@@ -204,6 +204,103 @@ class KernelWebClientIntegrationTest {
         });
     }
 
+    @Test
+    @DisplayName("getList decodes a JSON array into the element type")
+    void getListDecodesElements() {
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) -> respondWithJson(exchange, HttpStatus.OK,
+                    List.of(Map.of("id", "1", "name", "Cogwheel"), Map.of("id", "2", "name", "Sprocket"))));
+
+            List<Widget> widgets = client.getList("/widgets", Widget.class);
+
+            assertThat(widgets).containsExactly(new Widget("1", "Cogwheel"), new Widget("2", "Sprocket"));
+        });
+    }
+
+    @Test
+    @DisplayName("the same response read through get(path, List.class) does not produce elements of that type")
+    void rawListReadLosesTheElementType() {
+        // The defect getList exists to remove, pinned against the same wire bytes: a raw List.class
+        // hands the decoder no element type, so every element decodes to the driver's default mapping
+        // and the caller's first field access fails on a type it never wrote. Without this control,
+        // the test above would pass just as happily if getList delegated to get(path, List.class).
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) -> respondWithJson(exchange, HttpStatus.OK,
+                    List.of(Map.of("id", "1", "name", "Cogwheel"))));
+
+            List<?> raw = client.get("/widgets", List.class);
+
+            assertThat(raw).hasSize(1);
+            assertThat(raw.get(0)).isInstanceOf(Map.class).isNotInstanceOf(Widget.class);
+        });
+    }
+
+    @Test
+    @DisplayName("getList returns an empty list for an empty JSON array")
+    void getListEmptyArray() {
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) ->
+                    respondWithJson(exchange, HttpStatus.OK, List.of()));
+
+            assertThat(client.getList("/widgets", Widget.class)).isEmpty();
+        });
+    }
+
+    @Test
+    @DisplayName("getList hands back an unmodifiable list")
+    void getListIsUnmodifiable() {
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) -> respondWithJson(exchange, HttpStatus.OK,
+                    List.of(Map.of("id", "1", "name", "Cogwheel"))));
+
+            List<Widget> widgets = client.getList("/widgets", Widget.class);
+
+            // Both, and for different reasons: add() would also be refused by a bare
+            // Arrays.asList view, while set() is the one that reaches through it into the
+            // decoded array. Asserting only add() would accept a list that is not immutable.
+            assertThatThrownBy(() -> widgets.add(new Widget("2", "Sprocket")))
+                    .isInstanceOf(UnsupportedOperationException.class);
+            assertThatThrownBy(() -> widgets.set(0, new Widget("2", "Sprocket")))
+                    .isInstanceOf(UnsupportedOperationException.class);
+        });
+    }
+
+    @Test
+    @DisplayName("getList passes a null element through rather than rejecting the response")
+    void getListPassesNullElementThrough() {
+        // What the peer sent is what the caller is told it sent. List.of(...) would reject this with
+        // an NPE naming nothing the caller can act on.
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) ->
+                    respondWithBytes(exchange, HttpStatus.OK,
+                            "[null]".getBytes(StandardCharsets.UTF_8), "application/json"));
+
+            assertThat(client.getList("/widgets", Widget.class)).containsExactly((Widget) null);
+        });
+    }
+
+    @Test
+    @DisplayName("getList surfaces a non-2xx response as WebClientException, like get")
+    void getListNonSuccess() {
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) -> respondWithBytes(exchange,
+                    HttpStatus.NOT_FOUND, "{\"error\":\"nope\"}".getBytes(StandardCharsets.UTF_8),
+                    "application/json"));
+
+            assertThatThrownBy(() -> client.getList("/widgets", Widget.class))
+                    .isInstanceOf(KernelWebClient.WebClientException.class);
+        });
+    }
+
+    @Test
+    @DisplayName("getList rejects a null element type")
+    void getListRejectsNullElementType() {
+        runScopedTest(client ->
+                assertThatNullPointerException().isThrownBy(() -> client.getList("/widgets", null)));
+    }
+
+    private record Widget(String id, String name) {}
+
     private void runScopedTest(Consumer<KernelWebClient> testCase) {
         java.lang.ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() -> {
             int port = nextFreePort();
