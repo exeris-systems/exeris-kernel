@@ -123,9 +123,12 @@ Three things, named so the RFC is not read as more complete than it is:
 - **The `…spi.http` breakdown is per-surface**, so "promote HTTP" is not a single act — retry, route
   authorization and SSE are separately labelled and separately consumed, and they do not have to
   move together.
-- **Enterprise-tier consumers.** The matrix's "Enterprise divergence" column marks crypto, transport
-  and graph as having enterprise implementations. Whether promoting a contract constrains the
-  enterprise driver's roadmap is a question this repo cannot answer alone.
+- ~~**Enterprise-tier consumers.**~~ **Settled (2026-09-02):** the enterprise tier is a separate
+  scope and does not gate a promotion. The matrix's "Enterprise divergence" column marks crypto,
+  transport and graph as having enterprise implementations, but a driver implements a contract
+  rather than constraining when it is declared settled. The dependency runs the other way and only
+  for *changes*: a contract that moves after promotion is what would reach the enterprise driver,
+  which is an argument for promoting sooner rather than a reason to wait.
 
 ## Options Considered
 
@@ -181,10 +184,10 @@ ecosystem question, and the HLA's SKU thesis is the thing that would have to giv
 
 ## Recommendation
 
-**Not yet made — this RFC is opened to gather the two measurements it is missing** (what, if
-anything, is still scheduled for the HTTP codec surface; and whether an enterprise driver's roadmap
-constrains a crypto promotion), and to put the scoping question about `SecretProvider` in front of
-the person who owns it.
+**Not yet made — this RFC is opened to gather the one measurement it is still missing** (whether
+anything further is scheduled for the HTTP codec surface after v0.12) and to put the scoping
+question about `SecretProvider` in front of the person who owns it. The enterprise question this RFC
+opened with is answered above and closed: the enterprise tier does not gate a promotion.
 
 What the investigation does support saying now:
 
@@ -200,7 +203,6 @@ What the investigation does support saying now:
 ## Open questions
 
 - Does the `…spi.http` codec surface have anything further scheduled, or did v0.12 close it?
-- Does promoting `…spi.crypto` constrain the enterprise TLS driver's roadmap?
 - Is `SecretProvider` inside or outside the security surface that 1.0 publishes?
 - Should the matrix carry a "consumers waiting on promotion" column, so the HLA link is enforced in
   one place rather than reconstructed?
