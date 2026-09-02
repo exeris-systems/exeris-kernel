@@ -161,13 +161,9 @@ public final class HttpRouter implements HttpHandler {
     }
 
     private RouteMatch resolveTemplate(HttpMethod method, String path) {
-        if (templateRoutes.isEmpty()) {
-            return null;
-        }
-        String[] segments = path.split("/", -1);
         for (PathTemplateRoute template : templateRoutes) {
             if (template.method() == method) {
-                RouteMatch match = template.toMatch(segments);
+                RouteMatch match = template.toMatch(path);
                 if (match != null) {
                     return match;
                 }

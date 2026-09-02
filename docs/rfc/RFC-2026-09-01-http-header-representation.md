@@ -313,6 +313,12 @@ entries have to satisfy it.
   server's: two list-building parses per response, one of them purely to read `Content-Length`, plus
   a whole-line `String`, two substrings and two `trim()` calls per field. 7 624 → 1 952 B on an API
   JSON response, 10 216 → 2 384 B on a page response with cookies.
+- ~~The rest of the materialise-and-copy sweep~~ — **closed in v0.12**. The HTTP/2 decoded request
+  wraps its accumulator's list instead of copying it, and the router stopped splitting the request
+  path on every resolve (`GET /api/orders/42` 1 040 → 320 B). Two of the sweep's rows did not survive
+  contact: the router's was a conditional `substring` next to a much larger unconditional split, and
+  the response-header merge allocates nothing removable — its real defect was a duplicated method.
+  Details in the research note.
 - **The body is copied out of the aggregate on every request with a body.**
   `CommunityHttpRequestProcessor.handleRequest` allocates a `LoanedBuffer` and `MemorySegment.copy`s
   the body into it. The research sweep did not list this because it swept the *header* path. It is
@@ -320,6 +326,3 @@ entries have to satisfy it.
   own look, and `LoanedBuffer.peek`/`slice` already exist as the mechanism.
 - **Should recycled-segment access fail loudly?** Making the pool hand out segments whose stale
   access throws would change what is possible here, and matters beyond headers. Larger than this RFC.
-- **The client response decoder mirrors the server's old defect** — two passes plus per-token
-  materialisation. Sequenced behind this RFC deliberately: whichever option wins should be applied to
-  it once, not twice.
