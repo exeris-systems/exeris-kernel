@@ -10,6 +10,43 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **The router stops splitting the request path, and the HTTP/2 decoded request stops copying its
+  header list** — closing the materialise-and-copy sweep that
+  [RFC-2026-09-01](docs/rfc/RFC-2026-09-01-http-header-representation.md) sequenced. Path-template
+  matching walked a `String[]` produced by `path.split("/", -1)`, and the split ran **twice per
+  request** — once for the streaming table, once for the respond-once template list, a third time on
+  a HEAD fallback. `PathTemplate` now walks the path's `'/'`-separated segments in place: a literal
+  is a region comparison and only a placeholder's value is materialised. The streaming table is keyed
+  by method first, so a lookup no longer allocates a key to probe a map, and captured parameters go
+  through one map rather than a `LinkedHashMap` that was then copied. Measured, exact per-thread
+  bytes, three fresh JVMs:
+
+  | request | before | after |
+  |---|---:|---:|
+  | `GET /api/orders/{id}` hit | 1 040 B | **320 B** — 69% |
+  | two-placeholder route hit | 1 464 B | **464 B** — 68% |
+  | hit with a query string | 1 168 B | **448 B** — 62% |
+  | exact-route hit | 276 B | **~44 B** — the residual is a `RouteMatch` escape analysis sometimes removes |
+  | route miss (404) | 528 B | **0 B** |
+
+  On the HTTP/2 side, `PendingRequestHeaders` hands the decoded request an unmodifiable view of its
+  accumulated headers instead of `List.copyOf`: the accumulator is built, filled and consumed inside
+  one method, so no other reference to the list exists. 464 → 392 B for a 3-field request, 800 →
+  616 B for a 10-field one — the accumulator's own allocation, not the whole HTTP/2 decode, which
+  HPACK dominates.
+
+  **Matching semantics are unchanged, and that is tested against the implementation replaced**: the
+  split-based matcher is kept in `PathTemplateTest` as an oracle and the two are compared across a
+  template/path corpus, with the number of matching pairs pinned so a corpus edit cannot quietly
+  leave the comparison asserting nothing.
+
+  Two rows of the original sweep did not survive inspection and are corrected in the research note:
+  the router row named a conditional `substring` when the unconditional cost beside it was the split,
+  and the response-header merge allocates nothing removable — it sizes one list and only when both
+  sides are non-empty. Its real defect was duplication: `InMemoryHttp2Exchange` carried a
+  byte-identical private copy of `CommunityHttpResponseHeaders.merge` and neither was covered. The
+  copy is gone and the survivor has tests.
+
 - **The HTTP client stops decoding every response header twice, and stops materialising a line per
   field.** `resolveExpectedTotal` — which the read loop consults to learn when to stop reading —
   built a full `List<HttpHeader>` to read one field, `Content-Length`, and threw the list away;

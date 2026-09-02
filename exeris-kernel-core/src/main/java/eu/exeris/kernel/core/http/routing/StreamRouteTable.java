@@ -8,6 +8,7 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,11 +25,16 @@ import java.util.Map;
  */
 final class StreamRouteTable {
 
-    private final Map<Key, HttpStreamHandler> exact;
+    // Keyed by method first so a lookup needs no key object: a (method, path) record would be
+    // allocated and discarded on every request just to probe the map.
+    private final Map<HttpMethod, Map<String, HttpStreamHandler>> exact;
     private final List<TemplateEntry> templates;
 
-    private StreamRouteTable(Map<Key, HttpStreamHandler> exact, List<TemplateEntry> templates) {
-        this.exact = Map.copyOf(exact);
+    private StreamRouteTable(Map<HttpMethod, Map<String, HttpStreamHandler>> exact,
+                             List<TemplateEntry> templates) {
+        Map<HttpMethod, Map<String, HttpStreamHandler>> copied = new EnumMap<>(HttpMethod.class);
+        exact.forEach((method, byPath) -> copied.put(method, Map.copyOf(byPath)));
+        this.exact = copied;
         this.templates = List.copyOf(templates);
     }
 
@@ -43,24 +49,18 @@ final class StreamRouteTable {
      * @return the match, or {@code null}
      */
     /* default */ HttpRouter.StreamMatch resolve(HttpMethod method, String path) {
-        HttpStreamHandler literal = exact.get(new Key(method, path));
+        Map<String, HttpStreamHandler> byPath = exact.get(method);
+        HttpStreamHandler literal = byPath == null ? null : byPath.get(path);
         if (literal != null) {
             return HttpRouter.StreamMatch.exact(literal);
         }
-        if (templates.isEmpty()) {
-            return null;
-        }
-        String[] segments = path.split("/", -1);
         for (TemplateEntry entry : templates) {
-            if (entry.method() == method && entry.template().matches(segments)) {
-                return new HttpRouter.StreamMatch(
-                        entry.handler(), entry.template().capture(segments));
+            if (entry.method() == method && entry.template().matches(path)) {
+                return new HttpRouter.StreamMatch(entry.handler(), entry.template().capture(path));
             }
         }
         return null;
     }
-
-    private record Key(HttpMethod method, String path) {}
 
     private record TemplateEntry(HttpMethod method, PathTemplate template,
                                  HttpStreamHandler handler) {}
@@ -68,7 +68,8 @@ final class StreamRouteTable {
     /** Accumulates registrations, compiling each path once at build time. */
     /* default */ static final class Builder {
 
-        private final Map<Key, HttpStreamHandler> exact = new HashMap<>();
+        private final Map<HttpMethod, Map<String, HttpStreamHandler>> exact =
+                new EnumMap<>(HttpMethod.class);
         private final List<TemplateEntry> templates = new ArrayList<>();
 
         /**
@@ -82,7 +83,7 @@ final class StreamRouteTable {
             if (PathTemplate.isTemplate(path)) {
                 templates.add(new TemplateEntry(method, PathTemplate.compile(path), handler));
             } else {
-                exact.put(new Key(method, path), handler);
+                exact.computeIfAbsent(method, _ -> new HashMap<>()).put(path, handler);
             }
         }
 

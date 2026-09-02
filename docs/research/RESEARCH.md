@@ -335,9 +335,13 @@ Final decision:
   that is recycled after the request, and `HttpRequest.headers()` is SPI surface.
 
 Note:
-The remaining per-header cost is now dominated by token materialization, so the four unswept sites
-should be sequenced behind that RFC rather than ahead of it. The client response decoder in
-particular mirrors the server defect and would be rewritten by any representation change.
+The four remaining sweep sites were taken after the RFC settled the representation question, so none
+of them was edited twice. Two of the five rows in the sweep table described their site inaccurately
+and are corrected in the note: the router row named a conditional `substring` when the unconditional
+cost beside it was a path split run twice per request, and the response-header merge turned out to
+allocate nothing removable — the finding that survived there was a duplicated method, not waste.
+The remaining per-header cost is token materialization, which the RFC deliberately did not promote:
+its hard question is lifetime, not shape.
 
 ---
 

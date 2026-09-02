@@ -125,13 +125,31 @@ the copy dropped (44%), stable across three fresh JVMs. It also removed a hazard
 enforced header limit depended on which reached it first unless both were handed identical bounds,
 which is why `Http1Codec` no longer exposes its bounds at all (ADR-071, amendment of 2026-09-01).
 
+**The rest of the sweep, closed (v0.12).** The RFC settled the representation question first, so the
+four remaining sites could be taken without editing any of them twice. Each is listed with what it
+actually turned out to be, because two of the five rows in the table above described the site
+inaccurately.
+
+| site | disposition |
+|---|---|
+| client response decoder | **done.** The mirror of the server defect, and the same fix: the read loop's framing probe stopped building a header list to read one field, and the decode stopped building `String`s per token. 7 624 → 1 952 B on an API JSON 200, 10 216 → 2 384 B on a page with cookies, 3 672 → 1 184 B on a 204. |
+| `PendingRequestHeaders` (h2) | **done.** The decoded request now wraps the accumulator's list instead of copying it; the accumulator is built, filled and consumed inside one method, so nothing else can reach the list. 464 → 392 B for a 3-field request, 800 → 616 B for a 10-field one — the accumulator's own allocation, not the whole h2 decode, which HPACK dominates. |
+| the router's query strip | **the row understated it.** The `substring` is real but conditional — a path with no query allocates nothing — and it was 128 B of a measured 1 168. The unconditional cost sitting beside it was `path.split("/", -1)`, run **twice per request**: once by the stream table and once by the template list, a third time on a HEAD fallback. Matching now walks the path in place. `GET /api/orders/42` went 1 040 → 320 B, a two-placeholder route 1 464 → 464 B, an exact-route hit 276 → ~44 B, and a route miss 528 → 0 B. |
+| the response-header merge | **the claim did not hold.** `CommunityHttpResponseHeaders.merge` allocates one exactly-sized list and only when both sides are non-empty; an empty side returns the other list itself. There is nothing to remove without a concatenating view, which would trade one small allocation for an indirection on every `get()` in the write loop. The finding that survived inspection was a different one: `InMemoryHttp2Exchange` carried a byte-identical private copy of the method, and nothing covered either. The copy is gone and the survivor has tests. |
+
+An honest note on the router figures: the residual on an exact-route hit is a `RouteMatch` record
+that escape analysis sometimes scalar-replaces and sometimes does not, so that row reads 0–68 B
+across fresh JVMs where the others are stable to a few percent. The route-miss row reaching exactly
+0 B is what says the machinery itself can allocate nothing.
+
 **Still open, and this is where the remaining cost is.** At ~345 B per header, token materialisation
-now dominates what is left, and the four other sites in the sweep are untouched. The client response
-decoder is the one that matters for sequencing: it materialises `String`s from wire bytes exactly as
-the server did, so a representation change would rewrite it, and collapsing its copies first would
-mean editing it twice. The representation needs an RFC rather than a patch, because its hard question
-is not the shape but the **lifetime** — header slices point into a `LoanedBuffer` that is recycled
-after the request, and `HttpRequest.headers()` is SPI.
+dominates what is left of the read path. It is the one item the RFC deliberately did **not** promote:
+the hard question is not the shape but the **lifetime** — header slices would point into a
+`LoanedBuffer` that is recycled after the request, and `HttpRequest.headers()` is SPI. Two smaller
+residues are recorded rather than fixed: the router strips the query twice per request, once in the
+stream probe and once in `handle`, which needs a dispatcher contract change rather than a local edit;
+and captured path parameters still go through a `HashMap` because `pathParams()` is typed
+`Map<String, String>`, so the cheaper shapes stop at the SPI.
 
 **Not measured here, and not claimed:** the CPU share. T2-10's own text says the allocation count is
 known and its share of the 51 µs CPU/req is not — that remains true. Bytes are not microseconds, and
