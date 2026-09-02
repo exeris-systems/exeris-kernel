@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.spi.exceptions.security;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
@@ -67,6 +68,18 @@ public final class InsufficientPrivilegesException extends ExerisKernelException
     public static InsufficientPrivilegesException sentinel(String requiredRole) {
         return new InsufficientPrivilegesException(
                 false, false, new Object[]{requiredRole});
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the authenticated principal does not hold the required privilege.
+     * Granting it is an authorisation change rather than a deployment fix, and the same request from
+     * the same principal fails identically until it is granted.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }
 

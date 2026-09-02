@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.spi.exceptions.security;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
@@ -44,6 +45,17 @@ public final class SecurityAuthenticationException extends ExerisKernelException
     public SecurityAuthenticationException(String tokenType, String failureReason, Throwable cause) {
         super(KernelErrorCodes.EX_SEC_2002, "Token validation failed", cause,
                 tokenType, failureReason);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the credential the caller presented is expired, malformed or
+     * revoked. A valid one succeeds against the same deployment.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }
 

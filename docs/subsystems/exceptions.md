@@ -184,6 +184,45 @@ formatting. It implements:
 
 ---
 
+## Fault origin — whose fault it was (ADR-083)
+
+An error code says *what* failed. `faultOrigin()` says **who has to change something for the
+operation to succeed**, which is the question a protocol adapter answers before it picks a status:
+
+| Constant | Meaning |
+|---|---|
+| `FaultOrigin.CALLER` | the request, its arguments or its credentials are at fault; repeating it unchanged fails identically |
+| `FaultOrigin.SYSTEM` | the runtime, its configuration or its dependencies are at fault; the caller can do nothing about it |
+
+**`SYSTEM` is the default and an unclassified subclass keeps it.** That is what the runtime did
+before the method existed, so classifying more subclasses later adds information rather than
+changing behaviour. The asymmetry is deliberate: reporting a caller's mistake as a server error is a
+worse message, while reporting a broken deployment as the caller's mistake hides an outage behind a
+`4xx` nobody pages on.
+
+**Classify at a catch site with `FaultOrigin.classify(throwable)`, not with `instanceof`.** A handler
+catches throwables, not kernel exceptions, and anything that is not one carries no origin — guessing
+one from a JDK type is how a bare `NoSuchElementException` from an unbound kernel binding came to be
+answered as a bad request.
+
+```java
+} catch (RuntimeException failure) {
+    respond(FaultOrigin.classify(failure) == FaultOrigin.CALLER
+            ? HttpStatus.BAD_REQUEST
+            : HttpStatus.INTERNAL_SERVER_ERROR);
+}
+```
+
+The origin is **not** a status code. HTTP reads `CALLER` as `4xx` but picks between `400`, `401`,
+`403` and `409` from the exception itself; a non-HTTP binding maps it elsewhere. Keeping status out
+of the SPI is the same constraint that put status mapping on the handler in ADR-036.
+
+Four subclasses declare `CALLER` today — `RequestBodyDecodeException`,
+`SecurityAuthenticationException`, `InsufficientPrivilegesException` and
+`EventStreamAppendConflictException`. **A new subclass should state its origin when the answer is
+clear from its own contract, and leave the default when it is not**; a wrong `CALLER` is worse than
+an unclassified `SYSTEM`.
+
 ## Code Examples
 
 ### 1. The Glass-Box Ready Exception (SPI)
