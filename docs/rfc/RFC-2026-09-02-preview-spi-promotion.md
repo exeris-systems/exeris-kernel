@@ -50,12 +50,21 @@ every `@Requires` that names a kernel SPI against the matrix:
 | `…spi.crypto` | **preview** | `gateway-core`, `tls-termination`, `bot-fingerprinting` |
 | `…spi.security` (+ `.identity`) | **preview** | `multi-tenancy`, `rbac-policy`, `service-identity` |
 | `…spi.graph` | **preview** | `contact-graph` |
-| `…spi.http` | **mixed** — body codecs, retry, route authorization and SSE are each `preview` | `gateway-core`, `rest-emission`, `graphql-emission`, `openapi-emission` |
+| `…spi.http` | **mixed** — body codecs, retry, route authorization and SSE are each `preview` | `gateway-core` (declared); `rest-emission`, `graphql-emission`, `openapi-emission` reach the codec surface **without declaring it** — see below |
 
-**Seven capabilities across four layers depend on a surface we have declared will move**, and one of
-them — `gateway-core` — is the Layer-1 aggregate the entire Gateway SKU family composes. A
-`commercial` capability whose kernel contract is scheduled to change is not a product that can be
-sold against a 1.0.
+**Seven capabilities name a `preview` kernel SPI in their own `@Requires`** — `gateway-core`,
+`tls-termination`, `bot-fingerprinting`, `multi-tenancy`, `rbac-policy`, `contact-graph`,
+`service-identity` — **spanning five of the map's seven layers** (1, 3, 4, 5 and 7). One of them,
+`gateway-core`, is the Layer-1 aggregate the entire Gateway SKU family composes, and it names two
+`preview` surfaces rather than one. A `commercial` capability whose kernel contract is scheduled to
+change is not a product that can be sold against a 1.0.
+
+**Three more reach a `preview` surface without declaring it, and that is the worse case.** The
+emission caps — `rest-emission`, `graphql-emission`, `openapi-emission` — `@Requires`
+`service-boundary-core` and "ADR-015 codegen", naming no kernel SPI at all. Their dependency on the
+`preview` body-codec surface arrives through the code the pipeline emits. So the capability map
+under-reports its own exposure: ten capabilities are affected and only seven say so, which means the
+`@Requires` graph cannot be used on its own to answer "what breaks if this contract moves".
 
 **And the exposure is wider than Tier 2.** HTTP body codecs are `preview`, and *every generated
 Exeris application* binds them: the generated `parseBody` resolves
@@ -123,12 +132,14 @@ Three things, named so the RFC is not read as more complete than it is:
 - **The `…spi.http` breakdown is per-surface**, so "promote HTTP" is not a single act — retry, route
   authorization and SSE are separately labelled and separately consumed, and they do not have to
   move together.
-- ~~**Enterprise-tier consumers.**~~ **Settled (2026-09-02):** the enterprise tier is a separate
-  scope and does not gate a promotion. The matrix's "Enterprise divergence" column marks crypto,
-  transport and graph as having enterprise implementations, but a driver implements a contract
-  rather than constraining when it is declared settled. The dependency runs the other way and only
-  for *changes*: a contract that moves after promotion is what would reach the enterprise driver,
-  which is an argument for promoting sooner rather than a reason to wait.
+- ~~**Enterprise-tier consumers.**~~ **Settled (2026-09-02), and the matrix already said so.** The
+  question was whether the enterprise implementations the matrix marks on crypto, transport and
+  graph constrain a promotion. They do not, and this needed reading rather than deciding —
+  `docs/stability-matrix.md` states of that column: *"this is informational and **not** a dependency
+  of the open-core surface."* The reasoning behind it holds independently: a driver implements a
+  contract rather than constraining when it is declared settled, and the dependency runs the other
+  way and only for *changes* — a contract that moves after promotion is what would reach the
+  enterprise driver. That is an argument for promoting sooner, not a reason to wait.
 
 ## Options Considered
 
@@ -198,7 +209,9 @@ What the investigation does support saying now:
    Those two facts pointing the same way is unusual and should be used.
 3. Whatever is decided, the matrix should state, per `preview` surface, **which HLA capabilities are
    waiting on it**. Today that link exists only by cross-referencing two documents, which is how the
-   contradiction in Option C's "Cons" survived unnoticed.
+   contradiction in Option C's "Cons" survived unnoticed — and the emission caps show the
+   cross-reference alone is not enough, because three of the ten affected capabilities declare no
+   kernel dependency to cross-reference.
 
 ## Open questions
 
