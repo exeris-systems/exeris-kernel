@@ -239,19 +239,32 @@ jobs:
         # ignoring them, and the TCK reclassification landed — 115 bugs and vulnerabilities closed,
         # 8 code smells left.
         #
-        # It also logged `Unresolved imports/types have been detected during analysis`, which is not
-        # noise: `sonar.java.libraries` is a glob over the project tree, so it matches the 9 reactor
-        # jars and none of the 71 dependency jars on a module's real classpath. That is what the
-        # Maven scanner would derive correctly, and it is tracked separately.
+        # That analysis also logged `Unresolved imports/types have been detected during analysis`
+        # and `Missing 'sonar.java.test.libraries' property`, which is what moved this step from the
+        # standalone CLI scanner to the Maven one. The CLI scanner has to be HANDED the analysis
+        # classpath, and it was handed a glob over the project tree — which cannot reach the local
+        # Maven repository, so it matched the 9 reactor jars and none of the 71 dependency jars on
+        # a module's real test classpath. sonar-java was resolving neither JUnit nor AssertJ nor the
+        # Postgres driver. The Maven plugin derives both properties per module from the reactor;
+        # dumped locally before this change was made, exeris-kernel-community resolves to 26 main
+        # and 71 test library entries.
         #
-        # Pinned by commit SHA, not by tag. Two high-severity advisories (GHSA-f79p-9c5r-xg88,
-        # GHSA-5xq9-5g24-4g6f) cover every 4.x/5.x release of this action, so `@v5` resolved to a
-        # vulnerable revision and failed the Dependency Review gate on PRs into main; both are
-        # cleared from 6.0.0 onward. The SHA below is tag v8.2.1. A moving tag is also mutable —
-        # SHA-pinning is what makes the reviewed revision the one that actually runs.
+        # It also brings all ten reactor modules into scope, where sonar.sources had been a
+        # hand-written list missing three of them whose JaCoCo reports were nonetheless imported
+        # (18 x `File not found in project sources`, and that coverage discarded). What it does not
+        # cover is tools/jfr-reporter, 6 files and 570 lines of CI tooling that sit outside the
+        # reactor deliberately: the old list named it, this cannot, and adding it back to the root
+        # module's sources would analyse it without its own dependencies, reintroducing the exact
+        # defect being removed here.
+        #
+        # No third-party action any more, which also retires a SHA pin that existed because two
+        # high-severity advisories (GHSA-f79p-9c5r-xg88, GHSA-5xq9-5g24-4g6f) covered every 4.x/5.x
+        # release of `sonarqube-scan-action`. The plugin version is pinned in the root POM's
+        # pluginManagement; the goal is invoked by full coordinates so the pin is what resolves,
+        # rather than a prefix lookup that would take the newest release.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
-        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        run: mvn -B -e org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'

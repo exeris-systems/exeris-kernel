@@ -205,6 +205,22 @@ Reduce suppressions where possible without violating the Community best-effort p
 
 **Merge Gate:** SonarQube baseline established and enforced on new code.
 
+**Status (v0.12): PARTIAL — the gate is computed, and nothing enforces it.** Analysis moved from
+SonarQube Cloud Automatic Analysis to a CI-run scanner, and that is the half that is real: a quality
+gate with five new-code conditions is evaluated on every pull request, JaCoCo coverage is imported
+(it had never been — the `coverage` metric did not exist on this project at all, which is different
+from reading zero), and all ten reactor modules are in scope where the previous configuration named
+seven source roots by hand. The scanner is the Maven one, so the analysis classpath comes from the
+reactor instead of a glob that reached none of a module's 71 dependency jars.
+
+What is not delivered is the word *enforced*. `main` requires two status checks, `Build & TCK
+Verification` and `SPI Compatibility Gate`; the SonarQube check is not among them, and
+`development/0.12.0` carries no branch protection at all. The analysis step is also
+`continue-on-error` on purpose, because it runs inside the pipeline's root job and a SonarQube
+outage must not be able to take every merge gate down with it. So a red quality gate today is a
+report, not a refusal. Making it a refusal is a branch-protection change plus a decision about which
+failures should stop a merge — neither of which follows automatically from having the analysis.
+
 ---
 
 ### Product Boundary: Open-Core / Enterprise Separation Audit

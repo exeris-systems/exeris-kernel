@@ -135,6 +135,53 @@
             deliberately ungated (0.0) like its LINE floor.
         -->
         <jacoco.branch.minimum>0.15</jacoco.branch.minimum>
+
+        <!--
+            SonarQube Cloud analysis. These are only the values the reactor cannot derive; the
+            scanner takes projectVersion, sourceEncoding, the Java release, the source and test
+            roots, the compiled output and the analysis classpath from the build itself, which is
+            the reason it replaced a properties file that had to state all of them and had gone
+            stale on the first of them (it still said 0.11.0 on a 0.12.0-SNAPSHOT line).
+        -->
+        <sonar.organization>exeris-systems</sonar.organization>
+        <sonar.projectKey>exeris-systems_exeris-kernel</sonar.projectKey>
+        <!-- Without this the reactor root's name, "Exeris Kernel :: Root", becomes the project's. -->
+        <sonar.projectName>Exeris Kernel</sonar.projectName>
+        <sonar.newCode.referenceBranch>main</sonar.newCode.referenceBranch>
+
+        <sonar.exclusions>**/target/**,**/.idea/**,**/kernel-legacy/**,**/native-libs/**,**/*.md</sonar.exclusions>
+        <sonar.coverage.exclusions>**/*Benchmark*.java,**/target/**</sonar.coverage.exclusions>
+        <!--
+            Copy-paste exclusions for framework-mandated boilerplate where structural repetition is
+            by design, not a DRY violation: JMH *Benchmark* harness classes, and JFR @Event classes
+            (flat annotated POJOs, @Label/@Description fields plus a static emit() begin/set/commit
+            skeleton; 75 of 77 *Event.java extend jdk.jfr.Event). Each JFR event must be its own
+            concrete class with its own @Name, so CPD on them is noise.
+        -->
+        <sonar.cpd.exclusions>**/*Benchmark*.java,**/*Event.java</sonar.cpd.exclusions>
+        <sonar.coverage.jacoco.xmlReportPaths>**/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+
+        <!--
+            java:S2187 "Add some tests to this class", suppressed on test sources.
+
+            PROVISIONAL. The rule fires on the house test shape: a class whose tests all live in
+            JUnit 5 @Nested inner classes has no top-level @Test, and the analyser served by
+            SonarQube Cloud Automatic Analysis did not look inside. That was 103 test classes here
+            and 99 open issues, none of them real; every one of those classes runs tests.
+
+            Trade-off, stated plainly: this also hides a genuinely empty test class. That is judged
+            the lesser cost against 99 false BLOCKERs, which train reviewers to ignore the rule.
+
+            RE-TEST AND REMOVE IF POSSIBLE, and half-measured so far. Automatic Analysis was
+            ignoring this block entirely, which is why those 99 stayed open on main while the
+            configuration said otherwise. The first CI-based analysis reports 0, so the suppression
+            is finally doing something. What that does NOT establish is whether it still needs to: a
+            current sonar-java may understand @Nested on its own. The discriminating test is to
+            delete these three properties and re-run, and it has not been run.
+        -->
+        <sonar.issue.ignore.multicriteria>nestedTests</sonar.issue.ignore.multicriteria>
+        <sonar.issue.ignore.multicriteria.nestedTests.ruleKey>java:S2187</sonar.issue.ignore.multicriteria.nestedTests.ruleKey>
+        <sonar.issue.ignore.multicriteria.nestedTests.resourceKey>**/src/test/java/**/*.java</sonar.issue.ignore.multicriteria.nestedTests.resourceKey>
         <jvm.args>
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
@@ -259,6 +306,34 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-deploy-plugin</artifactId>
                     <version>3.1.4</version>
+                </plugin>
+
+                <!--
+                    The SonarQube analyser, pinned and NOT bound to a lifecycle phase: CI invokes
+                    `sonar:sonar` explicitly after `verify`, so an ordinary build never contacts
+                    SonarQube Cloud and an offline build is unaffected.
+
+                    It replaced the standalone CLI scanner because of one property it does not have
+                    to be told: the analysis classpath. The CLI scanner had to be handed
+                    `sonar.java.libraries` as a glob over the project tree, and a glob rooted at the
+                    project cannot reach the local Maven repository, so it matched the 9 reactor
+                    jars and none of the 71 dependency jars on a module's real test classpath.
+                    sonar-java analysed with JUnit, AssertJ, Mockito, the Postgres driver and the
+                    Kafka client all unresolved, and said so on every run: `Unresolved imports and
+                    types have been detected during analysis`, plus `Missing
+                    sonar.java.test.libraries property. You might end up with less precise analysis
+                    results`. This plugin derives both from the reactor, per module.
+
+                    It also brings every reactor module into scope. Under the CLI scanner
+                    `sonar.sources` was a hand-written list, and three modules were missing from it
+                    while their JaCoCo reports were still imported, so the scanner reported 18
+                    findings of the form `File not found in project sources` and threw that coverage
+                    away.
+                -->
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>5.2.0.4988</version>
                 </plugin>
             </plugins>
         </pluginManagement>

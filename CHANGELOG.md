@@ -10,6 +10,37 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **SonarQube analysis moves from the standalone CLI scanner to the Maven one, and stops guessing
+  the classpath.** The CLI scanner has to be handed `sonar.java.libraries`, and it was handed a glob
+  over the project tree — which cannot reach the local Maven repository. It matched the 9 reactor
+  jars and **none of the 71** dependency jars on a module's real test classpath, so sonar-java
+  resolved neither JUnit nor AssertJ nor the Postgres driver, and said so on every run
+  (`Unresolved imports/types have been detected during analysis`, `Missing
+  'sonar.java.test.libraries' property`). The Maven plugin derives both per module from the reactor;
+  dumped before the change, `exeris-kernel-community` resolves to 26 main and 71 test entries.
+
+  Everything else it derives too, which is why `sonar-project.properties` is deleted rather than
+  kept: the file listed `projectVersion`, `sourceEncoding`, the Java release, source and test roots
+  and compiled output, all of which the reactor already knows — and it had gone stale on the first
+  of them, still claiming `0.11.0` on a `0.12.0-SNAPSHOT` line. Only what cannot be derived moves
+  into the root POM: project identity, exclusions, coverage report paths, the new-code reference
+  branch and the `java:S2187` suppression. A file the scanner does not read is worse than no file,
+  because it still reads as configuration.
+
+  Two consequences worth stating. All **ten** reactor modules are now in scope, where `sonar.sources`
+  was a hand-written list missing three whose JaCoCo reports were imported anyway (18 x `File not
+  found in project sources`, that coverage discarded) — expect findings from `community-kafka`,
+  `build-config` and `diagnostics-cli`, analysed here for the first time. And `tools/jfr-reporter`
+  leaves analysis: 6 files, 570 lines, outside the reactor by design; adding it back to the root
+  module's sources would analyse it without its own dependencies, which is the defect being removed.
+
+  `exeris-kernel-tck` needs an explicit override, because the scanner reads source roots from Maven
+  and Maven says `src/main`. Its POM sets `sonar.sources` empty and puts both roots under
+  `sonar.tests` — verified by dumping the scanner's computed properties, not assumed. No third-party
+  action is involved any more, which retires a SHA pin that existed because two high-severity
+  advisories covered every 4.x/5.x release of `sonarqube-scan-action`; the LGPL licence exception it
+  held passes to the plugin, which carries the same licence for the same reason.
+
 - **`exeris-kernel-tck` publishes its contract instead of hiding it under a classifier.** The
   `Abstract*Tck` classes are that module's published API and now live in `src/main`. Until now the
   module had only `src/test`, so its published main jar held 7 files of META-INF while all 492 real
