@@ -164,9 +164,12 @@ This also makes the step's own semantics harmless. It does not wait for the verd
 (`sonar.qualitygate.wait` is set nowhere) and exits as soon as the report is uploaded, so its success
 means "submitted", not "passed". That mattered while it was the only signal; it does not now.
 
-`development/0.12.0` has no branch protection, so on the development line the gate is advisory. A
-milestone's pull requests merge there and only the release integration PR targets `main`, which is
-where the requirement bites.
+The same three contexts are required on `development/**`, as a pattern, so the next milestone's
+branch inherits it rather than needing the rule re-created. Two settings differ from `main` there on
+purpose: no approving-review requirement, and "up to date before merging" off, because enforcing that
+against a branch with many open pull requests serialises merges for little gain. The `preview` branch
+keeps its own rule and does not require the SonarQube check — that track builds on a newest-JDK line
+with `--enable-preview`, and what the analyser reports there has not been measured.
 
 The scanner log used to carry two warnings, `Unresolved imports/types have been detected` and `Use of
 preview features have been detected`, and both are gone. Neither was a defect in the code: the same

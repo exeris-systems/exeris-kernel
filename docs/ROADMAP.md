@@ -228,10 +228,19 @@ outage. That also disposes of a property that used to matter: the step does not 
 (`sonar.qualitygate.wait` is set nowhere), which is irrelevant once the verdict arrives as its own
 check.
 
-**What is not covered:** `development/0.12.0` carries no branch protection at all, and that is where
-the work actually lands — a milestone's pull requests merge there, and only the release integration
-PR targets `main`. So the gate binds at the release cut and is advisory for everything before it.
-Closing that means protecting the development line, which is a broader decision than this entry.
+The development line is covered too, and as a pattern rather than a branch: a `development/**` rule
+requires the same three contexts, so it survives the next milestone's branch instead of having to be
+re-created for it. Confirmed to bind rather than assumed — the REST protection endpoint for
+`development/0.12.0` now returns all three. Two settings differ from `main` deliberately: no
+approving-review requirement, since this was about checks and not about who merges; and `strict` off,
+because requiring every pull request to be up to date with a busy development branch serialises
+merges, which is a real cost with many open at once and a small benefit when the checks themselves
+re-run on the merge commit.
+
+**What is not covered:** the `preview` branch has its own protection and requires only the two
+GitHub Actions checks, not the SonarQube one. Left alone on purpose — that line builds on a newest-JDK
+track with `--enable-preview`, where the analyser's behaviour is exactly what this milestone found it
+cannot yet assume, so requiring the gate there should follow a run that shows what it reports.
 
 ---
 
