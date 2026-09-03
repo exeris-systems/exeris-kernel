@@ -12,14 +12,9 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
-// AvoidDuplicateLiterals: "Exeris", "Security" are JFR annotation literals — they cannot
-// be extracted to constants as @Label/@Category require compile-time string literals.
 // UseExplicitTypes: 'var' is used only for JFR event locals; explicit types would
 // duplicate the inner class name on the same line with zero type-safety gain.
-@SuppressWarnings({
-    "PMD.AvoidDuplicateLiterals",
-    "PMD.UseExplicitTypes"
-})
+@SuppressWarnings("PMD.UseExplicitTypes")
 public final class SecurityJfrEvents {
 
     private SecurityJfrEvents() {}

@@ -74,8 +74,11 @@ final class CoreFlowRuntime { // NOPMD
     private volatile long compensationsRunBaseline;
     private volatile long stepExecutionsBaseline;
     private final AtomicInteger queueDepth = new AtomicInteger();
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile FlowSnapshotStore snapshotStore;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile IdempotencyGuard guard;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile TimeSource timeSource = TimeSource.SYSTEM;
     private volatile boolean started;
     private volatile boolean closed;

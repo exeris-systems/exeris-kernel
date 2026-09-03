@@ -40,6 +40,7 @@ public final class CommunitySubsystemHealthWatcher {
     private final Map<String, HealthSource> sources = new ConcurrentHashMap<>();
     private final long intervalNanos;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread thread;
 
     public CommunitySubsystemHealthWatcher(KernelHealthMonitor monitor, long intervalNanos) {

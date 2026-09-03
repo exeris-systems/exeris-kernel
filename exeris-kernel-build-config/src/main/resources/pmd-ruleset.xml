@@ -128,5 +128,25 @@
         </properties>
     </rule>
 
+    <!--
+        AvoidDuplicateLiterals: annotation values are exempt, and only annotation values.
+
+        The rule's remedy is to extract a repeated literal into a named constant, and inside an
+        annotation that remedy is worse than the finding: `@SuppressWarnings(S3077)` compiles, but
+        a reader can no longer see WHICH rule is suppressed at the point of suppression, which is
+        the only thing the annotation is there to say. The threshold stays at its default for
+        ordinary code, where the rule is doing its job.
+
+        It surfaced when NativeTcpCarrier acquired five `@SuppressWarnings("java:S3077")` field
+        annotations at once; suppressing per field rather than per class is the deliberate choice
+        (it keeps the rule live for a future `volatile` collection in the same class), and this is
+        the lint consequence of making it.
+    -->
+    <rule ref="category/java/errorprone.xml/AvoidDuplicateLiterals">
+        <properties>
+            <property name="skipAnnotations" value="true"/>
+        </properties>
+    </rule>
+
 </ruleset>
 

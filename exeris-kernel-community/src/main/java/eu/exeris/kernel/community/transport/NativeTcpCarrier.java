@@ -106,10 +106,13 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLong refusedConnections = new AtomicLong();
     private final AtomicLong acceptFaults = new AtomicLong();
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile StreamHandler streamHandler;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile ConnectionHandler connectionHandler = connection -> {
     };
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile ServerSocketChannel serverChannel;
     /**
      * Accepts that returned a socket, including ones the connection cap then refused — what it
@@ -118,7 +121,9 @@ public final class NativeTcpCarrier implements TransportEngine {
      * so this needs no atomic.
      */
     private long acceptsObserved;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread acceptorThread;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile PaqsScheduler paqs;
     private final List<NativeTcpReactor> reactors = new ArrayList<>();
     private final AtomicInteger nextReactorIndex = new AtomicInteger(0);

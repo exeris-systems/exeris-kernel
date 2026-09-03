@@ -35,6 +35,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  */
 final class CommunityBootstrapServices {
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private static volatile PersistenceEngine sharedPersistenceEngine;
 
     private CommunityBootstrapServices() {

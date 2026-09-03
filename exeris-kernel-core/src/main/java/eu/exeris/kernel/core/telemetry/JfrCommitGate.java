@@ -27,6 +27,7 @@ public final class JfrCommitGate {
     /** Sentinel used when no committer is installed; always rejects so callers commit inline. */
     private static final CommitSink REJECT_ALL = event -> false;
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private static volatile CommitSink current = REJECT_ALL;
 
     /** Functional view of the active commit destination — avoids a nullable static pointer. */

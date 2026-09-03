@@ -18,7 +18,9 @@ final class DeferredHttpServerEngine implements HttpServerEngine {
     private final HttpConfig config;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile HttpServerEngine delegate;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile HttpHandler handler;
 
     /* default */ DeferredHttpServerEngine(HttpProvider provider, HttpConfig config) {

@@ -63,6 +63,7 @@ final class NativeTcpReactor {
     private final Set<SocketChannel> pendingWriteInterest = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean wakeupPending = new AtomicBoolean(false);
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread thread;
 
     // One reaper per reactor, not one per carrier: it carries a next-sweep cursor that is only

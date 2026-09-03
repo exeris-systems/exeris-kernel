@@ -11,10 +11,6 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
-// AvoidDuplicateLiterals: JFR @Label / @Category / @Name are annotation literals —
-// cannot be extracted to constants. The @Category array elements ("Exeris Kernel", etc.)
-// repeat across inner event classes by design.
-@SuppressWarnings("PMD.AvoidDuplicateLiterals")
 public final class TelemetryJfrEvents {
 
     private TelemetryJfrEvents() {
