@@ -1,16 +1,12 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.security;
 
+import eu.exeris.kernel.core.security.jfr.SecurityDenialReason;
 import eu.exeris.kernel.core.security.jfr.SecurityJfrEvents;
 import eu.exeris.kernel.spi.context.KernelProviders;
-import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.AuthenticationResult;
@@ -64,7 +60,9 @@ import java.util.Objects;
  * <h2>JFR-First Waterfall</h2>
  * <pre>
  *   PrincipalBound          ← successful bind (durationMicros, strategy, hasTenant)
- *   SecurityContextMissing  ← gate activation (EX-SEC-2001 / NO_PROVIDER / TOKEN_INVALID)
+ *   SecurityContextMissing  ← gate activation; the reason is a SecurityDenialReason and
+ *                             carries its own EX-SEC code (2001 = nothing to validate,
+ *                             2002 = validation attempted and failed)
  * </pre>
  *
  * <h2>The Wall</h2>
@@ -158,13 +156,13 @@ public final class SecurityInterceptor {
         try {
             result = provider.authenticate(rawToken);
         } catch (SecurityAuthenticationException _) {
-            SecurityJfrEvents.emitContextMissing(KernelErrorCodes.EX_SEC_2002, "TOKEN_INVALID");
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.TOKEN_INVALID);
             return false;
         } catch (Exception _) { //NOPMD AvoidCatchingGenericException — any provider failure = no context, Fail-Closed
-            SecurityJfrEvents.emitContextMissing(KernelErrorCodes.EX_SEC_2002, "PROVIDER_ERROR");
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.PROVIDER_ERROR);
             return false;
         } catch (Error ex) { //NOPMD AvoidCatchingGenericException — JFR must fire before JVM-fatal errors propagate
-            SecurityJfrEvents.emitContextMissing(KernelErrorCodes.EX_SEC_2002, "PROVIDER_ERROR");
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.PROVIDER_ERROR);
             throw ex;
         }
 
@@ -294,10 +292,10 @@ public final class SecurityInterceptor {
         try {
             storage = StorageContextBridge.derive(principal);
         } catch (Exception _) { //NOPMD AvoidCatchingGenericException — any bridge failure = fail-closed
-            SecurityJfrEvents.emitContextMissing(KernelErrorCodes.EX_SEC_2002, "PRE_AUTH_BRIDGE_ERROR");
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.PRE_AUTH_BRIDGE_ERROR);
             return false;
         } catch (Error ex) { //NOPMD AvoidCatchingGenericException — emit JFR then re-throw
-            SecurityJfrEvents.emitContextMissing(KernelErrorCodes.EX_SEC_2002, "PRE_AUTH_BRIDGE_ERROR");
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.PRE_AUTH_BRIDGE_ERROR);
             throw ex;
         }
 

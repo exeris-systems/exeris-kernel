@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -34,6 +31,30 @@ final class CommunityHttpTransportFactory {
     }
 
     /* default */ static TransportEngine buildTransport(HttpConfig config, int port, MemoryAllocator allocator) {
+        ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.isBound()
+            ? KernelProviders.CURRENT_CONFIG.get()
+            : null;
+        TransportConfig transportConfig = buildTransportConfig(config, port, configProvider);
+        NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
+        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
+            return provider.createEngine(transportConfig);
+        }
+        return ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator)
+                .call(() -> provider.createEngine(transportConfig));
+    }
+
+    /**
+     * Builds the listener's transport configuration.
+     *
+     * <p>Separate from {@link #buildTransport} so the operator-facing values on it can be asserted
+     * without opening a socket. The HTTP listener carries its own {@code TransportConfig} rather
+     * than sharing the transport subsystem's, so every key both paths honour has to be read here
+     * as well — one read in the subsystem alone would apply to a standalone carrier and silently
+     * not to the server almost every deployment actually runs.
+     */
+    /* default */ static TransportConfig buildTransportConfig(HttpConfig config,
+                                                              int port,
+                                                              ConfigProvider configProvider) {
         TransportMode transportMode = switch (config.mode()) {
             case SERVER -> TransportMode.SERVER;
             case CLIENT -> TransportMode.CLIENT;
@@ -41,25 +62,16 @@ final class CommunityHttpTransportFactory {
             case DISABLED -> TransportMode.DISABLED;
         };
         int transportPort = transportMode == TransportMode.CLIENT ? 0 : port;
-        ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.isBound()
-            ? KernelProviders.CURRENT_CONFIG.get()
-            : null;
-        int reactorCount = CommunityReactorCountResolver.resolve(configProvider);
-        TransportConfig transportConfig = new TransportConfig(
+        return new TransportConfig(
                 transportMode,
                 config.bindHost(),
                 transportPort,
-                reactorCount,
-            resolveTransportProperty(configProvider, "transport.certPath", "network.certPath"),
-            resolveTransportProperty(configProvider, "transport.keyPath", "network.keyPath"),
+                CommunityReactorCountResolver.resolve(configProvider),
+                resolveTransportProperty(configProvider, "transport.certPath", "network.certPath"),
+                resolveTransportProperty(configProvider, "transport.keyPath", "network.keyPath"),
                 config.maxConnections(),
-                config.idleTimeoutMillis());
-        NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
-        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            return provider.createEngine(transportConfig);
-        }
-        return ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator)
-                .call(() -> provider.createEngine(transportConfig));
+                config.idleTimeoutMillis(),
+                CommunityAdmissionCeilingResolver.resolve(configProvider));
     }
 
     private static String resolveTransportProperty(ConfigProvider configProvider,

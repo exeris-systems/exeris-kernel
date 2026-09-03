@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -94,8 +90,8 @@ final class CommunityHttp2SessionProcessor {
             LOG.log(System.Logger.Level.INFO,
                     "HTTP/2 prior-knowledge preface detected; entering h2c request frame-loop mode");
         }
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
-        try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderListSize());
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config)) {
             processBufferedHttp2Frames(stream, handler, session, state, totalBytes, initialFrameOffset);
         }
     }
@@ -107,8 +103,8 @@ final class CommunityHttp2SessionProcessor {
         LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
         long bufferedHttp2Bytes = CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
-        try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderListSize());
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config)) {
             processBufferedHttp2Frames(stream, handler, session, state, bufferedHttp2Bytes, 0);
         }
     }

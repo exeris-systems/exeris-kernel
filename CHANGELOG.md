@@ -6,6 +6,1292 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [0.12.0] — 2026-09-03
+
+### Added
+
+- **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
+  gains `abstain()` and a matching `Kind.ABSTAIN`; the dispatcher walks an ordered list of policies
+  and takes the first non-abstaining answer. Without it a policy had only two replies — a requirement
+  or none — and "none" meant *"this route is open"* rather than *"not mine"*, so the first policy
+  registered silently owned the whole URL space. Two authors can now share it without coordinating
+  through absence.
+
+### Changed
+
+- **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
+  total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
+  and Tier B column type — and throws a typed exception for anything it does not implement. It
+  specifically does **not** decode unknown bytes as UTF-8: returning mojibake for a structured binary
+  datum is silent corruption, and a refusal is strictly better than a wrong string that reads like a
+  right one.
+
+  Two further obligations are transcription rather than ruling, and are now written down for every
+  accessor because both implementations already agreed and only the Javadoc was silent: NULL
+  behaviour, resolved before any type dispatch (a reference-typed accessor returns `null` and must
+  not throw; a primitive accessor throws, having no null to return), and out-of-range behaviour,
+  uniformly `IndexOutOfBoundsException` — which `getInt` alone had stated while ten neighbours
+  behaved identically without saying so. Pinned by `AbstractRowCursorTypeSetTck`.
+
+- **A `401` names its reason to the recording, not to the caller.** The deny reason now reaches a JFR
+  event carrying the provider id and a reason code — never the raw token, key material, or claim
+  values — while the response to the caller stays an undifferentiated `401`. Both halves are the
+  point: an operator could not previously tell a stale JWKS from a bad signature from an unbound
+  provider, because all three produced the same silent rejection, and telling the *caller* which one
+  it was would hand an attacker a probe.
+
+### Added
+
+- **A `websocket` subsystem, so an application that boots the kernel reaches an endpoint without
+  naming a driver.** ADR-084 §1 decided a provider yields an engine *without* a kernel boot, for a
+  tool that must not pay for a runtime it does not use. That decision stands; what it did not decide
+  is that the no-boot path is the only one. An application — hand-written or generated — could
+  previously reach an endpoint only by naming a Community provider class, putting a driver on its
+  compile classpath, which is the coupling the Wall exists to prevent. Both deployments are now
+  supported: `WebSocketKernelProviders` publishes `WEBSOCKET_PROVIDER` and `WEBSOCKET_SERVER_ENGINE`,
+  and the application supplies its handler and handshake policy into the boot through the same class.
+
+  **Inert unless configured.** `websocket.enabled` defaults to `false`, so a deployment that merely
+  upgrades gains no listener — a socket appearing because a dependency was bumped is a security
+  regression delivered as a feature. `websocket.allowedOrigins` defaults to empty, which accepts no
+  browser origin. Eight keys, each defaulting to the constant `WebSocketConfig` already publishes, so
+  the documented default and the effective one cannot drift apart.
+
+  The engine is built at `start()`, not at `initialize()`: bootstrap composes `providerBindings()`
+  after every subsystem has initialised, so `MEMORY_ALLOCATOR` is not bound while one is
+  initialising, and `dependsOn("memory")` orders the phases without making the binding visible
+  earlier. Constructing early would either fail or open a second memory budget beside the kernel's —
+  the same problem `DeferredHttpServerEngine` already answers. Recorded as ADR-084 Amendment A2.
+
+- **Events and flow get real-runtime test fixtures** (T2-4), over one embedded kernel rather than one
+  fixture per subsystem, and `KernelScopePump` moves to the testkit root package where a consumer can
+  reach it.
+
+### Fixed
+
+- **The embedded path ADR-084 exists for threw on its first call.** `CommunityWebSocketServerEngine`
+  resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and refused when nothing had bound one
+  — precisely the state a tool embedding an endpoint is in. The transport factory's own javadoc
+  described that scenario while the method beneath it rejected it. It now falls back to a private
+  allocator when none is ambient, owned and closed by the engine that created it, mirroring
+  `CommunityHttpClientEngine`. An ambient allocator is still never closed by the engine, because it
+  belongs to whoever bound it. **The property is now enforced rather than described:**
+  `AbstractWebSocketProviderTck` binds no `ScopedValue` and boots nothing, so a provider that quietly
+  requires a kernel scope fails the shared suite. Recorded as ADR-084 Amendment A1.
+
+  This does **not** extend to HTTP: `CommunityHttpTransportFactory.resolveAllocator` still refuses an
+  unbound allocator, so an HTTP *server* engine is not constructible outside a boot. Whether it
+  should be belongs to its own decision.
+
+- **Twenty-five `volatile` fields audited rather than blanket-ignored** (`java:S3077`). The rule
+  fires on a `volatile` reference to a mutable type, where the write publishes the reference but not
+  the object's contents. Every site was read: all twenty-five hold either an immutable value, an
+  effectively-final snapshot, or a reference whose publication is the whole contract. Suppressions
+  carry the audit's reasoning at the field, which is worth more than a project-level exclusion
+  because it survives the next reader.
+
+- **`awaitSignal`'s loop is documented as the bounded one it is** (`java:S2189`). The analyser reads
+  a `while` with no loop-carried exit as infinite; the exit is the interrupt, and saying so at the
+  suppression is cheaper for a future reader than a false positive resolved in a web UI where the
+  code is not.
+
+### Fixed — verification
+
+- **The HTTP boot fixture had never carried a request body.** Every case sent a bodyless `GET`, so
+  the decoder binding and the request-scoped allocator the fixture exists to prove were exercised by
+  nothing. A parameterized case now sends `POST`, `PUT`, `PATCH` and `DELETE` with a body and asserts
+  the observed size, the bound allocator and the bound decoders — one case per method, because a
+  single one cannot show that method dispatch is not what carries the body.
+
+### Changed
+
+- **SonarQube analysis moves from the standalone CLI scanner to the Maven one, and stops guessing
+  the classpath.** The CLI scanner has to be handed `sonar.java.libraries`, and it was handed a glob
+  over the project tree — which cannot reach the local Maven repository. It matched the 9 reactor
+  jars and **none of the 71** dependency jars on a module's real test classpath, so sonar-java
+  resolved neither JUnit nor AssertJ nor the Postgres driver, and said so on every run
+  (`Unresolved imports/types have been detected during analysis`, `Missing
+  'sonar.java.test.libraries' property`). The Maven plugin derives both per module from the reactor;
+  dumped before the change, `exeris-kernel-community` resolves to 26 main and 71 test entries.
+
+  Both warnings are gone, but the second one took a second fix and a wrong turn worth recording.
+  `Unresolved imports/types` survived the switch, and the first reading of that — the analyser's
+  support for a recent JDK — was wrong. `sonar:sonar` invoked alone starts a session in which no
+  module has been packaged, so Maven cannot resolve a reactor sibling to a jar and falls back to the
+  local repository, where a CI step that runs `verify` rather than `install` has left nothing. Maven
+  said so before the goal started, and the fingerprint was exact: the warning fired in every module
+  with a reactor dependency and in neither of the two without one. The analysis therefore runs
+  `verify` in the same command. A local dump had agreed with the wrong reading, for a reason that
+  had nothing to do with the configuration: a previous `mvn clean install` leaves the sibling jars
+  in `~/.m2`, where CI has none.
+
+  `Use of preview features have been detected` disappeared with it, which was not predicted: that one
+  had been attributed to the analyser's support for a recent JDK, on the strength of firing in
+  `exeris-kernel-spi` where the other never did. Both are absent now and the run parses the same 1374
+  Java files, so it is not a narrower analysis; the mechanism behind the preview half is not
+  established, only that it is tied to the same change.
+
+  Everything else it derives too, which is why `sonar-project.properties` is deleted rather than
+  kept: the file listed `projectVersion`, `sourceEncoding`, the Java release, source and test roots
+  and compiled output, all of which the reactor already knows — and it had gone stale on the first
+  of them, still claiming `0.11.0` on a `0.12.0-SNAPSHOT` line. Only what cannot be derived moves
+  into the root POM: project identity, exclusions, coverage report paths, the new-code reference
+  branch and the `java:S2187` suppression. A file the scanner does not read is worse than no file,
+  because it still reads as configuration.
+
+  Two consequences worth stating. All **ten** reactor modules are now in scope, where `sonar.sources`
+  was a hand-written list missing three whose JaCoCo reports were imported anyway (18 x `File not
+  found in project sources`, that coverage discarded) — expect findings from `community-kafka`,
+  `build-config` and `diagnostics-cli`, analysed here for the first time. And `tools/jfr-reporter`
+  leaves analysis: 6 files, 570 lines, outside the reactor by design; adding it back to the root
+  module's sources would analyse it without its own dependencies, which is the defect being removed.
+
+  `exeris-kernel-tck` needs an explicit override, because the scanner reads source roots from Maven
+  and Maven says `src/main`. Its POM sets `sonar.sources` empty and puts both roots under
+  `sonar.tests` — verified by dumping the scanner's computed properties, not assumed. No third-party
+  action is involved any more, which retires a SHA pin that existed because two high-severity
+  advisories covered every 4.x/5.x release of `sonarqube-scan-action`; the LGPL licence exception it
+  held passes to the plugin, which carries the same licence for the same reason.
+
+- **`exeris-kernel-tck` publishes its contract instead of hiding it under a classifier.** The
+  `Abstract*Tck` classes are that module's published API and now live in `src/main`. Until now the
+  module had only `src/test`, so its published main jar held 7 files of META-INF while all 492 real
+  classes shipped as `<classifier>tests</classifier>` — which is why Maven Central could not take it
+  (no sources jar and no javadoc jar can be produced from empty compile roots) and why it was
+  excluded from the first Central publication. That exclusion is gone.
+
+  **Consumers change shape**: drop `<classifier>tests</classifier><type>test-jar</type>` and depend
+  on the plain artefact at `test` scope. The module no longer produces a test jar at all — five
+  self-tests remain in `src/test` and nobody consumes them. `exeris-kernel-core`, `-community` and
+  `-community-kafka` are updated here; the out-of-repo enterprise distribution needs the same edit,
+  in lockstep. `exeris-kernel-bom` drops the now-nonexistent `tests` entry, which also removes a
+  dangling pointer: the BOM is published to Central and was managing a coordinate that would not be
+  there.
+
+  **What it cost, and where.** Not the file move — 135 files, 5 of which stay put, compiling on the
+  first attempt after one scope correction. The cost was that test-shaped code entered a lint and
+  coverage regime written for production runtime code: **2284 findings at once (1782 PMD, 502
+  Checkstyle across 93 files)**, and a JaCoCo floor failing at 0.00 line coverage against a 0.20
+  minimum — structural, because a TCK's classes are exercised by the providers that subclass them in
+  *other* modules.
+
+  Resolved with rules rather than skips: `pmd-ruleset-tck.xml` and `checkstyle-tck.xml` are the
+  kernel rulesets **minus a named list**. The two get that property by different means, and only one
+  of them gets it from the file format. PMD's ruleset references the kernel's and excludes from it,
+  so it is a live view — a rule added upstream reaches the TCK unless somebody excludes it on
+  purpose. Checkstyle has no config inheritance, so its TCK config is a copy, and a copy's failure
+  is silent in the direction that matters: a module added to `checkstyle.xml` would simply never
+  reach these classes. `tools/checkstyle-parity-check` supplies what the format does not, comparing
+  the two configs module by module and property by property against a delta the TCK config declares
+  about itself, and failing on an undeclared difference or a declaration that no longer describes
+  one.
+
+  Ten PMD rules are kept live. Eight had their findings fixed in the code — including two genuinely
+  dead imports, a locale-dependent `toLowerCase()` in a contract assertion, twelve
+  `x.equals("literal")` comparisons and twelve suppressions that had stopped suppressing anything.
+  The other two, `CompareObjectsWithEquals` and `EmptyControlStatement`, are answered at eleven
+  individual sites rather than switched off for the module: four identity comparisons where
+  `equals()` would be the bug (a `LazyConstant` that re-initialised, an inserter closed twice,
+  `Thread` identity, `addSuppressed(self)`), and seven bodies whose emptiness is the assertion.
+  Excluding either rule would have taken every future `==` mistake in the other 126 classes with it. The **L0 ban
+  regexes are all retained**; the six sites where a TCK message *names* a banned type carry a local
+  suppression with its reason rather than the rule being weakened.
+
+  One finding the move surfaced that nothing could have seen before: `JfrAllocationMonitor` imports
+  `com.sun.management.ThreadMXBean`, which the kernel's `IllegalImport` ban would have refused — and
+  did not, because while the class was a test source the ban could not see it. It is the only way to
+  read exact per-thread allocated bytes, which is what that class cross-checks JFR's sampled figure
+  against, so it stays, documented at the site.
+
+### Added
+
+- **The Community WebSocket binding** (`eu.exeris.kernel.community.websocket`,
+  [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9) — provider, embeddable server engine, the
+  HTTP upgrade with its origin pre-filter, and the per-connection exchange. It runs the Core RFC 6455
+  codec over the community TCP carrier, **one virtual thread per connection with no queue in either
+  direction**: `receive()` reads and parses inline, `send()` writes inline under a lock, so
+  backpressure is the socket's and a full egress window parks the thread rather than growing a heap
+  queue (ADR-043 obligation 4, extended to duplex).
+
+  `AbstractWebSocketExchangeTck` is bound over a **real loopback socket**, driven by a client that
+  frames by hand rather than through the kernel codec — two ends sharing a codec also share its
+  mistakes.
+
+  **The TCK gained a case because a mutation survived it.** Skipping the origin pre-filter whenever a
+  handshake callback is set — precisely the "the callback may widen" reading ADR-084 §6 was corrected
+  to forbid — passed all eleven existing tests: the refusal test writes no callback, and every test
+  that writes one uses an allowed origin. The missing case now asserts that an unlisted origin is
+  refused *and that the callback never runs*.
+
+  Two further origin behaviours are pinned at the binding: an **empty allowlist fails closed** rather
+  than admitting everything (the subsystem doc says so, and the first implementation had it
+  inverted), and a request with **no `Origin` is admitted** as a non-browser client, because CSWSH
+  needs a browser's ambient cookies and refusing header-less clients would break every non-browser
+  consumer while stopping nobody.
+
+  **`keepAliveIntervalMillis` is not honoured by this binding** — no server-initiated pings. Dead-peer
+  detection still works, through the carrier's idle reaper; what is missing is holding a NAT path
+  open. Client pings are answered. Recorded in `docs/subsystems/http.md` and the provider's javadoc
+  rather than left for a consumer to discover.
+
+  **Both directions run on `LoanedBuffer`, and review found out why that is not a style point.**
+  `TransportStream` documents its segments as off-heap, and the community carrier passes them
+  straight to a POSIX `send()` downcall built without `Linker.Option.critical` — which rejects a heap
+  segment and has that rejection swallowed by a `catch (Throwable)` that falls back to NIO. A first
+  revision used `MemorySegment.ofArray`, so nothing failed and every frame silently left the fast
+  seam. Measured both ways: **one `IllegalArgumentException: Heap segment not allowed` per write
+  before, zero after.**
+
+  **CONTRIBUTING.md Rule 2 was wrong, and two green tests had been saying so.** It stated that a
+  second `LoanedBuffer.close()` decrements `refCount` below zero into a use-after-free;
+  `AbstractLoanedBuffer.close()` opens its CAS loop with `if (prev <= 0) { return; }`, the SPI javadoc
+  requires idempotence, and `AbstractLoanedBufferTest` and `CommunityLoanedBufferTest` have both been
+  pinning it all along. The rule now says what the real constraint is — **balance, not repetition**:
+  every `retain()` needs its own `close()`, and the use-after-free comes from forking without
+  retaining first.
+
+  A **close-ordering race** surfaced in CI and not locally. The echoed close frame went out before
+  the connection stopped being writable, so a peer could observe the close and still get a successful
+  `send()`. Ordering corrected; proven by widening the window rather than by repetition — with the
+  old order and a 300 ms delay the contract test fails 3 of 3, with the fix it passes 3 of 3.
+
+- **An error-code registry gate** (`tools/error-code-registry-check/`, wired into CI). `KernelErrorCodes`
+  is the declared single source of truth for `EX-` codes and `docs/subsystems/exceptions.md` is what an
+  operator reads when one turns up in a log. **Nothing connected the two**, and the drift was not
+  marginal: **20 of 84 codes had no documentation row**, including four entire domains (`EX-BLOB`,
+  `EX-DIAG`, `EX-JOB`, and the `EX-UNK` sentinel). All 20 rows are backfilled here.
+
+  Two main-source classes also stamped an `EX-` code as a **bare string literal** rather than the
+  constant — a second source of truth that no rename would follow. One of them was worse than a
+  duplicate: the telemetry sink's `"EX-UNK-0000"` fallback was **in no registry at all**, so every
+  record that carried no code of its own was stamped with an identifier a scraper could not look up
+  and this document did not explain. `EX-UNK-0000` is now a registered code with a row, and both
+  literals are gone.
+
+  Four checks, each because the failure it catches is silent: a code with no row is an identifier
+  nothing explains; a row with no code is a promise nothing keeps (the v0.8 sweep found five of
+  those); a constant whose name and value disagree ships the wrong code with a green build; a
+  literal outside the registry survives a rename. **Whether every code has a *thrower* is
+  deliberately not checked** — several are emitted by an orchestrator or a JFR event rather than an
+  exception (`EX-DIAG-*` are audit records, `EX-JOB-9001`/`9003` are JFR-only because a dispatched
+  job has no caller to throw to), so that check would report them all as dead and teach everyone to
+  ignore it.
+
+  Five mutations run against the gate itself, all five caught — including one where the doc's table
+  format changes underneath it, which initially exited non-zero **with no message at all**, because
+  `pipefail` killed the script before the guard written for that case could run.
+
+- **The RFC 6455 frame codec** (Core, [ADR-084](docs/adr/ADR-084-websocket-provider-spi.md) §9):
+  frame parser, writer and the message assembler over them. Driver-agnostic — it sees a
+  `MemorySegment` and offsets, never a socket — and the payload stays where it is, described by
+  offset and length, so a frame costs one header record and the copy happens once, when a completed
+  message becomes a `String`.
+
+  **Incomplete input returns `null` rather than raising.** A reader holding half a header has read
+  too little, which is the normal state of a stream and not a fault; treating it as one would close
+  connections for being slow. Only a genuine violation raises, and it carries the close code the
+  violation maps to so the caller does not re-derive it.
+
+  Three enforcement decisions are worth stating. **The size limit is checked as fragments arrive**,
+  not on the completed message — otherwise a peer could exhaust memory with a message it never
+  finishes. **UTF-8 is decoded strictly**: RFC 6455 §8.1 requires closing on invalid input, and
+  `new String(bytes, UTF_8)` would substitute U+FFFD and hand the handler something the peer did not
+  send. And **a close frame's reason is truncated on a character boundary**, because cutting
+  mid-sequence would make the close frame itself invalid UTF-8 — a violation committed while
+  reporting one.
+
+  `WebSocketCloseCode` gained **1007** (`INVALID_PAYLOAD_DATA`): writing the codec showed the enum
+  could not express a case the specification mandates.
+
+  **`EX-HTTP-4015`** is minted for the violation, and the exception is an `ExerisKernelException`
+  like every other wire-format violation in Core. Core placement decides who can catch it; it does
+  not exempt it from the registry or from `ExceptionDisclosure`, which envelopes only kernel
+  exceptions — a plain `RuntimeException` would have surfaced its detail verbatim in `PROD`. It is
+  `FaultOrigin.CALLER`, because every case is something the peer put on the wire. `EX-HTTP-4014`,
+  minted with the SPI, gained the `exceptions.md` row it was missing.
+
+  Nineteen tests, written against the wire rather than the implementation — every frame is either
+  hand-assembled byte by byte or produced by the writer, so a bug moving both sides together is
+  still caught. Four mutations run against them, all four caught: a mask index that stops cycling
+  (passes for payloads up to four bytes), the size limit checked only on the final fragment, the
+  substituting decoder in place of the strict one, and a close reason cut on a byte boundary.
+
+### Changed
+
+- **A duplex wire: the WebSocket SPI and its contract tests**
+  ([ADR-084](docs/adr/ADR-084-websocket-provider-spi.md)). `eu.exeris.kernel.spi.websocket` —
+  provider, server engine, per-connection exchange and session, handshake decision, close codes and
+  configuration — plus `AbstractWebSocketExchangeTck`. Ships **`preview`**; the Community binding and
+  the Core frame codec follow.
+
+  Its own package rather than an extension of `…spi.http`: only the handshake is HTTP, and the matrix
+  already carries `…spi.http` as `mixed` with a per-surface breakdown that a new family would muddy.
+
+  Four decisions carry the shape. The provider mirrors `HttpProvider` — `createServerEngine` +
+  `setHandler` + `start()` — so a consumer gets an endpoint **without booting the kernel**, which is
+  what an editor tool starting per session needs. The handler is text-only on its surface while the
+  codec still handles control and continuation frames, because a peer fragmenting a large message is
+  speaking the protocol correctly. `send` parks the virtual thread and never queues on the heap
+  (ADR-043 obligation 4), and it serialises across threads because RFC 6455 forbids interleaving two
+  messages' frames — so a slow peer blocks every sender on that connection, which is stated rather
+  than discovered. And the two directions end differently on purpose: `receive()` returns `null` at
+  close because that is the ordinary end of a loop, while `send` throws, because a handler that had
+  something to say and could not has to see it.
+
+  **The handshake refuses by default.** A WebSocket handshake is not subject to CORS, so a server
+  ignoring `Origin` can be opened by any page the user has visited, carrying their cookies — and a
+  browser cannot set request headers, leaving `Origin`, cookies, the subprotocol and the query as the
+  only channels a consumer has. The origin allowlist is a hard pre-filter and the optional callback
+  can only narrow it, so forgetting to write one produces a refusal somebody notices rather than a
+  hole nobody does.
+
+  **`AbstractWebSocketExchangeTck` is explicitly not the promotion gate.** A contract test proves a
+  shape is honoured, not that it survives; promotion to `stable` is gated on benchmark evidence.
+  Because it is abstract and no binding exists yet, the SPI also ships fourteen executable value
+  tests — a surface with no runnable coverage is a surface nobody has exercised.
+
+- **Every published jar names its own JPMS module.** A jar with no `Automatic-Module-Name` is still
+  usable on the module path — the JDK derives a name from the **file name** — and that derived name
+  becomes a de-facto contract from the first release a consumer compiles against, breaking every
+  `requires` clause if it is later changed. Ahead of the first Maven Central release, that is a
+  one-way door left open by a missing manifest line.
+
+  All eight jar-producing modules now carry a name matching their root package — including
+  `exeris-kernel-build-config`, which parents directly to the root POM and publishes a jar of its
+  own, so it inherits nothing from the reactor's shared parent. The manifest wiring therefore lives
+  next to the root's plugin version pin rather than in `exeris-kernel-parent`, where a second
+  `pluginManagement` entry would have silently overridden that pin.
+  `tools/module-name-check/module-name-check.sh` runs in CI against the built artifacts — nine of
+  them, because `exeris-kernel-tck` publishes two and the one that matters is the classifier-`tests`
+  jar: the module has no `src/main`, so its default jar is metadata only, while core, community,
+  community-kafka and the BOM all depend on the `tests` jar to reach the `Abstract*Tck` classes.
+
+  **This is the cheap half of module support, and the expensive half is not blocked**: a scan for
+  packages split across modules — the constraint that makes a real `module-info.java` hard to add
+  later — found **none**. So naming now costs a manifest line and buys the right to add module
+  descriptors afterwards without renaming anything.
+
+  **The gate is the guarantee, and that was measured rather than assumed.** An unset
+  `exeris.module.name` does *not* fail the build: with the configuration inherited and no local
+  plugin declaration, the property goes unresolved and the manifest entry is simply omitted, so the
+  jar ships nameless and green. (The jar plugin does reject an *empty* name, but only where a module
+  declares the plugin itself, which is what made the stronger claim look true.) So the check
+  discovers every jar the reactor produced instead of consulting a list somebody must remember to
+  extend. The shade plugin **preserves** the entry through the diagnostics CLI's shaded artifact,
+  checked on the built jar rather than guessed at from transformer behaviour.
+
+- **A kernel exception now says whose fault it is** ([ADR-083](docs/adr/ADR-083-exception-fault-origin.md)).
+  An error code says *what* failed; nothing said *who has to change something* — the question a
+  protocol adapter must answer before it can pick a status. The kernel stated it in exactly one
+  place, ADR-036 §2, and stated it by naming two exception **types**: a body that will not bind is a
+  `400`, a decoder that is not registered is a `5xx`. That is only usable by a caller who already
+  knows both names. `RequestBodyDecodeException` extends `ExerisKernelException`, so it is in neither
+  JDK hierarchy a handler reaches for — `catch (IllegalArgumentException) → 400` never matches it, and
+  the defensive `catch (RuntimeException) → 500` turns every malformed request into a server error.
+
+  `ExerisKernelException.faultOrigin()` returns `FaultOrigin.CALLER` or `FaultOrigin.SYSTEM`, and
+  `FaultOrigin.classify(throwable)` applies the same rule to anything that is not a kernel exception
+  — the case every handler has:
+
+  ```java
+  } catch (RuntimeException failure) {
+      respond(FaultOrigin.classify(failure) == FaultOrigin.CALLER
+              ? HttpStatus.BAD_REQUEST
+              : HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+  ```
+
+  **`SYSTEM` is the default**, which is what the runtime already did — so classifying more subclasses
+  later adds information rather than changing behaviour, and the asymmetry points the safe way: a
+  caller's mistake reported as a server error is a worse message, while a broken deployment reported
+  as the caller's mistake hides an outage behind a `4xx` nobody pages on. Four subclasses declare
+  `CALLER` — malformed request body, failed authentication, insufficient privileges, event-stream
+  append conflict. The other thirty keep the default deliberately: classifying an exception is a
+  judgement about its contract, and thirty judgements in one pass is how a safe default becomes a
+  wrong one.
+
+  The origin is **not** a status code — HTTP picks between `400`, `401`, `403` and `409` from the
+  exception itself, and the SPI stays protocol-blind. Both additions are binary- and
+  source-compatible on the `stable` `…spi.exceptions` surface.
+- **The typed HTTP client can read a collection, and a body decoder no longer needs an allocator it
+  does not use.** Two gaps on the client-facing surface, both of which bite code that binds to it
+  rather than the kernel itself.
+
+  `KernelWebClient` had no way to express a typed collection read. Its only type handle is a
+  `Class`, and `List.class` is raw — it tells the decoder nothing about the element type, so a JSON
+  array decodes to the driver's default mapping per element and the caller's first field access
+  fails with a `ClassCastException` naming a type it never wrote. An array class carries its
+  component type, so the new `getList(path, elementType)` decodes into `T[]` — a handle the existing
+  decoder registry already honours — and hands back an unmodifiable view over it, without a copy and
+  without a `@SuppressWarnings` at the call site. Framing is unchanged from `get`: an empty body is
+  an error, not an empty list.
+
+  `HttpRequestDecodingContext` and `HttpResponseDecodingContext` required a non-null `MemoryAllocator`.
+  **No decoder in the kernel reads it** — the allocator earns its place on the *encoding* contexts,
+  where an encoder must produce an off-heap body, while a decoder is handed a `LoanedBuffer` that is
+  already allocated. Requiring it coupled every decode site to a bound `MEMORY_ALLOCATOR`, and an
+  unbound slot then surfaced *inside* a handler as a failure to build the context — which reads as a
+  malformed body rather than as missing wiring. Both records now accept a three-argument form with no
+  allocator; the four-argument constructor is unchanged, so nothing that supplies one has to move. A
+  decoder that genuinely needs auxiliary off-heap memory should take an allocator at construction, the
+  way it takes its object mapper — a per-request context is the wrong place for a per-decoder
+  dependency. The decoder TCKs now drive `decode` with an allocator-less context on both sides, so the
+  rule is executable rather than documented.
+- **The router stops splitting the request path, and the HTTP/2 decoded request stops copying its
+  header list** — closing the materialise-and-copy sweep that
+  [RFC-2026-09-01](docs/rfc/RFC-2026-09-01-http-header-representation.md) sequenced. Path-template
+  matching walked a `String[]` produced by `path.split("/", -1)`, and the split ran **twice per
+  request** — once for the streaming table, once for the respond-once template list, a third time on
+  a HEAD fallback. `PathTemplate` now walks the path's `'/'`-separated segments in place: a literal
+  is a region comparison and only a placeholder's value is materialised. The streaming table is keyed
+  by method first, so a lookup no longer allocates a key to probe a map, and captured parameters go
+  through one map rather than a `LinkedHashMap` that was then copied. Measured, exact per-thread
+  bytes, three fresh JVMs:
+
+  | request | before | after |
+  |---|---:|---:|
+  | `GET /api/orders/{id}` hit | 1 040 B | **320 B** — 69% |
+  | two-placeholder route hit | 1 464 B | **464 B** — 68% |
+  | hit with a query string | 1 168 B | **448 B** — 62% |
+  | exact-route hit | 276 B | **~44 B** — the residual is a `RouteMatch` escape analysis sometimes removes |
+  | route miss (404) | 528 B | **0 B** |
+
+  On the HTTP/2 side, `PendingRequestHeaders` hands the decoded request an unmodifiable view of its
+  accumulated headers instead of `List.copyOf`: the accumulator is built, filled and consumed inside
+  one method, so no other reference to the list exists. 464 → 392 B for a 3-field request, 800 →
+  616 B for a 10-field one — the accumulator's own allocation, not the whole HTTP/2 decode, which
+  HPACK dominates.
+
+  **Matching semantics are unchanged, and that is tested against the implementation replaced**: the
+  split-based matcher is kept in `PathTemplateTest` as an oracle and the two are compared across a
+  template/path corpus, with the number of matching pairs pinned so a corpus edit cannot quietly
+  leave the comparison asserting nothing.
+
+  Two rows of the original sweep did not survive inspection and are corrected in the research note:
+  the router row named a conditional `substring` when the unconditional cost beside it was the split,
+  and the response-header merge allocates nothing removable — it sizes one list and only when both
+  sides are non-empty. Its real defect was duplication: `InMemoryHttp2Exchange` carried a
+  byte-identical private copy of `CommunityHttpResponseHeaders.merge` and neither was covered. The
+  copy is gone and the survivor has tests.
+
+- **The HTTP client stops decoding every response header twice, and stops materialising a line per
+  field.** `resolveExpectedTotal` — which the read loop consults to learn when to stop reading —
+  built a full `List<HttpHeader>` to read one field, `Content-Length`, and threw the list away;
+  `decodeResponse` then built it again. Each field cost a whole-line `String`, two substrings and two
+  `trim()` calls. Field boundaries are now found on the segment, only the value is materialised,
+  known names resolve from `CanonicalHeaderNames`, the read loop reads `Content-Length` without a
+  list, and the finished list is a view rather than a copy. Measured, exact per-thread bytes, three
+  fresh JVMs:
+
+  | response shape | before | after |
+  |---|---:|---:|
+  | API JSON 200 (7 fields) | 7 624 B | **1 952 B** — 74% |
+  | page 200 + cookies (10 fields) | 10 216 B | **2 384 B** — 77% |
+  | 204 No Content (3 fields) | 3 672 B | **1 184 B** — 68% |
+
+  **Behaviour-preserving, and checked that way rather than asserted**: the new tests were run against
+  the *old* decoder and all ten pass, so they describe behaviour both implementations share. That
+  includes the subtle half — decoding stays US-ASCII, so a high-bit byte remains the replacement
+  character and is not whitespace, which byte-level trimming reproduces by comparing unsigned.
+
+  Header-block reading moved to `CommunityHttpHeaderBlock`, because a block is read for two reasons
+  and only one of them wants a list.
+
+- **Known HTTP field-names are resolved from a shared table instead of being materialised per
+  request** ([RFC-2026-09-01](docs/rfc/RFC-2026-09-01-http-header-representation.md), ACCEPTED).
+  `CanonicalHeaderNames` matches a field-name's wire bytes against known spellings and returns a
+  constant, allocating nothing on a hit; a miss materialises the name exactly as before. Measured on
+  the read path, exact per-thread bytes, three fresh JVMs:
+
+  | request shape | before | after |
+  |---|---:|---:|
+  | browser GET (15 fields) | 5 792 B | **4 352 B** — 24.9% |
+  | service POST (9 fields) | 3 976 B | **3 144 B** — 20.9% |
+  | health probe (4 fields) | 1 712 B | **1 360 B** — 20.6% |
+
+  **Correctness-neutral by construction.** Matching is byte-wise and case-**sensitive**, so a hit
+  returns exactly the characters the wire carried and no field changes case; an unknown spelling —
+  including an unknown casing — falls through to today's path. A stale or incomplete table is a
+  performance question, never a correctness one. Every entry is registered in its conventional
+  spelling *and* in lowercase, because HTTP/2 requires lowercase field names and current browsers
+  already send some HTTP/1 fields that way.
+
+  RFC-2026-09-01 also records what was **rejected**: handing header fields out as slices into the
+  request buffer. `CommunityArenaShardPool` recycles segments without closing their arena, so a
+  retained field would not throw — it would return another request's bytes, silently. That is the
+  reason, not effort.
+
+- **The HTTP/1 read path parses each request's headers once, not twice.**
+  `CommunityHttp1RequestReader` ran `Http1Codec.parseHeaders` for connection state and h2c
+  detection, then ran the parser again to build the `List<HttpHeader>` — every field name and value
+  materialised twice — and then copied the finished list a third time. `Http1Codec.parseHeaders` now
+  accepts an optional `HeaderVisitor`, so connection state and the header list come off one
+  traversal. Measured on the read path, exact per-thread bytes: a 16-header request allocated
+  **9 848 B and now allocates 5 472 B**, a 44% reduction, of which the collapsed parse is 41%
+  (5 784 B) and the dropped list copy the rest. Header order, values, bounds and the `-1` incomplete
+  signal are unchanged.
+
+  It also removes a hazard rather than only a cost. Under two passes the enforced header limit
+  depended on which pass reached it first unless both were handed identical bounds, which
+  [ADR-071](docs/adr/ADR-071-operational-limit-configuration-path.md) fixed and a comment then asked
+  future editors to preserve. One pass cannot express that mistake. See ADR-071's amendment of
+  2026-09-01.
+
+### Fixed
+
+- **The documents an operator reads said WebSocket was absent, in five places, after it shipped.**
+  `docs/support-matrix.md` said it three times (the HTTP baseline row, a Community-tier limit, and a
+  *Deferred* row), `docs/operations/reference-deployment.md` listed it as a known limit, and
+  `docs/subsystems/transport.md` carried it as *"Deferred — separately-justified follow-up"*. All
+  five now describe what shipped **and** what did not: the engine is `ServiceLoader`-discoverable but
+  **embeddable rather than bootstrapped**, `keepAliveIntervalMillis` is validated and read by
+  nothing, and the handshake is **HTTP/1.1 Upgrade only** — no Extended CONNECT (RFC 8441). Three
+  other gaps in the same document are closed with it: the native-image stance the 1.0 requirements
+  ask this file for and it did not carry, the per-tenant quota absence its own roadmap entry
+  instructs it to declare, and an OTLP row whose `~v0.12` target has passed unmet. `docs/ROADMAP.md`
+  and `docs/release/1.0-scope.md` get the matching corrections — three roadmap entries stated
+  something untrue (the route-policy abstention and the SPI binary-compatibility gate both read as
+  open after shipping; `KERNEL_LOGIC` was described as wired to nothing), and the scope register
+  carried two `not started` rows for work already in `src/main`.
+
+- **A listener that ran out of file descriptors no longer stays down.** An `IOException` from
+  `accept()` — how `EMFILE`/`ENFILE` surface — called `handleAsyncFailure` and returned, clearing
+  `running` and closing the server channel, so a process that touched its `ulimit -n` once needed a
+  restart to serve again. The acceptor now pauses (`25ms × streak`, capped at 1s) and tries again,
+  emitting `CommunityAcceptRetry` with the streak and the pause; 64 consecutive failures are retried
+  and the 65th takes the fatal path. What ends a streak is an accept that returned a socket, counted
+  at the accept — so a pass that serves a connection and then fails probing for the next, which is
+  what descriptor pressure actually looks like, does not accumulate toward the ceiling. Every `IOException` is retried rather than a
+  classified subset: Java gives no typed signal, so classification means matching a message, and a
+  message that fails to match reinstates the defect — while retrying a genuinely fatal condition
+  only costs a bounded delay before the same outcome.
+
+### Added
+
+- **`TimeSource` — the kernel's seam for time it decides on** ([ADR-082](docs/adr/ADR-082-injectable-time-seam.md)).
+  `eu.exeris.kernel.spi.time.TimeSource` carries `nanoTime()` and `wallTime()`, is bound through
+  `KernelProviders.TIME_SOURCE`, and is read through `KernelProviders.timeSource()`, which falls back
+  to the platform clock when unbound. The method names come from `CommunitySchedulerClock` rather
+  than being invented, so the scheduler's clock becomes this seam plus its waiting primitives.
+
+  Migrated: the saga TTL path — the expiry comparison in `CoreFlowRuntime` and the wall↔monotonic
+  conversions in `RuntimeFlowInstance`. **Not** migrated: reads that measure rather than decide,
+  where virtualising would make JFR durations lie. Of 148 time reads in main sources, five are
+  comparisons.
+
+  A saga timeout is now drivable: `CoreFlowTimeSourceTest` advances a manual clock and asserts the
+  timeout in **0.79s against a 30-second deadline**, with no sleeping.
+
+
+- **A saga's parked definition version now survives a restart, not only a wake** (ADR-073 merge gate,
+  clause 3). `AbstractFlowDefinitionVersioningTck` covers version-bound resume exhaustively and never
+  rebuilds an engine; `AbstractSagaRecoveryTck` rebuilds constantly and was version-blind — so the
+  upgrade case, where the process that parked the saga is gone and the one that finds the row runs
+  different code, was uncovered. `CrossVersionUpgrade` adds both directions: parked-under-v1 resumes
+  on v1 across a rebuild that also hosts v2, and an upgrade that drops v1 refuses with
+  `DEFINITION_VERSION_UNRESOLVED` while leaving the row recoverable.
+
+
+- **An in-flight saga is now proven to survive a schema upgrade** (ADR-073 merge gate,
+  1.0-blocking). Every migration test started from an empty database — the one case that cannot
+  break an in-flight saga, because there is no row to break. `CommunitySchemaUpgradeTest` parks a
+  saga under the `V0.7.0` shape, runs the shipped migration set over it, and reads it back:
+  `definition_version` backfills to `VERSION_ABSENT` rather than to the first version, and
+  `compensation_step_names` to `NULL` — the two migrations' opposite choices, each asserted. It also
+  covers the pre-ledger upgrade path, where a database with no history rows replays every resource
+  over schema that already exists, which is what makes the `IF NOT EXISTS` guards load-bearing.
+
+
+- **The storage subsystem boots, and the operator says which driver** (ADR-056). Two Community blob
+  drivers — `blob-fs-community` and `blob-s3-community` — register at the same priority and nothing
+  loaded them, so a deployment got whichever it constructed by hand. `StorageBootstrap` in Core now
+  selects **by configured id**, `CommunityStorageSubsystem` binds the result into
+  `KernelProviders.BLOB_STORAGE_PROVIDER` / `BLOB_STORE`, and the choice is recorded on the
+  `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event.
+
+  This is the one bootstrap that does not rank by `priority()`: the two drivers are not
+  interchangeable — one needs a writable directory, the other credentials and an endpoint — so
+  ranking would decide where a tenant's objects land by ServiceLoader order.
+
+  **`storage.blob.provider` is both the switch and the selector.** Unset means blob storage is off
+  and nothing binds, which is what every deployment to date has been doing; set means the choice has
+  been stated. An id matching no driver fails at boot with `EX-BLOB-8008`, carrying the key, the
+  value and the ids that were available; a classpath with no driver at all is `EX-BLOB-8007`. Also
+  reads `storage.blob.location` (required once storage is on) and
+  `storage.blob.maxSignedUrlTtlSeconds`. For the S3 driver, `storage.blob.location` is the
+  **endpoint** and `storage.blob.s3.bucket` / `.accessKey` / `.secretKey` (plus optional `.region`
+  and `.maxObjectBytes`) are forwarded into the driver's properties. The subsystem declares
+  `dependsOn("memory")`, because the S3 store stages transfers through the kernel allocator.
+
+
+- **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**
+  ([ADR-071](docs/adr/ADR-071-operational-limit-configuration-path.md) amendment). The client sized
+  every response read from `maxRequestBodyBytes`, so one key bounded two unrelated things: what this
+  server accepts from callers, and what this application reads back from someone else's server. A
+  deployment tightening ingress shrank its outbound client; one loosening it grew the buffer every
+  response allocates. Neither name said so.
+
+  Both limits default to **10 MiB**, so an untuned deployment sees no change. The pre-0.12
+  constructor shape keeps delegating its single ceiling into both —
+  a caller who passed one number for an engine they built themselves is not silently lowered to a
+  default they never named, which would turn an upgrade into a run-time truncation. The
+  configuration keys resolve independently, because an operator setting an ingress limit said
+  something narrower than that.
+
+  `HttpConfig` gains the component appended, with the 14-argument shape retained: the SPI gate
+  reports an addition on a `stable` surface, `stable-breaks=0`.
+
+  **`-1` is refused on the response key** — the one limit with no unlimited setting. It used to
+  resolve to a 64 KiB ceiling, below the default and the smallest value the range could produce, so
+  an operator asking for no limit got the tightest one there is. Refused rather than made unbounded,
+  because the ceiling bounds how much a remote peer can make this client allocate: a server may
+  accept unbounded requests since it controls its callers, a client is exposed to someone else's
+  behaviour. A value past `Integer.MAX_VALUE` is refused too, rather than silently clamped — a
+  response is assembled into one buffer. Configs built through the pre-0.12 constructor with an
+  unlimited request limit still construct: the server half stays unlimited, the client ceiling takes
+  the 10 MiB default.
+
+- **The HTTP client stops paying for the largest response it might ever read.** The response read
+  moved into `CommunityHttpClientResponseReader`, which starts at 8 KiB and grows to what
+  `Content-Length` declares, so `http.maxResponseBodyBytes` bounds growth instead of sizing every
+  allocation. Measured on `MemoryStats.peakAllocatedBytes()` against a 10 MiB ceiling: a `HEAD`
+  declaring a 10 MiB body went from **10 493 952 bytes to 8 192**, a 200-byte `GET` from
+  **10 494 152 to 8 392**, a 100 KiB `GET` from **10 596 352 to 204 843**. The overrun refusal is
+  unchanged — a response past the ceiling is still refused rather than truncated — so an engine
+  sized deliberately, as the S3 blob driver is, behaves as before.
+
+  A ceiling near the int range no longer wraps negative: the header allowance pushed it past
+  `Integer.MAX_VALUE` and the allocator refused the result, so a deployment that set a large limit
+  failed on its first response. Clamping is free now that the value is only a bound.
+
+### Changed
+
+- **The connection cap gets one default, and the question it was left open on could not have been
+  answered as posed** ([ADR-081](docs/adr/ADR-081-accept-time-connection-cap.md)).
+  `HttpConfig.DEFAULT_MAX_CONNECTIONS` moves from **1 000 to 4 096**, matching the standalone
+  carrier's `transport.maxConnections`. It is one field enforced in one place; two defaults for it
+  were an accident, and 4 096 is the side the evidence pointed to — the project's own benchmark runs
+  had to raise the HTTP value to get through.
+
+  The open question asked whether an accept-time cap is right "as opposed to admitting and shedding
+  at request level, **where the response can carry a status**". That alternative does not exist here:
+  `StreamLoadShedder` closes the stream, and no server path in the kernel produces a 503 at all. The
+  two mechanisms are **layers** — connection slots before any bytes, concurrent stream work after the
+  stream exists — so neither substitutes for the other, and a status-bearing refusal would be a third
+  mechanism rather than a replacement.
+
+  **Check `ulimit -n` against the new default.** The cap refuses cleanly only while it is the ceiling
+  reached first; the common limit of 1024 sits below it. `reference-deployment.md` now carries the
+  requirement, and the failure mode it guards against — an `IOException` from `accept()` stopping the
+  listener permanently — is recorded as an open ROADMAP entry rather than fixed here, since it is a
+  behaviour change needing its own tests.
+
+  Which key governs which carrier is now documented: `http.maxConnections` for the HTTP listener,
+  `transport.maxConnections` for the standalone carrier, which is `DISABLED` unless `transport.mode`
+  is set. Setting the transport key on an HTTP deployment changes nothing and reports nothing.
+
+### Added
+
+- **`TransportStats.acceptFaults`** — the last open clause of v0.11's accept-fault merge gate. A
+  setup fault reached an operator only inside the JFR payload, so the two accept-path failure modes
+  were documented together but not *observable* together. It stays deliberately out of
+  `totalRejected`, which means work the engine *declined*: a setup that broke declined nothing, and
+  folding them removes the distinction between a capacity problem and a defect. Appended rather than
+  grouped beside `totalRejected`, with the six-argument constructor retained, so no existing
+  positional call changes meaning. `AbstractTransportEngineTck` asserts the separation from the side
+  an operator reads — a ceiling refusal must leave the fault count at zero — and the Community driver
+  test asserts the positive half after forcing a fault.
+
+- **Two owed test cases from the v0.11 sweep, both mutation-checked rather than merely green.**
+
+  `AbstractJobSchedulerTck` gains the repeating half of the fail-closed refusal: a job submitted
+  with no context and a fixed interval must **retire**, not come due every interval forever. The
+  behaviour was fixed in Community only, so a second `JobScheduler` provider could reproduce the
+  original defect — a failure event per interval on work that can never dispatch — while passing the
+  contract suite. Nothing the body can observe separates the two cases (the body never runs either
+  way), so the contract is asserted on the handle's state, sampled across several advances because a
+  wrongly re-queued job spends nearly all its time waiting rather than failed. Restoring the pre-fix
+  settle path reddens exactly this case and no other.
+
+- **`CommunitySeparatedSchemaPoolRecycleIT`** — the integration half of ADR-012's pool-recycle
+  isolation. The existing unit test asserts the SQL the interceptor *emits* against a mock; this
+  asserts what a live PostgreSQL does with it when one physical connection is handed between
+  tenants. The pool is one connection deep on purpose: `persistence.perTenantPooling` defaults to
+  `false`, so tenants share connections, and a deeper pool would let the two tenants land on
+  separate ones and pass while the republish did nothing. Three cases, each covering a direction the
+  others do not — tenant to tenant and back, `current_schema()` following the acquire, and a SHARED
+  acquire resetting the path a SEPARATED_SCHEMA acquire left set.
+
+  Not a row-visibility hole, stated precisely: RLS keys on `exeris.tenant_id`, republished on the
+  same acquire, so a stale `search_path` misdirects **name resolution** rather than exposing another
+  tenant's rows. Two mutations prove the split: removing the RESET arm reddens only the shared case;
+  making SEPARATED_SCHEMA stop setting its own path reddens only the other two.
+
+### Changed
+
+- **The GA line no longer builds with `--enable-preview`, in any scope** (ADR-066 Amendment A1).
+  The ten remaining fixtures that used `StructuredTaskScope` moved to `TckScope`, and the flag is
+  gone from the POMs, the surefire JVMs, the JMH forks, `MAVEN_OPTS` in both workflows, and the SPI
+  API-diff tool. No source in this repository uses a preview API.
+
+  **No published artifact changed.** The TCK test-jar — the only one built from test sources —
+  already measured 0 preview-stamped classes of 467; the 56 stamped ones sat in core and community
+  test-classes, which nothing publishes. What changes is the build: `--enable-preview` is legal
+  only when `--release` equals the running JDK, so the repository could be built by JDK 25 and
+  nothing else. It now builds on JDK 25 LTS **or newer** — verified by building the full reactor on
+  JDK 26, which fails on the unconverted tree with `invalid source release 25 with
+  --enable-preview`.
+
+  Three TLS fixtures share the new `BlockingPeerPair`: they drive two blocking OpenSSL peers, which
+  must run on platform threads under a deadline, and they report failure in three different
+  vocabularies. One security fixture asserted `ScopedValue` inheritance across a fork — a property
+  of the preview API rather than of the kernel — and now asserts the explicit carrier rebinding the
+  GA line actually offers.
+
+### Fixed
+
+- **Outbound TLS is a decision, not a consequence of crypto booting.** A `CLIENT`-mode transport armed TLS whenever a crypto provider happened to be bound, so a kernel that booted crypto to serve HTTPS could not make a plaintext outbound call at all. `exeris.transport.tls` is the opt-out that was missing, and it covers **server, client and dual**: a listener holding valid certificate and key can now decline TLS, for deployments terminating it at a sidecar. Half-configured material stays a boot failure regardless. A listener that declines while holding material emits `eu.exeris.kernel.transport.TransportTlsDeclined`, because that is the one outcome indistinguishable from any other plaintext socket. Defaults are unchanged.
+
+### Added
+
+- **The PAQS admission ceiling becomes configurable, and the constant beside it is documented as
+  deliberately not** (ADR-071 amendment). `transport.paqs.maxActiveStreams` carries the cap on
+  concurrently admitted streams on `TransportConfig`; `AdmissionController` enforces the configured
+  value instead of a private `5_000`. `-1` (`TransportConfig.UNBOUNDED_ACTIVE_STREAMS`) removes the
+  count ceiling — the memory-pressure arbiter still decides every stream, so this is not an
+  unguarded engine — and `0` is refused at startup, by the config record and again by the
+  controller, because a ceiling of zero admits nothing.
+
+  **Both sites that build a `TransportConfig` read it**: the transport subsystem and the HTTP
+  listener's own carrier. A key honoured on one of them is indistinguishable, from the outside, from
+  a key that does not work — the failure this ADR exists because of.
+
+  `PaqsScheduler.SPIN_THRESHOLD` did **not** become a key. It is reachable only from `close()` and
+  bounds how the shutdown drain spends CPU while waiting, under a drain deadline already documented
+  as deliberately fixed; the ROADMAP entry that listed it as an operational limit is corrected
+  rather than implemented.
+
+  A caller that passes no ceiling is unaffected: the 8-argument `TransportConfig` constructor
+  remains as a bridge applying the same 5 000 the scheduler already enforced, which is also what
+  keeps the SPI gate at zero `stable` breaks for a `stable`-classified surface.
+
+  Coverage: `AbstractPaqsSchedulerTck$ConfiguredAdmissionCeiling` (a lowered ceiling bounds
+  concurrent service under load and the slots come back; the sentinel admits past the default),
+  `TransportConfigActiveStreamsTest`, `AdmissionControllerTest$ConfiguredCeiling`, and one wiring
+  test per construction site.
+
+- **A route can declare that it blocks, and stop pinning a pooled connection while it does**
+  (ADR-077). `RouteRequirement` gains an execution facet — `PROMPT` (the default) or `LONG_RUNNING`
+  via `longRunning()`. On a `LONG_RUNNING` route `CommunityHttpRequestDispatcher` binds no
+  `PersistenceSessionBox`, so each persistence call acquires and releases through the engine instead
+  of holding one connection across a block whose own work draws from the same pool.
+
+  **The facet names the route, not a connection.** `spi.http` must stay blind to what a driver holds,
+  so the Community dispatcher draws the persistence consequence; another driver may draw a different
+  one, or none. That is why the enum is `Execution` and not `ConnectionLifetime` — the alternative
+  was costed in the ADR and rejected as a Wall breach.
+
+  **Nothing moves for a route that says nothing.** Every existing factory returns `PROMPT`, the two
+  scope-free shapes hand back shared constants so the wither stays allocation-free, and
+  `persistence.md`'s "One HTTP request is one connection" is narrowed to `PROMPT` routes rather than
+  retracted — `CommunityRequestScopeBypassIsolationIT`'s backend-PID assertion is untouched and still
+  passes as written.
+
+  Two costs are accepted by name rather than discovered later. A `LONG_RUNNING` handle is **owning**,
+  so a missed `close()` is a real pool leak — the rule every non-request path already runs. And a
+  declaration can go **stale**: `eu.exeris.kernel.http.RouteExecution` carries the handler duration on
+  every such request so the mismatch is detectable, with no threshold baked in, because what counts
+  as "too fast to be blocking" is a deployment's judgement. It is the first kernel JFR event to carry
+  a request path, which its Javadoc says out loud instead of leaving in a field list.
+
+  Coverage: `AbstractHttpRoutePolicyTck` gains the orthogonality contract (a requirement and its
+  `LONG_RUNNING` twin must decide identically on every shape and every principal, plus a non-vacuity
+  case so an admit-everything binding cannot pass it); `RouteRequirementTest` pins the carrier;
+  `CommunityRouteExecutionBindingTest` pins the dispatcher's decision in the default build; and
+  `CommunityRouteExecutionIsolationIT` pins its consequence in backend PIDs against a live pool.
+  `RouteExecutionEventTest` runs the mitigation the ADR records as unproven, so a documented signal
+  cannot ship without firing.
+
+  All three dispatcher-side suites are mutation-checked, each with the asymmetry that proves the
+  branch rather than the plumbing: binding the session unconditionally reddens the `LONG_RUNNING`
+  cases while the `PROMPT` ones stay green, and deleting the JFR emit reddens the signal test through
+  its *positive control* — the assertion that tells silence from a deaf recording.
+
+- **HTTP/2 stops silently ignoring the header limits an operator configures.** ADR-071 left this as
+  its stated out-of-scope tail: `http.maxRequestHeaderCount` / `…Size` are honoured on HTTP/1 and
+  the h2 path referenced neither, so a limit could be believed set while it was not. Closing it
+  needed no new mechanism — `Http2Settings` already carried `ID_MAX_HEADER_LIST_SIZE` (RFC 9113
+  §6.5.2) and the server was sending an **empty** SETTINGS frame, telling a peer nothing at all.
+  It now advertises a bound it enforces, and `Http2HeaderBlockAssembler`'s 65 536 becomes the
+  documented default of a new `http.maxHeaderBlockSize` key rather than a constant. (Which bound
+  is advertised is settled below: not this one.)
+  **A separate key, not a product of the other two, and the reason is measured**: those describe a
+  per-field size and a field count on HTTP/1, so multiplying them out yields ~800 KiB at the shipped
+  defaults — a twelvefold *loosening* of a protective bound, which is the wrong direction for a
+  limit whose job is to refuse a header bomb. Protective per ADR-071, so `0` and negatives are
+  refused rather than read as unlimited.
+
+  **Three keys, not one, because HTTP/2 bounds three different quantities.** `http.maxHeaderBlockSize`
+  is the COMPRESSED block above. `http.maxHeaderListSize` is the CUMULATIVE DECODED field section —
+  what RFC 9113 §6.5.2 actually defines SETTINGS_MAX_HEADER_LIST_SIZE against, and what the HPACK
+  decoder enforces; it is therefore the value advertised. Advertising the block bound instead would
+  hand a peer a number nothing checks, and asymmetrically: lowering the key would merely be
+  conservative while raising it would be believed and ignored — and raising it is the only reason to
+  touch it. `http.maxStringLiteralSize` is one decoded name or value, checked against the declared
+  length before the bytes are read, which is what refuses an oversized allocation up front rather
+  than after. Compression is what makes the first two independent; neither can be derived from the
+  other. This closes ADR-071's HTTP/2 tail completely — both constants it named by name, plus the
+  third bound it did not know it was leaving behind — and the ROADMAP's Operational Limits table
+  loses both HTTP/2 rows.
+
+- **`KernelWebClient.withAuthority(String)`** — the typed surface can now name its peer, which is
+  what makes ADR-074's "one engine serves many peers" reachable rather than merely decided. Until
+  this, every call built through the façade resolved to the engine's configured default, so the
+  argument that decided the carrier shape held only at the `HttpClientEngine` level. A derived view
+  rather than four addressed overloads: the peer is usually fixed for a run of calls, and the name
+  mirrors `HttpRequest.withAuthority` so there is one vocabulary rather than two. It deliberately
+  does **not** validate — the shape is checked at `HttpConfig` construction and at send, and a third
+  copy of that rule inside a façade would be the fourth hand-synced version of it.
+- **A request can name the peer it is sent to** (ADR-074). `HttpRequest` gains a nullable
+  `authority`, `HttpConfig` gains `defaultAuthority`, and both keep their previous canonical
+  constructor as a bridge — the SPI gate reports `stable-breaks=0` against `v0.11.0`, measured.
+  A new `http.client.defaultAuthority` key supplies the peer for requests that name none.
+
+### Fixed
+
+- **The graph churn-to-data TCK measured a coin flip, not a ratio.** `GraphChurnRatioTck` is the
+  executable half of graph.md's `< 20x` Community / `< 1x` Enterprise contract. It failed
+  intermittently locally and never in CI, and neither fact was evidence about the graph path. Its
+  numerator summed `weight` from `jdk.ObjectAllocationSample` — the sampler's extrapolation, which
+  arrives in a near-constant ~261 KB quantum — so the number was `quantum ×` *(times the sampler
+  happened to land on a kernel object)*, a Poisson count. Its denominator ran 1 000 iterations while
+  the workload ran 10 000, and that factor of ten is exactly what scaled one sampler hit to 2.04
+  ratio units and left the 20.0 threshold sitting between the ninth hit and the tenth. **The test
+  failed when the sampler drew ten**, at an observed mean of ~4.6 — a few percent per run, which is
+  all "flakes here, never there" ever was.
+
+  Two further defects meant it could not have measured the contract even correctly summed. The
+  numerator was filtered to `eu.exeris.*` types while graph.md attributes the ~15x to the *driver*;
+  on a 500-id traversal that filtered signal is **empty** — three consecutive measurements sampled
+  zero such events, which the shipped arithmetic reports as a perfect `0.00x`. And a traversal
+  returning one id spends ~11.7 KB of allocation on 16 bytes of payload, so the workload measured
+  session and protocol setup rather than churn per data byte.
+
+  The numerator is now the exact per-thread allocated-bytes delta, driver included; the denominator
+  derives from the iterations actually run and the result-set size actually returned; the traversal
+  carries a 500-id fan-out so the fixed per-round-trip cost amortises.
+
+  **What the corrected instrument found on its first honest run is the substantive part.** The
+  Community Bolt path has two allocation regimes — ~142 000 bytes/traversal (17.4–18.0x) and
+  ~166 000 (20.5–20.8x) — separated by a flat 17% and **fixed per JVM**: three processes ran six
+  windows of 300 traversals each and every window in a process stayed in one regime. Roughly two
+  runs in seven take the slow one (4 of 14 observed processes), so graph.md's published `< 20x` is met in one regime and breached
+  in the other. The TCK's Community bound is therefore **23x as a regression bound**, ~10% above the
+  observed slow-regime ceiling and tripped by a mutation adding 128 bytes per returned row (26.6x);
+  graph.md's 20x stays the contract and is reported alongside every measurement. Which number is
+  honest to publish, and whether the slow regime can be removed, is recorded in the ROADMAP as
+  1.0-blocking on the claims side. Separately, graph.md's assertion that the TCK emits
+  `EX-GRPH-5005` is corrected: nothing throws `ExcessiveAllocationException` anywhere.
+
+- **The diagnostics CLI died on `listProviders`, and took the caller's session with it.** The
+  shipped executable pinned its own Jackson 2 for the NDJSON codec while the kernel it boots uses
+  Jackson 3. Those are not independent: both resolve `com.fasterxml.jackson.core:jackson-annotations`,
+  of which Maven keeps one version, and the CLI's direct Jackson 2 outranked the kernel's transitive
+  Jackson 3 by proximity — pinning annotations to 2.18.7, below the 2.21 `jackson-databind` 3.x
+  needs. Every kernel mapper built at runtime then failed on `NoClassDefFoundError: JsonSerializeAs`,
+  which killed `listProviders` (the only method that instantiates every provider) and, because the
+  dispatch guard caught only `JsonProcessingException`, the process. A consumer that caches the child
+  across calls lost every later request too, not just that one. The CLI now uses the kernel's Jackson,
+  declared directly so it cannot be outranked again; `handle()` catches `LinkageError` and
+  `ServiceConfigurationError` alongside `RuntimeException`, so one broken provider degrades one
+  method; and the shaded jar shrinks by 2.4 MB with the second databind gone. Affected 0.10.2 through
+  0.12.0-SNAPSHOT — on 0.10.2 masked by the preview-flag failure that ADR-066 closed at 0.11.0.
+
+- **Nothing ever ran the artifact this module ships.** Its only test drove `handle()` against a fake,
+  so no kernel booted, no provider class initialiser ran, and the defect above stayed green through
+  three published versions. Two live suites now close that: `DiagnosticsCliLiveKernelTest` boots the
+  kernel in-process on the resolved classpath (default build), and `DiagnosticsCliShadedJarIT` spawns
+  the packaged jar over stdio at `verify` — where shading, the merged `META-INF/services`, and the
+  manifest are first observable, and where the distributed artifact's preview-cleanliness (ADR-066)
+  becomes an executed claim rather than a scanned one.
+
+- **The HTTP client dialled the address its own server listened on.** Not "single-host", which is
+  what every document said: `CommunityHttpClientEngine` has no public constructor, its only
+  reachable path took `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL
+  *listener* address — and no client-target key existed anywhere. An application could not address
+  the *first* external peer, and `HttpConfig.defaultClient()` (bindHost `null`, port `-1`) produced
+  an engine that could not send at all. An unaddressed request is now refused rather than sent
+  somewhere the caller never named, and `Host` follows the request's authority instead of
+  `TransportConnection.remoteAddress()`, whose SPI contract documents it as an *address*
+  (`e.g. 192.168.1.1`) — building the header that selects a name-based virtual host out of an
+  address breaks vhosting by construction.
+- **The S3 blob-storage driver and the OIDC JWKS fetch both reached their endpoint by the same
+  coincidence**, and both now state it. Each built a CLIENT engine with `bindHost` set to the
+  address it wanted to dial. `CommunityS3Client`'s own javadoc gave that as the load-bearing reason
+  it owns a private engine — "an engine is bound to a single host, so a shared application client
+  cannot address the storage endpoint at all" — which ADR-074 retires; the remaining reason,
+  head-of-line isolation for large object transfers, stands on its own and is now the one stated.
+
+### Decided
+
+- **ADR-077 — a route declares how it executes, and the dispatcher draws the connection
+  consequence.** Closes RFC-2026-08-26 (now ACCEPTED) and the cycle's only 1.0-CRITICAL item.
+  `CommunityHttpRequestDispatcher` binds a `PersistenceSessionBox` around every non-streaming
+  request, unconditionally and with no configuration key anywhere, so a handler that blocks holds its
+  pooled connection across the block while the work it waits on draws from that same pool — the first
+  cross-runtime benchmark result where the kernel loses categorically rather than by a margin.
+
+  The decision builds the seam and leaves the default: `RouteRequirement` gains an execution facet,
+  `PROMPT` (today's behaviour, the default) or `LONG_RUNNING`. **`spi.http` does not name a
+  connection** — the facet describes the route, and the Community dispatcher makes the inference,
+  because an HTTP SPI naming a pool concept is a Wall breach. Every existing static factory keeps
+  returning `PROMPT`, so a policy implementation that never names execution is unaffected. The
+  request-scoped promise in `persistence.md` is narrowed to `PROMPT` routes rather than retracted,
+  and `CommunityRequestScopeBypassIsolationIT`'s backend-PID assertion is not edited.
+
+  Two questions the RFC handed the ADR by name are settled. **Release ownership never moves to the
+  handle** — a `LONG_RUNNING` route has no box, so `openConnection` returns an owning handle, which
+  is not a new model but the one every non-request path already runs, flow threads included. And the
+  **default flip is gated on three named artefacts**, not on "a measurement": the acquire-rate
+  multiplier inside `[1.0×, 3.17×]` measured as reuses crossing a transaction boundary, the
+  interceptor's session-key cost at that rate, and a saga-benchmark re-run with `ConnectionHold`
+  enabled so the request-side and flow-side holds are apportioned rather than assumed.
+
+  Re-verifying the RFC's six constraints at their declaration sites produced one correction:
+  `NonOwningPersistenceConnection` is a private static nested class inside `PersistenceSessionBox`,
+  not a top-level type — nothing outside the box can reference it, which is exactly why release
+  ownership cannot migrate to the handle. Decision only; no source touched.
+
+- **Heterogeneous multi-hop graph traversal moves into 1.0 scope; not into 0.12.** The ROADMAP
+  entry (surfaced by dogfooding, 2026-07-31) previously read *post-1.0*, on the ground that graph
+  the subsystem is in 1.0 while this particular contract widening is surface the scope ruling never
+  assessed. Two things that post-date that reading overturn it. The benchmark track hit the same
+  wall from the cost side: the graph arm used to run inside the saga scenario, and splitting the
+  two left a standalone graph scenario that cannot run yet, because client-side hop composition is
+  precisely what it would be measuring. And the corrected churn TCK (above) prices the unit — a
+  1-hop traversal returning one id costs ~11.7 KB of allocation for 16 bytes of payload, so
+  composing a two-hop query client-side over 500 intermediate nodes costs ~5.8 MB where an
+  engine-side path costs ~142 KB. A fortyfold allocation penalty on the canonical graph use case is
+  a No-Waste-Compute question, not a scope one. Recorded with the correction that half the original
+  ruling's evidence — "GRAPH-111's zero-alloc and churn-ratio TCKs" — included the churn TCK shown
+  above to have measured a sampler draw. The RFC that entry requires is still unwritten, so the
+  commitment is to the GA cut, not to a named release.
+
+- **ADR-074 — a request names its own peer.** Discharges the one question RFC-2026-06-29 left
+  explicitly owed: its split disposition made multi-peer addressing 1.0 scope but fixed *when*, not
+  *how*. A code spike moved the problem before the option table was written. Every document here
+  calls the client *single-host*; it is narrower. `CommunityHttpClientEngine` has **zero public
+  constructors**, its only reachable path takes `targetHost` from `HttpConfig.bindHost` — documented
+  as the SERVER/DUAL **listener** address — and no client-target configuration key exists anywhere in
+  the tree. The client dials the address its own server listens on, so an application cannot address
+  even the *first* external peer. Decision: `HttpRequest` gains a nullable `authority` component with
+  the previous canonical constructor retained as a bridge; `Host` and TLS peer verification follow
+  the authority rather than the connection; the enricher observes the final authority so an outbound
+  credential's audience can bind to the peer it is sent to. Two spike findings decided it against the
+  per-host-engine alternative: `send` already opens a fresh connection per call, so there is no pool
+  the alternative would preserve, and `HttpClientRequestEnricher.enrich` receives only the request,
+  which makes audience binding structurally inexpressible when the peer lives on the engine.
+  Implementation follows; this slice is the decision.
+
+### Added
+
+- **The Maven Central publication path exists, is gated, and has produced nothing yet.** Every
+  coordinate now carries the metadata Central validates per artifact (`url`, `scm`, `developers`,
+  `organization` — none of which existed before), a `release` profile produces sources and javadoc
+  jars and GPG-signs every file including the SBOM, and `central-publishing-maven-plugin` uploads
+  with `autoPublish=false` so a human reviews the portal's validation before anything becomes
+  permanent. SLSA build provenance is attested through Sigstore keyless signing on the release
+  workflow's OIDC identity, which answers what a GPG signature does not: which workflow, at which
+  commit, produced the file. **No release has been published through it** — the secrets are not set,
+  and the first one is manual by design.
+- **A release-readiness gate**, `tools/release-readiness/release-readiness.sh`, asserting that every
+  coordinate has a pom, jar, sources jar, javadoc jar and SBOM and that each verifies against the
+  signing key. It found two real defects on its first run, both of which would have failed the
+  upload rather than the build — see below.
+- **A digest assertion tying the uploaded artifacts to the gated ones.** Maven re-runs the lifecycle
+  up to `deploy` and central-publishing stages its bundle during that phase, so there is no way to
+  upload previously built artifacts — the release workflow necessarily builds twice, and without
+  this the gate and the provenance attestation would describe a different build than the one Central
+  receives. The second build now runs `clean` and every jar, pom and SBOM is asserted byte-identical
+  to the gated set.
+
+### Fixed
+
+- **The release build produced no SBOMs at all, and the SBOM gate could not see it.**
+  `cyclonedx-maven-plugin`'s `skipNotDeployed` defaults to `true`, and
+  `central-publishing-maven-plugin` sets `maven.deploy.skip` because `<extensions>true</extensions>`
+  makes it replace the deploy step. So `mvn -P release verify` emitted eleven signed artifacts and
+  zero SBOMs, while the CI SBOM gate — which runs the ordinary build, where nothing skips deploy —
+  stayed green. Every Central release would have shipped SBOM-less with nothing reporting it.
+  `skipNotDeployed` is now `false`, and the release-readiness gate checks the SBOM alongside the
+  files Central itself requires.
+- **The shaded CLI jar was not reproducible across a second build over a dirty `target/`.** Two
+  clean `-P release` builds are byte-identical across all 69 files except the `.asc` signatures,
+  which carry a creation timestamp by design. A second build without `clean` re-shades an
+  already-shaded jar, and `exeris-kernel-diagnostics-cli` came out different — caught by the digest
+  assertion on its first run, which is what that assertion is for.
+
+### Changed
+
+- **The kernel is now Apache License 2.0, unmodified.** The Commons Clause condition is gone,
+  so the open kernel is open source by the OSI definition for the first time — the previous
+  terms withheld the right to sell the software as a competing product, which is a condition
+  Apache-2.0 does not carry and which corporate licence scanners correctly flagged as
+  non-permissive. Every source file now carries `SPDX-License-Identifier: Apache-2.0` (1 285
+  files) in place of a six-line prose header, and `LICENSING.md` maps the open-core boundary
+  for a legal review while `TRADEMARK.md` states what Apache-2.0 §6 explicitly does not grant:
+  the name.
+- **The Apache 2.0 text itself was wrong, and that is the larger half of this change.** What
+  shipped through v0.11.0 as "Apache License Version 2.0" was an abridged paraphrase, not the
+  licence. It dropped the definition of "submitted" and the "Not a Contribution" carve-out from
+  §1, two sentences from §4(d) including "the contents of the NOTICE file … do not modify the
+  License", and the whole "Notwithstanding the above" sentence from §5 — the clause that lets a
+  separate contributor agreement coexist with the inbound-equals-outbound default. `LICENSE`
+  now matches the canonical text byte for byte, verified against four independent Apache-2.0
+  copies rather than against a transcription. The five files that carried it (root plus the
+  four module copies) are identical again.
+- **The licence header check now covers the module that ships the header.**
+  `exeris-kernel-build-config` is parented to the root POM while the check is declared in
+  `exeris-kernel-parent`, so its own four sources sat outside the gate — and kept the old
+  header through a reformat that rewrote 1 275 files. `tools/jfr-reporter` was outside it too
+  and carried no header at all. Both now declare the check themselves, reading the one header
+  file rather than a second copy.
+- **Two published coordinates declared no licence at all.** `<licenses>` lived in
+  `exeris-kernel-parent`, but `exeris-kernel-bom` and `exeris-kernel-build-config` parent to the
+  root POM — so their effective POMs carried none, while every other module inherited one
+  (`help:effective-pom` resolved 1 for spi, 0 for both of those). The block moves to the root,
+  where all ten coordinates inherit it. This is also what Maven Central validates: per artifact,
+  not per reactor.
+
+### Added
+- **`FlowDefinitionBuilder.version(int)`** (ADR-064 amendment). ADR-064 made `(name, version)` the
+  plan's identity and called the version "explicit, application-declared" — but the builder, the only
+  supported way to assemble a definition and the one every generated saga uses, had no way to set it.
+  Every definition built through the fluent API was version 1. The workaround — build unversioned,
+  rebuild the record by hand through the five-argument `FlowDefinition` constructor — worked only by
+  side effect, because a definition's transitions are recorded when `build()` runs and read back at
+  compile: a hand-built record for a name never built through a builder compiled into a plan with
+  steps and **no declared edges**, silently — which is not a stalled saga but a linearised one, since
+  a step with no outgoing transition falls back to `index + 1`. A definition whose edges are already
+  sequential is unaffected; one that declares a skip or a branch runs a path it never declared. The new method is `default` and throws
+  (out-of-tree-implementation compatibility, same constraint as `FlowExecutionPlan.definitionVersion()`);
+  unlike that one it refuses rather than returning a default, because silently ignoring a requested
+  version would build a v1 definition claiming to be v3. `AbstractFlowDefinitionVersioningTck` now
+  assembles every plan through the builder and pins the builder → definition → plan carry.
+- **The two PostgreSQL session keys the RLS contract rests on are constants**
+  (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`, `SESSION_KEY_SHARED_SCOPE`). The name is a contract
+  between code the kernel ships and SQL it does not — the SPI itself says it cannot introspect a
+  deployment's policy — so both sides spelled the string by transcription with no compiler across the
+  gap. When they disagree the failure is the worst available: zero rows read, every write refused,
+  nothing pointing at the five characters responsible. A generator or migration tool can now reference
+  them; `RlsConnectionInterceptor` builds its statement from them.
+- **Every published coordinate carries a CycloneDX SBOM, and builds are reproducible.** The SBOM is
+  attached under classifier `cyclonedx`, so `mvn deploy` publishes it beside the jar with no
+  workflow change; the invariant is exceptionless, and the pom-packaged coordinates carry an SBOM
+  with an empty component list rather than an exemption. Reproducibility is the half that had to
+  come first: an SBOM describing an artifact nobody else can rebuild identically documents a jar
+  instead of attesting to one. `project.build.outputTimestamp` alone would not have done it —
+  `maven-jar-plugin` carried no version anywhere in the reactor and resolved through Maven's
+  super-POM to 3.1.2, which predates reproducible archive support, so the pins are what make the
+  property hold rather than hygiene standing next to it. Measured, not assumed: on the previous
+  commit two consecutive builds differed in all 9 jars; they are now byte-identical, as are the 11
+  SBOMs. A new `Supply-Chain Gate` runs `artifact:check-buildplan` and `tools/sbom-gate` on every
+  pull request. Artifact signing and provenance attestation are the next slice and are **not** in
+  this one — an SBOM establishes what an artifact contains, not who built it.
+
+### Fixed
+- **A malformed HTTP request body is answered `400` again, not `500`** (ADR-036 amendment). Since
+  ADR-036 landed, every request body that failed to parse reached the caller as a server error: the
+  decoder contract asked drivers to wrap binding exceptions in a `java.*` `RuntimeException` and named
+  `IllegalStateException`, which is also what a *missing* decoder raises — so the status mapping the
+  same ADR places on the handler ("bad bytes ⇒ 400, no codec ⇒ 5xx") had one type for two meanings and
+  could not be performed. A body the decoder cannot bind now surfaces as
+  `spi.exceptions.http.RequestBodyDecodeException` (`EX-HTTP-4013`; `rawArgs` carry the target type
+  name and body size, never body content); a missing or unresolvable decoder stays
+  `IllegalStateException`. The TCK asserts the classification rather than the type family, and the
+  wrapping rule now reads `java.*` **or** SPI-owned — driver opacity never required the former.
+  Generated handlers need no change: their existing catch order already maps everything that is not an
+  `IllegalStateException` to `400`.
+- **The RLS policy the kernel publishes now matches the one it tests.** The conforming-policy example
+  in `RlsConnectionInterceptor`'s Javadoc — the thing a deployment copies into its own migrations —
+  showed `CREATE POLICY` and nothing else, while all three integration tests holding this contract
+  issue `ENABLE` **and** `FORCE ROW LEVEL SECURITY` and connect as a non-owner role. PostgreSQL exempts
+  a table's owner from its own policies unless the table is forced, so an application connecting as the
+  role that owns its tables — the default in every quick-start — got a policy that is enabled, listed in
+  `pg_policies`, and never applied: no error, other tenants' rows in every read. The example also
+  compared `tenant_id` to `current_setting(...)` without stating that it assumes a `TEXT` column; a
+  deployment casting to `uuid` needs the empty-string guard on the tenant arm too, since the interceptor
+  publishes the key unconditionally. Both are now stated. `docs/subsystems/persistence.md` carries the
+  enforcement requirement.
+- **Two versions of one flow definition no longer consume each other's declared edges.** The handover
+  from `FlowDefinitionBuilder.build()` to `compile()` was keyed by definition *name* while the plan
+  catalog is keyed by `(name, version)`, so building two versions before compiling either — the shape
+  ADR-064 coexistence asks for, and one only reachable once the builder could express a version —
+  left the second plan with no declared edges. Not a stalled saga: a step with no outgoing transition
+  falls back to `index + 1`, so a sequential definition is unaffected and one declaring a skip or a
+  branch silently runs a path it never declared. Keyed by `(name, version)` now, pinned by a TCK case
+  whose declared edge skips a step, because a sequential one cannot observe the loss.
+
+### Fixed
+
+- **`transport.idleTimeoutMillis` reclaims idle connections, which it had never done.** The key was
+  read by both config resolvers, validated against `>= 0`, carried into `HttpConfig`, copied into
+  `TransportConfig` and printed by `toString()` — and compared to nothing. No code outside
+  construction read `TransportConfig.idleTimeoutMillis()`, so no connection was ever closed for
+  idleness at any setting, while `HttpConfig`'s javadoc documented the semantics of the limit in
+  detail (*"0 = no timeout"*). A carried knob is worse than a missing one: the operator sets it,
+  sees it echoed back, and diagnoses the resulting connection leak against `maxConnections`, which
+  is enforced.
+
+  `NativeTcpIdleReaper` now sweeps each reactor's own selector keys after dispatch — one instance
+  per reactor, no timer thread, no scheduled task, no shared state — closing streams whose last
+  read or queued write is older than the configured span. The sweep is gated to `idleTimeout / 4`
+  clamped to [250 ms, 5 s], the same cadence shape `CommunityTenantPoolRegistry` uses and for the
+  same reason: a reactor returns from `select` thousands of times a second under load, and an
+  ungated O(keys) walk would put a scan of every connection on the hot path to enforce a limit
+  measured in seconds.
+
+  **What counts as activity is asymmetric between the directions, deliberately.** On ingress only
+  an attempted `read()` counts, never bytes merely arriving — which is what makes the same stamp
+  bound a slow-loris hold, since dribbling a byte a second is precisely what defeats a timeout that
+  trusts arrival. On egress both the attempted write and bytes actually leaving the socket count,
+  so a large response draining to a slow client keeps its own connection alive instead of being cut
+  off mid-transfer. The first cut of this had the egress half wrong in a way worth recording,
+  because it is this entry's own subject one layer down: `write()` reaches `queueWrite` **only on
+  the TLS branch**, so on a plaintext stream — `CommunityHttpExchange`'s path, and the default one —
+  answering a request moved bytes without counting as activity, and idle reclamation silently
+  became a property of whether TLS was configured. Found in review of the PR that fixes it.
+
+  Teardown reuses `closeKeyStream` and is abortive, for the reason that method's contract already
+  states: a graceful close waits on queued egress, and a peer quiet enough to be reclaimed may
+  never drain it.
+
+  `0` still means no timeout (ADR-071's capacity/timeout class), and negatives are still refused by
+  `HttpConfig`. New JFR event `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` carries
+  the observed idle span *and* the configured limit, because the ratio is what tells an operator
+  whether a fleet is being trimmed on a threshold or is reclaiming dead peers.
+
+  Coverage: `NativeTcpIdleTimeoutTest` — reclamation with the event asserted, `0` reclaiming
+  nothing, **a connection reading every 166 ms under a 500 ms timeout surviving**, and **a
+  connection the server only writes to surviving**. The last two are what make the first two mean
+  anything: a carrier reclaiming every connection on a timer passes reclamation-and-disabled
+  identically, and the read-driven case alone leaves the entire egress half of the contract
+  unexercised by data movement — which is exactly how the plaintext `write()` gap survived the
+  first cut of this change.
+
+### Fixed — verification
+
+- **Four carrier-level TLS tests had never run, anywhere, and reported success by skipping.**
+  `NativeTcpClientServerE2e{,MultiReactor2,MultiReactor4}IntegrationTest` read their server
+  certificate from `../native-libs/certs/server.{crt,key}` behind an `assumeTrue`. That directory is
+  **in no commit, no `.gitignore`, no script, no document and no workflow** — it was one developer's
+  local path that never entered the repository, so the assumption never held for anyone. The classes
+  carry no `@Tag`, so they run in the default `mvn clean install`: every build executed them, every
+  build skipped them, and every build reported green. A skip is the one outcome that reads like a
+  pass in a summary line.
+
+  The material is now generated per run by `TlsTestCertificate` (BouncyCastle `bcpkix-jdk18on`,
+  **test scope only**, pinned to the `bcprov` version already managed by the BOM) into a JUnit
+  `@TempDir`. Generating beats committing on two counts: a checked-in `PRIVATE KEY` block trips
+  secret scanners for no benefit, and a checked-in certificate expires — turning a passing suite
+  into a dated time bomb. The seven tests in those three classes now run with **zero skips**.
+
+- **The established-callback one-shot is guarded for the first time**
+  (`NativeTcpTlsEstablishedOnceIntegrationTest`). `NativeTcpStream.fireEstablishedOnce()` is
+  CAS-guarded, and the guard was untested because of a path asymmetry: on plaintext the method is
+  reached from `markRegistrationReady()`, once per connection, so the CAS is unreachable a second
+  time; on TLS it is reached from `readTlsIngressFromFd()`, which the reactor calls per drained
+  record. `NativeTcpCarrierIngressIntegrationTest` asserts "exactly once" but runs plaintext, so
+  **deleting the CAS leaves that entire class green** — the assertion could not fail. The new test
+  drives spaced TLS records and reddens under the same mutation with `expected: 1 but was: 3`,
+  which is one connection announcing itself three times to a `ConnectionHandler`.
+### Changed
+
+- **Two operational knobs stop being reachable only by `-D`, and two are refused with a reason**
+  (T1-4, ADR-071). `transport.socket.backend` and `memory.jfr.sampleEvery` now resolve through
+  `ConfigProvider` first, falling back to the system properties that were the published surface —
+  `-Dexeris.community.transport.socket.backend` (with its two env aliases) and
+  `-Dexeris.community.memory.jfr.sampleEvery` — so nothing that worked stops working. What changes
+  is that the keys are reachable from a config file and the environment at all, and that they
+  appear in `config.md`, which had never listed either. Both objects are built inside the boot
+  scope, so `CURRENT_CONFIG` is bound where they read it; a driver constructed outside a boot
+  falls through to the property exactly as before.
+
+  **`transport.maxTlsRecordsPerRead` and `transport.queueBackpressureEnabled` are not promoted, and
+  the reason is lifecycle rather than taste.** They are `static final` fields on `NativeTcpCarrier`
+  and `NativeTcpStream`, resolved when the class loads — before any `ConfigProvider` exists, and
+  once per JVM for whatever touches the class first. Reading the provider at class initialisation
+  would not fix that; it would freeze whatever happened to be bound at that moment, which is worse
+  than an honest `-D` because it looks configurable and is not. Doing it properly means moving them
+  to instance state on the ingress path, which is a hot-path change owing a measurement. They join
+  `http.stream.creditWindowBytes` and `transport.acceptedSendBufferBytes` in the documented
+  direct-`-D` category instead, where their siblings already were.
+
+  Recorded while cataloguing them: with `queueBackpressureEnabled` at its default `false` the TLS
+  ingress queue is **count-unbounded**, not merely large. That is defensible rather than a defect —
+  every entry is an off-heap loan the watermark arbiter accounts for, so PAQS still sheds under
+  memory pressure — but the default deserves to be stated rather than discovered.
+
+  Coverage: `CommunityMemoryJfrSamplingConfigTest` (provider wins over `-D`, absent key falls
+  through to `-D`, neither set yields the default, and no provider bound still resolves `-D`) and
+  three cases in `NativeTcpCarrierBackendSelectionTest`. Both promotions are mutation-checked: with
+  the provider read disabled, exactly the provider-dependent cases redden and the fallback cases
+  stay green.
+### Added
+
+- **The SQL translation cache gets a bound an operator can raise, and the other three constants get
+  reasons** (T1-4 close). `persistence.sqlTranslationCacheMaxEntries` replaces a private `1024` in
+  `JdbcPersistenceConnection`. The limit matters more than its size suggests, because **the cache
+  never evicts**: past the bound an application retains the earliest statements it happened to see
+  rather than the hottest, and re-translates everything else on every call. `0` disables caching —
+  coherent for a workload with unbounded statement variety — and a negative value is refused rather
+  than replaced by the default, which would leave a misconfigured deployment believing it had set
+  something.
+
+- **`eu.exeris.kernel.flow.ProgressDisabled`** — `FlowProgressPublisher` probes a bounded window of
+  hash-derived event ordinals and, when every candidate collides, disables `FlowProgress`
+  publication for the life of the process. Nothing recorded that: `publishProgress` afterwards
+  returns on a cached sentinel, so a subscriber never receives anything, which is indistinguishable
+  from a system in which no flow ever terminated. Emitted once, at the transition, not per call.
+
+### Decided
+
+- **Three of the four catalogued "hardcoded limits" did not become keys, and the reasons differ.**
+  `DEFAULT_NETWORK_OFF_HEAP_THRESHOLD` needs no key because one exists —
+  `MemoryProviderConfig.networkOffHeapThreshold` is an SPI record component that the Community
+  allocator *refuses* any non-default value for, explicitly, and reads nowhere at runtime; a new key
+  would publish a setting the driver declines. `FLOW_PROGRESS_ORDINAL_PROBE_LIMIT` bounds a
+  collision probe an operator has no basis for sizing — its defect was silence, now fixed above.
+  `MAX_RECLAIM_CADENCE_MS` clamps a *derived* value (`tenantIdleTtl / 4`) whose input is already
+  configurable; a knob on the output would let the two disagree. With `PaqsScheduler.SPIN_THRESHOLD`
+  from #372, that is **three of twelve catalogued items that were not what the catalogue said** —
+  recorded because the pattern matters more than any one of them.
+
+### Security
+
+- **The four dependencies carrying published advisories are bumped, and one of them was not
+  four packages.** `jackson.version` 3.1.1 → 3.2.2, `postgresql.version` 42.7.11 → 42.7.13, and
+  `lz4.version` 1.10.2 → 1.11.2 in `exeris-kernel-bom`, which is what fixes them for every
+  distributed coordinate; `tools/jfr-reporter` moves 2.18.7 → 2.22.2 on its own pinned Jackson 2.
+  The lz4 pin is not decorative — `at.yawk.lz4:lz4-java` reaches the tree only as a runtime
+  transitive of `kafka-clients`, and it is this BOM entry that fixed it at the vulnerable version.
+
+  **The alert count describes `main`, not this line.** Dependabot scans the default branch, which
+  still carries 0.11.0, so seven of the alerts it reports are against a
+  `exeris-kernel-diagnostics-cli` that no longer exists as described: the CLI's Jackson 2 was
+  removed on this branch when the module moved to the kernel's Jackson 3. Those seven close on
+  release integration, with no bump owed. What was actually open here is the BOM and the reporter.
+
+- **`tools/jfr-reporter` stays on Jackson 2, deliberately.** The case for finishing the migration
+  was that the distribution should not carry two Jackson generations — and it no longer does: the
+  reporter has its own POM, inherits neither the parent nor the BOM, is outside the reactor, and is
+  never deployed. It is built and executed only by the JFR job in CI. Rewriting a report writer
+  whose output feeds that job, to remove a dependency no consumer resolves, buys nothing a version
+  bump does not. Verified by running the shaded jar against a real recording rather than by
+  building it: 180 allocation events through the streaming generator, all five JSON artefacts
+  written, exit 0 — the check the CLI regression taught, where a jar that assembled was executed
+  nowhere.
+
 ## [0.11.0] — 2026-08-11
 
 ### Added

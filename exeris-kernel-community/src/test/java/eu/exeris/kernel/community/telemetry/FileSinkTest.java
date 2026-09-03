@@ -1,14 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.telemetry;
 
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
+import eu.exeris.kernel.tck.support.TckScope;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -19,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.concurrent.StructuredTaskScope;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -150,7 +146,7 @@ class FileSinkTest {
             Path logFile = tempDir.resolve("overflow.log");
             // Queue depth=1, burst from 1000 VTs: concurrent offers will race and many must be dropped.
             try (FileSink sink = new FileSink(logFile, 1)) {
-                try (var scope = StructuredTaskScope.open()) {
+                try (TckScope scope = TckScope.openFailFast()) {
                     for (int i = 0; i < 1_000; i++) {
                         final int idx = i;
                         scope.fork(() -> {
@@ -174,19 +170,19 @@ class FileSinkTest {
     void concurrentEmitIsThreadSafe() throws Exception {
         Path logFile = tempDir.resolve("concurrent.log");
         try (FileSink sink = new FileSink(logFile, 1024)) {
-            try (var scope = StructuredTaskScope.open()) {
-                List<StructuredTaskScope.Subtask<Void>> subtasks = new java.util.ArrayList<>();
+            try (TckScope scope = TckScope.openFailFast()) {
+                List<TckScope.Forked<Void>> emits = new java.util.ArrayList<>();
                 for (int i = 0; i < 500; i++) {
                     final int idx = i;
-                    subtasks.add(scope.fork(() -> {
+                    emits.add(scope.fork(() -> {
                         sink.emit(KernelEvent.info("EX-CONCURRENT-" + idx, "vt-" + idx));
                         return null;
                     }));
                 }
                 scope.join();
-                assertThat(subtasks)
-                        .allSatisfy(subtask -> assertThat(subtask.state())
-                                .isEqualTo(StructuredTaskScope.Subtask.State.SUCCESS));
+                assertThat(emits)
+                        .as("every emit must have completed, not merely have been joined")
+                        .allSatisfy(emit -> assertThat(emit.failed()).isFalse());
             }
             // All emits completed without exception
         }

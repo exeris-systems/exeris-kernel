@@ -89,6 +89,63 @@ Java-side logic and serialization waste.
 
 ---
 
+## `RowCursor` value contract (ADR-080, since 0.12)
+
+Every accessor answers three questions, and until ADR-080 most of them answered none of the three
+out loud: eleven of the thirteen declared no exception at all. Two of the answers are stated and
+asserted here; the third is the type domain, which ADR-080 rules and a later change makes executable.
+
+**Column index.** An index outside `[0, columnCount())` throws `IndexOutOfBoundsException` — all
+thirteen accessors, uniformly. Only `getInt` and `getSegment` said so before; the rest behaved this
+way without declaring it, which is a coincidence and not something an implementor can rely on.
+
+**SQL NULL.** The answer follows the return type rather than the column:
+
+| Accessor | On SQL NULL |
+|---|---|
+| `getInt`, `getLong`, `getShort`, `getFloat`, `getDouble`, `getBoolean` | throws `NullPointerException` — a primitive has no null to return |
+| `getString`, `getBytes`, `getUuid`, `getInstant` | returns `null` |
+| `getSegment` | throws `NullPointerException` — a read-only view of nothing is not a segment |
+| `getLength` | returns `-1` |
+| `isNull` | returns `true` |
+
+`isNull` is the intended pre-check for the primitive accessors, and the reason the NULL rule is worth
+stating rather than inferring: a caller reading a nullable column through `getLong` gets an exception
+on a value that is not an error, and the fix is a different call, not a catch.
+
+**Type domain.** What a converting accessor accepts, and what it does outside that set, is ruled by
+[ADR-080](../adr/ADR-080-rowcursor-value-contract.md) over the measured set in
+[`docs/rowcursor-type-set.md`](../rowcursor-type-set.md). `getString` is total over Tiers A and B and
+refuses outside them with `EX-PERS-5008`; a mismatched typed accessor widens where widening is
+lossless and throws where it is not.
+
+The refusal reads the **declared type name**, never a JDBC type code and never an OID range. That is
+not a stylistic preference — measured through pgjdbc, `bool` (rendered) and `bit` (refused) are both
+reported as `Types.BIT`, so the code cannot separate them, and a native `enum` arrives as
+`Types.VARCHAR` under the application's own type name, so only the name catches it. It is also a
+property of the **column, not the row**: a SQL NULL in an unsupported column refuses, because `null`
+would report "no value here" when the truth is "this column cannot be rendered".
+
+### The rendering guarantee is scoped to PostgreSQL
+
+ADR-080 §2 contracts *the server's* `<type>_out` rendering, over a set measured on PostgreSQL. That
+does not travel: H2 in PostgreSQL compatibility mode renders `bool` as `TRUE` where PostgreSQL
+renders `t`, and names its types in SQL-standard spellings (`CHARACTER VARYING`) sharing no
+vocabulary with the measured set. So the Community driver applies the guarantee — and the refusal
+that gives it an edge — on PostgreSQL connections, detected once per result set. On any other engine
+`getString` remains the JDBC pass-through it has always been, with no §2 promise attached.
+
+Stated here rather than left implicit, because the alternative readings are both worse: enforcing the
+allow-list everywhere would refuse every column on an engine whose names were never enumerated, and
+promising the rendering everywhere would be a guarantee the driver provably cannot keep.
+
+**TCK:** `AbstractRowCursorTck` — index and NULL groups, every binding, default build.
+`AbstractRowCursorTypeSetTck` — the rendering and refusal contract, bound only against PostgreSQL 17
+(`CommunityRowCursorTypeSetIT`, `@Tag("integration")`), since two rows of the set are gated above
+PostgreSQL 16.
+
+---
+
 ## Multi-Tenancy Isolation Strategies
 
 Exeris supports three levels of physical isolation, resolved transparently through the `StorageContext`:
@@ -101,7 +158,19 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 
 The Mechanism column is what each strategy adds, not all it issues. **Every strategy publishes both
 `exeris.tenant_id` and `exeris.shared_scope` on connection acquisition**, in one `set_config` statement,
-whether or not its own isolation reads them — and publishes `""` when the context declares none.
+whether or not its own isolation reads them — and publishes `""` when the context declares none. Both
+names are published as constants on the persistence SPI (`ConnectionInterceptor.SESSION_KEY_TENANT_ID`,
+`SESSION_KEY_SHARED_SCOPE`) so a generator or migration tool can reference them instead of retyping
+them: a policy naming a key the runtime never publishes returns zero rows and refuses every write,
+which is a hard failure with nothing pointing at its cause.
+
+**Publishing the keys is the kernel's half; enforcing them is the deployment's, and `ENABLE` alone
+does not enforce.** The kernel ships no RLS policy and cannot introspect one. A conforming policy —
+the canonical example is in `RlsConnectionInterceptor`'s javadoc — must `ALTER TABLE … ENABLE ROW LEVEL
+SECURITY` **and** `FORCE ROW LEVEL SECURITY`, because PostgreSQL exempts a table's owner from its own
+policies unless the table is forced. An application connecting as the role that owns its tables (the
+default in every quick-start) otherwise gets a policy that is enabled, listed in `pg_policies`, and
+never applied: no error, and other tenants' rows in every read.
 
 Placement decides which connection a request lands on; it does not decide what the previous borrower
 left in the session. `set_config(..., false)` is session-scoped, so with `persistence.perTenantPooling`
@@ -111,6 +180,100 @@ a table the request touches. The same reasoning is why Shared and Dedicated Data
 search_path`: a setting a strategy never writes is not a setting it is free to ignore.
 
 ---
+
+## Request Session and the Scope Key
+
+One HTTP request is one connection — **on a route that returns promptly**. `CommunityHttpRequestDispatcher`
+binds a `PersistenceSessionBox` for the request; the first persistence call acquires a
+connection, every later call reuses it, and `box.release()` in the handler's
+`finally` returns it to the pool.
+
+### The promise is scoped to `PROMPT` routes (ADR-077, since 0.12)
+
+The qualifier is new and the behaviour it qualifies is not: `PROMPT` is what every
+`RouteRequirement` factory returns, so a route that declares nothing gets exactly the paragraph
+above.
+
+A route that **blocks** can say so — `RouteRequirement.authenticated().longRunning()` — and then no
+session is bound at all. Each persistence call acquires and releases through the engine, landing on
+the ownership rule every path outside a request session already runs, flow threads included.
+
+The reason is that the promise inverts under blocking. A handler that waits holds its pooled
+connection across the wait, while the work it waits on draws from that same pool: hold-and-wait on
+one pool, and an availability collapse rather than a slowdown. What the declaration buys is that
+nothing pooled is pinned across the block; what it costs is more acquires, and therefore more
+`RlsConnectionInterceptor` round-trips, since isolation is re-established per acquisition.
+
+Two consequences worth stating plainly:
+
+- **A `LONG_RUNNING` handle is owning.** Its `close()` is real, not the no-op a request-scoped
+  handle hands out, so a missed close is a genuine pool leak. Try-with-resources is not a style
+  preference on such a route.
+- **The declaration can go stale.** A route marked `LONG_RUNNING` that stops blocking keeps paying
+  the extra acquires forever. `eu.exeris.kernel.http.RouteExecution` carries the handler duration on
+  every such request so the mismatch is detectable; the kernel deliberately sets no threshold, since
+  what counts as "too fast to be blocking" is a deployment's judgement, not the runtime's.
+
+The default does not move until three measurements exist — the acquire-rate multiplier inside
+`[1.0×, 3.17×]` counted as reuses crossing a transaction boundary, the interceptor's session-key
+cost at that rate, and a saga-benchmark re-run with `ConnectionHold` enabled. ADR-077 records why.
+
+### Measuring how long a connection is actually held (since 0.12)
+
+Two JFR events cover the pool, and it is worth knowing which question each answers.
+`eu.exeris.kernel.persistence.ConnectionAcquire` carries `acquireLatencyNs` — the time spent
+*getting* a connection. `eu.exeris.kernel.persistence.ConnectionHold` is emitted when the connection
+goes back to the pool and carries `holdDurationNs` — the time it was *kept*.
+
+The second exists because the first has no counterpart on the release side, and the only hold
+measurement the kernel had came from `RequestSessionLifecycleEvent`, which is emitted from
+`PersistenceSessionBox` and nowhere else. A caller with no request session — a flow step on a bare
+virtual thread, a scheduled job, the migration runner — produced an acquire event and then nothing.
+That made pool residency for background work unmeasurable, and it made the *absence* of session
+events on those threads look like a finding when it is a property of where the instrument sits.
+`ConnectionHold` is emitted at the pool return itself, so every acquire has a matching hold whoever
+asked.
+
+Two fields make the residency apportionable, and both are sampled **at acquire**, not at release —
+the returning thread is not necessarily the acquiring one:
+
+| Field | Meaning |
+|---|---|
+| `withinRequestScope` | A request session was in scope on the acquiring thread. **Not an ownership claim** — a deliberate `openPhysical()` inside a request reads `true`, which is right for apportioning residency and wrong as a statement about who owns the connection. |
+| `acquiredOnVirtualThread` | The acquiring thread was virtual. Background work in this kernel runs virtual, so `withinRequestScope=false` with `acquiredOnVirtualThread=true` is the flow-step signature. |
+| `discarded` | The connection was **evicted, not returned**. A pool eviction reaches the same `close()` a healthy return does, so without this flag the two are the same event. The eviction path this kernel actually takes is `discardAfterInterceptorFailure` — a `ConnectionInterceptor` threw, so the connection is thrown away because the RLS session keys could not be published. Reported as an ordinary hold, a burst of those reads as a burst of very short *healthy* returns. |
+
+Both events are single-phase and hand their `commit()` to a platform thread through `JfrCommitGate`:
+a hold spans arbitrary caller work, so the release nearly always follows a park/remount, which is
+exactly the condition that makes a carrier-bound `EventWriter` flush a stale buffer.
+
+The box keys that session by a **scope key** taken from the request's
+`StorageContext`: `isolationKey`, `schemaName`, or `:dedicated:<ds>` per
+strategy, and `shared` when none is declared. A call whose scope key does not
+match the session's is refused (`BYPASS_SCOPE_MISMATCH`) and takes its own
+connection. That refusal is deliberate: a request genuinely addressing a
+second tenant must not be served the first tenant's session.
+
+**Both `openConnection()` overloads MUST derive that key from the same source.**
+The no-arg overload resolves `KernelProviders.storageContextOrSystem()` and
+delegates to the context overload; it does not key the session `shared` on its
+own. Until v0.12 it did, and the damage was not confined to connection counts:
+
+- Any request touching both overloads mismatched by construction. A Saga does:
+  the flow snapshot store, the outbox adapter and the event log all call the
+  no-arg overload while repositories arrive through the context one. Measured
+  on a v0.11 benchmark, 2.0 bypasses per request session.
+- The fallback ran **no** `ConnectionInterceptor`. `RlsConnectionInterceptor`
+  publishes its keys with session-scoped `set_config(..., false)`, which
+  survives pool checkin, so that connection arrived carrying the *previous
+  borrower's* tenant: a cross-tenant read under RLS, and a write judged by the
+  wrong `WITH CHECK`.
+
+The second point is why this is an isolation rule rather than a pooling
+optimisation. `CommunityRequestScopeBypassIsolationIT` pins it: two pooled
+connections primed under `tenant-a`, one `tenant-b` request, and the connection
+its second call receives must report `tenant-b`, see only `tenant-b` rows, and
+run on the same backend as its first call.
 
 ## Admission Control & Backpressure Integration
 
@@ -315,9 +478,45 @@ are the responsibility of the application layer or a dedicated migration tool.
 > Kernel-owned tables and is explicitly disabled by default. The migration list is maintained in
 > `CommunityPersistenceEngine.MIGRATION_RESOURCES`; new internal tables follow the
 > `db/migration/V{version}__{name}.sql` naming convention. The runner is intentionally minimal
-> (string split on `;`, idempotent `CREATE TABLE IF NOT EXISTS`); it is not a Flyway substitute.
-> Application schemas continue to be the operator's responsibility (see the recommendation table
-> below).
+> (string split on `;`); it is not a Flyway substitute. Application schemas continue to be the
+> operator's responsibility (see the recommendation table below).
+
+### Apply-once is the runner's property, not the SQL's (since 0.12, ADR-073)
+
+Until v0.12 the runner executed **every** script on **every** boot and recorded nothing. Re-running
+was harmless only because every author had written `CREATE TABLE IF NOT EXISTS` — counted, not
+assumed: 14 DDL statements across six scripts, all 14 guarded. The first migration that cannot be
+written that way breaks it, and the shapes are ordinary: a data backfill re-applies **silently**
+(healthy boot, wrong data), a constraint tightening fails the second boot outright.
+
+`exeris_schema_history` now records one row per applied migration — version, script, checksum,
+timestamp. Three rules follow:
+
+| Rule | Behaviour |
+|---|---|
+| **Apply-once** | A version already in the ledger is skipped, not re-run. |
+| **Fail closed on drift** | A version in the ledger whose file now hashes differently **refuses the boot**. The database no longer matches the code, and warning-and-continuing is what makes a drifted database look healthy. Remedy: restore the file, or delete the row if the change is known to be applied already. |
+| **One transaction per migration** | The ledger row is committed with the migration's own statements, so the ledger cannot claim something the database lacks. A failure at migration 4 keeps 1–3 applied *and recorded*, and the next boot resumes at 4. |
+
+A refused boot also emits `eu.exeris.kernel.persistence.SchemaMigrationRefused` — version, script, and
+**both** checksums — so an operator can see which migration and which direction without reading the
+exception. Comparing the recorded checksum against another deployment tells a local edit from a bad
+artefact.
+
+The checksum folds `\r\n` to `\n` and normalises nothing else — without that, a checkout on Windows
+refuses every boot with nothing wrong; with more, an edit could slip past.
+
+The ledger table is created with `IF NOT EXISTS` and is deliberately not recorded in itself: it is
+the one piece of schema whose creation must stay idempotent.
+
+**Existing databases baseline themselves on first boot.** With no ledger the runner sees every
+version as unapplied and runs the set; the guards make it a no-op and the ledger is then correct.
+That works *because* the current scripts are idempotent — the property being retired — so it is a
+one-time debt, not a mechanism.
+
+**Not covered:** concurrent boot of multiple nodes (two kernels can both see an empty ledger; no lock
+is taken, unchanged from before and tracked with the cross-node coordination seam), repair/baseline
+tooling, out-of-order versions, and down-migrations.
 
 | Concern                             | Recommendation                                                                                           |
 |:------------------------------------|:---------------------------------------------------------------------------------------------------------|

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -29,6 +25,17 @@ import java.util.Set;
  * {@code methodId} the kernel cannot derive from a URL. Offering a role predicate here would invite
  * callers to express at the edge something the edge cannot answer.
  *
+ * <h2>How the route executes (ADR-077)</h2>
+ * <p>A requirement also declares whether the handler returns promptly or blocks —
+ * {@link Execution#PROMPT} by default, {@link Execution#LONG_RUNNING} via {@link #longRunning()}.
+ * The facet describes the <em>route</em>, deliberately not a connection: this package must stay
+ * blind to what a driver holds, so the Community dispatcher is what draws the consequence (it binds
+ * no request-scoped persistence session across a {@code LONG_RUNNING} route). Another driver may
+ * draw a different one, or none.
+ *
+ * <p>The default reproduces the behaviour that shipped before the facet existed, so a policy that
+ * never names execution is unaffected by its arrival.
+ *
  * <h2>Allocation</h2>
  * <p>Instances are immutable and meant to be built once, at policy-declaration time, and returned
  * repeatedly. A {@link HttpRoutePolicy} that constructs a requirement per request moves allocation
@@ -37,16 +44,30 @@ import java.util.Set;
  *
  * @since 0.11.0
  */
-// TooManyMethods: ten methods on an immutable value carrier — four factories (one per shape the
+// TooManyMethods: twelve methods on an immutable value carrier — four factories (one per shape the
 // contract offers), two accessors that exist specifically to keep the decision path allocation-free,
-// kind(), and the three Object overrides a Valhalla-ready carrier is obliged to define. Splitting the
-// type to satisfy the count would put the shapes and the reads in different places for no gain.
+// kind(), execution() and longRunning() (ADR-077's facet, a reader and a wither rather than four more
+// factories), and the three Object overrides a Valhalla-ready carrier is obliged to define. Splitting
+// the type to satisfy the count would put the shapes and the reads in different places for no gain.
 @SuppressWarnings("PMD.TooManyMethods")
 public final class RouteRequirement {
 
-    private static final RouteRequirement PERMIT_ALL = new RouteRequirement(Kind.PERMIT_ALL, Set.of());
+    private static final RouteRequirement PERMIT_ALL =
+            new RouteRequirement(Kind.PERMIT_ALL, Set.of(), Execution.PROMPT);
+    /**
+     * Execution is {@code PROMPT} because an abstention has no execution facet to declare; the value
+     * is inert and never read by an admitted request, since an abstention never admits one.
+     */
+    private static final RouteRequirement ABSTAIN =
+            new RouteRequirement(Kind.ABSTAIN, Set.of(), Execution.PROMPT);
     private static final RouteRequirement AUTHENTICATED =
-            new RouteRequirement(Kind.AUTHENTICATED, Set.of());
+            new RouteRequirement(Kind.AUTHENTICATED, Set.of(), Execution.PROMPT);
+    // Shared too, so longRunning() on the scope-free shapes stays allocation-free on a path the
+    // class contract already forbids allocating on.
+    private static final RouteRequirement PERMIT_ALL_LONG_RUNNING =
+            new RouteRequirement(Kind.PERMIT_ALL, Set.of(), Execution.LONG_RUNNING);
+    private static final RouteRequirement AUTHENTICATED_LONG_RUNNING =
+            new RouteRequirement(Kind.AUTHENTICATED, Set.of(), Execution.LONG_RUNNING);
 
     /** How the declared scopes are matched. */
     public enum Kind {
@@ -57,16 +78,47 @@ public final class RouteRequirement {
         /** Verified identity holding at least one of the declared scopes. */
         ANY_SCOPE,
         /** Verified identity holding every declared scope. */
-        ALL_SCOPES
+        ALL_SCOPES,
+        /**
+         * This policy does not describe the route (ADR-061 amendment A2).
+         *
+         * <p>Not a requirement, and deliberately not one of the answers above: {@code PERMIT_ALL}
+         * describes a route as public, while this describes nothing at all. It exists so a policy
+         * composed with others can decline a route instead of guessing a stance for it.
+         *
+         * <p>Reaching a decision point unfolded is a defect, not a permission — see
+         * {@link #abstain()}.
+         *
+         * @since 0.12.0
+         */
+        ABSTAIN
+    }
+
+    /**
+     * How a route executes, and therefore what a driver may hold across it.
+     *
+     * @since 0.12.0
+     */
+    public enum Execution {
+        /** The handler returns promptly; request-scoped resources may be held for its duration. */
+        PROMPT,
+        /**
+         * The handler blocks. A driver must not hold request-scoped resources across it — on the
+         * Community HTTP path that means no request-scoped persistence session, because a handler
+         * that blocks while holding a pooled connection waits on work that draws from the same pool.
+         */
+        LONG_RUNNING
     }
 
     private final Kind kind;
     private final Set<String> scopes;
     private final String[] scopeArray;
+    private final Execution execution;
 
-    private RouteRequirement(Kind kind, Set<String> scopes) {
+    private RouteRequirement(Kind kind, Set<String> scopes, Execution execution) {
         this.kind = kind;
         this.scopes = scopes;
+        this.execution = execution;
         // Pre-flattened so the decision path iterates an array instead of an iterator over a Set.
         this.scopeArray = scopes.toArray(new String[0]);
     }
@@ -78,6 +130,38 @@ public final class RouteRequirement {
      */
     public static RouteRequirement permitAll() {
         return PERMIT_ALL;
+    }
+
+    /**
+     * States that this policy does not describe the route, leaving the answer to another (ADR-061
+     * amendment A2).
+     *
+     * <p><b>Only meaningful inside a composition.</b> {@link HttpRoutePolicy#firstDeclared} folds an
+     * ordered list of policies and takes the first non-abstaining answer; abstention is how a policy
+     * says "keep looking". A policy bound directly to the provider slot is still contractually total,
+     * because nothing downstream will fold for it — an abstention that reaches the decision point is
+     * treated as the defect it is and denies, in the same shape a {@code null} answer does.
+     *
+     * <p>This is not {@link #permitAll()}. That describes a route as public; this describes nothing,
+     * and the difference is the whole point: a generated policy that answered {@code permitAll()} for
+     * routes it did not generate would silently overrule the stance the application already chose for
+     * its unmatched routes.
+     *
+     * @return the shared abstention
+     * @since 0.12.0
+     */
+    public static RouteRequirement abstain() {
+        return ABSTAIN;
+    }
+
+    /**
+     * Whether this is an abstention rather than a requirement.
+     *
+     * @return {@code true} if this policy declined to describe the route
+     * @since 0.12.0
+     */
+    public boolean isAbstention() {
+        return kind == Kind.ABSTAIN;
     }
 
     /**
@@ -99,7 +183,7 @@ public final class RouteRequirement {
      *                                  route nobody can call
      */
     public static RouteRequirement requiringAnyScope(Set<String> requiredScopes) {
-        return new RouteRequirement(Kind.ANY_SCOPE, validated(requiredScopes));
+        return new RouteRequirement(Kind.ANY_SCOPE, validated(requiredScopes), Execution.PROMPT);
     }
 
     /**
@@ -112,7 +196,7 @@ public final class RouteRequirement {
      *                                  {@link #authenticated()}
      */
     public static RouteRequirement requiringAllScopes(Set<String> requiredScopes) {
-        return new RouteRequirement(Kind.ALL_SCOPES, validated(requiredScopes));
+        return new RouteRequirement(Kind.ALL_SCOPES, validated(requiredScopes), Execution.PROMPT);
     }
 
     /**
@@ -122,6 +206,48 @@ public final class RouteRequirement {
      */
     public Kind kind() {
         return kind;
+    }
+
+    /**
+     * Returns how this route executes.
+     *
+     * @return the execution shape; never {@code null}, {@link Execution#PROMPT} unless
+     *         {@link #longRunning()} was called
+     * @since 0.12.0
+     */
+    public Execution execution() {
+        return execution;
+    }
+
+    /**
+     * Returns this requirement declared {@link Execution#LONG_RUNNING}.
+     *
+     * <p>There is no inverse: {@link Execution#PROMPT} is what every factory already returns, so a
+     * route that wants it names nothing. Idempotent, and free on the scope-free shapes — both return
+     * shared constants rather than allocating, which is what keeps a policy that builds requirements
+     * eagerly from paying for the facet.
+     *
+     * @return an equal requirement whose execution is {@link Execution#LONG_RUNNING}
+     * @since 0.12.0
+     */
+    public RouteRequirement longRunning() {
+        if (execution == Execution.LONG_RUNNING) {
+            return this;
+        }
+        // Switched on kind, not compared by identity: the class contract forbids identity-sensitive
+        // operations on this carrier, and PERMIT_ALL / AUTHENTICATED are the only shapes whose kind
+        // determines their whole value (both carry no scopes).
+        return switch (kind) {
+            case PERMIT_ALL -> PERMIT_ALL_LONG_RUNNING;
+            case AUTHENTICATED -> AUTHENTICATED_LONG_RUNNING;
+            case ANY_SCOPE, ALL_SCOPES -> new RouteRequirement(kind, scopes, Execution.LONG_RUNNING);
+            // An abstention declares nothing about the route, its execution mode included. Returning
+            // `this` would hand back a non-declaration the caller believes is marked long-running —
+            // a plausible wrong answer, which is worse here than a loud one at composition time.
+            case ABSTAIN -> throw new IllegalStateException(
+                    "abstain() declares nothing about a route, so it cannot be marked LONG_RUNNING; "
+                            + "declare the requirement in the policy that owns the route");
+        };
     }
 
     /**
@@ -164,16 +290,22 @@ public final class RouteRequirement {
         // equivalent one by hand. Valhalla-ready carriers must not be identity-sensitive.
         return other instanceof RouteRequirement that
                 && kind == that.kind
+                && execution == that.execution
                 && scopes.equals(that.scopes);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, scopes);
+        return Objects.hash(kind, execution, scopes);
     }
 
     @Override
     public String toString() {
-        return "RouteRequirement[" + kind + (scopes.isEmpty() ? "" : ", scopes=" + scopes) + ']';
+        // PROMPT is left unrendered: it is the default, and printing it would change the rendering
+        // of every requirement that existed before the facet did.
+        return "RouteRequirement[" + kind
+                + (scopes.isEmpty() ? "" : ", scopes=" + scopes)
+                + (execution == Execution.PROMPT ? "" : ", " + execution)
+                + ']';
     }
 }

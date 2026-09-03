@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -21,9 +17,14 @@ import java.util.Objects;
  * but the registry has already matched on {@code (targetType, contentType)} before
  * {@link HttpResponseBodyDecoder#decode} is invoked.
  *
+ * <p>{@code allocator} is optional and a decoder must not assume one, for the reasons set out on
+ * {@link HttpRequestDecodingContext} — this is the client-side mirror and the rule is the same on
+ * both sides, so that a decoder written against one context behaves the same against the other.
+ *
  * @param status    wire status code (e.g., 200, 404, 500)
  * @param headers   immutable response headers; non-null, may be empty
- * @param allocator allocator for any auxiliary off-heap buffers a decoder may need; non-null
+ * @param allocator allocator for any auxiliary off-heap buffers a decoder may need; may be
+ *                  {@code null}
  * @since 0.8.0
  */
 public record HttpResponseDecodingContext(
@@ -34,6 +35,16 @@ public record HttpResponseDecodingContext(
 
     public HttpResponseDecodingContext {
         Objects.requireNonNull(headers, "headers must not be null");
-        Objects.requireNonNull(allocator, "allocator must not be null");
+    }
+
+    /**
+     * Builds a context with no allocator — the shape every decoder shipped with the kernel needs.
+     *
+     * @param status  wire status code
+     * @param headers immutable response headers; non-null, may be empty
+     * @since 0.12.0
+     */
+    public HttpResponseDecodingContext(int status, List<HttpHeader> headers) {
+        this(status, headers, null);
     }
 }

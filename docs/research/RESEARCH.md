@@ -303,6 +303,46 @@ Community payoff track. It is a separate, native-transport-specific follow-up mo
 by materially different execution geometry (`io_uring` / `IOCP`, poller interaction,
 wakeup costs, and scheduler/carrier coupling).
 
+### 2. HTTP/1 Read-Path Allocation
+
+**Branch:** `research/http1-header-allocation`
+
+**Status:** `concluded`
+
+Focus:
+- per-request heap allocation of the HTTP/1 request read path,
+- whether token materialization in `Http1RequestParser.readAscii` dominates it,
+- exact per-thread bytes (`ThreadMXBean`) rather than sampled JFR `weight`,
+- a sweep of materialize-and-copy sites across the HTTP request and response paths.
+
+Outcome:
+- a 16-header request allocated ~9.8 KB of heap to read ~500 B off the wire, roughly 20x its own
+  wire size,
+- the hypothesis was only partly confirmed: token materialization is under half the cost,
+- the rest was structural and the driving plan item did not mention it — the reader parsed the
+  header block twice and then copied the resulting list a third time,
+- the same materialize-and-copy shape was found at four further per-request sites, so this is a
+  subsystem pattern rather than one method,
+- no CPU or throughput claim was made; only allocation was measured.
+
+Final decision:
+- primary disposition: **Promote to Feature**
+- delivered in v0.12: the double parse was collapsed to one pass and the list copy dropped —
+  9 848 B to 5 472 B for that request, 44%, with ADR-071 gaining a 2026-09-01 amendment because
+  the change also made the configured header bound structural rather than maintained by convention,
+- follow-up: the zero-copy header representation is **not** promoted from here. It needs an RFC
+  first, because its hard question is lifetime — header slices would point into a `LoanedBuffer`
+  that is recycled after the request, and `HttpRequest.headers()` is SPI surface.
+
+Note:
+The four remaining sweep sites were taken after the RFC settled the representation question, so none
+of them was edited twice. Two of the five rows in the sweep table described their site inaccurately
+and are corrected in the note: the router row named a conditional `substring` when the unconditional
+cost beside it was a path split run twice per request, and the response-header merge turned out to
+allocate nothing removable — the finding that survived there was a duplicated method, not waste.
+The remaining per-header cost is token materialization, which the RFC deliberately did not promote:
+its hard question is lifetime, not shape.
+
 ---
 
 ## How Results Flow Back to Main

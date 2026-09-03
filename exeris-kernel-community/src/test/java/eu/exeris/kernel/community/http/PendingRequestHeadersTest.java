@@ -1,18 +1,18 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.spi.http.HttpHeader;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Adversarial unit coverage for {@link PendingRequestHeaders} HPACK-decode validation
@@ -40,6 +40,21 @@ class PendingRequestHeadersTest {
 
             assertThat(request.valid()).isTrue();
             assertThat(request.path()).isEqualTo("/");
+        }
+
+        @Test
+        @DisplayName("the decoded request's header list is unmodifiable")
+        void decodedHeadersAreUnmodifiable() {
+            PendingRequestHeaders headers = new PendingRequestHeaders();
+            headers.accept(":method", "GET");
+            headers.accept(":path", "/resource");
+            headers.accept("x-custom", "value");
+
+            List<HttpHeader> decoded = headers.toDecodedRequest(STREAM_ID).headers();
+
+            assertThat(decoded).containsExactly(new HttpHeader("x-custom", "value"));
+            assertThatThrownBy(() -> decoded.add(new HttpHeader("x-injected", "value")))
+                    .isInstanceOf(UnsupportedOperationException.class);
         }
 
         @Test

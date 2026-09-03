@@ -7,15 +7,17 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
     <artifactId>exeris-kernel-spi</artifactId>
     <name>Exeris Kernel :: SPI</name>
     <description>The "Invisible Wall" — agnostic L0/L1/L2 contracts and RAII memory protocols.</description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.spi</exeris.module.name>
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the SPI bundle.
             Current measurement: ~36% (records / enums / interface skeletons inflate

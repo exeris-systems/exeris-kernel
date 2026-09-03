@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.transport;
 
@@ -36,6 +32,14 @@ package eu.exeris.kernel.spi.transport;
  *                          binding happened to wire up.
  * @param rttP50Micros      median RTT in microseconds (0 if no samples)
  * @param rttP95Micros      95th percentile RTT in microseconds (0 if no samples)
+ * @param acceptFaults      cumulative connections that were accepted and then failed during setup —
+ *                          channel configuration, peer resolution, stream construction, registration.
+ *                          Deliberately <em>not</em> part of {@link #totalRejected()}: that field
+ *                          means work the engine <em>declined</em>, and a setup that broke declined
+ *                          nothing. An operator reading a spike needs to know whether they are
+ *                          looking at a capacity problem or a defect, and folding the two together
+ *                          removes the one distinction that changes what they do next. A driver with
+ *                          no such failure mode reports {@code 0}.
  * @see TransportEngine#stats()
  * @since 0.5.0
  */
@@ -45,11 +49,39 @@ public record TransportStats(
         long totalAccepted,
         long totalRejected,
         long rttP50Micros,
-        long rttP95Micros
+        long rttP95Micros,
+        long acceptFaults
 ) {
 
     /**
      * Empty stats — returned when the engine has not started yet.
      */
-    public static final TransportStats EMPTY = new TransportStats(0, 0, 0, 0, 0, 0);
+    public static final TransportStats EMPTY = new TransportStats(0, 0, 0, 0, 0, 0, 0);
+
+    /**
+     * Snapshot without an accept-fault count, for a driver that reports none.
+     *
+     * <p>Retained so the six-argument shape keeps its exact positional meaning: {@code acceptFaults}
+     * is appended rather than grouped beside {@code totalRejected}, so no existing call silently
+     * changes which value lands in which component. A driver that has an accept-setup path should
+     * use the canonical constructor and report it — {@code 0} here means "no such failure mode",
+     * which is a claim, not a default.
+     *
+     * @param activeConnections number of currently open connections
+     * @param activeStreams     number of currently open streams across all connections
+     * @param totalAccepted     cumulative number of connections accepted since engine start
+     * @param totalRejected     cumulative work the engine declined
+     * @param rttP50Micros      median RTT in microseconds (0 if no samples)
+     * @param rttP95Micros      95th percentile RTT in microseconds (0 if no samples)
+     * @since 0.12.0
+     */
+    public TransportStats(int activeConnections,
+                          long activeStreams,
+                          long totalAccepted,
+                          long totalRejected,
+                          long rttP50Micros,
+                          long rttP95Micros) {
+        this(activeConnections, activeStreams, totalAccepted, totalRejected,
+                rttP50Micros, rttP95Micros, 0L);
+    }
 }

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence.jdbc;
 
@@ -174,8 +170,22 @@ final class JdbcQueryResult implements QueryResult {
 
         private static final String NULL_COL_PREFIX = "column ";
         private static final String NULL_COL_SUFFIX = " is SQL NULL";
+
+        private static final byte COLUMN_UNRESOLVED = 0;
+        private static final byte COLUMN_RENDERABLE = 1;
+        private static final byte COLUMN_REFUSED    = 2;
+
         private final ResultSet resultSet;
         private final int       cachedColumnCount;
+
+        /**
+         * Per-column {@code getString} verdicts, allocated on the first {@code getString} call and
+         * never on the primitive or segment paths. Result metadata is fixed for the life of a
+         * result set, so each column is resolved once.
+         */
+        private byte[] columnPolicies;
+        /** Whether this connection's engine is one whose rendering ADR-080 §2 contracts. */
+        private boolean renderingIsContracted;
 
         /* default */ JdbcRowCursor(ResultSet resultSet, int columnCount) {
             this.resultSet         = resultSet;
@@ -296,10 +306,48 @@ final class JdbcQueryResult implements QueryResult {
         public String getString(int column) {
             checkBounds(column);
             try {
+                if (columnPolicy(column) == COLUMN_REFUSED) {
+                    throw PersistenceProviderException.unsupportedColumnType(
+                            declaredTypeName(column), column, "getString");
+                }
                 return resultSet.getString(column + 1);
             } catch (SQLException sqlEx) {
                 throw mapSql(sqlEx);
             }
+        }
+
+        /**
+         * Whether {@code getString} may render this column, resolved once per column (ADR-080 §2).
+         *
+         * <p>Keyed on the <b>declared type name</b>, never on a JDBC type code or an OID range, and
+         * that is measured rather than assumed: pgjdbc reports both {@code bool} (renderable) and
+         * {@code bit} (not) as {@link java.sql.Types#BIT}, so the code cannot separate them, and a
+         * native {@code enum} arrives as {@link java.sql.Types#VARCHAR} carrying the application's
+         * own type name, so only the name catches it.
+         *
+         * <p>The verdict belongs to the column, not the row — a SQL NULL in an unsupported column
+         * still refuses, because {@code null} would report "no value here" when the truth is "this
+         * column cannot be rendered".
+         */
+        private byte columnPolicy(int column) throws SQLException {
+            if (columnPolicies == null) {
+                columnPolicies = new byte[cachedColumnCount];
+                renderingIsContracted = PgTypeSet.isContractedEngine(resultSet);
+            }
+            byte cached = columnPolicies[column];
+            if (cached != COLUMN_UNRESOLVED) {
+                return cached;
+            }
+            byte resolved = !renderingIsContracted || PgTypeSet.renders(declaredTypeName(column))
+                    ? COLUMN_RENDERABLE
+                    : COLUMN_REFUSED;
+            columnPolicies[column] = resolved;
+            return resolved;
+        }
+
+        private String declaredTypeName(int column) throws SQLException {
+            ResultSetMetaData meta = resultSet.getMetaData();
+            return meta == null ? "" : meta.getColumnTypeName(column + 1);
         }
 
         @Override

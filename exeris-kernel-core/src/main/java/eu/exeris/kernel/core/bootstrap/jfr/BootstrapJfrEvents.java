@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.bootstrap.jfr;
 
@@ -20,14 +16,9 @@ import jdk.jfr.StackTrace;
 
 import java.util.Set;
 
-// AvoidDuplicateLiterals: "Exeris Kernel", "Bootstrap", "Duration (ms)" are JFR annotation
-// literals — they cannot be extracted to constants as @Label/@Category require string literals.
 // UseExplicitTypes: 'var' is used for JFR event locals; explicit type would duplicate
 // the inner class name on the same line, harming readability with zero type-safety gain.
-@SuppressWarnings({
-    "PMD.AvoidDuplicateLiterals",
-    "PMD.UseExplicitTypes"
-})
+@SuppressWarnings("PMD.UseExplicitTypes")
 public final class BootstrapJfrEvents {
 
     private BootstrapJfrEvents() {}

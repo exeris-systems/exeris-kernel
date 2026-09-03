@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.flow;
 
@@ -100,6 +96,47 @@ public interface FlowDefinitionBuilder {
      * @return {@code this} builder for chaining
      */
     FlowDefinitionBuilder maxRetries(int maxRetries);
+
+    /**
+     * Sets the definition version (ADR-064). Defaults to
+     * {@link eu.exeris.kernel.spi.flow.model.FlowDefinition#INITIAL_VERSION} when not set.
+     *
+     * <h2>Why this exists</h2>
+     * <p>ADR-064 made {@code (name, version)} the plan's identity: the catalog is keyed by the pair,
+     * a parked saga resumes on the exact version it parked under, and an unhosted version fails
+     * closed. {@link FlowDefinition} carries the version accordingly — but until 0.12 this builder,
+     * the only supported way to assemble a definition, had no way to set it. Every definition built
+     * through the fluent API was version 1, and a second version was unexpressible.
+     *
+     * <p>The workaround was to build through the builder and then rebuild the record by hand with
+     * the five-argument {@link FlowDefinition} constructor, which the kernel's own versioning TCK
+     * did. That works only by side effect: the Core factory records a definition's transitions when
+     * {@link #build()} runs and hands them to {@code compile}, so the hand-built record inherits
+     * them. An application
+     * that constructed a versioned {@code FlowDefinition} <em>without</em> first building one under
+     * the same name compiled to a plan with steps and <b>no declared edges</b>, and no diagnostic.
+     * That linearises rather than stalls — a step with no outgoing transition falls back to
+     * {@code index + 1} — so a sequential definition is unaffected and one declaring a skip or a
+     * branch silently runs a path it never declared.
+     *
+     * <h2>Default behaviour</h2>
+     * <p>{@code default}, and it throws. An interface this old cannot grow an abstract method
+     * without breaking every out-of-tree implementation at invoke time — the same constraint that
+     * gave {@link eu.exeris.kernel.spi.flow.model.FlowExecutionPlan#definitionVersion()} its
+     * default. But the choice of default differs on purpose: returning a value there is safe,
+     * whereas silently ignoring a requested version here would build a v1 definition that claims to
+     * be v3, which is precisely the confusion ADR-064 exists to prevent. A builder that cannot
+     * version says so.
+     *
+     * @param version definition version; must be &gt;= {@code FlowDefinition.INITIAL_VERSION}
+     * @return {@code this} builder for chaining
+     * @throws UnsupportedOperationException if this builder does not support versioning
+     * @since 0.12.0
+     */
+    default FlowDefinitionBuilder version(int version) {
+        throw new UnsupportedOperationException(
+                "this FlowDefinitionBuilder does not support definition versions (ADR-064)");
+    }
 
     /**
      * Builds and returns the immutable {@link FlowDefinition}.

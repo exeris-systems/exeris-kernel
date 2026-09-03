@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.http1;
 
+import eu.exeris.kernel.core.http.CanonicalHeaderNames;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
@@ -174,11 +171,7 @@ public final class Http1RequestParser {
                 throw new Http1ParseException(MSG_TOO_MANY_HEADERS, headerCount, maxHeaders);
             }
 
-            String rawName = readAscii(seg, pos, colonPos);
-            if (!isValidToken(rawName)) {
-                throw new Http1ParseException(MSG_INVALID_HEADER_NAME, rawName);
-            }
-            String name = rawName;
+            String name = resolveFieldName(seg, pos, colonPos);
             String rawValue = readAscii(seg, colonPos + 1, lineEnd);
             String value = trimOws(rawValue);
             visitor.onHeader(name, value);
@@ -256,6 +249,23 @@ public final class Http1RequestParser {
         return -1;
     }
 
+    /**
+     * A known spelling resolves to a shared constant with no allocation, and is a valid token by
+     * construction — so both the materialisation and the validation are skipped. A miss is exactly
+     * the path every field took before (RFC-2026-09-01).
+     */
+    private static String resolveFieldName(MemorySegment seg, long start, long end) {
+        String known = CanonicalHeaderNames.resolve(seg, start, end);
+        if (known != null) {
+            return known;
+        }
+        String rawName = readAscii(seg, start, end);
+        if (!CanonicalHeaderNames.isValidFieldName(rawName)) {
+            throw new Http1ParseException(MSG_INVALID_HEADER_NAME, rawName);
+        }
+        return rawName;
+    }
+
     private static String readAscii(MemorySegment seg, long start, long end) {
         int len = (int) (end - start);
         byte[] bytes = new byte[len];
@@ -287,31 +297,5 @@ public final class Http1RequestParser {
             return value;
         }
         return value.substring(start, end);
-    }
-
-    private static boolean isValidToken(String value) {
-        int len = value.length();
-        if (len == 0) {
-            return false;
-        }
-        for (int index = 0; index < len; index++) {
-            if (!isTchar(value.charAt(index))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isTchar(char candidateChar) {
-        if ((candidateChar >= 'a' && candidateChar <= 'z') || (candidateChar >= 'A' && candidateChar <= 'Z')) {
-            return true;
-        }
-        if (candidateChar >= '0' && candidateChar <= '9') {
-            return true;
-        }
-        return switch (candidateChar) {
-            case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~' -> true;
-            default -> false;
-        };
     }
 }

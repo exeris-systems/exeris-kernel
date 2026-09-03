@@ -1,16 +1,14 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.security.RouteAuthorizationEnforcer;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
+import eu.exeris.kernel.core.security.jfr.SecurityDenialReason;
+import eu.exeris.kernel.core.security.jfr.SecurityJfrEvents;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -43,7 +41,16 @@ import java.util.function.Supplier;
 // TooManyMethods was suppressed here until ADR-061 removed the four path-convention helpers
 // (requiresAdmission / isPublicPath / isAuthorized / requiresAdminScope); the class is now under the
 // threshold on its own, and PMD flags the leftover suppression as unnecessary.
-@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.AvoidCatchingGenericException"})
+// TooManyMethods: fourteen, one over the threshold, and ADR-077's resolveRequirement() is what
+// crossed it. Suppressed rather than refactored here, with the real finding written down instead of
+// annotated away: the class does hold a cluster that does not belong to dispatching at all —
+// createBearerTokenBuffer / extractBearerToken / parseBearerTokenValue are Authorization-header
+// parsing, self-contained, and would leave the count at eleven. Extracting them is the right change
+// and the wrong PR: it is security-adjacent code, and moving it inside a slice about connection
+// lifetime puts the blame surface in the wrong place if it goes wrong. Owner: whoever next opens
+// this class for its own reasons.
+@SuppressWarnings({
+    "PMD.CyclomaticComplexity", "PMD.AvoidCatchingGenericException", "PMD.TooManyMethods"})
 final class CommunityHttpRequestDispatcher {
 
     private static final String AUTHORIZATION_HEADER = "Authorization";
@@ -82,8 +89,16 @@ final class CommunityHttpRequestDispatcher {
             }
         }
 
-        if (!authorize(request, () -> exchange,
-                () -> handleWithinRequestSession(method, request, exchange, handler))) {
+        // Resolved here rather than inside authorize(), because ADR-077's execution facet rides the
+        // same carrier the authorization decision reads and the handling branch needs it too. One
+        // resolution, one path match: asking the policy twice would let two answers disagree about
+        // what a route is.
+        RouteRequirement requirement = resolveRequirement(request);
+        boolean longRunning = requirement != null
+                && requirement.execution() == RouteRequirement.Execution.LONG_RUNNING;
+
+        if (!authorize(request, requirement, () -> exchange,
+                () -> handleRequest(method, request, exchange, handler, longRunning))) {
             return;
         }
 
@@ -116,27 +131,51 @@ final class CommunityHttpRequestDispatcher {
      */
     /* default */ void dispatchStream(HttpRequest request, Supplier<HttpExchange> denial,
                                       Runnable openStream) {
-        authorize(request, denial, openStream);
+        // The streaming counterpart of what handleRequest establishes for a PROMPT route, and deliberately
+        // not the same set. The reactor thread inherits no kernel carrier binding, and a stream
+        // handler runs INLINE for the whole life of the stream (CommunityHttpStreamDispatcher calls
+        // handler.handle(engine) and returns when the emit loop ends), so whatever is bound here is
+        // bound for that entire duration. That is what makes the allocator and the decoder registry
+        // right to bind — both stateless engine-scoped instances — and exactly why REQUEST_SESSION is
+        // left out: PersistenceSessionBox lazily takes a pooled JDBC connection and holds it for the
+        // scope's duration, so one read inside a live feed would pin a connection for as long as the
+        // client stays connected. A streaming handler that needs the database wants a short-lived
+        // session per emit — a design, not a binding copied across.
+        ScopedValue.Carrier carrier = ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator);
+        if (requestBodyDecoderRegistry != null) {
+            carrier = carrier.where(
+                    HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry);
+        }
+        ScopedValue.Carrier streamScope = carrier;
+        authorize(request, resolveRequirement(request), denial, () -> streamScope.run(openStream));
     }
+
 
     /**
      * Resolves the route requirement and runs {@code admitted} if the request passes it.
      *
      * @return {@code false} if the request was denied and a response has already been written
      */
-    private boolean authorize(HttpRequest request, Supplier<HttpExchange> exchange, Runnable admitted) {
-        // A route the application never described is decided by the policy, not by this driver. With
-        // no policy bound the requirement is permit-all — an opt-in seam, so an application that
-        // declares nothing carries no edge authorization at all.
-        //
-        // That is NOT "unchanged behaviour": up to 0.10 this driver enforced a /secure prefix with
-        // security:read / security:write compiled in, and ADR-061 obligation 4 deleted the
-        // convention deliberately. An application that relied on the prefix and declares no policy
-        // serves those routes to anonymous callers. The release notes carry the migration step.
-        RouteRequirement requirement = routePolicy == null
+    /**
+     * Asks the bound policy what this route requires.
+     *
+     * <p>A route the application never described is decided by the policy, not by this driver. With
+     * no policy bound the requirement is permit-all — an opt-in seam, so an application that
+     * declares nothing carries no edge authorization at all.
+     *
+     * <p>That is NOT "unchanged behaviour": up to 0.10 this driver enforced a {@code /secure} prefix
+     * with {@code security:read} / {@code security:write} compiled in, and ADR-061 obligation 4
+     * deleted the convention deliberately. An application that relied on the prefix and declares no
+     * policy serves those routes to anonymous callers. The release notes carry the migration step.
+     */
+    private RouteRequirement resolveRequirement(HttpRequest request) {
+        return routePolicy == null
                 ? RouteRequirement.permitAll()
                 : routePolicy.requirementFor(request.method(), request.path());
+    }
 
+    private boolean authorize(HttpRequest request, RouteRequirement requirement,
+                              Supplier<HttpExchange> exchange, Runnable admitted) {
         if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
             // No requirement means no interceptor run, so the handler sees no PRINCIPAL_CONTEXT even
             // when the caller presented a valid token. A route that wants identity without demanding
@@ -146,8 +185,11 @@ final class CommunityHttpRequestDispatcher {
         }
         // Identity is required — or the policy returned null, which is a defect the enforcer
         // turns into a denial rather than an admission.
-        boolean intercepted = securityInterceptor != null
-                && interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
+        // The null check that used to guard this call has moved inside interceptRequest. Left here it
+        // short-circuited the method that knows why the denial happened, so the NO_PROVIDER case
+        // could never reach its own emit site — the reason the event advertised it and never carried it.
+        boolean intercepted =
+                interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
         if (!intercepted) {
             exchange.get().respond(HttpResponse.noBody(HttpStatus.UNAUTHORIZED, request.version()));
             return false;
@@ -155,13 +197,26 @@ final class CommunityHttpRequestDispatcher {
         return true;
     }
 
+    /**
+     * Establishes a security context, reporting why when it cannot.
+     *
+     * <p>Each denial emits at the site that knows the reason. The interceptor emits its own
+     * ({@code TOKEN_INVALID}, {@code PROVIDER_ERROR}); the two this method owns were dark until 0.12
+     * even though the JFR event's description named them, so an operator filtering on
+     * {@code NO_PROVIDER} saw nothing and could read a misconfigured deployment as a client problem.
+     *
+     * <p>The response is identical for every reason — one {@code 401}, no body. Telling an
+     * unauthenticated caller which of the three applies would hand them a probe oracle.
+     */
     private boolean interceptRequest(HttpRequest request, Runnable admittedHandler) {
         if (securityInterceptor == null) {
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.NO_PROVIDER);
             return false;
         }
 
         LoanedBuffer tokenBuffer = createBearerTokenBuffer(request.headers());
         if (tokenBuffer == null) {
+            SecurityJfrEvents.emitContextMissing(SecurityDenialReason.TOKEN_MISSING);
             return false;
         }
 
@@ -199,15 +254,30 @@ final class CommunityHttpRequestDispatcher {
         }
     }
 
-    private void handleWithinRequestSession(HttpMethod method,
-                                            HttpRequest request,
-                                            HttpExchange exchange,
-                                            HttpHandler handler) {
+    /**
+     * Runs the handler, binding a request-scoped persistence session unless the route declared
+     * {@link RouteRequirement.Execution#LONG_RUNNING} (ADR-077).
+     *
+     * <p>{@code persistence.md}'s "One HTTP request is one connection" is the promise for a
+     * {@code PROMPT} route and is unchanged. A {@code LONG_RUNNING} route gets no box, so each
+     * persistence call acquires and releases through the engine — the ownership rule every path
+     * outside a request session already runs, flow threads included. The trade is explicit: more
+     * acquires, and therefore more {@code RlsConnectionInterceptor} round-trips, bought against not
+     * pinning a pooled connection across a block whose own work draws from that same pool.
+     */
+    private void handleRequest(HttpMethod method,
+                               HttpRequest request,
+                               HttpExchange exchange,
+                               HttpHandler handler,
+                               boolean longRunning) {
         boolean readOnly = isReadOnlyMethod(method);
-        PersistenceSessionBox box = new PersistenceSessionBox(
-                persistenceEngine,
-                TransactionIsolation.READ_COMMITTED,
-                readOnly);
+        PersistenceSessionBox box = longRunning
+                ? null
+                : new PersistenceSessionBox(
+                        persistenceEngine,
+                        TransactionIsolation.READ_COMMITTED,
+                        readOnly);
+        long startedAt = longRunning ? System.nanoTime() : 0L;
 
         Runnable invocation = () -> {
             try {
@@ -217,7 +287,7 @@ final class CommunityHttpRequestDispatcher {
                     exchange.respond(HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, request.version()));
                 }
             } finally {
-                box.release();
+                completeRequest(request, box, startedAt);
             }
         };
 
@@ -225,12 +295,43 @@ final class CommunityHttpRequestDispatcher {
         // the kernel carrier scope): the per-request persistence session and — for write-over-HTTP —
         // the request-body decoder registry the generated handler resolves via
         // HttpKernelProviders.httpRequestBodyDecoderRegistry() (ADR-036 / W7 boot-path fix).
-        if (requestBodyDecoderRegistry == null) {
-            ScopedValue.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box).run(invocation);
+        //
+        // MEMORY_ALLOCATOR belongs in the same list and was missing from it. The kernel binds it as a
+        // FOUNDATION carrier binding around the boot callback, and the reactor threads are started
+        // with Thread.ofPlatform(), which does not inherit a ScopedValue — so kernel code that needs
+        // it on a request captures it at construction instead (NativeTcpTransportProvider does
+        // exactly that). Application code running inside a request cannot, and resolves this slot:
+        // the graph helpers do it on the kernel side, and so does anything building an off-heap body.
+        // Unbound, that surfaced as NoSuchElementException inside the handler's try — which a handler
+        // that classifies by exception type reports as 400, blaming the caller's body for a
+        // server-side omission. The decoding contexts no longer mandate an allocator (0.12), which
+        // removes one such site; the binding stays because the others remain.
+        ScopedValue.Carrier carrier = ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator);
+        if (box != null) {
+            carrier = carrier.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box);
+        }
+        if (requestBodyDecoderRegistry != null) {
+            carrier = carrier.where(
+                    HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry);
+        }
+        carrier.run(invocation);
+    }
+
+    /**
+     * Closes out one request: returns the pooled connection a {@code PROMPT} route held, or records
+     * how long a {@code LONG_RUNNING} route actually ran.
+     *
+     * <p>The event is a single-phase commit with a hand-measured duration rather than
+     * {@code begin()}/{@code commit()} around the handler. This runs on a virtual thread, and a JFR
+     * event straddling a blocking operation on one is a known crash shape in this repository — and a
+     * handler declared {@code LONG_RUNNING} is by definition one that blocks.
+     */
+    private static void completeRequest(HttpRequest request, PersistenceSessionBox box, long startedAt) {
+        if (box == null) {
+            RouteExecutionEvent.emitLongRunning(
+                    request.method().name(), request.path(), System.nanoTime() - startedAt);
         } else {
-            ScopedValue.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box)
-                    .where(HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry)
-                    .run(invocation);
+            box.release();
         }
     }
 

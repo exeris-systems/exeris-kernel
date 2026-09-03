@@ -3,9 +3,10 @@
 # Preview-bytecode gate (ADR-066).
 #
 # Asserts that nothing the project DISTRIBUTES carries preview bytecode, and that every shipped
-# class targets the declared LTS class-file major. Test and TCK fixtures are deliberately out of
-# scope: they still use StructuredTaskScope, they compile with --enable-preview, and they are not
-# published.
+# class targets the declared LTS class-file major. Since v0.12 no source in the repository uses a
+# preview API in any scope and the build sets no --enable-preview, so there is nothing for this
+# gate's published-only scope to exclude — it stays scoped to what ships because that is what a
+# consumer trips over, not because fixtures are exempt.
 #
 # Why bytecode rather than a source grep: `--enable-preview` stamps a class with
 # minor_version 0xFFFF, and the JVM then refuses to load it on any other major release EVEN WITH
@@ -38,6 +39,7 @@ import pathlib, struct, sys, xml.etree.ElementTree as ET, zipfile
 
 expect_major = int(sys.argv[1])
 scanned = 0
+owned = 0
 preview = []
 wrong_major = []
 
@@ -67,11 +69,13 @@ def owned_by_us(entry):
 
 
 def inspect(name, entry, raw):
-    global scanned
+    global scanned, owned
     if len(raw) < 8 or raw[:4] != b'\xca\xfe\xba\xbe':
         return
     minor, major = struct.unpack('>HH', raw[4:8])
     scanned += 1
+    if owned_by_us(entry):
+        owned += 1
     # Preview stamp: checked on EVERY class in the jar. A stamped third-party class would break a
     # consumer exactly as one of ours would, and the uber-jar CLI bundles its dependencies.
     if minor == 0xFFFF:
@@ -108,9 +112,11 @@ def publishing_modules():
 # Read the JARS, not a directory glob. The scope of this gate has to be derived from what the build
 # actually publishes, because the thing it is protecting against is a consumer tripping over a stamp
 # in a downloaded artifact. A `*/target/classes/**` glob looked equivalent and was not:
-# exeris-kernel-tck has no src/main at all, so its entire distributed surface is a test-jar built
-# from src/test — 55 of its classes shipped preview-stamped, invisible to this gate by construction,
-# for the whole milestone that advertised the opposite.
+# exeris-kernel-tck had no src/main at the time, so its entire distributed surface was a test-jar
+# built from src/test — 55 of its classes shipped preview-stamped, invisible to this gate by
+# construction, for the whole milestone that advertised the opposite. That module now publishes an
+# ordinary jar, which is why the rule is written as it is: reading what the build publishes survived
+# a change in where the sources live, and a glob over src/main would not have.
 expected_modules = publishing_modules()
 missing = []
 for module in expected_modules:
@@ -144,7 +150,13 @@ if scanned == 0:
     print("preview-bytecode gate: FAILED — scanned 0 classes; run `mvn package` first")
     sys.exit(1)
 
-print(f"preview-bytecode gate: scanned {scanned} distributed classes across "
+# BOTH counts, because the docs quote both and only one of them was ever printed. The release
+# notes, the CHANGELOG, ADR-066 and the platform guide all cite "N classes of ours out of M
+# scanned"; M came from this line and N came from whoever re-derived it alongside. That
+# re-derivation has been wrong twice — a "930" that predated this gate reading the TCK test-jar,
+# and a "311 of 927" on the preview line for the same reason. A figure a document quotes should
+# come out of the instrument that measures it, not from a script standing next to it.
+print(f"preview-bytecode gate: {owned} classes of ours out of {scanned} scanned across "
       f"{len(expected_modules)} reactor module(s) "
       f"(expecting class-file major {expect_major}, no preview stamp)")
 

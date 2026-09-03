@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.events;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.events.EventStreamAppender;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
@@ -99,5 +96,16 @@ public class EventStreamAppendConflictException extends ExerisKernelException {
             String streamType, long expectedVersion, long actualVersion, Throwable cause) {
         return new EventStreamAppendConflictException(KernelErrorCodes.EX_EVENT_6008, MSG_VERSION_CONFLICT, cause,
                 streamType, expectedVersion, actualVersion);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the caller's expected version did not match the stream. Re-reading
+     * and re-appending succeeds; nothing about the deployment is wrong.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }

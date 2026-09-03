@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-diagnostics-cli</artifactId>
@@ -17,12 +17,13 @@
         Standalone executable exposing the KernelDiagnostics SPI (ADR-033) over stdio JSON for
         out-of-process consumers (exeris-ai-bridge). Boots the kernel in read-only inspect mode
         (resolve subsystem topology only — no initialize/start, no infrastructure) and serves the
-        five-method surface (incl. getJvmErgonomics). The Enterprise
+        four-method surface (listProviders, getBootstrapDag, describeSubsystem, getJvmErgonomics). The Enterprise
         overlay rides the same binary via ServiceLoader (no separate enterprise CLI).
     </description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
-        <jackson.version>2.18.7</jackson.version>
+        <exeris.module.name>eu.exeris.kernel.diagnostics.cli</exeris.module.name>
         <!-- Thin executable harness: main()/serve() are integration-shaped (stdio + in-process
              kernel boot); the request-dispatch logic (handle) is unit-tested. -->
         <jacoco.line.minimum>0.0</jacoco.line.minimum>
@@ -39,20 +40,24 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!--
+            The SAME Jackson the kernel it boots uses (tools.jackson, version-managed by the BOM),
+            not a second one. Jackson 2 here used to be the CLI's own choice for its protocol codec,
+            and on a classpath that also carries the kernel's Jackson 3 the two are not independent:
+            they SHARE the com.fasterxml.jackson.core:jackson-annotations artifact, of which Maven
+            resolves exactly one version. The CLI's direct Jackson 2 dependency was a level nearer
+            than the kernel's transitive Jackson 3, so nearest-wins pinned annotations to 2.18.7 —
+            below the 2.21 that jackson-databind 3.x needs — and every kernel mapper built at
+            runtime died on NoClassDefFoundError: JsonSerializeAs. That killed listProviders (the
+            one method that instantiates every provider) and, through it, the process.
+
+            So this is not a version bump: two Jackson majors cannot coexist here at all, and the
+            one that must stay is the kernel's. Jackson 3 also folds jsr310/jdk8 into databind, so
+            the two datatype modules are gone with it.
+        -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
+            <groupId>tools.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>${jackson.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jsr310</artifactId>
-            <version>${jackson.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.datatype</groupId>
-            <artifactId>jackson-datatype-jdk8</artifactId>
-            <version>${jackson.version}</version>
         </dependency>
 
         <dependency>
@@ -69,6 +74,37 @@
 
     <build>
         <plugins>
+            <!--
+                The suite that runs the artifact this module ships. Bound to failsafe rather than
+                surefire because it needs `package` to have produced the shaded jar: everything
+                surefire can see is sources and a reactor classpath, and the jar users run is
+                assembled after that by the plugin below.
+
+                The jar is named explicitly rather than globbed out of target/ so a leftover from an
+                earlier version cannot be tested by accident.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <argLine>@{coverage.argLine} ${jvm.args}</argLine>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
+                    <systemPropertyVariables>
+                        <exeris.cli.jar>${project.build.directory}/${project.build.finalName}.jar</exeris.cli.jar>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>

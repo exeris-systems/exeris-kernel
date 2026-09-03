@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http;
 
@@ -25,6 +21,43 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class Http2HeaderBlockAssemblerTest {
+
+    @Test
+    void headerBlockBoundIsTheConfiguredOneNotAConstant() {
+        try (Arena arena = Arena.ofConfined()) {
+            // ADR-071's tail: this bound was a hardcoded 65 536, so an operator raising the header
+            // limits saw HTTP/1 honour them and HTTP/2 silently not. A tiny bound proves the value
+            // is read rather than the constant — at 65 536 this frame would sail through.
+            Http2HeaderBlockAssembler assembler =
+                    new Http2HeaderBlockAssembler(new StubAllocator(arena), 4);
+            Http2FrameParser.FrameHeader header =
+                    new Http2FrameParser.FrameHeader(8, Http2FrameType.HEADERS.code(), 0x04, 1);
+            MemorySegment payload = arena.allocate(8);
+
+            assertThatThrownBy(() -> assembler.beginHeaders(header, payload, 0, 8))
+                    .as("a block larger than the CONFIGURED bound must be refused")
+                    .isInstanceOf(Http2HeaderBlockAssembler.ContinuationViolationException.class);
+
+            Http2HeaderBlockAssembler roomy =
+                    new Http2HeaderBlockAssembler(new StubAllocator(arena), 16);
+            roomy.beginHeaders(header, payload, 0, 8);
+            assertThat(roomy.isComplete())
+                    .as("the same block is accepted once the bound admits it")
+                    .isTrue();
+        }
+    }
+
+    @Test
+    void nonPositiveHeaderBlockBoundIsRefused() {
+        try (Arena arena = Arena.ofConfined()) {
+            // Protective, so ADR-071 says 0 is not "unlimited" — it is a bound that refuses
+            // everything, and a protection must not be switchable off by an empty-looking value.
+            assertThatThrownBy(() -> new Http2HeaderBlockAssembler(new StubAllocator(arena), 0))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new Http2HeaderBlockAssembler(new StubAllocator(arena), -1))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
 
     @Test
     void beginHeadersFailureLeavesAssemblerResetAndReusable() {

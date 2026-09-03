@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.memory;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
@@ -58,7 +55,7 @@ import jdk.jfr.StackTrace;
         }
         PeekMisuseEvent evt = new PeekMisuseEvent();
         if (evt.isEnabled()) {
-            evt.errorCode = "EX-MEM-1003";
+            evt.errorCode = KernelErrorCodes.EX_MEM_1003;
             evt.callerMethod = method;
             evt.commit();
         }

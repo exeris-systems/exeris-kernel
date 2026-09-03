@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -49,12 +45,35 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * predicate pinned to the owner:
  *
  * <pre>{@code
+ * ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
+ * ALTER TABLE <table> FORCE  ROW LEVEL SECURITY;
+ *
  * CREATE POLICY tenant_isolation ON <table>
  *   USING (tenant_id = current_setting('exeris.tenant_id', true)
  *          OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL
  *              AND shared_scope = current_setting('exeris.shared_scope', true)))
  *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true));
  * }</pre>
+ *
+ * <p><b>{@code FORCE} is not optional, and leaving it out fails open.</b> PostgreSQL exempts a table's
+ * owner from that table's own policies unless the table is forced. A deployment whose application
+ * connects as the role owning its tables — the default in every quick-start — therefore gets a policy
+ * that is enabled, listed in {@code pg_policies}, and never applied: no error, no warning, other
+ * tenants' rows in every read. The three integration tests that hold this contract
+ * ({@code CommunityPersistenceTenantIsolationIT}, {@code CommunityPersistenceSharedScopeIT},
+ * {@code CommunityPersistenceIsolationLeakTckIT}) all issue both statements <em>and</em> connect as a
+ * non-owner role, so what they verify is the property a forced table has. This snippet used to show
+ * only the policy, which is the half that does not enforce anything on its own.
+ *
+ * <p><b>The comparison above is text-to-text, and that assumption is load-bearing.</b>
+ * {@code current_setting} returns {@code text} and the tested schema declares {@code tenant_id TEXT},
+ * so an unset key arrives as {@code ''}, matches no row, and fails closed. A deployment whose
+ * {@code tenant_id} column is {@code uuid} must cast — and the cast turns that same {@code ''} into
+ * {@code invalid input syntax for type uuid: ""} on every query against every scoped table, because
+ * {@link #publishSessionKeys} publishes the key unconditionally (as {@code ''} when the context
+ * declares no tenant) and a session-scoped setting survives connection reuse. Such a policy needs the
+ * empty-string guard on the tenant arm too, the way the shared-scope arm already carries it:
+ * {@code tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid}.
  *
  * <p>Note that {@code WITH CHECK} is unchanged from the tenant-private policy — owner-scoped write is
  * what the existing clause already expresses, so widening reads does not require relaxing writes. A
@@ -95,7 +114,8 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
      * <p>Uses parameterised bind to prevent SQL injection (isolationKey is untrusted data).
      */
     private static final String SQL_SET_SESSION_KEYS =
-            "SELECT set_config('exeris.tenant_id', ?, false), set_config('exeris.shared_scope', ?, false)";
+            "SELECT set_config('" + SESSION_KEY_TENANT_ID + "', ?, false), "
+                    + "set_config('" + SESSION_KEY_SHARED_SCOPE + "', ?, false)";
 
     private static final String SQL_SET_SCHEMA_PREFIX = "SET search_path TO ";
     private static final String SQL_SET_SCHEMA_SUFFIX = ", public";

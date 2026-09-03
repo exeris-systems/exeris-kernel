@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -14,6 +10,7 @@ import eu.exeris.kernel.core.http.hpack.HpackEncoder;
 import eu.exeris.kernel.core.http.http2.Http2FrameCodec;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2HeaderBlockAssembler;
+import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -61,7 +58,6 @@ import java.util.Map;
 final class Http2SessionContext implements AutoCloseable {
 
     private static final int HTTP2_MAX_DYNAMIC_TABLE_SIZE = 4096;
-    private static final int HTTP2_MAX_HEADER_LIST_SIZE = 65_536;
     private static final int HTTP2_SETTINGS_ENTRY_BYTES = 6;
     private static final int HTTP2_SETTINGS_HEADER_TABLE_SIZE = 0x01;
     private static final int HTTP2_SETTINGS_MAX_FRAME_SIZE = 0x05;
@@ -126,13 +122,23 @@ final class Http2SessionContext implements AutoCloseable {
         this.rapidResetCount = 0;
     }
 
-    /* default */ static Http2SessionContext create(MemoryAllocator allocator) {
+    /**
+     * Builds a session's codec set from the three HTTP/2 bounds the configuration carries.
+     *
+     * <p>Takes the {@link HttpConfig} rather than the three {@code int}s it reads out of it. They
+     * are the same type, adjacent, and all default to 65 536, so a transposed pair would compile,
+     * pass every test that uses defaults, and only diverge once an operator configured one — which
+     * is the exact failure shape this slice exists to remove, reintroduced at the call site.
+     */
+    /* default */ static Http2SessionContext create(MemoryAllocator allocator, HttpConfig config) {
         HpackDynamicTable decodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
         HpackDynamicTable encodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
-        HpackDecoder decoder = new HpackDecoder(decodeTable, allocator, HTTP2_MAX_HEADER_LIST_SIZE);
+        HpackDecoder decoder = new HpackDecoder(
+                decodeTable, allocator, config.maxHeaderListSize(), config.maxStringLiteralSize());
         HpackEncoder encoder = new HpackEncoder(encodeTable, allocator, false);
         Http2FrameCodec codec = new Http2FrameCodec();
-        Http2HeaderBlockAssembler assembler = new Http2HeaderBlockAssembler(allocator);
+        Http2HeaderBlockAssembler assembler =
+                new Http2HeaderBlockAssembler(allocator, config.maxHeaderBlockSize());
         return new Http2SessionContext(encodeTable, decoder, encoder, codec, assembler);
     }
 

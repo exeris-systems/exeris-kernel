@@ -1,15 +1,12 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.routing;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -81,53 +78,77 @@ record PathTemplate(List<Segment> segments, int paramCount) {
     }
 
     /**
-     * Returns whether {@code requestSegments} matches this template.
+     * Returns whether {@code path} matches this template.
+     *
+     * <p>Walks the {@code '/'}-separated segments of {@code path} in place. It used to take the path
+     * pre-split into a {@code String[]}, which cost an array plus a {@code String} per segment on
+     * every request — and the router split twice, once for the stream table and once for its own
+     * template list. Nothing here needs those objects: a literal segment is a region comparison and a
+     * placeholder only needs its bounds.
      *
      * <p>Separate from {@link #capture} so a miss — the common case when a router walks its template
-     * list — costs no map at all. A hit walks the segments a second time, which is a handful of
-     * comparisons against an allocation that would otherwise be made and discarded on every miss.
+     * list — costs nothing at all. A hit walks the segments a second time, which is a handful of
+     * comparisons against a map that would otherwise be built and discarded on every miss.
      *
-     * @param requestSegments the request path pre-split on {@code '/'} (split once by the router and
-     *                        reused across every template, hence an array rather than varargs)
+     * @param path the request path, query already stripped
      * @return {@code true} if every literal segment is equal and every placeholder has a non-empty value
      */
-    @SuppressWarnings("PMD.UseVarargs") // call site passes a pre-split array, never a varargs list
-    /* default */ boolean matches(String[] requestSegments) {
-        if (requestSegments.length != segments.size()) {
-            return false;
-        }
-        for (int i = 0; i < segments.size(); i++) {
-            Segment segment = segments.get(i);
-            String actual = requestSegments[i];
-            if (segment.param()) {
-                if (actual.isEmpty()) {
-                    return false;
-                }
-            } else if (!segment.text().equals(actual)) {
+    /* default */ boolean matches(String path) {
+        int count = segments.size();
+        int start = 0;
+        for (int i = 0; i < count; i++) {
+            int slash = path.indexOf('/', start);
+            boolean lastSegment = i == count - 1;
+            // The template's segment count must be the path's: a trailing slash still yields an
+            // (empty) segment, matching the -1 limit the split used to carry.
+            if (lastSegment != (slash < 0)) {
                 return false;
             }
+            int end = lastSegment ? path.length() : slash;
+            Segment segment = segments.get(i);
+            if (segment.param()) {
+                if (end == start) {
+                    return false;
+                }
+            } else if (!literalEquals(segment.text(), path, start, end)) {
+                return false;
+            }
+            start = end + 1;
         }
         return true;
     }
 
     /**
-     * Captures the placeholder values from segments already known to {@link #matches}.
+     * Captures the placeholder values from a path already known to {@link #matches}.
      *
-     * @param requestSegments the matching request path pre-split on {@code '/'}
+     * <p>Only placeholder segments are materialised; literals are never turned into {@code String}s.
+     *
+     * @param path the matching request path, query already stripped
      * @return the captured parameters; empty when the template declares none
      */
-    @SuppressWarnings("PMD.UseVarargs") // call site passes a pre-split array, never a varargs list
-    /* default */ Map<String, String> capture(String[] requestSegments) {
+    /* default */ Map<String, String> capture(String path) {
         if (paramCount == 0) {
             return Map.of();
         }
-        Map<String, String> captured = LinkedHashMap.newLinkedHashMap(paramCount);
-        for (int i = 0; i < segments.size(); i++) {
+        Map<String, String> captured = HashMap.newHashMap(paramCount);
+        int count = segments.size();
+        int start = 0;
+        for (int i = 0; i < count; i++) {
+            int slash = path.indexOf('/', start);
+            int end = i == count - 1 ? path.length() : slash;
             Segment segment = segments.get(i);
             if (segment.param()) {
-                captured.put(segment.text(), requestSegments[i]);
+                captured.put(segment.text(), path.substring(start, end));
             }
+            start = end + 1;
         }
-        return Map.copyOf(captured);
+        // Wrapped rather than copied: the map is built here and escapes only as an unmodifiable
+        // view, so a second immutable copy would buy nothing. Map.copyOf discarded insertion order
+        // anyway, so nothing downstream can have depended on it.
+        return Collections.unmodifiableMap(captured);
+    }
+
+    private static boolean literalEquals(String text, String path, int start, int end) {
+        return text.length() == end - start && path.regionMatches(start, text, 0, text.length());
     }
 }

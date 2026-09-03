@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.diagnostics.cli;
 
@@ -20,6 +16,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.ServiceConfigurationError;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -86,8 +83,30 @@ class DiagnosticsCliTest {
         assertThat(cli.handle("{}")).contains("\"error\"").contains("method");
     }
 
+    @Test
+    @DisplayName("a provider that fails to instantiate is an error response, not a dead process")
+    void providerFailureIsAnErrorResponse() {
+        DiagnosticsCli failing = new DiagnosticsCli(new ExplodingDiagnostics(), DiagnosticsCli.newMapper());
+
+        String out = failing.handle("{\"method\":\"listProviders\"}");
+
+        assertThat(out).contains("\"error\"").contains("listProviders").contains("Broken/Provider");
+    }
+
+    @Test
+    @DisplayName("the channel survives the failure — the next method still answers")
+    void failureDoesNotPoisonTheSession() {
+        DiagnosticsCli failing = new DiagnosticsCli(new ExplodingDiagnostics(), DiagnosticsCli.newMapper());
+
+        failing.handle("{\"method\":\"listProviders\"}");
+
+        assertThat(failing.handle("{\"method\":\"getBootstrapDag\"}"))
+                .startsWith("{\"schemaVersion\":\"1.0\"")
+                .doesNotContain("\"error\"");
+    }
+
     /** Deterministic in-memory {@link KernelDiagnostics} for dispatch tests. */
-    private static final class FakeDiagnostics implements KernelDiagnostics {
+    private static class FakeDiagnostics implements KernelDiagnostics {
         @Override
         public ProvidersSnapshot listProviders() {
             return ProvidersSnapshot.capture(List.of(
@@ -106,6 +125,23 @@ class DiagnosticsCliTest {
                     ? Optional.of(new SubsystemDescriptor("memory", "FOUNDATION", List.of(), false, false))
                     : Optional.empty();
             return SubsystemSnapshot.capture(name, detail);
+        }
+    }
+
+    /**
+     * A {@link KernelDiagnostics} whose {@code listProviders} fails the way a real one does.
+     *
+     * <p>{@link ServiceConfigurationError} is an {@code Error}, and that is the whole point: the
+     * real failure mode is a provider whose class initialiser throws, which {@code ServiceLoader}
+     * wraps and rethrows as this. A dispatch guard that only caught exceptions would let it end the
+     * process, and the consumer would lose every later request on the same child, not just this one.
+     */
+    private static final class ExplodingDiagnostics extends FakeDiagnostics {
+        @Override
+        public ProvidersSnapshot listProviders() {
+            throw new ServiceConfigurationError(
+                    "Provider Broken/Provider could not be instantiated",
+                    new NoClassDefFoundError("com/example/Missing"));
         }
     }
 }

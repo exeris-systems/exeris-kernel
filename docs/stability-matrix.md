@@ -58,7 +58,7 @@ this is informational and **not** a dependency of the open-core surface.
 | SPI package | Level | Since | Anchor ADR | TCK coverage | Enterprise overlay |
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
-| `…spi.persistence` | **stable** | 0.5.0 | ADR-022 | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, +6 | yes (slab/FFM tier) |
+| `…spi.persistence` | **stable** | 0.5.0 | ADR-022, ADR-080 [^rowcursor] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, +6 | yes (slab/FFM tier) |
 | `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +3 | v0.11 record-component note below |
 
 > **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
@@ -70,9 +70,11 @@ this is informational and **not** a dependency of the open-core surface.
 > **No automated gate reports this.** A binary-compatibility diff (japicmp) finds nothing, because nothing was removed: the 0.10.0 constructor descriptor is still present and the new components only add accessors. A source diff of the record declaration does show the components arriving, but not that anything downstream depends on their number or order. So this row is the record — not a redundant human note ahead of a machine that would have caught it anyway.
 >
 > The same asymmetry governs `FlowExecutionPlanFactory.registerMigration`, added to this package in v0.11: an abstract method on an interface is *binary*-compatible (implementors link until it is invoked) and *source*-incompatible. It ships with a refusing default so implementors keep compiling — again a change no binary gate would have flagged.
+> 
+> **`spi.flow` in v0.12 — `FlowDefinitionBuilder.version(int)`.** Same shape, same reason: a `default` method rather than an abstract one, so out-of-tree builders keep both linking and compiling. The default *throws* instead of returning a value, which is the deliberate difference from `registerMigration`'s and `FlowExecutionPlan.definitionVersion()`'s: a builder that silently ignored a requested version would produce a v1 definition claiming to be v3 — the exact confusion ADR-064 exists to prevent. Additive in both senses the gate asks, so it passes clean; the note is here because the *behaviour* of the default is the contract, and no diff reports that.
 | `…spi.memory` | **stable** | 0.5.0 | — (foundational) | `AbstractMemoryAllocatorTck`, `…LoanedBufferTck`, `…MemoryGovernorTck`, +5 | yes (slab pools) |
 | `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
-| `…spi.exceptions` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK) | — |
+| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
 | `…spi.telemetry` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractTelemetryProviderTck`, `…SinkTck`, `…RingBufferTck`, `…JfrTelemetrySinkTck` | yes (binary glass-box sink) |
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +5 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
@@ -84,15 +86,63 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.crypto` | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
 | `…spi.scheduling` | **preview** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
 | `…spi.storage.blob` | **preview** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
+| `…spi.time` | **preview** | 0.12.0 | ADR-082 | — (no provider contract; `TimeSource` is bound, not discovered) | — |
+| `…spi.websocket`³ | **preview** | 0.12.0 | ADR-084 | `AbstractWebSocketExchangeTck` | — |
 | `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
+
+² `exceptions`: ADR-083 (0.12.0) added `FaultOrigin` and a non-final `ExerisKernelException.faultOrigin()`
+to this `stable` surface. Both are **additive**: the method carries a default, so every existing
+subclass compiles and behaves exactly as before, and the compatibility gate reports
+**`stable-breaks=0` / `stable-src-breaks=0`** against `v0.11.0`. The residual risk the gate cannot
+see is source-level and out-of-tree, in the same way ADR-074's was: an out-of-repo subclass that
+already declares its own `faultOrigin()` with an incompatible return type would stop compiling.
+Nothing in this repository does — checked, not assumed. The Glass-Box contract itself (error code,
+`rawArgs`, disclosure) is unchanged and remains ADR-less by design.
+
+³ `websocket`: `preview` for a stated reason rather than a default one. The merge gate is a
+TCK and a binding, and **a contract test proves a shape is honoured, not that it survives** — for a
+long-lived duplex protocol that is exactly where the two diverge. Promotion to `stable` is gated on
+benchmark evidence (concurrent connections, frame throughput, backpressure under a slow reader,
+teardown of a dead peer), not on the TCK going green (ADR-084 §10). Its first-party consumers —
+Platform LSP and Studio — are therefore building on a surface declared to move, which is recorded
+rather than left to be discovered.
 
 ¹ `config`: `ConfigProvider` / `KernelProfile` / `Dynamic` are mature 0.5.0 contracts and treated
 as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.0, v0.9 Sprint 5) are
 **additive** and classified `preview` — enforced by `ImmutableConfigProcessor` (compile-time) and
 `DynamicConfigFileWatcher` (runtime `EX-CFG-1004` refusal), pending a dedicated `AbstractConfigProviderTck` binding.
 
+### v0.12 re-assessment: `…spi.scheduling` and `…spi.storage.blob`
+
+Both were re-read at the v0.12 cut, because both gained bootstrap wiring during the milestone and the
+question was whether that graduates them. **It does not, and the reason matters more than the answer:**
+this table's `preview` definition turns on *"a known, scheduled change still in flight"*, not on how
+completely a surface is wired. Bootstrap wiring is delivery, not contract movement.
+
+What the re-assessment did find is that neither surface has such a change named anywhere:
+
+| | anchor ADR | executable TCK | scheduled contract change on record |
+|---|---|---|---|
+| `…spi.scheduling` | ADR-057 | `AbstractJobSchedulerTck`, 20 cases across 4 groups | none named |
+| `…spi.storage.blob` | ADR-056 | `AbstractBlobStorageTck` | none named — provider selection closed in v0.12 |
+
+Under this table's own definition of `stable` — an accepted ADR **and** an executable TCK — both
+therefore qualify on the stated criteria while carrying the `preview` label. That is a discrepancy
+between the criteria and the labels, and it is deliberately **left standing here rather than resolved
+by editing a cell.** Promotion is semver-binding, so it belongs to the decision that owns the
+question: [`RFC-2026-09-02`](rfc/RFC-2026-09-02-preview-spi-promotion.md). Recorded at the cut so the
+next reader inherits the finding instead of rediscovering it.
+
 ### `…spi.http` per-surface breakdown
+
+> **ADR-074 added a component to two `stable` records without breaking either, and it was measured
+> rather than asserted.** `HttpRequest` gained `authority` and `HttpConfig` gained
+> `defaultAuthority`; both retain their previous canonical constructor as a bridge, so the SPI
+> compatibility gate reports **`stable-breaks=0` / `stable-src-breaks=0`** against `v0.11.0`.
+> The residual risk the gate cannot see is source-level and out-of-tree: a record **deconstruction
+> pattern** (`case HttpRequest(m, p, v, h, b)`) or a `HttpRequest::new` canonical-constructor
+> reference would not compile. Neither appears anywhere in this repository — checked, not assumed.
 
 Because this package is `mixed`, the breakdown is **exhaustive**: every class in
 `eu.exeris.kernel.spi.http` appears in exactly one row. A class named in no row would be neither
@@ -103,11 +153,13 @@ gated nor reported by the compatibility gate, so completeness here is enforced, 
 |---|---|---|---|---|
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
 | Request/response carriers: `HttpRequest`, `HttpResponse`, `HttpTypedResponse`, `HttpStatus`, `HttpMethod`, `HttpVersion`, `HttpHeader` | **stable** | 0.5.0 | ADR-009 | exercised through the engine/exchange/handler TCKs above |
+| ↳ `HttpRequest.authority()` / `HttpConfig.defaultAuthority()` / `HttpClientEngine.defaultAuthority()` | **stable** | 0.12.0 | ADR-074 | `AbstractHttpClientEngineTck$PeerAddressing`, `AbstractHttpProviderLoopbackTck`, `KernelWebClientRetryTest#enricherObservesTheResolvedAuthority` |
+| `HttpConfigValidation` | _internal_ | 0.12.0 | ADR-074 | — (package-private; `HttpConfig`'s own construction-time validation, extracted rather than published) |
 | Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck` |
 | `HttpClientRequestEnricher` | **stable** | 0.8.0 | ADR-032 | `AbstractHttpClientRequestEnricherTck` |
 | Body codecs: `HttpRequestBodyEncoder`, `HttpRequestBodyDecoder`, `HttpResponseBodyEncoder`, `HttpResponseBodyDecoder`, `HttpRequestBodyEncoderRegistry`, `HttpRequestBodyDecoderRegistry`, `HttpResponseBodyEncoderRegistry`, `HttpResponseBodyDecoderRegistry`, `HttpRequestEncodingContext`, `HttpRequestDecodingContext`, `HttpResponseEncodingContext`, `HttpResponseDecodingContext`, `HttpEncodedBody` | **preview** | 0.8.0 | ADR-034 / ADR-036 | `AbstractHttpRequestBodyEncoderTck`, `…RequestBodyDecoderTck`, `…ResponseBodyDecoderTck` |
 | Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` | **preview** | 0.10.0 | ADR-045 | `AbstractHttpRetryPolicyTck` |
-| Route authorization: `HttpRoutePolicy`, `RouteRequirement` | **preview** | 0.11.0 | ADR-061 | `AbstractHttpRoutePolicyTck` |
+| Route authorization: `HttpRoutePolicy`, `RouteRequirement` | **preview** | 0.11.0 | ADR-061, ADR-077 | `AbstractHttpRoutePolicyTck` |
 | `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` (SSE server-push) | **preview** | 0.10.0 | ADR-043 | `AbstractHttpStreamExchangeTck` |
 
 > One asymmetry is deliberate and worth stating, because it looks like an error: `HttpProvider` is
@@ -182,3 +234,12 @@ maturity change here.
 - `docs/subsystems/*.md` — per-subsystem SPI status tags.
 - `docs/ROADMAP.md` §"SPI Stability Declaration" — the originating gap entry.
 - `CHANGELOG.md` — release history with pre-1.0 semver caveat.
+
+[^rowcursor]: **Behavioural note, 0.12 (ADR-080).** `RowCursor.getString` narrows from "whatever the
+    driver returns" to "the server's rendering for a measured type set, and a typed refusal
+    (`EX-PERS-5008`) outside it". No signature changes, so the API-diff gate sees nothing — a total
+    function narrowed to a partial one has the same signature, which is why this is recorded here
+    rather than left to the gate. On PostgreSQL, reading a Tier C column (arrays, ranges, `inet`,
+    `tsvector`, native `enum`, composites) through `getString` now throws where it previously
+    returned a value. Other engines are unaffected: the guarantee is scoped to the server the set was
+    measured on.

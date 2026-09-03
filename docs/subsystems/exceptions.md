@@ -104,7 +104,7 @@ formatting. It implements:
 | `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] int streamPriority, [2] int thresholdPriority` |
 | `EX-NET-4007` | Buffer Exhaustion           | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs`         |
 
-### HTTP Codec (`EX-HTTP-`, codec-level violations 4001..4006)
+### HTTP (`EX-HTTP-`, codec-level violations 4001..4006; subsystem, streaming and request-decode faults 4007..)
 
 | Code           | Description                                  | Glass-Box Payload                      |
 |:---------------|:---------------------------------------------|:---------------------------------------|
@@ -117,6 +117,12 @@ formatting. It implements:
 | `EX-HTTP-4007` | HTTP Provider Bootstrap Failure              | `rawArgs[0]: String providerName`       |
 | `EX-HTTP-4008` | HTTP Server Engine Start Failure             | `rawArgs[0]: String providerName, rawArgs[1]: int port` |
 | `EX-HTTP-4009` | HTTP Client Engine Connection Failure        | `rawArgs[0]: String providerName, rawArgs[1]: String host, rawArgs[2]: int port` |
+| `EX-HTTP-4010` | HTTP/2 Rapid Reset Flood Defense (CVE-2023-44487) | `rawArgs[0]: int resetCount, rawArgs[1]: int lastProcessedStreamId` |
+| `EX-HTTP-4011` | Stream Emit After Close (ADR-043)            | `rawArgs[0]: long eventsEmitted`        |
+| `EX-HTTP-4012` | Stream Principal Expired Mid-Stream (ADR-012 §5) | `rawArgs[0]: long streamAgeMillis, rawArgs[1]: long eventsEmitted` |
+| `EX-HTTP-4013` | Request Body Decode Failure (caller fault → 400, ADR-036) | `rawArgs[0]: String targetTypeName, rawArgs[1]: long bodySize` |
+| `EX-HTTP-4014` | WebSocket Send After Close (ADR-084 §8)      | `rawArgs[0]: long connectionAgeMillis, rawArgs[1]: long messagesSent, rawArgs[2]: int closeCode` |
+| `EX-HTTP-4015` | WebSocket Protocol Violation (caller fault, RFC 6455) | `rawArgs[0]: int closeCode`             |
 
 ### Security (`EX-SEC-`)
 
@@ -138,6 +144,7 @@ formatting. It implements:
 | `EX-PERS-5005` | Persistence Transport Failure  | `[0] String transportName, [1] long fd, [2] int errno`               |
 | `EX-PERS-5006` | Interceptor Init Failure       | `[0] String interceptorClass, [1] String isolationKey`               |
 | `EX-PERS-5007` | No Provider on Classpath       | `[0] String message`                                                 |
+| `EX-PERS-5008` | Unsupported Column Type (ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
 
 ### Graph (`EX-GRPH-`)
 
@@ -160,13 +167,14 @@ formatting. It implements:
 | `EX-EVENT-6005` | Outbox Dead-Letter Queue | `rawArgs[0]: String eventType, rawArgs[1]: String reason, rawArgs[2]: int retryCount` |
 | `EX-EVENT-6006` | Projection Handler Threw | `rawArgs[0]: String projectionName, rawArgs[1]: int eventTypeOrdinal` |
 | `EX-EVENT-6007` | Event-Loop VT Uncaught Exception | `rawArgs[0]: String loopName, rawArgs[1]: String exceptionType` |
+| `EX-EVENT-6008` | Append Version Conflict (ADR-049) | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion` |
 
 ### Flow / Saga (`EX-FLOW-`)
 
 | Code           | Description               | Glass-Box Payload                                                               |
 |:---------------|:--------------------------|:--------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure   | `[0] String providerName, [1] String reason`                                    |
-| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx`   |
+| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx` — **except `phase="WAKE"`, which carries five slots**: `[3] long instanceIdMost, [4] long instanceIdLeast` (since 0.12; a flow identity is 128 bits and does not fit the `int`). Read this layout by phase, not by arity; index 2 is the reason code on every phase |
 | `EX-FLOW-7003` | Step Execution Failure    | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType (cause.getClass().getName() or "none")` |
 | `EX-FLOW-7004` | Registry Conflict         | `[0] int stepId, [1] String reason`                                             |
 
@@ -177,8 +185,97 @@ formatting. It implements:
 | `EX-CFG-1001` | Missing Property         | `[0] String missingKey, [1] String providerName`                              |
 | `EX-CFG-1002` | Type Mismatch            | `[0] String key, [1] String expectedType, [2] String actualValue` ⚠️ redact  |
 | `EX-CFG-1003` | Hot-Reload Read Error    | `[0] String filename, [1] String reason`                                      |
+| `EX-CFG-1004` | Immutable Key Reload Refused | `[0] String filename, [1] String key`                                     |
+
+### Blob Storage (`EX-BLOB-`)
+
+| Code            | Description                          | Glass-Box Payload                                                              |
+|:----------------|:-------------------------------------|:--------------------------------------------------------------------------------|
+| `EX-BLOB-8001` | Object Not Found                     | `[0] String providerName, [1] String container`                                 |
+| `EX-BLOB-8002` | No Isolation Key (ADR-056 §5)        | `[0] String providerName, [1] String denyReason`                                |
+| `EX-BLOB-8003` | Transfer I/O Failure                 | `[0] String providerName, [1] String container`                                 |
+| `EX-BLOB-8004` | Declared/Actual Length Mismatch      | `[0] String providerName, [1] long declaredLength, [2] long actualLength`       |
+| `EX-BLOB-8005` | Single-Object Ceiling Exceeded       | `[0] String providerName, [1] long declaredBytes, [2] long ceilingBytes`        |
+| `EX-BLOB-8006` | Remote Store Refused                 | `[0] String providerName, [1] String container, [2] int statusCode`             |
+| `EX-BLOB-8007` | No Provider on Classpath             | `[0] String component`                                                          |
+| `EX-BLOB-8008` | Provider Id Does Not Resolve         | `[0] String configKey, [1] String configuredId, [2] String availableIds`        |
+| `EX-BLOB-8009` | Required Configuration Key Unset     | `[0] String configKey, [1] String expected`                                     |
+
+### Job Scheduling (`EX-JOB-`)
+
+`9001` and `9003` are **JFR-only**: a dispatched job runs on its own thread and has no caller to
+throw to, so both are recorded on `eu.exeris.kernel.scheduling.JobFailure` rather than carried on an
+exception, and neither has a `rawArgs` layout.
+
+| Code           | Description                                | Glass-Box Payload                              |
+|:---------------|:-------------------------------------------|:------------------------------------------------|
+| `EX-JOB-9001` | Dispatch Refused — No Identity (ADR-057 §5) | *(JFR-only — no rawArgs)*                      |
+| `EX-JOB-9002` | Submission to a Closed Scheduler            | `[0] String schedulerName, [1] String jobName` |
+| `EX-JOB-9003` | Job Body Threw                              | *(JFR-only — no rawArgs)*                      |
+| `EX-JOB-9004` | No Provider on Classpath                    | `[0] String component`                         |
+
+### Diagnostics audit (`EX-DIAG-`, ADR-033)
+
+**Not exceptions.** Each out-of-process `KernelDiagnostics` call emits one INFO-level JFR event so
+operators can audit who introspected the kernel; the codes exist to name those events in the same
+namespace as failures. Cold path, so emission allocation is acceptable (ADR-033 Obligation 2).
+
+| Code            | Description                    | Glass-Box Payload |
+|:----------------|:-------------------------------|:--------------------|
+| `EX-DIAG-1001` | `listProviders()` invoked      | *(no rawArgs)*     |
+| `EX-DIAG-1003` | `getBootstrapDag()` invoked    | *(no rawArgs)*     |
+| `EX-DIAG-1004` | `describeSubsystem()` invoked  | *(no rawArgs)*     |
+| `EX-DIAG-1005` | `getJvmErgonomics()` invoked   | *(no rawArgs)*     |
+
+`EX-DIAG-1002` is a **reserved gap**, not an omission: the `listCapabilities()` method it audited was
+removed pre-1.0 and the number was left rather than renumbered, so `1003..1005` stay stable.
+
+### Unclassified (`EX-UNK-`)
+
+| Code           | Description                                | Glass-Box Payload |
+|:---------------|:-------------------------------------------|:--------------------|
+| `EX-UNK-0000` | Telemetry record carried no code of its own | *(no rawArgs)*     |
 
 ---
+
+## Fault origin — whose fault it was (ADR-083)
+
+An error code says *what* failed. `faultOrigin()` says **who has to change something for the
+operation to succeed**, which is the question a protocol adapter answers before it picks a status:
+
+| Constant | Meaning |
+|---|---|
+| `FaultOrigin.CALLER` | the request, its arguments or its credentials are at fault; repeating it unchanged fails identically |
+| `FaultOrigin.SYSTEM` | the runtime, its configuration or its dependencies are at fault; the caller can do nothing about it |
+
+**`SYSTEM` is the default and an unclassified subclass keeps it.** That is what the runtime did
+before the method existed, so classifying more subclasses later adds information rather than
+changing behaviour. The asymmetry is deliberate: reporting a caller's mistake as a server error is a
+worse message, while reporting a broken deployment as the caller's mistake hides an outage behind a
+`4xx` nobody pages on.
+
+**Classify at a catch site with `FaultOrigin.classify(throwable)`, not with `instanceof`.** A handler
+catches throwables, not kernel exceptions, and anything that is not one carries no origin — guessing
+one from a JDK type is how a bare `NoSuchElementException` from an unbound kernel binding came to be
+answered as a bad request.
+
+```java
+} catch (RuntimeException failure) {
+    respond(FaultOrigin.classify(failure) == FaultOrigin.CALLER
+            ? HttpStatus.BAD_REQUEST
+            : HttpStatus.INTERNAL_SERVER_ERROR);
+}
+```
+
+The origin is **not** a status code. HTTP reads `CALLER` as `4xx` but picks between `400`, `401`,
+`403` and `409` from the exception itself; a non-HTTP binding maps it elsewhere. Keeping status out
+of the SPI is the same constraint that put status mapping on the handler in ADR-036.
+
+Four subclasses declare `CALLER` today — `RequestBodyDecodeException`,
+`SecurityAuthenticationException`, `InsufficientPrivilegesException` and
+`EventStreamAppendConflictException`. **A new subclass should state its origin when the answer is
+clear from its own contract, and leave the default when it is not**; a wrong `CALLER` is worse than
+an unclassified `SYSTEM`.
 
 ## Code Examples
 

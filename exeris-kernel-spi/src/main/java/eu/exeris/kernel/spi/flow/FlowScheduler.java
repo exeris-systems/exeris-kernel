@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.flow;
 
@@ -78,6 +74,32 @@ public interface FlowScheduler {
      *         not currently parked
      */
     void wake(FlowContext context);
+
+    /**
+     * Wakes the instance identified by these ids, whatever the engine currently holds for it.
+     *
+     * <p>The key-addressed sibling of {@link #wake(FlowContext)}, added because the two-call form
+     * a choreography bridge had to use - {@code lookupParked(...).ifPresent(this::wake)} - is
+     * check-then-act and cannot be made atomic from outside the engine. A callback can land while
+     * the instance is still inside the step that is about to park, and the lookup reports it
+     * absent; dropping the wake there strands the saga, because a choreography wake is one event
+     * per business trigger and nothing re-sends it. Resolving by key inside the engine removes
+     * both the race and the second durable-store probe the two-call form pays on a miss.
+     *
+     * <p>An implementation MUST treat a live instance that has not parked yet as a wake to be
+     * deferred until it does, not as an absent one. A key the engine genuinely does not know
+     * still fails as it would through {@link #wake(FlowContext)}.
+     *
+     * <p>The default keeps the pre-0.12 two-call behaviour, so an implementation that does not
+     * override it is unchanged - including its exposure to the race above.
+     *
+     * @param instanceIdMost  most significant bits of the flow instance key
+     * @param instanceIdLeast least significant bits of the flow instance key
+     * @since 0.12.0
+     */
+    default void wake(long instanceIdMost, long instanceIdLeast) {
+        lookupParked(instanceIdMost, instanceIdLeast).ifPresent(this::wake);
+    }
 
     /**
      * Looks up a currently parked flow instance by its UUID components.

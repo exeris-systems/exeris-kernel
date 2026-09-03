@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.persistence;
 
@@ -27,10 +23,18 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>{@value KernelErrorCodes#EX_PERS_5004} — Authentication failure</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5005} — Transport I/O failure</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5006} — Interceptor initialization error</li>
+ *   <li>{@value KernelErrorCodes#EX_PERS_5008} — Column type outside the accessor's domain</li>
  * </ul>
  *
  * @since 0.5.0
  */
+// TooManyMethods: the same reason it is suppressed on FlowEngineException — the count is the
+// contract. One named factory per rawArgs layout is what keeps string literals out of throw sites (a
+// repo-wide hard constraint) and documents each layout in exactly one place. The ninth factory
+// (ADR-080's type refusal) crossed the threshold; collapsing the family into a code-taking factory
+// would move those literals back to the call sites, which is the drift the Glass-Box layout exists
+// to prevent.
+@SuppressWarnings("PMD.TooManyMethods")
 public final class PersistenceProviderException extends ExerisKernelException {
 
     private static final String BOOTSTRAP_MSG = "Persistence provider bootstrap failure";
@@ -39,6 +43,7 @@ public final class PersistenceProviderException extends ExerisKernelException {
     private static final String AUTH_MSG = "Persistence authentication failure";
     private static final String TRANSPORT_MSG = "Persistence transport I/O failure";
     private static final String INTERCEPTOR_MSG = "Persistence interceptor initialization failure";
+    private static final String UNSUPPORTED_TYPE_MSG = "Column type outside the accessor's domain";
 
     // -----------------------------------------------------------------------
     // Private constructor — use static factories
@@ -210,5 +215,27 @@ public final class PersistenceProviderException extends ExerisKernelException {
                 KernelErrorCodes.EX_PERS_5007,
                 "No PersistenceProvider available — kernel start aborted",
                 null, message);
+    }
+
+    /**
+     * A converting accessor was asked for a column type it does not implement (ADR-080 §2).
+     *
+     * <p>Refusing beats rendering: decoding an unimplemented type's bytes as text yields a plausible
+     * wrong answer on a data path. The decision reads the <em>declared</em> type name, never an OID
+     * range, and is a property of the column rather than of the row — a SQL NULL in an unsupported
+     * column refuses too, since {@code null} would claim "no value here" when the truth is "this
+     * column cannot be rendered".
+     *
+     * @param declaredTypeName the driver's name for the column type, from the result metadata
+     * @param columnIndex      zero-based column index
+     * @param accessor         the SPI method that refused, e.g. {@code "getString"}
+     * @return exception with rawArgs: [declaredTypeName, columnIndex, accessor]
+     * @since 0.12.0
+     */
+    public static PersistenceProviderException unsupportedColumnType(
+            String declaredTypeName, int columnIndex, String accessor) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5008, UNSUPPORTED_TYPE_MSG, null,
+                declaredTypeName, columnIndex, accessor);
     }
 }

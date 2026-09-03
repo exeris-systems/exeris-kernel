@@ -6,10 +6,10 @@ Mission: preserve **No Waste Compute**, keep **The Wall** intact, and prefer pra
 
 Exeris Kernel is a cloud-native, zero-copy runtime platform for the JVM (open-core: this repo is the open side). It replaces framework-heavy Java stacks with a system-level kernel: Panama FFM off-heap memory, virtual threads, `ScopedValue` context, JFR-first observability, OpenSSL via FFM. Not a standard Java app — standard Java idioms are often *wrong* here.
 
-- **Stack:** **JDK 25 LTS**, main sources compiled **preview-clean**; test/TCK fixtures still compile and run with `--enable-preview` because they are not distributed (ADR-066). Maven 3.9+ multi-module reactor, JUnit 5, ArchUnit, JMH, JFR, Testcontainers (Postgres/Kafka) for tagged integration tests.
+- **Stack:** **JDK 25 LTS** baseline, **preview-clean in every scope** — main sources, test sources and TCK fixtures alike, and the build sets `--enable-preview` nowhere (ADR-066 + Amendment A1). Because that flag is legal only when `--release` equals the running JDK, its removal also un-pins the build: JDK 25 or anything newer works. Maven 3.9+ multi-module reactor, JUnit 5, ArchUnit, JMH, JFR, Testcontainers (Postgres/Kafka) for tagged integration tests.
 - **Two distribution tracks, and they pick their JDK by opposite rules.** The default line (`main`, the distributable `1.0`) is preview-clean on **LTS only** — JDK 25 today, 29 next: no `--enable-preview` on main sources, no `StructuredTaskScope`, concurrency on virtual threads + explicit `ScopedValue` rebind (both GA). The **`preview` branch** targets the **newest JDK, LTS or not** — JDK 28 today — with `--enable-preview`, keeps `StructuredTaskScope`, and is where JEP 401 value classes get exercised; it ships as `1.0-preview` for JVM-controlled deployments and *is the intended future `main`*, converging at the LTS where those features go GA. **Which track a statement is about changes what it means**: a mandate to use `StructuredTaskScope` is correct on `preview` and disqualifying on `main`.
-- **The substitution is DONE on the default line (v0.11, ADR-066), and two of the four sites did not become forks.** `OutboxOrchestrator` and `CommunityEventLoop` moved to `core.concurrent.StructuredScope`; `InMemoryEventBus.publishAndAwait` and `SubsystemOrchestrator` phase start now run **in-thread**, because their contracts require `ScopedValue` bindings the kernel does not define — an application's own, and a `ScopedValue.Carrier` can only carry values named in advance. **You cannot propagate what you cannot enumerate**: rebuilding the kernel's carrier and forking was tried and booted the HTTP subsystem with no handler bound, every route 404. Verify the state by bytecode, not by grep — `tools/preview-bytecode-scan/preview-bytecode-scan.sh` is the gate, and 26 test fixtures still import `StructuredTaskScope` legitimately. Details: ROADMAP §"Platform Baseline for 1.0 GA".
-- **Coordinates:** groupId `eu.exeris`, packages `eu.exeris.kernel.<module>.<subsystem>`, GitHub `exeris-systems/exeris-kernel`. Version on `main`: 0.11.0; active development: v0.12. A second artifact ships from the `preview` branch — see `PREVIEW-TRACK.md` there.
+- **The substitution is DONE on the default line (v0.11, ADR-066), and two of the four sites did not become forks.** `OutboxOrchestrator` and `CommunityEventLoop` moved to `core.concurrent.StructuredScope`; `InMemoryEventBus.publishAndAwait` and `SubsystemOrchestrator` phase start now run **in-thread**, because their contracts require `ScopedValue` bindings the kernel does not define — an application's own, and a `ScopedValue.Carrier` can only carry values named in advance. **You cannot propagate what you cannot enumerate**: rebuilding the kernel's carrier and forking was tried and booted the HTTP subsystem with no handler bound, every route 404. Verify the state by bytecode, not by grep — `tools/preview-bytecode-scan/preview-bytecode-scan.sh` is the gate. As of v0.12 the test fixtures are converted too (`TckScope`, plus `BlockingPeerPair` for the three that must drive blocking peers on platform threads), so a `StructuredTaskScope` import anywhere on this line is now wrong rather than exempt. Details: ROADMAP §"Platform Baseline for 1.0 GA".
+- **Coordinates:** groupId `eu.exeris`, packages `eu.exeris.kernel.<module>.<subsystem>`, GitHub `exeris-systems/exeris-kernel`. Version on `main`: 0.12.0; active development: v0.13. A second artifact ships from the `preview` branch — see `PREVIEW-TRACK.md` there.
 - **Subsystems** (each has a contract doc in `docs/subsystems/`): bootstrap, config, crypto, events, exceptions, flow, graph, http, memory, persistence, scheduling, security, storage, telemetry, transport.
 - **Key terms** (`docs/glossary.md` is authoritative): *The Wall* = SPI/implementation separation; *No Waste Compute* = every byte allocated and cycle spent must add value; *software inflation* = abstraction layers without measurable value; *Glass-Box* = JFR events as primary observability, not logs.
 
@@ -21,10 +21,10 @@ Reactor modules (root `pom.xml`) and their import rules:
 |---|---|---|
 | `exeris-kernel-spi` | Contracts + carriers ("The Constitution") | **only `java.*` / `jdk.*`** |
 | `exeris-kernel-core` | Driver-agnostic orchestration, bootstrap; HTTP codec/runtime currently lives here | SPI. **Never** community/enterprise |
-| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI only. **Never** core internals |
+| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI, plus the **published** Core surface it is meant to reuse — `AbstractLoanedBuffer`, the HTTP/1 and RFC 6455 codecs, Core JFR event types (ADR-084 §9 designs the WebSocket binding this way). **Never** Core orchestration or bootstrap internals. This row previously read "SPI only", which the reactor has never matched: the pom declares `exeris-kernel-core` and Community main sources carry ~100 Core imports |
 | `exeris-kernel-community-kafka` | Kafka/Redpanda event/flow bindings | SPI, community |
 | `exeris-kernel-community-testkit` | Shared test fixtures | — |
-| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) + `ExerisArchitectureTest` (ArchUnit Wall guard) | SPI |
+| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) + `ExerisArchitectureTest` (ArchUnit Wall guard, **SPI reach only** — the Core/Community half is `KernelTierBanArchitectureTest` in Community) | SPI |
 | `exeris-kernel-diagnostics-cli` | Diagnostics tooling (thin, coverage-ungated) | — |
 | `exeris-kernel-bom` / `-parent` / `-build-config` | Build plumbing; build-config ships lint rulesets and is itself lint-exempt | — |
 
@@ -79,7 +79,7 @@ The following are banned in production runtime hot paths unless explicitly justi
 - `String.formatted()` / string concatenation on exception/failure paths — use the `rawArgs[]` primitive layout.
 - double-checked locking for lazy init — use the Supplier + `AtomicReference` CAS compute-once pattern (see CONTRIBUTING.md) or `LazyConstant`.
 
-These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses. The `ThreadLocal` and `Executors` bans are enforced by ArchUnit (`ExerisArchitectureTest`), not PMD — if the arch guard did not run, nothing has checked them.
+These bans do not automatically apply to test fixtures, build tooling, migration scripts, or debug harnesses. The `ThreadLocal`, `Executors`, `CompletableFuture` and `Unsafe` bans are enforced by ArchUnit, not PMD — if the arch guard did not run, nothing has checked them. **Two suites, and the split is about classpath reach, not about taste:** `ExerisArchitectureTest` (`exeris-kernel-tck`) sees only the SPI, because that module depends on nothing else; `KernelTierBanArchitectureTest` (`exeris-kernel-community`) is where the same four bans reach Core and Community, that being the first module with all three tiers on one classpath. Neither suite sees `exeris-kernel-community-kafka` or `exeris-kernel-diagnostics-cli` — both are leaves nothing depends on. Until v0.12 only the first existed and its rules named the whole repository, so a `ThreadLocal` in Core left it 13/13 green — measured, not supposed.
 
 ## Memory and Ownership Policy
 All native memory must have explicit owner and deterministic lifecycle.
@@ -107,6 +107,14 @@ mvn clean install
 mvn -pl <changed-modules> pmd:check checkstyle:check
 ```
 
+**Run that on a tree you have already built.** PMD's type-resolution rules need the auxclasspath
+that only exists after `compile`, so on a fresh worktree the same command reports violations that
+are not there — measured on an untouched `development/0.12.0`: **16 `PMD Failure` lines and
+`BUILD FAILURE` before compiling, 0 and `BUILD SUCCESS` after**, same commit and same ruleset. It
+cries wolf rather than missing anything, but a phantom `LawOfDemeter` finding has cost time before.
+Compile first (`mvn -pl <changed-modules> -am install -DskipTests -Dpmd.skip=true
+-Dcheckstyle.skip=true`), or just re-check after a full build.
+
 **Architecture guard:** run the Wall guard yourself — do not assume CI covers it (it has historically been `@ArchIgnore`'d):
 
 ```bash
@@ -120,7 +128,7 @@ CI (`.github/workflows/maven.yml`) runs `mvn clean verify -P coverage` (JaCoCo l
 **Definition of done — all of these, in order, before calling work finished:**
 1. `mvn clean install` green (full reactor for cross-module changes; `-pl <module> -am` acceptable for isolated ones).
 2. Lint-clean on changed modules — covered by step 1 **unless** any `-Dpmd.skip`/`-Dcheckstyle.skip` was used in the loop; then run the standalone command above. No new PMD/Checkstyle suppressions without written justification.
-3. `ExerisArchitectureTest` green.
+3. `ExerisArchitectureTest` green — and `KernelTierBanArchitectureTest` too if the change touched Core or Community, since that is the suite whose classpath can see them.
 4. Contract/SPI change → TCK + binding tests updated and green; tagged tests run if their subject changed.
 5. Docs/ADR impact triaged (`exeris-doc-impact-triage` skill); drift fixed or explicitly deferred with reason.
 6. Release notes/CHANGELOG describe only published behavior — no local-only links, no cross-repo private PR references.
@@ -128,7 +136,7 @@ CI (`.github/workflows/maven.yml`) runs `mvn clean verify -P coverage` (JaCoCo l
 Run the `exeris-pr-preflight` skill before any commit/push/PR — it encodes this checklist as a go/no-go gate. Never report "ready to PR" from a green `verify` alone.
 
 ## Branch, PR, and Release Workflow
-- **Base branch:** cut a fresh feature branch per task off the current active development base — `development/0.12.0` as of v0.11.0 (bump this line in the release integration PR) — or a `research/<slug>` branch for perf research. Never commit directly to `main`; never reuse a merged branch.
+- **Base branch:** cut a fresh feature branch per task off the current active development base — `development/0.13.0` as of v0.12.0 (bump this line in the release integration PR) — or a `research/<slug>` branch for perf research. Never commit directly to `main`; never reuse a merged branch.
 - **Branch names:** `feature/…`, `fix/…`, `perf/…`, `docs/…`, `research/…` with a version or ADR prefix when applicable (e.g. `feature/v011-…`, `feature/ADR-046-…`).
 - **Commits/PR titles:** conventional style `type(scope): summary` — e.g. `fix(persistence): …`, `docs(adr): …`, `release(0.10.0): …`.
 - **Releases:** milestones integrate into `main` via a single `release(x.y.z)` PR; `main` carries release versions, `development/*` carry `-SNAPSHOT`s (both publish to GitHub Packages).

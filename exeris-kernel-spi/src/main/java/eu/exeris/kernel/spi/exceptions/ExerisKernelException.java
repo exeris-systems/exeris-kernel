@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions;
 
@@ -251,6 +247,26 @@ public abstract class ExerisKernelException extends RuntimeException {
      */
     public final Object[] rawArgs() {
         return rawArgs;
+    }
+
+    /**
+     * Returns who has to change something for the failed operation to succeed.
+     *
+     * <p>Not {@code final}, and that is the point: a subclass whose failure is the caller's doing
+     * overrides this to {@link FaultOrigin#CALLER}, and everything else inherits
+     * {@link FaultOrigin#SYSTEM}. The default is the conservative direction — an unclassified
+     * failure keeps reporting exactly what it reported before this method existed, so classifying
+     * further subclasses later adds information rather than changing behaviour.
+     *
+     * <p>Prefer {@link FaultOrigin#classify(Throwable)} at a catch site: it applies the same default to a
+     * throwable that is not a kernel exception, which is a case every handler has and every handler
+     * would otherwise have to remember.
+     *
+     * @return the fault origin; never {@code null}
+     * @since 0.12.0
+     */
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.SYSTEM;
     }
 
 }

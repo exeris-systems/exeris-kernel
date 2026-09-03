@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -67,12 +63,18 @@ final class NativeTcpReactor {
     private final Set<SocketChannel> pendingWriteInterest = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean wakeupPending = new AtomicBoolean(false);
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread thread;
+
+    // One reaper per reactor, not one per carrier: it carries a next-sweep cursor that is only
+    // ever touched by this reactor's thread, which is what keeps the sweep lock-free.
+    private final NativeTcpIdleReaper idleReaper;
 
     /* default */ NativeTcpReactor(NativeTcpCarrier host, int index, Selector selector) {
         this.host = host;
         this.index = index;
         this.selector = selector;
+        this.idleReaper = NativeTcpIdleReaper.forTimeout(host.idleTimeoutMillis());
     }
 
     /* default */ void start() {
@@ -164,6 +166,11 @@ final class NativeTcpReactor {
                         host.closeKeyStream(key);
                     }
                 }
+
+                // After dispatch, so a key serviced this turn carries its fresh stamp into the
+                // sweep rather than being judged on the previous turn's. Self-gated to the sweep
+                // interval; on a disabled timeout this is one predictable branch per select.
+                idleReaper.sweep(selector, host, index, System.nanoTime());
             } catch (IOException e) {
                 if (host.isReactorActive()) {
                     host.handleAsyncFailure("reactor/" + index, e);

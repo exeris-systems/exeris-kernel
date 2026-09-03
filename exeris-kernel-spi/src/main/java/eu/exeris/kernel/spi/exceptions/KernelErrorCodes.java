@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions;
 
@@ -446,6 +442,71 @@ public final class KernelErrorCodes {
      */
     public static final String EX_HTTP_4012 = "EX-HTTP-4012";
 
+    /**
+     * Inbound request body could not be decoded into the handler's target type — the bytes are
+     * syntactically invalid for the binding, or do not bind to that type. A <em>caller</em> fault,
+     * carried by {@link eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException} so a
+     * handler can answer {@code 400 Bad Request} without inspecting a message string.
+     *
+     * <p>Distinct from a decoder that is missing or unregistered, which stays an
+     * {@code IllegalStateException} and is a <em>deployment</em> fault ({@code 5xx}). ADR-036 §2
+     * puts status mapping on the handler; that mapping is only expressible if the two failures are
+     * different types, so the split is part of the SPI contract rather than a driver detail.
+     *
+     * <p>Secret-safe: carries the target type name and the body length only. The body itself is
+     * request content and never reaches telemetry — a guarantee the decoder TCK holds across the
+     * whole {@code getCause()} chain, not just this exception's own message, because consumers log
+     * causes and a binding that quotes the offending input would leak through that path.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} targetTypeName (binary name of the requested payload type)</li>
+     *   <li>index 1 – {@code long}   bodySize (bytes offered to the decoder)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4013 = "EX-HTTP-4013";
+
+    /**
+     * A WebSocket send was attempted on a connection that is no longer writable — the handler
+     * closed it, the peer went away, or the engine closed it on a protocol fault.
+     *
+     * <p>The receive direction deliberately does <em>not</em> raise this: a closed connection is the
+     * ordinary end of a receive loop and returns {@code null}, while a send that cannot happen means
+     * the handler had something to say and could not, which it has to see.
+     *
+     * <p>Secret-safe: carries counters and the close code, never message content — the text a
+     * handler was trying to send is exactly the kind of payload most likely to be sensitive.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code long} connectionAgeMillis (how long the connection had been open)</li>
+     *   <li>index 1 – {@code long} messagesSent (messages successfully sent before this attempt)</li>
+     *   <li>index 2 – {@code int}  closeCode (RFC 6455 close code observed, 0 when none was seen)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4014 = "EX-HTTP-4014";
+
+    /**
+     * A WebSocket peer broke RFC 6455 and the connection is being closed for it — a reserved bit
+     * set, a fragmented control frame, an oversize control payload, a continuation with no message
+     * in progress, a message past the configured ceiling, a binary opcode on a text-only contract,
+     * or a text payload that is not valid UTF-8.
+     *
+     * <p>Caller fault by construction: every case is something the peer put on the wire. The
+     * distinction matters to an operator, who should not page for a malformed client.
+     *
+     * <p>Secret-safe, and deliberately more so than most: the offending frame is exactly the input
+     * most likely to be hostile, so neither the message nor the rawArgs quote any of it. The
+     * diagnostic value is in <em>which rule</em> broke and how the connection was closed, which the
+     * close code carries on its own.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 &ndash; {@code int} closeCode (the RFC 6455 code the connection closes with)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4015 = "EX-HTTP-4015";
+
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
     // -----------------------------------------------------------------------
@@ -539,6 +600,31 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_PERS_5007 = "EX-PERS-5007";
+
+    /**
+     * A converting accessor was asked for a column type it does not implement (ADR-080 §2).
+     *
+     * <p>Refusal rather than a rendering: decoding an unimplemented type's bytes as text produces a
+     * plausible wrong answer on a data path, which is the silent-corruption class ADR-080 exists to
+     * close. The decision is made from the <em>declared</em> column type, never from an OID range —
+     * a native {@code enum} is a text passthrough on the wire and would be rendered correctly by a
+     * range heuristic that then corrupts ranges and composites sharing that range.
+     *
+     * <p>The refusal is a property of the column, not of the row: a SQL NULL in an unsupported
+     * column still refuses, because {@code null} would report "no value here" when the truth is
+     * "this column cannot be rendered".
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} declaredTypeName (the driver's name for the column type,
+     *                                as reported by the result metadata)</li>
+     *   <li>index 1 – {@code Integer} columnIndex (zero-based)</li>
+     *   <li>index 2 – {@code String} accessor (the SPI method that refused, e.g. {@code "getString"})</li>
+     * </ul>
+     *
+     * @since 0.12.0
+     */
+    public static final String EX_PERS_5008 = "EX-PERS-5008";
 
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
@@ -994,6 +1080,52 @@ public final class KernelErrorCodes {
      */
     public static final String EX_BLOB_8006 = "EX-BLOB-8006";
 
+    /**
+     * Blob storage was configured, and no {@code BlobStorageProvider} is on the classpath to serve
+     * it. Distinct from {@link #EX_BLOB_8008}: nothing is ambiguous, there is simply nothing to
+     * choose from, and the fix is a dependency rather than a key.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} component — the bootstrap component that looked</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8007 = "EX-BLOB-8007";
+
+    /**
+     * The configured blob provider id does not resolve to exactly one provider on the classpath.
+     *
+     * <p>One code rather than two for "no such id" and "the id is ambiguous", because the operator
+     * action is the same in both: write a different value for one key. The message distinguishes
+     * them; the code is what an alert routes on, and both route to the same person.
+     *
+     * <p>Thrown at boot, never per request — a store nobody could choose is not a runtime condition.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} configKey — the key to set, so a refusal names its own remedy</li>
+     *   <li>index 1 – {@code String} configuredId — what was set, or the empty string when unset</li>
+     *   <li>index 2 – {@code String} availableIds — comma-joined provider ids actually discovered</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8008 = "EX-BLOB-8008";
+
+    /**
+     * Blob storage is switched on and a configuration key it needs is unset.
+     *
+     * <p>Separate from {@link #EX_BLOB_8008} because the rawArgs mean different things and Glass-Box
+     * tooling reads them positionally: 8008's last slot is the list of provider ids that were
+     * available, and a free-text hint in that position would be parsed as ids. Different failure,
+     * different layout, different code.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} configKey — the key that is unset</li>
+     *   <li>index 1 – {@code String} expected — what a value for it looks like</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8009 = "EX-BLOB-8009";
+
     // -----------------------------------------------------------------------
     // Scheduling (EX-JOB-9xxx) — ADR-057
     // -----------------------------------------------------------------------
@@ -1039,6 +1171,21 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_JOB_9004 = "EX-JOB-9004";
+
+    // -----------------------------------------------------------------------
+    // EX-UNK – no code of its own
+    // -----------------------------------------------------------------------
+
+    /**
+     * Stamped on a telemetry record that carried no error code — the sink needs something for the
+     * code field and inventing a domain-specific one would be a guess.
+     *
+     * <p>Registered rather than left as a sink-local literal because a scraper meets it in the same
+     * position as every other code and has to be able to look it up. It is the one code that means
+     * "the emitter did not say", and an operator seeing it should look at the emitter, not at this
+     * table.
+     */
+    public static final String EX_UNK_0000 = "EX-UNK-0000";
 
     // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation

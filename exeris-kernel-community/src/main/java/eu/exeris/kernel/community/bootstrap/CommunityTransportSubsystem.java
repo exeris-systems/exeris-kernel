@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
@@ -103,7 +100,7 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
         );
     }
 
-    private static TransportConfig buildTransportConfig(ConfigProvider configProvider) {
+    /* default */ static TransportConfig buildTransportConfig(ConfigProvider configProvider) {
         ConfigProvider.KernelSettings settings = configProvider.kernelSettings().get();
         ConfigProvider.NetworkSettings network = settings.network();
 
@@ -126,6 +123,8 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
         long idleTimeoutMillis = configProvider.getLong("transport.idleTimeoutMillis")
             .orElse(30_000L);
 
+        int maxActiveStreams = CommunityAdmissionCeilingResolver.resolve(configProvider);
+
         String certPath = configProvider.getString("transport.certPath")
                 .orElse(configProvider.getString("network.certPath").orElse(null));
         String keyPath = configProvider.getString("transport.keyPath")
@@ -139,7 +138,8 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
                 certPath,
                 keyPath,
             maxConnections,
-            idleTimeoutMillis
+            idleTimeoutMillis,
+            maxActiveStreams
         );
     }
 

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -32,12 +28,54 @@ import java.util.Objects;
  *                              use {@code -1} as sentinel for CLIENT / DISABLED
  * @param maxConnections        hard cap on concurrent connections; ignored for DISABLED
  * @param idleTimeoutMillis     connection idle timeout in ms (0 = no timeout); ignored for DISABLED
- * @param maxRequestHeaderCount maximum number of header fields per request (DoS guard)
- * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard)
+ * @param maxRequestHeaderCount maximum number of header fields per request (DoS guard); must be
+ *                              &gt; 0 — 0 is refused rather than read as "unlimited", because it
+ *                              refuses every request carrying a header (ADR-071)
+ * @param maxRequestHeaderSize  maximum byte size of a single header field (DoS guard); must be
+ *                              &gt; 0, refused on the same grounds
  * @param maxRequestBodyBytes   maximum request body size in bytes; ({@code -1} = unlimited)
+ * @param maxResponseBodyBytes  maximum size of a response the <em>client</em> will read, in bytes;
+ *                              must be in {@code (0, Integer.MAX_VALUE]}. Separate from
+ *                              {@code maxRequestBodyBytes}, which bounds what the <em>server</em>
+ *                              accepts: the two describe opposite directions on different sockets,
+ *                              and a deployment tuning its ingress limit should not thereby retune
+ *                              its outbound client. {@code -1} is <strong>refused</strong> here
+ *                              rather than read as unlimited — this ceiling is the bound on what a
+ *                              remote peer can make the client allocate.
  * @param h2cUpgradeEnabled     whether to accept HTTP/1.1 → HTTP/2 cleartext upgrade (RFC 7540 §3.2)
  * @param maxVersion            highest HTTP version this engine is permitted to negotiate;
  *                              {@link HttpVersion#HTTP_3} requires Enterprise provider
+ * @param defaultAuthority      CLIENT/DUAL default peer as {@code host:port}, used when an
+ *                              {@link HttpRequest#authority()} is {@code null}. The port is
+ *                              REQUIRED and an IPv6 address must be bracketed; both are checked
+ *                              here rather than at send time, so the message can name the key.
+ *                              May itself be {@code null}, in which case an unaddressed request
+ *                              is refused rather than sent somewhere unintended (ADR-074). This
+ *                              is a DIAL address, deliberately not {@code bindHost}, which is a
+ *                              LISTEN address
+ * @param maxHeaderBlockSize    HTTP/2 only: bound in bytes on an assembled HEADERS +
+ *                              CONTINUATION block as it arrives COMPRESSED on the wire,
+ *                              enforced locally by the header-block assembler and
+ *                              deliberately NOT advertised — the protocol has no setting
+ *                              for a compressed bound, and {@code maxHeaderListSize} is the
+ *                              one SETTINGS carries. It is a separate key from the two
+ *                              above BECAUSE they are a per-field size and a field count on
+ *                              HTTP/1 — multiplying them out would loosen this bound roughly
+ *                              twelvefold at the shipped defaults. Protective, {@code > 0}
+ * @param maxHeaderListSize     HTTP/2 only: bound in bytes on the CUMULATIVE decoded field
+ *                              section, enforced by the HPACK decoder and advertised to the
+ *                              peer as SETTINGS_MAX_HEADER_LIST_SIZE. This is the quantity
+ *                              RFC 9113 §6.5.2 defines that setting against, which is why it
+ *                              is a separate key from {@code maxHeaderBlockSize} and not a
+ *                              second name for it: that one bounds COMPRESSED wire bytes, and
+ *                              compression means the two cannot be derived from each other.
+ *                              Advertising one while enforcing the other is how a peer comes
+ *                              to be told a limit nothing honours. Protective, {@code > 0}
+ * @param maxStringLiteralSize  HTTP/2 only: bound in bytes on ONE decoded HPACK name or value,
+ *                              checked against the declared length before its bytes are read.
+ *                              Distinct from the cumulative bound above because it is what
+ *                              refuses an oversized allocation up front rather than after.
+ *                              Protective, {@code > 0}
  * @since 0.5.0
  */
 public record HttpConfig(
@@ -50,7 +88,12 @@ public record HttpConfig(
         int maxRequestHeaderSize,
         long maxRequestBodyBytes,
         boolean h2cUpgradeEnabled,
-        HttpVersion maxVersion
+        HttpVersion maxVersion,
+        String defaultAuthority,
+        int maxHeaderBlockSize,
+        int maxHeaderListSize,
+        int maxStringLiteralSize,
+        long maxResponseBodyBytes
 ) {
 
     /** Default bind address: all interfaces. */
@@ -60,8 +103,19 @@ public record HttpConfig(
     /** Default server port. */
     public static final int DEFAULT_PORT = 8080;
 
-    /** Default maximum concurrent connections. */
-    public static final int DEFAULT_MAX_CONNECTIONS = 1_000;
+    /**
+     * Default maximum concurrent connections (ADR-081).
+     *
+     * <p>Matches the standalone carrier's {@code transport.maxConnections} default. It is one field
+     * on one record enforced at one point, so two defaults for it were an accident rather than a
+     * policy — and 4 096 is the side the evidence pointed to: the project's own benchmark runs had
+     * to raise the previous 1 000 to get through.
+     *
+     * <p><b>Check the process file-descriptor limit against this.</b> The cap can only refuse
+     * cleanly while it is the ceiling that is reached first; above {@code ulimit -n} the failure
+     * mode is the operating system's, not the kernel's, and it is worse — see ADR-081 §Consequences.
+     */
+    public static final int DEFAULT_MAX_CONNECTIONS = 4_096;
 
     /** Default idle timeout: 30 seconds. */
     public static final long DEFAULT_IDLE_TIMEOUT_MS = 30_000L;
@@ -72,75 +126,146 @@ public record HttpConfig(
     /** Default max header field size in bytes (DoS guard). */
     public static final int DEFAULT_MAX_HEADER_SIZE = 8_192;
 
+    /**
+     * Default HTTP/2 header-block bound in bytes — the value the assembler enforced
+     * unconditionally before 0.12, kept so this key changes reachability and not behaviour.
+     *
+     * @since 0.12.0
+     */
+    public static final int DEFAULT_MAX_HEADER_BLOCK_SIZE = 65_536;
+
+    /**
+     * Default HTTP/2 decoded-field-section bound in bytes — the value the HPACK decoder was
+     * constructed with unconditionally before 0.12, kept so this key changes reachability and
+     * not behaviour.
+     *
+     * @since 0.12.0
+     */
+    public static final int DEFAULT_MAX_HEADER_LIST_SIZE = 65_536;
+
+    /**
+     * Default HPACK single-literal bound in bytes — the value {@code HpackDecoder} held as a
+     * constant before 0.12, kept on the same reachability-not-behaviour grounds. Named by
+     * ADR-071 as the other half of its deferred HTTP/2 tail.
+     *
+     * @since 0.12.0
+     */
+    public static final int DEFAULT_MAX_STRING_LITERAL_SIZE = 65_536;
+
     /** Default max request body: 10 MiB. */
     public static final long DEFAULT_MAX_REQUEST_BODY_BYTES = 10L * 1_024 * 1_024;
 
-    private static final int MIN_SERVER_PORT = 0;
-    private static final int MIN_PORT = 1;
-    private static final int MAX_PORT = 65_535;
-    private static final int MIN_CONNECTIONS = 1;
+    /**
+     * Default max response body the client will read: 10 MiB.
+     *
+     * <p>The same number as {@link #DEFAULT_MAX_REQUEST_BODY_BYTES} so an untuned deployment sees no
+     * change, and a <em>separate</em> constant because they are separate limits — one bounds what
+     * this server accepts, the other what this client reads back from someone else's.
+     */
+    public static final long DEFAULT_MAX_RESPONSE_BODY_BYTES = 10L * 1_024 * 1_024;
+
 
     public HttpConfig {
         Objects.requireNonNull(mode,       "mode must not be null");
         Objects.requireNonNull(maxVersion, "maxVersion must not be null");
         if (mode != HttpMode.DISABLED) {
-            validateConnectionLimits(maxConnections, idleTimeoutMillis);
-            validateRequestLimits(maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
-            validatePort(mode, port, bindHost);
+            HttpConfigValidation.validateConnectionLimits(maxConnections, idleTimeoutMillis);
+            HttpConfigValidation.validateRequestLimits(
+                    maxRequestHeaderCount, maxRequestHeaderSize, maxRequestBodyBytes);
+            HttpConfigValidation.validateResponseLimits(maxResponseBodyBytes);
+            HttpConfigValidation.validatePort(mode, port, bindHost);
+            HttpConfigValidation.validateDefaultAuthority(defaultAuthority);
+            HttpConfigValidation.validateHeaderBlockSize(maxHeaderBlockSize);
+            HttpConfigValidation.validateHeaderListSize(maxHeaderListSize);
+            HttpConfigValidation.validateStringLiteralSize(maxStringLiteralSize);
         }
     }
 
-    private static void validatePort(HttpMode mode, int port, String bindHost) {
-        if (mode == HttpMode.SERVER || mode == HttpMode.DUAL) {
-            validateServerDualBinding(bindHost, port);
-        } else {
-            validateClientPort(port);
-        }
+    /**
+     * Creates a configuration with no default client peer.
+     *
+     * <p>This is the canonical constructor as it stood before 0.12, retained as a compatibility
+     * bridge so that adding {@link #defaultAuthority()} to a {@code stable} carrier does not break
+     * existing callers. It delegates with a {@code null} default authority.
+     *
+     * @param mode                  operating mode
+     * @param bindHost              listener bind address for SERVER / DUAL modes
+     * @param port                  listener port for SERVER / DUAL modes
+     * @param maxConnections        maximum concurrent connections
+     * @param idleTimeoutMillis     idle connection timeout, {@code 0} disables
+     * @param maxRequestHeaderCount maximum request header count
+     * @param maxRequestHeaderSize  maximum single request header size in bytes
+     * @param maxRequestBodyBytes   maximum request body size in bytes
+     * @param h2cUpgradeEnabled     whether cleartext h2c upgrade is honoured
+     * @param maxVersion            highest negotiable HTTP version
+     * @since 0.5.0
+     */
+    @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
+    public HttpConfig(HttpMode mode,
+                      String bindHost,
+                      int port,
+                      int maxConnections,
+                      long idleTimeoutMillis,
+                      int maxRequestHeaderCount,
+                      int maxRequestHeaderSize,
+                      long maxRequestBodyBytes,
+                      boolean h2cUpgradeEnabled,
+                      HttpVersion maxVersion) {
+        this(mode, bindHost, port, maxConnections, idleTimeoutMillis, maxRequestHeaderCount,
+                maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion, null,
+                DEFAULT_MAX_HEADER_BLOCK_SIZE, DEFAULT_MAX_HEADER_LIST_SIZE,
+                DEFAULT_MAX_STRING_LITERAL_SIZE);
     }
 
-    private static void validateServerDualBinding(String bindHost, int port) {
-        if (bindHost == null || bindHost.isBlank()) {
-            throw new IllegalArgumentException(
-                    "bindHost must not be null or blank for SERVER/DUAL mode");
-        }
-        if (port < MIN_SERVER_PORT || port > MAX_PORT) {
-            throw new IllegalArgumentException(
-                    "port must be in range [0, 65535] for SERVER/DUAL mode (0 = ephemeral), got: " + port);
-        }
-    }
-
-    private static void validateClientPort(int port) {
-        if (port != -1 && (port < MIN_PORT || port > MAX_PORT)) {
-            throw new IllegalArgumentException(
-                    "port must be -1 (sentinel) or 1-65535 for CLIENT mode, got: " + port);
-        }
-    }
-
-    private static void validateConnectionLimits(int maxConnections, long idleTimeoutMillis) {
-        if (maxConnections < MIN_CONNECTIONS) {
-            throw new IllegalArgumentException(
-                    "maxConnections must be >= 1, got: " + maxConnections);
-        }
-        if (idleTimeoutMillis < 0) {
-            throw new IllegalArgumentException(
-                    "idleTimeoutMillis must be >= 0 (0 = no timeout), got: " + idleTimeoutMillis);
-        }
-    }
-
-    private static void validateRequestLimits(int maxRequestHeaderCount, int maxRequestHeaderSize,
-                                               long maxRequestBodyBytes) {
-        if (maxRequestHeaderCount < 0) {
-            throw new IllegalArgumentException(
-                    "maxRequestHeaderCount must be >= 0, got: " + maxRequestHeaderCount);
-        }
-        if (maxRequestHeaderSize < 0) {
-            throw new IllegalArgumentException(
-                    "maxRequestHeaderSize must be >= 0, got: " + maxRequestHeaderSize);
-        }
-        if (maxRequestBodyBytes < -1) {
-            throw new IllegalArgumentException(
-                    "maxRequestBodyBytes must be >= -1 (-1 = unlimited), got: " + maxRequestBodyBytes);
-        }
+    /**
+     * Creates a configuration whose client response ceiling is its request ceiling.
+     *
+     * <p>The canonical constructor as it stood before {@link #maxResponseBodyBytes()} existed,
+     * retained as a compatibility bridge. It delegates {@code maxRequestBodyBytes} into the response
+     * ceiling rather than the new default, and that asymmetry with the configuration keys is
+     * deliberate: a caller who wrote this shape passed <em>one</em> number for an engine they built
+     * themselves, and lowering their client silently to a default they never named would turn an
+     * upgrade into a run-time truncation. An operator setting {@code http.maxRequestBodyBytes} said
+     * something narrower — bound this server's ingress — so the key resolves the two independently.
+     *
+     * @param mode                  operating mode
+     * @param bindHost              listener bind address for SERVER / DUAL modes
+     * @param port                  listener port for SERVER / DUAL modes
+     * @param maxConnections        maximum concurrent connections
+     * @param idleTimeoutMillis     idle connection timeout, {@code 0} disables
+     * @param maxRequestHeaderCount maximum request header count
+     * @param maxRequestHeaderSize  maximum single request header size in bytes
+     * @param maxRequestBodyBytes   maximum request body size in bytes, and the client response
+     *                              ceiling — except {@code -1}, which stays unlimited for the
+     *                              server and becomes {@link #DEFAULT_MAX_RESPONSE_BODY_BYTES} for
+     *                              the client, because a response ceiling has no unlimited
+     * @param h2cUpgradeEnabled     whether cleartext h2c upgrade is honoured
+     * @param maxVersion            highest negotiable HTTP version
+     * @param defaultAuthority      default client peer, or {@code null}
+     * @param maxHeaderBlockSize    maximum HPACK header block size
+     * @param maxHeaderListSize     maximum decoded header list size
+     * @param maxStringLiteralSize  maximum HPACK string literal size
+     * @since 0.12.0
+     */
+    @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
+    public HttpConfig(HttpMode mode,
+                      String bindHost,
+                      int port,
+                      int maxConnections,
+                      long idleTimeoutMillis,
+                      int maxRequestHeaderCount,
+                      int maxRequestHeaderSize,
+                      long maxRequestBodyBytes,
+                      boolean h2cUpgradeEnabled,
+                      HttpVersion maxVersion,
+                      String defaultAuthority,
+                      int maxHeaderBlockSize,
+                      int maxHeaderListSize,
+                      int maxStringLiteralSize) {
+        this(mode, bindHost, port, maxConnections, idleTimeoutMillis, maxRequestHeaderCount,
+                maxRequestHeaderSize, maxRequestBodyBytes, h2cUpgradeEnabled, maxVersion,
+                defaultAuthority, maxHeaderBlockSize, maxHeaderListSize, maxStringLiteralSize,
+                maxRequestBodyBytes < 0 ? DEFAULT_MAX_RESPONSE_BODY_BYTES : maxRequestBodyBytes);
     }
 
     /**
@@ -160,7 +285,11 @@ public record HttpConfig(
                 DEFAULT_MAX_HEADER_SIZE,
                 DEFAULT_MAX_REQUEST_BODY_BYTES,
                 true,
-                HttpVersion.HTTP_2
+                HttpVersion.HTTP_2,
+                null,
+                DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                DEFAULT_MAX_HEADER_LIST_SIZE,
+                DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 
@@ -180,7 +309,11 @@ public record HttpConfig(
                 DEFAULT_MAX_HEADER_SIZE,
                 DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
-                HttpVersion.HTTP_2
+                HttpVersion.HTTP_2,
+                null,
+                DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                DEFAULT_MAX_HEADER_LIST_SIZE,
+                DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 }

@@ -10,14 +10,59 @@ the barrier to contribution, not to enforce bureaucracy.
 
 ---
 
+## Licence and the Contributor Licence Agreement
+
+The kernel is **Apache License 2.0**, unmodified — see [`LICENSE`](LICENSE) and
+[`LICENSING.md`](LICENSING.md). Earlier releases carried the Commons Clause; they no longer do.
+
+Contributions are accepted under a **Contributor Licence Agreement**, and it is worth saying
+plainly what that is for rather than leaving you to infer it.
+
+Exeris is open-core: the kernel here is Apache-2.0, and a separate enterprise tier is
+commercial. Apache-2.0 section 5 makes your contribution inbound-equals-outbound by default —
+it arrives under the same licence the project publishes — which is exactly right for this
+repository and does **not** give the project the right to place your code in the commercial
+tier. The CLA does. That is the whole of what it asks for beyond the licence you already grant.
+
+What it does **not** ask for:
+
+- **It does not transfer your copyright.** You keep it. The CLA is a non-exclusive licence,
+  not an assignment. That is a deliberate construction and not merely a soft option: under
+  Polish law an assignment of economic copyright requires written form on pain of nullity
+  (art. 53 of the copyright act), which a click-through cannot satisfy, while a non-exclusive
+  licence carries no form requirement (art. 67(5), read the other way round). A CLA works
+  where a contributor assignment agreement would not.
+- **It does not take your code out of Apache-2.0.** The agreement carries a *promise back*:
+  your contribution remains available under the licence in force on the day you submitted it.
+  Nothing you contribute can be removed from the open kernel later.
+
+We would rather state the asymmetry than pretend it is not there: the project gets a right you
+do not get in return. That is the honest shape of open-core, and if it is not acceptable to
+you, that is a reasonable position and we would rather know before you spend time on a patch.
+
+The agreement is with **Arkadiusz Przychocki**, trading as Exeris Systems, and carries a
+succession clause so the rights pass to the company on incorporation — a licence is granted to
+a person, natural or legal, and a GitHub organisation is neither. `NOTICE` and the per-file
+headers name the project rather than the person; the CLA and `TRADEMARK.md` name the person,
+because those two are the instruments that need one.
+
+> **Status:** the agreement text is being finalised and the signing flow is not yet wired up.
+> Until it is, a pull request will not be blocked on it — but a contribution merged in the
+> meantime is merged on the understanding above, and you will be asked to sign retroactively.
+> If that is not acceptable, say so on the PR and we will hold it.
+
+---
+
 ## Prerequisites
 
 ### Java Version
 
-**JDK 25 LTS is required on this line.** The distributed artifact is preview-clean (ADR-066): main
-sources compile without `--enable-preview`, and since the TCK's test-jar is the one published
-artifact built from test sources, its fixtures are preview-clean too. The `preview` branch is the
-opposite — newest JDK, preview features on — and ships separately as `1.0-preview`.
+**JDK 25 LTS is the baseline on this line; a newer JDK also works.** The line is preview-clean
+throughout (ADR-066 and its Amendment A1): nothing compiles with `--enable-preview`, main sources,
+test sources and TCK fixtures alike. That is what makes a newer JDK usable — the flag is legal only
+when `--release` equals the running JDK, so while it was set anywhere, JDK 25 was the only JDK that
+could build the repository. The `preview` branch is the opposite — newest JDK, preview features on —
+and ships separately as `1.0-preview`.
 
 | Feature                            | JEP       | Status in JDK              | Used in Kernel                                    |
 |:-----------------------------------|:----------|:---------------------------|:--------------------------------------------------|
@@ -29,15 +74,13 @@ opposite — newest JDK, preview features on — and ships separately as `1.0-pr
 | Valhalla Value Classes (prep)      | JEP 401   | Early Access preview       | **Not yet used.** All data carriers (`record`, `final class`) are designed to be migration-ready: no `synchronized`, no `System.identityHashCode()`, no identity `==` on domain objects. C2 JIT Escape Analysis scalarises them on hot-paths today. |
 | Lazy Constants                     | JEP 526   | Delivered in JDK 26 — **not available on this line** | Not used on `main`; the JDK 25 baseline predates it |
 
-The root POM enables preview features for **test** sources only — `--enable-preview` on every
-module's `default-testCompile` and on the surefire JVM ([pom.xml](pom.xml) lines 70, 91-94, 105) —
-and never for main sources. Do not add it to a module's main sources on this line: the
-Preview-Bytecode Gate reads the published jars and fails on any class stamped
-`minor_version 0xFFFF`, which is exactly what a consumer would trip over.
-
-The TCK is the exception that needs stating, because its test-jar *is* a published artifact: its
-fixtures were moved off `StructuredTaskScope` so they carry no stamp. Other modules' test sources
-still use it and still need the flag.
+The root POM sets `--enable-preview` nowhere — not on main sources, not on `default-testCompile`,
+not on a surefire or JMH JVM. Do not reintroduce it in any scope on this line. In main sources the
+Preview-Bytecode Gate will catch it: it reads the published jars and fails on any class stamped
+`minor_version 0xFFFF`, which is exactly what a consumer would trip over. In test sources nothing
+would catch it, and the cost is quieter — the whole repository becomes buildable by one exact JDK
+again, and the GA line reacquires a dependency on an API that is still changing shape across
+previews.
 
 **Recommended toolchain:**
 ```
@@ -83,27 +126,71 @@ export DYLD_LIBRARY_PATH="$(brew --prefix openssl@3)/lib:$DYLD_LIBRARY_PATH"
 ## Static Analysis (SonarQube Cloud)
 
 Analysis runs **from CI**, as a step in `build-and-verify` after `mvn clean verify -P coverage`, so it
-consumes the compiled classes and JaCoCo XML that build already produced. Configuration lives in
-`sonar-project.properties` (the CLI scanner reads it; note that the `sonar:sonar` Maven goal would *not*).
+consumes the compiled classes and JaCoCo XML that build already produced.
 
-Two things must be true in the SonarQube Cloud project for this to work, and neither is expressible in
-this repository. **Do them in this order** — the second is a precondition of the first, not a companion
-to it:
+**Configuration lives in the POMs, and there is no `sonar-project.properties`.** The step invokes the
+SonarQube Scanner for Maven, which does not read that file and does not need most of what one would
+hold: `projectVersion`, source encoding, the Java release, source and test roots, compiled output and
+the analysis classpath all come from the reactor. Only what cannot be derived is declared, in the root
+POM's `<properties>`: project identity, exclusions, the coverage report path, the new-code reference
+branch and the `java:S2187` suppression. One module overrides its own classification —
+`exeris-kernel-tck` sets `sonar.sources` empty and puts both source roots under `sonar.tests`, because
+its main sources are contract tests and Sonar keys production rules off `sonar.sources` alone.
 
-1. **Automatic Analysis must be OFF.** It is mutually exclusive with CI-based analysis: leave it on and
+Two rules for anything you add there. Write a coverage or report path as
+`${project.build.directory}/...`, never as a `**/` glob: a glob resolves against each module's base
+directory, so the reactor root matches every module's file at once and imports all of them. And do not
+set `sonar.projectName`; a property in the root POM is inherited by every module, which labels all
+eleven identically in the log, and it does not rename an existing SonarQube Cloud project anyway.
+
+Two things had to be true in the SonarQube Cloud project before any of this worked, and neither is
+expressible in this repository. Both are **done**, recorded here because they are invisible from the
+code and the next person to wonder why a fork's analysis skips will need them:
+
+1. **Automatic Analysis is OFF.** It is mutually exclusive with CI-based analysis: leave it on and
    SonarQube Cloud *rejects* the CI submission. Requires an organisation administrator.
-2. **`SONAR_TOKEN` repository secret.** Add it only once step 1 is done. Until then the analysis step
-   skips (no token) rather than failing — which is the state you want, because with Automatic Analysis
-   still enabled a submitted scan is rejected and the step fails.
+2. **`SONAR_TOKEN` exists as an organisation secret.** The step is guarded on it, so a pull request
+   from a fork (which gets no secrets) skips the analysis rather than failing.
 
-The analysis step carries `continue-on-error: true` precisely so that this cannot escalate: it runs in
-`build-and-verify`, which every other job depends on, and static analysis must never be able to block a
-merge gate. Remove that flag once a CI analysis has been confirmed green, otherwise a rotting analysis
-will go unnoticed.
+The analysis step carries `continue-on-error: true`, and it stays, because enforcement does not run
+through it. The step sits in `build-and-verify`, which every other job depends on, so a SonarQube
+outage must not be able to fail it. The quality gate is enforced instead by the check SonarQube Cloud
+publishes once it has processed the report — `SonarCloud Code Analysis` — which is a **required
+status check on `main`**, pinned to that app so nothing else can satisfy it by name. The two fit
+together: a red gate blocks the merge without a SonarQube outage taking the build job, and the eight
+jobs downstream of it, with it.
 
-Automatic Analysis is also why coverage was reported as `0.0% on New Code` before this setup regardless of
-the tests written — it never builds the project, so no JaCoCo report exists for it to import. If you see
-0.0% coverage on a pull request again, suspect the analysis path before suspecting the tests.
+This also makes the step's own semantics harmless. It does not wait for the verdict
+(`sonar.qualitygate.wait` is set nowhere) and exits as soon as the report is uploaded, so its success
+means "submitted", not "passed". That mattered while it was the only signal; it does not now.
+
+The same three contexts are required on `development/**`, as a pattern, so the next milestone's
+branch inherits it rather than needing the rule re-created. Two settings differ from `main` there on
+purpose: no approving-review requirement, and "up to date before merging" off, because enforcing that
+against a branch with many open pull requests serialises merges for little gain. The `preview` branch
+keeps its own rule and does not require the SonarQube check — that track builds on a newest-JDK line
+with `--enable-preview`, and what the analyser reports there has not been measured.
+
+The scanner log used to carry two warnings, `Unresolved imports/types have been detected` and `Use of
+preview features have been detected`, and both are gone. Neither was a defect in the code: the same
+1374 Java files are parsed now as then, so this is not a narrower analysis. The first is the reason the analysis step runs `verify` in the same Maven command as
+`sonar:sonar`. Invoked alone, the goal starts a session where no module has been packaged, so Maven
+cannot resolve a reactor sibling to a jar and falls back to the local repository, which in CI holds
+none of them. Maven announces it before the goal starts (`could not be resolved at this point of the
+build but seem to be part of the reactor ... Try running the build up to the lifecycle phase
+package`), and the fingerprint is unmistakable: the warning fired in every module with a reactor
+dependency and in neither of the two without one. The preview warning disappeared with it, which was
+not predicted — it had fired in `exeris-kernel-spi` too, where the other never did — and the mechanism
+behind that half is not established, only that it is empirically tied to the same change. It was never
+a risk either way: javac makes a preview feature at `--release 25` without `--enable-preview` a
+compile error rather than a warning, and the preview-bytecode gate reads major 69 with no stamp.
+
+Two things about the wrong turn are worth keeping, because both cost a cycle. A local dump can disagree with
+CI here for a reason that has nothing to do with the configuration — a previous `mvn clean install`
+leaves the sibling jars in `~/.m2`, so locally they resolve and the problem is invisible. And the
+obvious probe does not work: the warning says `Enable DEBUG mode to see them`, a run with
+`-Dsonar.verbose=true` was made, the property reached the scanner, and the log came back with zero
+DEBUG lines and the same unnamed warning.
 
 ## Build & Test
 
@@ -156,6 +243,95 @@ To run only the TCK:
 ```bash
 mvn test -pl exeris-kernel-tck
 ```
+
+### Supply-Chain Gate (SBOM + reproducible builds)
+
+Every module emits a CycloneDX SBOM at `package`, attached under classifier `cyclonedx` so
+`mvn deploy` publishes it beside the jar. Two checks guard it, and both run locally:
+
+```bash
+# Fails on a plugin that cannot produce reproducible output — reads the build PLAN, so it needs
+# no artifacts and catches the problem before anything is published.
+mvn -B org.apache.maven.plugins:maven-artifact-plugin:3.6.0:check-buildplan
+
+# Fails on an SBOM that is present and wrong: empty component list, stale version, restored
+# random serial. Needs a full `mvn package` first.
+tools/sbom-gate/sbom-gate.sh
+```
+
+To check reproducibility itself, build twice and compare — the property is that the bytes match,
+so that is what the check has to look at:
+
+```bash
+mvn -q clean package -DskipTests && find . -name '*.jar' -path '*/target/*' | sort | xargs sha256sum > /tmp/run1
+mvn -q clean package -DskipTests && find . -name '*.jar' -path '*/target/*' | sort | xargs sha256sum > /tmp/run2
+diff /tmp/run1 /tmp/run2   # must be empty
+```
+
+Two things break this, both easy to do by accident:
+
+- **Adding a plugin without a version.** Unversioned plugins resolve through Maven's super-POM, so
+  their versions come from whichever Maven is on the machine, and the published bytes then change
+  without a commit changing. `check-buildplan` catches it.
+- **Writing the build timestamp into an artifact.** `${maven.build.timestamp}` in a filtered
+  resource, a manifest entry, or a generated file defeats `project.build.outputTimestamp` for that
+  module only — so the reactor stays reproducible everywhere except the one place that regressed.
+  The double-build diff above is what finds it.
+
+`project.build.outputTimestamp` (root `pom.xml`) is bumped at each release cut. A stale value is
+not a defect: what makes the output reproducible is that the value is fixed, not that it is recent.
+
+### Exercising the release path locally
+
+The `release` profile is what a Maven Central release runs, and it is worth running before you need
+it — its failures are per-module and per-file, and Central discovers them on an **immutable**
+channel. Signing needs a key, so use a throwaway one in an isolated keyring rather than your own:
+
+```bash
+export GNUPGHOME=$(mktemp -d) && chmod 700 "$GNUPGHOME"
+gpg --batch --passphrase testpass --quick-gen-key 'Test <test@invalid.local>' rsa3072 sign 1d
+
+# verify, NOT deploy: builds and signs everything Central would receive, touching nothing remote
+MAVEN_GPG_PASSPHRASE=testpass mvn -P release clean verify -DskipTests
+
+tools/release-readiness/release-readiness.sh
+```
+
+The gate asserts that every coordinate has a pom, jar, sources jar, javadoc jar and SBOM, and that
+each verifies against the key. It reports what it deliberately skipped rather than staying silent —
+`exeris-kernel-tck` is currently held back from Central, and the root POM records why.
+
+Two things this profile does that the ordinary build does not, both of which have already bitten:
+
+- `central-publishing-maven-plugin` declares `<extensions>true</extensions>` and takes over
+  `deploy`, which sets `maven.deploy.skip`. That in turn made `cyclonedx` skip itself
+  (`skipNotDeployed` defaults to true), so the release build emitted signed artifacts and no SBOMs
+  while the ordinary SBOM gate stayed green. Anything you add under `-P release` needs checking
+  under `-P release`; the default build does not cover it.
+- A module with no `src/main` produces no sources or javadoc jar, and Central requires both per
+  artifact. That is why `exeris-kernel-tck` is excluded rather than published empty.
+
+**Reproducibility on this path is a property of CLEAN builds, and the release workflow depends on
+it.** Measured by building `-P release` twice: of 69 files, 45 differ and every one is a `.asc` —
+OpenPGP signature packets carry a creation timestamp, so re-signing the same content produces
+different, equally valid bytes. **Zero jars differ, javadoc included**: `maven-javadoc-plugin`
+passes `-notimestamp` once `project.build.outputTimestamp` is set, so the property CONTRIBUTING
+documents for the ordinary build holds here too.
+
+Build a second time over a **dirty** `target/` and it does not.
+`exeris-kernel-diagnostics-cli` is shaded, and re-running shade over an already-shaded jar produces
+different bytes. The release workflow therefore uses `clean` on its deploy step and then asserts
+that every jar, pom and SBOM is byte-identical to the one the gates and the provenance attestation
+covered — because Maven re-runs the lifecycle up to `deploy` and there is no way to upload
+previously built artifacts (central-publishing stages its bundle during the deploy phase; nothing
+exists before it).
+
+> **Adding a script under `tools/`:** set its mode through git, not only through the filesystem —
+> `git update-index --chmod=+x <path>`. This repository is commonly cloned with
+> `core.fileMode=false`, which makes `chmod +x` invisible to git: the script runs perfectly for you
+> and lands in the commit as `100644`, so CI is the first thing to discover it with
+> `Permission denied` and exit 126. Check with `git ls-files -s tools/**/*.sh` — every gate there
+> should read `100755`.
 
 ---
 
@@ -314,11 +490,27 @@ try (LoanedBuffer buffer = allocator.allocate(AllocationHint.MEDIUM)) {
 }  // close() called automatically — ref-count decremented
 ```
 
-### Rule 2: Double-Free Causes SIGSEGV
+### Rule 2: One Close Per Acquire — Not Per Reference
 
-Calling `LoanedBuffer.close()` twice decrements `refCount` below zero. The allocator may re-issue
-the same slab. The old holder's `MemorySegment` address is now reused — the next `segment().address()`
-call is a use-after-free. On Enterprise tier: `SIGSEGV`. Write all tests with `LeakDetectionMode.PARANOID`.
+**Corrected against the implementation.** This rule previously said that calling
+`LoanedBuffer.close()` twice decrements `refCount` below zero and yields a use-after-free. It does
+not, and it never did: `AbstractLoanedBuffer.close()` opens with `if (prev <= 0) { return; }` inside
+its CAS loop, so a close on an already-released buffer is a no-op. That matches the SPI contract —
+`LoanedBuffer.close()`'s javadoc requires idempotence in so many words — and it is **executable**,
+not merely documented: `AbstractLoanedBufferTest` ("Double close is idempotent — does not release
+twice") and `CommunityLoanedBufferTest` ("double close() after single allocate() does not throw")
+have both been green this whole time. This document was contradicting the contract, the code and two
+passing tests at once.
+
+The real rule is about **balance, not repetition**: every `retain()` needs its own `close()`, because
+`close()` releases only when the count reaches zero. Hand a buffer to a subtask without retaining
+first and the parent's `close()` frees it while the subtask still reads — *that* is the
+use-after-free, and on the Enterprise tier a `SIGSEGV`. Write all tests with
+`LeakDetectionMode.PARANOID`.
+
+An SPI implementation that is *not* idempotent would be violating the contract, so a caller need not
+guard against double close — but a caller that cannot see which implementation it holds may still
+choose to, and should say that is why rather than citing a decrement that does not happen.
 
 ### Rule 3: `retain()` Before Any `fork()`
 

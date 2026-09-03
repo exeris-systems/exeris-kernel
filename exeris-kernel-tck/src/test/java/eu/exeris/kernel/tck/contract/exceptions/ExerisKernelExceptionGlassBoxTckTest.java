@@ -1,20 +1,19 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.tck.contract.exceptions;
 
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
+import eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException;
 import eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.NoSuchElementException;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -128,6 +127,55 @@ class ExerisKernelExceptionGlassBoxTckTest {
     // =========================================================================
     // rawArgs layout — binary struct contract
     // =========================================================================
+
+    @Nested
+    @DisplayName("faultOrigin() — who has to change something (ADR-083)")
+    class FaultOriginContract {
+
+        @Test
+        @DisplayName("an unclassified kernel exception is a SYSTEM fault")
+        void unclassifiedDefaultsToSystem() {
+            // The default is what makes classifying further subclasses an addition rather than a
+            // change of behaviour: an exception nobody has looked at reports what it reported before
+            // this method existed.
+            assertThat(new MemoryExhaustedException(65536L, 0L).faultOrigin())
+                    .isEqualTo(FaultOrigin.SYSTEM);
+            assertThat(TransportException.bindFailure("exeris-tcp-0", 9443, null).faultOrigin())
+                    .isEqualTo(FaultOrigin.SYSTEM);
+        }
+
+        @Test
+        @DisplayName("a caller-fault subclass declares CALLER")
+        void callerFaultSubclassDeclaresCaller() {
+            assertThat(RequestBodyDecodeException.malformedBody("com.example.Widget", 42L, null)
+                    .faultOrigin())
+                    .as("ADR-036 §2 answers 400 for a body that will not bind")
+                    .isEqualTo(FaultOrigin.CALLER);
+        }
+
+        @Test
+        @DisplayName("classify applies the same default to a throwable that is not a kernel exception")
+        void classifyDefaultsForForeignThrowables() {
+            // The case every handler has and would otherwise have to remember. An unbound kernel
+            // binding raises a bare NoSuchElementException; reading that as the caller's fault is
+            // how a server-side omission came to be answered as a bad request.
+            assertThat(FaultOrigin.classify(new IllegalStateException("no decoder")))
+                    .isEqualTo(FaultOrigin.SYSTEM);
+            assertThat(FaultOrigin.classify(new NoSuchElementException("ScopedValue not bound")))
+                    .isEqualTo(FaultOrigin.SYSTEM);
+            assertThat(FaultOrigin.classify(null)).isEqualTo(FaultOrigin.SYSTEM);
+        }
+
+        @Test
+        @DisplayName("classify reads a kernel exception's own declaration")
+        void classifyReadsTheDeclaration() {
+            assertThat(FaultOrigin.classify(
+                    RequestBodyDecodeException.malformedBody("com.example.Widget", 42L, null)))
+                    .isEqualTo(FaultOrigin.CALLER);
+            assertThat(FaultOrigin.classify(new MemoryExhaustedException(1L, 0L)))
+                    .isEqualTo(FaultOrigin.SYSTEM);
+        }
+    }
 
     @Nested
     @DisplayName("rawArgs[] — binary struct layout (Glass-Box contract)")

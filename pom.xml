@@ -5,12 +5,91 @@
 
     <groupId>eu.exeris</groupId>
     <artifactId>exeris-kernel-root</artifactId>
-    <version>0.11.0</version>
+    <version>0.12.0</version>
     <packaging>pom</packaging>
 
     <name>Exeris Kernel :: Root</name>
-    <description>Cloud-Native, Zero-Copy Runtime Platform (Java 26+, FFM, Open-Core)</description>
+    <description>Cloud-Native, Zero-Copy Runtime Platform for the JVM (JDK 25 LTS, Panama FFM, Open-Core)</description>
+
+    <!--
+        v0.12 — url / organization / developers / scm are Maven Central publication requirements,
+        validated per artifact rather than per reactor, and none of them existed here before.
+
+        Inherited url and scm values have the child's artifactId APPENDED by default, which would
+        publish ten POMs each pointing at a path that does not exist — and Maven Central shows the
+        project URL on the artifact page an evaluator lands on, so "present but 404" is visible
+        rather than cosmetic. The documented fix is `child.*.inherit.append.path="false"`.
+
+        Measured rather than trusted, on Maven 3.9.12 against an isolated two-POM reproduction:
+        `child.scm.connection.inherit.append.path` WORKS — the connection appends the child's
+        artifactId without it and does not with it — while `child.project.url.inherit.append.path`
+        has NO effect, appending either way. So the scm attributes below are load-bearing and stay,
+        and the url attribute is not used at all: every module declares `<url>` explicitly instead,
+        which is verbatim by construction and needs no attribute to behave.
+    -->
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
     <inceptionYear>2026</inceptionYear>
+
+    <organization>
+        <name>Exeris Systems</name>
+        <url>https://github.com/exeris-systems</url>
+    </organization>
+
+    <!--
+        v0.12 — declared HERE rather than in exeris-kernel-parent, where it lived until now.
+        Two published coordinates parent to this POM and not to that one — exeris-kernel-bom and
+        exeris-kernel-build-config — so their effective POMs carried NO licence declaration at all
+        while every other module inherited one. Verified with `help:effective-pom`, not assumed:
+        `<licenses>` resolved 1 for spi and 0 for both of those.
+
+        That is a licensing gap on its own (a published artifact that states no licence), and it
+        is also the exact thing Maven Central validates per artifact rather than per reactor.
+        Declaring it at the root is what makes the claim in LICENSING.md true of all ten
+        coordinates instead of eight.
+    -->
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+            <comments>
+                The Exeris Kernel open-core sources are distributed under the unmodified
+                Apache License, Version 2.0 — SPDX identifier "Apache-2.0". See LICENSE in
+                the repository root for the full text and LICENSING.md for the open-core map.
+                Apache-2.0 section 6 grants no trademark rights; TRADEMARK.md states the
+                policy that governs use of the name.
+            </comments>
+        </license>
+    </licenses>
+
+    <!--
+        Central requires at least one developer entry. It names the person because that is what the
+        element is for — a point of contact and the party behind the coordinate — while NOTICE and
+        the per-file headers name the project. TRADEMARK.md and CONTRIBUTING.md state the same
+        split and the reason for it: a licence and a trademark are granted to a person, a copyright
+        notice identifies a work's origin.
+    -->
+    <developers>
+        <developer>
+            <id>aprzychocki</id>
+            <name>Arkadiusz Przychocki</name>
+            <organization>Exeris Systems</organization>
+            <organizationUrl>https://github.com/exeris-systems</organizationUrl>
+            <roles>
+                <role>Founder</role>
+                <role>Lead Architect</role>
+            </roles>
+        </developer>
+    </developers>
+
+    <scm child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false"
+         child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/exeris-systems/exeris-kernel.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/exeris-systems/exeris-kernel.git</developerConnection>
+        <url>https://github.com/exeris-systems/exeris-kernel</url>
+        <tag>HEAD</tag>
+    </scm>
 
     <modules>
         <module>exeris-kernel-build-config</module>
@@ -33,13 +112,6 @@
         <maven.compiler.target>25</maven.compiler.target>
         <maven.compiler.release>25</maven.compiler.release>
 
-        <!--
-            ADR-066: the DISTRIBUTED artifact is preview-clean, so main sources compile without
-            this flag. Test and TCK fixtures still use StructuredTaskScope (26 files) and are not
-            distributed, so it is applied to the test-compile execution only, and to the surefire
-            JVM below because preview-stamped test classes will not load without it.
-        -->
-        <jdk.preview.enable>--enable-preview</jdk.preview.enable>
         <coverage.argLine/>
 
         <!--
@@ -63,17 +135,104 @@
             deliberately ungated (0.0) like its LINE floor.
         -->
         <jacoco.branch.minimum>0.15</jacoco.branch.minimum>
+
+        <!--
+            SonarQube Cloud analysis. These are only the values the reactor cannot derive; the
+            scanner takes projectVersion, sourceEncoding, the Java release, the source and test
+            roots, the compiled output and the analysis classpath from the build itself, which is
+            the reason it replaced a properties file that had to state all of them and had gone
+            stale on the first of them (it still said 0.11.0 on a 0.12.0-SNAPSHOT line).
+        -->
+        <sonar.organization>exeris-systems</sonar.organization>
+        <sonar.projectKey>exeris-systems_exeris-kernel</sonar.projectKey>
+        <!--
+            sonar.projectName is deliberately NOT set. A property here is inherited by every module,
+            and the scanner then labels all eleven of them identically: the run that introduced this
+            change printed `Run sensors on module Exeris Kernel` eleven times, which cost an
+            investigation before it cost anything else. Nor would setting it buy the name back:
+            SonarQube Cloud has this project as `exeris-kernel`, and the deleted properties file had
+            been asking for `Exeris Kernel` for months without effect, because the name of an
+            existing project is not what an analysis updates.
+        -->
+        <sonar.newCode.referenceBranch>main</sonar.newCode.referenceBranch>
+
+        <sonar.exclusions>**/target/**,**/.idea/**,**/kernel-legacy/**,**/native-libs/**,**/*.md</sonar.exclusions>
+        <!--
+            exeris-kernel-community-testkit is excluded from COVERAGE measurement, not from analysis:
+            its rules still run and its own tests still gate. The module's fixtures hold a real
+            KernelBootstrap open, and exercising that needs a provider and a JDBC driver — which this
+            module can never have, because it builds BEFORE exeris-kernel-community in the reactor.
+            So the tests that drive the fixtures live in exeris-kernel-community
+            (…/testkitconsumer/), per-module JaCoCo cannot see across that boundary, and the number
+            reported for the testkit measures where the tests are allowed to live rather than whether
+            the code is tested. The same structural reason already exempts exeris-kernel-tck.
+        -->
+        <sonar.coverage.exclusions>**/*Benchmark*.java,**/target/**,exeris-kernel-community-testkit/**</sonar.coverage.exclusions>
+        <!--
+            Copy-paste exclusions for framework-mandated boilerplate where structural repetition is
+            by design, not a DRY violation: JMH *Benchmark* harness classes, and JFR @Event classes
+            (flat annotated POJOs, @Label/@Description fields plus a static emit() begin/set/commit
+            skeleton; 75 of 77 *Event.java extend jdk.jfr.Event). Each JFR event must be its own
+            concrete class with its own @Name, so CPD on them is noise.
+        -->
+        <sonar.cpd.exclusions>**/*Benchmark*.java,**/*Event.java</sonar.cpd.exclusions>
+        <!--
+            Per module, and NOT a `**/` glob. The glob is resolved against each module's base
+            directory, so at the reactor root it matches every module's report at once: that module
+            imported all 8 and, having only pom.xml as a source, reported all 853 classes in them as
+            `File not found in project sources`. The old CLI scanner never hit this because it ran
+            one project-wide analysis rather than one per module.
+        -->
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+
+        <!--
+            java:S2187 "Add some tests to this class", suppressed on test sources.
+
+            PROVISIONAL. The rule fires on the house test shape: a class whose tests all live in
+            JUnit 5 @Nested inner classes has no top-level @Test, and the analyser served by
+            SonarQube Cloud Automatic Analysis did not look inside. That was 103 test classes here
+            and 99 open issues, none of them real; every one of those classes runs tests.
+
+            Trade-off, stated plainly: this also hides a genuinely empty test class. That is judged
+            the lesser cost against 99 false BLOCKERs, which train reviewers to ignore the rule.
+
+            RE-TEST AND REMOVE IF POSSIBLE, and half-measured so far. Automatic Analysis was
+            ignoring this block entirely, which is why those 99 stayed open on main while the
+            configuration said otherwise. The first CI-based analysis reports 0, so the suppression
+            is finally doing something. What that does NOT establish is whether it still needs to: a
+            current sonar-java may understand @Nested on its own. The discriminating test is to
+            delete these three properties and re-run, and it has not been run.
+        -->
+        <sonar.issue.ignore.multicriteria>nestedTests</sonar.issue.ignore.multicriteria>
+        <sonar.issue.ignore.multicriteria.nestedTests.ruleKey>java:S2187</sonar.issue.ignore.multicriteria.nestedTests.ruleKey>
+        <sonar.issue.ignore.multicriteria.nestedTests.resourceKey>**/src/test/java/**/*.java</sonar.issue.ignore.multicriteria.nestedTests.resourceKey>
         <jvm.args>
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
             -XX:-ZUncommit
-            --enable-preview
             --enable-native-access=ALL-UNNAMED
             -XX:FlightRecorderOptions=stackdepth=256
             -XX:StartFlightRecording=disk=true,filename=target/surefire.jfr,maxsize=256m,maxage=10m,settings=profile
             -Xlog:jfr+startup=off
         </jvm.args>
         <maven.build.timestamp.format>yyyyMMdd-HHmmss</maven.build.timestamp.format>
+
+        <!--
+            v0.12 Stream B — reproducible builds. Every Maven plugin that writes an archive reads
+            this property and normalises entry timestamps and entry order to it instead of to the
+            wall clock. Without it two builds of the same commit differ in every jar's bytes, so
+            "this artifact was built from this source" is a claim only the builder can check —
+            which is precisely the class of report SECURITY.md solicits ("release artifacts that
+            cannot be traced back to source").
+
+            It is also a PREREQUISITE, not a companion, for the SBOM below: an SBOM that describes
+            an artifact nobody else can rebuild identically documents a jar rather than attesting
+            to one.
+
+            Bump at each release cut (docs/release ritual). A stale value is not a defect: what
+            makes the output reproducible is that the value is FIXED, not that it is recent.
+        -->
+        <project.build.outputTimestamp>2026-08-26T00:00:00Z</project.build.outputTimestamp>
     </properties>
 
     <build>
@@ -86,16 +245,6 @@
                     <configuration>
                         <release>${maven.compiler.release}</release>
                     </configuration>
-                    <executions>
-                        <execution>
-                            <id>default-testCompile</id>
-                            <configuration>
-                                <compilerArgs>
-                                    <arg>${jdk.preview.enable}</arg>
-                                </compilerArgs>
-                            </configuration>
-                        </execution>
-                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -119,8 +268,176 @@
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
+
+                <!--
+                    v0.12 Stream B — pin the default-lifecycle plugins. Until now these carried no
+                    version anywhere in the reactor, so their versions came from whichever Maven's
+                    super-POM was on the machine: Maven 3.9.12 resolves maven-jar-plugin to 3.1.2,
+                    a release that predates reproducible archive support entirely. So the pin is not
+                    hygiene sitting next to the outputTimestamp property above — it is what makes
+                    that property do anything, and a build on a different Maven would have silently
+                    produced non-reproducible jars while the property sat there looking applied.
+
+                    Pinning them also removes the last way the published bytes can change without a
+                    commit changing.
+                -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>3.5.0</version>
+                    <!--
+                        Automatic-Module-Name pins the JPMS name of every jar this reactor publishes.
+                        Without it a consumer on the module path gets a name derived from the FILE
+                        NAME, which becomes a de-facto contract from the first release and cannot be
+                        changed afterwards without breaking every `requires` that used it.
+
+                        It lives here rather than in exeris-kernel-parent so it reaches
+                        exeris-kernel-build-config too, which parents directly to this POM and
+                        publishes a jar of its own. Here it also cannot drift from the version pin
+                        above: a second pluginManagement entry lower down would silently override
+                        that pin, which is exactly what an earlier draft of this change did.
+
+                        `exeris.module.name` is intentionally undefaulted, and what that buys was
+                        measured rather than assumed. It does NOT fail the build: with the config
+                        inherited from here and no local plugin declaration, an unset property leaves
+                        the property unresolved and maven-archiver simply OMITS the entry, so the jar
+                        ships nameless and green. (maven-jar-plugin does reject an empty name, but
+                        only when a module declares the plugin itself, which is what made the
+                        stronger claim look true.) Nothing here is a guarantee; the guarantee is
+                        tools/module-name-check, which is why that script discovers every jar the
+                        reactor produces instead of checking a list somebody has to remember to
+                        extend.
+                    -->
+                    <configuration>
+                        <archive>
+                            <manifestEntries>
+                                <Automatic-Module-Name>${exeris.module.name}</Automatic-Module-Name>
+                            </manifestEntries>
+                        </archive>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>3.4.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>3.1.4</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>3.1.4</version>
+                </plugin>
+
+                <!--
+                    The SonarQube analyser, pinned and NOT bound to a lifecycle phase: CI invokes
+                    `sonar:sonar` explicitly after `verify`, so an ordinary build never contacts
+                    SonarQube Cloud and an offline build is unaffected.
+
+                    It replaced the standalone CLI scanner because of one property it does not have
+                    to be told: the analysis classpath. The CLI scanner had to be handed
+                    `sonar.java.libraries` as a glob over the project tree, and a glob rooted at the
+                    project cannot reach the local Maven repository, so it matched the 9 reactor
+                    jars and none of the 71 dependency jars on a module's real test classpath.
+                    sonar-java analysed with JUnit, AssertJ, Mockito, the Postgres driver and the
+                    Kafka client all unresolved, and said so on every run: `Unresolved imports and
+                    types have been detected during analysis`, plus `Missing
+                    sonar.java.test.libraries property. You might end up with less precise analysis
+                    results`. This plugin derives both from the reactor, per module.
+
+                    Both warnings needed this plugin, and the second one needed something else
+                    as well: the goal has to run in the same Maven command as `verify`, or no module
+                    has been packaged in the session and a reactor SIBLING cannot be resolved to a
+                    jar either. See the analysis step in .github/workflows/maven.yml, which carries
+                    the measurement.
+
+                    It also brings every reactor module into scope. Under the CLI scanner
+                    `sonar.sources` was a hand-written list, and three modules were missing from it
+                    while their JaCoCo reports were still imported, so the scanner reported 18
+                    findings of the form `File not found in project sources` and threw that coverage
+                    away.
+                -->
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>5.2.0.4988</version>
+                </plugin>
             </plugins>
         </pluginManagement>
+
+        <plugins>
+            <!--
+                v0.12 Stream B — a CycloneDX SBOM is attached to every artifact this reactor
+                publishes, with no exceptions to remember. The three pom-packaged modules (root,
+                parent, bom) carry no code and get an SBOM with an empty component list, which is
+                true rather than useful; that is a deliberate trade, because an exceptionless
+                invariant ("every published coordinate has an SBOM beside it") is cheap to state in
+                the release checklist and cheap to verify, while a list of exemptions rots.
+
+                makeBom, not makeAggregateBom: a consumer resolves one coordinate, so the useful
+                SBOM is the one describing what THAT jar carries. Maven attaches it under classifier
+                `cyclonedx`, so `mvn deploy` publishes it beside the jar with no workflow change.
+
+                includeBomSerialNumber is off because the serial is a fresh UUID per run and would
+                make the SBOM the one output that never reproduces. Test scope is excluded: it is
+                not in the distributed artifact, and listing it would overstate what a consumer
+                actually resolves.
+            -->
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <version>2.9.1</version>
+                <executions>
+                    <execution>
+                        <id>cyclonedx-sbom</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>makeBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <projectType>library</projectType>
+                    <schemaVersion>1.6</schemaVersion>
+                    <outputFormat>json</outputFormat>
+                    <includeBomSerialNumber>false</includeBomSerialNumber>
+                    <!--
+                        v0.12 S3 — defaults to TRUE, and that default silently removed the SBOM
+                        from exactly the build that matters. `skipNotDeployed` skips the goal when
+                        a module skips `deploy`, and central-publishing-maven-plugin declares
+                        <extensions>true</extensions>, which sets `maven.deploy.skip` because it
+                        replaces the deploy step with its own upload. So `mvn -P release verify`
+                        produced eleven signed artifacts and ZERO SBOMs, while the CI SBOM gate —
+                        which runs the ordinary build, where nothing skips deploy — stayed green.
+
+                        A gate that is green about a path it does not cover is the failure mode
+                        this whole stream exists to remove, so the release-readiness gate now
+                        asserts the SBOM's presence and signature on the release build too.
+
+                        Found by running `mvn -P release verify` against an ephemeral GPG key
+                        rather than by assuming the two plugins compose.
+                    -->
+                    <skipNotDeployed>false</skipNotDeployed>
+                    <!--
+                        The scope set is written out even where it matches today's plugin
+                        defaults. For an audit artifact, WHICH scopes an SBOM covers is a
+                        decision someone should be able to read, and leaving it implicit would
+                        let a future plugin default silently redefine what the published SBOM
+                        claims. includeSystemScope is deliberately NOT among them: system scope
+                        is a legacy Maven feature, `<scope>system</scope>` appears nowhere in
+                        this reactor, and naming it would be stating a default about something
+                        that does not exist.
+                    -->
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeProvidedScope>true</includeProvidedScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeTestScope>false</includeTestScope>
+                </configuration>
+            </plugin>
+        </plugins>
     </build>
 
     <profiles>
@@ -193,6 +510,145 @@
                                 </configuration>
                             </execution>
                         </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <!--
+            v0.12 Stream B S3 — everything a Maven Central release needs, and NOTHING that the
+            ordinary build touches. Activated only by `-P release`.
+
+            The isolation is not tidiness. central-publishing-maven-plugin declares
+            <extensions>true</extensions>, which makes it TAKE OVER the `deploy` phase: declared
+            outside this profile it would hijack the SNAPSHOT publish that every push to
+            development/* performs against GitHub Packages, and the first symptom would be
+            downstream consumers silently stopping to receive snapshots. So the two channels stay
+            separate by construction — `mvn deploy` is GitHub Packages via <distributionManagement>,
+            `mvn -P release deploy` is Central.
+
+            OSSRH was shut down on 2025-06-30. nexus-staging-maven-plugin and the oss.sonatype.org
+            URLs it needs no longer exist; anything describing that flow is describing a dead
+            system.
+        -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- Central requires a sources jar for every published coordinate. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        Central requires a javadoc jar to EXIST; it does not inspect its quality.
+                        doclint is therefore off and failOnError false, deliberately and with the
+                        cost stated: this tree currently has ~160 doclint findings across spi, core
+                        and community (missing @param/@return, heading sequence), so a strict run
+                        would block every release on documentation debt that no consumer is waiting
+                        for. Measured before choosing, not assumed — with doclint off the jar builds
+                        clean. Tightening this is quality work with its own slice; coupling it to
+                        the ability to publish would be the wrong dependency.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <failOnError>false</failOnError>
+                            <quiet>true</quiet>
+                        </configuration>
+                    </plugin>
+
+                    <!--
+                        Central verifies a detached GPG signature on every file it accepts — jar,
+                        sources, javadoc and pom alike.
+
+                        No `gpgArguments` here, and the absence is the point. This block used to
+                        pass a loopback pinentry argument, described as "what lets the passphrase
+                        arrive from the environment instead of a terminal prompt". The first dry run
+                        of the release workflow showed, in the plugin's own debug output, that it was
+                        dead in both directions. With a passphrase available the plugin ALREADY
+                        emits the loopback pinentry argument and a passphrase file descriptor of its
+                        own accord, so ours was a duplicate. Without one it appends its own pinentry
+                        mode of `error` AFTER our argument, and gpg honours the last occurrence, so
+                        ours was overridden by the very failure it claimed to prevent.
+
+                        Configuration that is redundant when it works and ignored when it does not
+                        is worse than none, because it reads as the thing that makes signing work.
+
+                        What actually carries the passphrase is the environment variable named by
+                        `passphraseEnvName`, and that name is chosen by actions/setup-java's
+                        `gpg-passphrase` input, not by this POM. See the comment on that input in
+                        .github/workflows/release.yml: the two have to agree, and when they did not,
+                        the failure surfaced as "gpg: signing failed: No pinentry" — a message about
+                        the agent that says nothing about a name mismatch.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <version>3.2.8</version>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                        autoPublish=false is not a placeholder to flip later without thinking. A
+                        deployment sitting in the portal can be DROPPED; a published one cannot be
+                        touched, ever. The first release goes through manual review of the portal's
+                        validation results, and waitUntil=validated makes the build block until
+                        there is something to review rather than exiting green on an upload.
+                    -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.11.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>validated</waitUntil>
+                            <!--
+                                No exclusions. exeris-kernel-tck used to be held back here, and the
+                                comment that stood in this place said the reason was a defect rather
+                                than a policy: the module had only src/test, so its published main
+                                jar was 7 files of META-INF while all 492 real classes shipped under
+                                the `tests` classifier, and Central requires a sources jar and a
+                                javadoc jar per artefact that empty compile roots cannot produce.
+
+                                That defect is fixed. The Abstract*Tck classes are the module's
+                                published API and now live in src/main, so it produces an ordinary
+                                jar with an ordinary sources and javadoc jar beside it, and the
+                                release-readiness gate verifies all three like every other
+                                coordinate.
+                            -->
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

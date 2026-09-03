@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.scheduling;
 
@@ -56,7 +52,12 @@ final class CommunitySystemSchedulerClock implements CommunitySchedulerClock {
         }
     }
 
+    /**
+     * Waits for the next {@link #signal()}, looping on the counter so a spurious wake-up does not
+     * read as a delivery.
+     */
     @Override
+    @SuppressWarnings("java:S2189") // the loop ends on signals != seen; await() releases the lock a signal() needs
     public void awaitSignal() throws InterruptedException {
         long seen = signals;
         while (signals == seen) {

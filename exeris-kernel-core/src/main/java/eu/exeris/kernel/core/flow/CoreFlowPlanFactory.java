@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -37,7 +33,17 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog;
     private final CoreMigrationRegistry migrationRegistry;
     private final Runnable onPlanCompiled;
-    private final ConcurrentMap<String, List<FlowTransitionDescriptor>> transitionsByDefinition =
+    /**
+     * Edges handed over from {@link Builder#build()} to {@link #compile}, keyed by {@code (name,
+     * version)} like {@link #planCatalog} — not by name. Keyed by name alone, building two versions
+     * of one definition before compiling either made the second build overwrite the first's edges
+     * and the first compile consume the entry, so the second plan compiled with none. That is not a
+     * stuck saga: a step with no outgoing transition falls back to {@code index + 1}, so the loss is
+     * invisible on a linear flow and silently takes the wrong branch on any definition whose
+     * declared edge differs from the sequential default. Declaring two versions and then registering
+     * them is exactly what ADR-064 coexistence asks an application to do.
+     */
+    private final ConcurrentMap<PlanKey, List<FlowTransitionDescriptor>> transitionsByDefinition =
             new ConcurrentHashMap<>();
 
     /* default */ CoreFlowPlanFactory(FlowEngineConfig config, CoreFlowRegistry registry,
@@ -62,7 +68,13 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         try {
             String definitionName = validatedDefinitionName(definition);
             FlowStepDescriptor[] steps = validatedSteps(definition);
-            List<List<FlowTransitionDescriptor>> buckets = transitionBuckets(definitionName, steps.length);
+            // Keyed by (name, version) since ADR-064: registering a changed definition must not
+            // evict the one every in-flight saga parked under. The ceiling therefore bounds retained
+            // versions as well as distinct definitions — an application that bumps on every deploy
+            // and never retires an old version will reach it. The pending-edge map is keyed the same
+            // way, so two versions built before either is compiled cannot consume each other's edges.
+            PlanKey key = new PlanKey(definitionName, definition.version());
+            List<List<FlowTransitionDescriptor>> buckets = transitionBuckets(key, steps.length);
             FlowTransitionDescriptor[][] adjacency = buildAdjacency(buckets, steps.length);
             int[] nextSteps = buildNextSteps(buckets, steps.length);
 
@@ -75,11 +87,6 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
                     definition.timeoutDurationNanos()
             );
             registry.replace(steps, adjacency);
-            // Keyed by (name, version) since ADR-064: registering a changed definition must not
-            // evict the one every in-flight saga parked under. The ceiling therefore bounds retained
-            // versions as well as distinct definitions — an application that bumps on every deploy
-            // and never retires an old version will reach it.
-            PlanKey key = new PlanKey(definitionName, definition.version());
             synchronized (planCatalog) {
                 if (!planCatalog.containsKey(key)
                         && planCatalog.size() >= config.maxExecutionPlans()) {
@@ -88,7 +95,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
                 }
                 planCatalog.put(key, plan);
             }
-            transitionsByDefinition.remove(definitionName);
+            transitionsByDefinition.remove(key);
             onPlanCompiled.run();
             return plan;
         } catch (IllegalArgumentException | IllegalStateException | IndexOutOfBoundsException ex) {
@@ -115,8 +122,8 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         return steps;
     }
 
-    private List<List<FlowTransitionDescriptor>> transitionBuckets(String definitionName, int stepCount) {
-        List<FlowTransitionDescriptor> transitions = transitionsByDefinition.getOrDefault(definitionName, List.of());
+    private List<List<FlowTransitionDescriptor>> transitionBuckets(PlanKey key, int stepCount) {
+        List<FlowTransitionDescriptor> transitions = transitionsByDefinition.getOrDefault(key, List.of());
         if (config.maxTransitions() > 0 && transitions.size() > config.maxTransitions()) {
             throw new IllegalArgumentException("FlowDefinition exceeds maxTransitions: " + transitions.size());
         }
@@ -182,6 +189,7 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         private final List<FlowTransitionDescriptor> transitions = new ArrayList<>();
         private long timeoutDurationNanos = config.timeoutDurationNanos();
         private int maxRetries;
+        private int version = FlowDefinition.INITIAL_VERSION;
 
         private Builder(String definitionName) {
             this.definitionName = Objects.requireNonNull(definitionName, "definitionName");
@@ -225,14 +233,28 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         }
 
         @Override
+        public FlowDefinitionBuilder version(int version) {
+            // Validated here rather than at build(): a caller that passes 0 finds out at the call
+            // site that named the version, not three chained methods later.
+            if (version < FlowDefinition.INITIAL_VERSION) {
+                throw new IllegalArgumentException(
+                        "flow definition version must be >= " + FlowDefinition.INITIAL_VERSION
+                                + ", got: " + version);
+            }
+            this.version = version;
+            return this;
+        }
+
+        @Override
         public FlowDefinition build() {
             FlowDefinition definition = new FlowDefinition(
                     definitionName,
+                    version,
                     List.copyOf(steps),
                     timeoutDurationNanos,
                     maxRetries
             );
-            transitionsByDefinition.put(definitionName, List.copyOf(transitions));
+            transitionsByDefinition.put(new PlanKey(definitionName, version), List.copyOf(transitions));
             return definition;
         }
     }

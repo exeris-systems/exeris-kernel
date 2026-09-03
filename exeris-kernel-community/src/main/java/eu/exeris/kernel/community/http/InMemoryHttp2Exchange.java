@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -19,7 +15,6 @@ import eu.exeris.kernel.spi.http.HttpResponseEncodingContext;
 import eu.exeris.kernel.spi.http.HttpTypedResponse;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -67,7 +62,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
         }
         HttpResponseEncodingContext context = new HttpResponseEncodingContext(request, allocator);
         HttpEncodedBody encodedBody = encoder.encode(typedResponse.payload(), context);
-        List<HttpHeader> mergedHeaders = mergeHeaders(typedResponse.headers(), encodedBody.headers());
+        List<HttpHeader> mergedHeaders =
+                CommunityHttpResponseHeaders.merge(typedResponse.headers(), encodedBody.headers());
         boolean responseCaptured = false;
         try { //NOPMD UseTryWithResources — response body ownership transfers on success; close only on failure
             respond(new HttpResponse(typedResponse.status(), request.version(), mergedHeaders, encodedBody.body()));
@@ -77,19 +73,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
                 encodedBody.body().close();
             }
         }
-    }
-
-    private static List<HttpHeader> mergeHeaders(List<HttpHeader> typedHeaders, List<HttpHeader> encodedHeaders) {
-        if (typedHeaders.isEmpty()) {
-            return encodedHeaders;
-        }
-        if (encodedHeaders.isEmpty()) {
-            return typedHeaders;
-        }
-        List<HttpHeader> merged = new ArrayList<>(typedHeaders.size() + encodedHeaders.size());
-        merged.addAll(typedHeaders);
-        merged.addAll(encodedHeaders);
-        return merged;
     }
 
     /* default */ boolean isResponded() {

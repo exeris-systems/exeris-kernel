@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.telemetry;
 
@@ -12,6 +8,7 @@ import eu.exeris.kernel.community.telemetry.Slf4jTelemetryLogLevelResolver.LogLe
 import eu.exeris.kernel.spi.config.KernelProfile;
 import eu.exeris.kernel.spi.exceptions.ExceptionDisclosure;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.telemetry.KernelEvent;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import org.slf4j.Logger;
@@ -60,7 +57,7 @@ import java.util.function.Supplier;
 })
 public final class Slf4jTelemetrySink implements TelemetrySink {
 
-    private static final String DEFAULT_CODE = "EX-UNK-0000";
+    private static final String DEFAULT_CODE = KernelErrorCodes.EX_UNK_0000;
     private static final String SINK_NAME = "ExerisCommunity/Slf4jTelemetrySink";
 
     private final LogAdapter logger;

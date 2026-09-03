@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.config;
 
@@ -102,7 +98,9 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      */
     private final Map<String, String> immutableBaselines = new HashMap<>();
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile WatchService activeWatchService;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread       watcherVt;
 
     // =========================================================================
@@ -424,6 +422,21 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * For each {@code @Immutable} key matching the changed file, refuses any value change:
      * the sealed boot-time value is preserved and an {@code EX-CFG-1004} audit event is
      * emitted. First sighting of an any-file guard seeds the baseline silently.
+     *
+     * <p><strong>One refusal per detection, not per mutation.</strong> Two things make the count
+     * unusable as an attempt count, and only the second is deterministic. A single logical edit is
+     * several filesystem modifications — {@code Files.writeString} with
+     * {@code TRUNCATE_EXISTING} is a truncate and a write — which {@code WatchService} usually but
+     * not always merges into one event: measured over 20 runs, 19 delivered one
+     * {@code ENTRY_MODIFY} with {@code count()==2} and one delivered two distinct events, and this
+     * loop dispatches per event. More importantly the baseline is deliberately never updated, so
+     * any later change to an <em>unrelated</em> key in the same file re-audits the sealed one for
+     * as long as the file holds the rejected value — measured directly: one refusal after the
+     * mutation, two after a subsequent edit that left the sealed key untouched on disk.
+     *
+     * <p>The intended reading is therefore a state and not a tally: the sealed key is still wrong
+     * on disk. Whether that should be coalesced is an open question, not a settled design — see
+     * {@code docs/rfc/RFC-2026-09-03-immutable-refusal-event-granularity.md}.
      */
     private void refuseImmutableReloads(
             Path filePath,

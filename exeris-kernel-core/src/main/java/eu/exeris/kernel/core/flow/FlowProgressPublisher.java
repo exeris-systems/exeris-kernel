@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -64,7 +60,15 @@ final class FlowProgressPublisher {
     }
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    private int resolveFlowProgressOrdinal(EventEngine eventEngine) {
+    /**
+     * Package-private so the give-up branch can be driven directly. It needs only an
+     * {@link EventEngine}, whereas {@link #publishProgress} needs a live {@code RuntimeFlowInstance}
+     * — and the branch worth testing is the one that decides, not the one that publishes.
+     *
+     * @param eventEngine the engine whose registry the ordinal is claimed in
+     * @return the claimed ordinal, or {@code -1} once publication is permanently disabled
+     */
+    /* default */ int resolveFlowProgressOrdinal(EventEngine eventEngine) {
         int cached = flowProgressOrdinal.get();
         if (cached != FLOW_PROGRESS_ORDINAL_UNRESOLVED) {
             return cached;
@@ -97,6 +101,13 @@ final class FlowProgressPublisher {
                 }
             }
 
+            // Emitted at the site that makes the decision, and only on the transition: the CAS-free
+            // path above returns the cached sentinel, so a per-call emit would fire on every
+            // terminal step for the life of the process. Without this the give-up is invisible —
+            // a subscriber to FlowProgress just never hears anything, which reads the same as a
+            // system where no flow terminated.
+            FlowProgressDisabledEvent.emit(
+                    FLOW_PROGRESS_EVENT_TYPE, baseOrdinal, FLOW_PROGRESS_ORDINAL_PROBE_LIMIT);
             flowProgressOrdinal.set(FLOW_PROGRESS_ORDINAL_DISABLED);
             return FLOW_PROGRESS_ORDINAL_DISABLED;
         }

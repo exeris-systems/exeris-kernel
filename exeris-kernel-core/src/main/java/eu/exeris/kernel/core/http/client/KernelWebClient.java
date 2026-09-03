@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.client;
 
@@ -29,8 +25,11 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -113,12 +112,15 @@ public final class KernelWebClient {
     private final HttpResponseBodyDecoderRegistry responseDecoders;
     private final HttpClientRequestEnricher enricher;
     private final HttpRetryPolicy retryPolicy;
+    private final String authority;
 
     /**
      * Creates a client with explicit enricher composition (ADR-032) and retry
      * policy (ADR-045).
      *
-     * @param engine           a started client engine targeting a single host
+     * @param engine           a started client engine; the peer comes from the request's
+     *                         authority, or from the engine's configured default when it
+     *                         names none (ADR-074)
      * @param allocator        the kernel memory allocator (used by the resolved encoder)
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
@@ -132,19 +134,33 @@ public final class KernelWebClient {
             HttpResponseBodyDecoderRegistry responseDecoders,
             HttpClientRequestEnricher enricher,
             HttpRetryPolicy retryPolicy) {
+        this(engine, allocator, requestEncoders, responseDecoders, enricher, retryPolicy, null);
+    }
+
+    private KernelWebClient(
+            HttpClientEngine engine,
+            MemoryAllocator allocator,
+            HttpRequestBodyEncoderRegistry requestEncoders,
+            HttpResponseBodyDecoderRegistry responseDecoders,
+            HttpClientRequestEnricher enricher,
+            HttpRetryPolicy retryPolicy,
+            String authority) {
         this.engine = Objects.requireNonNull(engine, "engine must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.requestEncoders = Objects.requireNonNull(requestEncoders, "requestEncoders must not be null");
         this.responseDecoders = Objects.requireNonNull(responseDecoders, "responseDecoders must not be null");
         this.enricher = Objects.requireNonNull(enricher, "enricher must not be null");
         this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy must not be null");
+        this.authority = authority;
     }
 
     /**
      * Convenience constructor — explicit enricher, defaults the retry policy to
      * {@link HttpRetryPolicy#none()} (preserves the ADR-026 no-implicit-retry surface).
      *
-     * @param engine           a started client engine targeting a single host
+     * @param engine           a started client engine; the peer comes from the request's
+     *                         authority, or from the engine's configured default when it
+     *                         names none (ADR-074)
      * @param allocator        the kernel memory allocator (used by the resolved encoder)
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
@@ -164,7 +180,9 @@ public final class KernelWebClient {
      * {@link HttpClientRequestEnricher#noop()} and the retry policy to
      * {@link HttpRetryPolicy#none()}.
      *
-     * @param engine           a started client engine targeting a single host
+     * @param engine           a started client engine; the peer comes from the request's
+     *                         authority, or from the engine's configured default when it
+     *                         names none (ADR-074)
      * @param allocator        the kernel memory allocator
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
@@ -179,17 +197,94 @@ public final class KernelWebClient {
     }
 
     /**
+     * Returns a client that addresses {@code authority}, sharing this one's engine, allocator,
+     * codecs, enricher and retry policy.
+     *
+     * <p>ADR-074 put the peer on the request so that one engine can serve many of them; this is the
+     * method that makes that reachable from the typed surface, which until now could only ever send
+     * to the engine's configured default. A view rather than four addressed overloads: the peer is
+     * usually fixed for a run of calls, and {@code client.withAuthority(payments).get(...)} keeps
+     * the verb methods to one shape each. The name mirrors {@link HttpRequest#withAuthority(String)}
+     * deliberately — same meaning, same derived-copy shape, one vocabulary rather than two.
+     *
+     * <p>No validation here on purpose. The authority's shape is checked in exactly two places —
+     * {@code HttpConfig} at construction for the configured default, and the engine at send for a
+     * request — and a third copy of that rule inside a façade would be the fourth hand-synced
+     * version of it. The engine's refusal already names the mistake.
+     *
+     * @param authority peer as {@code host:port} (IPv6 bracketed), or {@code null} to fall back to
+     *                  the engine's configured default
+     * @return a client bound to that peer, or {@code this} when it is already the bound one
+     * @since 0.12.0
+     */
+    public KernelWebClient withAuthority(String authority) {
+        if (Objects.equals(this.authority, authority)) {
+            return this;
+        }
+        return new KernelWebClient(engine, allocator, requestEncoders, responseDecoders,
+                enricher, retryPolicy, authority);
+    }
+
+    /**
      * Issues an HTTP {@code GET} against {@code path} and deserialises the
      * response body as {@code responseType}.
      *
      * @param <T>          response payload type
-     * @param path         request-target path (relative to the engine's target host)
+     * @param path         request-target path, relative to the addressed peer (see {@link #withAuthority(String)})
      * @param responseType target type, or {@code Void.class} to discard
      * @return the deserialised payload, or {@code null} when {@code responseType == Void.class}
      * @throws WebClientException on any non-2xx response
      */
     public <T> T get(String path, Class<T> responseType) {
         return execute(HttpMethod.GET, path, null, responseType);
+    }
+
+    /**
+     * Issues an HTTP {@code GET} against {@code path} and deserialises a JSON array
+     * response as a {@code List<T>}.
+     *
+     * <p>{@link #get(String, Class)} cannot express this. Its only type handle is a
+     * {@link Class}, and {@code List.class} is raw — it tells the decoder nothing about the
+     * element type, so a JSON array comes back as a list of whatever the decoder's default
+     * mapping produces (a {@code LinkedHashMap} per element, for the JSON driver) and the
+     * first element access fails with a {@link ClassCastException} that names a type the
+     * caller never wrote. An array class carries its component type, so
+     * {@code T[].class} is a handle the existing decoder registry can honour: this method
+     * decodes into an array and wraps it.
+     *
+     * <p>The returned list wraps the decoded array rather than copying it — nothing else
+     * holds that array — and is unmodifiable. Element order is the wire order. A
+     * {@code null} element is passed through rather than rejected: what the peer sent is
+     * what the caller is told it sent.
+     *
+     * <p>Body framing is unchanged from {@link #get(String, Class)}: an empty response body
+     * is an error, not an empty list. A peer with no items is expected to send {@code []}.
+     *
+     * @param <T>         element type
+     * @param path        request-target path, relative to the addressed peer (see {@link #withAuthority(String)})
+     * @param elementType the array's component type; must not be null
+     * @return the decoded elements; never {@code null}, possibly empty
+     * @throws WebClientException on any non-2xx response, or when the body does not decode
+     * @since 0.12.0
+     */
+    public <T> List<T> getList(String path, Class<T> elementType) {
+        Objects.requireNonNull(elementType, "elementType must not be null");
+        T[] decoded = execute(HttpMethod.GET, path, null, arrayTypeOf(elementType));
+        return decoded == null ? List.of() : Collections.unmodifiableList(Arrays.asList(decoded));
+    }
+
+    // Diagnostics only. getName() renders an array as its JVM encoding ([Lcom.example.Widget;),
+    // which is the shape getList() puts on this path; the canonical name reads as Widget[]. It is
+    // null for an anonymous or local class, so the JVM name remains the fallback.
+    private static String typeName(Class<?> type) {
+        return Objects.requireNonNullElse(type.getCanonicalName(), type.getName());
+    }
+
+    // Array.newInstance is the only way to name T[] from a Class<T>; the cast is sound because
+    // a zero-length array of T has exactly Class<T[]> as its class.
+    @SuppressWarnings("unchecked")
+    private static <T> Class<T[]> arrayTypeOf(Class<T> elementType) {
+        return (Class<T[]>) Array.newInstance(elementType, 0).getClass();
     }
 
     /**
@@ -240,7 +335,15 @@ public final class KernelWebClient {
         while (true) {
             // ADR-045: the typed body is re-encoded each attempt; no LoanedBuffer is retained across
             // attempts, so the codec path's zero-leak invariant is untouched by retry.
-            HttpRequest request = enricher.enrich(buildRequest(method, path, requestBody));
+            // ADR-074 decision 5: authority, THEN enrich, THEN send. The engine would substitute
+            // its default inside send(), which is strictly after enrichment — so an enricher binding
+            // an outbound credential's audience to the peer (ADR-040) would observe null every time.
+            // Resolving it here is what makes that decision true of the only path that exists.
+            HttpRequest addressed = buildRequest(method, path, requestBody).withAuthority(authority);
+            if (addressed.authority() == null) {
+                addressed = addressed.withAuthority(engine.defaultAuthority());
+            }
+            HttpRequest request = enricher.enrich(addressed);
 
             HttpResponse response;
             try {
@@ -330,7 +433,7 @@ public final class KernelWebClient {
             }
             if (responseBytes.length == 0) {
                 throw new WebClientException(status, "",
-                        "Empty response body cannot deserialize to " + responseType.getName(), null);
+                        "Empty response body cannot deserialize to " + typeName(responseType), null);
             }
             return decodeSuccessBody(response, body, responseBytes, responseType, status);
         } finally {
@@ -356,7 +459,7 @@ public final class KernelWebClient {
         if (decoder == null) {
             throw new WebClientException(status,
                     new String(responseBytes, StandardCharsets.UTF_8),
-                    "No response body decoder for type " + responseType.getName()
+                    "No response body decoder for type " + typeName(responseType)
                             + " (content-type=" + contentType + ")", null);
         }
         // SPI decoder is intentionally generics-free; cast confined to this single site (ADR-034 §3).
@@ -369,7 +472,7 @@ public final class KernelWebClient {
         } catch (RuntimeException ex) {
             throw new WebClientException(status,
                     new String(responseBytes, StandardCharsets.UTF_8),
-                    "Failed to deserialize response of type " + responseType.getName(), ex);
+                    "Failed to deserialize response of type " + typeName(responseType), ex);
         }
     }
 

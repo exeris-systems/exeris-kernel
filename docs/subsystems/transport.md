@@ -31,12 +31,32 @@ off-heap `LoanedBuffer` slabs via Panama FFM — no JVM heap contact on the ingr
 
 ## Connection ceiling
 
-`TransportConfig.maxConnections()` (`http.maxConnections`, default `HttpConfig.DEFAULT_MAX_CONNECTIONS`
-= 1000) is a hard cap on **concurrent connections across all reactors**, enforced at accept time. When
-it is reached, `NativeTcpCarrier` accepts the connection at TCP level and immediately closes it.
+`TransportConfig.maxConnections()` is a hard cap on **concurrent connections across all reactors**,
+enforced at accept time in one place, `NativeTcpCarrier.tryReserveConnectionSlot`. When it is reached,
+the carrier accepts the connection at TCP level and immediately closes it.
+
+**Which key sets it depends on which carrier you are running, and setting the wrong one is silent**
+(ADR-081):
+
+| Carrier | Key | Default | When it exists |
+|---|---|---|---|
+| HTTP listener | `http.maxConnections` | 4096 | whenever the HTTP subsystem is enabled — the carrier almost every deployment runs |
+| Standalone transport | `transport.maxConnections` | 4096 | only when `transport.mode` is set; the subsystem resolves to `DISABLED` otherwise |
+
+The two defaults were 1000 and 4096 until v0.12 — one field, one enforcement point, two numbers, no
+stated reason. ADR-081 unified them at 4096, the value the project's own benchmark runs had to raise
+the HTTP side to.
+
+**Check `ulimit -n` against this number.** The cap can only refuse cleanly while it is the ceiling
+reached *first*. Above the process file-descriptor limit — commonly 1024, below this default — the
+operating system's limit is reached first, and its failure mode is worse: see §"Accept-path failure
+modes".
 
 What a client observes: the socket opens and then dies, with no HTTP response — a transport-level
-failure, not a status code. There is no way for the client to distinguish this from a network fault.
+failure, not a status code, and indistinguishable from a network fault. **The stream admission
+ceiling below behaves the same way**: a shed stream is closed (FIN/RST on TCP, `STOP_SENDING` on
+QUIC), not answered. No server path in the kernel refuses with a status; if that is ever wanted it is
+a third mechanism above the connection layer, not a replacement for either of these (ADR-081 §2).
 
 Two properties make the ceiling easy to reach at a request rate that feels comfortable. It counts
 **concurrent connections, not rate**, so a client whose connection pool overlaps with a draining
@@ -51,9 +71,102 @@ Refusals are visible in two places, and were visible in neither before v0.11:
 - `eu.exeris.kernel.transport.CommunityConnectionRefused` is emitted per refusal, carrying the active
   count, the configured ceiling, and a cumulative total whose slope distinguishes a blip from a wall.
 
-Whether an accept-time cap is the right mechanism — as opposed to admitting and shedding at request
-level, where the response can carry a status — and whether 1000 is the right default, are open
-questions tracked in `docs/ROADMAP.md`. The behaviour above is unchanged; only its visibility is new.
+## Stream admission ceiling
+
+`TransportConfig.maxActiveStreams()` (`transport.paqs.maxActiveStreams`, default
+`TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS` = 5000) is a hard cap on **concurrently admitted
+streams per engine**, enforced by `AdmissionController.admit` after the memory-pressure decision and
+before a virtual thread is spawned. Over the cap the decision becomes `SHED_CAPACITY` whatever the
+priority and whatever the watermark says.
+
+This is a different bound from the connection ceiling above, and one is not derivable from the
+other: an HTTP/1 connection carries one stream, an HTTP/2 connection carries many.
+
+What a client observes: `StreamLoadShedder` closes the stream and emits
+`eu.exeris.kernel.transport.StreamShed` carrying the priority, the decision (`SHED_CAPACITY` rather
+than `SHED_MEMORY`) and the active count — so a capacity shed is distinguishable in JFR from a
+memory-pressure shed, which is the distinction that says whether raising the ceiling is the right
+response.
+
+**What the values mean** (the classification is ADR-071's):
+
+| Value | Meaning |
+|:--|:--|
+| `> 0` | the ceiling, as given |
+| `-1` (`TransportConfig.UNBOUNDED_ACTIVE_STREAMS`) | no stream-count ceiling |
+| `0`, other negatives | **refused at startup**, by `TransportConfig` and again by `AdmissionController` |
+
+`-1` removes the count cap, not admission control: the memory-pressure arbiter still decides every
+stream first, so an engine configured this way still sheds under watermark pressure. What it gives
+up is the ceiling that sheds *regardless* of memory pressure — the point for a JVM-controlled
+deployment measuring where saturation actually falls, and a foot-gun for a shared one. `0` is
+refused rather than read as "off" because an engine that admits nothing serves nothing.
+
+Both construction sites read the key: the transport subsystem and the HTTP listener, which builds
+its own `TransportConfig`. A key honoured on only one of them would apply to a standalone carrier
+and not to the server most deployments run.
+
+**Not a knob:** `PaqsScheduler.SPIN_THRESHOLD` has twice been catalogued as a PAQS operational
+limit. It is reachable only from `close()`, decides nothing about which streams are served, and
+bounds only how the drain spends CPU while it waits — under a drain deadline that is itself
+deliberately fixed. It stays a constant.
+
+## Idle connection reclamation
+
+`TransportConfig.idleTimeoutMillis()` (`transport.idleTimeoutMillis`, and `http.idleTimeoutMillis`
+reaching the same carrier through `HttpConfig`, default `HttpConfig.DEFAULT_IDLE_TIMEOUT_MS` =
+30 000) closes a connection that has moved no bytes for that long.
+
+**What the values mean** (ADR-071's capacity/timeout class):
+
+| Value | Meaning |
+|:--|:--|
+| `> 0` | reclaim after this many milliseconds without activity |
+| `0` | reclamation disabled — connections are held until the peer or the application closes them |
+| negatives | **refused at startup** by `HttpConfig` validation |
+
+**What counts as activity is deliberately asymmetric between the two directions**, and the
+asymmetry is the point rather than an oversight:
+
+| Direction | Refreshes the stamp | Does not |
+|:--|:--|:--|
+| ingress | the application calling `read()` | bytes merely *arriving* in the inbound queue |
+| egress | `write()` / `queueWrite()`, **and** bytes actually leaving the socket — the direct write, the reactor's deferred drain, and the TLS drain | — |
+
+On ingress, only an attempted read counts. A peer that opens a connection and sends nothing never
+causes one, so the same stamp that expires an idle keep-alive also bounds a slow-loris hold: a
+handler parked in `read()` for a body that never arrives has not refreshed its stamp since the read
+began. **Stamping on arrival would defeat exactly that** — dribbling one byte per second is what a
+slow-loris does, and a connection nobody is reading is not doing work.
+
+On egress the opposite is required: bytes leaving *are* the server doing work for this connection,
+so a large response draining to a slow client keeps its own connection alive rather than being cut
+off mid-transfer. `write()` reaching `queueWrite` only on the TLS branch is what made this wrong in
+the first cut — plaintext responses, which is `CommunityHttpExchange`'s path and the default one,
+moved bytes without counting, and idle reclamation became a property of whether TLS was configured.
+
+**The sweep is per reactor and rides a wake-up that was going to happen anyway.**
+`NativeTcpIdleReaper` runs inside the reactor's select loop after the selected keys are dispatched
+— no timer thread, no scheduled task, and no state shared between reactors. It is gated to
+`idleTimeout / 4` clamped to [250 ms, 5 s], because a reactor returns from `select` thousands of
+times a second under load and an ungated O(keys) walk would put a scan of the whole connection set
+on the hot path to enforce a limit measured in seconds. The same cadence shape, for the same
+reason, governs `CommunityTenantPoolRegistry`'s pool reclaim.
+
+**Teardown is abortive**, through the same `closeKeyStream` path as a dispatch fault. A graceful
+close waits for queued egress to drain, and a peer quiet enough to be reclaimed is exactly the peer
+that may never drain it.
+
+What an operator observes: `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout`, carrying
+the stream id, the reactor index, the observed idle span and the configured timeout. Both spans are
+on the event because the ratio is the interesting quantity — idle spans clustered just past the
+limit mean a fleet being trimmed on a threshold, spans minutes past it mean genuinely dead peers.
+
+> **This limit did nothing before 0.12.0.** It was read from configuration, validated, carried
+> through `HttpConfig` into `TransportConfig` and rendered by `toString()`, and never compared to
+> anything: no code read `idleTimeoutMillis()` outside construction. A knob that is carried but
+> unconsumed is worse than a missing one, because the missing one is discoverable — the operator
+> who sets it sees it echoed back and concludes it works.
 
 ## Accept-path failure modes
 
@@ -66,15 +179,52 @@ client: the socket opens and dies. They are different in kind, and the kernel no
 | Cause | the connection ceiling was reached | something threw while configuring the channel, resolving the peer, building the stream, or registering it |
 | Nature | a **policy** decision at a known limit | a **defect** — allocator failure, TLS engine that would not initialise, registry inconsistency |
 | In `totalRejected` | yes | **no** |
+| Counted on `TransportStats` | `totalRejected` | `acceptFaults` (since 0.12.0) |
 
 A setup fault is deliberately **not** counted as a refusal. `totalRejected` means work the engine
 *declined*, and a setup that broke declined nothing. Folding the two together would leave an operator
 reading a spike unable to tell a capacity problem from a bug — the one distinction that changes what
-they do next.
+they do next. Until 0.12.0 the fault count reached an operator only inside the JFR payload, so the two
+modes were documented together but not *observable* together; `TransportStats.acceptFaults` closes
+that (ADR-081 §5). A driver with no accept-setup path reports `0`.
 
 Both paths recover: the accept loop continues. That is correct for a per-connection failure, and
 making a setup fault fatal would trade a silent drop for an outage. What changed is only that neither
 is silent.
+
+**A third mode is neither of these, and since 0.12.0 it recovers.** An `IOException` from `accept()`
+itself — how file-descriptor exhaustion (`EMFILE`) surfaces — is the *listener* failing to produce a
+connection, not one connection failing to be set up. Until 0.12.0 it was fatal: `runAcceptorLoop`
+called `handleAsyncFailure` and returned, so a process that touched its `ulimit -n` once needed a
+restart to serve again, from a condition that clears on its own as connections close.
+
+| | Accept retry |
+|---|---|
+| Event | `CommunityAcceptRetry` |
+| Cause | `accept()` itself threw — descriptor exhaustion, an aborted connection |
+| Nature | a **transient** condition affecting the listener rather than a connection |
+| Response | pause and try again; `25ms × streak`, capped at 1s |
+| Bound | 64 consecutive failures are retried; the 65th takes the fatal path |
+
+**Every `IOException` is retried rather than a list of transient ones**, and that is deliberate. Java
+offers no typed signal — `EMFILE` arrives as a plain `IOException` — so classifying means matching on
+a message, and a message that does not match on some JDK, OS or locale reinstates the defect. The two
+mistakes are not symmetric: retrying a fatal condition costs a bounded delay before the same outcome,
+while declining to retry a transient one loses the listener. The ceiling does the work classification
+would have done, and the event's streak is what separates one retry from a process that is not
+recovering.
+
+**What ends a streak is an accept that returned a socket**, counted at the accept itself rather than
+inferred from how a pass finished. The distinction is the one descriptor pressure actually produces:
+descriptors free one at a time, so a pass accepts a connection and then throws probing for the next.
+It leaves by the throw, so a streak built from what the pass *returned* would climb to the ceiling
+while the listener was demonstrably still serving. An accept the connection cap then refuses counts
+too — what it witnesses is the listener working, which is a different question from whether the
+connection was served.
+
+The connection ceiling above still asks you to check `ulimit -n`. The cap refusing is the good
+outcome, and the OS limit winning the race is now survivable rather than terminal — but it is still
+the worse of the two.
 
 The fault event carries the exception **class** and never its message, matching
 `CommunityReactorDispatchFault` — a message can carry request-derived text.
@@ -397,18 +547,19 @@ idle connections that used to hold shutdown open.
 
 ## WebSocket / SSE — Design Stance
 
-**Server-Sent Events (SSE) is the kernel's first server-push primitive — decided in [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED), implemented in v0.10.** WebSocket remains unsupported and is a separately-justified follow-up. No server-push existed at TRL-3; this was a deliberate scope constraint, now being lifted SSE-first.
+**Server-Sent Events (SSE) is the kernel's first server-push primitive — decided in [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED), implemented in v0.10.** No server-push existed at TRL-3; this was a deliberate scope constraint, lifted SSE-first and then extended to full duplex by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) in v0.12.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
 | **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. The delivered wire framing is a close-delimited HTTP/1.1 response, not chunked transfer as sketched here before it landed; per-event chunked framing and an HTTP/2 `DATA` path are follow-ups. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
-| **WebSocket** | Deferred — separately-justified follow-up (not milestone-pinned) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Decided separately once a bidirectional/low-latency client-streaming use case is proven; may precede 1.0 but is not pinned to a release milestone (see ADR-043 §What is NOT in scope). |
+| **WebSocket** | ✅ Shipped v0.12 — ratified by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) (ACCEPTED) | Full duplex over the RFC 6455 HTTP/1.1 Upgrade handshake, surfaced as the sibling `WebSocketExchange` SPI. `preview` surface; text frames only on the application side; one virtual thread per connection with no queue in either direction, so backpressure is the socket's. **Extended CONNECT (H2, RFC 8441) is not implemented** — the upgrade is HTTP/1.1 only. The engine is embeddable **and**, since v0.12, bootstrappable: a `websocket` subsystem starts one when `websocket.enabled` is set, which it is not by default (ADR-084 A2). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
-Full-duplex traffic still has no kernel primitive: until WebSocket is decided, a bidirectional
-use case pairs SSE downstream with ordinary requests upstream, or falls back to the **Events
-subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler handles
-priority-based delivery.
+Full-duplex traffic has a kernel primitive since v0.12, on HTTP/1.1 only. A deployment behind a
+proxy that speaks h2 to the kernel has no upgrade path until Extended CONNECT lands, and for that
+case the pre-0.12 shape still applies: SSE downstream with ordinary requests upstream, or the
+**Events subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler
+handles priority-based delivery.
 
 ---
 
@@ -442,6 +593,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | `StreamLifecycleEvent` | `eu.exeris.kernel.transport.StreamLifecycle` | State transitions within a stream lifetime |
 | `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.transport.IngressQueueDepth` | Current queue depth metric |
 | `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
+| `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |
 
 ---
 

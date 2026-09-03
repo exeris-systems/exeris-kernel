@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -100,7 +96,8 @@ public final class CoreFlowEngine implements FlowEngine {
         }
         choreographySubscriptions.clear();
         runtime.close();
-        FlowEngineShutdownEvent.emit(config, runtime.stats(), System.nanoTime() - startNanos);
+        FlowEngineShutdownEvent.emit(config, runtime.stats(),
+                runtime.nonDurableParkedFlows(), System.nanoTime() - startNanos);
     }
 
     @Override

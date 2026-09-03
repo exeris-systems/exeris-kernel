@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -23,6 +19,7 @@ final class DeferredHttpClientEngine implements HttpClientEngine {
     private final HttpConfig config;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile HttpClientEngine delegate;
 
     /* default */ DeferredHttpClientEngine(HttpProvider provider, HttpConfig config) {

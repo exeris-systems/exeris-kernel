@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -16,6 +12,7 @@ import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /* default */ final class CommunityHttp1RequestReader {
@@ -42,8 +39,15 @@ import java.util.List;
         }
 
         long headerStart = requestLineEnd + 2;
+        // One pass yields both: the codec's connection state and this list. It used to be two, and
+        // the bound was the reason the second one was dangerous rather than merely wasteful — the
+        // enforced limit depended on which pass reached it first unless both were handed identical
+        // bounds (ADR-071). A single pass cannot express that mistake, and does not re-materialise
+        // every field to make it.
+        List<HttpHeader> headers = new ArrayList<>();
         long headersEnd = codec.parseHeaders(
-                aggregate.segment(), headerStart, total - headerStart);
+                aggregate.segment(), headerStart, total - headerStart,
+                (name, value) -> headers.add(new HttpHeader(name, value)));
         if (headersEnd < 0) {
             return null;
         }
@@ -53,23 +57,20 @@ import java.util.List;
             return null;
         }
 
-        List<HttpHeader> headers = new ArrayList<>();
-        Http1RequestParser.parseHeaders(
-                aggregate.segment(),
-                headerStart,
-                total - headerStart,
-                (name, value) -> headers.add(new HttpHeader(name, value)));
-
         HttpMethod method = parseMethod(requestLine.method());
         if (method == null) {
             return null;
         }
 
+        // A view, not a copy. HttpRequest documents its header list as immutable, and this one is:
+        // the ArrayList is created here, the visitor that fills it is not retained past the parse
+        // call (Http1Codec#parseHeaders says so), and the only reference left is the view itself.
+        // Should this list ever escape by another route, copy it again.
         return new ReadResult(
             method,
                 requestLine.target(),
                 parseVersion(requestLine.version()),
-                List.copyOf(headers),
+                Collections.unmodifiableList(headers),
                 headersEnd,
                 bodyLength,
                 headersEnd + bodyLength,

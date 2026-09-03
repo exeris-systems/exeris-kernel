@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.telemetry;
 
@@ -31,6 +27,7 @@ public final class JfrCommitGate {
     /** Sentinel used when no committer is installed; always rejects so callers commit inline. */
     private static final CommitSink REJECT_ALL = event -> false;
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private static volatile CommitSink current = REJECT_ALL;
 
     /** Functional view of the active commit destination — avoids a nullable static pointer. */

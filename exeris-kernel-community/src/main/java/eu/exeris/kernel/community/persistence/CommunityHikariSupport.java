@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -13,6 +9,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.HikariPoolMXBean;
 import eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection;
 import eu.exeris.kernel.core.persistence.ConnectionAcquireEvent;
+import eu.exeris.kernel.core.persistence.ConnectionHoldEvent;
 import eu.exeris.kernel.core.persistence.PersistenceErrorTranslator;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
 import eu.exeris.kernel.spi.persistence.EngineStats;
@@ -27,6 +24,9 @@ import java.util.Objects;
 
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 final class CommunityHikariSupport {
+
+    /** Bound only for the synchronous close inside {@link #discardConnection}; see there for why. */
+    private static final ScopedValue<Boolean> DISCARDING = ScopedValue.newInstance();
 
     private final HikariDataSource pool;
 
@@ -132,11 +132,25 @@ final class CommunityHikariSupport {
         Objects.requireNonNull(onClose, "onClose must not be null");
         long startNs = System.nanoTime();
         boolean success = false;
+        // Both discriminators are sampled HERE, at acquire, not at release. A request session is a
+        // ScopedValue and the release can happen on a different thread than the acquire, so reading
+        // either at release would answer a question about the returning thread rather than about the
+        // hold. See ConnectionHoldEvent on why withinRequestScope is not an ownership claim.
+        boolean withinRequestScope = PersistenceSessionBox.currentOrNull() != null;
+        boolean onVirtualThread = Thread.currentThread().isVirtual();
         // The checkout below can park (and unmount) a virtual thread. The JFR event is
         // committed single-phase after it returns — never held across the unmount — to
         // avoid a carrier-bound EventWriter flushing a stale buffer. See ConnectionAcquireEvent.
         try (ConnectionLease lease = ConnectionLease.open(pool)) {
-            JdbcPersistenceConnection connection = lease.transferToJdbc(onClose);
+            long acquiredAtNs = System.nanoTime();
+            // Wrapping onClose rather than widening the signature: JdbcPersistenceConnection.close()
+            // runs it in a finally, so every close path is covered — including the rollback-and-close
+            // one — and the two call sites in CommunityPersistenceEngine stay untouched.
+            JdbcPersistenceConnection connection = lease.transferToJdbc(() -> {
+                ConnectionHoldEvent.commitHold(providerId, tenantKey, withinRequestScope,
+                        onVirtualThread, DISCARDING.orElse(Boolean.FALSE), acquiredAtNs);
+                onClose.run();
+            });
             success = true;
             return connection;
         } finally {
@@ -146,11 +160,18 @@ final class CommunityHikariSupport {
 
     /* default */ void discardConnection(JdbcPersistenceConnection connection) {
         Objects.requireNonNull(connection, "connection must not be null");
-        try (connection) {
-            pool.evictConnection(connection.rawJdbcConnection());
-        } catch (IllegalArgumentException | IllegalStateException _) {
-            // best-effort: connection already detached or pool is shutting down
-        }
+        // An eviction reaches the same close() as a healthy return, and the onClose captured at
+        // acquire cannot see which one it is. The reason is bound for the synchronous close below
+        // rather than threaded through JdbcPersistenceConnection, because the close is on this
+        // thread inside this scope and nothing else needs to know. ScopedValue, not a field on the
+        // connection: no per-connection state to reset, and nothing to leak if evictConnection throws.
+        ScopedValue.where(DISCARDING, Boolean.TRUE).run(() -> {
+            try (connection) {
+                pool.evictConnection(connection.rawJdbcConnection());
+            } catch (IllegalArgumentException | IllegalStateException _) {
+                // best-effort: connection already detached or pool is shutting down
+            }
+        });
     }
 
     private static final class ConnectionLease implements AutoCloseable {

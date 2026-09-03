@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -76,9 +72,37 @@ final class CommunityHttpConfigResolver {
             .orElse(HttpConfig.DEFAULT_MAX_HEADER_SIZE);
         long maxBodyBytes = configProvider.getLong("http.maxRequestBodyBytes")
             .orElse(HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES);
+
+        // Resolved independently of http.maxRequestBodyBytes, which is the point (ADR-071 amendment):
+        // one bounds what this server accepts, the other what this client reads back from someone
+        // else's server. Sharing a key made a deployment tuning its ingress retune its outbound
+        // client, and neither name said so.
+        long maxResponseBodyBytes = configProvider.getLong("http.maxResponseBodyBytes")
+            .orElse(HttpConfig.DEFAULT_MAX_RESPONSE_BODY_BYTES);
         boolean h2cUpgradeEnabled = configProvider.getBoolean("http.h2cUpgradeEnabled")
             .orElse(true);
         HttpVersion maxVersion = resolveMaxVersion(configProvider);
+        // ADR-074. A DIAL address, deliberately distinct from http.bindHost, which is a LISTEN
+        // address — the client used to read the latter as the former. No default: an unaddressed
+        // request is refused rather than sent to whatever the server happens to bind.
+        // ADR-071's tail: the HTTP/1 header keys are a per-field size and a field count, while
+        // HTTP/2 bounds an assembled header BLOCK — different quantities, so this is its own key
+        // rather than a product of the other two, which would have loosened the default twelvefold.
+        int maxHeaderBlockSize = configProvider.getInt("http.maxHeaderBlockSize")
+            .orElse(HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE);
+        // Three HTTP/2 keys and not one, because they bound three different quantities: the
+        // COMPRESSED block on the wire (above), the CUMULATIVE decoded field section, and a
+        // SINGLE decoded literal. Compression is what makes the first two independent — neither
+        // can be computed from the other — and the middle one is the only one RFC 9113 §6.5.2
+        // defines SETTINGS_MAX_HEADER_LIST_SIZE against, so it is the one that gets advertised.
+        int maxHeaderListSize = configProvider.getInt("http.maxHeaderListSize")
+            .orElse(HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE);
+        int maxStringLiteralSize = configProvider.getInt("http.maxStringLiteralSize")
+            .orElse(HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
+        String defaultAuthority = configProvider.getString("http.client.defaultAuthority")
+            .map(String::strip)
+            .filter(value -> !value.isEmpty())
+            .orElse(null);
 
         return new HttpConfig(
             mode,
@@ -90,7 +114,12 @@ final class CommunityHttpConfigResolver {
             maxHeaderSize,
             maxBodyBytes,
             h2cUpgradeEnabled,
-            maxVersion
+            maxVersion,
+            defaultAuthority,
+            maxHeaderBlockSize,
+            maxHeaderListSize,
+            maxStringLiteralSize,
+            maxResponseBodyBytes
         );
     }
 

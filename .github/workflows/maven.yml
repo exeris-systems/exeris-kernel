@@ -21,14 +21,17 @@ on:
 env:
   # ADR-066 — the build baselines on JDK 25 LTS.
   #
-  # --enable-preview stays because TEST and TCK fixtures still use StructuredTaskScope and are
-  # compiled with it (they are not distributed); main sources are preview-clean, which the
-  # Preview-Bytecode Gate below asserts against the shipped class files rather than the sources.
+  # --enable-preview is GONE, from the whole line: no source under this repository uses a preview
+  # API any more, test fixtures included. This changed no published artifact — the TCK test-jar,
+  # the only one built from test sources, measured 0 preview-stamped classes of 467 already, and
+  # the 56 that were stamped sat in core/community test-classes, which are never published. What
+  # it buys is the build itself: --enable-preview is legal only when --release equals the running
+  # JDK, so the GA line could be built by JDK 25 and nothing else. Now any JDK >= 25 can build it.
   #
   # --enable-final-field-mutation was REMOVED, not overlooked: it is a JDK 26 flag (JEP 500
   # integrity-by-default) and JDK 25 refuses to start with it. There is nothing to re-enable on
   # 25, since that is the release the restriction has not reached yet.
-  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  MAVEN_OPTS: "--enable-native-access=ALL-UNNAMED"
   JDK_URL: "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_7.tar.gz"
   JDK_SHA256: "e58fcdcd637b25c03ca84cbbcefc70d11efb8f4b4cbd05decc9f661769d77f94"
   JDK_CACHE_KEY: "jdk-25.0.4-7-linux-x64"
@@ -117,9 +120,101 @@ jobs:
         # stamp is what a consumer trips over, it survives generated and processor-emitted code
         # that a grep would miss, and it cannot be satisfied by a comment claiming compliance.
         #
-        # Test and TCK fixtures are out of scope by design — 26 of them still use
-        # StructuredTaskScope, compile with --enable-preview, and are never published.
+        # Test and TCK fixtures used to be out of scope, because they compiled with
+        # --enable-preview and the shipped classes did not. They no longer use a preview API at
+        # all, so the flag is gone from the build and there is nothing left for the scope to
+        # exclude — the gate now describes the whole line rather than half of it.
         run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
+
+      - name: Module-Name Gate
+        # Every published jar must carry an Automatic-Module-Name. A jar without one is still
+        # usable on the module path — the JDK derives a name from the FILE NAME — and that derived
+        # name becomes a de-facto contract from the first release a consumer compiles against.
+        # So the failure is silent here and expensive at the far end, which is what makes it a gate
+        # rather than a convention.
+        #
+        # This step IS the guarantee, which was established by measurement rather than assumed: an
+        # unset `exeris.module.name` does not fail the build. With the config inherited from the
+        # root pluginManagement and no local plugin declaration, the property goes unresolved and
+        # the manifest entry is simply omitted — the jar ships nameless and green. So the script
+        # discovers every jar the reactor produced rather than checking a hand-maintained list,
+        # because a new module would otherwise be uncovered by default.
+        #
+        # Placed in the job that already built the reactor, for the same reason the preview gate is:
+        # it reads the artifacts rather than rebuilding them.
+        run: tools/module-name-check/module-name-check.sh
+      - name: Scope-Register Gate
+        # Keeps docs/release/1.0-scope.md and docs/ROADMAP.md from drifting. The roadmap owns the
+        # analysis and carries a `**1.0 disposition:**` per item; the register owns the state.
+        # Nothing connected them, which is how an item can be dispositioned and then never tracked.
+        #
+        # Checks set equality of headings, not correctness of a recorded state -- nothing can check
+        # the latter, and the register puts every state behind a named check or the word
+        # `unverified` for exactly that reason.
+        #
+        # Docs-only, so it needs no build artifact; it sits here rather than in its own job because
+        # a second checkout would cost more than the check.
+        run: tools/scope-register-check/scope-register-check.sh
+      - name: Error-Code Registry Gate
+        # Keeps KernelErrorCodes and docs/subsystems/exceptions.md in agreement, both directions,
+        # plus the single-source-of-truth rule the registry rests on.
+        #
+        # Nothing connected the two before, and the drift was not marginal: TWENTY of 84 codes had
+        # no doc row, including four whole domains, and two main-source classes stamped an EX- code
+        # as a bare string literal -- one of them a sentinel that was in no registry at all. None of
+        # that failed anything; it was found by chasing a single missing row.
+        #
+        # Docs-and-sources only, so it needs no build artifact -- same reasoning as the gate above.
+        run: tools/error-code-registry-check/error-code-registry-check.sh
+      - name: Checkstyle Parity Gate
+        # exeris-kernel-tck runs a second Checkstyle config, because its main sources are contract
+        # tests. The PMD ruleset beside it can reference the kernel's and exclude from it, so it
+        # stays a live view; Checkstyle has no config inheritance, so its TCK config is a copy and
+        # the format offers no guarantee at all.
+        #
+        # The failure that copy invites is silent and one-directional: a module added to
+        # checkstyle.xml stops short of ~130 classes, and nothing fails, because the TCK config is
+        # by itself still valid. This gate compares the two module by module and property by
+        # property against a delta the TCK config declares about itself.
+        #
+        # Config-only, so it needs no build artifact — same reasoning as the two gates above.
+        run: tools/checkstyle-parity-check/checkstyle-parity-check.sh
+
+      - name: Supply-Chain Gate
+        # v0.12 Stream B. Two checks, deliberately at different ends of the build.
+        #
+        # `artifact:check-buildplan` reads the BUILD PLAN, so it fails on a newly added plugin that
+        # cannot produce reproducible output before that plugin has published anything. It needs no
+        # artifacts and would work on an empty target/; it is here rather than in its own job only
+        # because a separate job would spend a JDK download on a five-second check.
+        #
+        # The SBOM gate reads the artifacts this job just built, same as the preview gate above. It
+        # exists because the failure mode of an SBOM is a file that is present and wrong — empty
+        # component list, stale version, restored random serial — and each of those reads as success
+        # to anything that merely checks the file is there.
+        #
+        # Placed in the root job knowingly: every other job depends on this one, so a failure here
+        # takes the pipeline down. That is correct for this gate and not for the Sonar step below —
+        # the distinction is whether the failure is about the code under test. A plugin that breaks
+        # reproducibility, or an SBOM that misdescribes the jar, is a change someone made in this
+        # diff.
+        run: |
+          mvn -B org.apache.maven.plugins:maven-artifact-plugin:3.6.0:check-buildplan
+          tools/sbom-gate/sbom-gate.sh
+
+      - name: Upload SBOMs
+        # Published beside each artifact by `mvn deploy` (classifier `cyclonedx`), so this upload is
+        # not the distribution channel — it is what makes the SBOMs readable for a run that never
+        # deploys, which is every pull request.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-${{ github.run_number }}
+          path: |
+            target/bom.json
+            exeris-kernel-*/target/bom.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: SonarQube Cloud Analysis
         # Runs in this job, immediately after the build, so it consumes the compiled classes and the
@@ -136,22 +231,77 @@ jobs:
         # down every merge gate for a reason unrelated to the code under test. Static analysis is not
         # a correctness gate here and must never be able to do that.
         #
-        # It is load-bearing right now, not just prudent: the SonarQube Cloud organisation is
-        # currently without an administrator, so Automatic Analysis cannot be switched off — and
-        # SonarQube Cloud *rejects* a CI submission while it is enabled. Until that is resolved this
-        # step is expected to fail whenever a token is present.
+        # The organisation now has an administrator, Automatic Analysis is off and the token is an
+        # organisation secret, so this step runs for real. The first CI-based analysis this
+        # repository has ever had is what settled several things that were guesses until then:
+        # JaCoCo coverage imported (8 reports, and the `coverage` metric had not existed at all
+        # before), the `sonar.issue.ignore` entries took effect where Automatic Analysis had been
+        # ignoring them, and the TCK reclassification landed — 115 bugs and vulnerabilities closed,
+        # 8 code smells left.
         #
-        # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
-        # let the analysis rot silently.
+        # That analysis also logged `Unresolved imports/types have been detected during analysis`
+        # and `Missing 'sonar.java.test.libraries' property`, which is what moved this step from the
+        # standalone CLI scanner to the Maven one. The CLI scanner has to be HANDED the analysis
+        # classpath, and it was handed a glob over the project tree — which cannot reach the local
+        # Maven repository, so it matched the 9 reactor jars and none of the 71 dependency jars on
+        # a module's real test classpath. sonar-java was resolving neither JUnit nor AssertJ nor the
+        # Postgres driver. The Maven plugin derives both properties per module from the reactor;
+        # dumped locally before this change was made, exeris-kernel-community resolves to 26 main
+        # and 71 test library entries.
         #
-        # Pinned by commit SHA, not by tag. Two high-severity advisories (GHSA-f79p-9c5r-xg88,
-        # GHSA-5xq9-5g24-4g6f) cover every 4.x/5.x release of this action, so `@v5` resolved to a
-        # vulnerable revision and failed the Dependency Review gate on PRs into main; both are
-        # cleared from 6.0.0 onward. The SHA below is tag v8.2.1. A moving tag is also mutable —
-        # SHA-pinning is what makes the reviewed revision the one that actually runs.
+        # `Missing 'sonar.java.test.libraries'` went with that change alone. `Unresolved
+        # imports/types` did not, and needed the invocation fix described further down; the reading
+        # in between — that the empty classpath had not been its only cause, and that a DEBUG run
+        # would be needed to name what was left — was half right and half a wrong turn. The DEBUG
+        # run was made, and came back empty.
+        #
+        # It also brings all ten reactor modules into scope, where sonar.sources had been a
+        # hand-written list missing three of them whose JaCoCo reports were nonetheless imported
+        # (18 x `File not found in project sources`, and that coverage discarded). What it does not
+        # cover is tools/jfr-reporter, 6 files and 570 lines of CI tooling that sit outside the
+        # reactor deliberately: the old list named it, this cannot, and adding it back to the root
+        # module's sources would analyse it without its own dependencies, reintroducing the exact
+        # defect being removed here.
+        #
+        # No third-party action any more, which also retires a SHA pin that existed because two
+        # high-severity advisories (GHSA-f79p-9c5r-xg88, GHSA-5xq9-5g24-4g6f) covered every 4.x/5.x
+        # release of `sonarqube-scan-action`. The plugin version is pinned in the root POM's
+        # pluginManagement; the goal is invoked by full coordinates so the pin is what resolves,
+        # rather than a prefix lookup that would take the newest release.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
-        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        # `verify` runs in the SAME command as the analysis, and that is load-bearing rather than
+        # belt-and-braces. Invoked alone, `sonar:sonar` starts a session in which no module has been
+        # packaged, so Maven cannot resolve a reactor sibling to a jar and falls back to the local
+        # repository — where the previous step, which runs `verify` and not `install`, has put
+        # nothing. Maven says so before the goal even starts: `The following dependencies could not
+        # be resolved at this point of the build but seem to be part of the reactor:
+        # eu.exeris:exeris-kernel-spi ... Try running the build up to the lifecycle phase package`.
+        #
+        # That is what `Unresolved imports/types have been detected during analysis` was, and the
+        # match is exact: the warning fired in every module with a reactor dependency and in neither
+        # of the two without one (exeris-kernel-spi, exeris-kernel-build-config). It was NOT the
+        # analyser's support for a recent JDK, which is what a first reading of it assumed, and a
+        # local dump agreed with that misreading only because a previous `mvn clean install` had
+        # left the sibling jars in ~/.m2 where CI has none.
+        #
+        # Tests and lint are skipped here because the step before this one ran both, on the same
+        # tree, without skip flags. This invocation exists to put the reactor in a resolvable state,
+        # not to re-verify it.
+        #
+        # `Use of preview features` went with it, which was not predicted: that one had been put
+        # down to the analyser's support for a recent JDK, on the strength of its firing in
+        # exeris-kernel-spi too, where `Unresolved imports/types` never did. Both are now absent,
+        # and the run parsed 1374 Java files exactly as the broken one did, so this is not a
+        # narrower analysis. The mechanism behind the preview half is NOT established — only that it
+        # is empirically tied to this same change. Nothing about it was ever a risk: javac settles
+        # that outright, since `--release 25` without `--enable-preview` makes a preview feature a
+        # compile error rather than a warning, and the preview-bytecode gate reads major 69 with no
+        # stamp.
+        run: |
+          mvn -B -e -DskipTests -Dpmd.skip=true -Dcheckstyle.skip=true \
+            verify -P coverage \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -239,7 +389,21 @@ jobs:
           # Highest released version, NOT `git describe`: patch releases are cut on main, so on a
           # development/* branch the last *reachable* tag can be older than the latest published
           # one. Reachability is irrelevant — this compares two API surfaces, not two histories.
-          BASELINE="$(git tag --sort=-v:refname --list 'v*' | head -1)"
+          # Strict vMAJOR.MINOR.PATCH, not the bare `v*` glob this used to take. The glob picks the
+          # highest tag matching a pattern, so any tag that lands inside it decides the baseline —
+          # and `git tag --sort=-v:refname` sorts `v0.11.0-preview` ABOVE `v0.11.0` (measured). One
+          # suffixed tag on the preview line would therefore have made THIS line diff its SPI
+          # against a tree that is not its ancestor: value classes, StructuredTaskScope signatures,
+          # a baseline that is garbage in either direction. The preview line tags `preview/vX.Y.Z`
+          # for that reason, but a naming convention nobody can enforce is not a guard — this is.
+          # `|| true` is load-bearing under `set -euo pipefail`, not defensive noise. grep exits 1
+          # when it matches nothing, pipefail makes that the pipeline's status, and an assignment
+          # from a failing command substitution aborts under -e — so without it the friendly
+          # "no release tag found" branch below is UNREACHABLE and the job hard-fails instead. The
+          # two-stage form the strict filter replaced never had the hazard: `head -1` exits 0 on an
+          # empty stream. Adding grep as a third stage is what introduced it, in the same v0.12
+          # change that added the filter.
+          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
           if [ -z "$BASELINE" ]; then
             echo "no release tag found — nothing to compare against"; exit 0
           fi

@@ -1,14 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngineCapabilities;
@@ -135,7 +132,8 @@ class CoreFlowRuntimeTest {
             RuntimeFlowInstance instance = RuntimeFlowInstance.fromContext(
                     plan,
                     context("parked-reschedule-does-not-block-wake-instance", definition.name(), 0, FlowState.PARKED),
-                    1L
+                    1L,
+                    TimeSource.SYSTEM
             );
 
             int scheduleResult = instance.beginScheduleForSchedule();
@@ -167,7 +165,8 @@ class CoreFlowRuntimeTest {
             RuntimeFlowInstance instance = RuntimeFlowInstance.fromContext(
                     plan,
                     context("deferred-wake-bookkeeping-instance", definition.name(), 0, FlowState.PARKED),
-                    1L
+                    1L,
+                    TimeSource.SYSTEM
             );
 
             assertThat(instance.claimPendingWake())
@@ -561,6 +560,47 @@ class CoreFlowRuntimeTest {
                     .as("WakeOnLoadFallback JFR event must still be emitted on a snapshot miss")
                     .isTrue();
             assertThat(captured.get().getBoolean("restored"))
+                    .as("snapshot store had no row, restored MUST be false")
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("key-addressed wake for an unknown instance still emits WakeOnLoadFallbackEvent")
+    void keyAddressedWakeMissEmitsWakeOnLoadFallbackEvent() throws Exception {
+        InMemorySnapshotStore snapshotStore = new InMemorySnapshotStore();
+        CountDownLatch eventReceived = new CountDownLatch(1);
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+
+        try (CoreFlowEngine engine = startedEngine(true, snapshotStore);
+             RecordingStream rs = new RecordingStream()) {
+
+            rs.enable(WAKE_FALLBACK_EVENT);
+            rs.onEvent(WAKE_FALLBACK_EVENT, event -> {
+                if (captured.compareAndSet(null, event)) {
+                    eventReceived.countDown();
+                }
+            });
+            rs.startAsync();
+
+            UUID unknown = UUID.randomUUID();
+            assertThatThrownBy(() -> engine.scheduler().wake(
+                    unknown.getMostSignificantBits(), unknown.getLeastSignificantBits()))
+                    .as("a key the engine does not know MUST still fail NOT_PARKED")
+                    .isInstanceOf(FlowEngineException.class);
+
+            // The regression this pins: the key-addressed form resolves and refuses inside the
+            // engine, so the refusal must not swallow the telemetry the two-call form emitted.
+            // A miss is the case ADR-013 §8 names explicitly - a stale wake for an instance no
+            // engine holds - and it is the half an operator cannot infer from anything else.
+            assertThat(eventReceived.await(3, TimeUnit.SECONDS))
+                    .as("wake(long, long) MUST emit WakeOnLoadFallback on the store miss it pays for")
+                    .isTrue();
+            RecordedEvent event = captured.get();
+            assertThat(event.getLong("instanceIdMost")).isEqualTo(unknown.getMostSignificantBits());
+            assertThat(event.getLong("instanceIdLeast")).isEqualTo(unknown.getLeastSignificantBits());
+            assertThat(event.getBoolean("restored"))
                     .as("snapshot store had no row, restored MUST be false")
                     .isFalse();
         }
@@ -1446,9 +1486,17 @@ class CoreFlowRuntimeTest {
             runtimeField.setAccessible(true);
             Object runtime = runtimeField.get(engine);
 
-            java.lang.reflect.Field orderField = CoreFlowRuntime.class.getDeclaredField("parkedLookupMissOrder");
+            // The miss cache moved to ParkedLookupMissCache in v0.12; the field it guards is
+            // the same deque, one object further down.
+            java.lang.reflect.Field cacheField =
+                    CoreFlowRuntime.class.getDeclaredField("parkedLookupMisses");
+            cacheField.setAccessible(true);
+            Object cache = cacheField.get(runtime);
+
+            java.lang.reflect.Field orderField =
+                    ParkedLookupMissCache.class.getDeclaredField("order");
             orderField.setAccessible(true);
-            java.util.Deque<?> order = (java.util.Deque<?>) orderField.get(runtime);
+            java.util.Deque<?> order = (java.util.Deque<?>) orderField.get(cache);
             return order.size();
         } catch (ReflectiveOperationException e) {
             throw new AssertionError("Unable to inspect parkedLookupMissOrder size", e);

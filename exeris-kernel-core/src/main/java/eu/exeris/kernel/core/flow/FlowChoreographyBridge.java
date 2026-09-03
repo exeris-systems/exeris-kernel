@@ -1,16 +1,13 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventPayload;
+import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.ChoreographyDecision;
 import eu.exeris.kernel.spi.flow.FlowChoreographyMapper;
 import eu.exeris.kernel.spi.flow.FlowScheduler;
@@ -48,10 +45,29 @@ final class FlowChoreographyBridge implements EventHandler {
             ChoreographyDecision decision = mapper.map(descriptor);
             switch (decision) {
                 case ChoreographyDecision.Wake(long most, long least) -> {
-                    scheduler.lookupParked(most, least).ifPresent(scheduler::wake);
-                    // Stale or duplicate wake event if absent — instance no longer parked; idempotent no-op
+                    // One call into the engine, which resolves by key under its own lock. The
+                    // two-call form this replaces - lookupParked(...).ifPresent(wake) - was
+                    // check-then-act by its own admission, and its two failure modes were not
+                    // symmetric: an instance still inside the step about to PARK reported absent
+                    // and the wake was dropped for good, while a genuinely unknown key paid a
+                    // second durable-store probe on the way to the same refusal.
+                    //
+                    // NOT_PARKED is still absorbed: it now means only what it always should have,
+                    // that the instance is already running. Every other EX-FLOW-7002 propagates.
+                    try {
+                        scheduler.wake(most, least);
+                    } catch (FlowEngineException ex) {
+                        if (!FlowEngineException.isNotParked(ex)) {
+                            throw ex;
+                        }
+                    }
                 }
                 case ChoreographyDecision.Start(FlowExecutionPlan plan, long most, long least) -> {
+                    // NOT migrated (ADR-082). This runs on whichever thread drives the
+                    // choreography bridge, and that thread's binding state is not established —
+                    // a slot read here would silently return the system clock, which is the
+                    // "looks migrated, is not drivable" failure the ADR names. Threading a
+                    // captured source in belongs with the rest of the choreography path.
                     long timeoutNanos = System.nanoTime() + plan.timeoutDurationNanos();
                     scheduler.schedule(
                             plan,
@@ -67,4 +83,5 @@ final class FlowChoreographyBridge implements EventHandler {
             }
         }
     }
+
 }

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ruleset name="Exeris PMD Ruleset — TCK"
+    xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 http://pmd.sourceforge.net/ruleset_2_0_0.xsd">
+
+    <description>
+        The main Exeris ruleset MINUS a named list, for exeris-kernel-tck.
+
+        That module's main sources are contract tests: abstract JUnit classes a provider
+        subclasses. They live in src/main because they are the module's published API, not because
+        they are production runtime code — so the rules whose premise is "this is production code"
+        do not describe them, while the rules that catch a broken test still do.
+
+        Written as a reference to the main ruleset rather than as a copy, deliberately: a rule added
+        to pmd-ruleset.xml applies here too unless somebody excludes it on purpose, and the
+        difference between the two files stays readable as a list.
+
+        Every exclusion below was measured on the module, not anticipated: 1782 violations across 56
+        rules when the classes were first compiled as main sources. What is NOT excluded is the
+        point of the file — those findings were fixed in the code instead.
+    </description>
+
+    <rule ref="pmd-ruleset.xml">
+
+        <!--
+            1. Test naming and test shape.
+
+            A TCK case is named for the clause it pins, and reads as a sentence:
+            `close_after_close_is_idempotent`. MethodNamingConventions wants camelCase and would
+            make every one of them worse. The same holds for the rest of this group — a @Nested
+            class per contract clause, fields declared beside the case that uses them, and one-letter
+            lambda parameters in an assertion are how a readable suite is written.
+
+            UnitTestContainsTooManyAsserts (331 hits) is the sharpest example of the mismatch: a
+            contract test asserting eight clauses of one contract is doing its job. Splitting it
+            into eight cases would hide which clauses belong together.
+        -->
+        <exclude name="MethodNamingConventions"/>
+        <exclude name="ShortMethodName"/>
+        <exclude name="ShortClassName"/>
+        <exclude name="ShortVariable"/>
+        <exclude name="LinguisticNaming"/>
+        <exclude name="CommentDefaultAccessModifier"/>
+        <exclude name="FieldDeclarationsShouldBeAtStartOfClass"/>
+        <exclude name="UnitTestContainsTooManyAsserts"/>
+        <exclude name="UnitTestAssertionsShouldIncludeMessage"/>
+        <exclude name="ControlStatementBraces"/>
+        <exclude name="UseExplicitTypes"/>
+        <exclude name="AvoidDuplicateLiterals"/>
+        <exclude name="UnnecessaryFullyQualifiedName"/>
+        <exclude name="LambdaCanBeMethodReference"/>
+        <exclude name="UseUnderscoresInNumericLiterals"/>
+        <exclude name="RedundantFieldInitializer"/>
+        <exclude name="NullAssignment"/>
+        <exclude name="SingularField"/>
+        <exclude name="LooseCoupling"/>
+        <exclude name="LawOfDemeter"/>
+
+        <!--
+            2. UnitTestShouldIncludeAssert cannot see through one level of indirection.
+
+            Verified on two independent samples rather than assumed. `void memory() {
+            audit(SubsystemUnderTest.MEMORY); }` asserts inside `audit`; `asTenant(TENANT_A, () ->
+            { ... })` asserts inside a lambda handed to a helper. PMD reports both as
+            assertion-free. Sharing setup through a helper is exactly how a TCK avoids repeating
+            the same six lines in forty cases, so this rule is structurally wrong here rather than
+            occasionally wrong.
+
+            The same false positive is on record for SonarCloud's java:S2187 against @Nested-only
+            classes in this repository.
+        -->
+        <exclude name="UnitTestShouldIncludeAssert"/>
+
+        <!--
+            3. Things a contract test does on purpose, which production code must not.
+
+            CloseResource (81 hits): a TCK that asserts the KERNEL closed something must not close
+            it itself — `TrackedEngine graph = kernel.graph(); assertThat(graph.isClosed())` is the
+            whole case. AbstractLoanedBufferTck deliberately drives unbalanced acquire/close to
+            prove the leak detector fires.
+
+            Catching and throwing broadly is how a contract test states "any failure here is a
+            failure of the contract"; forcing GC is how an allocation TCK reaches a stable
+            measurement; 127.0.0.1 is what a loopback TCK dials; allocating in a loop is what a
+            churn TCK is measuring.
+        -->
+        <exclude name="CloseResource"/>
+        <exclude name="UseTryWithResources"/>
+        <exclude name="AvoidCatchingGenericException"/>
+        <exclude name="AvoidThrowingRawExceptionTypes"/>
+        <exclude name="AvoidUncheckedExceptionsInSignatures"/>
+        <exclude name="SignatureDeclareThrowsException"/>
+        <exclude name="DoNotCallGarbageCollectionExplicitly"/>
+        <exclude name="AvoidUsingHardCodedIP"/>
+        <exclude name="AvoidInstantiatingObjectsInLoops"/>
+        <exclude name="AvoidLiteralsInIfCondition"/>
+        <exclude name="AssignmentInOperand"/>
+
+        <!--
+            JUnit5TestShouldBePackagePrivate is not merely inconvenient here, it is impossible to
+            satisfy: these @Test methods are declared on abstract classes in
+            eu.exeris.kernel.tck.contract and INHERITED by bindings in eu.exeris.kernel.community
+            and elsewhere. A package-private method is not visible to a subclass in another package,
+            so following this rule would stop the TCK being a TCK.
+        -->
+        <exclude name="JUnit5TestShouldBePackagePrivate"/>
+
+        <!--
+            4. Size and complexity, measured against the wrong unit.
+
+            These rules bound a production class. The unit here is a CONTRACT: AbstractBlobStorageTck
+            has one case per clause of the blob contract, and the clause count is set by the SPI
+            rather than by the author. Splitting a suite to satisfy TooManyMethods would scatter one
+            contract across several files and make the missing clause harder to see, which is the
+            opposite of what the number is for.
+        -->
+        <exclude name="TooManyMethods"/>
+        <exclude name="CyclomaticComplexity"/>
+        <exclude name="CognitiveComplexity"/>
+        <exclude name="NPathComplexity"/>
+        <exclude name="ExcessiveParameterList"/>
+        <exclude name="ExcessiveImports"/>
+        <exclude name="AvoidDeeplyNestedIfStmts"/>
+        <exclude name="SimplifyBooleanReturns"/>
+        <exclude name="EmptyMethodInAbstractClassShouldBeAbstract"/>
+        <exclude name="AbstractClassWithoutAbstractMethod"/>
+        <exclude name="AbstractClassWithoutAnyMethod"/>
+
+        <!--
+            5. Performance rules written for a runtime hot path.
+
+            StringBuilder append patterns matter where the kernel builds a response per request.
+            A TCK builds a failure message once, on the path where the test is already failing.
+        -->
+        <exclude name="ConsecutiveAppendsShouldReuse"/>
+        <exclude name="ConsecutiveLiteralAppends"/>
+        <exclude name="AppendCharacterWithChar"/>
+
+        <!--
+            NOT excluded, and this half is the reason the file exists rather than a `pmd.skip`:
+
+              UnusedLocalVariable          — a value computed and never asserted is a test that
+                                             does less than it reads as doing
+              UnusedImports / UnnecessaryImport
+              UnnecessaryWarningSuppression — a suppression that no longer suppresses anything
+              CompareObjectsWithEquals     — `==` in an assertion is how a test passes against the
+                                             wrong object
+              EmptyControlStatement        — an `if` with no body in a test is a missing assertion
+              LiteralsFirstInComparisons   — an NPE in a test reports as an error, not a failure
+              UseLocaleWithCaseConversions — locale-dependent case folding is wrong in a contract
+              UseProperClassLoader
+              TestClassWithoutTestCases
+              EmptyCatchBlock              — inherited with the main ruleset's `ignored|expected`
+                                             allowance
+
+            Each of these fired on the module and was answered in the code rather than excluded
+            here. CompareObjectsWithEquals and EmptyControlStatement are the two where the answer is
+            a suppression rather than a fix, and they are the reason the answer is per-site: eleven
+            places need it — four identity comparisons where equals() would be the bug (a
+            LazyConstant that re-initialised, an inserter closed twice, Thread identity,
+            addSuppressed(self)), and seven bodies whose emptiness is the assertion (`try (payload)
+            { }` is the RAII protocol; a drain loop does its work in the condition). Excluding
+            either rule for the module would have covered those eleven and every future `==` bug in
+            the other 126 classes with them, so each site carries its own NOPMD and its own reason.
+        -->
+    </rule>
+
+    <!--
+        TestClassWithoutTestCases fired once, on `TestFlowContexts` — a package-private FlowContext
+        factory that is a fixture, not a test. The rule keys on the class NAME, and its default
+        pattern treats a leading `Test` as a promise of test cases. Narrowing the pattern to this
+        module's actual convention (`*Tck`, `*Test`) keeps the rule live for the shape it is for —
+        a suite class that ended up with no cases — instead of switching it off.
+    -->
+    <rule ref="category/java/errorprone.xml/TestClassWithoutTestCases">
+        <properties>
+            <property name="testClassPattern" value="^(\w+Tck|\w+Test(s|Case)?)$"/>
+        </properties>
+    </rule>
+</ruleset>

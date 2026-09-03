@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.transport.scheduler;
 
@@ -59,7 +55,9 @@ import java.util.function.Function;
  * The sentence this paragraph replaced said concurrency inside {@code runStream()} MUST use
  * {@code StructuredTaskScope}. On the default line that mandates the one preview dependency 1.0 GA must
  * not ship — see ROADMAP §"Platform Baseline for 1.0 GA", which records the same staleness in
- * {@code ExerisArchitectureTest.noExecutorsAnywhere}'s reason text. Read it per track: the
+ * {@code KernelTierBanArchitectureTest.noExecutors}'s reason text (until v0.12 this named
+ * {@code ExerisArchitectureTest.noExecutorsAnywhere}, a rule whose reach never matched its
+ * name). Read it per track: the
  * {@code preview} artifact keeps {@code StructuredTaskScope}; the default line uses virtual threads
  * plus explicit {@code ScopedValue} rebind at the {@link StreamExecutionBackend} seam, both GA.
  * Either way structured lifetime is the requirement, not a specific class.
@@ -97,6 +95,16 @@ import java.util.function.Function;
 public final class PaqsScheduler implements AutoCloseable {
 
     private static final System.Logger LOG = System.getLogger(PaqsScheduler.class.getName());
+    /**
+     * Spins to take before the drain loop starts yielding instead.
+     *
+     * <p>Not configurable, and named here because it has twice been catalogued as a PAQS
+     * operational limit alongside the admission ceiling. It is not one. It is reachable only from
+     * {@link #close()}, it decides nothing about which streams are served, and its whole effect is
+     * how a shutdown that is already waiting spends the CPU it is waiting on — bounded above by
+     * {@link #DRAIN_DEADLINE_NANOS}, which is itself deliberately fixed. A key here would publish a
+     * knob whose only setting is how hot the last few milliseconds of shutdown run.
+     */
     private static final long SPIN_THRESHOLD = 10_000L;
 
     /**

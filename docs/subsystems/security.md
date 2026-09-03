@@ -166,7 +166,7 @@ public class SecurityInterceptor {
   cross-tenant access and asserting row count is zero.
 - Fail-Closed: invalid token at transport edge results in `EX-SEC-2002` and zero downstream calls.
 - Community HTTP admission semantics (implemented): missing/invalid token maps to HTTP `401`; authenticated principal without required scope maps to HTTP `403`; steady-state scope checks remain membership tests over immutable in-memory scope sets.
-- **Which routes require what is declared by the application, not by the driver (since 0.11, ADR-061).** `CommunityHttpRequestDispatcher` no longer gates on a `/secure` path prefix with the literal scopes `security:read` / `security:write` compiled into it. It resolves the route through `HttpRoutePolicy` (bound at `HttpKernelProviders.HTTP_ROUTE_POLICY`) and hands the resulting `RouteRequirement` to `RouteAuthorizationEnforcer` in Core, so every transport shares one decision layer. With no policy bound the requirement is permit-all, which means an application that never declares a policy has **no edge authorization**. Read that as written: it is not "unchanged behaviour". Up to 0.10 the driver enforced `/secure` by convention, so an application that declares nothing does not keep what it had — it serves those routes to anonymous callers. Migrating means declaring the routes the prefix used to cover. A route that wants an identity established without demanding a scope declares `authenticated()`; `permitAll()` runs no interceptor, so its handler sees no `PrincipalContext` even when the caller presented a valid token. The unmatched route is the application's call: `HttpRoutePolicy.unmatched()` is fail-closed, and a policy returning `null` is treated as a defect and denies outright rather than being read as unmatched.
+- **Which routes require what is declared by the application, not by the driver (since 0.11, ADR-061).** `CommunityHttpRequestDispatcher` no longer gates on a `/secure` path prefix with the literal scopes `security:read` / `security:write` compiled into it. It resolves the route through `HttpRoutePolicy` (bound at `HttpKernelProviders.HTTP_ROUTE_POLICY`) and hands the resulting `RouteRequirement` to `RouteAuthorizationEnforcer` in Core, so every transport shares one decision layer. With no policy bound the requirement is permit-all, which means an application that never declares a policy has **no edge authorization**. Read that as written: it is not "unchanged behaviour". Up to 0.10 the driver enforced `/secure` by convention, so an application that declares nothing does not keep what it had — it serves those routes to anonymous callers. Migrating means declaring the routes the prefix used to cover. A route that wants an identity established without demanding a scope declares `authenticated()`; `permitAll()` runs no interceptor, so its handler sees no `PrincipalContext` even when the caller presented a valid token. The unmatched route is the application's call: `HttpRoutePolicy.unmatched()` is fail-closed, and a policy returning `null` is treated as a defect and denies outright rather than being read as unmatched. **Since 0.12 (ADR-061 amendment A2) a policy may also abstain** — `RouteRequirement.abstain()` states that this policy does not describe the route, so `HttpRoutePolicy.firstDeclared` can fold an ordered list of policies (a generated one and a hand-written one, say) and take the first that answers. Abstention is not permit-all: an abstention that reaches `RouteAuthorizationEnforcer` unfolded is a defect and denies in the same shape `null` does, and the fold's all-abstain fallback is a required argument so the unmatched stance stays the application's single call. See [`http.md`](http.md) for the fold's ordering rule.
 - **The token grants what it claims, and nothing else (since 0.11).** `CommunityClaimsMapper` reads
   `scope` (OAuth 2.0 space-delimited, RFC 6749 §3.3), `scp` (the array form some identity providers
   emit, unioned with the former) and `roles`. Until 0.11 it handed every authenticated principal a
@@ -362,8 +362,48 @@ For mTLS requirements, operate an mTLS-terminating proxy (e.g., Envoy, Nginx) in
 
 | Event | When Emitted | Key Fields |
 |:------|:-------------|:-----------|
-| `SecurityContextMissingEvent` | Token rejection in `SecurityInterceptor.intercept()` (EX-SEC-2001) | `errorCode`, `component` |
+| `SecurityContextMissingEvent` | Any denial where no security context could be established | `errorCode`, `dropReason` |
 | `InsufficientPrivilegesEvent` | `CitadelGuard` RBAC gate denial (EX-SEC-2003) | `errorCode`, `requiredRole` |
+
+### Why a denial names its reason (since 0.12)
+
+Three unrelated situations produce the same `401`, and the response has to stay the same for all
+three — telling an unauthenticated caller *which* one applies hands them a probe oracle. The reason
+therefore lives in telemetry, where the operator can read it and the caller cannot.
+
+`dropReason` is a `SecurityDenialReason`, and the code travels with it rather than beside it:
+
+| Reason | Error code | Meaning |
+|:---|:---|:---|
+| `NO_PROVIDER` | `EX-SEC-2001` | No security provider bound — the whole authenticated surface denies |
+| `TOKEN_MISSING` | `EX-SEC-2001` | A provider is bound; the request carried no bearer credential |
+| `TOKEN_INVALID` | `EX-SEC-2002` | A credential was presented and rejected |
+| `PROVIDER_ERROR` | `EX-SEC-2002` | The provider failed without calling it a rejection |
+| `PRE_AUTH_BRIDGE_ERROR` | `EX-SEC-2002` | Storage-context derivation failed after identity was accepted |
+
+The split between the two codes is the point: **`2001` means there was nothing to validate, `2002`
+means validation was attempted and failed.** That is what separates a misconfigured deployment from a
+rejected caller.
+
+`NO_PROVIDER` is the one worth alerting on. A deployment that never bound a provider denies every
+authenticated route, and on the wire that is indistinguishable from a fleet of clients that all
+forgot their tokens — so it gets diagnosed against the clients. Read `NO_PROVIDER` against
+`TOKEN_MISSING`: the second rising is a client change, the first rising is yours.
+
+`PROVIDER_ERROR` carries the same warning in smaller print. An unreachable JWKS endpoint degrades to
+"every token fails", which reads as a credential problem and is an outbound-connectivity one.
+
+**Emitting the reason is a per-transport obligation.** The decision layer is shared — Core owns
+`SecurityInterceptor` and `RouteAuthorizationEnforcer`, so every transport inherits one admission
+rule — but the two reasons a *dispatcher* determines (`NO_PROVIDER`, `TOKEN_MISSING`) are known only
+where the request is decoded, and each transport has to emit them at its own sites. A transport that
+does not is not wrong on the wire and is dark in the recording, which is exactly the failure this
+section describes.
+
+**Until 0.12 two of these were advertised and never emitted.** The JFR event's own description named
+`NO_PROVIDER` and `TOKEN_MISSING`, and nothing produced either — so an operator filtering on
+`NO_PROVIDER` got an empty result and could reasonably conclude no deployment had ever been
+misconfigured. Both now emit at the site that knows the reason.
 
 ---
 

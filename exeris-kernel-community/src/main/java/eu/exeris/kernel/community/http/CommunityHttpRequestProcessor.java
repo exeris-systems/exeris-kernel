@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -125,7 +121,8 @@ public final class CommunityHttpRequestProcessor {
     // preserve HTTP/1.1 pipelined leftovers while still releasing when idle.
     /* default */ void process(TransportStream stream, HttpHandler handler) {
         try (stream; ProcessingState state = new ProcessingState()) {
-            Http1Codec codec = new Http1Codec();
+            Http1Codec codec = new Http1Codec(
+                    config.maxRequestHeaderCount(), config.maxRequestHeaderSize());
             boolean continueProcessing = true;
             while (continueProcessing) {
                 continueProcessing = processIteration(codec, stream, handler, state);

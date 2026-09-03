@@ -1,14 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow; // NOPMD
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowEngineStats;
@@ -25,8 +22,6 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -44,7 +39,7 @@ final class CoreFlowRuntime { // NOPMD
     /** Blast-radius bound only: adjacency enforced at registration is what terminates the chain. */
     private static final int MAX_MIGRATION_HOPS = 32;
 
-    private static final int  MAX_PARKED_LOOKUP_MISSES = 256;
+
     private static final long NO_TIMEOUT_OVERRUN       = 0L;
     private static final int  STEP_PROCEED             = Integer.MIN_VALUE;
     private static final int  EXIT_RUN_LOOP            = -1;
@@ -57,9 +52,7 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations = new ConcurrentHashMap<>();
     private final TerminalStateCatalog terminalStateCatalog;
-    private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
-    private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
-    private final Object parkedLookupMissLock = new Object();
+    private final ParkedLookupMissCache parkedLookupMisses = new ParkedLookupMissCache();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
     private final AtomicLong lifecycleGeneration = new AtomicLong();
     private final AtomicInteger activeFlows = new AtomicInteger();
@@ -73,14 +66,20 @@ final class CoreFlowRuntime { // NOPMD
     // (totalSinceForever - baselineAtLifecycleTransition); baseline writes are atomic volatile
     // longs, so a stale worker that survives interruptAndJoinRunningThreads' 5s join timeout
     // cannot leave the next generation with a non-zero residual.
+    private volatile long nonDurableParkedAtClose;
+    private final FlowParkCheckpoint.Attempt parkAttempt = this::persistParkSnapshot;
     private volatile long parkedFlowsBaseline;
     private volatile long completedFlowsBaseline;
     private volatile long failedFlowsBaseline;
     private volatile long compensationsRunBaseline;
     private volatile long stepExecutionsBaseline;
     private final AtomicInteger queueDepth = new AtomicInteger();
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile FlowSnapshotStore snapshotStore;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile IdempotencyGuard guard;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile TimeSource timeSource = TimeSource.SYSTEM;
     private volatile boolean started;
     private volatile boolean closed;
     private volatile boolean shutdownFinalized;
@@ -104,7 +103,7 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     /* default */ void clearLookupSuppressionAfterPlanCompile() {
-        clearParkedLookupMissTracking();
+        parkedLookupMisses.clearAll();
     }
 
     public FlowEngineStats stats() {
@@ -135,6 +134,11 @@ final class CoreFlowRuntime { // NOPMD
             snapshotStore = store.get();
         }
         guard = KernelProviders.idempotencyGuard().orElseGet(CoreIdempotencyGuard::new);
+        // Captured here, not read at use (ADR-082). A flow runs on a bare virtual thread, which
+        // inherits no ScopedValue binding — so a slot read on that thread always finds the system
+        // clock, and the seam would look applied while remaining undrivable. start() is inside the
+        // carrier scope, which is exactly why snapshotStore and guard are captured here too.
+        timeSource = KernelProviders.timeSource();
         lifecycleGeneration.incrementAndGet();
         resetLifecycleTotals();
         closed = false;
@@ -151,10 +155,11 @@ final class CoreFlowRuntime { // NOPMD
         interruptAndJoinRunningThreads();
         shutdownFinalized = true;
         runningThreads.removeIf(thread -> !thread.isAlive());
+        nonDurableParkedAtClose = FlowParkCheckpoint.countNonDurable(parkedInstances.values());
         liveInstances.clear();
         parkedInstances.clear();
         terminalStateCatalog.clear();
-        clearParkedLookupMissTracking();
+        parkedLookupMisses.clearAll();
         activeFlows.set(0);
         queueDepth.set(0);
         parkedFlowsBaseline = parkedFlows.sum();
@@ -241,15 +246,16 @@ final class CoreFlowRuntime { // NOPMD
                 new IllegalStateException("Flow engine is not started"));
     }
 
+    /** Structured, not concatenated — the reason is what lets a caller tell a race from a fault. */
     private FlowEngineException notParked(FlowKey key) {
-        return new FlowEngineException(
-                "Cannot wake flow that is not currently parked: " + key);
+        return FlowEngineException.notParked(
+                config.engineName(), key.instanceIdMost(), key.instanceIdLeast());
     }
 
     private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
@@ -262,7 +268,7 @@ final class CoreFlowRuntime { // NOPMD
             RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan, null, false);
             return restored != null
                     ? restored
-                    : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get());
+                    : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get(), timeSource);
         });
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
@@ -301,7 +307,7 @@ final class CoreFlowRuntime { // NOPMD
     private void park(FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         RuntimeFlowInstance instance = liveInstances.get(key);
         if (instance == null || instance.state() == FlowState.PARKED || instance.isTerminal()) {
             return;
@@ -312,19 +318,30 @@ final class CoreFlowRuntime { // NOPMD
             }
             instance.state(FlowState.PARKED);
             ensureParkedRegistration(instance);
-            persistSnapshot(instance, FlowState.PARKED, instance.currentStep());
+            FlowParkCheckpoint.persist(instance, instance.currentStep(), parkAttempt);
         }
     }
 
     private void wake(FlowContext context) {
         ensureStarted();
-        FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        wake(FlowKey.from(context), context.state());
+    }
+
+    /**
+     * Key-addressed wake (SPI {@code FlowScheduler.wake(long, long)}).
+     *
+     * <p>Resolves inside the engine, so a choreography bridge no longer probes first: the
+     * two-call form could not see a live instance on its way to PARK, and paid a second
+     * store read on a genuine miss. The fallback event that probe emitted still fires from
+     * the one store read that remains - see {@link #resolveParkedInstance}.
+     */
+    private void wake(FlowKey key, FlowState requestedState) {
+        parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
 
-        RuntimeFlowInstance instance = resolveParkedInstance(key, context.state());
+        RuntimeFlowInstance instance = resolveParkedInstance(key, requestedState);
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
             liveInstances.remove(key, instance);
@@ -356,7 +373,15 @@ final class CoreFlowRuntime { // NOPMD
             }
             throw notParked(key);
         }
+        // In-memory miss → durable store, the one probe this path pays. ADR-013 §8 telemetry
+        // contract: emit whichever way the read goes, because `restored` is the flag that
+        // separates a genuine cross-engine restore from a stale wake for a key this engine
+        // will never know. Emitting only on the hit would leave the miss - the case an
+        // operator most needs to see - dark on the key-addressed path.
+        long fallbackStartNanos = System.nanoTime();
         RuntimeFlowInstance restored = restoreParkedFromSnapshot(key, false);
+        WakeOnLoadFallbackEvent.emit(config.engineName(), key.instanceIdMost(),
+                key.instanceIdLeast(), restored != null, System.nanoTime() - fallbackStartNanos);
         if (restored == null) {
             throw notParked(key);
         }
@@ -399,11 +424,11 @@ final class CoreFlowRuntime { // NOPMD
         CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, resumable);
         if (resolvedPlan == null) {
             if (suppressRepeatedMisses) {
-                recordParkedLookupMiss(key);
+                parkedLookupMisses.recordMiss(key);
             }
             return null;
         }
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         boolean migrationPersisted = false;
         if (migrated != null) {
             // ADR-064 A3. Not persisting would leave the row naming a version the saga no longer
@@ -416,7 +441,7 @@ final class CoreFlowRuntime { // NOPMD
                     persisted.definitionVersion(), migrated.definitionVersion());
         }
         RuntimeFlowInstance instance =
-                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
+                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get(), timeSource);
         if (migrationPersisted) {
             // ADR-013 §5, as on every other save. The migrated snapshot is built from the loaded one
             // and carries ITS schemaVersion, so the instance seeds the version the row held BEFORE
@@ -433,65 +458,23 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return null;
         }
-        if (suppressRepeatedMisses && hasParkedLookupMiss(key)) {
+        if (suppressRepeatedMisses && parkedLookupMisses.hasMiss(key)) {
             return null;
         }
         FlowSnapshot snapshot = snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast()).orElse(null);
         if (snapshot == null || !matchesRequiredState(snapshot, requiredState)) {
             if (suppressRepeatedMisses) {
-                recordParkedLookupMiss(key);
+                parkedLookupMisses.recordMiss(key);
             }
             return null;
         }
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         return snapshot;
     }
 
-    private boolean hasParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            return parkedLookupMisses.contains(key);
-        }
-    }
-
-    private void recordParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            if (parkedLookupMisses.add(key)) {
-                parkedLookupMissOrder.offerLast(key);
-            }
-            trimParkedLookupMissOrderLocked();
-        }
-    }
-
-    private void clearParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            if (parkedLookupMisses.remove(key)) {
-                boolean removed;
-                do {
-                    removed = parkedLookupMissOrder.removeFirstOccurrence(key);
-                } while (removed);
-            }
-        }
-    }
-
-    private void clearParkedLookupMissTracking() {
-        synchronized (parkedLookupMissLock) {
-            parkedLookupMisses.clear();
-            parkedLookupMissOrder.clear();
-        }
-    }
-
-    private void trimParkedLookupMissOrderLocked() {
-        while (parkedLookupMissOrder.size() > MAX_PARKED_LOOKUP_MISSES) {
-            FlowKey oldest = parkedLookupMissOrder.pollFirst();
-            if (oldest == null) {
-                break;
-            }
-            parkedLookupMisses.remove(oldest);
-        }
-    }
 
     private void ensureParkedRegistration(RuntimeFlowInstance instance) {
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (parkedInstances.putIfAbsent(instance.key(), instance) == null) {
             parkedFlows.increment();
         }
@@ -670,7 +653,7 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return false;
         }
-        snapshotStore.save(migrated);
+        FlowSnapshotWriter.save(snapshotStore, migrated);
         return true;
     }
 
@@ -1029,7 +1012,8 @@ final class CoreFlowRuntime { // NOPMD
             FlowStepDescriptor step = instance.plan().stepAt(stepIndex);
 
             // DIST-303: timeoutNanos == Long.MAX_VALUE encodes Instant.MAX (no timeout).
-            long now = System.nanoTime();
+            // The deciding read (ADR-082): this comparison chooses timedOut, so it must be drivable.
+            long now = timeSource.nanoTime();
             long deadline = instance.timeoutNanos();
             if (deadline != Long.MAX_VALUE && deadline < now) {
                 return StepPlan.timedOut(step, now - deadline);
@@ -1178,7 +1162,7 @@ final class CoreFlowRuntime { // NOPMD
     private void applyParkOutcome(RuntimeFlowInstance instance, int stepIndex) {
         instance.state(FlowState.PARKED);
         ensureParkedRegistration(instance);
-        persistSnapshot(instance, FlowState.PARKED, stepIndex);
+        FlowParkCheckpoint.persist(instance, stepIndex, parkAttempt);
     }
 
     // step action is a user-supplied SPI callback; any Exception is a step failure (Errors propagate)
@@ -1260,7 +1244,7 @@ final class CoreFlowRuntime { // NOPMD
         if (!staleLifecycle && guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (!cleanupOnly) {
             failedFlows.increment();
             terminalStateCatalog.recordTerminal(instance.key(), FlowState.FAILED_ROLLEDBACK);
@@ -1281,7 +1265,7 @@ final class CoreFlowRuntime { // NOPMD
         boolean staleLifecycle = isStaleLifecycle(instance);
         boolean cleanupOnly = cleanupOnly(instance);
         instance.state(FlowState.COMPLETED);
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (!cleanupOnly) {
             terminalStateCatalog.recordTerminal(instance.key(), FlowState.COMPLETED);
         }
@@ -1321,6 +1305,16 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    /** Parked sagas the store refused: wakeable now, gone after a restart. */
+    /* default */ long nonDurableParkedFlows() {
+        return closed ? nonDurableParkedAtClose
+                      : FlowParkCheckpoint.countNonDurable(parkedInstances.values());
+    }
+
+    private void persistParkSnapshot(RuntimeFlowInstance instance, int stepIndex) {
+        persistSnapshot(instance, FlowState.PARKED, stepIndex);
+    }
+
     private void persistSnapshot(RuntimeFlowInstance instance, FlowState state, int stepIndex) {
         if (snapshotStore == null) {
             return;
@@ -1345,8 +1339,8 @@ final class CoreFlowRuntime { // NOPMD
         if (!isActiveLifecycle(instance) && !state.isTerminal()) {
             return;
         }
-        clearParkedLookupMiss(instance.key());
-        snapshotStore.save(instance.toSnapshot(state, stepIndex));
+        parkedLookupMisses.clearMiss(instance.key());
+        FlowSnapshotWriter.save(snapshotStore, instance, state, stepIndex);
         // ADR-013 §5: durable stores advance schema_version by one on every accepted write.
         // Mirror that increment locally so the next save carries the now-current expected
         // version. In-memory bindings ignore schemaVersion, so the bump is harmless there.
@@ -1380,6 +1374,13 @@ final class CoreFlowRuntime { // NOPMD
         }
 
         @Override
+        public void wake(long instanceIdMost, long instanceIdLeast) {
+            ensureStarted();
+            CoreFlowRuntime.this.wake(new FlowKey(instanceIdMost, instanceIdLeast),
+                    FlowState.PARKED);
+        }
+
+        @Override
         public Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
             FlowKey key = new FlowKey(instanceIdMost, instanceIdLeast);
             if (terminalStateCatalog.isTerminal(key)) {
@@ -1387,12 +1388,12 @@ final class CoreFlowRuntime { // NOPMD
             }
             RuntimeFlowInstance parked = parkedInstances.get(key);
             if (parked != null) {
-                clearParkedLookupMiss(key);
+                parkedLookupMisses.clearMiss(key);
                 return Optional.of(parked.contextView());
             }
             RuntimeFlowInstance live = liveInstances.get(key);
             if (live != null && live.state() == FlowState.PARKED) {
-                clearParkedLookupMiss(key);
+                parkedLookupMisses.clearMiss(key);
                 return Optional.of(live.contextView());
             }
             // In-memory miss → fall back to durable snapshot store. Distributed-saga JFR

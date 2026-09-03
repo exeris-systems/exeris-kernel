@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -12,6 +8,7 @@ import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -27,7 +24,9 @@ import java.util.Set;
  * §8.1.2.3 the prohibition on duplicate request pseudo-headers, and the
  * {@code :method} / {@code :path} pseudo-header requirements.
  *
- * <p>Instances are short-lived (one per HEADERS+CONTINUATION block).
+ * <p>Instances are short-lived (one per HEADERS+CONTINUATION block) and single-use: the accumulator
+ * is built, filled, and consumed by {@link #toDecodedRequest} inside one call, and never touched
+ * again. That is what lets the decoded request wrap this list rather than copy it.
  */
 final class PendingRequestHeaders {
 
@@ -61,11 +60,18 @@ final class PendingRequestHeaders {
         valid = false;
     }
 
+    /**
+     * Ends this accumulator's life, handing the decoded request an unmodifiable view of the
+     * accumulated headers. A view, not a copy: nothing else holds the list, and the accumulator is
+     * unreachable the moment this returns, so a copy would only duplicate every header of every
+     * HTTP/2 request to protect a reference no caller can obtain.
+     */
     /* default */ Http2DecodedRequest toDecodedRequest(int streamId) {
         HttpMethod method = parseHttp2Method(methodToken);
         String resolvedPath = path == null ? "" : path;
         boolean requestValid = valid && method != null && !resolvedPath.isEmpty();
-        return new Http2DecodedRequest(streamId, method, resolvedPath, List.copyOf(requestHeaders), requestValid);
+        return new Http2DecodedRequest(streamId, method, resolvedPath,
+                Collections.unmodifiableList(requestHeaders), requestValid);
     }
 
     private void acceptPseudoHeader(String name, String value) {

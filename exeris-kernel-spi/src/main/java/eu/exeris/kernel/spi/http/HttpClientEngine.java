@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -59,6 +55,27 @@ public interface HttpClientEngine extends AutoCloseable {
      * @throws IllegalStateException if the engine has not been started or has been closed
      */
     HttpResponse send(HttpRequest request);
+
+    /**
+     * Returns the peer this engine sends a request to when the request names none, or {@code null}
+     * when it has no default and an unaddressed request must be refused.
+     *
+     * <p>Exists so ADR-074's ordering rule — resolve the authority, THEN enrich, THEN send — can be
+     * honoured by a caller that sits above the engine. Without it the substitution of the default
+     * happens inside {@link #send(HttpRequest)}, which is strictly after
+     * {@link HttpClientRequestEnricher#enrich(HttpRequest)} has already run, so an enricher binding
+     * an outbound credential's audience to the peer (ADR-040) would only ever observe {@code null}.
+     *
+     * <p>{@code default} returning {@code null} so the addition is source- and binary-compatible for
+     * out-of-tree implementors: an engine that does not override it simply declares no default, which
+     * is the pre-0.12 behaviour of every engine that had one imposed on it by {@code bindHost}.
+     *
+     * @return the configured default peer as {@code host:port}, or {@code null} if there is none
+     * @since 0.12.0
+     */
+    default String defaultAuthority() {
+        return null;
+    }
 
     /**
      * Returns {@code true} if the engine is currently running (started but not closed).

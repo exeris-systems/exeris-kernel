@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.context;
 
@@ -32,6 +28,9 @@ import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
+import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
+import eu.exeris.kernel.spi.storage.blob.BlobStore;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.kernel.spi.transport.TransportEngine;
@@ -513,6 +512,43 @@ public final class KernelProviders {
     public static final ScopedValue<JobScheduler> JOB_SCHEDULER = ScopedValue.newInstance();
 
     /**
+     * The selected {@link eu.exeris.kernel.spi.storage.blob.BlobStorageProvider} (ADR-056).
+     *
+     * <p>Bound once at bootstrap, and only when blob storage is configured — the two Community
+     * drivers register at the same priority, so nothing is selected until an operator names one.
+     *
+     * @since 0.12.0
+     */
+    public static final ScopedValue<BlobStorageProvider> BLOB_STORAGE_PROVIDER =
+            ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link eu.exeris.kernel.spi.storage.blob.BlobStore} created from
+     * {@link #BLOB_STORAGE_PROVIDER}.
+     *
+     * <p>Named {@code BLOB_*} rather than {@code STORAGE_*} deliberately: {@link #STORAGE_CONTEXT}
+     * is ADR-012's tenant-isolation carrier and has nothing to do with object storage. Two things
+     * called storage that mean different things is a naming collision worth one extra word.
+     *
+     * <p>Unbound in a deployment that has not configured blob storage, which is the normal case —
+     * read it with {@code orElse}, not {@code get}, unless the caller already knows storage is on.
+     *
+     * @since 0.12.0
+     */
+    public static final ScopedValue<BlobStore> BLOB_STORE = ScopedValue.newInstance();
+
+    /**
+     * Where the kernel reads time it will decide on (ADR-082).
+     *
+     * <p>Bound once at bootstrap. Read it through {@link #timeSource()} rather than directly: an
+     * unbound kernel must still tell the time, and a call site that forgets its own {@code orElse}
+     * looks migrated while remaining undrivable.
+     *
+     * @since 0.12.0
+     */
+    public static final ScopedValue<TimeSource> TIME_SOURCE = ScopedValue.newInstance();
+
+    /**
      * The authenticated {@link PrincipalContext} for the current request scope.
      *
      * <p>Re-bound per request by the transport/security interceptor. Every virtual
@@ -778,6 +814,20 @@ public final class KernelProviders {
      */
     public static StorageContext storageContextOrSystem() {
         return STORAGE_CONTEXT.orElse(ImmutableStorageContext.GLOBAL);
+    }
+
+    /**
+     * Returns the bound {@link TimeSource}, or the platform clock when none is bound.
+     *
+     * <p>Unbound is the ordinary case for anything running outside a kernel scope — a test, a
+     * standalone driver — so this returns a default rather than throwing. Deciding reads call this;
+     * measuring reads call {@link System#nanoTime()} directly, which ADR-082 rules on.
+     *
+     * @return the bound source, or {@link TimeSource#SYSTEM}; never {@code null}
+     * @since 0.12.0
+     */
+    public static TimeSource timeSource() {
+        return TIME_SOURCE.orElse(TimeSource.SYSTEM);
     }
 
     /**

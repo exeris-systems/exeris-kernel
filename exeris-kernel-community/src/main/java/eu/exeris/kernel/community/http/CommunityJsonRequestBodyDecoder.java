@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -26,9 +22,11 @@ import java.util.Objects;
  *
  * <p>Returns {@code null} when the request body is empty ({@code body.size() == 0})
  * — the caller (the generated handler) decides whether {@code null} is acceptable
- * for the call's static request type. Jackson-specific exceptions are wrapped in
- * {@link IllegalStateException} to keep driver-specific types out of any SPI / Core
- * surface (mirrors the server-side {@code JsonBodyEncoder} pattern).
+ * for the call's static request type. A Jackson decode failure is wrapped in
+ * {@link eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException} — an SPI-owned type, so
+ * no driver-specific type reaches any SPI / Core surface, and a handler can answer
+ * {@code 400 Bad Request} without distinguishing it from a missing decoder by message text
+ * (ADR-036 §2).
  *
  * <p>No-Waste-Compute (ADR-036 §3): the segment is consumed with a single
  * {@code byte[]} copy straight into {@code mapper.readValue(bytes, targetType)} —
@@ -61,6 +59,6 @@ public final class CommunityJsonRequestBodyDecoder implements HttpRequestBodyDec
     @Override
     public Object decode(LoanedBuffer body, Class<?> targetType, HttpRequestDecodingContext context) {
         Objects.requireNonNull(context, "context must not be null");
-        return JsonBodyCodecs.readValue(mapper, body, targetType);
+        return JsonBodyCodecs.readRequestValue(mapper, body, targetType);
     }
 }

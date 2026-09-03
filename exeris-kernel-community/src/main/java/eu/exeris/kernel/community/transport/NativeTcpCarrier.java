@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -42,6 +38,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 
 /**
  * Community native TCP carrier with FD-owner reactor and VT-per-stream dispatch via PAQS.
@@ -62,7 +59,18 @@ import java.util.concurrent.atomic.AtomicLong;
 })
 public final class NativeTcpCarrier implements TransportEngine {
 
+    /**
+     * Accepts that may fail in a row before the listener is given up on. With the backoff below the
+     * streak spans roughly a minute, which is long enough for descriptors to come back under any
+     * load that is actually draining and short enough that a condition which never clears does not
+     * hold a dead listener open forever.
+     */
+    /* default */ static final int MAX_CONSECUTIVE_ACCEPT_FAILURES = 64;
+
     private static final System.Logger LOG = System.getLogger(NativeTcpCarrier.class.getName());
+
+    private static final long ACCEPT_RETRY_BASE_MILLIS = 25L;
+    private static final long ACCEPT_RETRY_MAX_MILLIS = 1_000L;
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
@@ -98,12 +106,24 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final AtomicLong refusedConnections = new AtomicLong();
     private final AtomicLong acceptFaults = new AtomicLong();
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile StreamHandler streamHandler;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile ConnectionHandler connectionHandler = connection -> {
     };
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile ServerSocketChannel serverChannel;
+    /**
+     * Accepts that returned a socket, including ones the connection cap then refused — what it
+     * witnesses is the listener working, which is a different question from whether the connection
+     * was served. Acceptor-thread-confined: the loop and the pass it runs share one platform thread,
+     * so this needs no atomic.
+     */
+    private long acceptsObserved;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread acceptorThread;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile PaqsScheduler paqs;
     private final List<NativeTcpReactor> reactors = new ArrayList<>();
     private final AtomicInteger nextReactorIndex = new AtomicInteger(0);
@@ -357,7 +377,8 @@ public final class NativeTcpCarrier implements TransportEngine {
                 totalAccepted.get(),
                 rejected,
                 0,
-                0
+                0,
+                acceptFaults.get()
         );
     }
 
@@ -456,7 +477,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private void initPaqs() {
         WatermarkManager watermarkManager = new WatermarkManager(allocator);
         ResourceArbiter arbiter = new ResourceArbiter(watermarkManager);
-        AdmissionController admissionController = new AdmissionController(arbiter);
+        AdmissionController admissionController =
+                new AdmissionController(arbiter, config.maxActiveStreams());
         StreamLoadShedder shedder = new StreamLoadShedder(engineName());
         this.paqs = new PaqsScheduler(
                 admissionController,
@@ -513,19 +535,101 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void runAcceptorLoop() {
+        acceptorLoop(this::acceptPendingConnections, () -> acceptsObserved);
+    }
+
+    /**
+     * One pass over the listener — accepts until it would block on nothing, or throws.
+     *
+     * <p>A seam, so a test can drive the loop below with a pass that fails and then recovers. The
+     * defect this loop had was that it <em>ended</em>, and only running it proves it no longer does;
+     * asserting a classification in isolation would test the judgement and not the consequence.
+     */
+    /* default */ @FunctionalInterface
+    interface AcceptPass {
+        void run() throws IOException;
+    }
+
+    /**
+     * Runs accept passes until the carrier stops, retrying a failed accept instead of ending.
+     *
+     * <p>Until 0.12.0 any {@link IOException} from {@code accept()} took the listener down for the
+     * lifetime of the JVM. That is how descriptor exhaustion surfaces — {@code EMFILE} is an
+     * {@code IOException} with nothing in its type to distinguish it — and it is transient by
+     * nature: descriptors come back as connections close. A listener that dies of it needs a
+     * restart to serve again.
+     *
+     * <p><b>Every {@code IOException} is retried, rather than a list of transient ones.</b> Java
+     * gives no typed signal here, so classifying means matching on the message, and a message that
+     * does not match reinstates exactly the defect being fixed — on a different JDK, OS or locale.
+     * The two directions are not symmetric: retrying a fatal condition costs a bounded delay before
+     * the same outcome, while refusing to retry a transient one loses the listener. So the bound
+     * does the work classification would have: {@link #MAX_CONSECUTIVE_ACCEPT_FAILURES} accepts in a
+     * row that all fail is a condition that is not clearing, and the fatal path is taken then.
+     *
+     * @param pass one accept pass
+     */
+    /* default */ void acceptorLoop(AcceptPass pass, LongSupplier acceptsObserved) {
+        acceptorLoop(pass, acceptsObserved, MAX_CONSECUTIVE_ACCEPT_FAILURES);
+    }
+
+    /**
+     * @param ceiling consecutive failures tolerated before the fatal path; a parameter so a test can
+     *                reach the bound without spending the real backoff of the shipped one
+     */
+    /* default */ void acceptorLoop(AcceptPass pass, LongSupplier acceptsObserved, int ceiling) {
+        int consecutiveFailures = 0;
         while (running.get()) {
+            long acceptsBefore = acceptsObserved.getAsLong();
             try {
-                acceptPendingConnections();
+                pass.run();
+                consecutiveFailures = 0;
             } catch (AsynchronousCloseException ignored) {
                 // shutdown path
                 return;
             } catch (IOException e) {
-                if (running.get()) {
-                    handleAsyncFailure("acceptor", e);
+                if (!running.get()) {
+                    return;
                 }
-                return;
+                // Progress is read from the counter rather than from how the pass returned, and the
+                // difference is not cosmetic: a pass that accepts a connection and then throws while
+                // probing for the next one leaves by the THROW, skipping any return value. Under the
+                // pressure this fix exists to survive — descriptors freeing one at a time — that is
+                // the normal shape, and a streak built from return values would climb to the ceiling
+                // while the listener was demonstrably still serving.
+                boolean served = acceptsObserved.getAsLong() > acceptsBefore;
+                consecutiveFailures = served ? 1 : consecutiveFailures + 1;
+                if (!retryAccept(e, consecutiveFailures, ceiling)) {
+                    return;
+                }
             }
         }
+    }
+
+    /**
+     * Decides whether the acceptor pauses and tries again, and pauses if so.
+     *
+     * @return {@code false} when the loop must end — the streak passed the ceiling, or the pause was
+     *         interrupted
+     */
+    private boolean retryAccept(IOException failure, int streak, int ceiling) {
+        if (streak > ceiling) {
+            handleAsyncFailure("acceptor", failure);
+            return false;
+        }
+        long backoffMillis = Math.min(ACCEPT_RETRY_BASE_MILLIS * streak, ACCEPT_RETRY_MAX_MILLIS);
+        CommunityAcceptRetryEvent.emit(config.bindAddress(), config.port(),
+                failure.getClass().getName(), streak, backoffMillis);
+        try {
+            Thread.sleep(backoffMillis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            // Symmetric with the ceiling above rather than a quiet return: the acceptor thread is
+            // ending either way, and leaving `running` true would advertise a listener that is gone.
+            handleAsyncFailure("acceptor", failure);
+            return false;
+        }
+        return true;
     }
 
     /* default */ void handleAsyncFailure(String stage, Exception error) {
@@ -580,11 +684,28 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /**
+     * The configured idle timeout in milliseconds, {@code 0} when reclamation is disabled.
+     *
+     * <p>Read once per reactor at construction to build its {@link NativeTcpIdleReaper}. It comes
+     * straight off {@code TransportConfig}, which is where {@code transport.idleTimeoutMillis}
+     * and {@code http.idleTimeoutMillis} both land.
+     *
+     * @return the timeout carried on this carrier's transport configuration
+     */
+    /* default */ long idleTimeoutMillis() {
+        return config.idleTimeoutMillis();
+    }
+
     /* default */ void closeKeyStream(SelectionKey key) {
-        // Reached only from the reactor select-loop catch(RuntimeException) (NativeTcpReactor), i.e.
-        // on the reactor thread, after a per-key dispatch (read-ingress or flush) faulted — most
-        // often an unwrap-on-closed TlsDecryptException once the stream's TLS engine is already
-        // closed. The connection is unrecoverable, so tear it down ABORTIVELY:
+        // Two callers, both on the reactor thread, and both wanting the same teardown. First, the
+        // select-loop catch(RuntimeException) (NativeTcpReactor) after a per-key dispatch
+        // (read-ingress or flush) faulted — most often an unwrap-on-closed TlsDecryptException once
+        // the stream's TLS engine is already closed. Second, NativeTcpIdleReaper, when a connection
+        // has moved no bytes for transport.idleTimeoutMillis. The first connection is unrecoverable
+        // and the second is unattended; neither can be waited on, so both tear down ABORTIVELY.
+        // Point 2 below is why the idle path in particular must not take a graceful close: a peer
+        // quiet enough to be reclaimed is a peer that may never drain the queue that close waits on.
         //  1. cancel the key synchronously — removes it from this reactor's selector so the
         //     level-triggered dead channel cannot re-fire (read OR write) and busy-spin the reactor
         //     while teardown completes. Direct cancel honours the single-consumer key protocol
@@ -610,7 +731,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void acceptPendingConnections() throws IOException {
-        SocketChannel acceptedChannel = serverChannel.accept();
+        SocketChannel acceptedChannel = acceptOne();
         while (acceptedChannel != null && running.get()) {
             SocketChannel currentChannel = acceptedChannel;
             NativeTcpConnection connection = null;
@@ -621,7 +742,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 if (!slotReserved) {
                     recordRefusal();
                     closeQuietly(currentChannel);
-                    acceptedChannel = serverChannel.accept();
+                    acceptedChannel = acceptOne();
                     continue;
                 }
                 configureAcceptedChannel(currentChannel);
@@ -648,8 +769,23 @@ public final class NativeTcpCarrier implements TransportEngine {
                     activeConnections.decrementAndGet();
                 }
             }
-            acceptedChannel = serverChannel.accept();
+            acceptedChannel = acceptOne();
         }
+    }
+
+    /**
+     * One {@code accept()}, counted.
+     *
+     * <p>Every probe goes through here, not only the first: the counter is what tells the loop the
+     * listener is alive, and a probe that succeeds after an earlier one in the same pass is exactly
+     * as much evidence of that as the first was.
+     */
+    private SocketChannel acceptOne() throws IOException {
+        SocketChannel accepted = serverChannel.accept();
+        if (accepted != null) {
+            acceptsObserved++;
+        }
+        return accepted;
     }
 
     private static void configureAcceptedChannel(SocketChannel channel) throws IOException {

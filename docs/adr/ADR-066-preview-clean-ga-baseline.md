@@ -119,6 +119,10 @@ Twenty-six test and TCK fixtures still use `StructuredTaskScope`. They compile w
 `--enable-preview` via a test-compile-only execution and run under it, because they are **not
 distributed**. Main sources compile without it. This is the whole of the distinction the gate enforces.
 
+*(Superseded by Amendment A1 below, v0.12: the fixtures were converted and the flag removed from
+every scope. The distinction the gate enforces is unchanged; there is simply nothing left on the
+other side of it.)*
+
 ### 4. The gate reads bytecode, not sources
 
 `tools/preview-bytecode-scan/` reads the **published jars** and fails the build if any distributed
@@ -138,6 +142,38 @@ and an unreadable artifact is reported as unscanned instead of ending the run in
 
 Both failure modes are proven to fail the gate by byte-level mutation of a built class, not by
 inspection.
+
+## Amendment A1 (v0.12) — the test-scope carve-out is closed, and it was not where the risk was
+
+§3 draws the line at what ships and leaves twenty-six fixtures compiling under `--enable-preview`.
+That carve-out no longer exists: the fixtures were moved onto GA APIs and the flag was removed from
+the POMs, the surefire JVMs, the JMH forks, `MAVEN_OPTS` in both workflows, and the SPI API-diff
+tool. No source in this repository uses a preview API in any scope.
+
+**What the carve-out was actually costing, measured rather than assumed.** It was not shipping
+preview bytecode. The TCK test-jar — the only published artifact built from test sources, and the
+one §4 was written to catch — measured **0 preview-stamped classes of 467** before this change,
+because `javac` stamps the classes that *use* a preview feature, not every class in a compilation
+that enabled one. The 56 stamped classes sat in `exeris-kernel-core` (41 of 598) and
+`exeris-kernel-community` (15 of 459) test-classes, which nothing publishes.
+
+The cost was to the **build**. `--enable-preview` is legal only when `--release` equals the running
+JDK, so a repository that baselines on `--release 25` and enables preview anywhere can be built by
+JDK 25 and nothing else — a contributor on 26 got `invalid source release 25 with --enable-preview`,
+naming the flag rather than the cause. That is now removed by mutation-checked evidence: the full
+reactor installs on JDK 26 on this branch, and fails on the unchanged branch with exactly that
+message.
+
+The second cost was ongoing. `StructuredTaskScope`'s exception model is still moving across previews,
+and every such change reached the GA line's test suite even though the GA line does not ship it.
+
+Three fixtures could not simply move to `TckScope`: they drive two blocking OpenSSL peers, which must
+run on platform threads (an FFM downcall blocks the carrier rather than unmounting the virtual
+thread) under a deadline (a stalled handshake hangs rather than fails). They share
+`BlockingPeerPair`, which reports an outcome instead of choosing a failure vocabulary for its three
+callers. One security fixture asserted `ScopedValue` inheritance across a fork — a property of the
+preview API, not of the kernel — and now asserts the propagation the GA line actually offers:
+capture inside the binding, rebind explicitly through `StructuredScope.open(carrier)`.
 
 ## Consequences
 

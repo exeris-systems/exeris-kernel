@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.http1;
 
@@ -90,6 +86,64 @@ class Http1RequestParserTest {
     void rejectsHeaderNameOutsideRfcToken() {
         try (Arena arena = Arena.ofConfined()) {
             String headers = "Bad Name: value\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
+                    (name, value) -> {
+                    }))
+                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .hasMessageContaining("Invalid HTTP header field-name");
+        }
+    }
+
+
+    @Test
+    void knownNamesArriveWithTheCharactersTheWireCarried() {
+        // The parser resolves known spellings from a shared table instead of materialising them
+        // (RFC-2026-09-01). The visible contract must not move: same characters, same order, and
+        // mixed casings the table does not know must still come through as sent.
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "Host: example.test\r\n"
+                    + "content-length: 7\r\n"
+                    + "X-Wholly-Invented: yes\r\n"
+                    + "HOST: shouted\r\n"
+                    + "\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+            List<String> parsed = new ArrayList<>();
+
+            long consumed = Http1RequestParser.parseHeaders(segment, 0, headers.length(),
+                    (name, value) -> parsed.add(name + '=' + value));
+
+            assertThat(consumed).isEqualTo(headers.length());
+            assertThat(parsed).containsExactly(
+                    "Host=example.test",
+                    "content-length=7",
+                    "X-Wholly-Invented=yes",
+                    "HOST=shouted");
+        }
+    }
+
+    @Test
+    void anInvalidNameIsStillRejectedWhenItLooksLikeATableEntry() {
+        // Validation now runs only on the table-miss path, so the case that matters is a name the
+        // table could plausibly be asked about: five bytes, exactly the length of "Range", but not
+        // a token. If the lookup ever answered on length alone this would be admitted silently.
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "Ra ge: value\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
+                    (name, value) -> {
+                    }))
+                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .hasMessageContaining("Invalid HTTP header field-name");
+        }
+    }
+
+    @Test
+    void anEmptyNameIsStillRejected() {
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = ": value\r\n\r\n";
             MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
 
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),

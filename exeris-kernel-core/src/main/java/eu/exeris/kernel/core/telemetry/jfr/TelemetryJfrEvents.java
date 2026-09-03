@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.telemetry.jfr;
 
@@ -15,10 +11,6 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
-// AvoidDuplicateLiterals: JFR @Label / @Category / @Name are annotation literals —
-// cannot be extracted to constants. The @Category array elements ("Exeris Kernel", etc.)
-// repeat across inner event classes by design.
-@SuppressWarnings("PMD.AvoidDuplicateLiterals")
 public final class TelemetryJfrEvents {
 
     private TelemetryJfrEvents() {

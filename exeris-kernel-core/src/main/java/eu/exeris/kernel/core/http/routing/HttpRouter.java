@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.routing;
 
@@ -165,13 +161,9 @@ public final class HttpRouter implements HttpHandler {
     }
 
     private RouteMatch resolveTemplate(HttpMethod method, String path) {
-        if (templateRoutes.isEmpty()) {
-            return null;
-        }
-        String[] segments = path.split("/", -1);
         for (PathTemplateRoute template : templateRoutes) {
             if (template.method() == method) {
-                RouteMatch match = template.toMatch(segments);
+                RouteMatch match = template.toMatch(path);
                 if (match != null) {
                     return match;
                 }
