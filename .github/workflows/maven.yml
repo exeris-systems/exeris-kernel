@@ -231,13 +231,18 @@ jobs:
         # down every merge gate for a reason unrelated to the code under test. Static analysis is not
         # a correctness gate here and must never be able to do that.
         #
-        # It is load-bearing right now, not just prudent: the SonarQube Cloud organisation is
-        # currently without an administrator, so Automatic Analysis cannot be switched off — and
-        # SonarQube Cloud *rejects* a CI submission while it is enabled. Until that is resolved this
-        # step is expected to fail whenever a token is present.
+        # The organisation now has an administrator, Automatic Analysis is off and the token is an
+        # organisation secret, so this step runs for real. The first CI-based analysis this
+        # repository has ever had is what settled several things that were guesses until then:
+        # JaCoCo coverage imported (8 reports, and the `coverage` metric had not existed at all
+        # before), the `sonar.issue.ignore` entries took effect where Automatic Analysis had been
+        # ignoring them, and the TCK reclassification landed — 115 bugs and vulnerabilities closed,
+        # 8 code smells left.
         #
-        # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
-        # let the analysis rot silently.
+        # It also logged `Unresolved imports/types have been detected during analysis`, which is not
+        # noise: `sonar.java.libraries` is a glob over the project tree, so it matches the 9 reactor
+        # jars and none of the 71 dependency jars on a module's real classpath. That is what the
+        # Maven scanner would derive correctly, and it is tracked separately.
         #
         # Pinned by commit SHA, not by tag. Two high-severity advisories (GHSA-f79p-9c5r-xg88,
         # GHSA-5xq9-5g24-4g6f) cover every 4.x/5.x release of this action, so `@v5` resolved to a
