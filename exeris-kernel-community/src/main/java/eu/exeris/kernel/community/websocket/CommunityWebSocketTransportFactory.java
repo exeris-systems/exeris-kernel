@@ -6,10 +6,12 @@ package eu.exeris.kernel.community.websocket;
 
 import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
+import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
@@ -21,20 +23,52 @@ import java.net.ServerSocket;
 /**
  * Builds the TCP carrier a WebSocket engine listens on.
  *
- * <p>Deliberately the same shape as {@code CommunityHttpTransportFactory}, including the
- * ScopedValue dance around an unbound allocator: a duplex endpoint that a tool embeds without
- * booting the kernel is exactly the case where {@code MEMORY_ALLOCATOR} is not already bound.
+ * <p>{@link #buildTransport} is the same shape as {@code CommunityHttpTransportFactory}, ScopedValue
+ * rebind included. {@link #resolveAllocator()} deliberately is <strong>not</strong>: that one creates
+ * an allocator when none is bound, where the HTTP server factory still refuses.
+ *
+ * <p>The divergence is the point. ADR-084 §1 exists so the platform can obtain an endpoint "without
+ * booting the kernel", from two public calls — and a tool embedding a duplex endpoint is exactly the
+ * case where {@code MEMORY_ALLOCATOR} is not already bound, so the first of those two calls used to
+ * answer {@code IllegalStateException}. The fallback mirrors
+ * {@code CommunityHttpClientEngine.resolveAllocator}, which had already solved the identical problem
+ * for the embedded client.
+ *
+ * <p>{@code CommunityHttpTransportFactory.resolveAllocator} carries the same gap and is left alone
+ * here: whether an HTTP <em>server</em> engine is meant to be constructible outside a boot is a
+ * question for its own ADR, and answering it in this file would be answering it by accident.
  */
 final class CommunityWebSocketTransportFactory {
 
     private CommunityWebSocketTransportFactory() {
     }
 
-    /* default */ static MemoryAllocator resolveAllocator() {
-        if (!KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            throw new IllegalStateException("KernelProviders.MEMORY_ALLOCATOR is not bound");
+    /**
+     * An allocator and whether the caller owns it.
+     *
+     * <p>One record rather than two calls, and the reason is the ownership rule itself: asking
+     * "is one bound?" twice admits a window in which the two answers disagree, and the engine would
+     * then either leak an allocator it created or close an ambient one it does not own — the second
+     * being exactly the failure the engine's field comment calls out. A single {@code isBound()}
+     * read cannot disagree with itself.
+     *
+     * @param allocator the allocator to use; never {@code null}
+     * @param ours      {@code true} when this factory created it, so its holder must close it
+     */
+    /* default */ record ResolvedAllocator(MemoryAllocator allocator, boolean ours) {
+    }
+
+    /**
+     * The ambient allocator when the caller has one, a private one when it does not.
+     *
+     * @return the allocator and its ownership, decided by one binding check
+     */
+    /* default */ static ResolvedAllocator resolveAllocator() {
+        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
+            return new ResolvedAllocator(KernelProviders.MEMORY_ALLOCATOR.get(), false);
         }
-        return KernelProviders.MEMORY_ALLOCATOR.get();
+        return new ResolvedAllocator(
+                new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults()), true);
     }
 
     /* default */ static TransportEngine buildTransport(WebSocketConfig config, int port,

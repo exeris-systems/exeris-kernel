@@ -157,7 +157,17 @@
         <sonar.newCode.referenceBranch>main</sonar.newCode.referenceBranch>
 
         <sonar.exclusions>**/target/**,**/.idea/**,**/kernel-legacy/**,**/native-libs/**,**/*.md</sonar.exclusions>
-        <sonar.coverage.exclusions>**/*Benchmark*.java,**/target/**</sonar.coverage.exclusions>
+        <!--
+            exeris-kernel-community-testkit is excluded from COVERAGE measurement, not from analysis:
+            its rules still run and its own tests still gate. The module's fixtures hold a real
+            KernelBootstrap open, and exercising that needs a provider and a JDBC driver — which this
+            module can never have, because it builds BEFORE exeris-kernel-community in the reactor.
+            So the tests that drive the fixtures live in exeris-kernel-community
+            (…/testkitconsumer/), per-module JaCoCo cannot see across that boundary, and the number
+            reported for the testkit measures where the tests are allowed to live rather than whether
+            the code is tested. The same structural reason already exempts exeris-kernel-tck.
+        -->
+        <sonar.coverage.exclusions>**/*Benchmark*.java,**/target/**,exeris-kernel-community-testkit/**</sonar.coverage.exclusions>
         <!--
             Copy-paste exclusions for framework-mandated boilerplate where structural repetition is
             by design, not a DRY violation: JMH *Benchmark* harness classes, and JFR @Event classes

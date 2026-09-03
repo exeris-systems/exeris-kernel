@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.testkit.persistence;
 
 import eu.exeris.kernel.community.testkit.FixtureBootLock;
+import eu.exeris.kernel.community.testkit.KernelScopePump;
 import eu.exeris.kernel.community.testkit.FixtureThreads;
 import eu.exeris.kernel.community.testkit.SystemPropertySnapshot;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;

@@ -209,6 +209,28 @@ configuration and can move without a contract change:
   payload argument that set §5's limit — `domainDescribe` returning a full projection — weighs
   differently over the internet to a browser than it did over a local socket.
 
+## Amendment A1 (v0.12) — §1's promise was not executable until this release
+
+§1 makes "the platform must get an endpoint without booting the kernel", from two public calls, the
+property that decides this ADR. As shipped, the first of those two calls threw:
+`CommunityWebSocketServerEngine` resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and
+refused when nothing had bound one — which is precisely the state a tool embedding an endpoint is in.
+The transport factory's own javadoc described that scenario while the method beneath it rejected it.
+
+Fixed by falling back to a private allocator when none is ambient, owned and closed by the engine
+that created it, mirroring `CommunityHttpClientEngine` — which had already solved the identical
+problem for the embedded client. An ambient allocator is still never closed by the engine, because it
+belongs to whoever bound it.
+
+**And the property is now enforced rather than described.** `AbstractWebSocketProviderTck` binds no
+`ScopedValue` and boots nothing, so a provider that quietly requires a kernel scope fails the shared
+suite. Until this release the TCK covered wire-level behaviour only, and a binding could contradict
+the deciding property of this ADR while passing every contract test.
+
+One thing this does **not** claim: `CommunityHttpTransportFactory.resolveAllocator` still refuses an
+unbound allocator, so an HTTP *server* engine is not constructible outside a boot. Whether it should
+be is a separate question and belongs to its own decision, not to this one.
+
 ## Amendment A2 (v0.12) — the no-boot path is not the only path
 
 §1 decided that a provider yields an engine **without** booting the kernel, and that decision stands
@@ -243,10 +265,10 @@ Three things this amendment does not change, stated because each was checked rat
   `DeferredWebSocketServerEngine` is the same answer `DeferredHttpServerEngine` already gives to the
   identical ordering problem.
 
-The state of §1's own implementation is a separate matter and is recorded in Amendment A1, which
-lands with the change that fixes it. This amendment deliberately makes no claim about it: asserting
-another pull request's outcome here would put a fix in the record before it is in the code, and the
-merge order of the two is not guaranteed.
+The state of §1's own implementation is recorded in Amendment A1 above, which landed with the change
+that fixed it. This amendment does not restate it. The two are independent decisions that happened to
+reach the same release, and folding one into the other would leave the record unable to say which
+change carried which.
 
 ## Consequences
 
