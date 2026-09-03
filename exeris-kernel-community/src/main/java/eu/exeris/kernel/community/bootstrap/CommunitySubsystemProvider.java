@@ -33,6 +33,7 @@ public final class CommunitySubsystemProvider implements SubsystemProvider {
                 new CommunityGraphSubsystem(),
                 new CommunityTransportSubsystem(),
                 new CommunityHttpSubsystem(),
+                new CommunityWebSocketSubsystem(),
                 new CommunityFlowSubsystem(),
                 new CommunitySchedulingSubsystem(),
                 new CommunityStorageSubsystem()
