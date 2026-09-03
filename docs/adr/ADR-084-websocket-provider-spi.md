@@ -209,7 +209,7 @@ configuration and can move without a contract change:
   payload argument that set §5's limit — `domainDescribe` returning a full projection — weighs
   differently over the internet to a browser than it did over a local socket.
 
-## Amendment A1 (v0.12) — the no-boot path is not the only path
+## Amendment A2 (v0.12) — the no-boot path is not the only path
 
 §1 decided that a provider yields an engine **without** booting the kernel, and that decision stands
 unchanged: `WebSocketProvider.createServerEngine` works with nothing bound, and a per-session LSP
@@ -243,11 +243,10 @@ Three things this amendment does not change, stated because each was checked rat
   `DeferredWebSocketServerEngine` is the same answer `DeferredHttpServerEngine` already gives to the
   identical ordering problem.
 
-Separately, the embedded path of §1 was **broken as shipped**: engine construction resolved
-`MEMORY_ALLOCATOR` and threw when it was unbound, which is exactly the state a tool embedding an
-endpoint is in. Fixed by falling back to a private allocator, owned and closed by the engine that
-created it, mirroring `CommunityHttpClientEngine`. So this amendment also marks the first release in
-which §1's own promise is executable.
+The state of §1's own implementation is a separate matter and is recorded in Amendment A1, which
+lands with the change that fixes it. This amendment deliberately makes no claim about it: asserting
+another pull request's outcome here would put a fix in the record before it is in the code, and the
+merge order of the two is not guaranteed.
 
 ## Consequences
 
