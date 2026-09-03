@@ -22,12 +22,12 @@ requirements.
 
 ## Which artifact line
 
-v0.11 ships two artifacts. They carry the **same kernel** — same SPI, same subsystems, same tests —
+v0.12 ships two artifacts. They carry the **same kernel** — same SPI, same subsystems, same tests —
 and differ in one axis plus the build that follows from it.
 
-| | `0.11.0` | `0.11.0-preview` |
+| | `eu.exeris:*:0.12.0` | `eu.exeris.preview:*:0.12.0` |
 |:--|:--|:--|
-| **JDK** | **25 LTS** | newest available — JDK 28 EA today |
+| **JDK** | **25 LTS** | newest available — JDK 28 today |
 | **`--enable-preview`** | **not required, and not imposed on you** | required, by definition |
 | **Structured concurrency** | `StructuredScope` — virtual threads + `ScopedValue`, both GA | `StructuredTaskScope` |
 | **Class-file major** | 69 | 72 |

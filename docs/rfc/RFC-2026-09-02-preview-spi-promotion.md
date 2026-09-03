@@ -126,6 +126,15 @@ the security surface at 1.0 include the secret seam, or does it publish without 
 
 Three things, named so the RFC is not read as more complete than it is:
 
+- **Four of the nine `preview` surfaces are not classified above** — a gap found at the v0.12 cut, not
+  when this was written. The investigation covers `…spi.events`, `…spi.graph`, `…spi.crypto`,
+  `…spi.security` and `…spi.security.identity`; it does not cover `…spi.scheduling`,
+  `…spi.storage.blob`, `…spi.time` or `…spi.websocket`. The last two are new in v0.12 and `preview` for
+  the ordinary reason. The first two are not: both carry an anchor ADR (ADR-057, ADR-056) and an
+  executable TCK, both gained bootstrap wiring in v0.12, and **neither has a scheduled contract change
+  named anywhere** — which is the condition the matrix's `preview` label turns on. They may be a fifth
+  kind: *nothing blocks promotion and nobody asked*. Recorded in `docs/stability-matrix.md`
+  §"v0.12 re-assessment" and deliberately not resolved there, because promotion is this RFC's question.
 - **HTTP codecs.** The surface moved in v0.12 (the request-decode exception type; the decoding
   contexts' allocator becoming optional). Whether anything further is scheduled has not been
   established, and the answer decides whether codecs are Kind 2 or Kind 3.
