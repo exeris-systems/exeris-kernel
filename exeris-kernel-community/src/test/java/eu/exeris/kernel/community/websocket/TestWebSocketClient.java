@@ -210,7 +210,12 @@ final class TestWebSocketClient implements AutoCloseable {
                 // Server-to-client frames must NOT be masked, so no unmasking happens here; a
                 // server that masked one would produce garbage, which is the correct outcome.
                 if (opcode == 0x1 || opcode == 0x0) {
-                    inbound.offer(new String(payload, StandardCharsets.UTF_8));
+                    if (!inbound.offer(new String(payload, StandardCharsets.UTF_8))) {
+                        // Same trap as the TCK capture: a bounded queue that silently drops turns
+                        // a delivery failure into a missing-message assertion with no cause.
+                        throw new IllegalStateException(
+                                "inbound queue full: the test client dropped a frame");
+                    }
                 } else if (opcode == 0x8) {
                     observedCloseCode.set(payload.length >= 2
                             ? ((payload[0] & 0xFF) << 8) | (payload[1] & 0xFF)

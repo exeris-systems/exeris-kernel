@@ -1990,7 +1990,7 @@ Compute improvement that can follow.
 (assert on allocator stats, not on timing); the overrun refusal still fires at the configured limit; the
 S3 driver's ceiling stops being the engine's ceiling.
 
-**Status (v0.12): the knob is DELIVERED; the per-response sizing is not.** Problem 2 of the two above
+**Status (v0.12): superseded — see the second status below, which closes both halves.** *(As first written, and kept because the sequence is the record: "the knob is DELIVERED; the per-response sizing is not". The sizing landed later in the same milestone.)* Problem 2 of the two above
 is closed — `http.maxResponseBodyBytes` is a separate key on `HttpConfig`, resolved independently of
 `http.maxRequestBodyBytes`, and `CommunityHttpClientEngine.resolveAggregateCapacity` reads it. Both
 default to 10 MiB, so an untuned deployment sees no change, and the pre-0.12 constructor shape keeps
@@ -3218,7 +3218,7 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 
 **1.0 disposition:** **1.0-RECOMMENDED** — cheap, fixes a real consistency gap, de-risks the DST moat. High value-per-effort, not a hard GA gate.
 
-**Status (v0.12): the seam ships and the saga TTL is drivable; the rest of the migration is not.**
+**Status (v0.12): superseded — see the second status below, which records the migration as complete.** *(As first written: "the seam ships and the saga TTL is drivable; the rest of the migration is not". The rest landed later in the same milestone.)*
 [ADR-082](adr/ADR-082-injectable-time-seam.md) rules `TimeSource` (`nanoTime()` + `wallTime()`) in
 `spi.time`, bound through `KernelProviders.TIME_SOURCE` and read through `KernelProviders.timeSource()`,
 which falls back to the platform clock. The names are taken from `CommunitySchedulerClock` rather than
@@ -3319,7 +3319,7 @@ CI against the built artifacts.
 
 **1.0 disposition:** **1.0-BLOCKING** — a credible "1.0 GA" on Maven Central cannot ship unsigned and SBOM-less; also the cheapest strategic win in this list.
 
-**Status (v0.12): PARTIAL — SBOM and reproducible builds delivered on `development/0.12.0`; signing and provenance are not.** Two of the four items the Resolution names are done and gated on every pull request by the `Supply-Chain Gate`: a CycloneDX SBOM per artifact, attached under classifier `cyclonedx` so `mvn deploy` publishes it beside the jar, and a reproducible-build baseline (`project.build.outputTimestamp` plus version pins on the default-lifecycle plugins). The Gap paragraph's "no reproducible-build config" was understated on one point worth keeping: `maven-jar-plugin` carried no version anywhere in the reactor and resolved through Maven's super-POM to 3.1.2, which predates reproducible archive support — so the pins are not hygiene accompanying the timestamp property, they are what makes it do anything. Measured rather than assumed: on the preceding commit two consecutive builds differed in all 9 jars; they are now byte-identical, as are the 11 SBOMs.
+**Status (v0.12, first slice): SBOM and reproducible builds, delivered on `development/0.12.0`.** *(This heading read "signing and provenance are not" until the cut; the second slice below built and gated both, so the clause was retired rather than left contradicting the paragraph beneath it.)* Two of the four items the Resolution names are done and gated on every pull request by the `Supply-Chain Gate`: a CycloneDX SBOM per artifact, attached under classifier `cyclonedx` so `mvn deploy` publishes it beside the jar, and a reproducible-build baseline (`project.build.outputTimestamp` plus version pins on the default-lifecycle plugins). The Gap paragraph's "no reproducible-build config" was understated on one point worth keeping: `maven-jar-plugin` carried no version anywhere in the reactor and resolved through Maven's super-POM to 3.1.2, which predates reproducible archive support — so the pins are not hygiene accompanying the timestamp property, they are what makes it do anything. Measured rather than assumed: on the preceding commit two consecutive builds differed in all 9 jars; they are now byte-identical, as are the 11 SBOMs.
 
 **Status (v0.12, second slice): the signing and provenance pipeline is built and gated; nothing has been published through it.** GPG signing covers every file a release carries — jar, sources, javadoc, pom and SBOM — and SLSA provenance is attested through Sigstore keyless signing on the release workflow's OIDC identity, which is the question a GPG signature does not answer (which workflow, at which commit, on which runner). The Merge Gate's "a CI job verifies the signature" is met by `tools/release-readiness`, which verifies each signature against the key *before* upload rather than after; verifying "on a fresh pull" is not yet possible because nothing signed has been published to pull.
 

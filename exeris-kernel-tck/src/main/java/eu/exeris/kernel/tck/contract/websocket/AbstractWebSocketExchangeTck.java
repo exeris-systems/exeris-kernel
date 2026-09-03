@@ -156,7 +156,13 @@ public abstract class AbstractWebSocketExchangeTck {
             captured.session.set(exchange.session());
             String message;
             while ((message = exchange.receive()) != null) {
-                captured.received.offer(message);
+                if (!captured.received.offer(message)) {
+                    // The capture is bounded, so a full queue would drop a message the assertions
+                    // below then compare against — a wrong expectation reported as a content
+                    // mismatch, with nothing naming the cause. Fail where it happens instead.
+                    throw new IllegalStateException(
+                            "capture queue full: the TCK dropped a received message");
+                }
                 try {
                     exchange.send(message);
                 } catch (WebSocketClosedException closed) {

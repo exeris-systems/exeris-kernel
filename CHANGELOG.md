@@ -10,6 +10,38 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
+  gains `abstain()` and a matching `Kind.ABSTAIN`; the dispatcher walks an ordered list of policies
+  and takes the first non-abstaining answer. Without it a policy had only two replies — a requirement
+  or none — and "none" meant *"this route is open"* rather than *"not mine"*, so the first policy
+  registered silently owned the whole URL space. Two authors can now share it without coordinating
+  through absence.
+
+### Changed
+
+- **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
+  total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
+  and Tier B column type — and throws a typed exception for anything it does not implement. It
+  specifically does **not** decode unknown bytes as UTF-8: returning mojibake for a structured binary
+  datum is silent corruption, and a refusal is strictly better than a wrong string that reads like a
+  right one.
+
+  Two further obligations are transcription rather than ruling, and are now written down for every
+  accessor because both implementations already agreed and only the Javadoc was silent: NULL
+  behaviour, resolved before any type dispatch (a reference-typed accessor returns `null` and must
+  not throw; a primitive accessor throws, having no null to return), and out-of-range behaviour,
+  uniformly `IndexOutOfBoundsException` — which `getInt` alone had stated while ten neighbours
+  behaved identically without saying so. Pinned by `AbstractRowCursorTypeSetTck`.
+
+- **A `401` names its reason to the recording, not to the caller.** The deny reason now reaches a JFR
+  event carrying the provider id and a reason code — never the raw token, key material, or claim
+  values — while the response to the caller stays an undifferentiated `401`. Both halves are the
+  point: an operator could not previously tell a stale JWKS from a bad signature from an unbound
+  provider, because all three produced the same silent rejection, and telling the *caller* which one
+  it was would hand an attacker a probe.
+
+### Added
+
 - **A `websocket` subsystem, so an application that boots the kernel reaches an endpoint without
   naming a driver.** ADR-084 §1 decided a provider yields an engine *without* a kernel boot, for a
   tool that must not pay for a runtime it does not use. That decision stands; what it did not decide
