@@ -83,6 +83,37 @@ the URL in use (`com.h2database:h2` for `inMemoryH2()`). The testkit declares ne
 class, and a test library has no business putting a database on the classpath of everything downstream
 of it.
 
+### Events and flow — `EmbeddedKernelFixture` (since 0.12)
+
+Boots `events`, `flow`, or both — transitively pulling `persistence` and, for events, `memory` — and
+hands back the engines out of **one** kernel.
+
+```java
+try (EmbeddedKernelFixture fixture = EmbeddedKernelFixtures.eventsAndFlowOnH2()) {
+    fixture.start();
+    fixture.eventEngine().bus().publish(descriptor, payload);
+    // saga state written by fixture.flowEngine() is readable through:
+    fixture.persistenceEngine();
+}
+```
+
+Factories: `eventsOnH2()`, `flowOnH2()`, `eventsAndFlowOnH2()`, and
+`forJdbcUrl(Set<String>, String, boolean)` for a container-backed database.
+
+**One fixture over a subsystem set, not one fixture per subsystem** — and the reason is mechanical
+rather than stylistic. Each fixture holds an entire `KernelBootstrap` open on its own thread, and
+`FixtureBootLock` serialises boots because configuration travels through JVM-global system properties.
+Three fixtures for one saga test would be three kernels, booted in sequence, sharing nothing. A saga
+that emits an event needs both engines out of the *same* runtime, which is also how production wires
+it.
+
+`persistenceEngine()` is always available, because both subsystems declare `dependsOn("persistence")`.
+That is what makes an assertion on saga state or on the outbox possible: the test reads the rows the
+engine wrote. Asking for an engine whose subsystem was not selected fails with a message naming it,
+not with a `NullPointerException`.
+
+---
+
 ### Security — `TestJwt`
 
 Signed-token construction for tests exercising `TokenValidator` / `IdentityProvider` bindings, plus
@@ -106,7 +137,8 @@ lines elsewhere.
 
 ## Shared plumbing
 
-`SystemPropertySnapshot`, `FixtureThreads` and `FixtureBootLock` sit in the root package. All three are
+`SystemPropertySnapshot`, `FixtureThreads`, `FixtureBootLock` and `KernelScopePump` sit in the root
+package. All four are
 **testkit-internal** — public only because Java package access does not reach across subpackages — and
 none is fixture API. They exist because every fixture that holds a kernel boot open on a dedicated
 thread has to publish configuration properties before booting and put them back afterwards, has to join
@@ -138,11 +170,18 @@ spawning a second boot thread and leaking the first.
 
 ## Not yet covered
 
-Events, flow, graph, scheduling, storage, and telemetry have no fixtures. Consumers binding those SPIs
-are still writing doubles, with the exposure described above. Tracked in
-[`ROADMAP.md`](../ROADMAP.md) → *Testkit: No Real-Runtime Fixtures Outside HTTP*; persistence was taken
-first because transactions are the sharpest case — propagation, rollback, and connection lifecycle are
-data-integrity behaviour.
+Graph, scheduling, storage, and telemetry have no fixtures. Consumers binding those SPIs are still
+writing doubles, with the exposure described above. Tracked in
+[`ROADMAP.md`](../ROADMAP.md) → *Testkit: No Real-Runtime Fixtures Outside HTTP*.
+
+The order was not arbitrary: persistence came first because transactions are the sharpest case
+(propagation, rollback, connection lifecycle are data-integrity behaviour), then events and flow
+because they compose with it over the same engine. Graph is next and is a different shape — its
+Community driver is swappable, and only the SQL/PGQ backend needs persistence, while the Cypher one
+needs a Neo4j container and so cannot be a fixture a consumer runs without Docker. Its PGQ DDL is also
+not yet H2-clean: `TIMESTAMPTZ` in the edge table is unknown to H2 even in PostgreSQL mode, where the
+standard `TIMESTAMP WITH TIME ZONE` spelling PostgreSQL also accepts works. That is a production
+change, not a fixture one, which is why it did not ride along here.
 
 ---
 
