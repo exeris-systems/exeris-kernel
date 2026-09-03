@@ -1,7 +1,7 @@
 # SPI API compatibility history
 
 **Status:** Generated artefact — do not edit by hand
-**Regenerate:** `tools/spi-api-diff/spi-api-diff.sh --history v0.5.0,v0.6.0,…,v0.10.2 --out docs/release`
+**Regenerate:** `tools/spi-api-diff/spi-api-diff.sh --history v0.5.0,…,v0.11.0,v0.12.0 --out docs/release`
 **Anchor ADR:** [ADR-065](../adr/ADR-065-spi-compatibility-gate.md)
 **Method:** each tag's `exeris-kernel-spi` is compiled straight from git and diffed with
 [japicmp](https://siom79.github.io/japicmp/) at `public` visibility; findings are classified by the
@@ -39,6 +39,7 @@ fails CI. See §"How to read a failure" below.
 | `v0.10.0` → `v0.10.1` | `0.0.1` | 0 | 0 | no API change |
 | `v0.10.1` → `v0.10.2` | `0.0.1` | 0 | 0 | no API change |
 | `v0.10.2` → `v0.11.0` | `1.0.0` | 0 | 1 | breaking on `preview` only — §4 |
+| `v0.11.0` → `v0.12.0` | `0.1.0` | 0 | 0 | additive — see note † |
 
 ### The declaration line
 
@@ -47,12 +48,23 @@ matters more than the raw counts:
 
 - **Before v0.9.0** there was no published maturity declaration. The breaks in §1 and §2 were not
   violations of anything — they predate the promise. They are migration archaeology, nothing more.
-- **From v0.9.0 onward** the declaration exists and has been kept. The one breaking transition in
-  that window, `v0.9.0 → v0.10.0`, lands entirely on `eu.exeris.kernel.spi.events`, which the matrix
-  labels `preview` — where the policy explicitly permits it. **Zero `stable` surfaces have taken a
-  binary-incompatible change since the declaration was published.**
+- **From v0.9.0 onward** the declaration exists and has been kept. The two breaking transitions in
+  that window, `v0.9.0 → v0.10.0` and `v0.10.2 → v0.11.0` (§3 and §4), land entirely on surfaces the
+  matrix labels `preview` — where the policy explicitly permits it. **Zero `stable` surfaces have
+  taken a binary-incompatible change since the declaration was published.**
+- **`v0.11.0` → `v0.12.0` is the first additive transition in that window**, and the first with no
+  break on `preview` either. It is worth naming because the surface grew rather than stood still: a
+  duplex wire, a time seam and fault attribution on every kernel exception all arrived without moving
+  anything already declared.
 
 That is the claim this file exists to support, and it is checkable: re-run the command at the top.
+
+### † Note on `v0.11.0` → `v0.12.0`
+
+Measured before the tag existed, with `--old v0.11.0 --new HEAD` on the release candidate rather than
+`--history`. The counts are the tool's, not a reading of the diff, and the row is regenerated from
+the tag at the cut. If the two ever disagree, the tag is authoritative and this note is the reason to
+look.
 
 ### Note on `v0.8.0` → `v0.8.1`
 
