@@ -113,6 +113,27 @@ as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.
 **additive** and classified `preview` — enforced by `ImmutableConfigProcessor` (compile-time) and
 `DynamicConfigFileWatcher` (runtime `EX-CFG-1004` refusal), pending a dedicated `AbstractConfigProviderTck` binding.
 
+### v0.12 re-assessment: `…spi.scheduling` and `…spi.storage.blob`
+
+Both were re-read at the v0.12 cut, because both gained bootstrap wiring during the milestone and the
+question was whether that graduates them. **It does not, and the reason matters more than the answer:**
+this table's `preview` definition turns on *"a known, scheduled change still in flight"*, not on how
+completely a surface is wired. Bootstrap wiring is delivery, not contract movement.
+
+What the re-assessment did find is that neither surface has such a change named anywhere:
+
+| | anchor ADR | executable TCK | scheduled contract change on record |
+|---|---|---|---|
+| `…spi.scheduling` | ADR-057 | `AbstractJobSchedulerTck`, 20 cases across 4 groups | none named |
+| `…spi.storage.blob` | ADR-056 | `AbstractBlobStorageTck` | none named — provider selection closed in v0.12 |
+
+Under this table's own definition of `stable` — an accepted ADR **and** an executable TCK — both
+therefore qualify on the stated criteria while carrying the `preview` label. That is a discrepancy
+between the criteria and the labels, and it is deliberately **left standing here rather than resolved
+by editing a cell.** Promotion is semver-binding, so it belongs to the decision that owns the
+question: [`RFC-2026-09-02`](rfc/RFC-2026-09-02-preview-spi-promotion.md). Recorded at the cut so the
+next reader inherits the finding instead of rediscovering it.
+
 ### `…spi.http` per-surface breakdown
 
 > **ADR-074 added a component to two `stable` records without breaking either, and it was measured

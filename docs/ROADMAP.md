@@ -1729,6 +1729,31 @@ See also: ADR-036 (request-body decoder SPI quadrant); ADR-043 (SSE streaming); 
 
 ---
 
+**Status (v0.12): DELIVERED.** All three clauses of the Merge Gate are met.
+`StreamExecutionBackend` is in `core.transport.scheduler`, `PaqsScheduler` uses it, and
+`AbstractPaqsSchedulerTck$ExecutionBackendSeamContract` carries the required case — a custom backend
+preserves `ScopedValue` bindings — bound by `CorePaqsSchedulerTckTest`, not `@Disabled`, and measured
+running green (`tests=1 skipped=0 failures=0`) in a full reactor build on 2026-09-03.
+[ADR-051](adr/ADR-051-paqs-execution-seam.md) has recorded the same thing since its Accepted flip.
+
+**How the first version of this disposition got it wrong, since the mechanism generalises.** It
+searched `exeris-kernel-tck` for the class, found six unrelated transport suites, and concluded the
+class did not exist. The seam is **Core-internal and not SPI** — ADR-051's own compliance note says
+so — so its contract lives in Core's test sources, which is the right home and the one place the
+search did not look. Searching where a TCK belongs *by convention* rather than where the owning ADR
+says it lives answers a narrower question than the one being asked; that is the same instrument
+failure this section records against the accept-fault entry, committed while writing the correction
+for it.
+
+**One genuine finding survives, and it is a different thing.**
+`LocalityAwareExecutionBackendStrictContractTest` is 85 lines of which **zero are live** — the file is
+commented out end to end, so `LocalityAwareExecutionBackend` has no executable coverage from any test
+in the tree. That is the optional locality re-test, not the M1 merge gate, and it is carried as a
+coverage obligation rather than as a re-opening of the locality question, which the research closed
+NO_GO.
+
+---
+
 ### Storage: `BlobStorageProvider` SPI (ADR-056)
 
 **Gap:** File and media handling has no kernel SPI seam. Application generators that need to emit upload widgets, signed-URL flows, or download streams cannot rely on a kernel-side adapter — every host application hand-wires its own S3 / MinIO / GCS / local-FS code, with no zero-copy story and no isolation-key scoping. Blob I/O is a runtime hot path (large-payload streaming, native sendfile candidate) with ≥2 plausible drivers, qualifying as kernel SPI territory under the Wall test.
@@ -1767,7 +1792,7 @@ See also: `docs/adr/ADR-056-blob-storage-provider-spi.md` (Accepted 2026-07-30) 
 
 See also: `docs/adr/ADR-057-job-scheduler-spi.md` (Accepted 2026-07-30). It deviates from the Resolution text above on both concurrency primitives, and the second deviation also retires the Merge-Gate clause immediately above. (a) **Dispatch is virtual threads + explicit `ScopedValue` rebind, not `StructuredTaskScope`** — a new subsystem on STS would have been a fifth preview-taint site on the default line, against the "Platform Baseline for 1.0 GA" mandate below. **The other four are gone as of v0.11 / ADR-066** — `OutboxOrchestrator` and `CommunityEventLoop` on `StructuredScope`, `InMemoryEventBus.publishAndAwait` and `SubsystemOrchestrator` phase start now in-thread — so this ruling reads today as the one that kept the count from ever reaching five, and the scheduler needs no follow-up. (b) **There is no `ScheduledExecutorService` and therefore no scoped-ban exception to document** — this entry asks for an injectable time source in the same breath, and `ScheduledThreadPoolExecutor` times off `System.nanoTime()` internally with no seam to displace, so the deterministic trigger TCK this gate requires is unreachable through it; the driver owns its timing loop instead. (c) A third, smaller departure: **`JobTrigger` carries three kinds, not four** — the event-driven kind listed in the Resolution text above is excluded on coupling direction (an event handler calling `submit` already expresses it, whereas a trigger kind would put an `spi.events` dependency inside the scheduling contract).
 
-**Status (v0.11): DELIVERED.** SPI + Community driver + `AbstractJobSchedulerTck` (18 cases); contract doc at `docs/subsystems/scheduling.md`. **The bootstrap wiring this entry called "the remaining slice" has since landed and the line was left stale** — corrected 2026-08-08 during the pre-cut audit. `CommunitySchedulingSubsystem` carries the full lifecycle (`initialize` / `start` / `stop` / `providerBindings`), resolves `scheduling.schedulerName` through `ConfigProvider` with `JobSchedulerConfig.DEFAULT_NAME` as the fallback, binds both `KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProviders.JOB_SCHEDULER`, and is discovered at boot through `CommunitySubsystemProvider` — the single `SubsystemProvider` service entry, where it sits alongside the other nine subsystems.
+**Status (v0.11): DELIVERED.** SPI + Community driver + `AbstractJobSchedulerTck` (20 cases across 4 groups — this line read 18 until the v0.12 cut re-counted it); contract doc at `docs/subsystems/scheduling.md`. **The bootstrap wiring this entry called "the remaining slice" has since landed and the line was left stale** — corrected 2026-08-08 during the pre-cut audit. `CommunitySchedulingSubsystem` carries the full lifecycle (`initialize` / `start` / `stop` / `providerBindings`), resolves `scheduling.schedulerName` through `ConfigProvider` with `JobSchedulerConfig.DEFAULT_NAME` as the fallback, binds both `KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProviders.JOB_SCHEDULER`, and is discovered at boot through `CommunitySubsystemProvider` — the single `SubsystemProvider` service entry, where it sits alongside the other nine subsystems.
 
 Two findings from the implementation, both recorded rather than papered over:
 
@@ -1874,11 +1899,11 @@ The asymmetry is local and visible: the sibling paths in the same file close the
 
 **Merge Gate:** Driver-local JFR test that forces a setup failure on an accepted connection and asserts the event; the fault count exposed alongside the refusal count; `docs/subsystems/transport.md` records both accept-path failure modes together, since an operator sees the same symptom from either.
 
-**Status (v0.11): implemented, merge gate 2 of 3.** Added 2026-08-08 — this section carried no disposition at all while the work it describes merged in #265 on 2026-07-31, which is how it stayed invisible. The silence is gone: `NativeTcpCarrier.recordAcceptFault` emits `CommunityAcceptFaultEvent` carrying the exception's **class name only** (secret-safe, as the Resolution required — no message) plus a running fault total, and recovery is deliberately unchanged, so a per-connection setup failure still continues the loop rather than becoming fatal.
+**Status (v0.11): implemented, merge gate 2 of 3 — superseded, see the correction below. (v0.12: 3 of 3, all clauses met.)** Added 2026-08-08 — this section carried no disposition at all while the work it describes merged in #265 on 2026-07-31, which is how it stayed invisible. The silence is gone: `NativeTcpCarrier.recordAcceptFault` emits `CommunityAcceptFaultEvent` carrying the exception's **class name only** (secret-safe, as the Resolution required — no message) plus a running fault total, and recovery is deliberately unchanged, so a per-connection setup failure still continues the loop rather than becoming fatal.
 
 **Correction (v0.12): the JFR-test clause was met before this text was written, and stayed listed as open for a milestone.** `CommunityAcceptFaultTest` forces a setup failure through a throwing crypto provider and asserts the event — its class, its running total, its bind address, and that no payload carries the provider's secret message; `CommunityConnectionRefusalTest` drives the cap to its ceiling and asserts the refusal event plus its arrival in `TransportStats.totalRejected`. Both have existed since the v0.11.0 integration. The audit that wrote the paragraph below searched for the event *class names* in test sources; the tests reference the events by their JFR **name string**, so the search returned nothing and the nothing was read as absence. An instrument that can only find one of two spellings answers a narrower question than the one being asked.
 
-One gate clause remains **not** met, and it is not cosmetic:
+Both clauses below were listed as open and are now met; the strikethroughs record what each said, because the reason one of them was wrong is worth keeping:
 - ~~**No driver-local JFR test.**~~ *Met — see the correction above. The original wording, kept for the record: nothing forces a setup failure and asserts the event, in the Community suite or the TCK. Same gap as the refusal event under §"Road to 1.0".*
 - ~~**The fault count is not exposed alongside the refusal count.**~~ **Met (v0.12, ADR-081 §5).** `TransportStats` gains `acceptFaults`, appended rather than grouped beside `totalRejected` so no positional call changes meaning, and deliberately still *excluded* from `totalRejected` because a setup fault is not declined work. The TCK asserts the separation from the side an operator reads — a ceiling refusal must leave the fault count at zero — and the Community driver test asserts the positive half after forcing a fault. **The gate is now 3 of 3.**
 
@@ -2083,6 +2108,14 @@ produces the chosen behaviour deterministically, rather than depending on what t
 
 ---
 
+**Status (v0.12): OPEN, unchanged — and now located precisely.** `Http2Settings.maxHeaderListSize`
+still has no reader outside the record that carries it. The three `maxHeaderListSize()` call sites in
+Core and Community all read `HttpConfig`'s own value — the bound we advertise and enforce, which is
+the symmetric half this entry describes as already working. Nothing reads the peer's parsed value.
+Measured 2026-09-03.
+
+---
+
 ### Storage: Two Blob Providers, No Way To Choose Between Them (surfaced 2026-08-01)
 
 **Gap:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider` are both
@@ -2205,6 +2238,13 @@ those does.
 **Merge Gate:** an integration test proving an event committed in a transaction reaches a *second*
 kernel instance after a crash of the first — the property neither engine can demonstrate today; the
 delivery-boundary section in `docs/subsystems/events.md` loses its "not composable today" paragraph.
+
+---
+
+**Status (v0.12): OPEN, unchanged.** No selection seam landed. `KafkaEventEngine` still constructs a
+`NoOpQueue` and starts no outbox orchestrator, and no configuration path chooses an
+`OutboxBrokerPort` — so the operator-visible cost this entry exists to record is still paid by the
+same deployment. Measured 2026-09-03.
 
 ---
 
@@ -2450,7 +2490,7 @@ mechanically:
 | Registered but never swept | Kind |
 |---|---|
 | `HttpProvider` | ordinary driver, and one of the ten bootable subsystems |
-| `WebSocketProvider` | ordinary driver (v0.12, ADR-084); embeddable rather than bootstrapped |
+| `WebSocketProvider` | ordinary driver (v0.12, ADR-084); embeddable, and bootstrapped when `websocket.enabled` is set |
 | `JobSchedulerProvider` | ordinary driver (v0.11, ADR-057) |
 | `BlobStorageProvider` | ordinary driver (v0.11, ADR-056) |
 | `SubsystemProvider`, `ConfigProvider`, `KernelDiagnosticsProvider` | bootstrap/meta — plausibly deliberate, but nothing says so |
@@ -2485,6 +2525,17 @@ rather than as not enumerable — an error the gate would inherit and then certi
 **Merge Gate:** `listProviders` reports an HTTP provider, a scheduler and a blob store on a default
 Community classpath; a gate test that fails when a provider SPI is neither swept nor explicitly
 excluded, proven non-vacuous by deleting one sweep and watching it fail.
+
+---
+
+**Status (v0.12): OPEN, and the entry's own forecast came true inside one milestone.** The sweep is
+still **nine** `discover(...)` calls, against **sixteen** distinct provider SPIs registered across
+Community and the Kafka module — so the heading's "Fifteen" is now one milestone behind this entry's
+own body. `WebSocketProvider` landed with ADR-084 in this milestone and was not added, which is
+precisely the failure mode the paragraph above predicted: a hand-maintained list falls behind once
+per new provider SPI, silently, by construction. Never swept, now seven: `HttpProvider`,
+`WebSocketProvider`, `JobSchedulerProvider`, `BlobStorageProvider`, `SubsystemProvider`,
+`ConfigProvider`, `KernelDiagnosticsProvider`. Measured 2026-09-03.
 
 ---
 
@@ -2717,7 +2768,7 @@ migration ours to absorb rather than a customer's.
 
 **Status (v0.12): DELIVERED — the full package, and it shipped `preview`.** [ADR-084](adr/ADR-084-websocket-provider-spi.md) ACCEPTED; `eu.exeris.kernel.spi.websocket` with `AbstractWebSocketExchangeTck`; the RFC 6455 frame codec (parser, writer, message assembler) in Core; and a Community binding — provider, embeddable server engine, HTTP/1.1 Upgrade handshake with an origin pre-filter, and a per-connection exchange running one virtual thread per connection with no queue in either direction. `docs/stability-matrix.md` carries the `…spi.websocket` row at `preview` since 0.12.0.
 
-**Three limits the delivery does not hide**, all named in ADR-084 and now in `docs/support-matrix.md` and `docs/subsystems/transport.md` so an operator meets them before deploying: the engine is **embeddable, not bootstrapped** — `KernelBootstrap` starts no WebSocket subsystem; `keepAliveIntervalMillis` is validated by `WebSocketConfig` and read by nothing, and the read path parks without a timeout, so a server-originated ping has nothing to ride; and the handshake is **HTTP/1.1 Upgrade only** — Extended CONNECT (RFC 8441) appears nowhere in main sources, so an h2-to-kernel proxy has no upgrade path.
+**Three limits the delivery does not hide**, all named in ADR-084 and now in `docs/support-matrix.md` and `docs/subsystems/transport.md` so an operator meets them before deploying: the engine is **embeddable, not bootstrapped** — `KernelBootstrap` starts no WebSocket subsystem *(superseded in the same milestone: ADR-084 Amendment A2 adds an opt-in `websocket` subsystem, default off)*; `keepAliveIntervalMillis` is validated by `WebSocketConfig` and read by nothing, and the read path parks without a timeout, so a server-originated ping has nothing to ride; and the handshake is **HTTP/1.1 Upgrade only** — Extended CONNECT (RFC 8441) appears nowhere in main sources, so an h2-to-kernel proxy has no upgrade path.
 
 **What the milestone still owes it:** ADR-084 §10 gates promotion out of `preview` on benchmark evidence that lives in `exeris-benchmarks` and does not exist yet, and the provider is registered in `META-INF/services` while `CommunityProviderInventory` does not sweep it — so `listProviders` reports the kernel as having no WebSocket capability (see *Diagnostics: The Provider Inventory* above, whose denominator this delivery moved).
 
