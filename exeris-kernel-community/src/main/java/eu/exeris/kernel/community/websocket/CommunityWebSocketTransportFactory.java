@@ -23,16 +23,20 @@ import java.net.ServerSocket;
 /**
  * Builds the TCP carrier a WebSocket engine listens on.
  *
- * <p>Deliberately the same shape as {@code CommunityHttpTransportFactory}, including the
- * ScopedValue dance around an unbound allocator: a duplex endpoint that a tool embeds without
- * booting the kernel is exactly the case where {@code MEMORY_ALLOCATOR} is not already bound.
+ * <p>{@link #buildTransport} is the same shape as {@code CommunityHttpTransportFactory}, ScopedValue
+ * rebind included. {@link #resolveAllocator()} deliberately is <strong>not</strong>: that one creates
+ * an allocator when none is bound, where the HTTP server factory still refuses.
  *
- * <p>Which is why {@link #resolveAllocator()} creates one rather than refusing. It used to throw,
- * and that made the sentence above describe a scenario the code rejected: ADR-084 §1 exists so the
- * platform can obtain an endpoint "without booting the kernel", from two public calls, and the
- * first of those two calls answered {@code IllegalStateException: KernelProviders.MEMORY_ALLOCATOR
- * is not bound}. The fallback mirrors {@code CommunityHttpClientEngine.resolveAllocator}, which had
- * already solved the identical problem for the embedded client.
+ * <p>The divergence is the point. ADR-084 §1 exists so the platform can obtain an endpoint "without
+ * booting the kernel", from two public calls — and a tool embedding a duplex endpoint is exactly the
+ * case where {@code MEMORY_ALLOCATOR} is not already bound, so the first of those two calls used to
+ * answer {@code IllegalStateException}. The fallback mirrors
+ * {@code CommunityHttpClientEngine.resolveAllocator}, which had already solved the identical problem
+ * for the embedded client.
+ *
+ * <p>{@code CommunityHttpTransportFactory.resolveAllocator} carries the same gap and is left alone
+ * here: whether an HTTP <em>server</em> engine is meant to be constructible outside a boot is a
+ * question for its own ADR, and answering it in this file would be answering it by accident.
  */
 final class CommunityWebSocketTransportFactory {
 

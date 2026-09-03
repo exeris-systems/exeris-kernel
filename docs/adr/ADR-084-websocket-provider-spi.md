@@ -209,6 +209,28 @@ configuration and can move without a contract change:
   payload argument that set §5's limit — `domainDescribe` returning a full projection — weighs
   differently over the internet to a browser than it did over a local socket.
 
+## Amendment A1 (v0.12) — §1's promise was not executable until this release
+
+§1 makes "the platform must get an endpoint without booting the kernel", from two public calls, the
+property that decides this ADR. As shipped, the first of those two calls threw:
+`CommunityWebSocketServerEngine` resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and
+refused when nothing had bound one — which is precisely the state a tool embedding an endpoint is in.
+The transport factory's own javadoc described that scenario while the method beneath it rejected it.
+
+Fixed by falling back to a private allocator when none is ambient, owned and closed by the engine
+that created it, mirroring `CommunityHttpClientEngine` — which had already solved the identical
+problem for the embedded client. An ambient allocator is still never closed by the engine, because it
+belongs to whoever bound it.
+
+**And the property is now enforced rather than described.** `AbstractWebSocketProviderTck` binds no
+`ScopedValue` and boots nothing, so a provider that quietly requires a kernel scope fails the shared
+suite. Until this release the TCK covered wire-level behaviour only, and a binding could contradict
+the deciding property of this ADR while passing every contract test.
+
+One thing this does **not** claim: `CommunityHttpTransportFactory.resolveAllocator` still refuses an
+unbound allocator, so an HTTP *server* engine is not constructible outside a boot. Whether it should
+be is a separate question and belongs to its own decision, not to this one.
+
 ## Consequences
 
 - The platform gets an embeddable duplex endpoint without a kernel boot, which is the requirement
