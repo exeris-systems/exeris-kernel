@@ -19,6 +19,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   'sonar.java.test.libraries' property`). The Maven plugin derives both per module from the reactor;
   dumped before the change, `exeris-kernel-community` resolves to 26 main and 71 test entries.
 
+  **Half the predicted outcome held.** The `sonar.java.test.libraries` warning is gone; `Unresolved
+  imports/types` is not, so the empty classpath was not its only cause. What is still unresolved is
+  not named by the log without a DEBUG run, and that run has not been made.
+
   Everything else it derives too, which is why `sonar-project.properties` is deleted rather than
   kept: the file listed `projectVersion`, `sourceEncoding`, the Java release, source and test roots
   and compiled output, all of which the reactor already knows — and it had gone stale on the first

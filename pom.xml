@@ -145,8 +145,15 @@
         -->
         <sonar.organization>exeris-systems</sonar.organization>
         <sonar.projectKey>exeris-systems_exeris-kernel</sonar.projectKey>
-        <!-- Without this the reactor root's name, "Exeris Kernel :: Root", becomes the project's. -->
-        <sonar.projectName>Exeris Kernel</sonar.projectName>
+        <!--
+            sonar.projectName is deliberately NOT set. A property here is inherited by every module,
+            and the scanner then labels all eleven of them identically: the run that introduced this
+            change printed `Run sensors on module Exeris Kernel` eleven times, which cost an
+            investigation before it cost anything else. Nor would setting it buy the name back:
+            SonarQube Cloud has this project as `exeris-kernel`, and the deleted properties file had
+            been asking for `Exeris Kernel` for months without effect, because the name of an
+            existing project is not what an analysis updates.
+        -->
         <sonar.newCode.referenceBranch>main</sonar.newCode.referenceBranch>
 
         <sonar.exclusions>**/target/**,**/.idea/**,**/kernel-legacy/**,**/native-libs/**,**/*.md</sonar.exclusions>
@@ -159,7 +166,14 @@
             concrete class with its own @Name, so CPD on them is noise.
         -->
         <sonar.cpd.exclusions>**/*Benchmark*.java,**/*Event.java</sonar.cpd.exclusions>
-        <sonar.coverage.jacoco.xmlReportPaths>**/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+        <!--
+            Per module, and NOT a `**/` glob. The glob is resolved against each module's base
+            directory, so at the reactor root it matches every module's report at once: that module
+            imported all 8 and, having only pom.xml as a source, reported all 853 classes in them as
+            `File not found in project sources`. The old CLI scanner never hit this because it ran
+            one project-wide analysis rather than one per module.
+        -->
+        <sonar.coverage.jacoco.xmlReportPaths>${project.build.directory}/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
 
         <!--
             java:S2187 "Add some tests to this class", suppressed on test sources.
@@ -323,6 +337,13 @@
                     types have been detected during analysis`, plus `Missing
                     sonar.java.test.libraries property. You might end up with less precise analysis
                     results`. This plugin derives both from the reactor, per module.
+
+                    Measured outcome, and only half of it is what was predicted: the
+                    `sonar.java.test.libraries` warning is gone, and `Unresolved imports and types`
+                    is NOT. So the empty classpath was not its only cause. What remains unresolved
+                    is not named by the log without DEBUG, and that run has not been made; the
+                    analysis is strictly better resolved than before either way, since the
+                    dependency jars it could not see are now on the classpath.
 
                     It also brings every reactor module into scope. Under the CLI scanner
                     `sonar.sources` was a hand-written list, and three modules were missing from it

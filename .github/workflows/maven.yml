@@ -249,6 +249,10 @@ jobs:
         # dumped locally before this change was made, exeris-kernel-community resolves to 26 main
         # and 71 test library entries.
         #
+        # Half of the predicted outcome held: `Missing 'sonar.java.test.libraries'` is gone,
+        # `Unresolved imports/types` is not. The empty classpath was therefore not its only cause,
+        # and naming what is still unresolved needs a DEBUG run that has not been made.
+        #
         # It also brings all ten reactor modules into scope, where sonar.sources had been a
         # hand-written list missing three of them whose JaCoCo reports were nonetheless imported
         # (18 x `File not found in project sources`, and that coverage discarded). What it does not
