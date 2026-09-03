@@ -163,16 +163,21 @@ Two warnings in the scanner log are known and neither is a defect in this reposi
 `Use of preview features have been detected` fires in every Java module, `exeris-kernel-spi` included,
 which has no dependencies at all — and javac settles the question outright, since `--release 25`
 without `--enable-preview` refuses to compile a preview feature and this build is green (the
-preview-bytecode gate agrees: class-file major 69, no preview stamp). `Unresolved imports/types` fires
-in every module that has compile dependencies and not in SPI. Both are most plausibly the analyser's
-own support level for a recent JDK: CI builds this line on JDK 25, released only months before
-sonar-java saw it, and the same class of gap has bitten PMD and ArchUnit here before.
+preview-bytecode gate agrees: class-file major 69, no preview stamp). `Unresolved imports/types` is a
+different matter, and it is why the analysis step runs `verify` in the same Maven command as
+`sonar:sonar`. Invoked alone, the goal starts a session where no module has been packaged, so Maven
+cannot resolve a reactor sibling to a jar and falls back to the local repository, which in CI holds
+none of them. Maven announces it before the goal starts (`could not be resolved at this point of the
+build but seem to be part of the reactor ... Try running the build up to the lifecycle phase
+package`), and the fingerprint is unmistakable: the warning fired in every module with a reactor
+dependency and in neither of the two without one.
 
-If you chase either, note that the obvious probe does not work. The warning says `Enable DEBUG mode
-to see them`, and a run with `-Dsonar.verbose=true` was made: the property reached the scanner and
-the log came back with zero DEBUG lines and the same unnamed warning. Whatever raises the engine's
-log level with the Maven bootstrapper, that is not it — so start by finding that, not by repeating
-the run.
+Two things about that are worth keeping, because both cost a cycle. A local dump can disagree with
+CI here for a reason that has nothing to do with the configuration — a previous `mvn clean install`
+leaves the sibling jars in `~/.m2`, so locally they resolve and the problem is invisible. And the
+obvious probe does not work: the warning says `Enable DEBUG mode to see them`, a run with
+`-Dsonar.verbose=true` was made, the property reached the scanner, and the log came back with zero
+DEBUG lines and the same unnamed warning.
 
 ## Build & Test
 

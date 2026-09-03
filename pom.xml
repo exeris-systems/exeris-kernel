@@ -338,12 +338,11 @@
                     sonar.java.test.libraries property. You might end up with less precise analysis
                     results`. This plugin derives both from the reactor, per module.
 
-                    Measured outcome, and only half of it is what was predicted: the
-                    `sonar.java.test.libraries` warning is gone, and `Unresolved imports and types`
-                    is NOT. So the empty classpath was not its only cause. What remains unresolved
-                    is not named by the log without DEBUG, and that run has not been made; the
-                    analysis is strictly better resolved than before either way, since the
-                    dependency jars it could not see are now on the classpath.
+                    Both warnings needed this plugin, and the second one needed something else
+                    as well: the goal has to run in the same Maven command as `verify`, or no module
+                    has been packaged in the session and a reactor SIBLING cannot be resolved to a
+                    jar either. See the analysis step in .github/workflows/maven.yml, which carries
+                    the measurement.
 
                     It also brings every reactor module into scope. Under the CLI scanner
                     `sonar.sources` was a hand-written list, and three modules were missing from it

@@ -19,9 +19,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   'sonar.java.test.libraries' property`). The Maven plugin derives both per module from the reactor;
   dumped before the change, `exeris-kernel-community` resolves to 26 main and 71 test entries.
 
-  **Half the predicted outcome held.** The `sonar.java.test.libraries` warning is gone; `Unresolved
-  imports/types` is not, so the empty classpath was not its only cause. What is still unresolved is
-  not named by the log without a DEBUG run, and that run has not been made.
+  Both warnings are gone, but the second one took a second fix and a wrong turn worth recording.
+  `Unresolved imports/types` survived the switch, and the first reading of that — the analyser's
+  support for a recent JDK — was wrong. `sonar:sonar` invoked alone starts a session in which no
+  module has been packaged, so Maven cannot resolve a reactor sibling to a jar and falls back to the
+  local repository, where a CI step that runs `verify` rather than `install` has left nothing. Maven
+  said so before the goal started, and the fingerprint was exact: the warning fired in every module
+  with a reactor dependency and in neither of the two without one. The analysis therefore runs
+  `verify` in the same command. A local dump had agreed with the wrong reading, for a reason that
+  had nothing to do with the configuration: a previous `mvn clean install` leaves the sibling jars
+  in `~/.m2`, where CI has none.
 
   Everything else it derives too, which is why `sonar-project.properties` is deleted rather than
   kept: the file listed `projectVersion`, `sourceEncoding`, the Java release, source and test roots

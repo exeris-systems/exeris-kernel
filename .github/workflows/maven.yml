@@ -268,21 +268,33 @@ jobs:
         # rather than a prefix lookup that would take the newest release.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
-        # No -Dsonar.verbose here, and that is a finding rather than an omission. The analyser
-        # reports `Unresolved imports/types have been detected during analysis. Enable DEBUG mode to
-        # see them` and names nothing; a run was made with `-Dsonar.verbose=true` to make it name
-        # them, the property reached the scanner, and the log came back with ZERO DEBUG lines and
-        # the identical unnamed warning. So that is not what raises the engine's log level under the
-        # Maven bootstrapper, and repeating the probe would waste a second CI cycle the way it
-        # wasted the first.
+        # `verify` runs in the SAME command as the analysis, and that is load-bearing rather than
+        # belt-and-braces. Invoked alone, `sonar:sonar` starts a session in which no module has been
+        # packaged, so Maven cannot resolve a reactor sibling to a jar and falls back to the local
+        # repository — where the previous step, which runs `verify` and not `install`, has put
+        # nothing. Maven says so before the goal even starts: `The following dependencies could not
+        # be resolved at this point of the build but seem to be part of the reactor:
+        # eu.exeris:exeris-kernel-spi ... Try running the build up to the lifecycle phase package`.
         #
-        # What is known without it: the warning fires in every module that has compile dependencies
-        # and not in exeris-kernel-spi, which has none, while `Use of preview features` fires in
-        # every Java module INCLUDING that one. The preview half is answered outright by javac,
-        # which at `--release 25` without `--enable-preview` refuses to compile a preview feature,
-        # and by the preview-bytecode gate reading major 69 with no stamp. Both are most plausibly
-        # the analyser's support level for a JDK released months before it.
-        run: mvn -B -e org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+        # That is what `Unresolved imports/types have been detected during analysis` was, and the
+        # match is exact: the warning fired in every module with a reactor dependency and in neither
+        # of the two without one (exeris-kernel-spi, exeris-kernel-build-config). It was NOT the
+        # analyser's support for a recent JDK, which is what a first reading of it assumed, and a
+        # local dump agreed with that misreading only because a previous `mvn clean install` had
+        # left the sibling jars in ~/.m2 where CI has none.
+        #
+        # Tests and lint are skipped here because the step before this one ran both, on the same
+        # tree, without skip flags. This invocation exists to put the reactor in a resolvable state,
+        # not to re-verify it.
+        #
+        # `Use of preview features` is a different matter and stays: it fires in every Java module
+        # INCLUDING exeris-kernel-spi, and javac settles it outright, since `--release 25` without
+        # `--enable-preview` refuses to compile a preview feature and this build is green. The
+        # preview-bytecode gate agrees, reading major 69 with no stamp.
+        run: |
+          mvn -B -e -DskipTests -Dpmd.skip=true -Dcheckstyle.skip=true \
+            verify -P coverage \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
