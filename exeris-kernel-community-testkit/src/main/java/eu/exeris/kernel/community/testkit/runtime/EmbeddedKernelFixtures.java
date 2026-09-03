@@ -33,9 +33,6 @@ public final class EmbeddedKernelFixtures {
      */
     private static final String H2_URL_TEMPLATE = "jdbc:h2:mem:%s;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
 
-    private static final String EVENTS = "events";
-    private static final String FLOW = "flow";
-
     private EmbeddedKernelFixtures() {
     }
 
@@ -49,7 +46,7 @@ public final class EmbeddedKernelFixtures {
      * @return an unstarted fixture
      */
     public static EmbeddedKernelFixture eventsOnH2() {
-        return onH2(Set.of(EVENTS));
+        return onH2(Set.of(SelectedEngines.EVENTS));
     }
 
     /**
@@ -62,7 +59,7 @@ public final class EmbeddedKernelFixtures {
      * @return an unstarted fixture
      */
     public static EmbeddedKernelFixture flowOnH2() {
-        return onH2(Set.of(FLOW));
+        return onH2(Set.of(SelectedEngines.FLOW));
     }
 
     /**
@@ -75,7 +72,7 @@ public final class EmbeddedKernelFixtures {
      * @return an unstarted fixture
      */
     public static EmbeddedKernelFixture eventsAndFlowOnH2() {
-        return onH2(Set.of(EVENTS, FLOW));
+        return onH2(Set.of(SelectedEngines.EVENTS, SelectedEngines.FLOW));
     }
 
     /**

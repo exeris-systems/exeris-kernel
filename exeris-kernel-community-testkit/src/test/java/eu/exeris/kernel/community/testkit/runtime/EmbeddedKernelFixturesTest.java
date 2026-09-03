@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -53,8 +54,14 @@ class EmbeddedKernelFixturesTest {
     }
 
     @Test
-    @DisplayName("close before start is a no-op rather than a failure")
+    @DisplayName("close before start is a no-op, and leaves the fixture reusable")
     void closeBeforeStartIsQuiet() {
-        EmbeddedKernelFixtures.flowOnH2().close();
+        EmbeddedKernelFixture fixture = EmbeddedKernelFixtures.flowOnH2();
+
+        assertThatCode(fixture::close).doesNotThrowAnyException();
+        assertThat(fixture.isRunning()).isFalse();
+        // The claim on `starting` must not survive a close that never started, or a fixture closed
+        // defensively in a @BeforeEach could never be started afterwards.
+        assertThatCode(fixture::close).doesNotThrowAnyException();
     }
 }

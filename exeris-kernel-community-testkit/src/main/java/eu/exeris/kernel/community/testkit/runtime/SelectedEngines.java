@@ -29,9 +29,9 @@ final class SelectedEngines {
     /* default */ static final String FLOW = "flow";
 
     private final Set<String> selected;
-    private final AtomicReference<EventEngine> events = new AtomicReference<>();
-    private final AtomicReference<FlowEngine> flow = new AtomicReference<>();
-    private final AtomicReference<PersistenceEngine> persistence = new AtomicReference<>();
+    private final AtomicReference<EventEngine> eventEngineSlot = new AtomicReference<>();
+    private final AtomicReference<FlowEngine> flowEngineSlot = new AtomicReference<>();
+    private final AtomicReference<PersistenceEngine> persistenceEngineSlot = new AtomicReference<>();
 
     /* default */ SelectedEngines(Set<String> selected) {
         this.selected = Set.copyOf(selected);
@@ -39,25 +39,25 @@ final class SelectedEngines {
 
     /** Reads the bound engines out of {@link KernelProviders}; called inside the boot scope. */
     /* default */ void captureFromKernelScope() {
-        persistence.set(KernelProviders.persistenceEngine());
+        persistenceEngineSlot.set(KernelProviders.persistenceEngine());
         if (selected.contains(EVENTS)) {
-            events.set(KernelProviders.eventEngine());
+            eventEngineSlot.set(KernelProviders.eventEngine());
         }
         if (selected.contains(FLOW)) {
-            flow.set(KernelProviders.flowEngine());
+            flowEngineSlot.set(KernelProviders.flowEngine());
         }
     }
 
     /* default */ EventEngine eventEngine() {
-        return require(events.get(), EVENTS);
+        return require(eventEngineSlot.get(), EVENTS);
     }
 
     /* default */ FlowEngine flowEngine() {
-        return require(flow.get(), FLOW);
+        return require(flowEngineSlot.get(), FLOW);
     }
 
     /* default */ PersistenceEngine persistenceEngine() {
-        PersistenceEngine current = persistence.get();
+        PersistenceEngine current = persistenceEngineSlot.get();
         if (current == null) {
             throw new IllegalStateException(
                     "Persistence engine is not bound — every subsystem this fixture selects declares "
@@ -67,13 +67,13 @@ final class SelectedEngines {
     }
 
     /* default */ boolean isBound() {
-        return persistence.get() != null;
+        return persistenceEngineSlot.get() != null;
     }
 
     /* default */ void release() {
-        events.set(null);
-        flow.set(null);
-        persistence.set(null);
+        eventEngineSlot.set(null);
+        flowEngineSlot.set(null);
+        persistenceEngineSlot.set(null);
     }
 
     private <T> T require(T engine, String subsystem) {
