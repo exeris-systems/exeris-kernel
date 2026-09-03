@@ -1,5 +1,15 @@
 # RFC-2026-09-03: Should `EX-CFG-1004` report a state or count attempts?
 
+|                    |                                                                          |
+|:-------------------|:-------------------------------------------------------------------------|
+| **Status**         | **OPEN** — options laid out and measured, decision not taken             |
+| **Author(s)**      | Arkadiusz Przychocki                                                     |
+| **Date Opened**    | 2026-09-03                                                               |
+| **Date Closed**    | —                                                                        |
+| **Target ADR(s)**  | None reserved. Only Option C changes observable behaviour and would need one; reserving a number before that choice is made would put an unused number in a global namespace |
+| **Affected Repos** | `exeris-kernel` (authoritative and sole — the event is emitted in Core and consumed by nothing outside this repo today) |
+| **Reviewers**      | —                                                                        |
+
 ## Question
 
 `ImmutableReloadRefused` (`EX-CFG-1004`) is emitted every time the config watcher detects that a

@@ -74,7 +74,7 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
   updated, any later change to an **unrelated** key in the same file re-audits the sealed one, for as
   long as the file holds the rejected value. The signal means *the sealed key is still wrong on disk*.
   Whether it should be coalesced is open — see
-  [`RFC-2026-09-03`](rfc/RFC-2026-09-03-immutable-refusal-event-granularity.md).
+  [`RFC-2026-09-03`](../rfc/RFC-2026-09-03-immutable-refusal-event-granularity.md).
 
 ### JEP 513 Validation (Flexible Constructor Bodies — Closed/Delivered in JDK 25)
 Type validation is performed via JEP 513 Flexible Constructor Bodies — environment and Vault state is validated
