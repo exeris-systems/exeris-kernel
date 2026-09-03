@@ -8,6 +8,69 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Added
+
+- **A `websocket` subsystem, so an application that boots the kernel reaches an endpoint without
+  naming a driver.** ADR-084 §1 decided a provider yields an engine *without* a kernel boot, for a
+  tool that must not pay for a runtime it does not use. That decision stands; what it did not decide
+  is that the no-boot path is the only one. An application — hand-written or generated — could
+  previously reach an endpoint only by naming a Community provider class, putting a driver on its
+  compile classpath, which is the coupling the Wall exists to prevent. Both deployments are now
+  supported: `WebSocketKernelProviders` publishes `WEBSOCKET_PROVIDER` and `WEBSOCKET_SERVER_ENGINE`,
+  and the application supplies its handler and handshake policy into the boot through the same class.
+
+  **Inert unless configured.** `websocket.enabled` defaults to `false`, so a deployment that merely
+  upgrades gains no listener — a socket appearing because a dependency was bumped is a security
+  regression delivered as a feature. `websocket.allowedOrigins` defaults to empty, which accepts no
+  browser origin. Eight keys, each defaulting to the constant `WebSocketConfig` already publishes, so
+  the documented default and the effective one cannot drift apart.
+
+  The engine is built at `start()`, not at `initialize()`: bootstrap composes `providerBindings()`
+  after every subsystem has initialised, so `MEMORY_ALLOCATOR` is not bound while one is
+  initialising, and `dependsOn("memory")` orders the phases without making the binding visible
+  earlier. Constructing early would either fail or open a second memory budget beside the kernel's —
+  the same problem `DeferredHttpServerEngine` already answers. Recorded as ADR-084 Amendment A2.
+
+- **Events and flow get real-runtime test fixtures** (T2-4), over one embedded kernel rather than one
+  fixture per subsystem, and `KernelScopePump` moves to the testkit root package where a consumer can
+  reach it.
+
+### Fixed
+
+- **The embedded path ADR-084 exists for threw on its first call.** `CommunityWebSocketServerEngine`
+  resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and refused when nothing had bound one
+  — precisely the state a tool embedding an endpoint is in. The transport factory's own javadoc
+  described that scenario while the method beneath it rejected it. It now falls back to a private
+  allocator when none is ambient, owned and closed by the engine that created it, mirroring
+  `CommunityHttpClientEngine`. An ambient allocator is still never closed by the engine, because it
+  belongs to whoever bound it. **The property is now enforced rather than described:**
+  `AbstractWebSocketProviderTck` binds no `ScopedValue` and boots nothing, so a provider that quietly
+  requires a kernel scope fails the shared suite. Recorded as ADR-084 Amendment A1.
+
+  This does **not** extend to HTTP: `CommunityHttpTransportFactory.resolveAllocator` still refuses an
+  unbound allocator, so an HTTP *server* engine is not constructible outside a boot. Whether it
+  should be belongs to its own decision.
+
+- **Twenty-five `volatile` fields audited rather than blanket-ignored** (`java:S3077`). The rule
+  fires on a `volatile` reference to a mutable type, where the write publishes the reference but not
+  the object's contents. Every site was read: all twenty-five hold either an immutable value, an
+  effectively-final snapshot, or a reference whose publication is the whole contract. Suppressions
+  carry the audit's reasoning at the field, which is worth more than a project-level exclusion
+  because it survives the next reader.
+
+- **`awaitSignal`'s loop is documented as the bounded one it is** (`java:S2189`). The analyser reads
+  a `while` with no loop-carried exit as infinite; the exit is the interrupt, and saying so at the
+  suppression is cheaper for a future reader than a false positive resolved in a web UI where the
+  code is not.
+
+### Fixed — verification
+
+- **The HTTP boot fixture had never carried a request body.** Every case sent a bodyless `GET`, so
+  the decoder binding and the request-scoped allocator the fixture exists to prove were exercised by
+  nothing. A parameterized case now sends `POST`, `PUT`, `PATCH` and `DELETE` with a body and asserts
+  the observed size, the bound allocator and the bound decoders — one case per method, because a
+  single one cannot show that method dispatch is not what carries the body.
+
 ### Changed
 
 - **SonarQube analysis moves from the standalone CLI scanner to the Maven one, and stops guessing
