@@ -30,6 +30,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   had nothing to do with the configuration: a previous `mvn clean install` leaves the sibling jars
   in `~/.m2`, where CI has none.
 
+  `Use of preview features have been detected` disappeared with it, which was not predicted: that one
+  had been attributed to the analyser's support for a recent JDK, on the strength of firing in
+  `exeris-kernel-spi` where the other never did. Both are absent now and the run parses the same 1374
+  Java files, so it is not a narrower analysis; the mechanism behind the preview half is not
+  established, only that it is tied to the same change.
+
   Everything else it derives too, which is why `sonar-project.properties` is deleted rather than
   kept: the file listed `projectVersion`, `sourceEncoding`, the Java release, source and test roots
   and compiled output, all of which the reactor already knows — and it had gone stale on the first

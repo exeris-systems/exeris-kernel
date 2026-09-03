@@ -287,10 +287,15 @@ jobs:
         # tree, without skip flags. This invocation exists to put the reactor in a resolvable state,
         # not to re-verify it.
         #
-        # `Use of preview features` is a different matter and stays: it fires in every Java module
-        # INCLUDING exeris-kernel-spi, and javac settles it outright, since `--release 25` without
-        # `--enable-preview` refuses to compile a preview feature and this build is green. The
-        # preview-bytecode gate agrees, reading major 69 with no stamp.
+        # `Use of preview features` went with it, which was not predicted: that one had been put
+        # down to the analyser's support for a recent JDK, on the strength of its firing in
+        # exeris-kernel-spi too, where `Unresolved imports/types` never did. Both are now absent,
+        # and the run parsed 1374 Java files exactly as the broken one did, so this is not a
+        # narrower analysis. The mechanism behind the preview half is NOT established — only that it
+        # is empirically tied to this same change. Nothing about it was ever a risk: javac settles
+        # that outright, since `--release 25` without `--enable-preview` makes a preview feature a
+        # compile error rather than a warning, and the preview-bytecode gate reads major 69 with no
+        # stamp.
         run: |
           mvn -B -e -DskipTests -Dpmd.skip=true -Dcheckstyle.skip=true \
             verify -P coverage \

@@ -159,20 +159,21 @@ and reported, not enforced**. `main` requires `Build & TCK Verification` and `SP
 and the SonarQube check is not among them. Making it enforcing is a branch-protection change plus a
 decision about which failures should stop a merge.
 
-Two warnings in the scanner log are known and neither is a defect in this repository.
-`Use of preview features have been detected` fires in every Java module, `exeris-kernel-spi` included,
-which has no dependencies at all — and javac settles the question outright, since `--release 25`
-without `--enable-preview` refuses to compile a preview feature and this build is green (the
-preview-bytecode gate agrees: class-file major 69, no preview stamp). `Unresolved imports/types` is a
-different matter, and it is why the analysis step runs `verify` in the same Maven command as
+The scanner log used to carry two warnings, `Unresolved imports/types have been detected` and `Use of
+preview features have been detected`, and both are gone. Neither was a defect in the code: the same
+1374 Java files are parsed now as then, so this is not a narrower analysis. The first is the reason the analysis step runs `verify` in the same Maven command as
 `sonar:sonar`. Invoked alone, the goal starts a session where no module has been packaged, so Maven
 cannot resolve a reactor sibling to a jar and falls back to the local repository, which in CI holds
 none of them. Maven announces it before the goal starts (`could not be resolved at this point of the
 build but seem to be part of the reactor ... Try running the build up to the lifecycle phase
 package`), and the fingerprint is unmistakable: the warning fired in every module with a reactor
-dependency and in neither of the two without one.
+dependency and in neither of the two without one. The preview warning disappeared with it, which was
+not predicted — it had fired in `exeris-kernel-spi` too, where the other never did — and the mechanism
+behind that half is not established, only that it is empirically tied to the same change. It was never
+a risk either way: javac makes a preview feature at `--release 25` without `--enable-preview` a
+compile error rather than a warning, and the preview-bytecode gate reads major 69 with no stamp.
 
-Two things about that are worth keeping, because both cost a cycle. A local dump can disagree with
+Two things about the wrong turn are worth keeping, because both cost a cycle. A local dump can disagree with
 CI here for a reason that has nothing to do with the configuration — a previous `mvn clean install`
 leaves the sibling jars in `~/.m2`, so locally they resolve and the problem is invisible. And the
 obvious probe does not work: the warning says `Enable DEBUG mode to see them`, a run with
