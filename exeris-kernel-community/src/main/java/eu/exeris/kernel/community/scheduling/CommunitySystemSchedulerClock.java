@@ -52,7 +52,12 @@ final class CommunitySystemSchedulerClock implements CommunitySchedulerClock {
         }
     }
 
+    /**
+     * Waits for the next {@link #signal()}, looping on the counter so a spurious wake-up does not
+     * read as a delivery.
+     */
     @Override
+    @SuppressWarnings("java:S2189") // the loop ends on signals != seen; await() releases the lock a signal() needs
     public void awaitSignal() throws InterruptedException {
         long seen = signals;
         while (signals == seen) {
