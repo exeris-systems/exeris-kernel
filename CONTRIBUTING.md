@@ -126,27 +126,53 @@ export DYLD_LIBRARY_PATH="$(brew --prefix openssl@3)/lib:$DYLD_LIBRARY_PATH"
 ## Static Analysis (SonarQube Cloud)
 
 Analysis runs **from CI**, as a step in `build-and-verify` after `mvn clean verify -P coverage`, so it
-consumes the compiled classes and JaCoCo XML that build already produced. Configuration lives in
-`sonar-project.properties` (the CLI scanner reads it; note that the `sonar:sonar` Maven goal would *not*).
+consumes the compiled classes and JaCoCo XML that build already produced.
 
-Two things must be true in the SonarQube Cloud project for this to work, and neither is expressible in
-this repository. **Do them in this order** — the second is a precondition of the first, not a companion
-to it:
+**Configuration lives in the POMs, and there is no `sonar-project.properties`.** The step invokes the
+SonarQube Scanner for Maven, which does not read that file and does not need most of what one would
+hold: `projectVersion`, source encoding, the Java release, source and test roots, compiled output and
+the analysis classpath all come from the reactor. Only what cannot be derived is declared, in the root
+POM's `<properties>`: project identity, exclusions, the coverage report path, the new-code reference
+branch and the `java:S2187` suppression. One module overrides its own classification —
+`exeris-kernel-tck` sets `sonar.sources` empty and puts both source roots under `sonar.tests`, because
+its main sources are contract tests and Sonar keys production rules off `sonar.sources` alone.
 
-1. **Automatic Analysis must be OFF.** It is mutually exclusive with CI-based analysis: leave it on and
+Two rules for anything you add there. Write a coverage or report path as
+`${project.build.directory}/...`, never as a `**/` glob: a glob resolves against each module's base
+directory, so the reactor root matches every module's file at once and imports all of them. And do not
+set `sonar.projectName`; a property in the root POM is inherited by every module, which labels all
+eleven identically in the log, and it does not rename an existing SonarQube Cloud project anyway.
+
+Two things had to be true in the SonarQube Cloud project before any of this worked, and neither is
+expressible in this repository. Both are **done**, recorded here because they are invisible from the
+code and the next person to wonder why a fork's analysis skips will need them:
+
+1. **Automatic Analysis is OFF.** It is mutually exclusive with CI-based analysis: leave it on and
    SonarQube Cloud *rejects* the CI submission. Requires an organisation administrator.
-2. **`SONAR_TOKEN` repository secret.** Add it only once step 1 is done. Until then the analysis step
-   skips (no token) rather than failing — which is the state you want, because with Automatic Analysis
-   still enabled a submitted scan is rejected and the step fails.
+2. **`SONAR_TOKEN` exists as an organisation secret.** The step is guarded on it, so a pull request
+   from a fork (which gets no secrets) skips the analysis rather than failing.
 
-The analysis step carries `continue-on-error: true` precisely so that this cannot escalate: it runs in
-`build-and-verify`, which every other job depends on, and static analysis must never be able to block a
-merge gate. Remove that flag once a CI analysis has been confirmed green, otherwise a rotting analysis
-will go unnoticed.
+The analysis step carries `continue-on-error: true`, and it stays: it runs in `build-and-verify`, which
+every other job depends on, so a SonarQube outage would otherwise take every merge gate down for a
+reason unrelated to the code under test. Note what that means for the quality gate — it is **computed
+and reported, not enforced**. `main` requires `Build & TCK Verification` and `SPI Compatibility Gate`,
+and the SonarQube check is not among them. Making it enforcing is a branch-protection change plus a
+decision about which failures should stop a merge.
 
-Automatic Analysis is also why coverage was reported as `0.0% on New Code` before this setup regardless of
-the tests written — it never builds the project, so no JaCoCo report exists for it to import. If you see
-0.0% coverage on a pull request again, suspect the analysis path before suspecting the tests.
+Two warnings in the scanner log are known and neither is a defect in this repository.
+`Use of preview features have been detected` fires in every Java module, `exeris-kernel-spi` included,
+which has no dependencies at all — and javac settles the question outright, since `--release 25`
+without `--enable-preview` refuses to compile a preview feature and this build is green (the
+preview-bytecode gate agrees: class-file major 69, no preview stamp). `Unresolved imports/types` fires
+in every module that has compile dependencies and not in SPI. Both are most plausibly the analyser's
+own support level for a recent JDK: CI builds this line on JDK 25, released only months before
+sonar-java saw it, and the same class of gap has bitten PMD and ArchUnit here before.
+
+If you chase either, note that the obvious probe does not work. The warning says `Enable DEBUG mode
+to see them`, and a run with `-Dsonar.verbose=true` was made: the property reached the scanner and
+the log came back with zero DEBUG lines and the same unnamed warning. Whatever raises the engine's
+log level with the Maven bootstrapper, that is not it — so start by finding that, not by repeating
+the run.
 
 ## Build & Test
 

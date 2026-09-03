@@ -268,12 +268,21 @@ jobs:
         # rather than a prefix lookup that would take the newest release.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
-        # TEMPORARY -Dsonar.verbose: the analyser reports `Unresolved imports/types have been
-        # detected during analysis. Enable DEBUG mode to see them` and names nothing. Attribution by
-        # module narrows it without settling it: it fires in every module that has compile
-        # dependencies and NOT in exeris-kernel-spi, which has none. This run names them. Reverted
-        # in the next commit with the answer recorded.
-        run: mvn -B -e -Dsonar.verbose=true org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+        # No -Dsonar.verbose here, and that is a finding rather than an omission. The analyser
+        # reports `Unresolved imports/types have been detected during analysis. Enable DEBUG mode to
+        # see them` and names nothing; a run was made with `-Dsonar.verbose=true` to make it name
+        # them, the property reached the scanner, and the log came back with ZERO DEBUG lines and
+        # the identical unnamed warning. So that is not what raises the engine's log level under the
+        # Maven bootstrapper, and repeating the probe would waste a second CI cycle the way it
+        # wasted the first.
+        #
+        # What is known without it: the warning fires in every module that has compile dependencies
+        # and not in exeris-kernel-spi, which has none, while `Use of preview features` fires in
+        # every Java module INCLUDING that one. The preview half is answered outright by javac,
+        # which at `--release 25` without `--enable-preview` refuses to compile a preview feature,
+        # and by the preview-bytecode gate reading major 69 with no stamp. Both are most plausibly
+        # the analyser's support level for a JDK released months before it.
+        run: mvn -B -e org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
