@@ -104,8 +104,16 @@ fi
 # stripped first: several classes legitimately cite a code in prose ("e.g. \"EX-NET-2002\"") and the
 # usage examples in ExerisKernelException's own javadoc are documentation, not a second definition.
 # Test sources are out of scope — a fixture asserting on an unknown code is exercising the sink's
-# fallback, which is the point of the fixture.
+# fallback, which is the point of the fixture. That exemption used to be spelled `not under
+# src/main`, which stopped meaning what it says once exeris-kernel-tck moved its contract tests to
+# src/main to be publishable: the module is named here instead, because the thing being exempted is
+# test code, not a directory. Its literals are of two kinds and neither is a leak — invented fixture
+# codes (EX-TEST-*, EX-TCK-*) that must NOT be in the registry, and real codes pinned by an
+# assertion, where writing the constant would compare it against itself and pin nothing. A rename in
+# the registry breaks those assertions at test time, which is the check the gate would otherwise be
+# duplicating.
 leaked=$(find "$ROOT" -path '*/src/main/java/*' -name '*.java' ! -path '*/target/*' \
+           ! -path '*/exeris-kernel-tck/*' \
            ! -name 'KernelErrorCodes.java' -print0 \
          | xargs -0 python3 -c '
 import re, sys

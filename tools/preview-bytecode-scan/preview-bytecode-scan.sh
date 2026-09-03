@@ -112,9 +112,11 @@ def publishing_modules():
 # Read the JARS, not a directory glob. The scope of this gate has to be derived from what the build
 # actually publishes, because the thing it is protecting against is a consumer tripping over a stamp
 # in a downloaded artifact. A `*/target/classes/**` glob looked equivalent and was not:
-# exeris-kernel-tck has no src/main at all, so its entire distributed surface is a test-jar built
-# from src/test — 55 of its classes shipped preview-stamped, invisible to this gate by construction,
-# for the whole milestone that advertised the opposite.
+# exeris-kernel-tck had no src/main at the time, so its entire distributed surface was a test-jar
+# built from src/test — 55 of its classes shipped preview-stamped, invisible to this gate by
+# construction, for the whole milestone that advertised the opposite. That module now publishes an
+# ordinary jar, which is why the rule is written as it is: reading what the build publishes survived
+# a change in where the sources live, and a glob over src/main would not have.
 expected_modules = publishing_modules()
 missing = []
 for module in expected_modules:

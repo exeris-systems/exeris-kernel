@@ -166,6 +166,19 @@ jobs:
         #
         # Docs-and-sources only, so it needs no build artifact -- same reasoning as the gate above.
         run: tools/error-code-registry-check/error-code-registry-check.sh
+      - name: Checkstyle Parity Gate
+        # exeris-kernel-tck runs a second Checkstyle config, because its main sources are contract
+        # tests. The PMD ruleset beside it can reference the kernel's and exclude from it, so it
+        # stays a live view; Checkstyle has no config inheritance, so its TCK config is a copy and
+        # the format offers no guarantee at all.
+        #
+        # The failure that copy invites is silent and one-directional: a module added to
+        # checkstyle.xml stops short of ~130 classes, and nothing fails, because the TCK config is
+        # by itself still valid. This gate compares the two module by module and property by
+        # property against a delta the TCK config declares about itself.
+        #
+        # Config-only, so it needs no build artifact — same reasoning as the two gates above.
+        run: tools/checkstyle-parity-check/checkstyle-parity-check.sh
 
       - name: Supply-Chain Gate
         # v0.12 Stream B. Two checks, deliberately at different ends of the build.
@@ -218,13 +231,18 @@ jobs:
         # down every merge gate for a reason unrelated to the code under test. Static analysis is not
         # a correctness gate here and must never be able to do that.
         #
-        # It is load-bearing right now, not just prudent: the SonarQube Cloud organisation is
-        # currently without an administrator, so Automatic Analysis cannot be switched off — and
-        # SonarQube Cloud *rejects* a CI submission while it is enabled. Until that is resolved this
-        # step is expected to fail whenever a token is present.
+        # The organisation now has an administrator, Automatic Analysis is off and the token is an
+        # organisation secret, so this step runs for real. The first CI-based analysis this
+        # repository has ever had is what settled several things that were guesses until then:
+        # JaCoCo coverage imported (8 reports, and the `coverage` metric had not existed at all
+        # before), the `sonar.issue.ignore` entries took effect where Automatic Analysis had been
+        # ignoring them, and the TCK reclassification landed — 115 bugs and vulnerabilities closed,
+        # 8 code smells left.
         #
-        # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
-        # let the analysis rot silently.
+        # It also logged `Unresolved imports/types have been detected during analysis`, which is not
+        # noise: `sonar.java.libraries` is a glob over the project tree, so it matches the 9 reactor
+        # jars and none of the 71 dependency jars on a module's real classpath. That is what the
+        # Maven scanner would derive correctly, and it is tracked separately.
         #
         # Pinned by commit SHA, not by tag. Two high-severity advisories (GHSA-f79p-9c5r-xg88,
         # GHSA-5xq9-5g24-4g6f) cover every 4.x/5.x release of this action, so `@v5` resolved to a

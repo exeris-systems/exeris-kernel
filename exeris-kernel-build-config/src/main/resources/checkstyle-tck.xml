@@ -1,0 +1,134 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+    The kernel Checkstyle config for exeris-kernel-tck, whose main sources are contract tests.
+
+    This is a COPY, not a subtraction, and the distinction is the file's one real weakness. The PMD
+    ruleset beside it can write `<rule ref="pmd-ruleset.xml"><exclude .../></rule>` and stay a live
+    view of the kernel's rules; Checkstyle has no config inheritance, so nothing in the format keeps
+    the two files together. What keeps them together is `tools/checkstyle-parity-check`, which
+    compares this file to checkstyle.xml module by module and property by property and fails on any
+    difference not declared below — in either direction, so a declaration that stops describing a
+    difference fails too. A module added to checkstyle.xml therefore cannot silently skip the ~130
+    classes here: the gate names it and asks for a decision.
+
+    Six modules are dropped because their premise is production code, and the count each reported
+    when these classes first became main sources is given so the delta is auditable rather than
+    asserted:
+
+      PARITY-DELTA: drop MethodName            54  — a TCK case is named for the clause it pins:
+                                                     `close_after_close_is_idempotent` reads better
+                                                     than any camelCase
+      PARITY-DELTA: drop DeclarationOrder     180  — fields declared beside the case that uses them
+      PARITY-DELTA: drop LeftCurly            125
+      PARITY-DELTA: drop NeedBraces            60
+      PARITY-DELTA: drop OneStatementPerLine   15
+      PARITY-DELTA: drop RightCurly             2
+
+      PARITY-DELTA: set LineLength.max              120 -> 140, relaxed rather than dropped:
+                                                    assertion messages and @DisplayName text are
+                                                    prose a reader needs on one line, and all 53
+                                                    findings were of that shape
+      PARITY-DELTA: set EmptyCatchBlock.exceptionVariableName
+                                                    additionally accepts `ignored`, which the PMD
+                                                    ruleset already accepted — the two tools
+                                                    disagreed, and the TCK's best-effort teardown
+                                                    loops are the shape both were written for
+
+    EVERYTHING ELSE IS KEPT, and the L0 ban regexes especially: ThreadLocal, unstructured
+    concurrency, Unsafe, direct Arena allocation, DI containers, java.util.Date and MemoryManager
+    stay banned here exactly as in the kernel. Where the TCK *names* one of those in an assertion
+    message — six sites, all string literals, which `ignoreComments` does not reach — the site
+    carries a local CHECKSTYLE:OFF with the reason, rather than the rule being weakened.
+-->
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="error"/>
+    <property name="fileExtensions" value="java"/>
+    <module name="FileLength">
+        <property name="max" value="1500"/>
+    </module>
+
+    <module name="LineLength">
+        <property name="max" value="140"/>
+        <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://"/>
+    </module>
+
+    <module name="TreeWalker">
+        <module name="SuppressionCommentFilter"/>
+        <module name="AvoidStarImport"/>
+        <module name="UnusedImports"/>
+        <module name="IllegalImport">
+            <property name="illegalPkgs" value="sun,com.sun"/>
+        </module>
+
+        <module name="PackageName">
+            <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+        </module>
+        <module name="TypeName">
+            <property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
+        </module>
+        <module name="ConstantName">
+            <property name="format" value="^[A-Z][A-Z0-9]*(_[A-Z0-9]+)*$"/>
+        </module>
+
+
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="\b(?:java\.lang\.)?ThreadLocal\b"/>
+            <property name="message" value="[EXERIS L0] ThreadLocal is banned. Use ScopedValue (JEP 506)."/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <module name="RegexpSinglelineJava">
+            <property name="format"
+                      value="\b(?:java\.util\.concurrent\.)?(?:ExecutorService|Executors|CompletableFuture)\b"/>
+            <property name="message"
+                      value="[EXERIS L0] Unstructured concurrency is banned. Use StructuredTaskScope (JEP 525)."/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="\b(?:sun\.misc\.)?Unsafe\b"/>
+            <property name="message"
+                      value="[EXERIS L0] Unsafe is banned (JEP 471). Use Panama FFM (MemorySegment, VarHandle)."/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="\b(?:java\.lang\.foreign\.)?Arena\.of(?:Confined|Shared)\(\)"/>
+            <property name="message"
+                      value="[EXERIS L0] Direct Arena allocation is banned. Use KernelProviders.MEMORY_ALLOCATOR.get()."/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="\b(?:org\.springframework\.|javax\.inject\.|jakarta\.inject\.)"/>
+            <property name="message"
+                      value="[EXERIS L0] Magic DI is banned. Use pure Java constructors and ServiceLoader."/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="\b(?:java\.util\.)?Date\b"/>
+            <property name="message" value="[EXERIS L0] java.util.Date is banned. Use java.time.*."/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+        <module name="RegexpSinglelineJava">
+            <property name="format" value="MemoryManager\."/>
+            <property name="message"
+                      value="[EXERIS L0] Accessing MemoryManager directly is banned. Use KernelProviders.MEMORY_ALLOCATOR.get()."/>
+            <property name="ignoreComments" value="true"/>
+        </module>
+
+
+        <module name="ModifierOrder"/>
+        <module name="RedundantModifier"/>
+        <module name="AvoidNestedBlocks"/>
+
+        <module name="EmptyCatchBlock">
+            <property name="exceptionVariableName" value="expected|ignored|_"/>
+        </module>
+    </module>
+</module>

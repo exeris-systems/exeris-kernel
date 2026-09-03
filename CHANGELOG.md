@@ -8,6 +8,58 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased] — development/0.12.0
 
+### Changed
+
+- **`exeris-kernel-tck` publishes its contract instead of hiding it under a classifier.** The
+  `Abstract*Tck` classes are that module's published API and now live in `src/main`. Until now the
+  module had only `src/test`, so its published main jar held 7 files of META-INF while all 492 real
+  classes shipped as `<classifier>tests</classifier>` — which is why Maven Central could not take it
+  (no sources jar and no javadoc jar can be produced from empty compile roots) and why it was
+  excluded from the first Central publication. That exclusion is gone.
+
+  **Consumers change shape**: drop `<classifier>tests</classifier><type>test-jar</type>` and depend
+  on the plain artefact at `test` scope. The module no longer produces a test jar at all — five
+  self-tests remain in `src/test` and nobody consumes them. `exeris-kernel-core`, `-community` and
+  `-community-kafka` are updated here; the out-of-repo enterprise distribution needs the same edit,
+  in lockstep. `exeris-kernel-bom` drops the now-nonexistent `tests` entry, which also removes a
+  dangling pointer: the BOM is published to Central and was managing a coordinate that would not be
+  there.
+
+  **What it cost, and where.** Not the file move — 135 files, 5 of which stay put, compiling on the
+  first attempt after one scope correction. The cost was that test-shaped code entered a lint and
+  coverage regime written for production runtime code: **2284 findings at once (1782 PMD, 502
+  Checkstyle across 93 files)**, and a JaCoCo floor failing at 0.00 line coverage against a 0.20
+  minimum — structural, because a TCK's classes are exercised by the providers that subclass them in
+  *other* modules.
+
+  Resolved with rules rather than skips: `pmd-ruleset-tck.xml` and `checkstyle-tck.xml` are the
+  kernel rulesets **minus a named list**. The two get that property by different means, and only one
+  of them gets it from the file format. PMD's ruleset references the kernel's and excludes from it,
+  so it is a live view — a rule added upstream reaches the TCK unless somebody excludes it on
+  purpose. Checkstyle has no config inheritance, so its TCK config is a copy, and a copy's failure
+  is silent in the direction that matters: a module added to `checkstyle.xml` would simply never
+  reach these classes. `tools/checkstyle-parity-check` supplies what the format does not, comparing
+  the two configs module by module and property by property against a delta the TCK config declares
+  about itself, and failing on an undeclared difference or a declaration that no longer describes
+  one.
+
+  Ten PMD rules are kept live. Eight had their findings fixed in the code — including two genuinely
+  dead imports, a locale-dependent `toLowerCase()` in a contract assertion, twelve
+  `x.equals("literal")` comparisons and twelve suppressions that had stopped suppressing anything.
+  The other two, `CompareObjectsWithEquals` and `EmptyControlStatement`, are answered at eleven
+  individual sites rather than switched off for the module: four identity comparisons where
+  `equals()` would be the bug (a `LazyConstant` that re-initialised, an inserter closed twice,
+  `Thread` identity, `addSuppressed(self)`), and seven bodies whose emptiness is the assertion.
+  Excluding either rule would have taken every future `==` mistake in the other 126 classes with it. The **L0 ban
+  regexes are all retained**; the six sites where a TCK message *names* a banned type carry a local
+  suppression with its reason rather than the rule being weakened.
+
+  One finding the move surfaced that nothing could have seen before: `JfrAllocationMonitor` imports
+  `com.sun.management.ThreadMXBean`, which the kernel's `IllegalImport` ban would have refused — and
+  did not, because while the class was a test source the ban could not see it. It is the only way to
+  read exact per-thread allocated bytes, which is what that class cross-checks JFR's sampled figure
+  against, so it stays, documented at the site.
+
 ### Added
 
 - **The Community WebSocket binding** (`eu.exeris.kernel.community.websocket`,

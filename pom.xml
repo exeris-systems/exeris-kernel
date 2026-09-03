@@ -530,32 +530,19 @@
                             <autoPublish>false</autoPublish>
                             <waitUntil>validated</waitUntil>
                             <!--
-                                exeris-kernel-tck is held back from the first Central publication,
-                                and the reason is a defect rather than a policy.
+                                No exclusions. exeris-kernel-tck used to be held back here, and the
+                                comment that stood in this place said the reason was a defect rather
+                                than a policy: the module had only src/test, so its published main
+                                jar was 7 files of META-INF while all 492 real classes shipped under
+                                the `tests` classifier, and Central requires a sources jar and a
+                                javadoc jar per artefact that empty compile roots cannot produce.
 
-                                The module has only `src/test/` and no `src/main` at all, so its
-                                published main jar contains 7 files and 4.6 kB of META-INF while
-                                all 492 real classes ship under the `tests` classifier. Central
-                                validates per artifact and requires a `-sources.jar` and a
-                                `-javadoc.jar`; maven-source-plugin and maven-javadoc-plugin both
-                                read the COMPILE source roots, which are empty here, so neither can
-                                produce one. The plugins' `test-jar` goals emit `-test-sources.jar`,
-                                a different classifier that does not satisfy the requirement.
-
-                                The real fix is that the Abstract*Tck classes are this module's
-                                published API and belong in `src/main` — which changes the
-                                coordinate every provider module and the enterprise distribution
-                                depend on, and is therefore its own slice, not a line in a signing
-                                PR. Publishing an empty main jar to an immutable channel in the
-                                meantime would be the worse of the two options.
-
-                                Consumers keep resolving it from GitHub Packages exactly as today.
-                                The release-readiness gate reads this list and reports what it
-                                skipped, so the exclusion cannot quietly become permanent.
+                                That defect is fixed. The Abstract*Tck classes are the module's
+                                published API and now live in src/main, so it produces an ordinary
+                                jar with an ordinary sources and javadoc jar beside it, and the
+                                release-readiness gate verifies all three like every other
+                                coordinate.
                             -->
-                            <excludeArtifacts>
-                                <excludeArtifact>exeris-kernel-tck</excludeArtifact>
-                            </excludeArtifacts>
                         </configuration>
                     </plugin>
                 </plugins>

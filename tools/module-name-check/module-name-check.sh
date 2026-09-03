@@ -34,15 +34,16 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # (the shade plugin's pre-shading copy, left beside the jar it replaced — without this the CLI
 # matches twice and the check could inspect the copy that is not published).
 #
-# `-tests` jars are deliberately NOT excluded, though the obvious reading is that a test jar is not
-# a published artifact. For exeris-kernel-tck it is the ONLY artifact anyone consumes: the module
-# has no src/main, so its default jar holds seven files of metadata and nothing else, while
-# core, community, community-kafka and the BOM all depend on the classifier-`tests` jar to reach the
-# Abstract*Tck classes. Excluding it left the gate validating the jar nobody uses and skipping the
-# one two modules put on their classpath. It passes today only because the manifest config sits in
-# pluginManagement and so applies to both executions — incidental, not verified, which is the exact
-# shape of the assumption this gate exists to refuse. No other module declares a test-jar goal, so
-# admitting them adds no noise.
+# `-tests` jars are still NOT excluded, and the reason has changed under the rule rather than gone
+# away. It used to be that exeris-kernel-tck's classifier-`tests` jar was the ONLY artifact anyone
+# consumed — the module had no src/main, so its default jar held seven files of metadata while all
+# 492 real classes shipped under the classifier. Excluding test jars would have left the gate
+# validating the jar nobody used and skipping the one four modules put on their classpath.
+#
+# That module now publishes an ordinary jar and no test-jar at all, so no reactor module currently
+# produces one. The pattern stays admitted anyway: a module that starts publishing a test jar would
+# otherwise acquire an unnamed one silently, which is the class of failure this gate exists to
+# refuse. Admitting a shape nothing currently produces costs nothing and closes that door.
 
 NAME_RE='^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$'
 
