@@ -421,15 +421,20 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * the sealed boot-time value is preserved and an {@code EX-CFG-1004} audit event is
      * emitted. First sighting of an any-file guard seeds the baseline silently.
      *
-     * <p><strong>One refusal per detection, not per mutation.</strong> A single logical edit is
-     * usually several filesystem events — one {@code Files.writeString} with
-     * {@code TRUNCATE_EXISTING} measures as two {@code ENTRY_MODIFY} on Linux, truncate then
-     * write — and the baseline is deliberately never updated, so every one of them sees the
-     * on-disk value still differing from the sealed one and audits it again. A later change to an
-     * unrelated key in the same file will do so too, for as long as the file holds the rejected
-     * value. That is the intended reading of the signal: it says the sealed key is still wrong on
-     * disk, not that someone attempted a change N times. Counting these events as attempts is a
-     * misreading, and an assertion that counted them was the flake that produced this note.
+     * <p><strong>One refusal per detection, not per mutation.</strong> Two things make the count
+     * unusable as an attempt count, and only the second is deterministic. A single logical edit is
+     * several filesystem modifications — {@code Files.writeString} with
+     * {@code TRUNCATE_EXISTING} is a truncate and a write — which {@code WatchService} usually but
+     * not always merges into one event: measured over 20 runs, 19 delivered one
+     * {@code ENTRY_MODIFY} with {@code count()==2} and one delivered two distinct events, and this
+     * loop dispatches per event. More importantly the baseline is deliberately never updated, so
+     * any later change to an <em>unrelated</em> key in the same file re-audits the sealed one for
+     * as long as the file holds the rejected value — measured directly: one refusal after the
+     * mutation, two after a subsequent edit that left the sealed key untouched on disk.
+     *
+     * <p>The intended reading is therefore a state and not a tally: the sealed key is still wrong
+     * on disk. Whether that should be coalesced is an open question, not a settled design — see
+     * {@code docs/rfc/RFC-2026-09-03-immutable-refusal-event-granularity.md}.
      */
     private void refuseImmutableReloads(
             Path filePath,
