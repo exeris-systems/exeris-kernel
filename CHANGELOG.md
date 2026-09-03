@@ -71,7 +71,6 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the observed size, the bound allocator and the bound decoders — one case per method, because a
   single one cannot show that method dispatch is not what carries the body.
 
-
 ### Changed
 
 - **SonarQube analysis moves from the standalone CLI scanner to the Maven one, and stops guessing
