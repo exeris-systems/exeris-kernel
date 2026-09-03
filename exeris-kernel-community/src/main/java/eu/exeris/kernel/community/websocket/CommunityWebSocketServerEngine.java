@@ -52,8 +52,10 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
                 ? CommunityWebSocketTransportFactory.nextFreePort()
                 : nonNull.port();
         this.config = nonNull;
-        this.ownsAllocator = CommunityWebSocketTransportFactory.allocatorIsOurs();
-        this.allocator = CommunityWebSocketTransportFactory.resolveAllocator();
+        CommunityWebSocketTransportFactory.ResolvedAllocator resolved =
+                CommunityWebSocketTransportFactory.resolveAllocator();
+        this.ownsAllocator = resolved.ours();
+        this.allocator = resolved.allocator();
         this.transport = CommunityWebSocketTransportFactory.buildTransport(nonNull, resolvedPort,
                 this.allocator);
         this.listenPort = resolvedPort;

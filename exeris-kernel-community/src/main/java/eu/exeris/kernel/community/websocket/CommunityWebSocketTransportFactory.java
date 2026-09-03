@@ -40,25 +40,31 @@ final class CommunityWebSocketTransportFactory {
     }
 
     /**
-     * The ambient allocator when the caller has one, a private one when it does not.
+     * An allocator and whether the caller owns it.
      *
-     * <p>{@link #allocatorIsOurs()} says which happened, because ownership follows: an allocator
-     * this factory created must be closed by the engine that holds it, and an ambient one must not
-     * be — closing another component's allocator is the failure the engine's own field comment
-     * warns about.
+     * <p>One record rather than two calls, and the reason is the ownership rule itself: asking
+     * "is one bound?" twice admits a window in which the two answers disagree, and the engine would
+     * then either leak an allocator it created or close an ambient one it does not own — the second
+     * being exactly the failure the engine's field comment calls out. A single {@code isBound()}
+     * read cannot disagree with itself.
      *
-     * @return an allocator; never {@code null}
+     * @param allocator the allocator to use; never {@code null}
+     * @param ours      {@code true} when this factory created it, so its holder must close it
      */
-    /* default */ static MemoryAllocator resolveAllocator() {
-        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            return KernelProviders.MEMORY_ALLOCATOR.get();
-        }
-        return new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
+    /* default */ record ResolvedAllocator(MemoryAllocator allocator, boolean ours) {
     }
 
-    /** Whether {@link #resolveAllocator()} would create an allocator rather than borrow one. */
-    /* default */ static boolean allocatorIsOurs() {
-        return !KernelProviders.MEMORY_ALLOCATOR.isBound();
+    /**
+     * The ambient allocator when the caller has one, a private one when it does not.
+     *
+     * @return the allocator and its ownership, decided by one binding check
+     */
+    /* default */ static ResolvedAllocator resolveAllocator() {
+        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
+            return new ResolvedAllocator(KernelProviders.MEMORY_ALLOCATOR.get(), false);
+        }
+        return new ResolvedAllocator(
+                new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults()), true);
     }
 
     /* default */ static TransportEngine buildTransport(WebSocketConfig config, int port,
