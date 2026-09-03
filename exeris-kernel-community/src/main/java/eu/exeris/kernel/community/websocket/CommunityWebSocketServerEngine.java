@@ -30,10 +30,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
 
     private final WebSocketConfig config;
-    // Not closed by this engine, and not a leak: the allocator is resolved from the ambient binding
-    // and owned by whoever bound it. Closing another component's allocator is the failure this
+    // Closed by this engine ONLY when this engine created it — see ownsAllocator. An ambient one is
+    // owned by whoever bound it, and closing another component's allocator is the failure this
     // deliberately does not risk.
     private final MemoryAllocator allocator;
+    /** True when no ambient allocator was bound, so this engine created one and must release it. */
+    private final boolean ownsAllocator;
     private final TransportEngine transport;
     private final int listenPort;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -50,6 +52,7 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
                 ? CommunityWebSocketTransportFactory.nextFreePort()
                 : nonNull.port();
         this.config = nonNull;
+        this.ownsAllocator = CommunityWebSocketTransportFactory.allocatorIsOurs();
         this.allocator = CommunityWebSocketTransportFactory.resolveAllocator();
         this.transport = CommunityWebSocketTransportFactory.buildTransport(nonNull, resolvedPort,
                 this.allocator);
@@ -150,5 +153,8 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
             stop();
         }
         transport.close();
+        if (ownsAllocator) {
+            allocator.close();
+        }
     }
 }
