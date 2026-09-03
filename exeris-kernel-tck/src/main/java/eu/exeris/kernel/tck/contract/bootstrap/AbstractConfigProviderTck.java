@@ -132,7 +132,8 @@ public abstract class AbstractConfigProviderTck {
                         var settings = provider.kernelSettings().get();
                         if (!firstSeen.compareAndSet(null, settings)) {
                             Object expected = firstSeen.get();
-                            if (expected != settings) {
+                            // Identity IS the contract here: equals() would hide a second initialisation of an equal value.
+                            if (expected != settings) {  // NOPMD CompareObjectsWithEquals
                                 failure.compareAndSet(null, new AssertionError(
                                         "KernelSettings was initialised more than once! " +
                                         "LazyConstant single-init contract violated. " +

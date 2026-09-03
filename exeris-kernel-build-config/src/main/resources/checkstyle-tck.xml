@@ -2,25 +2,39 @@
 <!DOCTYPE module PUBLIC "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
         "https://checkstyle.org/dtds/configuration_1_3.dtd">
 <!--
-    The kernel Checkstyle config MINUS a named list, for exeris-kernel-tck.
+    The kernel Checkstyle config for exeris-kernel-tck, whose main sources are contract tests.
 
-    That module's main sources are contract tests. Six modules are dropped because their premise is
-    production code, and the count each of them reported when these classes first became main
-    sources is given so the delta is auditable rather than asserted:
+    This is a COPY, not a subtraction, and the distinction is the file's one real weakness. The PMD
+    ruleset beside it can write `<rule ref="pmd-ruleset.xml"><exclude .../></rule>` and stay a live
+    view of the kernel's rules; Checkstyle has no config inheritance, so nothing in the format keeps
+    the two files together. What keeps them together is `tools/checkstyle-parity-check`, which
+    compares this file to checkstyle.xml module by module and property by property and fails on any
+    difference not declared below — in either direction, so a declaration that stops describing a
+    difference fails too. A module added to checkstyle.xml therefore cannot silently skip the ~130
+    classes here: the gate names it and asks for a decision.
 
-      MethodName          54  — a TCK case is named for the clause it pins:
-                                `close_after_close_is_idempotent` reads better than any camelCase
-      DeclarationOrder   180  — fields declared beside the case that uses them
-      LeftCurly          125
-      NeedBraces          60
-      OneStatementPerLine 15
-      RightCurly           2
+    Six modules are dropped because their premise is production code, and the count each reported
+    when these classes first became main sources is given so the delta is auditable rather than
+    asserted:
 
-    LineLength is relaxed 120 -> 140 rather than dropped: assertion messages and @DisplayName text
-    are prose a reader needs on one line, and 53 findings were all of that shape.
+      PARITY-DELTA: drop MethodName            54  — a TCK case is named for the clause it pins:
+                                                     `close_after_close_is_idempotent` reads better
+                                                     than any camelCase
+      PARITY-DELTA: drop DeclarationOrder     180  — fields declared beside the case that uses them
+      PARITY-DELTA: drop LeftCurly            125
+      PARITY-DELTA: drop NeedBraces            60
+      PARITY-DELTA: drop OneStatementPerLine   15
+      PARITY-DELTA: drop RightCurly             2
 
-    EmptyCatchBlock additionally accepts `ignored`, which the PMD ruleset already accepted — the two
-    tools disagreed, and the TCK's best-effort teardown loops are the shape both were written for.
+      PARITY-DELTA: set LineLength.max              120 -> 140, relaxed rather than dropped:
+                                                    assertion messages and @DisplayName text are
+                                                    prose a reader needs on one line, and all 53
+                                                    findings were of that shape
+      PARITY-DELTA: set EmptyCatchBlock.exceptionVariableName
+                                                    additionally accepts `ignored`, which the PMD
+                                                    ruleset already accepted — the two tools
+                                                    disagreed, and the TCK's best-effort teardown
+                                                    loops are the shape both were written for
 
     EVERYTHING ELSE IS KEPT, and the L0 ban regexes especially: ThreadLocal, unstructured
     concurrency, Unsafe, direct Arena allocation, DI containers, java.util.Date and MemoryManager

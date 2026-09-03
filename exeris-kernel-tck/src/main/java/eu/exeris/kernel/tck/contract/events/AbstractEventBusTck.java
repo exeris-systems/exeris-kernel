@@ -131,7 +131,7 @@ public abstract class AbstractEventBusTck {
         @DisplayName("subscribe() returns a valid, non-INVALID token")
         void subscribeReturnsValidToken() {
             SubscriptionToken token = engine.bus().subscribe(TYPE_USER_CREATED, (d, p) -> {
-                try (p) { /* no-op */ }
+                try (p) { /* no-op */ }  // NOPMD EmptyControlStatement - closing the payload IS the contract
             });
 
             assertThat(token)
@@ -145,7 +145,7 @@ public abstract class AbstractEventBusTck {
         @DisplayName("unsubscribe() with a valid token does not throw")
         void unsubscribeDoesNotThrow() {
             SubscriptionToken token = engine.bus().subscribe(TYPE_USER_CREATED, (d, p) -> {
-                try (p) { /* no-op */ }
+                try (p) { /* no-op */ }  // NOPMD EmptyControlStatement - closing the payload IS the contract
             });
             assertThatCode(() -> engine.bus().unsubscribe(token))
                     .as("unsubscribe() with valid token MUST not throw")
@@ -199,7 +199,7 @@ public abstract class AbstractEventBusTck {
             CountDownLatch handled = new CountDownLatch(1);
 
             engine.bus().subscribe(TYPE_USER_CREATED, (d, payload) -> {
-                try (payload) {
+                try (payload) {  // NOPMD EmptyControlStatement - closing the payload IS the contract
                     // handler work is intentionally empty
                 } finally {
                     handled.countDown();
@@ -224,7 +224,7 @@ public abstract class AbstractEventBusTck {
 
             for (int i = 0; i < 3; i++) {
                 engine.bus().subscribe(TYPE_USER_CREATED, (d, payload) -> {
-                    try (payload) {
+                    try (payload) {  // NOPMD EmptyControlStatement - closing the payload IS the contract
                         // handler work is intentionally empty
                     } finally {
                         allHandled.countDown();

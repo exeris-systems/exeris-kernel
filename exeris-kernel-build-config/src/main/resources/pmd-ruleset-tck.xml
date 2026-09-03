@@ -107,19 +107,6 @@
         <exclude name="JUnit5TestShouldBePackagePrivate"/>
 
         <!--
-            EmptyControlStatement: the RAII payload protocol is verified by a handler whose whole
-            body is `try (p) { /* no-op */ }` — receiving the payload and closing it is the contract
-            being asserted. Unlike EmptyCatchBlock, this rule has no allowCommentedBlocks property,
-            so the comment that explains the emptiness cannot reach it.
-
-            CompareObjectsWithEquals: `if (thread != self)` is identity comparison on Thread, where
-            identity IS the semantics — and the persistence TCK likewise asserts flyweight identity,
-            which equals() would hide.
-        -->
-        <exclude name="EmptyControlStatement"/>
-        <exclude name="CompareObjectsWithEquals"/>
-
-        <!--
             4. Size and complexity, measured against the wrong unit.
 
             These rules bound a production class. The unit here is a CONTRACT: AbstractBlobStorageTck
@@ -167,7 +154,15 @@
               EmptyCatchBlock              — inherited with the main ruleset's `ignored|expected`
                                              allowance
 
-            Each of these fired on the module and was fixed in the code rather than excluded here.
+            Each of these fired on the module and was answered in the code rather than excluded
+            here. CompareObjectsWithEquals and EmptyControlStatement are the two where the answer is
+            a suppression rather than a fix, and they are the reason the answer is per-site: eleven
+            places need it — four identity comparisons where equals() would be the bug (a
+            LazyConstant that re-initialised, an inserter closed twice, Thread identity,
+            addSuppressed(self)), and seven bodies whose emptiness is the assertion (`try (payload)
+            { }` is the RAII protocol; a drain loop does its work in the condition). Excluding
+            either rule for the module would have covered those eleven and every future `==` bug in
+            the other 126 classes with them, so each site carries its own NOPMD and its own reason.
         -->
     </rule>
 

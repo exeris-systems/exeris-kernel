@@ -32,14 +32,27 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   minimum — structural, because a TCK's classes are exercised by the providers that subclass them in
   *other* modules.
 
-  Resolved with rules rather than skips. `pmd-ruleset-tck.xml` and `checkstyle-tck.xml` are the
-  kernel rulesets **minus a named list**, referenced rather than copied, so a rule added upstream
-  applies here unless somebody excludes it deliberately. Ten PMD rules were kept live and their
-  findings fixed in the code — including two genuinely dead imports, a locale-dependent
-  `toLowerCase()` in a contract assertion, twelve `x.equals("literal")` comparisons and twelve
-  suppressions that had stopped suppressing anything. The **L0 ban regexes are all retained**;
-  the six sites where a TCK message *names* a banned type carry a local suppression with its reason
-  rather than the rule being weakened.
+  Resolved with rules rather than skips: `pmd-ruleset-tck.xml` and `checkstyle-tck.xml` are the
+  kernel rulesets **minus a named list**. The two get that property by different means, and only one
+  of them gets it from the file format. PMD's ruleset references the kernel's and excludes from it,
+  so it is a live view — a rule added upstream reaches the TCK unless somebody excludes it on
+  purpose. Checkstyle has no config inheritance, so its TCK config is a copy, and a copy's failure
+  is silent in the direction that matters: a module added to `checkstyle.xml` would simply never
+  reach these classes. `tools/checkstyle-parity-check` supplies what the format does not, comparing
+  the two configs module by module and property by property against a delta the TCK config declares
+  about itself, and failing on an undeclared difference or a declaration that no longer describes
+  one.
+
+  Ten PMD rules are kept live. Eight had their findings fixed in the code — including two genuinely
+  dead imports, a locale-dependent `toLowerCase()` in a contract assertion, twelve
+  `x.equals("literal")` comparisons and twelve suppressions that had stopped suppressing anything.
+  The other two, `CompareObjectsWithEquals` and `EmptyControlStatement`, are answered at eleven
+  individual sites rather than switched off for the module: four identity comparisons where
+  `equals()` would be the bug (a `LazyConstant` that re-initialised, an inserter closed twice,
+  `Thread` identity, `addSuppressed(self)`), and seven bodies whose emptiness is the assertion.
+  Excluding either rule would have taken every future `==` mistake in the other 126 classes with it. The **L0 ban
+  regexes are all retained**; the six sites where a TCK message *names* a banned type carry a local
+  suppression with its reason rather than the rule being weakened.
 
   One finding the move surfaced that nothing could have seen before: `JfrAllocationMonitor` imports
   `com.sun.management.ThreadMXBean`, which the kernel's `IllegalImport` ban would have refused — and

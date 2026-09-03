@@ -71,7 +71,7 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
         engine.registry().register(EventTypeSpec.of(EVENT_TYPE, EVENT_ORDINAL));
         // Pre-register a handler that closes the payload correctly (no slab leak)
         engine.bus().subscribe(EVENT_TYPE, (descriptor, payload) -> {
-            try (payload) {
+            try (payload) {  // NOPMD EmptyControlStatement - closing the payload IS the contract
                 // intentionally minimal — we measure routing overhead, not handler work
             }
         });

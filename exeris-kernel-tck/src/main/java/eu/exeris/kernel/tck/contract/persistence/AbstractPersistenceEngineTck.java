@@ -311,7 +311,8 @@ public abstract class AbstractPersistenceEngineTck {
                             .isEqualTo(second.isPresent());
 
                     first.ifPresent(eu.exeris.kernel.spi.persistence.BulkInserter::close);
-                    if (second.isPresent() && first.map(b -> b != second.get()).orElse(true)) {
+                    // Identity, not equality: two equal-but-distinct inserters must each be closed exactly once.
+                    if (second.isPresent() && first.map(b -> b != second.get()).orElse(true)) {  // NOPMD CompareObjectsWithEquals
                         second.get().close();
                     }
                 } finally {

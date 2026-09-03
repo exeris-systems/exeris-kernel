@@ -274,7 +274,7 @@ public abstract class AbstractWebSocketExchangeTck {
             AtomicReference<WebSocketExchange> held = new AtomicReference<>();
             WebSocketHandler capture = exchange -> {
                 held.set(exchange);
-                while (exchange.receive() != null) {
+                while (exchange.receive() != null) {  // NOPMD EmptyControlStatement - the condition does the draining
                     // drain until the peer goes
                 }
             };

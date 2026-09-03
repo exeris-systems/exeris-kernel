@@ -166,6 +166,19 @@ jobs:
         #
         # Docs-and-sources only, so it needs no build artifact -- same reasoning as the gate above.
         run: tools/error-code-registry-check/error-code-registry-check.sh
+      - name: Checkstyle Parity Gate
+        # exeris-kernel-tck runs a second Checkstyle config, because its main sources are contract
+        # tests. The PMD ruleset beside it can reference the kernel's and exclude from it, so it
+        # stays a live view; Checkstyle has no config inheritance, so its TCK config is a copy and
+        # the format offers no guarantee at all.
+        #
+        # The failure that copy invites is silent and one-directional: a module added to
+        # checkstyle.xml stops short of ~130 classes, and nothing fails, because the TCK config is
+        # by itself still valid. This gate compares the two module by module and property by
+        # property against a delta the TCK config declares about itself.
+        #
+        # Config-only, so it needs no build artifact — same reasoning as the two gates above.
+        run: tools/checkstyle-parity-check/checkstyle-parity-check.sh
 
       - name: Supply-Chain Gate
         # v0.12 Stream B. Two checks, deliberately at different ends of the build.

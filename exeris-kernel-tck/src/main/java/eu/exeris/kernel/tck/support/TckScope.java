@@ -231,7 +231,7 @@ public final class TckScope implements AutoCloseable {
         }
         Thread self = Thread.currentThread();
         for (Thread thread : forked) {
-            if (thread != self) {
+            if (thread != self) {  // NOPMD CompareObjectsWithEquals - Thread identity
                 thread.interrupt();
             }
         }
@@ -266,7 +266,7 @@ public final class TckScope implements AutoCloseable {
     private static void attachRest(Throwable carrier, List<Throwable> observed) {
         for (int i = 1; i < observed.size(); i++) {
             Throwable other = observed.get(i);
-            if (other != carrier) {
+            if (other != carrier) {  // NOPMD CompareObjectsWithEquals - addSuppressed(self) throws
                 carrier.addSuppressed(other);
             }
         }

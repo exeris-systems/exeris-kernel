@@ -62,7 +62,7 @@ public abstract class EventBusZeroAllocTck extends AbstractSubsystemZeroAllocTck
 
         // Register a no-op handler that correctly closes the payload
         engine.bus().subscribe(EVENT_TYPE, (descriptor, payload) -> {
-            try (payload) {
+            try (payload) {  // NOPMD EmptyControlStatement - closing the payload IS the contract
                 // intentionally empty — we measure routing, not handler work
             }
         });
