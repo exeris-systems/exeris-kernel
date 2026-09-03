@@ -268,7 +268,12 @@ jobs:
         # rather than a prefix lookup that would take the newest release.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
-        run: mvn -B -e org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+        # TEMPORARY -Dsonar.verbose: the analyser reports `Unresolved imports/types have been
+        # detected during analysis. Enable DEBUG mode to see them` and names nothing. Attribution by
+        # module narrows it without settling it: it fires in every module that has compile
+        # dependencies and NOT in exeris-kernel-spi, which has none. This run names them. Reverted
+        # in the next commit with the answer recorded.
+        run: mvn -B -e -Dsonar.verbose=true org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
