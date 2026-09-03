@@ -67,11 +67,14 @@ A file change triggers an atomic state reload in Core without a JVM restart — 
   `@Dynamic`: `ConfigProvider.guardImmutable(file, key)` (a no-op in Community, which runs no watcher).
 
   The audit event is emitted **per detection, not per mutation**, and the count carries no meaning as
-  an attempt count. One logical edit is typically several filesystem events (a single write with
-  `TRUNCATE_EXISTING` measures as two `ENTRY_MODIFY` on Linux — truncate, then write), and because the
-  sealed baseline is never updated, any later change to an unrelated key in the same file re-audits
-  the sealed one for as long as the file holds the rejected value. The signal means *the sealed key is
-  still wrong on disk*.
+  an attempt count. A single logical edit is several filesystem modifications (a write with
+  `TRUNCATE_EXISTING` is a truncate and a write) which `WatchService` usually merges into one event
+  but sometimes does not — 19 of 20 measured runs delivered one, one delivered two — and the watch
+  loop dispatches per event. The deterministic half matters more: because the sealed baseline is never
+  updated, any later change to an **unrelated** key in the same file re-audits the sealed one, for as
+  long as the file holds the rejected value. The signal means *the sealed key is still wrong on disk*.
+  Whether it should be coalesced is open — see
+  [`RFC-2026-09-03`](rfc/RFC-2026-09-03-immutable-refusal-event-granularity.md).
 
 ### JEP 513 Validation (Flexible Constructor Bodies — Closed/Delivered in JDK 25)
 Type validation is performed via JEP 513 Flexible Constructor Bodies — environment and Vault state is validated
