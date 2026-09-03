@@ -1692,6 +1692,17 @@ See also: ADR-012 (isolation model); `exeris-sdk/docs/rfc/RFC-2026-06-24-univers
 
 **Status (v0.10):** **DELIVERED.** (1) `HttpRouter` gained `{name}` path-template routing (resolution precedence exact → template → prefix), capturing each placeholder into the new SPI default `HttpExchange.pathParams()` via a Core-side `PathParamHttpExchange` decorator (no concrete-exchange coupling); `HttpRouterRegisteredEvent` now also counts template routes. (2) Root cause of the `POST` 500 was pinned as a **scope-propagation defect, not a fixture gap**: `CommunityHttpSubsystem.providerBindings()` does bind `HTTP_REQUEST_BODY_DECODER_REGISTRY` into the kernel carrier scope (since v0.8 #160), but the native transport (`NativeTcpReactor`) runs the per-request handler on a bare reactor thread that does not inherit the carrier `ScopedValue` scope — so the slot is unbound at handler time (the same reason the encoder/security/persistence are captured at engine-construction time and threaded as fields, and `REQUEST_SESSION` is rebound per request). Fix applied at the Community dispatch seam (`CommunityHttpRequestDispatcher.handleWithinRequestSession`): the registry is captured at processor construction (inside the carrier scope) and rebound per request alongside `REQUEST_SESSION`. Guarded by `GeneratedAppBootPathReachabilityIntegrationTest` (real boot over a socket) plus 12 new `HttpRouter` path-parameter cases and an `AbstractHttpExchangeTck` default-`pathParams()` assertion. The testkit fixture (`KernelBootstrapHttpEngineFixture`) is unchanged — confirming the gap was scope propagation, not a missing fixture binding.
 
+**Status (v0.12): re-measured, and the fixture is complete.** A later claim held that the fixture binds
+`HTTP_SERVER_HANDLER` only, so `MEMORY_ALLOCATOR` is unbound at request time and every write over HTTP
+answers `400`. It does not reproduce. Driven through the fixture over a socket, `POST`, `PUT`, `PATCH`
+and `DELETE` each answer `200`, the body arrives whole, and both `KernelProviders.MEMORY_ALLOCATOR` and
+`HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` report bound *inside the handler* — which is
+the scope the v0.10 fix above rebinds them into. The gap was that nothing asserted it: the fixture's
+only integration test covered `start()`, `close()` and the pre-start guards, so no test in the
+repository had ever sent a body through it. `KernelBootstrapHttpEngineFixtureIntegrationTest` now
+parameterises the four write methods and pins all four facts; mutation-checked by removing the
+dispatcher's per-request rebind, which reddens every case.
+
 **1.0 disposition:** **1.0-RECOMMENDED** — both are small, concrete kernel fixes that block the Entity-First "a generated app runs over a real boot" demonstration end-to-end (by-id CRUD + `@Action`s + writes). Path-parameter routing especially is load-bearing for the entire generated CRUD table. Targetable in v0.10 alongside the SSE boot-path work.
 
 **Related (cross-repo / informational, not kernel gaps on their own):**
