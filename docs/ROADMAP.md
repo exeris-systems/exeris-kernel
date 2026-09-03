@@ -205,6 +205,53 @@ Reduce suppressions where possible without violating the Community best-effort p
 
 **Merge Gate:** SonarQube baseline established and enforced on new code.
 
+**Status (v0.12): DELIVERED on `main` and `development/**`; `preview` excluded on purpose.** Analysis moved from
+SonarQube Cloud Automatic Analysis to a CI-run scanner, and that is the half that came first: a
+quality gate with five new-code conditions is evaluated on every pull request, JaCoCo coverage is
+imported (it had never been — the `coverage` metric did not exist on this project at all, which is
+different from reading zero), and all ten reactor modules are in scope where the previous
+configuration named seven source roots by hand. The scanner is the Maven one, so the analysis
+classpath comes from the reactor.
+
+*Enforced* took a second step, and one correction. SonarQube Cloud does publish a status check here
+— `SonarCloud Code Analysis`, from app `sonarqubecloud` — and an earlier draft of this entry claimed
+it did not, having read the checks on a commit whose analysis had not finished. It is now a required
+context on `main`, pinned to that app id so another app cannot satisfy it by reporting the same name.
+It was verified non-vacuous before being required rather than after: on the head of PR #435, where
+the quality gate failed on new-code security and reliability ratings, that check reported `failure`
+with the title `Quality Gate failed`.
+
+The workflow step keeps `continue-on-error: true`, and the two decisions now fit together rather than
+competing. Enforcement sits in a check SonarQube Cloud publishes after processing the report, so the
+step's own job — the pipeline root that every other job depends on — stays isolated from a SonarQube
+outage. That also disposes of a property that used to matter: the step does not wait for the verdict
+(`sonar.qualitygate.wait` is set nowhere), which is irrelevant once the verdict arrives as its own
+check.
+
+The development line is covered too, and as a pattern rather than a branch: a `development/**` rule
+requires the same three contexts, so it survives the next milestone's branch instead of having to be
+re-created for it. Confirmed to bind rather than assumed — the REST protection endpoint for
+`development/0.12.0` now returns all three. Two settings differ from `main` deliberately: no
+approving-review requirement, since this was about checks and not about who merges; and `strict` off,
+because requiring every pull request to be up to date with a busy development branch serialises
+merges, which is a real cost with many open at once and a small benefit when the checks themselves
+re-run on the merge commit.
+
+The protection itself lives in GitHub settings and so leaves no diff. Recorded here for that reason,
+because a change nobody can read back is a change nobody can review: `main` keeps `strict` and its
+review requirement and gains a third required context; a new classic rule on the `development/**`
+pattern requires the same three with `strict` and reviews off. Every context is pinned to the app
+that reports it — `github-actions` (15368) for the two build gates, `sonarqubecloud` (12526) for the
+quality gate — so another app cannot satisfy one by reporting the same name. Only the narrow
+`required_status_checks` sub-resource was written on `main`, leaving linear history, the review
+requirement, conversation resolution and the force-push ban untouched; that was verified by reading
+the protection back afterwards, not assumed from the call succeeding.
+
+**What is not covered:** the `preview` branch has its own protection and requires only the two
+GitHub Actions checks, not the SonarQube one. Left alone on purpose — that line builds on a newest-JDK
+track with `--enable-preview`, where the analyser's behaviour is exactly what this milestone found it
+cannot yet assume, so requiring the gate there should follow a run that shows what it reports.
+
 ---
 
 ### Product Boundary: Open-Core / Enterprise Separation Audit

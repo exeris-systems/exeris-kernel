@@ -21,6 +21,22 @@
 
 
     <properties>
+        <!--
+            This module's main sources are contract tests, and Sonar has to be told so explicitly:
+            it keys production rules off sonar.sources alone, and the scanner derives that from the
+            Maven source roots, which say src/main. Judging test code by production rules says so in
+            its own words. The analysis taken right after these classes moved to src/main reported
+            92 x java:S5960 "Remove this assertion from production code" and 9 x java:S5443 (a temp
+            directory in a fixture) as CRITICAL vulnerabilities; all 115 new bugs and vulnerabilities
+            on that run were in this one module, and all of them closed once it was classified as
+            test code.
+
+            sonar.sources is deliberately empty: there is no main source here to analyse as
+            production. Both roots go to sonar.tests instead.
+        -->
+        <sonar.sources></sonar.sources>
+        <sonar.tests>src/main/java,src/test/java</sonar.tests>
+
         <exeris.module.name>eu.exeris.kernel.tck</exeris.module.name>
 
         <!--
