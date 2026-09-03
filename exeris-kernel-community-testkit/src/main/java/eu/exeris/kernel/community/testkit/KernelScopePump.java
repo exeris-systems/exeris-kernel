@@ -2,7 +2,7 @@
  * Copyright (C) 2025-2026 Exeris Systems.
  * SPDX-License-Identifier: Apache-2.0
  */
-package eu.exeris.kernel.community.testkit.persistence;
+package eu.exeris.kernel.community.testkit;
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
@@ -13,6 +13,11 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Carries work to the thread that holds the kernel scope open.
  *
+ * <p>Lives beside {@code FixtureBootLock}, {@code FixtureThreads} and
+ * {@code SystemPropertySnapshot} rather than under {@code persistence}, because nothing about it
+ * is persistence-specific: it is the inversion every fixture that holds a boot open needs, and it
+ * acquired its second caller when the events and flow fixtures landed.
+ *
  * <p>A {@code ScopedValue} binding cannot outlive the frame that opened it, so a fixture cannot hand
  * its scope to the test thread. The inversion is the only option left: one thread stays parked inside
  * the boot running {@link #pumpUntilStopped()}, and callers post work to it.
@@ -20,7 +25,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>The pump is single-consumer by construction — {@link #pumpUntilStopped()} is called from exactly
  * one thread, the one inside the scope — and any number of producers may submit.
  */
-final class KernelScopePump {
+public final class KernelScopePump {
 
     /** Identity-compared sentinel; a plain no-op {@code Runnable} would be indistinguishable. */
     private static final Runnable STOP_SENTINEL = () -> { };
@@ -32,7 +37,7 @@ final class KernelScopePump {
      *
      * <p>Called from inside the kernel scope; returns when the fixture closes.
      */
-    /* default */ void pumpUntilStopped() {
+    public void pumpUntilStopped() {
         while (true) {
             Runnable task;
             try {
@@ -57,7 +62,7 @@ final class KernelScopePump {
      * @param body           the work to run inside the kernel scope
      * @param timeoutSeconds how long to wait for it to complete
      */
-    /* default */ void submitAndWait(Runnable body, long timeoutSeconds) {
+    public void submitAndWait(Runnable body, long timeoutSeconds) {
         CountDownLatch done = new CountDownLatch(1);
         AtomicReference<Throwable> failure = new AtomicReference<>();
         Runnable task = () -> runCapturing(body, failure, done);
@@ -82,7 +87,7 @@ final class KernelScopePump {
     }
 
     /** Signals {@link #pumpUntilStopped()} to return, releasing the thread that holds the scope. */
-    /* default */ void requestStop() {
+    public void requestStop() {
         tasks.add(STOP_SENTINEL);
     }
 

@@ -2241,6 +2241,26 @@ testkit — that drives a transaction through the real engine and observes a rol
 surface documented in `docs/modules/` alongside the HTTP one. No new SPI: the fixtures compose
 existing contracts, so nothing here widens the kernel's public surface.
 
+**Status (v0.12): PARTIAL — persistence, events and flow delivered; graph, scheduling, storage and
+telemetry open.** `EmbeddedKernelFixture` boots `events`, `flow` or both out of **one** kernel, with
+`persistence` arriving through dependency closure so saga state and the outbox are readable through the
+same engine the test asserts on. One fixture over a subsystem set rather than one per subsystem, for a
+mechanical reason: each holds a whole `KernelBootstrap` open on its own thread and `FixtureBootLock`
+serialises boots, so three fixtures for one saga test would be three kernels sharing nothing. The merge
+gate is met by `EmbeddedKernelFixtureConsumerTest`, which imports the testkit and the SPI and nothing
+from `eu.exeris.kernel.community.*`, and is mutation-checked in both directions — publishing an
+unsubscribed ordinal fails the delivery assertion, and naming a table the schema does not carry fails
+the composition one. Surface documented in `docs/modules/06-testkit.md`.
+
+**Graph is next and is a different shape, established by measurement rather than assumed.** Its
+Community driver is swappable and only the SQL/PGQ backend needs persistence; the Cypher one needs a
+Neo4j container and therefore cannot be a fixture a consumer runs without Docker. The PGQ path is also
+not H2-clean today: of the DDL the dialect generates, `UUID`, `JSONB` and `WITH RECURSIVE` all apply on
+H2 in PostgreSQL mode, and `TIMESTAMPTZ` in the edge table does not — where the standard
+`TIMESTAMP WITH TIME ZONE` spelling, which PostgreSQL accepts as the same type, applies with every
+default intact. That is a production change to `CommunityGraphDialect`, not a fixture, which is why it
+is sequenced after the release cut rather than folded in before it.
+
 **Status (v0.11): PARTIAL — persistence delivered, the rest open.**
 
 `EmbeddedPersistenceEngineFixture` boots the real `persistence` subsystem (transitively `memory`)
