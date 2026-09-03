@@ -420,6 +420,16 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * For each {@code @Immutable} key matching the changed file, refuses any value change:
      * the sealed boot-time value is preserved and an {@code EX-CFG-1004} audit event is
      * emitted. First sighting of an any-file guard seeds the baseline silently.
+     *
+     * <p><strong>One refusal per detection, not per mutation.</strong> A single logical edit is
+     * usually several filesystem events — one {@code Files.writeString} with
+     * {@code TRUNCATE_EXISTING} measures as two {@code ENTRY_MODIFY} on Linux, truncate then
+     * write — and the baseline is deliberately never updated, so every one of them sees the
+     * on-disk value still differing from the sealed one and audits it again. A later change to an
+     * unrelated key in the same file will do so too, for as long as the file holds the rejected
+     * value. That is the intended reading of the signal: it says the sealed key is still wrong on
+     * disk, not that someone attempted a change N times. Counting these events as attempts is a
+     * misreading, and an assertion that counted them was the flake that produced this note.
      */
     private void refuseImmutableReloads(
             Path filePath,
