@@ -213,13 +213,29 @@ from reading zero), and all ten reactor modules are in scope where the previous 
 seven source roots by hand. The scanner is the Maven one, so the analysis classpath comes from the
 reactor instead of a glob that reached none of a module's 71 dependency jars.
 
-What is not delivered is the word *enforced*. `main` requires two status checks, `Build & TCK
-Verification` and `SPI Compatibility Gate`; the SonarQube check is not among them, and
-`development/0.12.0` carries no branch protection at all. The analysis step is also
-`continue-on-error` on purpose, because it runs inside the pipeline's root job and a SonarQube
-outage must not be able to take every merge gate down with it. So a red quality gate today is a
-report, not a refusal. Making it a refusal is a branch-protection change plus a decision about which
-failures should stop a merge — neither of which follows automatically from having the analysis.
+What is not delivered is the word *enforced*, and the reason is not the obvious one. The analysis
+does run inside `Build & TCK Verification`, which `main` does require — so "it sits in a required
+job" is true and still does not make the gate binding. Three things are in the way, and the second
+is the one that would survive fixing the others:
+
+1. The step carries `continue-on-error: true`, so a failure inside it does not fail the job. That is
+   deliberate: the step runs in the pipeline's root job, which every other job depends on, and a
+   SonarQube outage must not be able to take every merge gate down with it.
+2. **The step could not fail on a red quality gate even without that flag.** It does not wait for the
+   verdict. `sonar.qualitygate.wait` is set nowhere, and the scanner says so as it exits —
+   `ANALYSIS SUCCESSFUL ... you will be able to access the updated dashboard once the server has
+   processed the submitted analysis report`. The step succeeding means the report was uploaded, not
+   that the code passed. The verdict is computed afterwards, server-side.
+3. SonarQube Cloud posts no status check on this repository either. The checks on a pull request head
+   are `Build & TCK Verification`, `SPI Compatibility Gate`, `claude-review`, `Scan PR Dependencies`
+   and `security/snyk`; the quality gate arrives as a bot comment, which nothing can be required to
+   pass. `development/0.12.0` additionally carries no branch protection at all.
+
+So a red quality gate today is a report, not a refusal. The cleaner of the two ways to change that is
+to have SonarQube Cloud publish its check and make that context required, which keeps the
+outage-isolation property point 1 exists for — a separate check going red does not take the build job
+with it. The other way, `-Dsonar.qualitygate.wait=true` plus dropping `continue-on-error`, buys the
+same enforcement by giving up exactly that property.
 
 ---
 
