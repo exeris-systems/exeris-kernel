@@ -205,7 +205,7 @@ Reduce suppressions where possible without violating the Community best-effort p
 
 **Merge Gate:** SonarQube baseline established and enforced on new code.
 
-**Status (v0.12): DELIVERED on `main`, advisory on the development line.** Analysis moved from
+**Status (v0.12): DELIVERED on `main` and `development/**`; `preview` excluded on purpose.** Analysis moved from
 SonarQube Cloud Automatic Analysis to a CI-run scanner, and that is the half that came first: a
 quality gate with five new-code conditions is evaluated on every pull request, JaCoCo coverage is
 imported (it had never been — the `coverage` metric did not exist on this project at all, which is
@@ -236,6 +236,16 @@ approving-review requirement, since this was about checks and not about who merg
 because requiring every pull request to be up to date with a busy development branch serialises
 merges, which is a real cost with many open at once and a small benefit when the checks themselves
 re-run on the merge commit.
+
+The protection itself lives in GitHub settings and so leaves no diff. Recorded here for that reason,
+because a change nobody can read back is a change nobody can review: `main` keeps `strict` and its
+review requirement and gains a third required context; a new classic rule on the `development/**`
+pattern requires the same three with `strict` and reviews off. Every context is pinned to the app
+that reports it — `github-actions` (15368) for the two build gates, `sonarqubecloud` (12526) for the
+quality gate — so another app cannot satisfy one by reporting the same name. Only the narrow
+`required_status_checks` sub-resource was written on `main`, leaving linear history, the review
+requirement, conversation resolution and the force-push ban untouched; that was verified by reading
+the protection back afterwards, not assumed from the call succeeding.
 
 **What is not covered:** the `preview` branch has its own protection and requires only the two
 GitHub Actions checks, not the SonarQube one. Left alone on purpose — that line builds on a newest-JDK
