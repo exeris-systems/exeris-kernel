@@ -152,12 +152,21 @@ code and the next person to wonder why a fork's analysis skips will need them:
 2. **`SONAR_TOKEN` exists as an organisation secret.** The step is guarded on it, so a pull request
    from a fork (which gets no secrets) skips the analysis rather than failing.
 
-The analysis step carries `continue-on-error: true`, and it stays: it runs in `build-and-verify`, which
-every other job depends on, so a SonarQube outage would otherwise take every merge gate down for a
-reason unrelated to the code under test. Note what that means for the quality gate — it is **computed
-and reported, not enforced**. `main` requires `Build & TCK Verification` and `SPI Compatibility Gate`,
-and the SonarQube check is not among them. Making it enforcing is a branch-protection change plus a
-decision about which failures should stop a merge.
+The analysis step carries `continue-on-error: true`, and it stays, because enforcement does not run
+through it. The step sits in `build-and-verify`, which every other job depends on, so a SonarQube
+outage must not be able to fail it. The quality gate is enforced instead by the check SonarQube Cloud
+publishes once it has processed the report — `SonarCloud Code Analysis` — which is a **required
+status check on `main`**, pinned to that app so nothing else can satisfy it by name. The two fit
+together: a red gate blocks the merge without a SonarQube outage taking the build job, and the eight
+jobs downstream of it, with it.
+
+This also makes the step's own semantics harmless. It does not wait for the verdict
+(`sonar.qualitygate.wait` is set nowhere) and exits as soon as the report is uploaded, so its success
+means "submitted", not "passed". That mattered while it was the only signal; it does not now.
+
+`development/0.12.0` has no branch protection, so on the development line the gate is advisory. A
+milestone's pull requests merge there and only the release integration PR targets `main`, which is
+where the requirement bites.
 
 The scanner log used to carry two warnings, `Unresolved imports/types have been detected` and `Use of
 preview features have been detected`, and both are gone. Neither was a defect in the code: the same
