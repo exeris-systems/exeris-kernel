@@ -98,7 +98,9 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      */
     private final Map<String, String> immutableBaselines = new HashMap<>();
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile WatchService activeWatchService;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread       watcherVt;
 
     // =========================================================================

@@ -16,14 +16,9 @@ import jdk.jfr.StackTrace;
 
 import java.util.Set;
 
-// AvoidDuplicateLiterals: "Exeris Kernel", "Bootstrap", "Duration (ms)" are JFR annotation
-// literals — they cannot be extracted to constants as @Label/@Category require string literals.
 // UseExplicitTypes: 'var' is used for JFR event locals; explicit type would duplicate
 // the inner class name on the same line, harming readability with zero type-safety gain.
-@SuppressWarnings({
-    "PMD.AvoidDuplicateLiterals",
-    "PMD.UseExplicitTypes"
-})
+@SuppressWarnings("PMD.UseExplicitTypes")
 public final class BootstrapJfrEvents {
 
     private BootstrapJfrEvents() {}

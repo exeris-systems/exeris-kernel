@@ -26,6 +26,7 @@ final class CommunityHttpServerEngine implements HttpServerEngine {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile HttpHandler handler;
 
     /* default */ CommunityHttpServerEngine(HttpConfig config) {

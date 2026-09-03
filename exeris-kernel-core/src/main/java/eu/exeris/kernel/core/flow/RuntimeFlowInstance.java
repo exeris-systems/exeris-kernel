@@ -36,7 +36,9 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
     private final Object monitor = new Object();
     private final RuntimeFlowContext contextView;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile CoreFlowExecutionPlan plan;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile EventEngine eventEngine;
     private volatile FlowState state;
     /** A wake refused because a run still held the instance; guarded by {@code monitor}. */

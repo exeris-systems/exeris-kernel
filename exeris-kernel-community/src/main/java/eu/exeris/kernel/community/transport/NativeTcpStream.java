@@ -138,6 +138,7 @@ final class NativeTcpStream implements TransportStream {
     // (plaintext: reactor registration armed; TLS: reactor-driven handshake reached ACTIVE).
     // Replaces the acceptor thread blocking on the handshake — see fireEstablishedOnce().
     private final AtomicBoolean establishedFired = new AtomicBoolean(false);
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Runnable onEstablishedCallback;
     private volatile long registrationReadyNanos;
     private final Object tlsLock = new Object();

@@ -60,6 +60,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
     private final OutboxStateMachine stateMachine;
     private final OutboxBatchFlusher batchFlusher;
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread ownerThread;
 
     @SuppressWarnings("PMD.LawOfDemeter") // builder field access is the canonical Builder pattern.

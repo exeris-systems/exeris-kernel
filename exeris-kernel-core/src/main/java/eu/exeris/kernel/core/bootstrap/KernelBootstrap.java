@@ -89,6 +89,7 @@ public final class KernelBootstrap {
     private final BootstrapSelector                   selector;
     private final ClassLoader                         classLoader;
     private final AtomicBoolean                       bootActive = new AtomicBoolean(false);
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile SubsystemOrchestrator activeOrchestrator;
 
     // =========================================================================
