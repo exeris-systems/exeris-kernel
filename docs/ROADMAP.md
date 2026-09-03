@@ -2817,6 +2817,15 @@ See also: v0.10 §"Events: Log-Ordering & Optimistic-Concurrency Boundary" (the 
 
 ---
 
+**Status (v0.12): NOT STARTED.** The Merge Gate asks for an RFC that *distinguishes* KV-as-projection
+from the cache seam, and no such RFC exists. `RFC-2026-08-07-cache-provider-spi.md` is the only
+candidate and does not do it: both of its two occurrences of "projection" are about the SDK's
+`@Projection` **annotation** and the metadata the processor never extracts, not about a keyed
+last-value view over a compacted log. Checked rather than assumed, because the pairing in the
+Resolution makes the cache RFC look like it discharges this one. Measured 2026-09-03.
+
+---
+
 ### Persistence: `RowCursor` Has a Ruling and No Executable Half (ADR-080, surfaced 2026-08-28)
 
 **Gap:** ADR-080 states what every `RowCursor` accessor returns, what it does with SQL NULL and an out-of-range index, and, for the converting accessors, the type domain it accepts. None of it is asserted. `AbstractRowCursorTck` checks three values and calls `getString` on **one** column whose SQL type each binding chooses for itself, which is precisely the hole the two implementations diverged into.
@@ -3065,6 +3074,13 @@ in every implementation, and a case proving one says nothing about the other.
 
 ---
 
+**Status (v0.12): NOT STARTED.** The limit family is still enforced by Community tests only: the 13
+files of `exeris-kernel-tck`'s `contract/http` package contain **no** reference to
+`maxRequestBodyBytes`, `maxResponseBodyBytes` or `maxRequestHeaderSize`, so a second engine could
+ignore every one of them and pass the shared suite. Measured 2026-09-03.
+
+---
+
 ### Build: The SPI Gate's Baseline Is Hardened On One Line And Not The Other (surfaced 2026-09-01)
 
 **Gap:** the GA line picks its `spi-api-diff` baseline with a strict
@@ -3095,6 +3111,15 @@ only fail on one.
 
 **Merge Gate:** the two branches' baseline selection is either identical or differs for a reason
 stated at the call site.
+
+---
+
+**Status (v0.12): DELIVERED.** The Merge Gate asked that the two branches' baseline selection be
+either identical or differ for a stated reason. It is now **byte-identical** — both `main` and
+`preview` run `git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1`, so the
+preview line diffs against the GA tag by the same strict filter and a `preview/`-prefixed tag cannot
+be selected as a baseline on either. Verified by diffing the two workflow files at the cut,
+2026-09-03.
 
 ---
 
