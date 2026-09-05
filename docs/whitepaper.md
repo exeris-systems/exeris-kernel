@@ -27,11 +27,13 @@ prioritized developer convenience over hardware efficiency, leading to a critica
   at **-25.6% / -33.3% CPU** against a tuned pure-JDBC Quarkus arm and an idiomatic Quarkus + Hibernate arm, at **~1/2.7
   the resident memory under an equal memory budget** — a ratio that narrows to **1.18-1.26x** once the heaps are matched,
   which is the qualifier that belongs with any footprint claim from that dataset
-  (`exeris-benchmarks/results/reports/2026-07-21-entity-read-by-id-tuned-pg-triad-comparison-eligible.md`).
+  ([2026-07-21 tuned-pg triad](https://github.com/exeris-systems/exeris-benchmarks/blob/main/results/reports/2026-07-21-entity-read-by-id-tuned-pg-triad-comparison-eligible.md)).
   <!-- vale Exeris.RetractedFigures = NO -->
-  A quarter to a third of the per-request CPU is the honest magnitude; earlier revisions of this document asserted "up to
-  60% of CPU cycles" and a ">160 GB allocation on a 4 GB payload". No campaign in `exeris-benchmarks` supports either and
-  both are withdrawn.
+  A quarter to a third of the per-request CPU is the honest magnitude. This bullet used to open with a ">160 GB
+  allocation on a 4 GB payload"; no campaign in `exeris-benchmarks` supports that figure and it is withdrawn. It is one
+  of the two unsourced inflation magnitudes registered as drift, and the only one this document ever carried — the
+  other, "up to 60% of CPU cycles", was withdrawn from the B2B technical whitepaper §1 and the high-level architecture
+  §3.1, which is where it was.
   <!-- vale Exeris.RetractedFigures = YES -->
 - **The Consequence:** Infrastructure is massively over-provisioned. We pay for 16GB RAM cloud nodes to run workloads
   that functionally require megabytes, just to buffer the Garbage Collection (GC) pauses.
@@ -155,14 +157,14 @@ This section separates what has been **measured** from what the TCK enforces as 
 **Saga (`e2e-shop-order-saga`) — withdrawn in full, 2026-08-27.** Earlier revisions of this section led with a
 three-stack comparison from a dev-laptop run of 2026-05-05: a whole-deployment density table, the memory and thread
 multipliers derived from it, and a compensation-correctness asymmetry. **All of it is withdrawn** — entry **#23** of the
-retraction register in `exeris-benchmarks/docs/CLAIMS.md` — on three independent grounds. The comparator published as an
+[retraction register](https://github.com/exeris-systems/exeris-benchmarks/blob/main/docs/CLAIMS.md) — on three independent grounds. The comparator published as an
 Axon-Framework saga arm never ran one: the orchestration was hand-rolled over a command bus, so nothing in the run is a
 property of that framework's saga implementation. The correctness columns measured our own harness, whose status poller
 did not recognise `CANCELLED` — the state a compensated saga actually writes — so compensations fired and were scored
-unresolved. And `scenarios/e2e-shop-order-saga/CONTRACT-v2.md` §10 classes the v1 finding **superseded**, with any
+unresolved. And [`CONTRACT-v2.md`](https://github.com/exeris-systems/exeris-benchmarks/blob/main/scenarios/e2e-shop-order-saga/CONTRACT-v2.md) §10 classes the v1 finding **superseded**, with any
 mixed-population latency table **invalid under v2, do not cite**. No re-derived multiplier replaces those figures and
 **no v2 comparative saga numbers exist yet**; the full retraction, including the mechanism this document used to offer
-for the correctness columns, is B2B technical whitepaper §4.1. This entry is the one retraction in that register that
+for the correctness columns, is [B2B technical whitepaper](https://github.com/exeris-systems/exeris-docs/blob/main/b2b-technical-whitepaper.md) §4.1. This entry is the one retraction in that register that
 reached distributed artefacts before it was caught, so a surviving copy of the old table is live, not historical.
 <!-- vale Exeris.RetractedFigures = YES -->
 
