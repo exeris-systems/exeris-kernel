@@ -67,11 +67,16 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   `-pl exeris-kernel-spi -am` and `-am` drags every dependency into the reactor: from the root
   the profile gated `exeris-kernel-build-config` too and the first run failed there without ever
   reaching the SPI. The `release` profile keeps `doclint none` so publishing never waits on prose.
-  **Open defect:** the gate's Checkstyle half audits nothing here. `checkstyle:check` on
-  `exeris-kernel-spi` writes an empty `<checkstyle/>` report — zero files, zero violations, exit 0 —
-  against the bundle ruleset *and* against this repository's own `checkstyle.xml` under the bound
-  `validate-architecture` execution. It therefore predates this gate and is not caused by it, but
-  until it is understood a green Checkstyle result from this module means nothing.
+  The Checkstyle half adds **644 violations** on the same module — 383 `@since`, 60 `<pre>`
+  examples, 60 missing comments, 46 missing `@return`, 40 block tags out of order, 21 empty
+  descriptions. It reported `0 violations` until 2026-09-05, from three separate faults: the
+  bundle's rule-8 message contained braces and Checkstyle renders messages through `MessageFormat`,
+  so the audit threw `can't parse argument number: @snippet` and stopped after two files; its
+  `SuppressionFilter` named `${config_loc}`, which is unset when the config lives outside the
+  project, so the config would not parse at all; and this repository's parent pom hard-coded
+  `<configLocation>`, which silently overrides `-Dcheckstyle.config.location` — a bogus path did
+  not even fail. That last one is fixed here by making it a property, and it is the general lesson:
+  a gate that reports clean has to be shown finding something before the report is believed.
 - **`docs-review`** — an L2 review (ADR-085 §J.33). It produces findings for a human to weigh, and
   a reviewer's judgement is not a merge gate.
 - **`Analyze (java-kotlin)`** (CodeQL), **`Scan PR Dependencies`**, **`security/snyk`** — advisory
