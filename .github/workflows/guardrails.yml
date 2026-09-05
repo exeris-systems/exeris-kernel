@@ -1,0 +1,44 @@
+# The per-repo footprint of ADR-085 §C.11. Everything it runs lives in exeris-systems/.github;
+# this file only says which gates apply here and how strictly.
+#
+# Nothing in the repository ran these before: the documentation standards were binding but
+# unenforced, and the L2 documentation review existed only inside a Cowork session, so a pull
+# request could contradict a standard and merge green.
+name: guardrails
+on:
+  pull_request:
+    # labeled/unlabeled matter: adr-conventions rule 9 requires the `adr` label on a PR that
+    # amends an ADR, so adding the label after a red run has to re-run the gate.
+    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled]
+concurrency:
+  group: guardrails-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  docs:
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@main
+    with:
+      # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
+      # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
+      # what it edits and not for a backlog it did not create. Flip to strict when the backfill
+      # has landed — 88 of the 113 are machine-fillable, the rest need a type chosen by hand.
+      mode: ramp
+      # Off until docs/subsystems/*.md carry Contract / Hot path / Failure modes / Owning ADRs.
+      # Fifteen subsystem pages exist and none has the section set yet.
+      section-check: false
+  commits:
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@main
+  pr-body:
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@main
+  # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
+  # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
+  # against the documentation standards. They are different questions and both are wanted.
+  # Skips itself when no Markdown or Java changed.
+  docs-review:
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@main
+    secrets: inherit
+  # Not adopted yet: javadoc-gate. It needs `failOnWarnings` in the gated modules' pom
+  # (port java/javadoc-plugin-block.xml from the bundle); until then it has nothing to run.

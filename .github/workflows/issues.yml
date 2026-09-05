@@ -1,0 +1,26 @@
+# The issue-side footprint of issue-conventions.md rules 3 and 5.
+#
+# Separate from guardrails.yml because it is not pull-request-triggered and needs `issues: write`,
+# which the pull-request gates deliberately do not have. The label sync is additive — it adds the
+# organisation taxonomy and never deletes — so this repository keeps its own `layer:` and `area:`
+# labels, which no other repository has.
+name: issues
+on:
+  schedule:
+    - cron: "17 4 * * 1"     # Monday, early. Label drift and stale evidence are not urgent.
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Report label changes without making them"
+        type: boolean
+        default: false
+permissions:
+  issues: write
+
+jobs:
+  labels:
+    uses: exeris-systems/.github/.github/workflows/labels-sync.yml@main
+    with:
+      dry-run: ${{ inputs.dry-run == true }}
+  hygiene:
+    uses: exeris-systems/.github/.github/workflows/issue-hygiene.yml@main
