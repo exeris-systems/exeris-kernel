@@ -1,11 +1,13 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tck-first/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tck-first
 description: 'TCK-first PR review for Exeris Kernel. Use when changes touch SPI contracts, observable behavior, or provider bindings to enforce that every contract change has executable Abstract*Tck coverage and implementation bindings in Core/Community/Enterprise.'
 argument-hint: 'PR scope, changed contracts, and expected observable behavior changes'
 user-invocable: true
 disable-model-invocation: false
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tck-first/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris TCK First
 
 ## Purpose

@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-jfr-perf-research/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-jfr-perf-research
 description: Disciplined JMH/JFR performance-research loop for Exeris Kernel — guards against single-run flukes, driver confounds, and wrong conclusions from hot-method noise. Use when investigating a throughput/latency/allocation regression or claim, reading a JFR recording, or running a benchmark on a research/<slug> branch.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-jfr-perf-research/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris JFR Perf Research
 
 ## Purpose

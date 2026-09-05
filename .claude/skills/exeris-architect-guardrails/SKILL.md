@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-architect-guardrails/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-architect-guardrails
 description: Architectural review for Exeris Kernel changes that touch module boundaries, SPI/Core/Community/Enterprise placement, dependency direction, provider wiring, or ADR-fixed structure. Use when a change adds or moves interfaces/providers, alters module layering, or risks a The-Wall breach (SPI implementation leak, Core driver leak). Not needed for pure intra-module edits with no boundary impact.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-architect-guardrails/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Architect Guardrails
 
 ## Purpose

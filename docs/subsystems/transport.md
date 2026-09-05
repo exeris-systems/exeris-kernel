@@ -474,7 +474,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 
 ## Implementation Notes — Class Decomposition Assessment (HEUR-061)
 
-`NativeTcpCarrier` (~1.4k LOC, 146 declared members) and `NativeTcpStream` (~1.2k LOC, 133 declared members) cross the CLAUDE.md "≈5 collaborators" heuristic threshold. A v0.6 PR-review carry-over (HEUR-061) asked whether they should be decomposed along reactor / FD-owner / PAQS-dispatch responsibility lines.
+`NativeTcpCarrier` (~1.4k LOC, 146 declared members) and `NativeTcpStream` (~1.2k LOC, 133 declared members) cross the "≈5 collaborators" heuristic threshold. A v0.6 PR-review carry-over (HEUR-061) asked whether they should be decomposed along reactor / FD-owner / PAQS-dispatch responsibility lines.
 
 **Assessment outcome (v0.7 Sprint 2): keep current single-file shape; do not refactor in this sprint.**
 
@@ -501,7 +501,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 1. **Tight coupling cost**: `ReactorLoop` is an inner class deliberately — its operational surface (`channelRuntimeRegistry`, `streamByChannel`, `closeKeyStream`, `readIngress`, `flushStream`) is intimate with carrier state. Promoting it to a top-level class requires ~10 callback / port references injected through the constructor, which trades an inner class for a callback-heavy delegate without measurable readability gain. Same risk applies to FD-owner / PAQS-dispatch extraction.
 2. **Active development collision risk**: v0.7 Sprint 5 (Kafka EventEngine), Sprint 6 (distributed integration), and PERF-061 / PERF-062 (HTTP/2 frame writer + TLS ingress slab) all touch transport hot paths. Decomposition during this window adds merge surface to every concurrent PR.
 3. **Sibling precedent**: SQ-006 raised the analogous question for `CoreFlowRuntime` and was deferred with a design note rather than a refactor PR. The same disposition applies here.
-4. **Heuristic vs hard rule**: the ">5 collaborators" rule is a signal, not a hard gate (CLAUDE.md §C heuristics). Class size alone does not justify forced decomposition when the cost outweighs the benefit.
+4. **Heuristic vs hard rule**: the ">5 collaborators" rule is a signal, not a hard gate (`.agents/policies/operating-standards.md` §Heuristics). Class size alone does not justify forced decomposition when the cost outweighs the benefit.
 
 **When to revisit:**
 

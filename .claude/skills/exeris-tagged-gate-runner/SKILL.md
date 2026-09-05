@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tagged-gate-runner/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tagged-gate-runner
 description: Run the tagged test gates (integration / continuity / stress) that the default build EXCLUDES, mapped from what a change touched. Use before claiming definition-of-done when touched code is covered by @Tag'd tests, or to reproduce a CI gate (persistence RLS, Kafka, recovery continuity, transport stress) locally.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tagged-gate-runner/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tagged Gate Runner
 
 ## Purpose

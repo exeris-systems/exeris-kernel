@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-docs-adr-check/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-docs-adr-check
 description: Documentation and ADR consistency review for Exeris Kernel. Use when PRs may cause doc drift, architectural intent changes, or mismatch between repository reality and documented target-state.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-docs-adr-check/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Docs ADR Check
 
 ## Purpose

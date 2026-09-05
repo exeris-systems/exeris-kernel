@@ -1,12 +1,17 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-tck-first-review.md (agents-md-schema.md rule 7). Edit the source.
 name: community-tck-first-review
 description: 'Review Exeris changes with TCK-first discipline for SPI/observable behavior impact, abstract TCK requirements, binding tests, and semantic coverage.'
 argument-hint: 'SPI change, provider semantics, or lifecycle behavior change'
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-tck-first-review.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this change with Exeris TCK-first discipline.
 
 Treat TCK as the contract judge.
+
+Scope:
+$ARGUMENTS
 
 For this change:
 - classify contract impact as NO_CONTRACT_CHANGE, CONTRACT_EXTENSION, or CONTRACT_BREAKING_CHANGE,
