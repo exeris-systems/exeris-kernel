@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-tck.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tck
 description: Contract verification agent for Exeris Kernel. Use for test strategy, TCK expansion, binding tests, and observable behavior validation.
 tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tck.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris TCK/Test
 
 ## Role

@@ -26,3 +26,7 @@ replay_pid*
 **/target/
 # IntelliJ IDEA
 .idea/
+
+# Local git worktrees for concurrent sessions. .claude/ is provider configuration and generated
+# adapters; a worktree checked out inside it is neither.
+.claude/worktrees/

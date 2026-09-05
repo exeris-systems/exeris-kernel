@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-pr-review.md (agents-md-schema.md rule 7). Edit the source.
 description: General Exeris Community/Open-Core PR review with boundary, contract, performance, verification, and docs/ADR impact verdict.
 argument-hint: PR diff or changed files
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-pr-review.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this PR as an Exeris Community/Open-Core reviewer.
 
 Priorities:

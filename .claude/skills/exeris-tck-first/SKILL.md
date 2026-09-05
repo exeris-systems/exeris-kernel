@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tck-first/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tck-first
 description: TCK-first review for Exeris Kernel. Use when a change touches SPI interfaces, value/error contracts, lifecycle/state behavior, or provider bindings — to enforce that every contract change has executable Abstract*Tck coverage plus binding tests in Core/Community/Enterprise, with semantic (not happy-path-only) assertions. Trigger on new contract surface, changed error codes, or altered observable behavior.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tck-first/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris TCK First
 
 ## Purpose

@@ -1,12 +1,17 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-refactor-safety.md (agents-md-schema.md rule 7). Edit the source.
 name: community-refactor-safety
 description: 'Review Exeris Community refactor safety for hidden contract drift, boundary/dependency impact, and proportional test/doc implications.'
 argument-hint: 'Refactor diff or scope to validate'
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-refactor-safety.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this refactor for Exeris Community/Open-Core safety.
 
 Assume the goal is to preserve behavior unless explicitly stated otherwise.
+
+Refactor scope:
+$ARGUMENTS
 
 Please determine:
 1. Is this truly refactor-only, or does it affect observable behavior?

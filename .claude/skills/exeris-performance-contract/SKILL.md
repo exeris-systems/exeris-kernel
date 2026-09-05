@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-performance-contract/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-performance-contract
 description: Performance-lawyer review enforcing No Waste Compute for Exeris Kernel. Use when a change touches runtime hot paths (transport, flow, memory, persistence, bootstrap, dispatch) or can affect allocations, structured concurrency, off-heap copies, or banned APIs (ThreadLocal, ExecutorService, CompletableFuture, ByteBuffer, Unsafe). Skip for docs-only or pure test/tooling changes.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-performance-contract/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Performance Contract
 
 ## Purpose

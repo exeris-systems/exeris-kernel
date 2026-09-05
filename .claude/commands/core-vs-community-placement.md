@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/core-vs-community-placement.md (agents-md-schema.md rule 7). Edit the source.
 description: Decide whether an Exeris change belongs in Core or Community, with boundary/dependency implications and a minimal safe refactoring path.
 argument-hint: Change scope to place in Core vs Community
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/core-vs-community-placement.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Help decide whether this Exeris change belongs in Core or Community.
 
 Use these principles:

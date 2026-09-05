@@ -93,8 +93,8 @@ the dispatching thread. Two consequences are normative:
 
 ## Lifecycle boundary
 
-Jobs dispatch on bare virtual threads, not inside a `StructuredTaskScope`. CLAUDE.md forbids
-unstructured concurrency in orchestration paths; the equivalent containment comes from
+Jobs dispatch on bare virtual threads, not inside a `StructuredTaskScope`. The repository forbids
+unstructured concurrency in orchestration paths (`.agents/policies/the-wall.md`); the equivalent containment comes from
 `JobHandle.cancel()` plus the drain in `JobScheduler.close()`. Every dispatched job is reachable from
 a handle, and shutdown awaits runs already in flight rather than abandoning them.
 

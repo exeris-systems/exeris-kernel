@@ -1,4 +1,5 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-tck.md (agents-md-schema.md rule 7). Edit the source.
 name: Exeris TCK/Test
 description: Contract verification agent for Exeris Kernel. Use for test strategy, TCK expansion, binding tests, and observable behavior validation.
 model: Auto (copilot)
@@ -6,7 +7,8 @@ target: vscode
 user-invocable: true
 tools: [read/problems, read/readFile, read/terminalSelection, read/terminalLastCommand, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/usages, execute/runTests, execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, edit/editFiles, edit/createFile, edit/createDirectory, web/fetch, web/githubRepo, todo]
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-tck.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris TCK/Test
 
 ## Role

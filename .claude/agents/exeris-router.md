@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-router.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-router
 description: Entry router for Exeris Kernel. Use proactively for triage to classify work and recommend a specialist agent (architect, implementer, tck, performance, docs-adr). Invoke when the task scope crosses domains or the right specialist is not obvious.
 tools: Read, Grep, Glob, WebFetch, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-router.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Router
 
 ## Role
