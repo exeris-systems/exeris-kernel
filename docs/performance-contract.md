@@ -1,4 +1,13 @@
-﻿# The Performance Contract (Hyper-Density Spec)
+---
+title: The Performance Contract (Hyper-Density Spec)
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-05
+---
+
+# The Performance Contract (Hyper-Density Spec)
 
 This document defines the efficiency targets for Exeris Kernel. Targets are **strictly divided**
 into the current development baseline (TRL-3) and the final Enterprise goals.
@@ -108,7 +117,12 @@ JFR events (when enabled via profile):
 **Benchmark Run:** 2026-03-28T15:20:50Z, entity-read-by-id scenario, 50 concurrent virtual threads
 - Pre-fix: p50 52.57ms, fairness 0.1268, ThreadPark 40,793, 428k box instances per 52k requests
 - Post-fix: p50 ≤5ms (target), fairness ≥0.95 (target), ThreadPark <5k (target), admission rejection <2%
-- See [Performance Analysis Report](docs/performance-analysis-report.md) for full JFR analysis
+- **No report backs these figures.** They come from a development run of 2026-03-28; the
+  "Performance Analysis Report" this line used to link does not exist in this repository and
+  never has, and `exeris-benchmarks` publishes nothing for that date — its earliest
+  `entity-read-by-id` report is 2026-06-20. Evidence state: **unartifacted**
+  (`claims-and-evidence.md`). Treat the pre-fix numbers as a development observation, not as a
+  citable measurement, until a run on the reference profile replaces them.
 
 ---
 
