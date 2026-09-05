@@ -23,14 +23,12 @@ permissions:
 # and it is a required check here.
 #
 # The trailing comment carries a date rather than a version because `exeris-systems/.github`
-# publishes no tags. Bump this pin when the follow-up bundle change lands (exeris-systems/.github#12):
-# until then the javadoc job fails on `Could not find artifact ...build-config` rather than on
-# anything about Javadoc, because the step that resolves the reactor first is not in this SHA.
+# publishes no tags, so nothing about the SHA says how old it is. Dependabot rewrites both together.
 
 jobs:
   labels:
-    uses: exeris-systems/.github/.github/workflows/labels-sync.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
+    uses: exeris-systems/.github/.github/workflows/labels-sync.yml@5144f771223069ee7bac0d1c9a0fc6a39bf210c2 # main @ 2026-09-05
     with:
       dry-run: ${{ inputs.dry-run == true }}
   hygiene:
-    uses: exeris-systems/.github/.github/workflows/issue-hygiene.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
+    uses: exeris-systems/.github/.github/workflows/issue-hygiene.yml@5144f771223069ee7bac0d1c9a0fc6a39bf210c2 # main @ 2026-09-05
