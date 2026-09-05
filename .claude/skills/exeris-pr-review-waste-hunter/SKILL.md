@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-pr-review-waste-hunter/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-pr-review-waste-hunter
 description: Default entry-point for ANY Exeris Kernel PR/diff/branch review — start here. Triages software inflation, >5-dependency classes, and boundary/perf/contract risk, then dispatches to the focused lens skills (exeris-architect-guardrails, exeris-performance-contract, exeris-tck-first, exeris-jfr-telemetry-review, exeris-java26-panama-loom, exeris-subsystem-specialist) as the diff warrants. Trigger whenever asked to review, look at, audit, or assess a change.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-pr-review-waste-hunter/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris PR Review Waste Hunter
 
 ## Purpose

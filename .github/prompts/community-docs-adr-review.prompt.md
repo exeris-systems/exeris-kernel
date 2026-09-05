@@ -1,9 +1,11 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-docs-adr-review.md (agents-md-schema.md rule 7). Edit the source.
 name: community-docs-adr-review
 description: 'Review Exeris Community/Open-Core changes for docs/ADR drift and produce minimal required doc patch list.'
 argument-hint: 'Change scope with potential docs/ADR impact'
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-docs-adr-review.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this Exeris Community/Open-Core change for documentation and ADR consistency.
 
 Rules:
@@ -11,6 +13,9 @@ Rules:
 - Do not document target architecture as implemented fact unless clearly marked as planned/placeholder/repository-state note.
 - Use docs/modules/*.md and docs/subsystems/*.md as primary sources.
 - Escalate to docs/adr/*.md only when architecture intent, module split, or lifecycle model changes.
+
+Change:
+$ARGUMENTS
 
 Please output:
 1. Affected docs

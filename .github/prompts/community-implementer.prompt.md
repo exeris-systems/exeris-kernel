@@ -1,9 +1,11 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-implementer.md (agents-md-schema.md rule 7). Edit the source.
 name: community-implementer
 description: 'Implement an Exeris Community/Open-Core change with minimal targeted edits while preserving boundaries and runtime-safe idioms.'
 argument-hint: 'Implementation task or PR scope'
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-implementer.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Implement this as an Exeris Community/Open-Core change.
 
 Constraints:
@@ -13,6 +15,9 @@ Constraints:
 - Avoid framework DI, ThreadLocal for runtime context, and unstructured orchestration in runtime paths.
 - Keep changes minimal and targeted.
 - If the change affects SPI-observable behavior, explicitly mark that TCK review is required.
+
+Task:
+$ARGUMENTS
 
 Please provide:
 1. implementation plan,

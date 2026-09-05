@@ -1,11 +1,13 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-architect-guardrails/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-architect-guardrails
 description: 'Architectural PR review for Exeris Kernel. Use for every PR review to enforce docs/modules, docs/subsystems, ADR alignment, The Wall boundaries, SPI blindness, Core isolation, and dependency graph integrity.'
 argument-hint: 'PR scope, changed modules/files, and intended architectural impact'
 user-invocable: true
 disable-model-invocation: false
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-architect-guardrails/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Architect Guardrails
 
 ## Purpose
@@ -18,7 +20,7 @@ Run a strict architectural review for Exeris Kernel changes so every PR remains 
 This skill is mandatory for PR reviews that touch architecture, module boundaries, subsystem contracts, or dependency wiring.
 
 ## When to Use
-- Any PR review in Exeris Kernel (default)
+- Any PR that can affect placement, boundaries, or dependency direction (skip pure intra-module edits with no boundary impact)
 - Any change touching SPI/Core/Community/Enterprise/TCK modules
 - Any change introducing or modifying interfaces, providers, adapters, transport/security/persistence internals
 - Any refactor that can alter dependency direction or module layering
@@ -57,7 +59,7 @@ This skill is mandatory for PR reviews that touch architecture, module boundarie
 
 6. **Decision and report**
    - Produce one of: `APPROVE`, `CONDITIONAL`, `REJECT`.
-   - For each issue, map finding -> violated document/decision -> required corrective action.
+   - For each issue, map finding → violated document/decision → required corrective action.
 
 ## Decision Logic
 - **APPROVE**: No boundary leaks, no graph violations, no ADR conflicts.

@@ -1,0 +1,96 @@
+# Composition and delivery metadata for this repository's agent material.
+# agents-md-schema.md rules 5 and 8: profiles and workflows compose by reference, and any imported
+# bundle is version-pinned. This repository imports nothing — the organisation bundle does not exist
+# as a published artefact yet, and a floating import would be a rule-8 violation, not a shortcut.
+version: 1
+repository: exeris-kernel
+imports: []
+
+policies:
+  - policies/branch-and-release.md
+  - policies/definition-of-done.md
+  - policies/jdk-and-preview-track.md
+  - policies/memory-ownership.md
+  - policies/operating-standards.md
+  - policies/scoped-bans.md
+  - policies/sonarqube-mcp.md
+  - policies/the-wall.md
+
+references:
+  # The short form of facts owned elsewhere in this repository. Each names its authoritative
+  # source and yields to it (rule 6).
+  - references/build-and-ci.md
+  - references/testing-model.md
+
+skills:
+  - skills/exeris-adr-register
+  - skills/exeris-architect-guardrails
+  - skills/exeris-doc-impact-triage
+  - skills/exeris-docs-adr-check
+  - skills/exeris-java26-panama-loom
+  - skills/exeris-jfr-perf-research
+  - skills/exeris-jfr-telemetry-review
+  - skills/exeris-performance-contract
+  - skills/exeris-pr-preflight
+  - skills/exeris-pr-review-waste-hunter
+  - skills/exeris-release-integration
+  - skills/exeris-service-loader-and-bootstrap
+  - skills/exeris-subsystem-specialist
+  - skills/exeris-tagged-gate-runner
+  - skills/exeris-tck-first
+  - skills/exeris-triage
+
+agents:
+  - agents/exeris-architect.md
+  - agents/exeris-docs-adr.md
+  - agents/exeris-implementer.md
+  - agents/exeris-performance.md
+  - agents/exeris-router.md
+  - agents/exeris-tck.md
+
+workflows:
+  # User-invoked Community / Open-Core review and implementation sequences. They render to
+  # .claude/commands/, which is the provider's name for the same thing.
+  - workflows/community-architecture-review.md
+  - workflows/community-docs-adr-review.md
+  - workflows/community-implementer.md
+  - workflows/community-performance-memory.md
+  - workflows/community-pr-review.md
+  - workflows/community-provider-serviceloader.md
+  - workflows/community-refactor-safety.md
+  - workflows/community-subsystem-review.md
+  - workflows/community-tck-first-review.md
+  - workflows/core-vs-community-placement.md
+  - workflows/open-core-boundary.md
+  - workflows/spi-purity.md
+
+adapters:
+  # Both sets are rewritten by tools/agent-adapter-check/agent-adapter-render.sh, which preserves
+  # each destination's own frontmatter and replaces the body. Every generated file carries the
+  # do-not-edit marker twice: once as a YAML comment inside the frontmatter, because the
+  # organisation gate reads only the first 600 characters and Copilot's tool lists are longer than
+  # that, and once as an HTML comment below it for a human opening the file.
+  claude:
+    target: .claude
+    generated: true
+    renderer: tools/agent-adapter-check/agent-adapter-render.sh
+    map:
+      skills: .claude/skills
+      agents: .claude/agents
+      workflows: .claude/commands
+  copilot:
+    target: .github
+    generated: true
+    renderer: tools/agent-adapter-check/agent-adapter-render.sh
+    entry: .github/copilot-instructions.md
+    map:
+      skills: .github/skills
+      agents: .github/agents
+      workflows: .github/prompts
+    naming:
+      agents: "{name}.agent.md"
+      workflows: "{name}.prompt.md"
+    extra:
+      # A Copilot instructions file rendered from a single policy. branch-protection.md beside it is
+      # operational documentation of repository settings, provider-owned, and not generated.
+      .github/instructions/sonarqube_mcp.instructions.md: policies/sonarqube-mcp.md

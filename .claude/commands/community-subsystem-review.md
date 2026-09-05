@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-subsystem-review.md (agents-md-schema.md rule 7). Edit the source.
 description: Review Exeris change in a specific subsystem context with placement, contract, runtime risk, and TCK implications.
 argument-hint: SUBSYSTEM_NAME + SUBSYSTEM_FILE + change scope
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-subsystem-review.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this Exeris change in the context of a specific subsystem.
 
 Inputs (subsystem name, subsystem doc filename, and change scope):

@@ -75,7 +75,7 @@ jobs:
             2. `docs/adr/*.md` — boundaries, lifecycle model, module split
             3. `docs/whitepaper.md`, `docs/architecture.md`,
                `docs/performance-contract.md` — when relevant
-            4. `CLAUDE.md` — repo-wide guardrails for AI reviewers (read this first)
+            4. `AGENTS.md` — the repository's agent contract, and the index to `.agents/` (read this first)
 
             Focus on (in priority order):
             1. **The Wall (ADR-006) — boundary integrity.** `exeris-kernel-spi` and

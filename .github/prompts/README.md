@@ -1,33 +1,14 @@
-# Exeris Community/Open-Core Prompts
+<!-- Every sibling file in this directory is generated from .agents/ and carries its own
+     do-not-edit marker. This README is hand-written; the banner is here because
+     agents_file_check.py requires the marker on every .md under a provider semantic directory,
+     and an accidental match in the prose is not a guarantee. -->
+# `.github/prompts/` — generated Copilot adapters
 
-Reusable prompts for Community/Open-Core review and implementation workflows.
+Not a place to author prompts. These files are **generated** from
+[`.agents/workflows/`](../../.agents/workflows), the canonical Community and Open-Core review
+sequences, and each carries a do-not-edit marker naming its source
+([`agents-md-schema.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/agents-md-schema.md)
+rules 2 and 7). Edit the source; a change made here is lost at the next regeneration.
 
-## Starter Slash Prompts
-- `community-architecture-review`
-- `community-implementer`
-- `community-tck-first-review`
-- `community-performance-memory`
-- `open-core-boundary`
-- `community-pr-review`
-
-## Extended Slash Prompts
-- `core-vs-community-placement`
-- `spi-purity`
-- `community-provider-serviceloader`
-- `community-docs-adr-review`
-- `community-refactor-safety`
-- `community-subsystem-review`
-
-## Full Prompt Catalog
-- See `exeris-community-prompt-pack.md` for the extended set (12 templates + quick prompts).
-
-## Usage
-1. Type `/` in Copilot Chat.
-2. Select one starter prompt.
-3. Paste PR diff, file list, or concrete task context.
-
-## Guiding Intent
-- Preserve The Wall and contract purity.
-- Keep Core driver-agnostic and Community implementation-focused.
-- Keep TCK-first discipline when observable contract behavior changes.
-- Keep docs aligned with repository reality (no placeholder-as-implemented drift).
+`exeris-community-prompt-pack.md` used to sit here as a third inlined copy of the same twelve
+prompts, with repository claims that had gone stale. It is retired: the workflows are the catalogue.

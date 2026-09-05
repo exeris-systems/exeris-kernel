@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-pr-preflight/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-pr-preflight
 description: Pre-PR gate for Exeris Kernel — run BEFORE opening or pushing any PR. Enforces lint-gate integrity (skip flags poison a green build's lint proof), the architecture guard test, fresh-branch-per-task discipline, and the register-ADR-before-claiming rule. Use whenever about to commit/push a branch or open a PR in the kernel repo.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-pr-preflight/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris PR Preflight
 
 ## Purpose
@@ -16,7 +18,7 @@ Catch the recurring, expensive footguns that a green build alone does **not** pr
 ## Mandatory Checks (in order)
 
 1. **Branch hygiene — fresh branch per task**
-   - Confirm work is on a fresh feature branch cut off the current active development base (the `development/<active-ver>` branch on origin; check the repo `CLAUDE.md` / README for the current name as it advances per release), or the current `research/<slug>` branch — NOT an already-merged branch or directly on `main`.
+   - Confirm work is on a fresh feature branch cut off the current active development base (the `development/<active-ver>` branch on origin — resolve it with `git branch -r --list 'origin/development/*' | sort -V | tail -1`, because no file in this repository names it; see `.agents/policies/branch-and-release.md`), or the current `research/<slug>` branch — NOT an already-merged branch or directly on `main`.
    - If multiple Claude sessions may share this tree, prefer a git worktree off a clean base — a parallel branch-switch/commit can revert uncommitted edits.
 
 2. **Lint gate — confirm the proof was not poisoned by skip flags**
@@ -30,7 +32,7 @@ Catch the recurring, expensive footguns that a green build alone does **not** pr
 3. **Architecture guard test (The Wall)**
    - Run the ArchUnit guard so SPI/Core/Driver boundaries are enforced (it has historically been `@ArchIgnore`'d — do not assume CI covers it):
      ```
-     mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest \
+     mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest **plus the Community-module guards** (`KernelTierDirectionArchitectureTest`, `CommunitySchedulingArchitectureTest`, `KernelTierBanArchitectureTest`) — `-pl exeris-kernel-tck -am` does not build Community, so the Core→Community direction rule never runs under it; ExerisArchitectureTest \
        -Dsurefire.failIfNoSpecifiedTests=false \
        -Dpmd.skip=true -Dcheckstyle.skip=true test
      ```

@@ -4,8 +4,8 @@
 #
 # WHY THIS IS A GATE, and why it is three checks rather than one.
 #
-# KernelErrorCodes is declared the single source of truth for error codes (CLAUDE.md, hard
-# constraint) and docs/subsystems/exceptions.md is what an operator actually reads when a code turns
+# KernelErrorCodes is declared the single source of truth for error codes
+# (.agents/policies/the-wall.md, hard constraint) and docs/subsystems/exceptions.md is what an operator actually reads when a code turns
 # up in a log. Nothing connected the two. The drift is silent in both directions and each direction
 # fails differently:
 #
@@ -128,7 +128,7 @@ for path in sys.argv[1:]:
 if [ -n "$leaked" ]; then
   echo "error-code-registry-check: FAIL — EX- code written as a literal instead of a KernelErrorCodes constant:" >&2
   echo "$leaked" | sed "s|$ROOT/||" >&2
-  echo "  KernelErrorCodes is the single source of truth (CLAUDE.md); a literal survives a rename it should not." >&2
+  echo "  KernelErrorCodes is the single source of truth (.agents/policies/the-wall.md); a literal survives a rename it should not." >&2
   failures=$((failures + 1))
 fi
 

@@ -1,9 +1,11 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-provider-serviceloader.md (agents-md-schema.md rule 7). Edit the source.
 name: community-provider-serviceloader
 description: 'Review Exeris Community provider loading and ServiceLoader semantics, including registration risks, boundary risks, and test implications.'
 argument-hint: 'Provider registration/discovery change scope'
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-provider-serviceloader.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this Exeris Community change as a provider-loading and ServiceLoader task.
 
 Focus on:
@@ -12,6 +14,9 @@ Focus on:
 - registration correctness,
 - preserving Community as a replaceable implementation,
 - keeping observable provider behavior testable through TCK or binding tests where applicable.
+
+Change:
+$ARGUMENTS
 
 Output:
 1. Loading model check
