@@ -1,9 +1,11 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/core-vs-community-placement.md (agents-md-schema.md rule 7). Edit the source.
 name: core-vs-community-placement
 description: 'Decide whether an Exeris change belongs in Core or Community, with boundary/dependency implications and minimal safe refactoring path.'
 argument-hint: 'Change scope to place in Core vs Community'
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/core-vs-community-placement.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Help decide whether this Exeris change belongs in Core or Community.
 
 Use these principles:
@@ -13,6 +15,9 @@ Use these principles:
 - Community may depend on Core, not the other way around.
 - If the capability is shared by Community and Enterprise and does not violate The Wall, prefer Core.
 - If it is a concrete OSS driver/runtime implementation detail, prefer Community.
+
+Change:
+$ARGUMENTS
 
 Output:
 1. Recommended placement

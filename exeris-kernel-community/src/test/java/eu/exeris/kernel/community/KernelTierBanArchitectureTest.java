@@ -25,8 +25,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * records for the direction rules, and the same remedy: this module is the first point in the
  * reactor where SPI, Core and Community are all visible at once.
  *
- * <p>The bans are not new and neither is the discipline — {@code CLAUDE.md} lists them as scoped
- * bans and CONTRIBUTING documents the replacements. What is new is that a violation in Core now
+ * <p>The bans are not new and neither is the discipline — {@code .agents/policies/scoped-bans.md}
+ * lists them and CONTRIBUTING documents the replacements. What is new is that a violation in Core now
  * fails a build instead of waiting for a reviewer to notice.
  *
  * <h2>What this found when it was switched on</h2>

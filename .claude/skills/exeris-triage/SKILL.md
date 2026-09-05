@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-triage/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-triage
 description: Single-pass triage for an Exeris Kernel task, PR, or request — classify the work, identify subsystem scope and required contract docs, pick the one primary risk, choose the owning specialist plus ordered handoffs, and set the validation gates. Replaces the former task-classifier / subsystem-scope-detector / risk-prioritizer / routing-planner / validation-gate-planner / multi-agent-handoff micro-skills. Use at the START of work when the owner is not obvious, the scope crosses domains, or several risks compete.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-triage/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Triage
 
 ## Purpose

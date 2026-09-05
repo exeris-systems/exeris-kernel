@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-java26-panama-loom/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-java26-panama-loom
 description: Java 26+ idiom review for Exeris Kernel. Use when a change touches concurrency, context propagation, native interop, memory APIs, or runtime data carriers — to enforce ScopedValue over ThreadLocal, StructuredTaskScope over ad-hoc async, Panama FFM (MemorySegment/Linker/SymbolLookup), Valhalla-ready immutable carriers, early construction, and removal of legacy framework idioms.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-java26-panama-loom/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Java 26 Panama Loom
 
 ## Purpose

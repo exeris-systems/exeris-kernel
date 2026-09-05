@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-subsystem-specialist/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-subsystem-specialist
 description: Targeted single-subsystem review for Exeris Kernel via one mode-driven skill — one mode per contract doc in docs/subsystems/ (bootstrap, config, crypto, events, exceptions, flow, graph, http, memory, persistence, security, telemetry, transport). Use when a change is concentrated in one subsystem and you want its contract doc loaded as the primary source of truth plus mode-specific deep checks — without spawning multiple agents. State the mode (e.g. "review this as Transport").
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-subsystem-specialist/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Subsystem Specialist
 
 ## Purpose

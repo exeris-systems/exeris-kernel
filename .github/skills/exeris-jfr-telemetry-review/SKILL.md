@@ -1,11 +1,13 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-jfr-telemetry-review/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-jfr-telemetry-review
 description: 'Observability contract review for Exeris Kernel. Use for PRs touching bootstrap, telemetry, memory, transport, lifecycle/state machines, and exception mapping to enforce JFR-first events, lightweight emission, secret-safe payloads, L0/L1 boundaries, and error/rawArgs contracts.'
 argument-hint: 'PR scope, changed lifecycle points, and telemetry/error-code impact'
 user-invocable: true
 disable-model-invocation: false
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-jfr-telemetry-review/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris JFR Telemetry Review
 
 ## Purpose
@@ -62,7 +64,7 @@ This skill validates that lifecycle-critical behavior emits compliant telemetry 
    - Enumerate all lifecycle transitions and failure edges touched by the PR.
 
 2. **Build event matrix**
-   - For each transition/failure edge, map: trigger -> expected typed event -> required fields -> tier owner.
+   - For each transition/failure edge, map: trigger → expected typed event → required fields → tier owner.
 
 3. **Validate emission quality**
    - Check lightweight event annotations and avoid heavy runtime formatting on emission path.

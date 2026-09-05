@@ -1,4 +1,5 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-docs-adr.md (agents-md-schema.md rule 7). Edit the source.
 name: Exeris Docs/ADR
 description: Documentation integrity agent for Exeris Kernel. Use for doc drift detection, ADR impact checks, and synchronization between code, subsystem docs, and architecture guidance.
 model: Auto (copilot)
@@ -6,7 +7,8 @@ target: vscode
 user-invocable: true
 tools: [read/problems, read/readFile, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/usages, edit/editFiles, edit/createFile, agent/runSubagent, web/fetch, web/githubRepo, todo]
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-docs-adr.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Docs/ADR
 
 ## Role

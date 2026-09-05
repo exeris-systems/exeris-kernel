@@ -1,4 +1,5 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-performance.md (agents-md-schema.md rule 7). Edit the source.
 name: Exeris Performance/Memory
 description: Runtime hot-path reviewer for Exeris Kernel. Use for allocation discipline, memory ownership, hidden-copy detection, and JFR-oriented performance risk review.
 model: Auto (copilot)
@@ -6,7 +7,8 @@ target: vscode
 user-invocable: true
 tools: [read/problems, read/readFile, read/terminalSelection, read/terminalLastCommand, search/changes, search/codebase, search/fileSearch, search/listDirectory, search/textSearch, search/usages, execute/runTests, execute/runInTerminal, execute/getTerminalOutput, execute/awaitTerminal, execute/killTerminal, web/fetch, web/githubRepo, todo]
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-performance.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Performance/Memory
 
 ## Role

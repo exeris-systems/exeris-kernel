@@ -46,10 +46,36 @@ a person, natural or legal, and a GitHub organisation is neither. `NOTICE` and t
 headers name the project rather than the person; the CLA and `TRADEMARK.md` name the person,
 because those two are the instruments that need one.
 
+**Sign-off.** Alongside the agreement, an external contribution carries a `Signed-off-by:` trailer
+(`git commit -s`). It is a Developer Certificate of Origin sign-off, and it answers a different
+question from the agreement: it certifies that you have the right to submit the work under the
+licence this repository publishes, and it grants nothing at all. The two compose — origin on every
+commit, rights once. Organisation members are exempt from the trailer, not from being accountable
+for what they merge.
+
 > **Status:** the agreement text is being finalised and the signing flow is not yet wired up.
 > Until it is, a pull request will not be blocked on it — but a contribution merged in the
 > meantime is merged on the understanding above, and you will be asked to sign retroactively.
 > If that is not acceptable, say so on the PR and we will hold it.
+
+**AI provenance.** Exeris is built with AI assistance as a matter of course, and states the terms
+rather than hiding them. They are
+[`ai-provenance.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/ai-provenance.md),
+and they are short:
+
+- An AI-assisted commit keeps its `Co-authored-by:` trailer. Stripping it is a defect; adding it
+  where no AI was involved is a lie, and is treated the same.
+- **A named human is accountable for every line.** You must be able to explain and defend any part
+  of the change in review. "The agent produced it" is not an answer — it is the reason the question
+  is being asked.
+- **Agents do not open pull requests, file issues or post comments without a human author.**
+  Automated *review* comments are fine; automated *contributions* are not.
+- A pull request states the commands run after the last push. A green default build says nothing
+  about the tagged gates, and a skip-flagged build says nothing about lint.
+- AI-generated tests that assert nothing observable are rejected. Tests follow this repository's
+  philosophy — TCK-first, semantics over volume — not a line count.
+- The description is what you would have written unaided: what it does, what it costs, what it does
+  not cover. Not a transcript.
 
 ---
 

@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-release-integration/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-release-integration
 description: Milestone release flow for Exeris Kernel — flip versions, write release notes, integrate development/X.Y.0 into main via a single release(x.y.z) PR, then open the next development line. Use when asked to prepare, cut, integrate, or finalize a milestone release, or to open the next development branch.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-release-integration/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Release Integration
 
 ## Purpose
@@ -30,7 +32,9 @@ Make the recurring milestone→main integration deterministic. The flow below ma
 
 4. **Repo-doc sync in the same PR.**
    - `docs/ROADMAP.md` milestone status.
-   - `CLAUDE.md` "Base branch" line — CLAUDE.md itself instructs bumping it in the release integration PR.
+   - No agent file carries the active development version any more: `.agents/policies/branch-and-release.md`
+     points at the root `pom.xml` and `docs/ROADMAP.md` instead, so there is no "Base branch" line to bump.
+     Check that those two do name the new line.
 
 5. **The integration PR.** Single PR `release(x.y.z): integrate vX.Y.0 milestone into main`, base `main`, head `development/X.Y.0`. Run `exeris-pr-preflight` before pushing. Never commit to `main` directly.
 

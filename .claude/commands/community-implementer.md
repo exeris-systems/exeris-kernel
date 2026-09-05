@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-implementer.md (agents-md-schema.md rule 7). Edit the source.
 description: Implement an Exeris Community/Open-Core change with minimal targeted edits while preserving boundaries and runtime-safe idioms.
 argument-hint: Implementation task or PR scope
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-implementer.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Implement this as an Exeris Community/Open-Core change.
 
 Constraints:
