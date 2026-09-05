@@ -13,9 +13,20 @@ on:
 concurrency:
   group: guardrails-${{ github.event.pull_request.number }}
   cancel-in-progress: true
+# A called workflow can only NARROW what the caller grants, never raise it, so this block is the
+# union of what every called workflow declares — not a wish list. Omitting the last two is what
+# made the first push of this file an invalid workflow: "requesting 'issues: read, id-token: write',
+# but is only allowed 'issues: none, id-token: none'".
+#
+# Granting them here does not widen docs-lint, commit-lint or pr-body-check: a called workflow's
+# jobs receive what its OWN permissions block declares, capped by this one. `id-token: write` is
+# docs-review's, for the OIDC exchange claude-code-action performs; `issues: read` lets the routine
+# read the debt issues that issue-conventions.md rule 6 says a review finding becomes.
 permissions:
   contents: read
   pull-requests: read
+  issues: read
+  id-token: write
 
 jobs:
   docs:
