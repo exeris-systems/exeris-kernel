@@ -1,0 +1,95 @@
+# The per-repo footprint of ADR-085 §C.11. Everything it runs lives in exeris-systems/.github;
+# this file only says which gates apply here and how strictly.
+#
+# Nothing in the repository ran these before: the documentation standards were binding but
+# unenforced, and the L2 documentation review existed only inside a Cowork session, so a pull
+# request could contradict a standard and merge green.
+name: guardrails
+on:
+  pull_request:
+    # labeled/unlabeled matter: adr-conventions rule 9 requires the `adr` label on a PR that
+    # amends an ADR, so adding the label after a red run has to re-run the gate.
+    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled]
+concurrency:
+  group: guardrails-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+# A called workflow can only NARROW what the caller grants, never raise it, so this block is the
+# union of what every called workflow declares — not a wish list. Omitting the last two is what
+# made the first push of this file an invalid workflow: "requesting 'issues: read, id-token: write',
+# but is only allowed 'issues: none, id-token: none'".
+#
+# Granting them here does not widen docs-lint, commit-lint or pr-body-check: a called workflow's
+# jobs receive what its OWN permissions block declares, capped by this one. `id-token: write` is
+# docs-review's, for the OIDC exchange claude-code-action performs; `issues: read` lets the routine
+# read the debt issues that issue-conventions.md rule 6 says a review finding becomes.
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  id-token: write
+
+# Pinned by commit SHA, like every other `uses:` in this repository — `dependabot.yml` explains
+# why: a SHA is immune to a moved tag but invisible to a reader, and Dependabot is what keeps it
+# current, rewriting the SHA and the trailing comment together. SonarCloud enforces the same rule
+# and it is a required check here.
+#
+# The trailing comment names the ref the SHA came from, not a version and not a date. That
+# repository publishes no tags and no releases, so there is no version to name; and a date would
+# rot, because Dependabot updates a version comment by finding the PREVIOUS VERSION STRING in it
+# and replacing that (dependabot-core#5951) — it has no rule for a date, so the SHA would move and
+# the date would not. `@main` stays true whichever commit the SHA is.
+#
+# Whether Dependabot bumps these at all is worth watching on the first weekly run: it does cover
+# reusable-workflow `uses:` (GitHub docs), and for a SHA with no tag behind it, it moves the pin to
+# the branch HEAD (dependabot-core#13466, #14716) — which is the behaviour wanted here. Both are
+# reports about other people's repositories, not something observed in this one.
+
+jobs:
+  docs:
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
+    with:
+      # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
+      # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
+      # what it edits and not for a backlog it did not create. Flip to strict when the backfill
+      # has landed — 88 of the 113 are machine-fillable, the rest need a type chosen by hand.
+      mode: ramp
+      # Off until docs/subsystems/*.md carry Contract / Hot path / Failure modes / Owning ADRs.
+      # Fifteen subsystem pages exist and none has the section set yet.
+      section-check: false
+  commits:
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
+  pr-body:
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
+  # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
+  # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
+  # against the documentation standards. They are different questions and both are wanted.
+  # Skips itself when no Markdown or Java changed.
+  docs-review:
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
+    # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
+    # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
+    # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
+    secrets:
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  # ADR-085 §F.21. Expected RED on the day it lands: 62 doclint errors and 100 warnings on
+  # exeris-kernel-spi, measured before switching it on. That is the reason to switch it on — the
+  # gate is the worklist, and a worklist nobody can see is a worklist nobody clears. It is a
+  # reported check and deliberately not a required one until the count reaches zero.
+  #
+  # `-Pjavadoc-gate` selects a profile that exists only for this job. The `release` profile keeps
+  # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
+  # the strict settings there instead would have made a red gate block a release.
+  javadoc:
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
+    with:
+      # The two published surfaces that are neither Core, Community nor tooling — the set
+      # javadoc-conventions.md rule 11 sends to diff-aware checking instead of a hard gate. Every
+      # jar module here reaches Maven Central, so "published" alone does not narrow anything; what
+      # narrows it is rule 11, and what is left after it is the SPI and the TCK.
+      #
+      # Measured before adding the TCK: 13 doclint errors, warnings capped at javadoc's default
+      # -Xmaxwarns of 100. The others, for the record and for whoever revisits rule 11:
+      # core 31/100+, community 6/91, community-testkit 0/24, community-kafka 0/11,
+      # diagnostics-cli and build-config clean.
+      modules: exeris-kernel-spi,exeris-kernel-tck
+      extra-maven-args: "-Pjavadoc-gate"
