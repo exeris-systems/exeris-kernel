@@ -1,4 +1,13 @@
-﻿# Exeris Kernel: The Vision & Whitepaper
+---
+title: "Exeris Kernel: The Vision and Whitepaper"
+type: explanation
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-05
+---
+
+# Exeris Kernel: The Vision & Whitepaper
 
 **Author:** Arkadiusz Przychocki, Founder & Lead Architect  
 **Status:** TRL-3 (Validated Architectural Prototype)  
@@ -13,8 +22,17 @@
 Modern cloud computing is suffering from a silent crisis: **"Software Inflation"**. For decades, the industry
 prioritized developer convenience over hardware efficiency, leading to a critical execution tax.
 
-- **The Inflation Factor:** Processing a 4GB network payload often triggers >160GB of temporary heap allocations just
-  for wrappers, POJOs, and DTOs.
+- **The Inflation Factor:** The tax is measurable rather than rhetorical, and the measurement is ours to be held to.
+  On a runtime-bound single-row read, under strict-gate comparison on dedicated bare metal, the kernel serves a request
+  at **-25.6% / -33.3% CPU** against a tuned pure-JDBC Quarkus arm and an idiomatic Quarkus + Hibernate arm, at **~1/2.7
+  the resident memory under an equal memory budget** — a ratio that narrows to **1.18-1.26x** once the heaps are matched,
+  which is the qualifier that belongs with any footprint claim from that dataset
+  (`exeris-benchmarks/results/reports/2026-07-21-entity-read-by-id-tuned-pg-triad-comparison-eligible.md`).
+  <!-- vale Exeris.RetractedFigures = NO -->
+  A quarter to a third of the per-request CPU is the honest magnitude; earlier revisions of this document asserted "up to
+  60% of CPU cycles" and a ">160 GB allocation on a 4 GB payload". No campaign in `exeris-benchmarks` supports either and
+  both are withdrawn.
+  <!-- vale Exeris.RetractedFigures = YES -->
 - **The Consequence:** Infrastructure is massively over-provisioned. We pay for 16GB RAM cloud nodes to run workloads
   that functionally require megabytes, just to buffer the Garbage Collection (GC) pauses.
 
@@ -133,7 +151,20 @@ This section separates what has been **measured** from what the TCK enforces as 
 
 ### 5.1 Measured Results to Date
 
-**Saga compensation correctness (`e2e-shop-order-saga`, 2026-05-05, dev-laptop, loopback HTTP/1.1 — claim scope: exploratory; reproducibility artifacts published in `exeris-benchmarks`).** A five-step order saga with payment failure injected at a configured 3% rate, run against Quarkus 3 + Axon Framework and Spring Boot 3 + Axon Framework (each requiring a separate Axon Server process). Full-system totals (app + Axon Server): Exeris in-process **459 MB RSS / 66 threads / 24.7 CPU-s**, versus **~1.54 GB / ~217 threads / ~48 CPU-s** for Quarkus + Axon and **~2.16 GB / ~221 threads / ~85 CPU-s** for Spring + Axon — i.e. **3.4× lower memory / 3.3× fewer threads / ~1.9× lower CPU** vs Quarkus + Axon, and **4.7× / 3.3× / ~3.4×** vs Spring + Axon. On compensation correctness at the configured 3% failure rate: Exeris compensated **3.32%** of sagas (matching the injection within statistical noise), while both Axon stacks reported **0%** compensations — their async `202 Accepted` dispatch returns before the saga completes, leaving 1.82% (Quarkus) / 1.22% (Spring) of sagas unresolved at window close. Full write-up: B2B technical whitepaper §4.1 and the blog post "What you measure depends on where you draw the boundary" (blog.arkstack.dev).
+<!-- vale Exeris.RetractedFigures = NO -->
+**Saga (`e2e-shop-order-saga`) — withdrawn in full, 2026-08-27.** Earlier revisions of this section led with a
+three-stack comparison from a dev-laptop run of 2026-05-05: a whole-deployment density table, the memory and thread
+multipliers derived from it, and a compensation-correctness asymmetry. **All of it is withdrawn** — entry **#23** of the
+retraction register in `exeris-benchmarks/docs/CLAIMS.md` — on three independent grounds. The comparator published as an
+Axon-Framework saga arm never ran one: the orchestration was hand-rolled over a command bus, so nothing in the run is a
+property of that framework's saga implementation. The correctness columns measured our own harness, whose status poller
+did not recognise `CANCELLED` — the state a compensated saga actually writes — so compensations fired and were scored
+unresolved. And `scenarios/e2e-shop-order-saga/CONTRACT-v2.md` §10 classes the v1 finding **superseded**, with any
+mixed-population latency table **invalid under v2, do not cite**. No re-derived multiplier replaces those figures and
+**no v2 comparative saga numbers exist yet**; the full retraction, including the mechanism this document used to offer
+for the correctness columns, is B2B technical whitepaper §4.1. This entry is the one retraction in that register that
+reached distributed artefacts before it was caught, so a surviving copy of the old table is live, not historical.
+<!-- vale Exeris.RetractedFigures = YES -->
 
 **TLS record path (JMH micro-matrix, report `20260501-123118-all` in `exeris-benchmarks/results/reports/`; publication mode: public; baseline rows `comparison_eligible`; recorded hardware profile: `linux-generic`).** The Exeris Enterprise `OffHeapTlsEngine` on the in-process Memory-BIO harness (B5) measured **~923,617 ops/s at p99 2.10 µs** — on par with the JDK `SSLEngine` baseline (B3: ~905,855 ops/s, p99 2.97 µs) and Netty tcnative (B4: ~850,225 ops/s, p99 2.72 µs). The Exeris Community FD-owner integration path (B6, real loopback socket) measured **~365,375 ops/s**: the gap versus the engine-level rows is socket-wiring overhead on the Community integration path, and per the published report B5 (Memory-BIO lens) and B6 (FD-owner) are deliberately not collapsed into a single row.
 
