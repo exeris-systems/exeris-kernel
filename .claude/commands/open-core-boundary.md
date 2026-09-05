@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/open-core-boundary.md (agents-md-schema.md rule 7). Edit the source.
 description: Review Exeris changes through the Open-Core boundary — SPI/Core/Community/Enterprise placement, leakage risks, and smallest boundary-safe approach.
 argument-hint: Change scope to evaluate through Open-Core split
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/open-core-boundary.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this change specifically through the Exeris Open-Core boundary.
 
 Change:

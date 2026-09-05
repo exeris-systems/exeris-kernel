@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-architect.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-architect
 description: Architectural reviewer for Exeris Kernel. Use for placement decisions, ADR alignment, boundary breaches, and review-before-code triage. Read-only — does not edit code.
 tools: Read, Grep, Glob, WebFetch
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-architect.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Architect
 
 ## Role

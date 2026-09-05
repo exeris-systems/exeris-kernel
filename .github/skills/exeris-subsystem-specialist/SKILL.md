@@ -1,11 +1,13 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-subsystem-specialist/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-subsystem-specialist
 description: 'Subsystem-focused PR review for Exeris Kernel using one skill with modes: bootstrap, memory, crypto, transport, persistence, events, flow, http, security, config. Use when you want a targeted subsystem review without creating many separate agents.'
 argument-hint: 'Mode (bootstrap|memory|crypto|transport|persistence|events|flow|http|security|config) + PR scope/files + review goal'
 user-invocable: true
 disable-model-invocation: false
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-subsystem-specialist/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Subsystem Specialist
 
 ## Purpose
@@ -24,6 +26,9 @@ This skill keeps one shared Exeris philosophy while switching to subsystem-speci
 - http
 - security
 - config
+- exceptions
+- graph
+- telemetry
 
 ## Invocation Pattern
 Use a mode-first subprompt, for example:
@@ -46,16 +51,19 @@ Always load:
 - related ADRs in docs/adr
 
 Then load exactly one subsystem contract based on selected mode:
-- bootstrap -> docs/subsystems/bootstrap.md
-- memory -> docs/subsystems/memory.md
-- crypto -> docs/subsystems/crypto.md
-- transport -> docs/subsystems/transport.md
-- persistence -> docs/subsystems/persistence.md
-- events -> docs/subsystems/events.md
-- flow -> docs/subsystems/flow.md
-- http -> docs/subsystems/http.md
-- security -> docs/subsystems/security.md
-- config -> docs/subsystems/config.md
+- bootstrap → docs/subsystems/bootstrap.md
+- memory → docs/subsystems/memory.md
+- crypto → docs/subsystems/crypto.md
+- transport → docs/subsystems/transport.md
+- persistence → docs/subsystems/persistence.md
+- events → docs/subsystems/events.md
+- flow → docs/subsystems/flow.md
+- http → docs/subsystems/http.md
+- security → docs/subsystems/security.md
+- config → docs/subsystems/config.md
+- exceptions → docs/subsystems/exceptions.md
+- graph → docs/subsystems/graph.md
+- telemetry → docs/subsystems/telemetry.md
 
 ## Mode Workflow
 1. **Select mode**
@@ -84,6 +92,9 @@ Then load exactly one subsystem contract based on selected mode:
    - http: provider/server/client/handler/exchange contract conformance at SPI boundary.
    - security: context propagation, identity/authorization invariants, isolation and auditability guarantees.
    - config: schema and validation semantics, deterministic resolution/override precedence, boot-time safety.
+   - exceptions: `KernelErrorCodes` registry integrity (single source of truth, no string literals in constructors), `rawArgs[]` layout comments and primitive-only payloads, no `String.formatted()`/concat on failure paths, checked-exception ban on hot state machines.
+   - graph: traversal/query contract semantics, zero-copy payload handoff at persistence boundaries, deterministic lookup complexity on hot paths.
+   - telemetry: JFR-first event contracts, single-phase `commit()` (never begin → blocking-op → commit on a virtual thread), `@StackTrace(false)` weight discipline, secret-safe payloads, L0/L1 sink boundaries.
 
 5. **Decision and report**
    - Output verdict: APPROVE, CONDITIONAL, REJECT.

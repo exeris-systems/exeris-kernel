@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-implementer.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-implementer
 description: Runtime-focused coding agent for Exeris Kernel. Use to implement changes with Java 26+, Loom/Panama/ScopedValue patterns while preserving existing architecture decisions.
 tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-implementer.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Implementer
 
 ## Role

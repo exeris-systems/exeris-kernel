@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-jfr-telemetry-review/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-jfr-telemetry-review
 description: Observability contract review for Exeris Kernel. Use for PRs touching bootstrap, telemetry, memory, transport, lifecycle/state machines, and exception mapping to enforce JFR-first events, lightweight emission, secret-safe payloads, L0/L1 boundaries, and error/rawArgs contracts.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-jfr-telemetry-review/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris JFR Telemetry Review
 
 ## Purpose

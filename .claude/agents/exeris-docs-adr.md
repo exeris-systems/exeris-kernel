@@ -1,10 +1,12 @@
 ---
+# DO NOT EDIT — generated from .agents/agents/exeris-docs-adr.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-docs-adr
 description: Documentation integrity agent for Exeris Kernel. Use for doc drift detection, ADR impact checks, and synchronization between code, subsystem docs, and architecture guidance.
 tools: Read, Edit, Write, Grep, Glob, WebFetch, TodoWrite
 model: inherit
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-docs-adr.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Docs/ADR
 
 ## Role

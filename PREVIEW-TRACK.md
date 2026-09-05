@@ -74,8 +74,8 @@ has `StructuredTaskScope` directly. The merge brought it into 13 call sites acro
 files took `preview`'s spelling back wholesale, `AbstractSecurityInterceptorTck` was converted by hand
 because it also carries real new cases, and the class and its test are deleted here.
 
-**Pre-existing on this line, not introduced by a merge-up:** CLAUDE.md's standalone architecture-guard
-command (`mvn -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest ... test`) fails here with
+**Pre-existing on this line, not introduced by a merge-up:** the standalone architecture-guard
+command (`.agents/references/build-and-ci.md`) (`mvn -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest ... test`) fails here with
 `[No Class Loaded]` — the guard's own non-vacuity assertion, reporting that it scanned nothing. Checked
 against a clean `origin/preview` checkout, where it fails identically. The guard itself is fine: it runs
 and passes inside the full `mvn clean install`, which is what CI does. It is the isolated invocation

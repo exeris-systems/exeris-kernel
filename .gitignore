@@ -26,3 +26,14 @@ replay_pid*
 **/target/
 # IntelliJ IDEA
 .idea/
+
+# Provider-owned local configuration: a permission allowlist for one machine, never repository
+# content. Ignored here rather than relying on a developer's global gitignore, because `git add
+# .claude` during a manual adapter refresh would otherwise commit it to a public repository.
+.claude/settings.local.json
+
+# Legacy location for local git worktrees. Keep the entry so an existing one stays untracked, but
+# put new worktrees OUTSIDE the repository (see .agents/policies/branch-and-release.md): the
+# agent-file gate walks the working tree and reads a worktree's own AGENTS.md as a nested one,
+# reporting a 7 KB file against the 4 KB nested limit — an error that does not exist.
+.claude/worktrees/

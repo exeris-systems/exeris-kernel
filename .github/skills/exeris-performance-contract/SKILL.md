@@ -1,11 +1,13 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-performance-contract/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-performance-contract
 description: 'Performance-lawyer PR review for Exeris Kernel. Use for every PR review to enforce No Waste Compute, zero-allocation hot paths, structured concurrency, off-heap discipline, and mandatory JFR lifecycle telemetry.'
 argument-hint: 'PR scope, changed files/hot paths, and runtime impact'
 user-invocable: true
 disable-model-invocation: false
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-performance-contract/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Performance Contract
 
 ## Purpose
@@ -18,7 +20,7 @@ This skill validates that changes respect:
 - subsystem hot-path contracts in `docs/subsystems/*.md`
 
 ## When to Use
-- Every PR review in Exeris Kernel (mandatory)
+- Any PR that can touch runtime code paths (skip for docs-only or pure test/tooling changes — classify scope first)
 - Any change touching runtime, transport, flow, memory, persistence, telemetry, or bootstrap
 - Any change that can affect allocations, concurrency model, or off-heap memory movement
 
