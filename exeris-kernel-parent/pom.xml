@@ -22,6 +22,7 @@
     <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <checkstyle.config.location>checkstyle.xml</checkstyle.config.location>
         <exec.maven.plugin.version>3.5.0</exec.maven.plugin.version>
 
         <!-- Benchmark parameters — all overridable on CLI with -D -->
@@ -155,7 +156,14 @@
                     </dependency>
                 </dependencies>
                 <configuration>
-                    <configLocation>checkstyle.xml</configLocation>
+                    <!--
+                        A property, not a literal. `checkstyle.config.location` is the plugin's
+                        documented user property, but an explicit <configLocation> in the pom
+                        overrides it silently: `-Dcheckstyle.config.location=/nonexistent.xml`
+                        does not even fail. That is how the shared javadoc-gate came to run this
+                        ruleset instead of its own, and report clean.
+                    -->
+                    <configLocation>${checkstyle.config.location}</configLocation>
                     <consoleOutput>true</consoleOutput>
                     <failsOnError>true</failsOnError>
                 </configuration>
