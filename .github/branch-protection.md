@@ -34,8 +34,9 @@ Names must match the workflow's `name:` exactly.
 |:--|:--|:--|
 | `Build & TCK Verification` | `maven.yml` | The reactor and the TCK. Nothing merges past a red build. |
 | `SPI Compatibility Gate` | `maven.yml` | japicmp against the release baseline — the stability matrix is only a promise while this runs. |
-| `SonarCloud Code Analysis` | SonarCloud | The quality gate on new code. Reported by the SonarCloud app, not by a workflow in this repository. |
-| `Persistence RLS/Interceptor Gate` | `maven.yml` | Row-level security is a security contract; a green build with a broken interceptor is the failure this catches. |
+| `SonarCloud Code Analysis` | SonarCloud app | The quality gate on new code. The *scan* is a step **inside** `Build & TCK Verification` (`SonarQube Cloud Analysis`), so requiring that job already forces the analysis to run; this separate context is the app's verdict on the result, which is a different thing and is required separately. |
+| `SonarCloud` | SonarCloud app | The app's second, faster status. Not required — two contexts from one app, and requiring both buys nothing. |
+| `Persistence RLS/Interceptor Gate` | `maven.yml` | Row-level security is a security contract; a green build with a broken interceptor is the failure this catches. It is its **own job** (`needs: build-and-verify`), not a step inside the build — requiring `Build & TCK Verification` does not require it, because a ruleset requires check contexts and a job is one context. |
 | `Kafka Integration Gate` | `maven.yml` | The Community Kafka binding against a real broker. |
 | `Recovery Continuity Gate` | `maven.yml` | Restart and snapshot recovery for `Flow`. |
 | `Transport Stress Gate` | `maven.yml` | Native I/O under load — the tier where a regression is silent in unit tests. |
@@ -52,11 +53,17 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   Requiring it by name pins the ruleset to a version string and a matrix edit silently drops the
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with
   `needs:`.
+- **`javadoc-gate`** — red by design on arrival: 62 doclint errors and 100 warnings on
+  `exeris-kernel-spi`, measured 2026-09-05. It is the worklist for the Javadoc sweep and becomes
+  requirable when that count is zero. Runs under the `javadoc-gate` profile, which exists only for
+  this job — the `release` profile keeps `doclint none` so publishing never waits on prose.
 - **`docs-review`** — an L2 review (ADR-085 §J.33). It produces findings for a human to weigh, and
   a reviewer's judgement is not a merge gate.
 - **`Analyze (java-kotlin)`** (CodeQL), **`Scan PR Dependencies`**, **`security/snyk`** — advisory
   security surfaces. They are watched, not gated, so a third-party advisory database update cannot
-  block an unrelated merge on its own.
+  block an unrelated merge on its own. The CodeQL context is `Analyze (java-kotlin)` — read from
+  `/repos/.../commits/<sha>/check-runs`, not from `codeql.yml`, whose job is named `Analyze Java`.
+  The action renames its own check run, which is exactly why this table is derived from the API.
 - **`JMH Benchmarks (Community + Core)`**, **`Parse JFR → Lab JSON`**, **`Publish JFR Data → GH
   Pages`** — run on push and schedule against `main` only, and report `skipping` on a pull request.
 
