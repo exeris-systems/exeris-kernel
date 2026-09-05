@@ -55,15 +55,30 @@ The `ThreadLocal`, `Executors`, `CompletableFuture` and `Unsafe` bans are ArchUn
 rules. If the architecture guard did not run, nothing has checked them — a green `mvn clean install`
 that skipped the guard proves nothing here.
 
-**Reach is a property of the classpath, not of the rule text.** `ExerisArchitectureTest` lives in
-`exeris-kernel-tck` and is declared `@AnalyzeClasses(packages = "eu.exeris.kernel")`, which reads as
-repository-wide. It is not: that module's only compile dependency is `exeris-kernel-spi`, so no Core
-and no Community class is ever on its classpath, and none is inspected. A `ThreadLocal` in Core
-leaves the suite green. Verify a ban by looking at what the suite can load, never by reading the
-rule's `packages` argument.
+**Reach is a property of the classpath, not of the rule text.** Every suite below declares
+`@AnalyzeClasses` over a package prefix that reads wider than what its module can actually load.
+Measured on this branch:
 
-Nothing on this branch inspects Core or Community for these four bans. Treat every such finding in
-those tiers as review work, and say so rather than citing a guard that did not see the class.
+| Suite | Module | Sees | Enforces |
+|:--|:--|:--|:--|
+| `ExerisArchitectureTest` | `exeris-kernel-tck` | **SPI only** — that module's one compile dependency is `exeris-kernel-spi` | the four bans, plus `noStructuredTaskScopeInSchedulingSpi` |
+| `KernelTierDirectionArchitectureTest` | `exeris-kernel-community` | all three tiers, and it asserts non-vacuity per tier so a missing classpath fails loudly | `coreDoesNotDependOnCommunity`, `spiDependsOnNeitherCoreNorCommunity` |
+| `CommunitySchedulingArchitectureTest` | `exeris-kernel-community` | `eu.exeris.kernel.community.scheduling` only | `noStructuredTaskScope`, `noThreadLocal`, `noExecutors` |
+
+Neither suite reaches `exeris-kernel-community-kafka` or `exeris-kernel-diagnostics-cli`; both are
+leaves nothing depends on.
+
+**Where the four bans do and do not reach on this branch.** They are executable over the **SPI**
+(`ExerisArchitectureTest`) and over **`community.scheduling`** (`CommunitySchedulingArchitectureTest`).
+Core, and Community outside `scheduling`, are **not** guarded for the four bans here — that gap is
+closed on the development line by `KernelTierBanArchitectureTest`. Until it reaches this branch, a
+`ThreadLocal` in Core is a review finding, not a build failure. **Direction is a different matter and
+is fully guarded**: `coreDoesNotDependOnCommunity` runs over all three tiers today.
+
+Verify a ban by what the suite can load, never by reading its `packages` argument — and remember
+that the guard living in `exeris-kernel-community` never runs under a `-pl exeris-kernel-tck -am`
+invocation, because `-am` builds that module's dependencies, and Community is not one of them.
+
 
 ## Related
 

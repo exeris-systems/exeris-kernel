@@ -65,14 +65,15 @@ workflows:
   - workflows/spi-purity.md
 
 adapters:
-  # No renderer exists yet, so both sets are refreshed by hand and every generated file carries the
-  # do-not-edit marker twice: once as a YAML comment inside the frontmatter, because the checker
-  # reads only the first 600 characters and Copilot's tool lists are longer than that, and once as
-  # an HTML comment below it for a human opening the file. See .claude/README.md.
+  # Both sets are rewritten by tools/agent-adapter-check/agent-adapter-render.sh, which preserves
+  # each destination's own frontmatter and replaces the body. Every generated file carries the
+  # do-not-edit marker twice: once as a YAML comment inside the frontmatter, because the
+  # organisation gate reads only the first 600 characters and Copilot's tool lists are longer than
+  # that, and once as an HTML comment below it for a human opening the file.
   claude:
     target: .claude
     generated: true
-    renderer: none
+    renderer: tools/agent-adapter-check/agent-adapter-render.sh
     map:
       skills: .claude/skills
       agents: .claude/agents
@@ -80,7 +81,7 @@ adapters:
   copilot:
     target: .github
     generated: true
-    renderer: none
+    renderer: tools/agent-adapter-check/agent-adapter-render.sh
     entry: .github/copilot-instructions.md
     map:
       skills: .github/skills
