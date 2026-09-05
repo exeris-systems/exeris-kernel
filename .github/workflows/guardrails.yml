@@ -40,5 +40,16 @@ jobs:
   docs-review:
     uses: exeris-systems/.github/.github/workflows/docs-review.yml@main
     secrets: inherit
-  # Not adopted yet: javadoc-gate. It needs `failOnWarnings` in the gated modules' pom
-  # (port java/javadoc-plugin-block.xml from the bundle); until then it has nothing to run.
+  # ADR-085 §F.21. Expected RED on the day it lands: 62 doclint errors and 100 warnings on
+  # exeris-kernel-spi, measured before switching it on. That is the reason to switch it on — the
+  # gate is the worklist, and a worklist nobody can see is a worklist nobody clears. It is a
+  # reported check and deliberately not a required one until the count reaches zero.
+  #
+  # `-Pjavadoc-gate` selects a profile that exists only for this job. The `release` profile keeps
+  # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
+  # the strict settings there instead would have made a red gate block a release.
+  javadoc:
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@main
+    with:
+      modules: exeris-kernel-spi
+      extra-maven-args: "-Pjavadoc-gate"
