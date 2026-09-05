@@ -28,9 +28,9 @@ cycle must add value — and **The Wall**, the SPI/implementation separation.
 Coordinates: groupId `eu.exeris.preview` **on this branch** (`eu.exeris` on the distributed line),
 packages `eu.exeris.kernel.<module>.<subsystem>`. Every subsystem
 has a contract document in [`docs/subsystems/`](docs/subsystems), and it outranks this file on that
-subsystem's behaviour. Versions and the active development base live in the root
-[`pom.xml`](pom.xml) and [`docs/ROADMAP.md`](docs/ROADMAP.md) — read them there rather than from a
-number written into an agent file, which is the first thing to rot.
+subsystem's behaviour. The active development base is written down nowhere in this repository: resolve it from the remote
+with `git branch -r --list 'origin/development/*' | sort -V | tail -1`, never from a version in a
+file ([branching](.agents/policies/branch-and-release.md)).
 
 ## Operating contract
 
@@ -76,7 +76,7 @@ them and bounds them; it does not restate them.
 
 | Path | What it holds |
 |:--|:--|
-| [`.agents/policies/`](.agents/policies) | What is permitted or forbidden: [the Wall](.agents/policies/the-wall.md), [scoped bans](.agents/policies/scoped-bans.md), [memory ownership](.agents/policies/memory-ownership.md), [the JDK track](.agents/policies/jdk-and-preview-track.md), [definition of done](.agents/policies/definition-of-done.md), [operating standards](.agents/policies/operating-standards.md), [branching](.agents/policies/branch-and-release.md). |
+| [`.agents/policies/`](.agents/policies) | What is permitted or forbidden: [the Wall](.agents/policies/the-wall.md), [scoped bans](.agents/policies/scoped-bans.md), [memory ownership](.agents/policies/memory-ownership.md), [the JDK track](.agents/policies/jdk-and-preview-track.md), [definition of done](.agents/policies/definition-of-done.md), [operating standards](.agents/policies/operating-standards.md), [branching](.agents/policies/branch-and-release.md), [the SonarQube MCP server](.agents/policies/sonarqube-mcp.md). |
 | [`.agents/references/`](.agents/references) | The short form of facts owned elsewhere — [build and CI](.agents/references/build-and-ci.md), [the testing model](.agents/references/testing-model.md). Each names its source and yields to it. |
 | [`.agents/skills/`](.agents/skills) | Bounded capabilities: PR-review and subsystem lenses, single-pass triage, and the workflow skills — preflight, ADR registration, JFR research, release integration, tagged gates. |
 | [`.agents/agents/`](.agents/agents) | Role profiles composed from those skills — router, architect, implementer, TCK, performance, docs. |
@@ -123,6 +123,6 @@ line, and an agent does not open pull requests or file issues on its own. Contri
 ## Provider adapters
 
 [`.claude/`](.claude) holds Claude Code adapters generated from `.agents/`, each carrying a
-do-not-edit marker naming its source, plus provider-owned configuration. There is no renderer yet,
-so they are refreshed by hand — see [`.claude/README.md`](.claude/README.md). `CLAUDE.md` points
-here.
+do-not-edit marker naming its source, plus provider-owned configuration. Rewrite them with
+`tools/agent-adapter-check/agent-adapter-render.sh` and verify with `…/agent-adapter-check.sh`;
+never edit an adapter. `CLAUDE.md` points here.

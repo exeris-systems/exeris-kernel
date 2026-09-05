@@ -36,7 +36,13 @@ last-verified: 2026-09-05
   local plans directory. In-repo planning is `docs/ROADMAP.md` and `docs/release/*` notes, nothing
   else.
 - **Concurrent sessions share this checkout.** Use a git worktree off a clean base; a parallel
-  branch switch can revert uncommitted edits in the primary tree.
+  branch switch can revert uncommitted edits in the primary tree. **Put the worktree outside the
+  repository** — a sibling directory such as `../exeris-kernel-wt-<slug>`, the shape already used
+  for `exeris-kernel-wt-0.7.1`. A worktree under `.claude/worktrees/` is git-ignored but still on
+  disk, and `agents_file_check.py` walks the working tree: it reads that worktree's own `AGENTS.md`
+  as a *nested* one and fails it against the 4 KB nested limit. Reproduced — `nested AGENTS.md is
+  7 KB (limit 4 KB), 1 errors` — so a repo-root gate run is only clean while no worktree is
+  unpacked.
 - **Contribution terms.** External contributions carry a `Signed-off-by:` trailer and are covered by
   the contributor agreement described in [`CONTRIBUTING.md`](../../CONTRIBUTING.md); AI-assisted
   commits keep their `Co-authored-by:` trailer. See

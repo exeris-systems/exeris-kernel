@@ -52,8 +52,22 @@ mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest \
   -Dpmd.skip=true -Dcheckstyle.skip=true test
 ```
 
-`-Dtest` activates the `targeted-test-run` profile, which unmasks tagged gates; when you need to
-exclude rather than select, use `-Dsurefire.excludesFile`.
+And the guards that live in `exeris-kernel-community`. **This is the invocation the tck one cannot
+substitute for**: `-pl exeris-kernel-tck -am` builds that module's dependencies, and Community is not
+one of them, so `coreDoesNotDependOnCommunity` never runs under it.
+
+```bash
+mvn -q -pl exeris-kernel-community -am \
+  -Dtest='KernelTierDirectionArchitectureTest,CommunitySchedulingArchitectureTest' \
+  -Dsurefire.failIfNoSpecifiedTests=false \
+  -Dpmd.skip=true -Dcheckstyle.skip=true test
+```
+
+Passing `-Dtest` here activates the `targeted-test-run` profile, which is declared **only** in
+`exeris-kernel-community/pom.xml` and replaces that module's excluded groups with `flamegraph` alone
+— so the tagged gates stop being masked for this module. That is what you want when selecting a
+suite by name, and a trap when you meant to exclude: use `-Dsurefire.excludesFile` for that. The
+profile does not exist in any other module, so it has no bearing on the tck command above.
 
 ## Tagged gates the default build excludes
 
