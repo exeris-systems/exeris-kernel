@@ -50,7 +50,11 @@ jobs:
   # Skips itself when no Markdown or Java changed.
   docs-review:
     uses: exeris-systems/.github/.github/workflows/docs-review.yml@main
-    secrets: inherit
+    # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
+    # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
+    # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
+    secrets:
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
   # ADR-085 §F.21. Expected RED on the day it lands: 62 doclint errors and 100 warnings on
   # exeris-kernel-spi, measured before switching it on. That is the reason to switch it on — the
   # gate is the worklist, and a worklist nobody can see is a worklist nobody clears. It is a
