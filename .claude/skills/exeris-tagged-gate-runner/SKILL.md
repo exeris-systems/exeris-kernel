@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-tagged-gate-runner/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-tagged-gate-runner
 description: Run the tagged test gates (integration / continuity / stress) that the default build EXCLUDES, mapped from what a change touched. Use before claiming definition-of-done when touched code is covered by @Tag'd tests, or to reproduce a CI gate (persistence RLS, Kafka, recovery continuity, transport stress) locally.
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-tagged-gate-runner/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Tagged Gate Runner
 
 ## Purpose
@@ -27,7 +29,7 @@ description: Run the tagged test gates (integration / continuity / stress) that 
 
 1. **Confirm coverage.** For each touched module: `git grep -l '@Tag("<tag>")' -- '<module>/src/test'`. If a touched area appears in the map above, its gate is required.
 
-2. **Preconditions.** Docker running (Testcontainers pulls Postgres/Kafka); JDK 26 with `--enable-preview` active. Tagged runs are slower than the default suite — expect minutes, not seconds.
+2. **Preconditions.** Docker running (Testcontainers pulls Postgres/Kafka); JDK 28 EA with `--enable-preview` active, as this line requires. Tagged runs are slower than the default suite — expect minutes, not seconds.
 
 3. **Run each required gate exactly as CI does** (install deps first, then the tagged run; the empty `-DexcludedGroups=` is REQUIRED — without it Surefire keeps the default exclusion and silently runs nothing):
 

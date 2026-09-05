@@ -10,6 +10,48 @@ the barrier to contribution, not to enforce bureaucracy.
 
 ---
 
+## Licence, contributor terms and provenance
+
+**Licence.** [`LICENSE`](LICENSE) is the index; the tier files beside it are the operative texts —
+[`LICENSE-COMMUNITY`](LICENSE-COMMUNITY) for everything in this repository and
+[`LICENSE-ENTERPRISE`](LICENSE-ENTERPRISE) for the separately distributed Enterprise tier. Read the
+file rather than a summary: the Community tier on this branch is not plain Apache-2.0.
+
+**Sign-off.** An external contribution carries a `Signed-off-by:` trailer (`git commit -s`). It is a
+Developer Certificate of Origin sign-off: it certifies that you have the right to submit the work
+under the licence this repository publishes, and it grants nothing beyond that. Organisation members
+are exempt from the trailer, not from being accountable for what they merge.
+
+**Contributor agreement.** This is an open-core project, and a contribution the project may also
+ship in the commercial tier needs a right that inbound-equals-outbound does not supply. That right
+comes from a separate, non-exclusive contributor licence agreement. It does not transfer your
+copyright, and it carries a promise back: your contribution stays available under the licence in
+force on the day you submitted it. The agreement text and the signing flow are still being
+finalised — until they exist a pull request is not blocked on them, but a contribution merged in the
+meantime is merged on that understanding, and you will be asked to sign retroactively. If that is
+not acceptable, say so on the pull request and it will be held.
+
+**AI provenance.** Exeris is built with AI assistance as a matter of course, and states the terms
+rather than hiding them. They are
+[`ai-provenance.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/ai-provenance.md),
+and they are short:
+
+- An AI-assisted commit keeps its `Co-authored-by:` trailer. Stripping it is a defect; adding it
+  where no AI was involved is a lie, and is treated the same.
+- **A named human is accountable for every line.** You must be able to explain and defend any part
+  of the change in review. "The agent produced it" is not an answer — it is the reason the question
+  is being asked.
+- **Agents do not open pull requests, file issues or post comments without a human author.**
+  Automated *review* comments are fine; automated *contributions* are not.
+- A pull request states the commands run after the last push. A green default build says nothing
+  about the tagged gates, and a skip-flagged build says nothing about lint.
+- AI-generated tests that assert nothing observable are rejected. Tests follow this repository's
+  philosophy — TCK-first, semantics over volume — not a line count.
+- The description is what you would have written unaided: what it does, what it costs, what it does
+  not cover. Not a transcript.
+
+---
+
 ## Prerequisites
 
 ### Java Version

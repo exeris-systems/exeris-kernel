@@ -1,11 +1,13 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-docs-adr-check/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-docs-adr-check
 description: 'Documentation and ADR consistency review for Exeris Kernel. Use when PRs may cause doc drift, architectural intent changes, or mismatch between repository reality and documented target-state.'
 argument-hint: 'PR scope, changed modules/subsystems, and expected architecture/doc impact'
 user-invocable: true
 disable-model-invocation: false
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-docs-adr-check/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Docs ADR Check
 
 ## Purpose
@@ -37,7 +39,7 @@ Keep code, docs, and architectural decisions synchronized without over-documenti
 - ADR intent is preserved; deviations are explicit and justified.
 
 ## Output Contract
-For each finding: drift -> impact -> minimal doc/ADR action.
+For each finding: drift → impact → minimal doc/ADR action.
 
 ## Non-Negotiable Rules
 - Do not let docs outrun code.

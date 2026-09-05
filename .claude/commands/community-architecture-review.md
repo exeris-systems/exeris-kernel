@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-architecture-review.md (agents-md-schema.md rule 7). Edit the source.
 description: Review an Exeris change for Open-Core architecture placement, boundary integrity, ADR/contract alignment, and minimal safe direction.
 argument-hint: PR diff or task scope to review
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-architecture-review.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this change as an Exeris Community/Open-Core architecture task.
 
 Context:

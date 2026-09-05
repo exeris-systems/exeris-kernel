@@ -1,11 +1,13 @@
 ---
+# DO NOT EDIT — generated from .agents/skills/exeris-service-loader-and-bootstrap/SKILL.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-service-loader-and-bootstrap
 description: 'Plugin-model and lifecycle PR review for Exeris Kernel. Use for changes touching ServiceLoader semantics, provider discovery, bootstrap DAG, fail-fast/degrade policy, and SPI→Core→Driver boundaries while keeping Core driver-agnostic.'
 argument-hint: 'PR scope, changed providers/bootstrap flow, and expected lifecycle behavior'
 user-invocable: true
 disable-model-invocation: false
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/skills/exeris-service-loader-and-bootstrap/SKILL.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 # Exeris Service Loader and Bootstrap
 
 ## Purpose
@@ -67,7 +69,7 @@ This skill verifies that Core remains driver-agnostic while provider discovery, 
    - Enumerate changed provider contracts, discovery paths, and bootstrap transitions.
 
 2. **Build bootstrap matrix**
-   - For each subsystem/provider: discovery source -> validation step -> DAG node -> failure behavior.
+   - For each subsystem/provider: discovery source → validation step → DAG node → failure behavior.
 
 3. **Verify policy and determinism**
    - Validate fail-fast/degrade semantics and deterministic provider selection.

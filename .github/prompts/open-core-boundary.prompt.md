@@ -1,10 +1,15 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/open-core-boundary.md (agents-md-schema.md rule 7). Edit the source.
 name: open-core-boundary
 description: 'Review Exeris changes through Open-Core boundary: SPI/Core/Community/Enterprise placement, leakage risks, and smallest boundary-safe approach.'
 argument-hint: 'Change scope to evaluate through Open-Core split'
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/open-core-boundary.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this change specifically through the Exeris Open-Core boundary.
+
+Change:
+$ARGUMENTS
 
 Questions to answer:
 1. Is this capability part of SPI contract, Core shared infrastructure, Community OSS implementation, or Enterprise-only specialization?

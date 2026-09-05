@@ -1,8 +1,10 @@
 ---
+# DO NOT EDIT — generated from .agents/workflows/community-performance-memory.md (agents-md-schema.md rule 7). Edit the source.
 description: Review Exeris Community runtime changes for hot-path allocation/copy churn, ownership lifecycle, runtime risk, and observability expectations.
 argument-hint: Hot-path or memory-sensitive change scope
 ---
-
+<!-- DO NOT EDIT. Generated from .agents/workflows/community-performance-memory.md by the AGENTS.md adapter step
+     (agents-md-schema.md rule 7). Edit the source, not this file. -->
 Review this Exeris Community change as a runtime hot-path and memory-lifecycle task.
 
 Scope:
