@@ -55,20 +55,28 @@ The `ThreadLocal`, `Executors`, `CompletableFuture` and `Unsafe` bans are ArchUn
 rules. If the architecture guard did not run, nothing has checked them — a green `mvn clean install`
 that skipped the guard proves nothing here.
 
-**Two suites, and the split is about classpath reach, not about taste.** Both declare
-`@AnalyzeClasses(packages = "eu.exeris.kernel")`, which reads as repository-wide, and neither is:
+**Reach is a property of the classpath, not of the rule text.** Every suite below declares
+`@AnalyzeClasses` over a package prefix that reads wider than what its module can actually load.
+Measured on this branch:
 
-- `ExerisArchitectureTest` (`exeris-kernel-tck`) sees only the SPI, because that module's one
-  compile dependency is `exeris-kernel-spi`.
-- `KernelTierBanArchitectureTest` (`exeris-kernel-community`) is where the same four bans reach Core
-  and Community — that being the first module with all three tiers on one classpath.
+| Suite | Module | Sees | Enforces |
+|:--|:--|:--|:--|
+| `ExerisArchitectureTest` | `exeris-kernel-tck` | **SPI only** — that module's one compile dependency is `exeris-kernel-spi` | the four bans, plus `noStructuredTaskScopeInSchedulingSpi` |
+| `KernelTierDirectionArchitectureTest` | `exeris-kernel-community` | all three tiers, and it asserts non-vacuity per tier so a missing classpath fails loudly | `coreDoesNotDependOnCommunity`, `spiDependsOnNeitherCoreNorCommunity` |
+| `CommunitySchedulingArchitectureTest` | `exeris-kernel-community` | `eu.exeris.kernel.community.scheduling` only | `noStructuredTaskScope`, `noThreadLocal`, `noExecutors` |
+| `KernelTierBanArchitectureTest` | `exeris-kernel-community` | all three tiers | the four bans above, across Core and Community |
 
-Neither suite sees `exeris-kernel-community-kafka` or `exeris-kernel-diagnostics-cli`; both are
-leaves nothing depends on. Until v0.12 only the first suite existed and its rules named the whole
-repository, so a `ThreadLocal` in Core left it 13/13 green — measured, not supposed.
+Neither suite reaches `exeris-kernel-community-kafka` or `exeris-kernel-diagnostics-cli`; both are
+leaves nothing depends on.
 
-Verify a ban by looking at what the suite can load, never by reading the rule's `packages`
-argument.
+**Where the four bans do and do not reach on this branch.** `KernelTierBanArchitectureTest` covers Core and
+Community, `ExerisArchitectureTest` covers the SPI, and `CommunitySchedulingArchitectureTest` covers
+the scheduling driver twice over. There is no untested tier for these four.
+
+Verify a ban by what the suite can load, never by reading its `packages` argument — and remember
+that the guard living in `exeris-kernel-community` never runs under a `-pl exeris-kernel-tck -am`
+invocation, because `-am` builds that module's dependencies, and Community is not one of them.
+
 
 ## Related
 

@@ -32,9 +32,12 @@ Make the recurring milestone→main integration deterministic. The flow below ma
 
 4. **Repo-doc sync in the same PR.**
    - `docs/ROADMAP.md` milestone status.
-   - No agent file carries the active development version any more: `.agents/policies/branch-and-release.md`
-     points at the root `pom.xml` and `docs/ROADMAP.md` instead, so there is no "Base branch" line to bump.
-     Check that those two do name the new line.
+   - Nothing needs bumping for the base branch: no file in this repository names the active
+     development line, by design — it is resolved from the remote
+     (`git branch -r --list 'origin/development/*' | sort -V | tail -1`). Do **not** "fix" that by
+     writing the new version into `docs/ROADMAP.md` or an agent file; that is the drift
+     `.agents/policies/branch-and-release.md` exists to prevent. Cutting the next
+     `development/X.Y.0` branch is what makes the resolver return it.
 
 5. **The integration PR.** Single PR `release(x.y.z): integrate vX.Y.0 milestone into main`, base `main`, head `development/X.Y.0`. Run `exeris-pr-preflight` before pushing. Never commit to `main` directly.
 

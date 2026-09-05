@@ -18,10 +18,13 @@ skipped.
 2. **Lint-clean on the changed modules.** Step 1 covers this **unless** any `-Dpmd.skip` or
    `-Dcheckstyle.skip` was used anywhere in the loop; then re-check standalone. No new PMD or
    Checkstyle suppression without written justification.
-3. **The architecture guards green** — `ExerisArchitectureTest`, and `KernelTierBanArchitectureTest`
-   too when the change touched Core or Community, since that is the suite whose classpath can see
-   them. Run them yourself; do not assume CI covers it — the guard has historically been
-   `@ArchIgnore`'d ([`scoped-bans.md`](scoped-bans.md)).
+3. **The architecture guards green — all of them.** The inventory and what each can see is
+   [`scoped-bans.md`](scoped-bans.md); the commands are
+   [`../references/build-and-ci.md`](../references/build-and-ci.md). Run them yourself rather than
+   assuming CI covers it — the guard has historically been `@ArchIgnore`'d. **One invocation is not
+   enough:** `-pl exeris-kernel-tck -am` never builds `exeris-kernel-community`, so
+   `coreDoesNotDependOnCommunity` — the rule that would catch a Core → Community import — does not
+   run under it.
 4. **Contract or SPI change → TCK and binding tests updated and green**, and the tagged gates run if
    their subject changed. A green default build is not evidence about a tagged test.
 5. **Docs and ADR impact triaged** (`exeris-doc-impact-triage`); drift fixed, or deferred with a

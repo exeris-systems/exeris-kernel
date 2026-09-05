@@ -453,7 +453,13 @@ Enterprise eliminates this via native off-heap DB drivers.
 
 Before submitting a PR, verify the following:
 
-### Banned Patterns (L0 Enforcement)
+### Banned Patterns
+
+The authoritative list — with the scope class each ban applies to, and which ArchUnit suite actually
+enforces it over which tier — is [`.agents/policies/scoped-bans.md`](.agents/policies/scoped-bans.md).
+Change that file first; the table below is the contributor-facing summary of it. Note that "banned"
+here means *by policy*: only some of these are executable, and only over some tiers.
+
 
 | Pattern                                  | Why banned                                           | What to use instead               |
 |:-----------------------------------------|:-----------------------------------------------------|:-----------------------------------|
@@ -470,7 +476,10 @@ Before submitting a PR, verify the following:
 
 - `exeris-kernel-spi` must import **nothing** outside `java.*` and `jdk.*`.
 - `exeris-kernel-core` must import **nothing** from `community` or `enterprise`.
-- `exeris-kernel-community` must import **nothing** from `core` internals (only SPI).
+- `exeris-kernel-community` imports the SPI **and a specific set of Core packages** — it always has;
+  the pom declares `exeris-kernel-core`. The permitted set is enumerated in
+  [`.agents/policies/the-wall.md`](.agents/policies/the-wall.md); reaching a Core package outside it
+  is a boundary change and needs an ADR. What is guarded executably is the other direction.
 - If you add a new `ExerisKernelException` subclass, you **must** add a `rawArgs` layout
   comment and register the error code in `KernelErrorCodes.java`.
 - If you add a new SPI interface, you **must** add a corresponding `Abstract*Tck` class
