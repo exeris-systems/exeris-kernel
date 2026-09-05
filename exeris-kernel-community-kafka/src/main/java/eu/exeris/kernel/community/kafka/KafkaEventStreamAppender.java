@@ -56,7 +56,7 @@ import java.util.function.LongBinaryOperator;
  * {@link AppendResult} / {@link EventStreamAppendConflictException}. The {@link Producer} is owned by
  * the caller (mirrors {@link KafkaEventBrokerPort}) — this appender never closes it.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class KafkaEventStreamAppender implements EventStreamAppender {
 

@@ -19,7 +19,7 @@ import java.util.Optional;
  * @param capturedAt    the instant this snapshot was captured (best-effort, per-call)
  * @param requestedName the name passed to {@link KernelDiagnostics#describeSubsystem(String)}
  * @param subsystem     the subsystem detail, or empty when not found
- * @since 0.9.0
+ * @since 0.9
  */
 public record SubsystemSnapshot(
         String schemaVersion,

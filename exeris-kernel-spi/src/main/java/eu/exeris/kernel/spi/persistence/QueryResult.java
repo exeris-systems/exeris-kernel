@@ -39,7 +39,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  *
  * @see RowCursor
  * @see PersistenceConnection
- * @since 0.5.0
+ * @since 0.5
  */
 public interface QueryResult extends AutoCloseable {
 

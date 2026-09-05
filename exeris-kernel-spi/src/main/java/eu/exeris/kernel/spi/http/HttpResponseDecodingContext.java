@@ -25,7 +25,7 @@ import java.util.Objects;
  * @param headers   immutable response headers; non-null, may be empty
  * @param allocator allocator for any auxiliary off-heap buffers a decoder may need; may be
  *                  {@code null}
- * @since 0.8.0
+ * @since 0.8
  */
 public record HttpResponseDecodingContext(
         int status,
@@ -42,7 +42,7 @@ public record HttpResponseDecodingContext(
      *
      * @param status  wire status code
      * @param headers immutable response headers; non-null, may be empty
-     * @since 0.12.0
+     * @since 0.12
      */
     public HttpResponseDecodingContext(int status, List<HttpHeader> headers) {
         this(status, headers, null);

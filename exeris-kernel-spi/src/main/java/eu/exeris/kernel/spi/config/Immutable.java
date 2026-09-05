@@ -59,7 +59,7 @@ import java.lang.annotation.Target;
  * provider.guardImmutable("security.properties", "security.jwks.uri");
  * }</pre>
  *
- * @since 0.9.0
+ * @since 0.9
  * @see Dynamic
  * @see ConfigProvider#guardImmutable(String, String)
  * @see eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_CFG_1004

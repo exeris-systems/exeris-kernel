@@ -24,7 +24,7 @@ import java.util.UUID;
  *       graph load.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface PathFinder {
 

@@ -19,7 +19,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5003}
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class GraphSyncException extends ExerisKernelException {
 

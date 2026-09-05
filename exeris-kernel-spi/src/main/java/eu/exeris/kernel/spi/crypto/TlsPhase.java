@@ -28,7 +28,7 @@ package eu.exeris.kernel.spi.crypto;
  * <p>Enum constants are singletons — safe as {@code value record} fields.
  * Ordinal-based dispatch in the underlying TLS state machine is O(1).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see TlsSessionState
  */
 public enum TlsPhase {

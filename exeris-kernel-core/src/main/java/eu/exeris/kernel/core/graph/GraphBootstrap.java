@@ -36,7 +36,7 @@ import java.util.Objects;
  * <p>This class imports only {@code exeris-kernel-spi}. It has zero knowledge of
  * HikariCP, Bolt, io_uring, or any Community/Enterprise implementation class.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#GRAPH_ENGINE
  */
 public final class GraphBootstrap {

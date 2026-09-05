@@ -28,7 +28,7 @@ import java.util.Objects;
  * @param leakDetection           Leak detection mode. {@code DISABLED} in production.
  * @param jfrEnabled              Whether to emit JFR events on allocation lifecycle.
  * @see MemoryProvider
- * @since 0.5.0
+ * @since 0.5
  */
 public record MemoryProviderConfig(
         long totalOffHeapBytes,

@@ -26,7 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>{@value KernelErrorCodes#EX_JOB_9003} — a job body threw</li>
  * </ul>
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class JobSchedulerException extends ExerisKernelException {
 

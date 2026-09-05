@@ -22,7 +22,7 @@ package eu.exeris.kernel.spi.flow;
  * <p>This interface is <strong>implementation-blind</strong>: no reference to any
  * storage driver, lock type, or concrete data structure appears here.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#IDEMPOTENCY_GUARD
  */
 public interface IdempotencyGuard {

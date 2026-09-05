@@ -26,7 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * index 2..N → Object extraRawArgs (optional native context, e.g. result code, symbol name)
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CryptoBootstrapException extends ExerisKernelException {
 

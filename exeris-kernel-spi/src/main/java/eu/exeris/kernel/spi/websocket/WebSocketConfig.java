@@ -37,7 +37,7 @@ import java.util.Set;
  *                               lets any page the user has visited open a connection carrying their
  *                               cookies. Forgetting this produces a refusal somebody notices, rather
  *                               than a hole nobody does
- * @since 0.12.0
+ * @since 0.12
  */
 public record WebSocketConfig(
         String bindHost,

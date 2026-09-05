@@ -54,7 +54,7 @@ import jdk.jfr.StackTrace;
  * {@link Event#isEnabled()} before allocating, so an inactive recording costs no heap.
  * {@link StackTrace @StackTrace(false)} keeps the release path off the stack-walker.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @Name("eu.exeris.kernel.persistence.ConnectionHold")
 @Label("Persistence Connection Hold")

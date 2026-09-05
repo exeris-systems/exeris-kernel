@@ -22,7 +22,7 @@ import jdk.jfr.StackTrace;
  * thread (carrier-bound {@code EventWriter} straddle → SIGSEGV; the {@code ConnectionAcquireEvent}
  * precedent). This event records the park decision, not its duration.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @Name("eu.exeris.kernel.http.StreamBackpressurePark")
 @Label("HTTP Stream Backpressure Park")

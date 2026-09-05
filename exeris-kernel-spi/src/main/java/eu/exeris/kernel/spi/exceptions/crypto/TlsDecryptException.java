@@ -28,7 +28,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * {@code Object → Throwable → Exception → RuntimeException →
  * ExerisKernelException → TlsDecryptException}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class TlsDecryptException extends ExerisKernelException {
 

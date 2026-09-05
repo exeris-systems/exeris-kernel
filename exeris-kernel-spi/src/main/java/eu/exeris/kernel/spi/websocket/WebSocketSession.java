@@ -32,7 +32,7 @@ import java.util.UUID;
  *                     handshake, empty for an unscoped connection. Captured rather than owned here:
  *                     it stops being ambient and becomes the connection's, but its source is the
  *                     established context
- * @since 0.12.0
+ * @since 0.12
  */
 // `id` follows StreamEvent, which carries the same suppression for the same reason: it is the
 // name the field has everywhere it is read, and lengthening it to satisfy a rule would make the

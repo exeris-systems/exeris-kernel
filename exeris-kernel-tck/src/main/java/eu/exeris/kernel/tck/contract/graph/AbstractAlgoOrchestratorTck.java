@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * work to the {@link PathFinder} SPI. This TCK validates the full round-trip through
  * the SPI contract — implementation correctness flows directly to orchestrator correctness.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("TCK: PathFinder SPI — algorithm correctness contract")
 public abstract class AbstractAlgoOrchestratorTck {

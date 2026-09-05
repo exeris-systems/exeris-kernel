@@ -16,7 +16,7 @@ import org.junit.jupiter.api.DisplayName;
  * <p>{@code provider.authenticate(token)} — token validation must never block
  * a carrier thread (no synchronized, no blocking I/O on the hot path).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
  * @see SecurityZeroAllocTck
  */

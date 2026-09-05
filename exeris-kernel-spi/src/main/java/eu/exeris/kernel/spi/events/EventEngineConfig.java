@@ -41,7 +41,7 @@ import java.util.Objects;
  *                            exhaustion) raise the same code with the same rawArgs layout.
  *                            (since 0.7.0)
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // 12 fields — flat-record config carrier; nesting would obscure ServiceLoader mapping
 @SuppressWarnings("PMD.ExcessiveParameterList")
@@ -87,7 +87,7 @@ public record EventEngineConfig(
      * Convenience 11-arg constructor — for callers that do not care about the publish-overflow
      * policy. Defaults {@code busPublishFailFast = false} (blocking mode: never-drop).
      *
-     * @since 0.7.0
+     * @since 0.7
      */
     public EventEngineConfig(
             String  engineName,

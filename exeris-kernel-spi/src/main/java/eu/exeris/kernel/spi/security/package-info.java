@@ -56,7 +56,7 @@
  *       slab-bound storage context. Lives in {@code exeris-kernel-enterprise}.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.security;
 

@@ -25,7 +25,7 @@ package eu.exeris.kernel.spi.persistence;
  * <h2>Valhalla Readiness</h2>
  * <p>Enum — identity-safe by definition. No migration needed for JEP 401.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see PersistenceConnection
  */
 public enum TransactionIsolation {

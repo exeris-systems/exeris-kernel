@@ -37,7 +37,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *
  * @param <T> the entity type to encode (SHOULD be an immutable record)
  * @see EntityDecoder
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface EntityEncoder<T> {

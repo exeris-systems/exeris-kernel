@@ -19,7 +19,7 @@ import java.lang.foreign.ValueLayout;
  * <h2>Termination</h2>
  * <p>The chunked message is terminated by a final chunk with size 0, followed by CRLF CRLF.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class Http1ChunkedEncoder {
 

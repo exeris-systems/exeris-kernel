@@ -30,7 +30,7 @@ import jdk.jfr.StackTrace;
  * analysis of TLS session bootstrap failures across both Community (fd-owner BIO)
  * and Enterprise (Memory-BIO / QUIC) transport tiers.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.tls.EngineBind")
 @Label("TLS Engine Bind")

@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.http;
  * {@code @StackTrace(false)} on {@link #start()} and {@link #stop()} for
  * zero-overhead lifecycle telemetry.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface HttpServerEngine extends AutoCloseable {
 

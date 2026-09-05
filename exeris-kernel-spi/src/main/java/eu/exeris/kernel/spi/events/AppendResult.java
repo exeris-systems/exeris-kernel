@@ -20,7 +20,7 @@ package eu.exeris.kernel.spi.events;
  *
  * @param committedSequence the 1-based per-stream sequence assigned to the appended event
  *        (the stream's new head); always {@code >= 1}
- * @since 0.10.0
+ * @since 0.10
  * @see EventStreamAppender
  */
 public record AppendResult(long committedSequence) {

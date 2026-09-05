@@ -58,7 +58,7 @@ import java.lang.annotation.Target;
  *   <li>After JVM warm-up, JIT may constant-fold if the field is effectively final.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see ConfigProvider#watch(String, String, java.util.function.Consumer)
  */
 @Retention(RetentionPolicy.RUNTIME)

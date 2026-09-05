@@ -25,7 +25,7 @@ package eu.exeris.kernel.spi.security;
  *       time, never on the per-request hot path.</li>
  * </ul>
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public interface RoleRegistry {
 

@@ -44,7 +44,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * @see PersistenceEngine
  * @see PersistenceStatement
  * @see QueryResult
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.TooManyMethods") // SPI contract surface — method count is intrinsic
 public interface PersistenceConnection extends AutoCloseable {
@@ -67,7 +67,7 @@ public interface PersistenceConnection extends AutoCloseable {
      * @param sql query string (parameters marked with {@code $1, $2, ...} for PostgreSQL)
      * @return a statement ready for binding; caller MUST close via try-with-resources
      * @throws PersistenceProviderException on parse failure
-     * @since 0.5.0
+     * @since 0.5
      */
     PersistenceStatement prepare(String sql);
 
@@ -128,7 +128,7 @@ public interface PersistenceConnection extends AutoCloseable {
      * @param readOnly  if {@code true}, enables backend optimizations for read-only
      *                  workloads (PostgreSQL skips write conflict detection)
      * @throws PersistenceProviderException if already in a transaction
-     * @since 0.5.0
+     * @since 0.5
      */
     void beginTransaction(TransactionIsolation isolation, boolean readOnly);
 
@@ -205,7 +205,7 @@ public interface PersistenceConnection extends AutoCloseable {
      * @param <T>  the facility type
      * @return an {@link java.util.Optional} holding the unwrapped instance, or
      *         empty if this provider exposes no such facility
-     * @since 0.8.1
+     * @since 0.8
      */
     default <T> java.util.Optional<T> unwrap(Class<T> type) {
         return type.isInstance(this)

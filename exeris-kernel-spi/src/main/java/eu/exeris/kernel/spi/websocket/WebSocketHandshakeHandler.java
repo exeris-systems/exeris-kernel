@@ -29,7 +29,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
  * <p>This is also where a returning client is recognised, which is what makes consumer-side session
  * resumption possible at all — see {@link WebSocketSession}.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @FunctionalInterface
 public interface WebSocketHandshakeHandler {

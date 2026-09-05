@@ -16,7 +16,7 @@ import java.util.Objects;
  * @param status response status; non-null
  * @param headers additional response headers; non-null, may be empty
  * @param payload typed payload object; may be null
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpTypedResponse(
         HttpStatus status,

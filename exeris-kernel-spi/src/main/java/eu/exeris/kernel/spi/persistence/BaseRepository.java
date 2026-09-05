@@ -37,7 +37,7 @@ import java.util.Optional;
  *            MUST be a value-safe type: no identity operations ({@code ==}, {@code synchronized}).
  * @see EventStore
  * @see PersistenceConnection
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.ShortVariable")
 // id: domain identifier parameter — universally understood DDD term, not a meaningless abbreviation

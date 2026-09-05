@@ -41,7 +41,7 @@ import java.util.UUID;
  *
  * @see BaseRepository
  * @see ConnectionInterceptor
- * @since 0.5.0
+ * @since 0.5
  */
 public interface EventStore {
 
@@ -93,7 +93,7 @@ public interface EventStore {
      * @param eventType     fully-qualified event type name (e.g., {@code "OrderPlaced"})
      * @param payload       serialised event payload bytes; never {@code null} or empty
      * @param occurredAt    epoch-millisecond timestamp of when the event was raised
-     * @since 0.5.0
+     * @since 0.5
      */
     record OutboxEvent(
             UUID eventId,

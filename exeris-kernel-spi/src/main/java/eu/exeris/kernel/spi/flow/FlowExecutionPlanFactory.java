@@ -38,7 +38,7 @@ import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
  *       slab pools — zero heap allocation after {@link FlowEngine#start()}.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowDefinitionBuilder
  * @see FlowDefinition
  * @see FlowExecutionPlan
@@ -111,7 +111,7 @@ public interface FlowExecutionPlanFactory {
      * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if a migration is already
      *         registered for that definition and version
      * @throws UnsupportedOperationException if this factory does not support in-flight migration
-     * @since 0.11.0
+     * @since 0.11
      */
     default void registerMigration(String definitionName, int fromVersion, FlowDefinitionMigration migration) {
         throw new UnsupportedOperationException(

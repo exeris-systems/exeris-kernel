@@ -36,7 +36,7 @@ import eu.exeris.kernel.spi.flow.model.FlowTransitionDescriptor;
  * <p>Builder instances are <strong>not</strong> thread-safe. Create one builder per
  * definition and do not share it across threads.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowExecutionPlanFactory
  * @see FlowDefinition
  */
@@ -131,7 +131,7 @@ public interface FlowDefinitionBuilder {
      * @param version definition version; must be &gt;= {@code FlowDefinition.INITIAL_VERSION}
      * @return {@code this} builder for chaining
      * @throws UnsupportedOperationException if this builder does not support versioning
-     * @since 0.12.0
+     * @since 0.12
      */
     default FlowDefinitionBuilder version(int version) {
         throw new UnsupportedOperationException(

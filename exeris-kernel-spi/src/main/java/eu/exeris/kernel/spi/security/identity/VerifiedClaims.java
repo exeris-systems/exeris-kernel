@@ -24,7 +24,7 @@ import java.util.Set;
  * unverified or partially-verified token — producing a {@code VerifiedClaims} instance is itself
  * the assertion that verification succeeded.
  *
- * @since 0.10.0
+ * @since 0.10
  * @see TokenValidator
  * @see ClaimsMapper
  */

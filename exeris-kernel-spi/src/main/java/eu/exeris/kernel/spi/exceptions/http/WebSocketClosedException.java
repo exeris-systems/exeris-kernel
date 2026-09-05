@@ -28,7 +28,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <p>Message content never appears — not in the message, not in {@code rawArgs}. The text a handler
  * was trying to send is exactly the payload most likely to be sensitive.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class WebSocketClosedException extends ExerisKernelException {
 

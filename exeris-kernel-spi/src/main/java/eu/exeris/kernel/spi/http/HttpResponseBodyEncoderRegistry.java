@@ -7,7 +7,7 @@ package eu.exeris.kernel.spi.http;
 /**
  * SPI: Registry contract for typed response body encoder resolution.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface HttpResponseBodyEncoderRegistry {

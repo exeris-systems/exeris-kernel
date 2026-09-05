@@ -45,7 +45,7 @@ import java.util.concurrent.TimeUnit;
  * This benchmark validates that SLO by extrapolation: at 2M ops/s, 1M samples cost &lt; 500 ms total,
  * meaning per-request overhead &lt; 50 µs at 1% sampling (1 sample per 100 requests).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @State(Scope.Benchmark)
 @BenchmarkMode({Mode.Throughput, Mode.SampleTime})

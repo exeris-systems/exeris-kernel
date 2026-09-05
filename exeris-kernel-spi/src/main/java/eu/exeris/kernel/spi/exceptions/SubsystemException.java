@@ -44,7 +44,7 @@ package eu.exeris.kernel.spi.exceptions;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_BOOT_0002}
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class SubsystemException extends ExerisKernelException {
 

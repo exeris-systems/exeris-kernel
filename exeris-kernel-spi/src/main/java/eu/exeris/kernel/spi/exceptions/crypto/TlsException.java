@@ -25,7 +25,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <p>No string formatting occurs in any constructor. Numeric context is stored in
  * {@link #rawArgs()} for binary Glass-Box serialization by the Enterprise telemetry tier.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class TlsException extends ExerisKernelException {
 

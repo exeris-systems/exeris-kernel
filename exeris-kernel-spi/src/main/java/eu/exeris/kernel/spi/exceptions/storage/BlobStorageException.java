@@ -29,7 +29,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>{@value KernelErrorCodes#EX_BLOB_8006} — the remote store refused the request</li>
  * </ul>
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class BlobStorageException extends ExerisKernelException {
 

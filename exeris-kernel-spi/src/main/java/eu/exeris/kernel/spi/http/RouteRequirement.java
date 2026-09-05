@@ -42,7 +42,7 @@ import java.util.Set;
  * onto the admission path and breaks the performance contract ADR-014 §5 fixes for the neighbouring
  * RBAC decision. {@link #permitAll()} and {@link #authenticated()} return shared constants.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 // TooManyMethods: twelve methods on an immutable value carrier — four factories (one per shape the
 // contract offers), two accessors that exist specifically to keep the decision path allocation-free,
@@ -89,7 +89,7 @@ public final class RouteRequirement {
          * <p>Reaching a decision point unfolded is a defect, not a permission — see
          * {@link #abstain()}.
          *
-         * @since 0.12.0
+         * @since 0.12
          */
         ABSTAIN
     }
@@ -97,7 +97,7 @@ public final class RouteRequirement {
     /**
      * How a route executes, and therefore what a driver may hold across it.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public enum Execution {
         /** The handler returns promptly; request-scoped resources may be held for its duration. */
@@ -148,7 +148,7 @@ public final class RouteRequirement {
      * its unmatched routes.
      *
      * @return the shared abstention
-     * @since 0.12.0
+     * @since 0.12
      */
     public static RouteRequirement abstain() {
         return ABSTAIN;
@@ -158,7 +158,7 @@ public final class RouteRequirement {
      * Whether this is an abstention rather than a requirement.
      *
      * @return {@code true} if this policy declined to describe the route
-     * @since 0.12.0
+     * @since 0.12
      */
     public boolean isAbstention() {
         return kind == Kind.ABSTAIN;
@@ -213,7 +213,7 @@ public final class RouteRequirement {
      *
      * @return the execution shape; never {@code null}, {@link Execution#PROMPT} unless
      *         {@link #longRunning()} was called
-     * @since 0.12.0
+     * @since 0.12
      */
     public Execution execution() {
         return execution;
@@ -228,7 +228,7 @@ public final class RouteRequirement {
      * eagerly from paying for the facet.
      *
      * @return an equal requirement whose execution is {@link Execution#LONG_RUNNING}
-     * @since 0.12.0
+     * @since 0.12
      */
     public RouteRequirement longRunning() {
         if (execution == Execution.LONG_RUNNING) {

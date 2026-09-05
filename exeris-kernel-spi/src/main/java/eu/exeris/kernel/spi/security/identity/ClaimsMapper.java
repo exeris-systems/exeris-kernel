@@ -30,7 +30,7 @@ import eu.exeris.kernel.spi.security.PrincipalContext;
  *       returning a degraded principal (fail-closed).</li>
  * </ul>
  *
- * @since 0.10.0
+ * @since 0.10
  * @see VerifiedClaims
  * @see IdentityStorageMapping
  */

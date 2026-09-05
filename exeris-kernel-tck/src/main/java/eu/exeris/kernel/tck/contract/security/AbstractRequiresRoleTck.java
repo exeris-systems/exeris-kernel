@@ -54,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>The abstract drives the enforcer with a stub {@link RoleRegistry}; bindings
  * supply the enforcer factory.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public abstract class AbstractRequiresRoleTck {
 

@@ -20,7 +20,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5001}
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class GraphBootstrapException extends ExerisKernelException {
 

@@ -18,7 +18,7 @@ package eu.exeris.kernel.spi.flow.model;
  * <p>Do NOT use {@code ==}, {@code synchronized}, or {@code System.identityHashCode()}.
  * Use {@link #isSameInstance(FlowContext)} for identity checks.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface FlowContext {
 

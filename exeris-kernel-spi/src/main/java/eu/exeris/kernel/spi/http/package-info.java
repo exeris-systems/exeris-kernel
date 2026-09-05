@@ -29,7 +29,7 @@
  * and do not reflect the current repository layout.
  * </p>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.http;
 

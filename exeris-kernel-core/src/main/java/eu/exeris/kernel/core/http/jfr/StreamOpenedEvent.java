@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * operation in between — safe to emit from the stream's virtual thread (no carrier-bound
  * {@code EventWriter} straddle, the {@code ConnectionAcquireEvent} precedent).
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @Name("eu.exeris.kernel.http.StreamOpened")
 @Label("HTTP Stream Opened")

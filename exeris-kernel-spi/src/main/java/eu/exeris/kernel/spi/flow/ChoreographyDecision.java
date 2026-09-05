@@ -14,7 +14,7 @@ import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
  * {@link FlowExecutionPlan} (an SPI type). No broker types, no collections, no
  * {@link String} identity operations.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowChoreographyMapper
  */
 public sealed interface ChoreographyDecision

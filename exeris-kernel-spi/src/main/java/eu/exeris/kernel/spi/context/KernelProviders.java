@@ -77,7 +77,7 @@ import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
  * carrier-affine slab pool selection in {@link MemoryAllocator#allocateCarrierSlab(int)}
  * requires no argument threading — the index flows via {@code ScopedValue}.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="../../../../../../docs/subsystems/memory.md">memory.md</a>
  */
 // Central ScopedValue slot registry — it imports every SPI provider/engine type by
@@ -109,7 +109,7 @@ public final class KernelProviders {
      * ConfigProvider cfg = KernelProviders.config();
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<ConfigProvider> CURRENT_CONFIG = ScopedValue.newInstance();
 
@@ -189,7 +189,7 @@ public final class KernelProviders {
      * JFR-backed sinks guard themselves with an {@code isEnabled()} check so that a
      * disabled JFR recording costs approximately zero nanoseconds.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<List<TelemetrySink>> TELEMETRY_SINKS = ScopedValue.newInstance();
 
@@ -199,7 +199,7 @@ public final class KernelProviders {
      * <p>Use this slot only in bootstrap code that needs to introspect or reconfigure
      * the provider. Application code should use {@link #PERSISTENCE_ENGINE} directly.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<PersistenceProvider> PERSISTENCE_PROVIDER = ScopedValue.newInstance();
 
@@ -221,7 +221,7 @@ public final class KernelProviders {
      * }
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
 
@@ -237,7 +237,7 @@ public final class KernelProviders {
      * and bound here. Use this slot only in bootstrap code that needs to introspect or
      * reconfigure the provider. Application code should use {@link #EVENT_ENGINE} directly.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<EventProvider> EVENT_PROVIDER = ScopedValue.newInstance();
 
@@ -268,7 +268,7 @@ public final class KernelProviders {
      *     });
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      * @see eu.exeris.kernel.spi.events.EventEngine
      * @see eu.exeris.kernel.spi.events.EventProvider
      */
@@ -281,7 +281,7 @@ public final class KernelProviders {
      * classpath. Application code should consult {@link #eventStreamReader()} and treat
      * an empty {@link Optional} as "broker does not support replay" — never as a hard error.
      *
-     * @since 0.7.0
+     * @since 0.7
      * @see EventStreamReader
      */
     public static final ScopedValue<EventStreamReader> EVENT_STREAM_READER = ScopedValue.newInstance();
@@ -293,7 +293,7 @@ public final class KernelProviders {
      * callers route through the transactional outbox; direct use is reserved for sites
      * that need topic/partition routing.
      *
-     * @since 0.7.0
+     * @since 0.7
      * @see EventStreamAppender
      */
     public static final ScopedValue<EventStreamAppender> EVENT_STREAM_APPENDER = ScopedValue.newInstance();
@@ -313,7 +313,7 @@ public final class KernelProviders {
      * virtual thread in the kernel scope (the publish-path threads where the generated
      * publisher runs).
      *
-     * @since 0.10.0
+     * @since 0.10
      * @see eu.exeris.kernel.spi.events.codec.EventPayloadCodec
      * @see #eventPayloadCodecRegistry()
      */
@@ -332,7 +332,7 @@ public final class KernelProviders {
      * and bound here. Use this slot only in bootstrap code that needs to introspect or
      * reconfigure the provider. Application code should use {@link #FLOW_ENGINE} directly.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<FlowProvider> FLOW_PROVIDER = ScopedValue.newInstance();
 
@@ -351,7 +351,7 @@ public final class KernelProviders {
      * engine.scheduler().schedule(plan, context);
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      * @see FlowEngine
      * @see FlowProvider
      */
@@ -391,7 +391,7 @@ public final class KernelProviders {
      * }
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      * @see FlowSnapshotStore
      * @see #flowSnapshotStore()
      * @see eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()
@@ -404,7 +404,7 @@ public final class KernelProviders {
      * <p>Bound by the bootstrapper before {@link FlowEngine#start()} when a custom
      * guard is required. If unbound, the default {@link FlowEngine} implementation installs a heap-backed guard.
      *
-     * @since 0.5.0
+     * @since 0.5
      * @see IdempotencyGuard
      * @see #idempotencyGuard()
      */
@@ -420,7 +420,7 @@ public final class KernelProviders {
      * <p>Use this slot only in bootstrap code that needs to introspect the provider.
      * Application code should use {@link #TRANSPORT_ENGINE} directly.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<TransportProvider> TRANSPORT_PROVIDER = ScopedValue.newInstance();
 
@@ -437,7 +437,7 @@ public final class KernelProviders {
      * TransportStream stream = conn.openStream();
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<TransportEngine> TRANSPORT_ENGINE = ScopedValue.newInstance();
 
@@ -451,7 +451,7 @@ public final class KernelProviders {
      * <p>Use this slot only in bootstrap code that needs to introspect the provider.
      * Application code should use {@link #GRAPH_ENGINE} directly.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<GraphProvider> GRAPH_PROVIDER = ScopedValue.newInstance();
 
@@ -468,7 +468,7 @@ public final class KernelProviders {
      * }
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<GraphEngine> GRAPH_ENGINE = ScopedValue.newInstance();
 
@@ -484,7 +484,7 @@ public final class KernelProviders {
      * when a new request arrives. Application code should not access this directly —
      * it reads {@link #PRINCIPAL_CONTEXT} and {@link #STORAGE_CONTEXT} instead.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<SecurityProvider> SECURITY_PROVIDER = ScopedValue.newInstance();
 
@@ -494,7 +494,7 @@ public final class KernelProviders {
      * <p>Bound once at bootstrap. Application code should use {@link #JOB_SCHEDULER} directly; this
      * slot exists for diagnostics and for code that needs to reconfigure the provider.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final ScopedValue<JobSchedulerProvider> JOB_SCHEDULER_PROVIDER =
             ScopedValue.newInstance();
@@ -507,7 +507,7 @@ public final class KernelProviders {
      * {@code StorageContext} and rebind them at dispatch; a submission with neither bound fails
      * closed rather than running as nobody (ADR-057 §5).
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final ScopedValue<JobScheduler> JOB_SCHEDULER = ScopedValue.newInstance();
 
@@ -517,7 +517,7 @@ public final class KernelProviders {
      * <p>Bound once at bootstrap, and only when blob storage is configured — the two Community
      * drivers register at the same priority, so nothing is selected until an operator names one.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final ScopedValue<BlobStorageProvider> BLOB_STORAGE_PROVIDER =
             ScopedValue.newInstance();
@@ -533,7 +533,7 @@ public final class KernelProviders {
      * <p>Unbound in a deployment that has not configured blob storage, which is the normal case —
      * read it with {@code orElse}, not {@code get}, unless the caller already knows storage is on.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final ScopedValue<BlobStore> BLOB_STORE = ScopedValue.newInstance();
 
@@ -544,7 +544,7 @@ public final class KernelProviders {
      * unbound kernel must still tell the time, and a call site that forgets its own {@code orElse}
      * looks migrated while remaining undrivable.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final ScopedValue<TimeSource> TIME_SOURCE = ScopedValue.newInstance();
 
@@ -561,7 +561,7 @@ public final class KernelProviders {
      * if (ctx.hasRole("ROLE_ADMIN")) { ... }
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<PrincipalContext> PRINCIPAL_CONTEXT = ScopedValue.newInstance();
 
@@ -587,7 +587,7 @@ public final class KernelProviders {
      * }
      * }</pre>
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final ScopedValue<StorageContext> STORAGE_CONTEXT = ScopedValue.newInstance();
 
@@ -605,7 +605,7 @@ public final class KernelProviders {
      * ({@code initialize()} / {@code start()} / {@code stop()}); lifecycle is owned solely by the
      * bootstrap orchestrator.
      *
-     * @since 0.9.0
+     * @since 0.9
      */
     public static final ScopedValue<List<Subsystem>> SUBSYSTEMS = ScopedValue.newInstance();
 
@@ -693,7 +693,7 @@ public final class KernelProviders {
      *
      * @return an {@link Optional} containing the reader if a binding is present and
      *         the slot was bound; empty otherwise
-     * @since 0.7.0
+     * @since 0.7
      */
     public static Optional<EventStreamReader> eventStreamReader() {
         return EVENT_STREAM_READER.isBound()
@@ -706,7 +706,7 @@ public final class KernelProviders {
      *
      * @return an {@link Optional} containing the appender if a binding is present and
      *         the slot was bound; empty otherwise
-     * @since 0.7.0
+     * @since 0.7
      */
     public static Optional<EventStreamAppender> eventStreamAppender() {
         return EVENT_STREAM_APPENDER.isBound()
@@ -720,7 +720,7 @@ public final class KernelProviders {
      *
      * @return an {@link Optional} containing the registry if a codec binding is present
      *         and the slot was bound; empty otherwise
-     * @since 0.10.0
+     * @since 0.10
      */
     public static Optional<EventPayloadCodecRegistry> eventPayloadCodecRegistry() {
         return EVENT_PAYLOAD_CODEC_REGISTRY.isBound()
@@ -824,7 +824,7 @@ public final class KernelProviders {
      * measuring reads call {@link System#nanoTime()} directly, which ADR-082 rules on.
      *
      * @return the bound source, or {@link TimeSource#SYSTEM}; never {@code null}
-     * @since 0.12.0
+     * @since 0.12
      */
     public static TimeSource timeSource() {
         return TIME_SOURCE.orElse(TimeSource.SYSTEM);

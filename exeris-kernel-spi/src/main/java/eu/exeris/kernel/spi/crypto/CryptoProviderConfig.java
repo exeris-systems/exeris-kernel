@@ -32,7 +32,7 @@ import java.util.Objects;
  * @param jfrEnabled         whether to emit JFR events on handshake lifecycle
  * @param minimumTlsVersion  minimum TLS version string (e.g., {@code "TLSv1.3"})
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record CryptoProviderConfig(
         Protocol protocol,

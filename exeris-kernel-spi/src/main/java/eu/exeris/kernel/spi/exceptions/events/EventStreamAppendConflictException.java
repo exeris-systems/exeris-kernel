@@ -32,7 +32,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 2 – {@code long}   actualVersion    (the stream's actual head)</li>
  * </ul>
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public class EventStreamAppendConflictException extends ExerisKernelException {
 

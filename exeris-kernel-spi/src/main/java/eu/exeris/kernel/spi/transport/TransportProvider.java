@@ -51,7 +51,7 @@ package eu.exeris.kernel.spi.transport;
  *
  * @see TransportEngine
  * @see TransportConfig
- * @since 0.5.0
+ * @since 0.5
  */
 public interface TransportProvider {
 

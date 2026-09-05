@@ -41,7 +41,7 @@ package eu.exeris.kernel.spi.transport;
  * @see TransportProvider
  * @see TransportConnection
  * @see TransportStream
- * @since 0.5.0
+ * @since 0.5
  */
 public interface TransportEngine extends AutoCloseable {
 

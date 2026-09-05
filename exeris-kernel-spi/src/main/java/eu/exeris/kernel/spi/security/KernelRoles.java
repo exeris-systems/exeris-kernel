@@ -24,7 +24,7 @@ package eu.exeris.kernel.spi.security;
  *
  * @see RequiresRole
  * @see <a href="../../../../../../docs/adr/ADR-014-requiresrole-compile-time-rbac-generation.md">ADR-014</a>
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KernelRoles {
 

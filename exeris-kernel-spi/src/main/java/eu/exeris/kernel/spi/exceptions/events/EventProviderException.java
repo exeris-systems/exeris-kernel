@@ -27,7 +27,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 1 – {@code String} reason (static failure description)</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class EventProviderException extends ExerisKernelException {
 

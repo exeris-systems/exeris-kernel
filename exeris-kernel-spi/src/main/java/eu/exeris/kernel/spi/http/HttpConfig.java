@@ -76,7 +76,7 @@ import java.util.Objects;
  *                              Distinct from the cumulative bound above because it is what
  *                              refuses an oversized allocation up front rather than after.
  *                              Protective, {@code > 0}
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpConfig(
         HttpMode mode,
@@ -130,7 +130,7 @@ public record HttpConfig(
      * Default HTTP/2 header-block bound in bytes — the value the assembler enforced
      * unconditionally before 0.12, kept so this key changes reachability and not behaviour.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final int DEFAULT_MAX_HEADER_BLOCK_SIZE = 65_536;
 
@@ -139,7 +139,7 @@ public record HttpConfig(
      * constructed with unconditionally before 0.12, kept so this key changes reachability and
      * not behaviour.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final int DEFAULT_MAX_HEADER_LIST_SIZE = 65_536;
 
@@ -148,7 +148,7 @@ public record HttpConfig(
      * constant before 0.12, kept on the same reachability-not-behaviour grounds. Named by
      * ADR-071 as the other half of its deferred HTTP/2 tail.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final int DEFAULT_MAX_STRING_LITERAL_SIZE = 65_536;
 
@@ -198,7 +198,7 @@ public record HttpConfig(
      * @param maxRequestBodyBytes   maximum request body size in bytes
      * @param h2cUpgradeEnabled     whether cleartext h2c upgrade is honoured
      * @param maxVersion            highest negotiable HTTP version
-     * @since 0.5.0
+     * @since 0.5
      */
     @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
     public HttpConfig(HttpMode mode,
@@ -245,7 +245,7 @@ public record HttpConfig(
      * @param maxHeaderBlockSize    maximum HPACK header block size
      * @param maxHeaderListSize     maximum decoded header list size
      * @param maxStringLiteralSize  maximum HPACK string literal size
-     * @since 0.12.0
+     * @since 0.12
      */
     @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
     public HttpConfig(HttpMode mode,

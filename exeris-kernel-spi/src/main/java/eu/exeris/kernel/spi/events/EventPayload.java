@@ -64,7 +64,7 @@ import java.lang.foreign.MemorySegment;
  * <p>Use {@link #empty()} for events that carry no data (lifecycle signals, graph edges).
  * The empty sentinel has infinite refCount and no backing memory — retain/close are no-ops.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventDescriptor
  * @see EventBus
  * @see EventHandler

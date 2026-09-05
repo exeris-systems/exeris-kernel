@@ -13,7 +13,7 @@ package eu.exeris.kernel.spi.storage.blob;
  *
  * @param offset zero-based first byte to read; never negative
  * @param length number of bytes to read; strictly positive
- * @since 0.11.0
+ * @since 0.11
  */
 public record BlobRange(long offset, long length) {
 

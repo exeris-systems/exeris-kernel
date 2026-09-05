@@ -35,7 +35,7 @@ import eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException;
  *
  * @see MemoryProvider
  * @see LoanedBuffer
- * @since 0.5.0
+ * @since 0.5
  */
 public interface MemoryAllocator extends AutoCloseable {
 

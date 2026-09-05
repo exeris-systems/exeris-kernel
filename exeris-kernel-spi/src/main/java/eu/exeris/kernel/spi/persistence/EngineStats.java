@@ -24,7 +24,7 @@ package eu.exeris.kernel.spi.persistence;
  * @param totalEvicted      Cumulative count of connections evicted (timeout/error).
  * @param tenantPoolCount   Number of active per-tenant pools (0 if per-tenant disabled).
  * @see PersistenceEngine#stats()
- * @since 0.5.0
+ * @since 0.5
  */
 public record EngineStats(
         int activeConnections,

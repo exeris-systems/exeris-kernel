@@ -30,7 +30,7 @@
  *
  * @see eu.exeris.kernel.spi.bootstrap.Subsystem
  * @see eu.exeris.kernel.spi.bootstrap.SubsystemProvider
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.bootstrap;
 

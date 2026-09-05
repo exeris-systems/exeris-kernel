@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.fail;
  * <p>{@code queueWrite(LoanedBuffer)} MUST either consume the buffer (decrement refCount
  * or take ownership) or throw {@code TransportException} — preventing off-heap leaks.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractTransportStreamTck {
 

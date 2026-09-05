@@ -14,7 +14,7 @@ import java.util.Optional;
  * @param spiType      the SPI domain this provider serves (e.g. {@code "telemetry"}, {@code "memory"})
  * @param priority     the provider's discovery priority (Community = 0, Enterprise = 100)
  * @param displayName  optional human-friendly name, when distinct from {@code providerName}
- * @since 0.9.0
+ * @since 0.9
  */
 public record ProviderDescriptor(
         String providerName,

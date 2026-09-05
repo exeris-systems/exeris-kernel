@@ -27,7 +27,7 @@ import java.util.Objects;
  * <p>Buffer ownership transfers to the returned encoded body; callers must
  * not close the buffer after calling {@link #encode}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class JsonBodyEncoder implements HttpResponseBodyEncoder {
 

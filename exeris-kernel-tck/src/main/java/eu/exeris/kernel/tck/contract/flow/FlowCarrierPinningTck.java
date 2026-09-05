@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>{@code scheduler.schedule(plan, ctx) → park(ctx) → wake(ctx)} — the step dispatch
  * loop must never pin a carrier thread.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
  * @see FlowZeroAllocTck
  */

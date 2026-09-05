@@ -69,7 +69,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * }</pre>
  *
  * @see AbstractEventStoreTck
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Outbox Guarantee TCK")
 public abstract class AbstractOutboxGuaranteeTck {

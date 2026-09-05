@@ -14,7 +14,7 @@ package eu.exeris.kernel.spi.scheduling;
  * leader through the coordination seam rather than inventing a parallel mechanism. Neither appears in
  * any signature here.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface JobSchedulerProvider {
 

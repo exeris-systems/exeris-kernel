@@ -41,7 +41,7 @@ import java.util.Optional;
  * HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class HttpKernelProviders {
 
@@ -95,7 +95,7 @@ public final class HttpKernelProviders {
      * callers) do not require this slot to be bound. Use
      * {@link #httpRequestBodyEncoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpRequestBodyEncoderRegistry> HTTP_REQUEST_BODY_ENCODER_REGISTRY =
             ScopedValue.newInstance();
@@ -110,7 +110,7 @@ public final class HttpKernelProviders {
      * callers) do not require this slot to be bound. Use
      * {@link #httpResponseBodyDecoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpResponseBodyDecoderRegistry> HTTP_RESPONSE_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
@@ -125,7 +125,7 @@ public final class HttpKernelProviders {
      * that never decode a body (read-only resources) do not require it to be bound.
      * Use {@link #httpRequestBodyDecoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpRequestBodyDecoderRegistry> HTTP_REQUEST_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
@@ -139,7 +139,7 @@ public final class HttpKernelProviders {
      * application that declares nothing sees no change. Use {@link #httpRoutePolicy()} to read
      * defensively.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final ScopedValue<HttpRoutePolicy> HTTP_ROUTE_POLICY = ScopedValue.newInstance();
 
@@ -194,7 +194,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpRequestBodyEncoderRegistry> httpRequestBodyEncoderRegistry() {
         return HTTP_REQUEST_BODY_ENCODER_REGISTRY.isBound()
@@ -207,7 +207,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpResponseBodyDecoderRegistry> httpResponseBodyDecoderRegistry() {
         return HTTP_RESPONSE_BODY_DECODER_REGISTRY.isBound()
@@ -220,7 +220,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpRequestBodyDecoderRegistry> httpRequestBodyDecoderRegistry() {
         return HTTP_REQUEST_BODY_DECODER_REGISTRY.isBound()
@@ -232,7 +232,7 @@ public final class HttpKernelProviders {
      * Returns the optional per-route authorization policy, if the application bound one.
      *
      * @return an {@link Optional} containing the policy when bound, or empty otherwise
-     * @since 0.11.0
+     * @since 0.11
      */
     public static Optional<HttpRoutePolicy> httpRoutePolicy() {
         return HTTP_ROUTE_POLICY.isBound()

@@ -25,7 +25,7 @@ import java.util.Objects;
  * provider's {@link IdentityProvider#authenticate} failure as terminal and MUST NOT re-select a
  * different provider for the same token — re-dispatch on failure is token-confusion / fail-open.
  *
- * @since 0.10.0
+ * @since 0.10
  * @see IdentityProvider
  */
 @FunctionalInterface

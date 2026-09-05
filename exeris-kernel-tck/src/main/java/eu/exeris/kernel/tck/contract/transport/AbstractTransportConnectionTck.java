@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>Attachment pattern: set/get works correctly</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractTransportConnectionTck {
 

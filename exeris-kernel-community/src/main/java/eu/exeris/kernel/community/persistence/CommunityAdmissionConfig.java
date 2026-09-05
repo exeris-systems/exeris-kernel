@@ -47,7 +47,7 @@ import eu.exeris.kernel.spi.config.Dynamic;
  *                                     sub-millisecond queries while restoring availability on
  *                                     tiny pools. Set to {@code 0.0} to restore the strict
  *                                     pre-035 "shed on first waiter" contract.
- * @since 0.7.1
+ * @since 0.7
  * @see CommunityPersistenceAdmissionController
  * @see Dynamic
  */

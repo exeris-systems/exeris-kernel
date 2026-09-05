@@ -17,7 +17,7 @@ package eu.exeris.kernel.spi.websocket;
  * <em>told</em>, never for what it may send. {@link #sendable()} carries that distinction rather
  * than leaving it to a comment nobody reads at the call site.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public enum WebSocketCloseCode {
 

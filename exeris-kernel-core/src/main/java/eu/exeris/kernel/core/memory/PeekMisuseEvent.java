@@ -26,7 +26,7 @@ import jdk.jfr.StackTrace;
  * The misuse site is identified by the {@code callerMethod} field, not by capturing an
  * expensive stack walk.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.PeekViewMisuse")
 @Label("Peek View Ownership Misuse")

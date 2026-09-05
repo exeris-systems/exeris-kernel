@@ -38,7 +38,7 @@ import eu.exeris.kernel.spi.context.KernelProviders;
  *
  * @see ExerisKernelException
  * @see KernelProfile
- * @since 0.7.0
+ * @since 0.7
  */
 public final class ExceptionDisclosure {
 

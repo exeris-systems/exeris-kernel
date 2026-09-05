@@ -28,7 +28,7 @@ import eu.exeris.kernel.spi.exceptions.http.HttpException;
  * <p>Handlers are plain Java objects. Dependencies are injected via constructors.
  * No Spring, Guice, or Jakarta Inject annotations are permitted.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface HttpHandler {

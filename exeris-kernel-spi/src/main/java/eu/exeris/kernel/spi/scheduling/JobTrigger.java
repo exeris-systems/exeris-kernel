@@ -15,7 +15,7 @@ import java.util.Objects;
  * the kernel already has one of those — routing it through a scheduler would create a second way to
  * consume events whose ordering and delivery guarantees would have to be re-specified.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public sealed interface JobTrigger {
 

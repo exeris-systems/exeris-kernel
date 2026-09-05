@@ -31,7 +31,7 @@ import jdk.jfr.StackTrace;
  * that the {@code restored} flag distinguishes "saga genuinely cross-engine"
  * from "stale wake event for an unknown instance".
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @Name("eu.exeris.kernel.flow.WakeOnLoadFallback")
 @Label("Distributed Saga — Wake-on-Load Fallback")

@@ -46,7 +46,7 @@ import java.util.Set;
  * }
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.exceptions.SubsystemException
  */
 public final class SubsystemCircularDependencyException extends RuntimeException {

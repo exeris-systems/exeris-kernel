@@ -38,7 +38,7 @@ import java.util.function.Supplier;
  * <p>Community tier: {@link #watch(String, String, Consumer)} is a no-op.
  * Enterprise tier overrides this with NIO {@code WatchService} hot-reload.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityConfigProvider implements ConfigProvider {
 

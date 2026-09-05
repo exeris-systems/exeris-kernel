@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * <p>Zero overhead when JFR is not recording. Emitted exactly once per engine
  * lifecycle — never on the I/O hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.tls.EngineClose")
 @Label("TLS Engine Close")

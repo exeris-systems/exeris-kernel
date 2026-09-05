@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.memory;
  * </table>
  *
  * @see MemoryAllocator#allocate(AllocationHint)
- * @since 0.5.0
+ * @since 0.5
  */
 public enum AllocationHint {
 

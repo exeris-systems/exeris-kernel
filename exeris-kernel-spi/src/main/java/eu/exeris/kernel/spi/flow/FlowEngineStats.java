@@ -26,7 +26,7 @@ package eu.exeris.kernel.spi.flow;
  * @param schedulerQueueDepth current depth of the scheduler queue (Enterprise: ring buffer fill level)
  * @param slabUtilizationPct  percentage of off-heap slab pool in use (Enterprise); -1 for Community
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record FlowEngineStats(
         long activeFlows,

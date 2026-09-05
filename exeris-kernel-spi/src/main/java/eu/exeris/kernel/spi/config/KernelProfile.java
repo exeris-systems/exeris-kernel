@@ -30,7 +30,7 @@ package eu.exeris.kernel.spi.config;
  *   <li>Default: {@link #PROD} (safest fallback).</li>
  * </ol>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum KernelProfile {
 

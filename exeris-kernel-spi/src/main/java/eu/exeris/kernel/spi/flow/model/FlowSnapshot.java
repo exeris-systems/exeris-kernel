@@ -65,7 +65,7 @@ import java.util.Optional;
  * @param schemaVersion     monotonic version for optimistic concurrency control on durable
  *                          stores; {@code >= 1L}; new snapshots use {@link #SCHEMA_VERSION_INITIAL}
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record FlowSnapshot(
         long      instanceIdMost,
@@ -94,7 +94,7 @@ public record FlowSnapshot(
      * Initial value of {@link #schemaVersion} for newly created snapshots. Durable stores
      * MUST advance from this value on every accepted write.
      *
-     * @since 0.7.0
+     * @since 0.7
      */
     public static final long SCHEMA_VERSION_INITIAL = 1L;
 
@@ -106,7 +106,7 @@ public record FlowSnapshot(
      * reason ADR-062 rejects a snapshot carrying no step identity — a default here would be a
      * permanent route back to resuming against whatever happens to be registered.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final int VERSION_ABSENT = 0;
 
@@ -213,7 +213,7 @@ public record FlowSnapshot(
      * {@code RecordComponent[]} still observe a different shape. That residue is irreducible for a
      * record and is recorded in the release notes rather than papered over here.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     @SuppressWarnings("PMD.ExcessiveParameterList") // compatibility bridge — preserves the 0.10.0 shape
     public FlowSnapshot(
@@ -241,7 +241,7 @@ public record FlowSnapshot(
      * compile unchanged. Durable stores that participate in optimistic concurrency
      * MUST use the canonical constructor and pass the current on-disk version.
      *
-     * @since 0.7.0
+     * @since 0.7
      */
     @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge — preserves v0.6 call shape
     public FlowSnapshot(
@@ -284,7 +284,7 @@ public record FlowSnapshot(
      * {@link #stackPointer()} means the identities are <b>absent</b>, not that the stack is empty —
      * the two are distinguishable precisely because a stack with nothing live has nothing to validate.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public String[] compensationStepNames() {
         return Arrays.copyOf(compensationStepNames, compensationStepNames.length);

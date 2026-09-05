@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  * Production SRE tooling relies on this event to verify that the persistence layer
  * started cleanly and within expected latency bounds.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.EngineBootstrap")
 @Label("Persistence Engine Bootstrap")

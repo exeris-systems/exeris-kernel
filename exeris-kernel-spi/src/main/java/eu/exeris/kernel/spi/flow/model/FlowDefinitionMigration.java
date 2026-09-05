@@ -24,7 +24,7 @@ package eu.exeris.kernel.spi.flow.model;
  * mismatched version is refused rather than migrated — see ADR-064 amendment A1, which states that
  * narrowing rather than leaving it implied.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @FunctionalInterface
 public interface FlowDefinitionMigration {

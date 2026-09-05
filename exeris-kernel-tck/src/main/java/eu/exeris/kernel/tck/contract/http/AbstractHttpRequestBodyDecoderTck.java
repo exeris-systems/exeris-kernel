@@ -115,7 +115,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>This TCK imports only from {@code exeris-kernel-spi}. Drivers may not leak
  * their binding-library types onto the TCK surface.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class AbstractHttpRequestBodyDecoderTck {

@@ -36,7 +36,7 @@ package eu.exeris.kernel.spi.diagnostics;
  * overlay ({@code priority() == 100}) returns the <em>same</em> record types with additional
  * Enterprise-only fields populated where useful — never a fork of the shapes (ADR-033 Obligation 6).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public interface KernelDiagnostics {
 

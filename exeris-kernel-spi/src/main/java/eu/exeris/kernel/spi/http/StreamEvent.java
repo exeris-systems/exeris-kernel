@@ -36,7 +36,7 @@ import java.util.Objects;
  * @param data        event payload; must not be {@code null} (empty string is a valid SSE {@code data:})
  * @param id          event id; {@code null}/blank omits the SSE {@code id:} field
  * @param retryMillis client reconnection delay in ms; {@code <= 0} omits the SSE {@code retry:} field
- * @since 0.10.0
+ * @since 0.10
  */
 @SuppressWarnings({"PMD.ShortMethodName", "PMD.ShortVariable"})
 // 'of' is the standard Java factory idiom (cf. List.of, Map.of); 'id' is the canonical SSE field name.

@@ -13,7 +13,7 @@ import eu.exeris.kernel.spi.telemetry.TelemetrySink;
  * <p>Delegates event and metric emission to the standard core implementation while exposing
  * a stable Community sink identity for diagnostics and provider-level assertions.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class JfrTelemetrySink implements TelemetrySink {
 

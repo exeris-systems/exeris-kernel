@@ -23,7 +23,7 @@ import java.util.Objects;
  * @param method    HTTP method for the outbound request; non-null
  * @param path      request-target path component; non-null
  * @param allocator allocator for off-heap request buffers; non-null
- * @since 0.8.0
+ * @since 0.8
  */
 public record HttpRequestEncodingContext(
         HttpMethod method,

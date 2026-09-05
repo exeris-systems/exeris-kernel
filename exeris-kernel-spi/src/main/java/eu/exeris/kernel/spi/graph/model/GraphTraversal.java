@@ -19,7 +19,7 @@ import java.util.UUID;
  * @param includeStartNode whether to include the start node in results
  * @param includePayload   whether to include node payload data in results
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record GraphTraversal(
         UUID startNodeId,

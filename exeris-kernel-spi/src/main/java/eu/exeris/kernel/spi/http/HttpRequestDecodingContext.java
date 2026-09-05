@@ -45,7 +45,7 @@ import java.util.Objects;
  * @param headers   immutable request headers; non-null, may be empty
  * @param allocator allocator for any auxiliary off-heap buffers a decoder may need; may be
  *                  {@code null} — see above
- * @since 0.8.0
+ * @since 0.8
  */
 public record HttpRequestDecodingContext(
         HttpMethod method,
@@ -66,7 +66,7 @@ public record HttpRequestDecodingContext(
      * @param method  request method; non-null
      * @param path    request path; non-null
      * @param headers immutable request headers; non-null, may be empty
-     * @since 0.12.0
+     * @since 0.12
      */
     public HttpRequestDecodingContext(HttpMethod method, String path, List<HttpHeader> headers) {
         this(method, path, headers, null);

@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.scheduling;
  * <p>Drivers own their timing loop against an injected time source rather than delegating to a
  * scheduled executor, which is what makes trigger behaviour testable without sleeping (ADR-057 §3-4).
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface JobScheduler extends AutoCloseable {
 

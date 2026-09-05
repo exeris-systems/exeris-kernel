@@ -29,7 +29,7 @@ package eu.exeris.kernel.spi.flow.model;
  * @param action       the action to execute; must not be {@code null}
  * @param compensation the compensation action for backward recovery; {@code null} if not defined
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowStepAction
  * @see FlowDefinition
  */

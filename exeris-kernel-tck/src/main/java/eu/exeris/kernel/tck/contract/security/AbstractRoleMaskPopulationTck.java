@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * within the authenticated scope. The abstract's handler reads
  * {@link KernelProviders#PRINCIPAL_CONTEXT} to observe the bound mask.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public abstract class AbstractRoleMaskPopulationTck {
 

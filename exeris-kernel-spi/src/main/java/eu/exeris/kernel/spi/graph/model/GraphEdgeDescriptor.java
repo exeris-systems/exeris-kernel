@@ -25,7 +25,7 @@ import java.util.Objects;
  * @param direction     edge direction (OUTGOING, INCOMING, BOTH)
  * @param tableName     pre-computed relational table name (e.g. "follows_edges")
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record GraphEdgeDescriptor(
         String sourceNode,

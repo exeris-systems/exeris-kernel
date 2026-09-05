@@ -37,7 +37,7 @@ import java.util.UUID;
  *       Zero dynamic allocation after engine startup.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.TooManyMethods") // SPI contract: one method per graph operation type (traversal, CRUD, tx)
 public interface GraphSession extends AutoCloseable {

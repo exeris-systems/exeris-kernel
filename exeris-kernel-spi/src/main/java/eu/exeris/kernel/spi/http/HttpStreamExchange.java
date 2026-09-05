@@ -51,7 +51,7 @@ import java.util.Map;
  * literals, io_uring SQEs). SSE framing is owned by Core; the held-open transport mechanics live in the
  * Community (NIO) and Enterprise (native) tiers.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public interface HttpStreamExchange {
 
@@ -82,7 +82,7 @@ public interface HttpStreamExchange {
      *
      * @return an immutable map of captured path parameters; never {@code null}, empty when the route
      *         declared no placeholders
-     * @since 0.11.0
+     * @since 0.11
      */
     default Map<String, String> pathParams() {
         return Map.of();

@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@code start()} after {@code close()} throws {@link IllegalStateException}</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractHttpClientEngineTck {
 

@@ -51,7 +51,7 @@ package eu.exeris.kernel.spi.graph;
  * {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots — they do NOT
  * receive them as constructor parameters. This ensures clean SPI isolation.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see GraphEngine
  * @see GraphConfig
  */

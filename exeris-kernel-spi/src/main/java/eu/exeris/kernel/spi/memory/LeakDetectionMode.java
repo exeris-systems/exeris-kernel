@@ -11,7 +11,7 @@ package eu.exeris.kernel.spi.memory;
  * <p>Enum constants are JVM singletons — no heap allocation on comparison.
  *
  * @see MemoryProviderConfig#leakDetection()
- * @since 0.5.0
+ * @since 0.5
  */
 public enum LeakDetectionMode {
 

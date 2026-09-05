@@ -24,7 +24,7 @@ import eu.exeris.kernel.spi.memory.MemoryProvider;
  * bootstrap failures; distinct from {@value KernelErrorCodes#EX_BOOT_0002} which
  * covers general subsystem lifecycle failures with a different rawArgs schema.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class MemoryBootstrapException extends ExerisKernelException {
 

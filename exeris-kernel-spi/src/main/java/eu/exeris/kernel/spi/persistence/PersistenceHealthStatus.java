@@ -28,7 +28,7 @@ package eu.exeris.kernel.spi.persistence;
  * health-check invocation (cold path, not hot path).
  *
  * @see PersistenceEngine
- * @since 0.5.0
+ * @since 0.5
  */
 public record PersistenceHealthStatus(
         boolean healthy,

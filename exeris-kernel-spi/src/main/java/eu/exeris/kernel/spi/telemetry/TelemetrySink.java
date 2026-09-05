@@ -21,7 +21,7 @@ package eu.exeris.kernel.spi.telemetry;
  * </ul>
  *
  * @see TelemetryProvider
- * @since 0.5.0
+ * @since 0.5
  */
 public interface TelemetrySink extends AutoCloseable {
 

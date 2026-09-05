@@ -14,7 +14,7 @@ import jdk.jfr.StackTrace;
  *
  * <p>{@code @StackTrace(false)} — zero-overhead telemetry per the Performance Contract.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Label("Event Bus Publish")
 @Category({"Exeris", "Events", "Bus"})

@@ -28,7 +28,7 @@ import java.util.Map;
  * io_uring SQEs). Implementations may be backed by HTTP/1.1, HTTP/2, or HTTP/3
  * transports transparently.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface HttpExchange {
 
@@ -59,7 +59,7 @@ public interface HttpExchange {
      *
      * @return an immutable map of captured path parameters; never {@code null}, empty
      *         when the route declared no placeholders
-     * @since 0.10.0
+     * @since 0.10
      */
     default Map<String, String> pathParams() {
         return Map.of();

@@ -12,7 +12,7 @@ package eu.exeris.kernel.spi.storage.blob;
  * {@code FlowProvider}, {@code TransportProvider}, {@code MemoryProvider}), so a reader who knows one
  * knows this one.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface BlobStorageProvider {
 

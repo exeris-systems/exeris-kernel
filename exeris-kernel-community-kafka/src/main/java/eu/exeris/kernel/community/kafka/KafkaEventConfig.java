@@ -34,7 +34,7 @@ import java.util.Objects;
  * @param consumerPollTimeout how long each {@code consumer.poll} call may block; bounded so
  *                            shutdown remains responsive even under empty topics
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public record KafkaEventConfig(
         String   bootstrapServers,

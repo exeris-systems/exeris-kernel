@@ -37,7 +37,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * Index 2 stays the reason code on every phase, which is what makes
  * {@link #isNotParked(Throwable)} safe to apply to any {@code EX-FLOW-7002}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // TooManyMethods: the count is the contract. One named factory per rawArgs layout is what keeps
 // string literals out of throw sites (a repo-wide hard constraint) and keeps each layout documented
@@ -183,7 +183,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName     the engine name
      * @param instanceIdMost high 64 bits of the flow instance id
      * @param instanceIdLeast low 64 bits of the flow instance id
-     * @since 0.12.0
+     * @since 0.12
      */
     public static FlowEngineException notParked(String engineName,
                                                 long instanceIdMost,
@@ -199,7 +199,7 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param throwable the throwable to classify; {@code null} yields {@code false}
      * @return {@code true} if this is an {@code EX-FLOW-7002} refusal with reason {@code NOT_PARKED}
-     * @since 0.12.0
+     * @since 0.12
      */
     public static boolean isNotParked(Throwable throwable) {
         if (!(throwable instanceof FlowEngineException flowEngineException)) {
@@ -222,7 +222,7 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName            the engine name
      * @param incomingSchemaVersion the schemaVersion the caller attempted to write
-     * @since 0.7.0
+     * @since 0.7
      */
     public static FlowEngineException optimisticLockConflict(String engineName, long incomingSchemaVersion) {
         return optimisticLockConflict(engineName, incomingSchemaVersion, null);
@@ -238,7 +238,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName            the engine name
      * @param incomingSchemaVersion the schemaVersion the caller attempted to write
      * @param cause                 underlying driver exception that surfaced the conflict; may be {@code null}
-     * @since 0.7.0
+     * @since 0.7
      */
     public static FlowEngineException optimisticLockConflict(
             String engineName, long incomingSchemaVersion, Throwable cause) {
@@ -262,7 +262,7 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName   the engine name
      * @param persistedStep the persisted resume step index the current definition no longer has
-     * @since 0.10.0
+     * @since 0.10
      */
     public static FlowEngineException schemaMismatch(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -281,7 +281,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName    the engine name
      * @param persistedStep the persisted resume step index whose identity no longer matches
      * @return the exception
-     * @since 0.11.0
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchStepIdentity(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -299,7 +299,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName    the engine name
      * @param persistedStep the persisted resume step index that cannot be validated
      * @return the exception
-     * @since 0.11.0
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchStepIdentityAbsent(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -320,7 +320,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName     the engine name
      * @param offendingEntry the stack entry that does not index the plan
      * @return the exception
-     * @since 0.11.0
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchCompensationStack(String engineName, int offendingEntry) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -342,7 +342,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName     the engine name
      * @param offendingEntry the plan position whose identity no longer matches
      * @return the exception
-     * @since 0.11.0
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchCompensationStackIdentity(String engineName,
                                                                              int offendingEntry) {
@@ -361,7 +361,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName   the engine name
      * @param stackPointer the number of live entries that carry no identity
      * @return the exception
-     * @since 0.11.0
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchCompensationStackIdentityAbsent(String engineName,
                                                                                     int stackPointer) {
@@ -379,7 +379,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName    the engine that refused the resume
      * @param persistedStep the step index the snapshot carried
      * @return the exception to throw
-     * @since 0.11.0
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchDefinitionVersionAbsent(String engineName,
                                                                            int persistedStep) {
@@ -400,7 +400,7 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName        the engine that refused the resume
      * @param persistedVersion  the definition version the snapshot carried
      * @return the exception to throw
-     * @since 0.11.0
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchDefinitionVersionUnresolved(String engineName,
                                                                                int persistedVersion) {

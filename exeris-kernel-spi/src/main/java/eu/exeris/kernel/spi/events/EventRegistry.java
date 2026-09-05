@@ -36,7 +36,7 @@ import java.util.Set;
  * {@link EventEngine#start()} — the routing table is built once during startup.
  * Community implementations allow registration at any time.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventTypeSpec
  */
 public interface EventRegistry {

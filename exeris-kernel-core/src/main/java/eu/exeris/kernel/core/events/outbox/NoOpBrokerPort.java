@@ -15,7 +15,7 @@ import java.util.List;
  * from the outbox are immediately marked as delivered — effectively draining
  * the outbox without publishing anywhere.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class NoOpBrokerPort implements OutboxBrokerPort {
 

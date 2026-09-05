@@ -31,7 +31,7 @@ import java.time.ZoneOffset;
  *
  * <p>Implementations must be thread-safe: one source serves the whole runtime.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public interface TimeSource {
 

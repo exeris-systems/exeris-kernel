@@ -34,7 +34,7 @@ import java.lang.foreign.ValueLayout;
  * <h2>Thread Safety</h2>
  * <p>Not thread-safe. Each HTTP/2 connection must use its own encoder.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class HpackEncoder {
 

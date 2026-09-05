@@ -26,7 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 2 – {@code long}   queueCapacity</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class EventBusException extends ExerisKernelException {
 

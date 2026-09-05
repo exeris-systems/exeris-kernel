@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
  * splice into a query string must match {@code [A-Za-z][A-Za-z0-9_]*} — the rule both
  * Neo4j and Cypher admit for valid identifiers.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class CypherIdentifiers {
 

@@ -19,7 +19,7 @@ import java.util.Objects;
  * returns {@code null} when no candidate supports the input — the façade maps this
  * to a {@code WebClientException} at the call site.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 @FunctionalInterface
 public interface HttpRequestBodyEncoderRegistry {

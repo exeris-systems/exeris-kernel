@@ -70,7 +70,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @see MemoryStats#utilization()
  * @see MemoryStats#allocatedBytes()
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractMemoryGovernorTck {
 

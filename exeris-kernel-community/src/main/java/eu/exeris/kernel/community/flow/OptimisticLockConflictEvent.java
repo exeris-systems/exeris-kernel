@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  * violation). Operators tracking distributed-saga health watch the rate of this
  * event to detect contention hotspots before they manifest as wake-storm failures.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @Name("eu.exeris.kernel.flow.OptimisticLockConflict")
 @Label("Distributed Saga — Optimistic-Lock Conflict")

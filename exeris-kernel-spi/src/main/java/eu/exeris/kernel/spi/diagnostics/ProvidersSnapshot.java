@@ -17,7 +17,7 @@ import java.util.Objects;
  * @param schemaVersion the wire-schema version (see {@link KernelDiagnostics#SCHEMA_VERSION})
  * @param capturedAt    the instant this snapshot was captured (best-effort, per-call; ADR-033 Obligation 7)
  * @param providers     the discovered providers; defensively copied, never {@code null}
- * @since 0.9.0
+ * @since 0.9
  */
 public record ProvidersSnapshot(
         String schemaVersion,

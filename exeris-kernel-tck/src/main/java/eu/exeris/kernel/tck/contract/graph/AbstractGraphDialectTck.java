@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>DDL generation is idempotent for the same schema inputs</li>
  * </ol>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("TCK: GraphDialect — MATCH DSL parity contract")
 public abstract class AbstractGraphDialectTck {

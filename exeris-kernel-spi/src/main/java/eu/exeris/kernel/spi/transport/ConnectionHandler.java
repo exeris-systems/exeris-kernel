@@ -35,7 +35,7 @@ package eu.exeris.kernel.spi.transport;
  *
  * @see TransportEngine#setConnectionHandler(ConnectionHandler)
  * @see TransportConnection
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface ConnectionHandler {

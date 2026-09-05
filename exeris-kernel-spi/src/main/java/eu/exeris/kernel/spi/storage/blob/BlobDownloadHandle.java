@@ -31,7 +31,7 @@ import java.lang.foreign.MemorySegment;
  *
  * <p>Handles are not thread-safe: one download is driven by one thread.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface BlobDownloadHandle extends AutoCloseable {
 

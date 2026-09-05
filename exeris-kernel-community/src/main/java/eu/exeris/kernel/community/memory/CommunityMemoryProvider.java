@@ -28,7 +28,7 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
  * <p>Registered via {@code META-INF/services/eu.exeris.kernel.spi.memory.MemoryProvider}.
  * Returns {@link #priority()} = 0; Enterprise provider (priority 100) wins when both are present.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityMemoryProvider implements MemoryProvider {
 

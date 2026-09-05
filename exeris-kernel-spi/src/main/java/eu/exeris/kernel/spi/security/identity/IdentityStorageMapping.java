@@ -38,7 +38,7 @@ import java.util.UUID;
  *       is permitted (ADR-012 §4b.5).</li>
  * </ul>
  *
- * @since 0.10.0
+ * @since 0.10
  * @see KernelIsolationClaims
  * @see ClaimsMapper
  */
@@ -65,7 +65,7 @@ public final class IdentityStorageMapping {
      * audience, and JWKS endpoint. The constant exists now to fix the name that step will use, so
      * operator-facing documentation and the eventual wiring cannot drift apart.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final String SHARED_SCOPE_ENFORCED_KEY = "exeris.security.shared-scope.enforced";
 
@@ -107,7 +107,7 @@ public final class IdentityStorageMapping {
      * @return the resolved storage context; never {@code null}
      * @throws SecurityAuthenticationException on an incomplete or unrecognised isolation declaration, or
      *         on a shared scope this deployment cannot enforce
-     * @since 0.11.0
+     * @since 0.11
      */
     public static StorageContext fromClaims(VerifiedClaims claims, UUID subjectId, String tokenType,
                                             boolean sharedScopeEnforced) {

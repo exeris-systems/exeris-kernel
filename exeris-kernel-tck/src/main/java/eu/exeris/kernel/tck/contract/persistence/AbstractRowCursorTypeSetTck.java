@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * accepts {@link #pinSession(PersistenceConnection)} as written or overrides it, but it must not
  * skip it — an unpinned session makes every temporal and float expectation a coin flip.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public abstract class AbstractRowCursorTypeSetTck {
 

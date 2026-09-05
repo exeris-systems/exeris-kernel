@@ -22,7 +22,7 @@ import java.util.Objects;
  *
  * @param name  header field name; non-null, non-blank
  * @param value header field value; non-null (empty string is a valid value per RFC 9110)
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpHeader(String name, String value) {
 

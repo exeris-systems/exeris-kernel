@@ -24,7 +24,7 @@ import java.util.List;
  *
  * <p>The lists are <b>read-only views</b> — do not mutate them.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventLoop#registerProcessor(String, EventBatchProcessor)
  */
 @FunctionalInterface

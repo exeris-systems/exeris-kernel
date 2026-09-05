@@ -16,7 +16,7 @@ import java.util.Objects;
  * @param ref         the object this describes
  * @param sizeBytes   object size in bytes; never negative
  * @param contentType the declared media type, or {@code "application/octet-stream"} when none was given
- * @since 0.11.0
+ * @since 0.11
  */
 public record BlobMetadata(BlobRef ref, long sizeBytes, String contentType) {
 

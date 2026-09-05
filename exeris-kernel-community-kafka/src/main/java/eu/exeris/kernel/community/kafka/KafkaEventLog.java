@@ -38,7 +38,7 @@ import java.util.function.LongPredicate;
  * lookup O(1) without transactions (the log stays authoritative); deferred until a real Kafka
  * consumer needs it.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class KafkaEventLog {
 

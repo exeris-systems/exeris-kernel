@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Community wrapper over {@link OffHeapTlsEngine} with FD-owner bind support.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
 	"PMD.CyclomaticComplexity",

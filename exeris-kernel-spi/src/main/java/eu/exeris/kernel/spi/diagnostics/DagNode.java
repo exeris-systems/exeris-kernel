@@ -15,7 +15,7 @@ import java.util.Objects;
  * @param dependsOn names of subsystems this node depends on; defensively copied, never {@code null}
  * @param running   whether the subsystem is currently running
  * @param optional  whether the subsystem is optional (skippable under a DEGRADE failure policy)
- * @since 0.9.0
+ * @since 0.9
  */
 public record DagNode(
         String name,

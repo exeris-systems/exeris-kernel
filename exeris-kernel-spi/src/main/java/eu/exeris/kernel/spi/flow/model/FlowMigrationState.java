@@ -39,7 +39,7 @@ import java.util.Objects;
  *                          here that is user data rather than definition metadata. Capped at
  *                          {@link FlowSnapshot#MAX_OPAQUE_STATE_BYTES}, because that is where these
  *                          bytes are going
- * @since 0.11.0
+ * @since 0.11
  */
 public record FlowMigrationState(
         int      parkedStep,

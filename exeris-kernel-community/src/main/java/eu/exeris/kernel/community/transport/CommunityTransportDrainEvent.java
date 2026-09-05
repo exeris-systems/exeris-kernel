@@ -32,7 +32,7 @@ import jdk.jfr.StackTrace;
  * thread driving shutdown; never on a virtual thread, so the carrier-pinning hazard that afflicts
  * begin/commit straddles does not arise.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @Name("eu.exeris.kernel.transport.CommunityTransportDrain")
 @Label("Community Transport Drain")

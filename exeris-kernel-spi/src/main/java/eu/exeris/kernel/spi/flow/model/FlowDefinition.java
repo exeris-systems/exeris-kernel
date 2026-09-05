@@ -28,7 +28,7 @@ import java.util.Objects;
  *                              {@code System.nanoTime() + timeoutDurationNanos}
  * @param maxRetries            maximum number of step-level retries before triggering compensation
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowStepDescriptor
  * @see FlowExecutionPlan
  */
@@ -78,7 +78,7 @@ public record FlowDefinition(
      * and an application that never versions its flows keeps the behaviour it had before ADR-064.
      * Versioning is a choice the application makes, not an obligation it inherits.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public FlowDefinition(String name,
                           List<FlowStepDescriptor> steps,

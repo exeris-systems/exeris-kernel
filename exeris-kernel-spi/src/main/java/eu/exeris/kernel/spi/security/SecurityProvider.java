@@ -39,7 +39,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  * <p>Implementations MUST be thread-safe. A single instance is shared across all
  * virtual threads for the lifetime of the kernel.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see PrincipalContext
  * @see StorageContext
  * @see eu.exeris.kernel.spi.context.KernelProviders#PRINCIPAL_CONTEXT

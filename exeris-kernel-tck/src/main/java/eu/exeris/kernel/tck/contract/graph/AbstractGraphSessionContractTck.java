@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>{@code close()} — idempotent lifecycle</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("TCK: GraphSession — path and lifecycle contract")
 public abstract class AbstractGraphSessionContractTck {

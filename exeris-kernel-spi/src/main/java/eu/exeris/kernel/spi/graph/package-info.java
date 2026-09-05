@@ -37,7 +37,7 @@
  *       Zero dynamic allocation after startup.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.graph.GraphProvider
  * @see eu.exeris.kernel.spi.graph.GraphEngine
  */

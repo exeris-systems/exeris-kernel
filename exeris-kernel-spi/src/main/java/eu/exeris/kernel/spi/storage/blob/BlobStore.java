@@ -25,7 +25,7 @@ import java.util.Optional;
  *
  * <p>Implementations are thread-safe; the handles they return are not.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface BlobStore extends AutoCloseable {
 

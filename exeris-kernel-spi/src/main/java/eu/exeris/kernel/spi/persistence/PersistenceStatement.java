@@ -49,7 +49,7 @@ import java.util.UUID;
  *
  * @see PersistenceConnection
  * @see QueryResult
- * @since 0.5.0
+ * @since 0.5
  */
 // SPI contract: one method per JVM primitive type + String/bytes/null + execute/close
 @SuppressWarnings("PMD.TooManyMethods") // intentional: one binder per JVM primitive type (zero-boxing contract)
@@ -178,7 +178,7 @@ public interface PersistenceStatement extends AutoCloseable {
      * @param index zero-based parameter index
      * @param value Instant value (may be {@code null} — treated as SQL NULL)
      * @return this statement (fluent)
-     * @since 0.8.0
+     * @since 0.8
      */
     PersistenceStatement bindInstant(int index, Instant value);
 

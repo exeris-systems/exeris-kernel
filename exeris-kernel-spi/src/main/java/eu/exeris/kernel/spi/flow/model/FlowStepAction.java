@@ -22,7 +22,7 @@ package eu.exeris.kernel.spi.flow.model;
  * during {@link #execute(FlowContext)}. All transient buffers must be acquired from
  * {@link eu.exeris.kernel.spi.memory.MemoryAllocator} via {@code try-with-resources}.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowContext
  * @see FlowOutcome
  */

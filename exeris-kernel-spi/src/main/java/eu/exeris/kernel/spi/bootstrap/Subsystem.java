@@ -43,7 +43,7 @@ import java.util.function.UnaryOperator;
  * {@link BootstrapPhase#FOUNDATION} subsystems are always considered mandatory
  * regardless of this flag.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface Subsystem {
 
@@ -204,7 +204,7 @@ public interface Subsystem {
      * }</pre>
      *
      * @return a function that appends this subsystem's bindings to a carrier; never {@code null}
-     * @since 0.5.0
+     * @since 0.5
      * @see eu.exeris.kernel.spi.context.KernelProviders
      */
     default UnaryOperator<ScopedValue.Carrier> providerBindings() {

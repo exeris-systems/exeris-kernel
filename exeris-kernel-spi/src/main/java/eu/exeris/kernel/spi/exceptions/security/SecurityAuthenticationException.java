@@ -20,7 +20,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 1 – {@code String} failureReason (e.g. "expired", "malformed", "revoked")</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class SecurityAuthenticationException extends ExerisKernelException {
 

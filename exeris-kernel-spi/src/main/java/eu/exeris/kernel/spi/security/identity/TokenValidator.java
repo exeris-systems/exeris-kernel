@@ -30,7 +30,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  * <p>The raw token arrives in a caller-owned {@link LoanedBuffer}. The validator MUST NOT close or
  * retain it beyond the call.
  *
- * @since 0.10.0
+ * @since 0.10
  * @see IdentityProvider
  * @see VerifiedClaims
  */

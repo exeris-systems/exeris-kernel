@@ -11,7 +11,7 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * The production {@link CommunitySchedulerClock}: real time, real waiting.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunitySystemSchedulerClock implements CommunitySchedulerClock {
 

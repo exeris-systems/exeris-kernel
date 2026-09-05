@@ -24,7 +24,7 @@ import java.util.function.Consumer;
  *       two consecutive slots. Returns {@code false} if full.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface EventQueue {
 

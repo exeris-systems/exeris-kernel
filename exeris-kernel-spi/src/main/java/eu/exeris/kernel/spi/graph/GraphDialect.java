@@ -26,7 +26,7 @@ import java.util.List;
  *   <li><b>Enterprise Neo4j:</b> FFM-native Bolt (future)</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface GraphDialect {
 

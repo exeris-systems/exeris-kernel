@@ -17,7 +17,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>rawArgs layout (Glass-Box Telemetry)</h2>
  * <p>No raw args — this is a pure "missing context" signal.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class StorageContextMissingException extends ExerisKernelException {
 

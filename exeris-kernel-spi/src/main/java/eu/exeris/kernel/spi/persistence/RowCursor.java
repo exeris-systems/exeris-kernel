@@ -36,7 +36,7 @@ import java.util.UUID;
  * on the Enterprise hot path. Prefer {@link #getSegment(int)} for zero-copy access.
  *
  * @see QueryResult
- * @since 0.5.0
+ * @since 0.5
  */
 public interface RowCursor {
 
@@ -220,7 +220,7 @@ public interface RowCursor {
      * @param column zero-based column index
      * @return Instant value, or {@code null} if SQL NULL
      * @throws IndexOutOfBoundsException if column is out of range
-     * @since 0.8.0
+     * @since 0.8
      */
     Instant getInstant(int column);
 

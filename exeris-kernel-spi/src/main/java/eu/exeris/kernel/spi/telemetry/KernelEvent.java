@@ -29,7 +29,7 @@ import java.time.Instant;
  *                  precision is platform-dependent and not guaranteed to be nanosecond-resolution)
  * @param exception optional attached exception (may be {@code null})
  * @param component kernel component name (compile-time constant on call site)
- * @since 0.5.0
+ * @since 0.5
  */
 public record KernelEvent(
         String code,

@@ -17,7 +17,7 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
  * Enterprise tier reads directly from off-heap {@code LoanedBuffer}.
  * Community tier wraps JDBC ResultSet (bounded allocations).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class PersistenceZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 

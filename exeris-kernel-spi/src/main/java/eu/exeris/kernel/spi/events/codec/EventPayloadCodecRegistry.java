@@ -25,7 +25,7 @@ import java.util.Objects;
  * descending sort on {@code priority()}, ties by insertion order, first
  * {@code supports(...) == true} wins.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @FunctionalInterface
 public interface EventPayloadCodecRegistry {

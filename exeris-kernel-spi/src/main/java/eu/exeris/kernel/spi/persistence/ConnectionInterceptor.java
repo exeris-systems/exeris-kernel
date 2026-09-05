@@ -45,7 +45,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * @see PersistenceEngine#openConnection(StorageContext)
  * @see PersistenceConnection
  * @see StorageContext
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface ConnectionInterceptor {
@@ -64,7 +64,7 @@ public interface ConnectionInterceptor {
      * {@code app.tenant_id}) and only found it once row-level security was actually being enforced.
      * A generator or a migration tool can now reference this instead of retyping it.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     String SESSION_KEY_TENANT_ID = "exeris.tenant_id";
 
@@ -77,7 +77,7 @@ public interface ConnectionInterceptor {
      * because a session-scoped setting survives connection reuse, so a key left unpublished is a
      * key inherited from the previous borrower.
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     String SESSION_KEY_SHARED_SCOPE = "exeris.shared_scope";
 

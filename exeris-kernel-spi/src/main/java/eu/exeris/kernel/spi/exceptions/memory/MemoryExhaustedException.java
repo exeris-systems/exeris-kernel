@@ -39,7 +39,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *       requestedBytes, availableBytes);
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class MemoryExhaustedException extends ExerisKernelException {
 

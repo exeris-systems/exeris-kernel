@@ -37,7 +37,7 @@ import java.util.Optional;
  * <h2>Zero-Copy Contract</h2>
  * <p>All accessors are O(1). No lazy DB lookups, no mutable state.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT
  * @see PrincipalContext
  */
@@ -117,7 +117,7 @@ public interface StorageContext {
      * policy object, or driver type crosses this interface.
      *
      * @return the shared-scope partition key, or empty for the tenant-private default
-     * @since 0.11.0
+     * @since 0.11
      */
     default Optional<String> sharedScopeKey() {
         return Optional.empty();

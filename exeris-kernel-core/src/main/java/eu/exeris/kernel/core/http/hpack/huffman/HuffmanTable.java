@@ -26,7 +26,7 @@ package eu.exeris.kernel.core.http.hpack.huffman;
  * <p>{@link #getEntry(int, int)} is the only method intended for the decode hot path.
  * It returns a packed {@code int} — zero heap allocation per nibble.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
         "PMD.CyclomaticComplexity",

@@ -17,7 +17,7 @@ import eu.exeris.kernel.spi.storage.blob.BlobRange;
  *
  * @param offset first byte to read
  * @param length number of bytes covered; {@code 0} when the range lies at or past the end
- * @since 0.11.0
+ * @since 0.11
  */
 /* default */ record CommunityS3Slice(long offset, long length) {
 

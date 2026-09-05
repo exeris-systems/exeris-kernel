@@ -75,7 +75,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * }</pre>
  *
  * @param <I> the concrete interceptor type under test
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractSecurityInterceptorTck<I> {
 

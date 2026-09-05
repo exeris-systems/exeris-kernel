@@ -12,7 +12,7 @@ package eu.exeris.kernel.spi.scheduling;
  * drains or cancels everything still reachable. A dispatch that no handle can name would break that
  * property, so a driver must not create one.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface JobHandle {
 

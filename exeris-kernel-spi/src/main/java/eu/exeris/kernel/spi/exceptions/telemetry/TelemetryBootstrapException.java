@@ -16,7 +16,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * index 1 → String reason        (failure cause — static constant, never formatted)
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class TelemetryBootstrapException extends ExerisKernelException {
 

@@ -18,7 +18,7 @@ import java.util.List;
  *
  * @param keys   the property names captured
  * @param values the values at capture time, {@code null} where the property was unset
- * @since 0.11.0
+ * @since 0.11
  */
 public record SystemPropertySnapshot(List<String> keys, List<String> values) {
 

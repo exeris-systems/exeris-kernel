@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * the drain in {@link #close()} total, and it is the load-bearing half of the lifecycle boundary this
  * subsystem substitutes for a structured scope.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class CommunityJobScheduler implements JobScheduler {
 

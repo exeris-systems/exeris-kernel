@@ -14,7 +14,7 @@ package eu.exeris.kernel.spi.http;
  *
  * @param retry       whether the attempt should be retried
  * @param delayMillis delay before the next attempt in milliseconds; {@code >= 0}
- * @since 0.10.0
+ * @since 0.10
  */
 public record RetryDecision(boolean retry, long delayMillis) {
 

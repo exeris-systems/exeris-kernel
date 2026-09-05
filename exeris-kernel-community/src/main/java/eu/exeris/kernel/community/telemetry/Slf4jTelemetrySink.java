@@ -49,7 +49,7 @@ import java.util.function.Supplier;
  * {@code PMD.TooManyMethods} + {@code PMD.CyclomaticComplexity} suppressions
  * previously held on this class.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
     "PMD.UseTryWithResources",   // MDC scope close order is explicit (LIFO) — try-with-resources cannot express.

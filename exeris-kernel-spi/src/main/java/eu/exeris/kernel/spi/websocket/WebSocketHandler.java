@@ -11,7 +11,7 @@ package eu.exeris.kernel.spi.websocket;
  * call does: returning from {@code handle} closes it normally. A handler that wants to serve until
  * the peer goes away loops on {@link WebSocketExchange#receive()} until it returns {@code null}.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @FunctionalInterface
 public interface WebSocketHandler {

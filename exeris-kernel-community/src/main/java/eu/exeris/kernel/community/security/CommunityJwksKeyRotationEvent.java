@@ -26,7 +26,7 @@ import jdk.jfr.StackTrace;
  * <p>Carries only opaque {@code kid} labels and integer key counts — never key material
  * (no modulus/exponent/{@code byte[]}) and never token bytes.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @Name("eu.exeris.kernel.security.CommunityJwksKeyRotation")
 @Label("Community JWKS Key Rotation")

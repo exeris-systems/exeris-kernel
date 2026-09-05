@@ -12,7 +12,7 @@ import java.util.UUID;
  * <p>Avoid identity operations. Will migrate to {@code value} interface
  * when JEP 401 is mainline.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface EdgeWeightFunction {

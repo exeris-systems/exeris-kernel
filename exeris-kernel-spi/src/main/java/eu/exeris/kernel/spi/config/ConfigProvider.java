@@ -58,7 +58,7 @@ import java.util.function.Supplier;
  * eu.exeris.kernel.enterprise.config.EnterpriseConfigProvider  # priority=100
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface ConfigProvider {
 

@@ -19,7 +19,7 @@ package eu.exeris.kernel.spi.crypto;
  * @param status              semantic outcome of this shutdown step
  * @param sentCloseNotify     whether the local side has sent a TLS close-notify alert
  * @param receivedCloseNotify whether the peer's close-notify has been received
- * @since 0.5.0
+ * @since 0.5
  */
 public record TlsShutdownResult(Status status,
                                 boolean sentCloseNotify,

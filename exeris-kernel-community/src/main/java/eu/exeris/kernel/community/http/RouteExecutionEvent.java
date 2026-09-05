@@ -39,7 +39,7 @@ import jdk.jfr.Timespan;
  * blocking operation on a virtual thread is a known crash shape in this repository, and a handler
  * declared {@code LONG_RUNNING} is by definition one that blocks.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @Name("eu.exeris.kernel.http.RouteExecution")
 @Label("HTTP Route Execution")

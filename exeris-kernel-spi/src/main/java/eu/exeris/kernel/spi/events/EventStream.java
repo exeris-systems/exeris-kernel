@@ -31,7 +31,7 @@ package eu.exeris.kernel.spi.events;
  * lazily filled — so the per-event allocation budget on a hot replay path is bounded
  * by the descriptor footprint, not by the payload size.
  *
- * @since 0.7.0
+ * @since 0.7
  * @see EventStreamReader
  * @see EventPayload
  */

@@ -22,7 +22,7 @@ import jdk.jfr.StackTrace;
  * business events via {@code streamId}. The {@link jdk.jfr.FlightRecorder} guard
  * ensures zero overhead when recording is disabled.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.transport.StreamAccepted")
 @Label("Stream Accepted")

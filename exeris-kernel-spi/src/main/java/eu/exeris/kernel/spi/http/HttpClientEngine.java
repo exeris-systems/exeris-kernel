@@ -26,7 +26,7 @@ package eu.exeris.kernel.spi.http;
  * Each {@code send} call may use a pooled connection internally — connection pooling
  * semantics are the implementation's private concern.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface HttpClientEngine extends AutoCloseable {
 
@@ -71,7 +71,7 @@ public interface HttpClientEngine extends AutoCloseable {
      * is the pre-0.12 behaviour of every engine that had one imposed on it by {@code bindHost}.
      *
      * @return the configured default peer as {@code host:port}, or {@code null} if there is none
-     * @since 0.12.0
+     * @since 0.12
      */
     default String defaultAuthority() {
         return null;

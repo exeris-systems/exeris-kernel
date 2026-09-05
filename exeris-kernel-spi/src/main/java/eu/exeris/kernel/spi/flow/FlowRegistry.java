@@ -37,7 +37,7 @@ import eu.exeris.kernel.spi.flow.model.FlowTransitionDescriptor;
  * before {@link FlowEngine#start()} is called. Registering after start is undefined
  * behaviour and implementations MAY throw {@link IllegalStateException}.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowStepDescriptor
  * @see FlowTransitionDescriptor
  */

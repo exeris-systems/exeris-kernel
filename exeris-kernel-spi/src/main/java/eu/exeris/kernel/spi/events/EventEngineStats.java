@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.events;
  * @param avgDispatchNanos  exponentially-weighted average dispatch latency in nanoseconds
  * @param loopRunning       {@code true} if the event loop is currently running
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventEngine#stats()
  */
 public record EventEngineStats(

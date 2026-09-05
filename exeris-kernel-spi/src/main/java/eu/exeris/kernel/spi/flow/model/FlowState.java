@@ -16,7 +16,7 @@ package eu.exeris.kernel.spi.flow.model;
  *                  └──► COMPENSATING ──► FAILED_ROLLEDBACK
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum FlowState {
 

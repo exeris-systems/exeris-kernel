@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * bytes before commit passes every happy path and fails {@link UploadVisibility}; a store that signs
  * for some inputs and not others passes a naive signed-URL test and fails {@link SignedUrlContract}.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public abstract class AbstractBlobStorageTck {
 

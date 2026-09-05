@@ -46,7 +46,7 @@ import java.lang.foreign.MemorySegment;
  * }</pre>
  *
  * @see MemoryAllocator
- * @since 0.5.0
+ * @since 0.5
  */
 public interface LoanedBuffer extends AutoCloseable {
 

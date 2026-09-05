@@ -59,7 +59,7 @@ import java.util.Optional;
  * @param version   protocol version; non-null
  * @param headers   immutable list of header fields; non-null, may be empty
  * @param body      request body buffer, or {@code null} if the request has no body
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpRequest(
         HttpMethod method,
@@ -92,7 +92,7 @@ public record HttpRequest(
      * @param version protocol version; non-null
      * @param headers immutable list of header fields; non-null, may be empty
      * @param body    request body buffer, or {@code null} if the request has no body
-     * @since 0.5.0
+     * @since 0.5
      */
     public HttpRequest(HttpMethod method,
                        String path,
@@ -155,7 +155,7 @@ public record HttpRequest(
      * @param authority {@code host:port} (port required, IPv6 bracketed), or {@code null} for the
      *                  engine's configured default peer
      * @return derived request, or {@code this} when the authority is already the requested one
-     * @since 0.12.0
+     * @since 0.12
      */
     public HttpRequest withAuthority(String authority) {
         if (Objects.equals(this.authority, authority)) {
@@ -179,7 +179,7 @@ public record HttpRequest(
      *
      * @param additional headers to append after the existing list; non-null, may be empty
      * @return derived request with merged headers, or {@code this} when {@code additional} is empty
-     * @since 0.8.0
+     * @since 0.8
      */
     public HttpRequest withAdditionalHeaders(List<HttpHeader> additional) {
         Objects.requireNonNull(additional, "additional must not be null");

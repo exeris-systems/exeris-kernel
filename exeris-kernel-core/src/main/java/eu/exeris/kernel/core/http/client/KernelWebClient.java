@@ -70,7 +70,7 @@ import java.util.Objects;
  * {@code KernelClientGenerator}-emitted code references this tier-neutral
  * symbol so no {@code Community*} identity leaks into application source.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 // CyclomaticComplexity: execute()/buildRequest() codify the documented status-mapping +
 // codec-resolution + buffer-ownership-transfer paths from ADR-034 §4; the branches are
@@ -215,7 +215,7 @@ public final class KernelWebClient {
      * @param authority peer as {@code host:port} (IPv6 bracketed), or {@code null} to fall back to
      *                  the engine's configured default
      * @return a client bound to that peer, or {@code this} when it is already the bound one
-     * @since 0.12.0
+     * @since 0.12
      */
     public KernelWebClient withAuthority(String authority) {
         if (Objects.equals(this.authority, authority)) {
@@ -265,7 +265,7 @@ public final class KernelWebClient {
      * @param elementType the array's component type; must not be null
      * @return the decoded elements; never {@code null}, possibly empty
      * @throws WebClientException on any non-2xx response, or when the body does not decode
-     * @since 0.12.0
+     * @since 0.12
      */
     public <T> List<T> getList(String path, Class<T> elementType) {
         Objects.requireNonNull(elementType, "elementType must not be null");

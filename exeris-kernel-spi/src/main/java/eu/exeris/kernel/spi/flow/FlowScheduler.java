@@ -32,7 +32,7 @@ import java.util.Optional;
  * <h2>Thread Safety</h2>
  * <p>All methods MUST be safe for concurrent invocation from any virtual thread.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowContext
  * @see FlowExecutionPlan
  */
@@ -95,7 +95,7 @@ public interface FlowScheduler {
      *
      * @param instanceIdMost  most significant bits of the flow instance key
      * @param instanceIdLeast least significant bits of the flow instance key
-     * @since 0.12.0
+     * @since 0.12
      */
     default void wake(long instanceIdMost, long instanceIdLeast) {
         lookupParked(instanceIdMost, instanceIdLeast).ifPresent(this::wake);

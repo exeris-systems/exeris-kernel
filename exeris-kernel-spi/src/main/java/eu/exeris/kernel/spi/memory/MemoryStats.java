@@ -34,7 +34,7 @@ import java.util.Objects;
  *                           or {@link LeakDetectionMode#PARANOID}.
  * @param leakDetectionMode  The active leak detection mode for this allocator instance.
  * @see MemoryAllocator#stats()
- * @since 0.5.0
+ * @since 0.5
  */
 public record MemoryStats(
         long totalBytes,

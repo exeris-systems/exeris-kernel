@@ -33,7 +33,7 @@ import java.util.Optional;
  *
  * @see EventEngine
  * @see eu.exeris.kernel.spi.context.KernelProviders#EVENT_ENGINE
- * @since 0.5.0
+ * @since 0.5
  */
 public interface EventProvider {
 
@@ -104,7 +104,7 @@ public interface EventProvider {
      * producer falls back to {@link EventPayload#empty()}.
      *
      * @return the codec registry, or empty when this provider ships none
-     * @since 0.10.0
+     * @since 0.10
      */
     default Optional<EventPayloadCodecRegistry> eventPayloadCodecRegistry() {
         return Optional.empty();

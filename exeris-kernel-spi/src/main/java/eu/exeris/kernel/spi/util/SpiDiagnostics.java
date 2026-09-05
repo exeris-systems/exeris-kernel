@@ -19,7 +19,7 @@ import java.util.UUID;
  * <h2>Non-Instantiable</h2>
  * <p>Pure static utility — no instances, no state, no DI.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class SpiDiagnostics {
 

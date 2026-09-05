@@ -58,7 +58,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * specific class. It operates purely on {@link PersistenceStatement} bindings.
  *
  * @see PersistenceConnection#openBulkInserter(String)
- * @since 0.5.0
+ * @since 0.5
  */
 public interface BulkInserter extends AutoCloseable {
 

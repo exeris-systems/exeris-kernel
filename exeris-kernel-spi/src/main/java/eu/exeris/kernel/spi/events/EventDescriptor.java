@@ -49,7 +49,7 @@ package eu.exeris.kernel.spi.events;
  * @param flags            lifecycle bitmask (PERSISTENT | ASYNC | ORDERED | BROADCAST)
  * @param occurredAtEpochMs wall-clock timestamp in epoch milliseconds (replaces {@code Instant} object)
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventPayload
  * @see EventBus
  * @see EventRegistry

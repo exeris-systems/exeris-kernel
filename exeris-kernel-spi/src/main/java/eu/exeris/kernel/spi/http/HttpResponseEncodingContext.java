@@ -13,7 +13,7 @@ import java.util.Objects;
  *
  * @param request inbound request associated with the exchange; non-null
  * @param allocator allocator for off-heap response buffers; non-null
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpResponseEncodingContext(
         HttpRequest request,

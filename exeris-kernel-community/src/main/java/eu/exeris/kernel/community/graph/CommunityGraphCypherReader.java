@@ -24,7 +24,7 @@ import java.util.UUID;
  * {@link CommunityGraphCypherWriter}. Lifecycle and session state are owned by the
  * caller via {@link CypherExecutor}.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class CommunityGraphCypherReader {
 

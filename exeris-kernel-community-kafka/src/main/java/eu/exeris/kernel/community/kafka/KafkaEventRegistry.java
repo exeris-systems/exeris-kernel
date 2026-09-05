@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * package-private Community internal. {@code AbstractEventRegistryTck} (Sprint 5a)
  * defines the obligation; this class satisfies it the same way the Community one does.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class KafkaEventRegistry implements EventRegistry {
 

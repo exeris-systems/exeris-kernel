@@ -23,7 +23,7 @@ import java.util.UUID;
  * @param hopCount  number of edges in path
  * @param algorithm algorithm used (e.g. "dijkstra", "bfs")
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.UnusedAssignment") // hopCount record component is normalised in the compact
 // constructor (path.size()-1) — the caller-supplied value is intentionally discarded to enforce

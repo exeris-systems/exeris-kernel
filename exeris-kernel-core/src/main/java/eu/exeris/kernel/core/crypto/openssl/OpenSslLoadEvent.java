@@ -27,7 +27,7 @@ import jdk.jfr.StackTrace;
  * was selected and that {@code libssl}/{@code libcrypto} agree on a major version. The resolved
  * filesystem paths are diagnostics, not secrets.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @Name("eu.exeris.kernel.core.crypto.OpenSslLoad")
 @Label("OpenSSL Load")

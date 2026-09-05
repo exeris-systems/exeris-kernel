@@ -47,7 +47,7 @@ package eu.exeris.kernel.spi.transport;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
  * @see TransportProvider
  * @see TransportEngine
- * @since 0.5.0
+ * @since 0.5
  */
 public record TransportConfig(
         TransportMode mode,
@@ -131,7 +131,7 @@ public record TransportConfig(
      * @param keyPath           TLS private key path, or {@code null}
      * @param maxConnections    concurrent connection ceiling
      * @param idleTimeoutMillis idle timeout in milliseconds
-     * @since 0.12.0
+     * @since 0.12
      */
     public TransportConfig(TransportMode mode,
                            String bindAddress,

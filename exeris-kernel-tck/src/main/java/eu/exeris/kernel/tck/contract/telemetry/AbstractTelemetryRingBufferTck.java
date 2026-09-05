@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       within 100ms (includes final flush).</li>
  * </ol>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Telemetry Sink — ring-buffer throughput & flush latency contract")
 public abstract class AbstractTelemetryRingBufferTck {

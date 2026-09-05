@@ -50,7 +50,7 @@ import java.util.Objects;
  * <p>This class imports only {@code exeris-kernel-spi}. It has zero knowledge of
  * HikariCP, io_uring, pgjdbc, or any Community/Enterprise implementation class.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class PersistenceBootstrap {
 

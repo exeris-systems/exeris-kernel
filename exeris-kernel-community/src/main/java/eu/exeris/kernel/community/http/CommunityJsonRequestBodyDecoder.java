@@ -36,7 +36,7 @@ import java.util.Objects;
  * the {@link LoanedBuffer}; ownership stays with the caller, which closes the
  * buffer when the exchange ends.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class CommunityJsonRequestBodyDecoder implements HttpRequestBodyDecoder {
 

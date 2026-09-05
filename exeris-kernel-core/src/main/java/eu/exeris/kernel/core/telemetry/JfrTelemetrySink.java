@@ -47,7 +47,7 @@ import jdk.jfr.FlightRecorder;
  * {@code eu.exeris.kernel.core.telemetry.jfr} event types. Zero knowledge of
  * io_uring, JDBC, Netty, or any transport driver.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // TooManyMethods: TelemetrySink SPI mandates emit/increment/gauge/latency/sinkName/close.
 // Typed private emitters are a minimal O(1) dispatch table required by the typed-JFR contract.

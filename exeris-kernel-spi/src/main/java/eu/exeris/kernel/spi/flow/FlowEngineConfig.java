@@ -56,7 +56,7 @@ import java.util.concurrent.TimeUnit;
  *                                     {@link eu.exeris.kernel.spi.flow.model.FlowContext}.
  *                                     (since 0.7.0)
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.ExcessiveParameterList") // 14 fields — flat-record config carrier;
 public record FlowEngineConfig(
@@ -76,10 +76,10 @@ public record FlowEngineConfig(
         long    defaultSagaTimeoutLongNanos
 ) {
 
-    /** Default short-lived (transactional) saga timeout — 30 seconds. @since 0.7.0 */
+    /** Default short-lived (transactional) saga timeout — 30 seconds. @since 0.7 */
     public static final long DEFAULT_SAGA_TIMEOUT_SHORT_NANOS = TimeUnit.SECONDS.toNanos(30L);
 
-    /** Default long-running (business-process) saga timeout — 30 days. @since 0.7.0 */
+    /** Default long-running (business-process) saga timeout — 30 days. @since 0.7 */
     public static final long DEFAULT_SAGA_TIMEOUT_LONG_NANOS = TimeUnit.DAYS.toNanos(30L);
 
 
@@ -142,7 +142,7 @@ public record FlowEngineConfig(
      * fields to: {@code terminalCatalogMaxSize = 0} (unbounded — preserves prior behavior),
      * {@link #DEFAULT_SAGA_TIMEOUT_SHORT_NANOS}, and {@link #DEFAULT_SAGA_TIMEOUT_LONG_NANOS}.
      *
-     * @since 0.7.0
+     * @since 0.7
      */
     public FlowEngineConfig(
             String  engineName,

@@ -34,7 +34,7 @@ import java.util.List;
  * database (auth, network) shows up at engine construction rather than on first
  * request.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 final class CommunityPersistencePoolWarmup {
 

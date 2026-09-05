@@ -27,7 +27,7 @@ import java.util.Objects;
  *       thread-spawning, no blocking I/O.</li>
  * </ul>
  *
- * @since 0.8.0
+ * @since 0.8
  */
 @FunctionalInterface
 public interface HttpClientRequestEnricher {

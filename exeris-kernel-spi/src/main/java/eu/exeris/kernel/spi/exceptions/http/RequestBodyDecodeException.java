@@ -58,7 +58,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   index 1 → long   bodySize
  * </pre>
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class RequestBodyDecodeException extends ExerisKernelException {
 

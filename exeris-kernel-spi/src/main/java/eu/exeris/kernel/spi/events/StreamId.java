@@ -34,7 +34,7 @@ import java.util.UUID;
  * @param streamIdLow  low 64 bits of the stream UUID
  * @param streamType   non-blank stream type qualifier (e.g. {@code "Order"})
  *
- * @since 0.7.0
+ * @since 0.7
  * @see EventStreamReader
  * @see EventStreamAppender
  */

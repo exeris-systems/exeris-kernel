@@ -18,7 +18,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *       (e.g. {@code "DUPLICATE_STEP"}, {@code "STEP_NOT_FOUND"})</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class FlowRegistryException extends ExerisKernelException {
 

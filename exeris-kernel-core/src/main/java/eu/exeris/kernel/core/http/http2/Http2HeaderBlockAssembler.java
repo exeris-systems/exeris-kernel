@@ -43,7 +43,7 @@ import java.lang.foreign.ValueLayout;
  * <h2>Thread Safety</h2>
  * <p>Not thread-safe. One instance per HTTP/2 connection.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.10">RFC 7540 §6.10</a>
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
@@ -105,7 +105,7 @@ public final class Http2HeaderBlockAssembler {
      * @param maxHeaderBlockSize bound in bytes; must be {@code > 0} — this is a protective limit, so
      *                           per ADR-071 it has no "0 means unlimited" reading
      * @throws IllegalArgumentException if the bound is not positive
-     * @since 0.12.0
+     * @since 0.12
      */
     public Http2HeaderBlockAssembler(MemoryAllocator allocator, int maxHeaderBlockSize) {
         if (maxHeaderBlockSize <= 0) {
@@ -323,7 +323,7 @@ public final class Http2HeaderBlockAssembler {
      *
      * <p>The caller MUST respond with GOAWAY(PROTOCOL_ERROR) and close the connection.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class ContinuationViolationException extends ExerisKernelException {
 

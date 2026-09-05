@@ -28,7 +28,7 @@ import java.util.Objects;
 /**
  * Community {@link KernelCryptoProvider} for TCP TLS over OpenSSL 3.x.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
 	"PMD.CyclomaticComplexity"

@@ -58,7 +58,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * }
  * }</pre>
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @DisplayName("TCK: HTTP route-authorization policy (ADR-061)")
 public abstract class AbstractHttpRoutePolicyTck {

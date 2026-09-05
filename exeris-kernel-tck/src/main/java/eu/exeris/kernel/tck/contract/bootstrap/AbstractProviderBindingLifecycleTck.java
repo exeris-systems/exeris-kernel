@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Bindings are composed after successful {@code initialize()}, before {@code start()}</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Provider Binding Lifecycle — State Symmetry TCK")
 public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootstrapOrchestratorTck {

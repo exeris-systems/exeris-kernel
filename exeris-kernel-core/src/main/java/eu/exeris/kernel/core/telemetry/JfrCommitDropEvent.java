@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * <p>Emitted only on the drop path (off the steady-state hot path), so a single allocation here
  * is acceptable. {@link StackTrace @StackTrace(false)} keeps it lightweight.
  *
- * @since 0.7.1
+ * @since 0.7
  */
 @Name("eu.exeris.kernel.telemetry.JfrCommitDrop")
 @Label("JFR Commit Drop")

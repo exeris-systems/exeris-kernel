@@ -36,7 +36,7 @@ import java.util.Set;
  *
  * @param requestedNames explicitly requested subsystem names; empty when {@link #selectAll} is true
  * @param selectAll      {@code true} = activate every subsystem found via ServiceLoader
- * @since 0.5.0
+ * @since 0.5
  */
 public record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
 
@@ -72,7 +72,7 @@ public record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
      * needed but no subsystem lifecycle is required.
      *
      * @return the "none" selector
-     * @since 0.5.0
+     * @since 0.5
      */
     public static BootstrapSelector none() {
         return new BootstrapSelector(Set.of(), false);

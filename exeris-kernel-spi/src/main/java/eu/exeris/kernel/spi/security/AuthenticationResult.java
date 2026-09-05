@@ -29,7 +29,7 @@ import java.util.Objects;
  * @param principal the authenticated identity (never {@code null})
  * @param storage   the tenant-isolation descriptor for persistence (never {@code null})
  *
- * @since 0.5.0
+ * @since 0.5
  * @see SecurityProvider
  * @see PrincipalContext
  * @see StorageContext

@@ -40,7 +40,7 @@ import java.lang.invoke.VarHandle;
  * <h2>JFR-First</h2>
  * <p>Every successful transition emits a {@link TlsPhaseTransitionEvent}.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see TlsSessionState
  * @see TlsPhase
  */

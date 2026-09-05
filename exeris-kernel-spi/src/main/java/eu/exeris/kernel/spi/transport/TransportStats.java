@@ -41,7 +41,7 @@ package eu.exeris.kernel.spi.transport;
  *                          removes the one distinction that changes what they do next. A driver with
  *                          no such failure mode reports {@code 0}.
  * @see TransportEngine#stats()
- * @since 0.5.0
+ * @since 0.5
  */
 public record TransportStats(
         int activeConnections,
@@ -73,7 +73,7 @@ public record TransportStats(
      * @param totalRejected     cumulative work the engine declined
      * @param rttP50Micros      median RTT in microseconds (0 if no samples)
      * @param rttP95Micros      95th percentile RTT in microseconds (0 if no samples)
-     * @since 0.12.0
+     * @since 0.12
      */
     public TransportStats(int activeConnections,
                           long activeStreams,

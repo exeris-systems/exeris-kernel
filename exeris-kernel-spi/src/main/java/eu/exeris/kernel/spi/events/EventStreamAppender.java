@@ -56,7 +56,7 @@ package eu.exeris.kernel.spi.events;
  *       the first event of a new stream.</li>
  * </ul>
  *
- * @since 0.7.0
+ * @since 0.7
  * @see EventStreamReader
  * @see AppendResult
  */

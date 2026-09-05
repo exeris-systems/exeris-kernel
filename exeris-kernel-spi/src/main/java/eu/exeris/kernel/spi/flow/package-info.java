@@ -39,7 +39,7 @@
  * {@link eu.exeris.kernel.spi.context.KernelProviders#FLOW_ENGINE} once during bootstrap.
  * All subsystems read it via the scoped slot — zero static singletons.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.flow;
 

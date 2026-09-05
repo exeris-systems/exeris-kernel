@@ -32,7 +32,7 @@
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_ENGINE} during bootstrap
  * and inherited by all virtual threads via {@link java.lang.ScopedValue} semantics.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.events;
 

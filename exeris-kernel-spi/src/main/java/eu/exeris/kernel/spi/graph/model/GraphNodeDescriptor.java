@@ -25,7 +25,7 @@ import java.util.Objects;
  * @param properties   list of property names exposed in graph queries
  * @param syncToGraph  whether relational changes should be synced to graph
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record GraphNodeDescriptor(
         String nodeLabel,

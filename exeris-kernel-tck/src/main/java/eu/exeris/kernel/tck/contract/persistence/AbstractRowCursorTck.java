@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * after {@code QueryResult.close()}. With {@code LeakDetectionMode.PARANOID},
  * any unreleased segment triggers a test failure.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractRowCursorTck {
 

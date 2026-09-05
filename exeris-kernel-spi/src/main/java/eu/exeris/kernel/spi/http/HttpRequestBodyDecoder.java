@@ -52,7 +52,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  * <p>Until 0.12 both arrived as {@code IllegalStateException} and the mandated mapping was
  * therefore not expressible: every malformed request reached the caller as a 500.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public interface HttpRequestBodyDecoder {
 

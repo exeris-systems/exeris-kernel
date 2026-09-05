@@ -27,7 +27,7 @@ import java.util.Objects;
  *
  * @param contentType   the requested content-type; never null (use {@link #JSON})
  * @param eventTypeName the event-type name for diagnostics; never null (may be empty)
- * @since 0.10.0
+ * @since 0.10
  */
 public record EventCodecContext(String contentType, String eventTypeName) {
 
@@ -50,7 +50,7 @@ public record EventCodecContext(String contentType, String eventTypeName) {
      *
      * @param eventTypeName the event-type name; never null (may be empty)
      * @return a JSON-content-type context
-     * @since 0.10.0
+     * @since 0.10
      */
     public static EventCodecContext json(String eventTypeName) {
         return new EventCodecContext(JSON, eventTypeName);

@@ -16,7 +16,7 @@ import java.util.Objects;
  * then throws today's {@code unknown-kid} deny). This resolver never rotates and
  * never throws a terminal deny of its own.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 /* default */ final class StaticJwksKeyResolver implements JwksKeyResolver {
 

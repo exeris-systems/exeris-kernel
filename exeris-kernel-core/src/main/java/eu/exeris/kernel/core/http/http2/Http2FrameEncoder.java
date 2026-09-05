@@ -17,7 +17,7 @@ import java.lang.foreign.ValueLayout;
  * <p>Writes the 9-byte frame header directly into a {@link MemorySegment}.
  * The caller is responsible for writing the frame payload after the header.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
 public final class Http2FrameEncoder {
@@ -226,7 +226,7 @@ public final class Http2FrameEncoder {
     /**
      * Unchecked exception for HTTP/2 Frame encoding violations (RFC 7540 §4 / §6).
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static class FrameEncodingException extends ExerisKernelException {
 

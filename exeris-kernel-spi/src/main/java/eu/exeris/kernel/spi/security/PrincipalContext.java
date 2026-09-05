@@ -66,7 +66,7 @@ import java.util.UUID;
  *       database indexing — sequential inserts, no page splits.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#PRINCIPAL_CONTEXT
  * @see StorageContext
  */
@@ -221,7 +221,7 @@ public interface PrincipalContext {
      *
      * @return packed role bitmask; {@code 0L} when the principal has no
      *         registry-resolved roles
-     * @since 0.7.0
+     * @since 0.7
      */
     default long roleMask() {
         return 0L;

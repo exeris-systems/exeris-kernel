@@ -31,7 +31,7 @@ import java.util.Objects;
  *                         installed; must be non-null and non-negative
  * @param staleFetchBudget maximum age of the last good generation before a refresh failure forces
  *                         deny; must be non-null and non-negative
- * @since 0.10.0
+ * @since 0.10
  */
 public record KeyRotationPolicy(Duration overlapWindow, Duration staleFetchBudget) {
 

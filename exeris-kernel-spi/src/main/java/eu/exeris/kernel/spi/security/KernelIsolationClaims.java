@@ -61,7 +61,7 @@ package eu.exeris.kernel.spi.security;
  * <p>This class is part of {@code exeris-kernel-spi} and carries no runtime
  * dependencies — no JWT library, no persistence driver, no framework code.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see StorageContext.IsolationStrategy
  * @see ImmutableStorageContext
  * @see eu.exeris.kernel.spi.persistence.PersistenceConfig#dedicatedDataSources()
@@ -131,7 +131,7 @@ public final class KernelIsolationClaims {
      * would grant visibility nothing enforces — ADR-012 §4b.5 forbids both. The deny lifts, per
      * deployment, when a binding can honour it.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final String SHARED_SCOPE_KEY = "x-exeris-shared-scope";
 

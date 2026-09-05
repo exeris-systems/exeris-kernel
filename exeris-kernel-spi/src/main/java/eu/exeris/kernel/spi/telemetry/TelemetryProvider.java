@@ -24,7 +24,7 @@ import java.util.List;
  * Community returns 0. Higher value wins.
  *
  * @see TelemetrySink
- * @since 0.5.0
+ * @since 0.5
  */
 public interface TelemetryProvider {
 

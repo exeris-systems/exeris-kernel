@@ -44,7 +44,7 @@ import java.util.Collection;
  *       no new object is created per dispatch, preserving the Zero-GC contract.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowExecutionPlanFactory
  * @see FlowScheduler
  * @see FlowRegistry
@@ -107,7 +107,7 @@ public interface FlowEngine extends AutoCloseable {
      * @param eventTypeNames event type names to subscribe to; must not be {@code null} or empty
      * @param bus            the {@link EventBus} on which to subscribe; must not be {@code null}
      * @throws UnsupportedOperationException if choreography is not supported
-     * @since 0.5.0
+     * @since 0.5
      */
     default void registerChoreographyMapper(
             FlowChoreographyMapper mapper,

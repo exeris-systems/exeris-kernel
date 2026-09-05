@@ -14,7 +14,7 @@ package eu.exeris.kernel.spi.diagnostics;
  * iteration order — implementation-defined and not stable across runs, so providers MUST NOT rely on
  * winning a tie.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public interface KernelDiagnosticsProvider {
 

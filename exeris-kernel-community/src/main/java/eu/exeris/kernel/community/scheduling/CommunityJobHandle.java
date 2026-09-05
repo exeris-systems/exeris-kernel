@@ -16,7 +16,7 @@ import eu.exeris.kernel.spi.scheduling.JobState;
  * handle is not a synchronisation point of its own — a second lock here would only create an
  * ordering to get wrong.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 // TooManyMethods: the JobHandle contract itself is most of them, and releasePayload/settle add the
 // lifecycle the payload release needs. Splitting would put the released fields and the code that

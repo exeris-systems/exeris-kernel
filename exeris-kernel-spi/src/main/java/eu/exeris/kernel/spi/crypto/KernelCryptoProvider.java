@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.crypto;
  * <p>Loaded via {@link java.util.ServiceLoader}. Enterprise returns {@link #priority()} = 100,
  * Community returns 0. Higher value wins.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface KernelCryptoProvider {
 

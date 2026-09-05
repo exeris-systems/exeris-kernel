@@ -22,7 +22,7 @@ package eu.exeris.kernel.spi.flow.model;
  * <p>A {@code FlowExecutionPlan} is immutable after creation. The same plan instance
  * can be safely scheduled for multiple concurrent flow instances.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowDefinition
  * @see eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory
  */
@@ -59,7 +59,7 @@ public interface FlowExecutionPlan {
      * a way the compiler used to prevent.
      *
      * @return the declared version, {@code >= FlowDefinition.INITIAL_VERSION}
-     * @since 0.11.0
+     * @since 0.11
      */
     default int definitionVersion() {
         return FlowDefinition.INITIAL_VERSION;

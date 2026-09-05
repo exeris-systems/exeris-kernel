@@ -30,7 +30,7 @@ import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
  * in the queue at the time {@link #stop()} was called. Events pushed after {@link #stop()}
  * is called may be silently dropped — callers should stop publishing before stopping the loop.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventBatchProcessor
  * @see EventQueue
  */

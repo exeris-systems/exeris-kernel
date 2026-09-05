@@ -16,7 +16,7 @@ import java.lang.foreign.MemorySegment;
  * <p>Intentionally <b>package-private</b>: no external module should reference it directly.
  * Always obtain via {@link EventPayload#empty()}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class EmptyEventPayload implements EventPayload {
 

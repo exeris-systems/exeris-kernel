@@ -24,7 +24,7 @@ import java.util.Objects;
  * @param statusCode      the received HTTP status, or {@code 0} for a transport failure
  * @param responseHeaders the response headers (empty on a transport failure); never {@code null}
  * @param failure         the transport-level failure, or {@code null} when a response arrived
- * @since 0.10.0
+ * @since 0.10
  */
 public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeaders, Throwable failure) {
 

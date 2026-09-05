@@ -39,7 +39,7 @@ import java.util.List;
  * }
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractSubsystemZeroAllocTck
  */
 @DisplayName("Bootstrap topological sort JFR zero-allocation TCK")

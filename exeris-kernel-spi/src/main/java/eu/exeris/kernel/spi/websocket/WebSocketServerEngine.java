@@ -12,7 +12,7 @@ package eu.exeris.kernel.spi.websocket;
  * booting the kernel</strong> (ADR-084 §1). A language server starts per editing session; requiring
  * a full runtime to open a socket would make the tool pay for something it does not use.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public interface WebSocketServerEngine extends AutoCloseable {
 

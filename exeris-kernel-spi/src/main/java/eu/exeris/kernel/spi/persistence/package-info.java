@@ -59,6 +59,6 @@
  * @see eu.exeris.kernel.spi.persistence.PersistenceProvider
  * @see eu.exeris.kernel.spi.persistence.PersistenceStatement
  * @see eu.exeris.kernel.spi.persistence.QueryResult
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.persistence;

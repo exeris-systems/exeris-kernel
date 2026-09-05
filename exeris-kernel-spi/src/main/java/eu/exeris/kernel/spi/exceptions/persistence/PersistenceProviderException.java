@@ -26,7 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>{@value KernelErrorCodes#EX_PERS_5008} — Column type outside the accessor's domain</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // TooManyMethods: the same reason it is suppressed on FlowEngineException — the count is the
 // contract. One named factory per rawArgs layout is what keeps string literals out of throw sites (a
@@ -230,7 +230,7 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * @param columnIndex      zero-based column index
      * @param accessor         the SPI method that refused, e.g. {@code "getString"}
      * @return exception with rawArgs: [declaredTypeName, columnIndex, accessor]
-     * @since 0.12.0
+     * @since 0.12
      */
     public static PersistenceProviderException unsupportedColumnType(
             String declaredTypeName, int columnIndex, String accessor) {

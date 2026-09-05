@@ -43,7 +43,7 @@ package eu.exeris.kernel.spi.events;
  * @param topic      optional binding-agnostic routing target ({@code null}/blank = no override);
  *                   see the "Binding-Agnostic Topic" section above
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventRegistry
  * @see EventDescriptor#eventTypeOrdinal()
  */

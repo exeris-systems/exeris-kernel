@@ -42,7 +42,7 @@ import java.time.Instant;
  * side of the ordering boundary the durable log owns; the transient {@link EventBus} makes no
  * ordering promise.
  *
- * @since 0.7.0
+ * @since 0.7
  * @see EventStream
  * @see EventStreamAppender
  */

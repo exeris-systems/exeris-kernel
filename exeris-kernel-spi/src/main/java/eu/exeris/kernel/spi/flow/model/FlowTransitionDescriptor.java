@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.flow.model;
  *                     use {@code "default"} for unconditional transitions;
  *                     never {@code null}
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowStepDescriptor
  * @see FlowDefinition
  */

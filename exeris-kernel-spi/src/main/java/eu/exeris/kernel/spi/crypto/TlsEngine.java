@@ -45,7 +45,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  * <p>Instances are NOT thread-safe by design. Each carrier/virtual thread owns its own engine.
  * Shared state lives only in the provider's global TLS context, which is read-only after bootstrap.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see KernelCryptoProvider
  * @see TlsStatus
  */

@@ -23,7 +23,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>Provider failure    → {@value KernelErrorCodes#EX_EVENT_6004} (see {@link EventProviderException})</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class EventEngineException extends ExerisKernelException {
 

@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link KafkaEventCodec#decodePayloadSegment(byte[])}). {@link #segment()} returns the held
  * segment as-is — no per-call {@link MemorySegment#ofArray(byte[])} wrapper allocation.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class KafkaHeapEventPayload implements EventPayload {
 

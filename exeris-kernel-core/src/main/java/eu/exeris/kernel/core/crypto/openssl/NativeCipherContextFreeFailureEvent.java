@@ -27,7 +27,7 @@ import jdk.jfr.StackTrace;
  * indicates a serious native-heap corruption. A non-zero count in a JFR recording
  * MUST be treated as a P0 incident.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.crypto.NativeCipherContextFreeFailure")
 @Label("NativeCipherContext SSL_free Failure")

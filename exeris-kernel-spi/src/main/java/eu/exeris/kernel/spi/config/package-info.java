@@ -28,7 +28,7 @@
  * heap-flattening once JEP 401 is mainline.
  *
  * @see eu.exeris.kernel.spi.config.ConfigProvider
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.config;
 

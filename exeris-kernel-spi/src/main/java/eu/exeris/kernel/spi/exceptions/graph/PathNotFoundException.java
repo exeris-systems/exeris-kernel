@@ -27,7 +27,7 @@ import java.util.UUID;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5004}
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class PathNotFoundException extends ExerisKernelException {
 

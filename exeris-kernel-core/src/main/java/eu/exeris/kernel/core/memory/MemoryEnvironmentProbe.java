@@ -42,7 +42,7 @@ import java.nio.file.Path;
  * <p>Emits a single {@code MemoryEnvironmentProbed} event at probe time for bootstrap
  * waterfall visibility.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class MemoryEnvironmentProbe {
 

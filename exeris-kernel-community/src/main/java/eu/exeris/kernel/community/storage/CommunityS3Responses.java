@@ -18,7 +18,7 @@ import java.util.Optional;
  * one decides what came back. Both are small; keeping them apart is what stops the store from growing
  * header parsing.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityS3Responses {
 

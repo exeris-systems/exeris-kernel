@@ -36,7 +36,7 @@ package eu.exeris.kernel.spi.websocket;
  * that cannot happen means the handler had something to say and could not, which is a failure it
  * has to see.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public interface WebSocketExchange {
 

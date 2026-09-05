@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *       {@code "none"} when no cause; class names are stable and not user-controlled</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class FlowExecutionException extends ExerisKernelException {
 

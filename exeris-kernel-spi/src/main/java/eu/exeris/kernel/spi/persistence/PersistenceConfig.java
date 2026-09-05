@@ -57,7 +57,7 @@ import java.util.Objects;
  *                               Nested entries MUST NOT themselves have non-empty
  *                               {@code dedicatedDataSources} maps (nesting depth = 1).
  * @see PersistenceProvider
- * @since 0.5.0
+ * @since 0.5
  */
 public record PersistenceConfig(
         String connectionUrl,
@@ -342,7 +342,7 @@ public record PersistenceConfig(
      * @param tenantPools max per-tenant pools
      * @param properties  opaque native options
      * @return production-ready configuration with native options
-     * @since 0.5.0
+     * @since 0.5
      */
     public static PersistenceConfig production(String url, String username, String password,
                                                int maxPool, int minIdle, int tenantPools,

@@ -29,7 +29,7 @@ import java.util.Optional;
  *                       {@code strategy} — see {@link StorageContext#sharedScopeKey()}
  * @param attributes     opaque {@code String→String} interceptor metadata; never {@code null}
  *
- * @since 0.5.0
+ * @since 0.5
  * @see StorageContext
  */
 public record ImmutableStorageContext(
@@ -317,7 +317,7 @@ public record ImmutableStorageContext(
      * @param sharedScopeKey the shared-scope partition key; never {@code null}
      * @return a new context identical to this one but carrying the shared scope; never {@code null}
      * @throws IllegalArgumentException if this context has no {@link #isolationKey()}
-     * @since 0.11.0
+     * @since 0.11
      */
     public ImmutableStorageContext withSharedScope(String sharedScopeKey) {
         Objects.requireNonNull(sharedScopeKey, "sharedScopeKey must not be null");

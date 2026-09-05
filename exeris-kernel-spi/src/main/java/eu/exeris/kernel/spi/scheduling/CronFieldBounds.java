@@ -11,7 +11,7 @@ package eu.exeris.kernel.spi.scheduling;
  * what a number means. Keeping the two apart means widening a field's range is not a change to the
  * grammar, and vice versa.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CronFieldBounds {
 

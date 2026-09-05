@@ -45,7 +45,7 @@ import java.util.concurrent.TimeUnit;
  * <p>Run with {@code -prof gc} to measure {@code norm.alloc} (bytes per operation).
  * Enterprise MUST report {@code 0.0 B/op} in steady state.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @BenchmarkMode({Mode.Throughput, Mode.AverageTime})
 @OutputTimeUnit(TimeUnit.MICROSECONDS)

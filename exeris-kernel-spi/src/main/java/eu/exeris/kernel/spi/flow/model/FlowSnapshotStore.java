@@ -40,7 +40,7 @@ import java.util.Optional;
  * <p>Once wired, the engine calls {@link #save(FlowSnapshot)} asynchronously on the
  * PARK transition and synchronously on LRU eviction.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#FLOW_SNAPSHOT_STORE
  */
 public interface FlowSnapshotStore {
@@ -104,7 +104,7 @@ public interface FlowSnapshotStore {
      *
      * @return list of parked snapshots; empty list if the store has none or does not
      *         track parked instances
-     * @since 0.7.0
+     * @since 0.7
      */
     default List<FlowSnapshot> listParked() {
         return List.of();

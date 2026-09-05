@@ -52,7 +52,7 @@ import java.util.Optional;
  * @param transparentHugePages  whether the host THP mode is active (not {@code [never]}); empty if unknown
  * @param classDataSharingActive whether CDS is active; empty if undeterminable
  * @param aotCacheActive        whether an AOT cache is active; empty if undeterminable
- * @since 0.9.0
+ * @since 0.9
  */
 public record RuntimeErgonomicsSnapshot(
         String schemaVersion,

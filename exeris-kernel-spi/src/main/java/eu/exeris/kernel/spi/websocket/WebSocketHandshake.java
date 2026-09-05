@@ -17,7 +17,7 @@ import java.util.Optional;
  * rejection is an HTTP response; the status comes from the set already in use rather than a parallel
  * one minted for this surface (ADR-084 §6).
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class WebSocketHandshake {
 

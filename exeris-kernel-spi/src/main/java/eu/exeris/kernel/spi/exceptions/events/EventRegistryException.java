@@ -26,7 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 1 – {@code int}    ordinal    (ordinal already in use)</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class EventRegistryException extends ExerisKernelException {
 

@@ -15,7 +15,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted when the Community Crypto provider finishes bootstrap.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.crypto.CommunityProviderBootstrap")
 @Label("Community Crypto Provider Bootstrap")

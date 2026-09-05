@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.exceptions;
  * [ID]     – 4-digit monotonic identifier within the domain
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("unused") // Codes are API contracts — referenced by future exception subclasses and external scrapers
 public final class KernelErrorCodes {
@@ -622,7 +622,7 @@ public final class KernelErrorCodes {
      *   <li>index 2 – {@code String} accessor (the SPI method that refused, e.g. {@code "getString"})</li>
      * </ul>
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final String EX_PERS_5008 = "EX-PERS-5008";
 

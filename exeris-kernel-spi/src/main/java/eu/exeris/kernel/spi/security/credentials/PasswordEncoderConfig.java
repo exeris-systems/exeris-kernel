@@ -9,7 +9,7 @@ package eu.exeris.kernel.spi.security.credentials;
  *
  * <p>OWASP-minimum (2024): {@code memoryCostKib=65_536, iterations=3, parallelism=1, hashLength=32}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record PasswordEncoderConfig(
 		int memoryCostKib,

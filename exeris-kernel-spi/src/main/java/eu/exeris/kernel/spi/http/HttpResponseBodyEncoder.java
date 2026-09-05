@@ -10,7 +10,7 @@ package eu.exeris.kernel.spi.http;
  * <p>Implementations are provider-side and transport-agnostic: they map domain payloads
  * to an off-heap encoded representation that can be wrapped in {@link HttpResponse}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface HttpResponseBodyEncoder {
 

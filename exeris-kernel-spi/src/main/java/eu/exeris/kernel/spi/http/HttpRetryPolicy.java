@@ -30,7 +30,7 @@ package eu.exeris.kernel.spi.http;
  * jitter, idempotency gate, {@code Retry-After} handling) are an implementation
  * concern, not SPI surface — see {@code CommunityHttpRetryPolicy}.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @FunctionalInterface
 public interface HttpRetryPolicy {

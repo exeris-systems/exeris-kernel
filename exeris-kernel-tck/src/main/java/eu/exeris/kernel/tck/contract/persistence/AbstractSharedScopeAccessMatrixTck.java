@@ -36,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Cross-tenant <em>mutation</em> of another owner's row is out of contract scope (ADR-012 §4b.4). It
  * appears below only as a denial, and MUST NOT be relaxed into an allowed cell by a binding.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public abstract class AbstractSharedScopeAccessMatrixTck {
 

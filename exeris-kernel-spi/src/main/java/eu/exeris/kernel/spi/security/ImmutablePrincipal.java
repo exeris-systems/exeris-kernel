@@ -50,7 +50,7 @@ import java.util.UUID;
  * @param roles       immutable role set (never {@code null})
  * @param scopes      immutable OAuth2 scope set (never {@code null})
  *
- * @since 0.5.0
+ * @since 0.5
  * @see PrincipalContext
  */
 public record ImmutablePrincipal(

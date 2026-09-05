@@ -50,7 +50,7 @@ import java.lang.annotation.Target;
  * @see KernelRoles
  * @see RoleMatch
  * @see <a href="../../../../../../docs/adr/ADR-014-requiresrole-compile-time-rbac-generation.md">ADR-014</a>
- * @since 0.7.0
+ * @since 0.7
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target({ElementType.METHOD, ElementType.TYPE})

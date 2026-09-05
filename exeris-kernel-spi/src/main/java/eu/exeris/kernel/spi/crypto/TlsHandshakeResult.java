@@ -20,7 +20,7 @@ package eu.exeris.kernel.spi.crypto;
  * @param status          the semantic outcome of this handshake step
  * @param nativeErrorCode provider-specific error code (0 for non-error outcomes);
  *                        interpretation is left to the implementation tier
- * @since 0.5.0
+ * @since 0.5
  */
 public record TlsHandshakeResult(Status status, int nativeErrorCode) {
 

@@ -39,7 +39,7 @@ import java.util.List;
  * Individual {@link GraphSession} instances are <strong>NOT thread-safe</strong> — one
  * session per Virtual Thread, always used within a try-with-resources block.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see GraphProvider
  * @see GraphSession
  */

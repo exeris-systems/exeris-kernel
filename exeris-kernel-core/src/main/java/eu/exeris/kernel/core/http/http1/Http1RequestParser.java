@@ -30,7 +30,7 @@ import java.nio.charset.StandardCharsets;
  * <h2>Thread Safety</h2>
  * <p>Thread-safe. Stateless static utility methods can be used concurrently.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc9112">RFC 9112</a>
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
@@ -184,7 +184,7 @@ public final class Http1RequestParser {
      * Unchecked exception for HTTP/1.1 protocol parse violations (DoS limits, malformed
      * framing).
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class Http1ParseException extends ExerisKernelException {
 

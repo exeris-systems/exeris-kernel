@@ -25,7 +25,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 0 – {@code String} requiredRole — the role that was missing</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.security.PrincipalContext#hasRole(String)
  */
 public final class InsufficientPrivilegesException extends ExerisKernelException {

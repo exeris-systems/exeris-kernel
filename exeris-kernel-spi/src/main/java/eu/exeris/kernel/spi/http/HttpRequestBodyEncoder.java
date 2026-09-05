@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.http;
  * {@link IllegalStateException}) before returning. No driver-specific exception
  * types may cross the SPI boundary.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public interface HttpRequestBodyEncoder {
 

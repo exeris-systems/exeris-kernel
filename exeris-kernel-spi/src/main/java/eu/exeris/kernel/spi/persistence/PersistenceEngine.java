@@ -36,7 +36,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * @see PersistenceProvider
  * @see PersistenceConnection
- * @since 0.5.0
+ * @since 0.5
  */
 public interface PersistenceEngine extends AutoCloseable {
 
@@ -97,7 +97,7 @@ public interface PersistenceEngine extends AutoCloseable {
      * measurement via a {@code SELECT 1} (or equivalent) round-trip query.
      *
      * @return structured health status; never {@code null}
-     * @since 0.5.0
+     * @since 0.5
      */
     PersistenceHealthStatus healthCheckDetailed();
 
@@ -116,7 +116,7 @@ public interface PersistenceEngine extends AutoCloseable {
      * @param interceptor the interceptor to add; must not be {@code null}
      * @throws NullPointerException  if {@code interceptor} is {@code null}
      * @throws IllegalStateException if called after the first connection has been opened
-     * @since 0.5.0
+     * @since 0.5
      */
     void registerInterceptor(ConnectionInterceptor interceptor);
 

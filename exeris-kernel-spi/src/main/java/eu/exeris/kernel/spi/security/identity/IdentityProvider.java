@@ -32,7 +32,7 @@ import eu.exeris.kernel.spi.security.AuthenticationResult;
  * <p>Implementations MUST be thread-safe; a single instance is shared across all virtual threads
  * for the kernel's lifetime.
  *
- * @since 0.10.0
+ * @since 0.10
  * @see IdentityProviderRegistry
  * @see TokenValidator
  * @see ClaimsMapper

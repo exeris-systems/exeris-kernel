@@ -27,7 +27,7 @@ import java.lang.foreign.ValueLayout;
  * <p>This parser reads directly from a {@link MemorySegment} — no intermediate
  * byte arrays, no heap allocation per frame.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-4">RFC 7540 §4</a>
  */
 public final class Http2FrameParser {

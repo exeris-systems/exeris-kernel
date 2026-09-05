@@ -42,7 +42,7 @@ import jdk.jfr.StackTrace;
  * Keys can carry application data, which is why {@link BlobStorageException} refuses to capture one
  * either. Endpoint credentials are never recorded for the same reason.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityBlobFailures {
 

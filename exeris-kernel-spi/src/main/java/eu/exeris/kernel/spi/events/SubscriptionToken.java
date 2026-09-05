@@ -19,7 +19,7 @@ package eu.exeris.kernel.spi.events;
  * @param busId               identifier of the {@link EventBus} instance that issued this token
  * @param subscriptionOrdinal the slot ordinal within the bus's subscriber table
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventBus#unsubscribe(SubscriptionToken)
  */
 public record SubscriptionToken(int busId, long subscriptionOrdinal) {

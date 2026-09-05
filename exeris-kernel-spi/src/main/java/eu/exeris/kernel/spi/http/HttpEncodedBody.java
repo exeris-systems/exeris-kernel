@@ -14,7 +14,7 @@ import java.util.Objects;
  *
  * @param headers headers generated during encoding; non-null, may be empty
  * @param body encoded body buffer; nullable for bodyless responses
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpEncodedBody(
         List<HttpHeader> headers,

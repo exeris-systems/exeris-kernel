@@ -41,7 +41,7 @@ import java.util.Optional;
  *
  * @see PersistenceEngine
  * @see PersistenceConfig
- * @since 0.5.0
+ * @since 0.5
  */
 public interface PersistenceProvider {
 
@@ -101,7 +101,7 @@ public interface PersistenceProvider {
      * expose a raw {@link MemorySegment} codec.
      *
      * @return raw encoder binding, if supported by this provider
-     * @since 0.5.0
+     * @since 0.5
      */
     default Optional<EntityEncoder<MemorySegment>> rawEntityEncoder() {
         return Optional.empty();
@@ -114,7 +114,7 @@ public interface PersistenceProvider {
      * expose a raw {@link MemorySegment} codec.
      *
      * @return raw decoder binding, if supported by this provider
-     * @since 0.5.0
+     * @since 0.5
      */
     default Optional<EntityDecoder<MemorySegment>> rawEntityDecoder() {
         return Optional.empty();

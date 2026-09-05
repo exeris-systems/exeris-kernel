@@ -21,7 +21,7 @@ import java.util.Map;
  * table has exactly the precedence rules the respond-once one does — which is the property that stopped
  * being true when this table was a bare {@code Map} and templated stream routes silently never matched.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class StreamRouteTable {
 

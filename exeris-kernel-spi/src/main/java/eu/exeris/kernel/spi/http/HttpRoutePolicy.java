@@ -46,7 +46,7 @@ import java.util.Set;
  * the slot is unbound, the kernel applies no per-route requirement — behaviour matches a kernel with
  * no policy at all. Read defensively via {@link HttpKernelProviders#httpRoutePolicy()}.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @FunctionalInterface
 public interface HttpRoutePolicy {
@@ -114,7 +114,7 @@ public interface HttpRoutePolicy {
      * @return a policy answering the first declared requirement, else {@code whenNoneDeclares}
      * @throws IllegalArgumentException if {@code whenNoneDeclares} is an abstention
      * @throws NullPointerException     if any argument or element is {@code null}
-     * @since 0.12.0
+     * @since 0.12
      */
     // Scope: composition time, not a runtime path. A policy list is folded once when the application
     // declares it, so the concatenated messages below are outside the rawArgs[] discipline that

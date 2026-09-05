@@ -43,7 +43,7 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowProviderException;
  * @see FlowEngine
  * @see FlowEngineConfig
  * @see eu.exeris.kernel.spi.context.KernelProviders#FLOW_ENGINE
- * @since 0.5.0
+ * @since 0.5
  */
 public interface FlowProvider {
 

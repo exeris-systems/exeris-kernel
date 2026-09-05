@@ -17,6 +17,6 @@
  * <p>This package contains ONLY pure SPI interfaces — no JDBC, HikariCP, io_uring,
  * or any driver-specific class references are permitted here.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.persistence.codec;

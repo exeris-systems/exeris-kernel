@@ -63,7 +63,7 @@ import java.util.Objects;
  *   index 1 → int    port   (-1 if not applicable)
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class TransportException extends ExerisKernelException {
 

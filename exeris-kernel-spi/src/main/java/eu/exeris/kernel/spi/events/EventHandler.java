@@ -32,7 +32,7 @@ package eu.exeris.kernel.spi.events;
  * {@link #handle} invocation (or while refCount > 0 after retain).
  * Accessing it after the final {@code close()} results in undefined behaviour.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventBus#subscribe(String, EventHandler)
  * @see EventPayload
  */

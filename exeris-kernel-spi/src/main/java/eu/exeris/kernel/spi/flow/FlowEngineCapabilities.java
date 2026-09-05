@@ -37,7 +37,7 @@ package eu.exeris.kernel.spi.flow;
  * @param providerId             stable identifier of the provider that created this engine
  *                               (e.g. {@code "community"}, {@code "enterprise"})
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record FlowEngineCapabilities(
         boolean deterministicExecution,

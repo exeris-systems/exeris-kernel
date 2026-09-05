@@ -41,7 +41,7 @@ import java.util.Optional;
  * @see HttpServerEngine
  * @see HttpClientEngine
  * @see HttpConfig
- * @since 0.5.0
+ * @since 0.5
  */
 public interface HttpProvider {
 
@@ -129,7 +129,7 @@ public interface HttpProvider {
      * bootstrap channel.
      *
      * @return optional registry; empty when the provider does not contribute defaults
-     * @since 0.8.0
+     * @since 0.8
      */
     default Optional<HttpRequestBodyEncoderRegistry> requestBodyEncoderRegistry() {
         return Optional.empty();
@@ -145,7 +145,7 @@ public interface HttpProvider {
      * bootstrap channel.
      *
      * @return optional registry; empty when the provider does not contribute defaults
-     * @since 0.8.0
+     * @since 0.8
      */
     default Optional<HttpResponseBodyDecoderRegistry> responseBodyDecoderRegistry() {
         return Optional.empty();
@@ -162,7 +162,7 @@ public interface HttpProvider {
      * request bodies (ADR-036).
      *
      * @return optional registry; empty when the provider does not contribute defaults
-     * @since 0.8.0
+     * @since 0.8
      */
     default Optional<HttpRequestBodyDecoderRegistry> requestBodyDecoderRegistry() {
         return Optional.empty();

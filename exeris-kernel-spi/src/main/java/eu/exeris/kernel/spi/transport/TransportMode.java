@@ -21,7 +21,7 @@ package eu.exeris.kernel.spi.transport;
  *
  * @see TransportConfig
  * @see TransportEngine
- * @since 0.5.0
+ * @since 0.5
  */
 public enum TransportMode {
 

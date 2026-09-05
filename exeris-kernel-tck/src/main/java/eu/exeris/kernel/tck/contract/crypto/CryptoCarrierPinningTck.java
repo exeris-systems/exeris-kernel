@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link LoanedBuffer}s. The cipher record loop must never pin a carrier thread —
  * no native blocking calls (e.g. {@code SSL_read} in blocking mode) allowed.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
  * @see CryptoZeroAllocTck
  */

@@ -47,7 +47,7 @@ import java.util.Optional;
  * defeats the limit and the second is simply wrong. The filesystem driver pays the same cost as a
  * {@code stat}.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class CommunityS3BlobStore implements BlobStore {
 

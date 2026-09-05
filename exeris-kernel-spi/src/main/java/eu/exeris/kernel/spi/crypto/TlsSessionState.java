@@ -16,7 +16,7 @@ package eu.exeris.kernel.spi.crypto;
  * <p>This SPI type must remain blind to {@code TlsStateMachine}, VarHandle internals,
  * and any provider-specific error codes. It exposes only {@link TlsPhase} semantics.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see TlsPhase
  * @see TlsEngine
  */

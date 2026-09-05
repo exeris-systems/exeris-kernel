@@ -41,7 +41,7 @@ import java.nio.ByteOrder;
  * allocation, no {@code System.arraycopy}. The legacy {@link #decodePayloadBytes(byte[])}
  * remains for byte-level test assertions and delegates to the slice API.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class KafkaEventCodec {
 

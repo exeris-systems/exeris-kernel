@@ -25,7 +25,7 @@ package eu.exeris.kernel.spi.transport;
  *
  * @see TransportEngine#setStreamHandler(StreamHandler)
  * @see TransportStream
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface StreamHandler {

@@ -73,7 +73,7 @@ import java.util.function.UnaryOperator;
  * Narrow synchronized sections are used only for internal {@code orderedSubsystems}
  * list mutation/snapshots off the hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see SubsystemCircularDependencyException
  * @see BootstrapJfrEvents
  */

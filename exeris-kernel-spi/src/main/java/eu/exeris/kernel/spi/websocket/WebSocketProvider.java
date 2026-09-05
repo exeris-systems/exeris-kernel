@@ -15,7 +15,7 @@ package eu.exeris.kernel.spi.websocket;
  * <h2>SPI Compliance</h2>
  * <p>Implementation-blind: no reference to sockets, frame buffers, TLS handles or event loops.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public interface WebSocketProvider {
 

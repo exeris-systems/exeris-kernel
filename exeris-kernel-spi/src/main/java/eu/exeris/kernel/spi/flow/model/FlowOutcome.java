@@ -10,7 +10,7 @@ package eu.exeris.kernel.spi.flow.model;
  * <p>Returned by {@link FlowStepAction#execute(FlowContext)} to signal the scheduler
  * what to do next with this flow instance.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowStepAction
  */
 public enum FlowOutcome {

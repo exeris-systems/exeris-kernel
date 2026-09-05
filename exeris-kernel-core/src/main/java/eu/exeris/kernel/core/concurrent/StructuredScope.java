@@ -74,7 +74,7 @@ import java.util.concurrent.Callable;
  * <p>{@code state} moves once, monotonically, from {@code RUNNING} to a terminal value, so a reader
  * can never observe it going backwards.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class StructuredScope implements AutoCloseable {
 

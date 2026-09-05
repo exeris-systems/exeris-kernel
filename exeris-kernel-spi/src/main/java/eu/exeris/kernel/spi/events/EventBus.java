@@ -35,7 +35,7 @@ import eu.exeris.kernel.spi.exceptions.events.EventBusException;
  *       O(1) ordinal lookup. Zero heap allocation per publish after startup.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventDescriptor
  * @see EventPayload
  * @see EventHandler

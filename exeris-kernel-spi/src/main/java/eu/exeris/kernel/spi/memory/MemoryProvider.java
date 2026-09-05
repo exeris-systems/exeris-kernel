@@ -33,7 +33,7 @@ import eu.exeris.kernel.spi.exceptions.memory.MemoryBootstrapException;
  *
  * @see MemoryAllocator
  * @see MemoryProviderConfig
- * @since 0.5.0
+ * @since 0.5
  */
 public interface MemoryProvider {
 

@@ -23,7 +23,7 @@ import java.util.Objects;
  * @param code         numeric status code (100–599); values outside this range are rejected
  * @param reasonPhrase human-readable phrase; non-null (may be blank for HTTP/2 where it is
  *                     not transmitted on the wire, but must be non-null for API consistency)
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpStatus(int code, String reasonPhrase) {
 

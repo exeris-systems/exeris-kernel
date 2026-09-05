@@ -17,7 +17,7 @@ package eu.exeris.kernel.spi.security.credentials;
  * Instantiate the implementation directly:
  * {@code new Argon2idPasswordEncoder(PasswordEncoderConfig.defaults())}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface KernelPasswordEncoder {
 

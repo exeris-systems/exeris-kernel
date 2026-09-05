@@ -29,7 +29,7 @@ import java.util.Objects;
  * @param version protocol version of the response; non-null
  * @param headers immutable list of response header fields; non-null, may be empty
  * @param body    response body buffer, or {@code null} if the response has no body
- * @since 0.5.0
+ * @since 0.5
  */
 public record HttpResponse(
         HttpStatus status,

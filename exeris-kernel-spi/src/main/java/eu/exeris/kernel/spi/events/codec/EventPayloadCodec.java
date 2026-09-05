@@ -39,7 +39,7 @@ import eu.exeris.kernel.spi.events.EventPayload;
  * (testable-as-written; the TCK asserts the thrown type's package
  * {@code startsWith("java.")}).
  *
- * @since 0.10.0
+ * @since 0.10
  * @see EventPayloadCodecRegistry
  * @see EventCodecContext
  * @see EventPayload

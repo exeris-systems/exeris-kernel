@@ -45,7 +45,7 @@ import java.util.UUID;
  * io_uring, Netty, JDBC, or any protocol-specific concept. It is a pure contract.
  *
  * @see <a href="../../../../../../docs/subsystems/exceptions.md">exceptions.md – Exceptions Subsystem</a>
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class ExerisKernelException extends RuntimeException {
 
@@ -263,7 +263,7 @@ public abstract class ExerisKernelException extends RuntimeException {
      * would otherwise have to remember.
      *
      * @return the fault origin; never {@code null}
-     * @since 0.12.0
+     * @since 0.12
      */
     public FaultOrigin faultOrigin() {
         return FaultOrigin.SYSTEM;

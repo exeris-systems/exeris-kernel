@@ -32,7 +32,7 @@ package eu.exeris.kernel.spi.exceptions;
  * <p>More constants may be added — a retryable-transient origin is the obvious candidate — so a
  * {@code switch} over this enum needs a {@code default}.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public enum FaultOrigin {
 

@@ -17,7 +17,7 @@ package eu.exeris.kernel.spi.telemetry;
  * @param glassBoxOffHeapBytes Off-heap budget for BinaryGlassBoxSink (Enterprise).
  *                             {@code 0} = disabled (Community mode).
  * @param maxEventQueueDepth   Maximum buffered events before backpressure/drop.
- * @since 0.5.0
+ * @since 0.5
  */
 public record TelemetryConfig(
         boolean consoleSinkEnabled,

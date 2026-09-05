@@ -31,7 +31,7 @@ import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
  * <p>Handlers are plain Java objects. Dependencies are injected via constructors. No Spring, Guice, or
  * Jakarta Inject annotations are permitted.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @FunctionalInterface
 public interface HttpStreamHandler {

@@ -40,7 +40,7 @@ import java.util.List;
  *       (required by {@link java.util.ServiceLoader}).</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see Subsystem
  * @see BootstrapSelector
  */

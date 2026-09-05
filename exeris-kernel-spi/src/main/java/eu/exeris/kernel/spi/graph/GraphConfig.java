@@ -26,7 +26,7 @@ import java.util.Objects;
  * @param pathFinderEnabled whether shortest-path algorithms are enabled
  * @param properties      opaque backend-specific configuration map
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record GraphConfig(
         String backendType,
