@@ -22,7 +22,8 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 public final class PrincipalContextMissingException extends ExerisKernelException {
 
     /**
-     * Creates a new principal-context-missing exception.
+     * Builds the exception with the fixed message and no raw arguments — the absence of a
+     * bound context is itself the entire diagnosis.
      */
     public PrincipalContextMissingException() {
         super(KernelErrorCodes.EX_SEC_2001, "PrincipalContext not bound — "

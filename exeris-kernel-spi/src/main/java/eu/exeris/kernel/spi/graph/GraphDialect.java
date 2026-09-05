@@ -18,30 +18,26 @@ import java.util.List;
  * or any network/storage mechanism. Callers never see SQL vs Cypher — they see
  * "a query string the session knows how to execute".
  *
- * <h2>Implementations</h2>
- * <ul>
- *   <li><b>Community PostgreSQL:</b> SQL:2023 PGQ (GRAPH_TABLE + MATCH)</li>
- *   <li><b>Community Neo4j:</b> Cypher query language</li>
- *   <li><b>Enterprise PostgreSQL:</b> PGQ via PG native wire protocol</li>
- *   <li><b>Enterprise Neo4j:</b> FFM-native Bolt (future)</li>
- * </ul>
- *
+ * @implNote Community binds SQL:2023 PGQ ({@code GRAPH_TABLE}/{@code MATCH}) for PostgreSQL
+ *           and Cypher for Neo4j. Enterprise binds PGQ over the native PostgreSQL wire
+ *           protocol; an FFM-native Bolt binding is planned.
  * @since 0.5
  */
 public interface GraphDialect {
 
     /**
-     * Builds a MATCH query for single-hop edge traversal.
+     * Returns a dialect-specific query string that matches a single hop across {@code edge}.
      *
-     * @param edge edge descriptor
+     * @param edge edge descriptor to match
      * @return dialect-specific query string
      */
     String buildMatchQuery(GraphEdgeDescriptor edge);
 
     /**
-     * Builds a multi-hop MATCH query with depth bounds.
+     * Returns a dialect-specific query string that matches between {@code minHops} and
+     * {@code maxHops} hops across {@code edge}.
      *
-     * @param edge    edge descriptor
+     * @param edge    edge descriptor to match
      * @param minHops minimum hops (≥ 1)
      * @param maxHops maximum hops
      * @return dialect-specific query string
@@ -49,25 +45,27 @@ public interface GraphDialect {
     String buildMultiHopQuery(GraphEdgeDescriptor edge, int minHops, int maxHops);
 
     /**
-     * Builds a shortest-path query.
+     * Returns a dialect-specific query string that finds the shortest path across
+     * {@code edge}, bounded to at most {@code maxDepth} hops.
      *
-     * @param edge     edge descriptor
+     * @param edge     edge descriptor to match
      * @param maxDepth maximum path depth
      * @return dialect-specific query string
      */
     String buildShortestPathQuery(GraphEdgeDescriptor edge, int maxDepth);
 
     /**
-     * Generates DDL to create the property graph (if supported by backend).
+     * Returns DDL that creates the property graph over {@code nodes} and {@code edges}.
      *
      * @param nodes node definitions
      * @param edges edge definitions
-     * @return DDL statement, or empty string if not applicable
+     * @return DDL statement, or an empty string if the backend has no explicit
+     *         property-graph DDL
      */
     String buildCreatePropertyGraph(List<GraphNodeDescriptor> nodes, List<GraphEdgeDescriptor> edges);
 
     /**
-     * Generates DDL to create an edge storage table.
+     * Returns DDL that creates the storage table backing {@code edge}.
      *
      * @param edge edge descriptor
      * @return DDL statement
@@ -75,9 +73,10 @@ public interface GraphDialect {
     String buildCreateEdgeTable(GraphEdgeDescriptor edge);
 
     /**
-     * Generates DDL to drop the property graph (if supported by backend).
+     * Returns DDL that drops the property graph.
      *
-     * @return DDL statement, or empty string if not applicable
+     * @return DDL statement, or an empty string if the backend has no explicit
+     *         property-graph DDL
      */
     String buildDropPropertyGraph();
 

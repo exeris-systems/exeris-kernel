@@ -41,7 +41,11 @@ import java.util.UUID;
 public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
 
     /**
-     * Compact constructor — validates {@code streamType} is non-null and non-blank.
+     * Compact constructor — refuses an unqualified stream identity, since {@code streamType} is
+     * what scopes a replay query and a blank one would silently widen it.
+     *
+     * @throws NullPointerException     if {@code streamType} is {@code null}
+     * @throws IllegalArgumentException if {@code streamType} is blank
      */
     public StreamId {
         Objects.requireNonNull(streamType, "streamType must not be null");
@@ -59,7 +63,11 @@ public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
      *
      * @param uuid       the stream UUID; must not be {@code null}
      * @param streamType non-blank stream type qualifier
-     * @return new {@code StreamId} carrying {@code uuid}'s high/low bits
+     * @return a {@code StreamId} whose high/low halves are {@code uuid}'s most/least significant
+     *         bits, wire-compatible with {@link EventDescriptor#streamIdHigh()} /
+     *         {@link EventDescriptor#streamIdLow()}
+     * @throws NullPointerException     if {@code uuid} or {@code streamType} is {@code null}
+     * @throws IllegalArgumentException if {@code streamType} is blank
      */
     // 'of' is a standard Java factory idiom (cf. List.of, Map.of, EventDescriptor.of)
     @SuppressWarnings("PMD.ShortMethodName")
@@ -69,12 +77,13 @@ public record StreamId(long streamIdHigh, long streamIdLow, String streamType) {
     }
 
     /**
-     * Reconstructs the stream {@link UUID}.
+     * Materialises the stream identity as a {@link UUID} from the primitive high/low pair, for
+     * interoperability with APIs that speak {@code UUID}.
      *
-     * <p><b>Allocates</b> — diagnostic / logging path only. Use the high/low primitive
-     * accessors directly on the dispatch / replay hot path.
-     *
-     * @return new {@link UUID} composed of {@code streamIdHigh}/{@code streamIdLow}
+     * @return a newly allocated {@link UUID} composed of {@code streamIdHigh} and
+     *         {@code streamIdLow}
+     * @apiNote Allocates one {@code UUID} per call — diagnostics and logging only. Use the
+     *          primitive accessors directly on the dispatch and replay paths.
      */
     public UUID toUuid() {
         return new UUID(streamIdHigh, streamIdLow);

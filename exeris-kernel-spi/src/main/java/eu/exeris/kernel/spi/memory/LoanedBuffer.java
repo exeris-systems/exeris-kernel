@@ -10,11 +10,11 @@ import java.lang.foreign.MemorySegment;
  * SPI: A borrowed, reference-counted buffer backed by a {@link MemorySegment}.
  *
  * <h2>Zero-Copy Contract</h2>
- * <p>Data MUST never be copied between heap and off-heap. All fragment operations
- * ({@link #slice}, {@link #view}) return views into the <em>same</em> underlying
+ * <p>Data is never copied between heap and off-heap. All fragment operations
+ * ({@link #slice}, {@link #view}, {@link #peek}) return views into the <em>same</em> underlying
  * {@link MemorySegment} — zero bytes are moved. The parent buffer's reference count
- * is incremented by each view/slice, ensuring the backing memory remains live until
- * the last view is closed.
+ * is incremented by each owning view or slice, so the backing memory remains live until
+ * the last of them is closed.
  *
  * <h2>Reference-Count Lifecycle</h2>
  * <pre>
@@ -25,17 +25,17 @@ import java.lang.foreign.MemorySegment;
  * </pre>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (LoanedBuffer buf = allocator.allocate(AllocationHint.MEDIUM)) {
  *     buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0xFF);
  *     transport.send(buf);   // transport calls buf.retain()
  * }
- * // close() called here; if transport still holds a retain, memory lives on
- * }</pre>
+ * // close() runs here; while transport holds its retain, the memory stays live
+ * }
  *
  * <h2>Packet Fragmentation (Zero-Copy)</h2>
- * <pre>{@code
- * // Split a 64 KB frame into two 32 KB halves WITHOUT copying:
+ * {@snippet lang="java" :
+ * // Split a 64 KB frame into two 32 KB halves without copying:
  * try (LoanedBuffer frame = allocator.allocateNetwork(65_536)) {
  *     try (LoanedBuffer head = frame.slice(0, 32_768);
  *          LoanedBuffer tail = frame.slice(32_768, 32_768)) {
@@ -43,10 +43,27 @@ import java.lang.foreign.MemorySegment;
  *         pipeline.sendFragment(tail);
  *     }
  * }
- * }</pre>
+ * }
  *
- * @see MemoryAllocator
+ * <p><b>Allocation:</b> zero-alloc on hot path — {@link #slice}, {@link #view} and
+ * {@link #peek} move no bytes and add nothing beyond the returned handle; pooling of the
+ * backing segment is the allocator's concern.
+ * <p><b>Thread confinement:</b> virtual-thread-safe — the reference count is maintained
+ * atomically, so a buffer may cross a thread boundary; the hand-off must be paired,
+ * {@link #retain()} before publishing the reference and {@link #close()} by the receiver.
+ * <p><b>Ownership:</b> the holder of the last reference releases the memory via
+ * {@link #close()}; every {@code slice} and {@code view} owns a reference of its own and
+ * must be closed, while a {@code peek} view owns nothing and must not outlive its parent.
+ *
+ * @implSpec Implementations must return the backing segment to the pool exactly once, on
+ *           the transition from reference count 1 to 0, and must reject every subsequent
+ *           operation on the buffer with {@code IllegalStateException}. {@link #close()}
+ *           on an already-released buffer is the one exception: it is a no-op.
+ * @apiNote Prefer {@code try-with-resources}. A missed {@code close()} is a silent leak
+ *          that only {@link LeakDetectionMode#SAMPLED} or {@link LeakDetectionMode#PARANOID}
+ *          will report, as {@code EX-MEM-1002}.
  * @since 0.5
+ * @see MemoryAllocator
  */
 public interface LoanedBuffer extends AutoCloseable {
 
@@ -55,10 +72,13 @@ public interface LoanedBuffer extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Returns the underlying Panama FFM {@link MemorySegment}.
+     * Returns the backing memory as a live Panama FFM {@link MemorySegment} whose validity
+     * ends when this buffer's reference count reaches zero.
      *
-     * <p>Callers use {@code MemorySegment.set(ValueLayout, offset, value)} for direct
-     * reads and writes — no intermediate arrays, no copies.
+     * <p>Callers read and write through {@code MemorySegment.get}/{@code set(ValueLayout,
+     * offset, value)} — no intermediate arrays, no copies. The segment spans
+     * {@link #capacity()} bytes, of which the first {@link #size()} hold valid data.
+     * A segment obtained from a buffer returned by {@link #view()} may be read-only.
      *
      * @return live segment (off-heap or on-heap depending on the active allocator tier)
      * @throws IllegalStateException if this buffer has already been closed
@@ -66,14 +86,19 @@ public interface LoanedBuffer extends AutoCloseable {
     MemorySegment segment();
 
     /**
-     * Number of bytes currently written into this buffer (the logical write-cursor).
+     * Returns the number of valid data bytes in this buffer — the logical write-cursor,
+     * which is what a reader must respect and is independent of {@link #capacity()}.
      *
      * @return value in {@code [0, capacity()]}
      */
     long size();
 
     /**
-     * Maximum number of bytes this buffer can hold.
+     * Returns the byte size of the backing segment — the hard upper bound for
+     * {@link #setSize} and for any write through {@link #segment()}.
+     *
+     * <p>May exceed the {@link AllocationHint#sizeBytes()} that was requested, because the
+     * allocator rounds to a pool bucket.
      *
      * @return backing segment byte size
      */
@@ -84,68 +109,65 @@ public interface LoanedBuffer extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Returns a <em>zero-copy view</em> of this buffer, starting at {@code offset} for
-     * {@code length} bytes.
+     * Returns an owning, zero-copy view of {@code length} bytes of this buffer starting at
+     * {@code offset}, which keeps the parent's memory live until the slice is closed.
      *
-     * <p><strong>Contract:</strong>
-     * <ul>
-     *   <li>Returns a new {@code LoanedBuffer} whose {@code segment()} is
-     *       {@code this.segment().asSlice(offset, length)} — no bytes are copied.</li>
-     *   <li>This buffer's reference count is incremented by one. The slice MUST
-     *       be closed by the caller; when it is closed the parent's refCount is
-     *       decremented.</li>
-     *   <li>The slice's own {@code size()} equals {@code length}.</li>
-     * </ul>
+     * <p>The slice shares the parent's backing segment — no bytes are copied — but it is an
+     * independent {@code LoanedBuffer} with a {@link #close()} obligation of its own, and it
+     * is therefore the form to use when the fragment may cross a thread boundary.
      *
      * @param offset byte offset within this buffer (0-based)
      * @param length number of bytes in the slice
-     * @return a zero-copy slice; caller must close it
+     * @return a zero-copy slice whose own {@code size()} equals {@code length}; the caller
+     *         must close it
      * @throws IndexOutOfBoundsException if {@code offset + length > capacity()}
      * @throws IllegalStateException     if this buffer is closed
+     * @implSpec The returned buffer's {@code segment()} must be
+     *           {@code this.segment().asSlice(offset, length)}, and this buffer's reference
+     *           count must be incremented by one on the call and decremented when the slice
+     *           is closed.
      */
     LoanedBuffer slice(long offset, long length);
 
     /**
-     * Returns a <em>read-only zero-copy view</em> of this buffer covering all valid data.
+     * Returns an owning, zero-copy view over the {@link #size()} valid bytes of this buffer,
+     * signalling read-only intent to downstream handlers.
      *
-     * <p>Equivalent to {@code slice(0, size())} but semantically signals read-only
-     * intent. Implementations MAY return a read-only {@link MemorySegment} to prevent
-     * accidental mutation by downstream handlers.
+     * <p>Equivalent in extent to {@code slice(0, size())}. Implementations may back it with a
+     * read-only {@link MemorySegment} to prevent accidental mutation of the parent's bytes.
      *
-     * @return read-only view of current data; caller must close it
+     * @return read-only view of the current data; the caller must close it
      * @throws IllegalStateException if this buffer is closed
+     * @implSpec This buffer's reference count must be incremented by one on the call and
+     *           decremented when the view is closed, exactly as for {@link #slice}.
      */
     LoanedBuffer view();
 
     /**
-     * Returns a <em>zero-copy, non-owning view</em> of this buffer covering a specific range.
+     * Returns a zero-copy, <em>non-owning</em> view of a range of this buffer: it takes no
+     * reference, so the caller must keep this buffer alive for as long as the view is used.
      *
-     * <h3>Ownership Contract (implementors MUST honour)</h3>
-     * <ul>
-     *   <li>This method does <strong>not</strong> increment the parent refCount.
-     *       The returned view is <em>non-owning</em>.</li>
-     *   <li>The caller is responsible for ensuring the parent {@code LoanedBuffer}
-     *       remains alive (i.e., not closed) for the entire duration of use of the peek view.</li>
-     *   <li>{@link #close()} on a peek view MUST be a no-op with respect to reference counting.
-     *       It must not decrement the parent's refCount.</li>
-     *   <li>{@link #retain()} on a peek view MUST be a no-op with respect to reference counting.
-     *       It must not increment any counter.</li>
-     *   <li>{@link #refCount()} on a peek view is for diagnostics only; it SHOULD reflect
-     *       the parent buffer's refCount and MUST NOT maintain an independent mutable count.</li>
-     * </ul>
-     *
-     * <p>Unlike {@link #slice}, which increments the parent refCount and is safe across thread
-     * boundaries, {@code peek} is intended strictly for same-scope, same-thread use where the
-     * parent buffer's lifetime trivially covers the view's use.
-     *
-     * <p><b>Warning:</b> prefer {@link #slice} whenever the view may cross a thread boundary
-     * or ownership boundaries are not immediately obvious.
+     * <p>Unlike {@link #slice}, which takes a reference and is therefore safe across thread
+     * boundaries, {@code peek} is for same-scope, same-thread reads where the parent buffer's
+     * lifetime trivially covers the view's use.
      *
      * @param offset byte offset within this buffer
      * @param length number of bytes
-     * @return a lightweight, non-owning view; {@code close()} is a no-op for ref-counting
+     * @return a lightweight, non-owning view; {@code close()} on it is a no-op for
+     *         reference counting
      * @throws IndexOutOfBoundsException if {@code offset + length > capacity()}
      * @throws IllegalStateException     if this buffer is closed
+     * @implSpec Implementations must not increment this buffer's reference count for the
+     *           returned view. On that view, {@link #close()} must be a no-op that does not
+     *           decrement the parent's count, {@link #retain()} must be a no-op that
+     *           increments no counter, and {@link #refCount()} is diagnostic only — it should
+     *           report the parent's count and must not maintain an independent mutable count.
+     * @apiNote Prefer {@link #slice} whenever the view may cross a thread boundary, or
+     *          whenever the ownership boundaries are not immediately obvious at the call
+     *          site: a peek view that outlives its parent is a use-after-free on the
+     *          native segment.
+     * @implNote The kernel reports a {@link #retain()} or {@link #addCloseAction} call on a
+     *           peek view as {@code EX-MEM-1003} (peek-view ownership misuse).
      */
     LoanedBuffer peek(long offset, long length);
 
@@ -154,29 +176,34 @@ public interface LoanedBuffer extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Increments the reference count (claims shared ownership).
-     *
-     * <p>Call this before passing the buffer to another component that will
-     * independently manage its lifetime (e.g., async transport callback).
+     * Claims a share of ownership by incrementing the reference count, so that the memory
+     * outlives the caller's own {@link #close()}.
      *
      * @throws IllegalStateException if the buffer has already been fully released
+     * @apiNote Call this <em>before</em> publishing the buffer to a component that manages
+     *          its lifetime independently — an async transport callback, a forked subtask,
+     *          a queue crossing to another virtual thread. The receiver closes the reference
+     *          this call created; the retain and that close must pair exactly.
      */
     void retain();
 
     /**
-     * Decrements the reference count. When it reaches zero the buffer is returned
-     * to the pool or the backing {@code MemorySegment} is released.
+     * Releases one reference; when the last one goes, the buffer is returned to the pool or
+     * the backing {@code MemorySegment} is freed and the registered close actions run.
      *
-     * <p>Must be idempotent: multiple calls to {@code close()} on an already-released
-     * buffer must not throw.
+     * @implSpec Must be idempotent: further calls to {@code close()} on an already-released
+     *           buffer must not throw and must not decrement any count.
      */
     @Override
     void close();
 
     /**
-     * Returns the current reference count (for diagnostics and tests only).
+     * Returns how many references are currently outstanding, for diagnostics and tests.
      *
      * @return reference count; {@code 0} means the buffer has been returned to the pool
+     * @apiNote Never branch production logic on this value — it can change under a
+     *          concurrent hand-off between the read and the branch. Pair {@link #retain()}
+     *          with {@link #close()} instead.
      */
     int refCount();
 
@@ -198,17 +225,26 @@ public interface LoanedBuffer extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Returns {@code true} if this buffer is still live (refCount &gt; 0).
+     * Reports whether the backing memory is still valid — that is, whether at least one
+     * reference is outstanding.
      *
-     * @return buffer liveness
+     * @return {@code true} while {@code refCount() > 0}; {@code false} once the buffer has
+     *         been returned to the pool, after which every accessor throws
+     *         {@code IllegalStateException}
      */
     boolean isAlive();
 
     /**
-     * Registers a cleanup action to be invoked when the reference count reaches zero.
-     * Actions are executed in LIFO order.
+     * Registers a cleanup action to run when the reference count reaches zero, immediately
+     * before the memory is returned to the pool.
+     *
+     * <p>Actions are executed in LIFO order, so an action registered later sees the state
+     * left by the ones registered before it.
      *
      * @param action cleanup callback; must not throw
+     * @implNote The kernel's Core base implementation holds a fixed set of four action slots
+     *           per buffer and rejects a fifth registration; a peek view holds none at all
+     *           (see {@link #peek}).
      */
     void addCloseAction(Runnable action);
 }

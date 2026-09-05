@@ -18,23 +18,8 @@ import java.util.Optional;
  * ladder, "you are throttled, raise X") is the Enterprise advisor's surface per ADR-008, layered on top
  * of this same record shape.
  *
- * <h2>Degradation contract (ADR-033 Obligation 5)</h2>
- * <p>Data that is legitimately absent — a non-Linux host, a cgroup-v1-only hierarchy, no container
- * limits, a non-HotSpot JVM that cannot report a knob — is modelled as {@link Optional#empty()} on the
- * affected field, never a sentinel value or a new "unknown" type. The always-available JVM facts
- * ({@code gcName}, {@code availableProcessors}, heap geometry) are plain fields; {@code heapMaxBytes} is
- * {@code -1} when the JVM reports the max as undefined (mirrors {@code java.lang.management}).
- *
  * <p>This record joins the ADR-033 snapshot family: {@code schemaVersion} first, then {@code capturedAt},
  * with append-only growth governed by {@link KernelDiagnostics#SCHEMA_VERSION}.
- *
- * <h2>Valhalla readiness — explicit tradeoff</h2>
- * <p>This carrier deliberately uses {@link Optional} components (an identity class today) over
- * sentinel-{@code long}s + a presence bitmask: it is a cold-path diagnostic snapshot (never on a hot
- * path or in an allocation budget), and the {@code Optional.empty()} degradation contract is materially
- * clearer than sentinels. A future Valhalla value-class migration would flatten the {@code long}/{@code int}
- * components but not the {@code Optional} ones — that is an accepted, documented cost for this record, not
- * an oversight to re-litigate during a Valhalla sweep.
  *
  * @param schemaVersion         the wire-schema version (see {@link KernelDiagnostics#SCHEMA_VERSION})
  * @param capturedAt            the instant this snapshot was captured (best-effort, per-call)
@@ -52,6 +37,20 @@ import java.util.Optional;
  * @param transparentHugePages  whether the host THP mode is active (not {@code [never]}); empty if unknown
  * @param classDataSharingActive whether CDS is active; empty if undeterminable
  * @param aotCacheActive        whether an AOT cache is active; empty if undeterminable
+ * @implSpec Data that is legitimately absent — a non-Linux host, a cgroup-v1-only hierarchy, no
+ *           container limits, a non-HotSpot JVM that cannot report a knob — is modelled as
+ *           {@link Optional#empty()} on the affected field, never as a sentinel value, a {@code null}
+ *           component or a new "unknown" type (ADR-033 Obligation 5). The always-available JVM facts
+ *           ({@code gcName}, {@code availableProcessors}, heap geometry) are plain fields;
+ *           {@code heapMaxBytes} is {@code -1} when the JVM reports the max as undefined (mirrors
+ *           {@code java.lang.management}).
+ * @apiNote  This carrier deliberately uses {@link Optional} components (an identity class today) over
+ *           sentinel-{@code long}s + a presence bitmask: it is a cold-path diagnostic snapshot (never on
+ *           a hot path or in an allocation budget), and the {@code Optional.empty()} degradation
+ *           contract is materially clearer than sentinels. A future Valhalla value-class migration would
+ *           flatten the {@code long}/{@code int} components but not the {@code Optional} ones — that is
+ *           an accepted, documented cost for this record, not an oversight to re-litigate during a
+ *           Valhalla sweep.
  * @since 0.9
  */
 public record RuntimeErgonomicsSnapshot(
@@ -70,6 +69,13 @@ public record RuntimeErgonomicsSnapshot(
         Optional<Boolean> classDataSharingActive,
         Optional<Boolean> aotCacheActive) {
 
+    /**
+     * Rejects a {@code null} component, so a consumer reading an {@link Optional} field never has to
+     * distinguish "absent" from "the producer forgot": absence is always {@link Optional#empty()}.
+     *
+     * @throws NullPointerException if {@code schemaVersion}, {@code capturedAt}, {@code gcName} or any
+     *                              {@link Optional} component is {@code null}
+     */
     public RuntimeErgonomicsSnapshot {
         Objects.requireNonNull(schemaVersion, "schemaVersion");
         Objects.requireNonNull(capturedAt, "capturedAt");
@@ -85,10 +91,16 @@ public record RuntimeErgonomicsSnapshot(
     }
 
     /**
-     * The minimal, fully-degraded snapshot used by the {@link KernelDiagnostics#getJvmErgonomics()}
-     * default method: real {@code availableProcessors}, an {@code "unknown"} GC, undefined heap, and every
-     * environment-sensitive field {@link Optional#empty()}. A {@link KernelDiagnosticsProvider} that does
-     * not override the method stays binary-compatible and still returns a valid, non-null snapshot.
+     * The minimal, fully-degraded snapshot: the only environment fact it reports is the real
+     * {@code availableProcessors}; the GC is named {@code "unknown"}, both heap figures are {@code -1},
+     * and every environment-sensitive field is {@link Optional#empty()}.
+     *
+     * @return a non-null snapshot stamped with {@link KernelDiagnostics#SCHEMA_VERSION} and the current
+     *         instant, satisfying the degradation contract of this record without reading
+     *         {@code java.lang.management}, procfs or cgroupfs
+     * @apiNote This is what {@link KernelDiagnostics#getJvmErgonomics()} answers by default, so a
+     *          {@link KernelDiagnosticsProvider} that does not override that method stays
+     *          binary-compatible and still returns a valid, non-null snapshot.
      */
     public static RuntimeErgonomicsSnapshot unknown() {
         return new RuntimeErgonomicsSnapshot(

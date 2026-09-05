@@ -11,15 +11,20 @@ import java.util.Optional;
 /**
  * Canonical, deeply-immutable implementation of {@link StorageContext}.
  *
- * <h2>Valhalla Readiness</h2>
- * <p>Standard {@code record} — ready for {@code value record} migration (JEP 401).
- * No identity operations permitted on instances of this type.
- *
  * <h2>Usage</h2>
  * <p>Created by {@link SecurityProvider} during token validation and bound into
  * {@code KernelProviders.STORAGE_CONTEXT}. The Persistence layer reads it via
  * {@code KernelProviders.STORAGE_CONTEXT.get().isolationKey()} to inject RLS
  * parameters — zero coupling to Security classes.
+ *
+ * <p><b>Allocation:</b> allocates (one record per factory call, plus a {@link Map#copyOf} of
+ * {@code attributes}); {@link #system()} returns the shared {@link #GLOBAL} singleton instead, and
+ * {@link #shared(long, long)} formats the isolation key without materialising a
+ * {@link java.util.UUID}
+ * <p><b>Thread confinement:</b> any thread — deeply immutable, so one instance is safe to publish
+ * across the {@code STORAGE_CONTEXT} binding and every subtask that inherits it
+ * <p><b>Ownership:</b> nothing to release — the {@code attributes} map is copied rather than
+ * adopted, so the caller's map stays the caller's
  *
  * @param isolationKey   the tenant isolation key for RLS (empty for system scope)
  * @param strategy       the physical isolation strategy
@@ -29,6 +34,9 @@ import java.util.Optional;
  *                       {@code strategy} — see {@link StorageContext#sharedScopeKey()}
  * @param attributes     opaque {@code String→String} interceptor metadata; never {@code null}
  *
+ * @apiNote No identity operation ({@code ==}, {@code synchronized},
+ *          {@code System.identityHashCode()}) is permitted on an instance: the record is ready for
+ *          {@code value record} migration (JEP 401), which would make identity meaningless.
  * @since 0.5
  * @see StorageContext
  */
@@ -80,6 +88,11 @@ public record ImmutableStorageContext(
      * {@code isolationKey}, because the shared-scope write predicate pins {@code owner = isolationKey}
      * and has nothing to pin to otherwise. This is what makes {@link #GLOBAL} (system scope, no
      * isolation key) structurally incapable of carrying a shared scope.
+     *
+     * @throws NullPointerException     if any component is {@code null}
+     * @throws IllegalArgumentException if a component is inconsistent with {@code strategy}, or if
+     *                                  {@code sharedScopeKey} is present without an
+     *                                  {@code isolationKey}
      */
     public ImmutableStorageContext {
         Objects.requireNonNull(isolationKey, "isolationKey Optional must not be null");
@@ -146,17 +159,20 @@ public record ImmutableStorageContext(
     }
 
     /**
-     * Factory for the default SHARED/RLS mode from raw UUID bits — zero {@code UUID.toString()} allocation.
+     * Factory for the default SHARED/RLS mode from raw UUID bits, so an authentication path that
+     * already holds the two {@code long} halves never materialises a {@link java.util.UUID} to
+     * throw away.
      *
-     * <p>Produces an isolation key in canonical UUID string format
-     * ({@code xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}) by encoding the two
-     * {@code long} components via {@link #uuidBitsToString(long, long)} using manual
-     * nibble extraction into a pre-allocated {@code char[]} backed by the {@code HEX_DIGITS}
-     * lookup table, without creating an intermediate {@link java.util.UUID} object.
+     * <p>The isolation key is in canonical UUID string form
+     * ({@code xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}), identical to what
+     * {@link #shared(String)} would have received.
      *
      * @param idMost  {@link java.util.UUID#getMostSignificantBits()}
      * @param idLeast {@link java.util.UUID#getLeastSignificantBits()}
      * @return shared-mode storage context; never {@code null}
+     * @implNote The key is built by manual nibble extraction into a pre-allocated {@code char[]}
+     *           backed by a hex lookup table — one {@code String} allocation, no intermediate
+     *           {@code UUID}.
      */
     public static ImmutableStorageContext shared(long idMost, long idLeast) {
         String isolationKey = uuidBitsToString(idMost, idLeast);
@@ -170,8 +186,8 @@ public record ImmutableStorageContext(
     }
 
     /**
-     * Encodes two {@code long} UUID components into canonical UUID string format
-     * without allocating a {@link java.util.UUID} object.
+     * Encodes two {@code long} UUID components into canonical UUID string form, allocating the
+     * result {@code String} and nothing else.
      *
      * <p>Format: {@code xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx} (RFC 4122, lowercase hex, zero-padded).
      *
@@ -316,6 +332,7 @@ public record ImmutableStorageContext(
      *
      * @param sharedScopeKey the shared-scope partition key; never {@code null}
      * @return a new context identical to this one but carrying the shared scope; never {@code null}
+     * @throws NullPointerException     if {@code sharedScopeKey} is {@code null}
      * @throws IllegalArgumentException if this context has no {@link #isolationKey()}
      * @since 0.11
      */

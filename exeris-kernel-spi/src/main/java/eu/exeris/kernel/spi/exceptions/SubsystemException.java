@@ -8,18 +8,21 @@ package eu.exeris.kernel.spi.exceptions;
  * Thrown when a {@code Subsystem} fails during a lifecycle transition
  * ({@link Phase#INITIALIZE}, {@link Phase#START}, or {@link Phase#STOP}).
  *
- * <h2>Zero-Allocation Contract (The Wall)</h2>
- * <p>The legacy implementation concatenated strings in the constructor:
- * <pre>{@code
- * // ❌ BANNED – allocates StringBuilder + String on every throw:
+ * <p>Extends {@link ExerisKernelException} — unchecked, because a bootstrap failure is fatal and
+ * a caller cannot meaningfully recover from it at the call site: forcing every layer between the
+ * throw site and the top-level {@code KernelBootstrap} to declare {@code throws
+ * SubsystemException} would only leak lifecycle semantics up the call stack (The Wall). The
+ * {@code StructuredTaskScope} used in the bootstrap sequence catches {@code Throwable} regardless,
+ * so checked-versus-unchecked makes no difference there either.
+ *
+ * {@snippet lang="java" :
+ * // Wrong — allocates StringBuilder + String on every throw:
  * super("[%s/%s] %s".formatted(subsystemName, phase, message));
- * }</pre>
- * <p>This version passes raw context values to {@link #rawArgs()} instead:
- * <pre>{@code
- * // ✅ CORRECT – zero String formatting on hot-path:
+ *
+ * // Correct — raw context values passed to rawArgs, zero String formatting on the throw path:
  * super(KernelErrorCodes.EX_BOOT_0002, "Subsystem lifecycle failure", cause,
  *       subsystemName, phase, message);
- * }</pre>
+ * }
  *
  * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <pre>
@@ -27,19 +30,6 @@ package eu.exeris.kernel.spi.exceptions;
  * index 1 → Phase   phase           (INITIALIZE | START | STOP)
  * index 2 → String  detailMessage   (static detail string; no formatting permitted)
  * </pre>
- *
- * <h2>Checked → Unchecked Migration</h2>
- * <p>The legacy class extended {@code Exception} (checked). This version extends
- * {@link ExerisKernelException} → {@code RuntimeException} because:
- * <ol>
- *   <li>Bootstrap failures are <em>fatal</em>; a caller cannot meaningfully recover
- *       from them at the call-site.</li>
- *   <li>Checked exceptions force every layer between the throw site and the top-level
- *       {@code KernelBootstrap} to declare {@code throws SubsystemException}, violating
- *       "The Wall" by leaking lifecycle semantics up the call stack.</li>
- *   <li>The {@code StructuredTaskScope} used in the bootstrap sequence catches
- *       {@code Throwable}, so checked / unchecked distinction is irrelevant there.</li>
- * </ol>
  *
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_BOOT_0002}
@@ -74,7 +64,8 @@ public final class SubsystemException extends ExerisKernelException {
     // -----------------------------------------------------------------------
 
     /**
-     * Primary constructor – no chained cause.
+     * Records a lifecycle failure with no chained cause — the detail string is the whole
+     * diagnosis.
      *
      * @param subsystemName logical name of the subsystem that failed (e.g. {@code "MemorySubsystem"})
      * @param phase         lifecycle phase in which the failure occurred
@@ -85,7 +76,8 @@ public final class SubsystemException extends ExerisKernelException {
     }
 
     /**
-     * Chained constructor – wraps the upstream {@link Throwable} from the subsystem.
+     * Records a lifecycle failure, keeping the upstream {@link Throwable} from the subsystem as
+     * the cause for forensics.
      *
      * @param subsystemName logical name of the subsystem that failed
      * @param phase         lifecycle phase in which the failure occurred

@@ -10,26 +10,29 @@ package eu.exeris.kernel.spi.http;
  * outcome. Resolves the retry deferral that ADR-026 (&quot;no implicit
  * retry&quot;) and ADR-032 (Alternative D) both named (see ADR-045).
  *
- * <p>Contract:
- * <ul>
- *   <li>{@link #decide(HttpRequest, HttpAttemptOutcome, int)} is invoked once per
- *       completed attempt with the zero-based {@code attemptIndex} of that attempt.</li>
- *   <li>Implementations MUST NOT read, retain, or close the request body
- *       {@code LoanedBuffer} reachable via {@link HttpRequest#body()} — body
- *       ownership belongs to the façade, which re-encodes the body per attempt.
- *       The policy reads the method and headers (e.g. {@code Idempotency-Key}) only.</li>
- *   <li>Implementations run synchronously on the caller's virtual thread; no
- *       thread-spawning, no blocking I/O. Returning {@link RetryDecision#retryAfter(long)}
- *       instructs the façade to sleep {@code delayMillis} before the next attempt.</li>
- *   <li>Implementations SHOULD bound total attempts so a fleet of clients cannot
- *       amplify a server-side admission shed (ADR-010 {@code SHED_LOAD}) into a
- *       retry storm.</li>
- * </ul>
+ * <p>Which statuses retry, the attempt cap, the backoff curve, jitter, the idempotency gate and
+ * {@code Retry-After} handling are all the policy's own; none of them is SPI surface.
  *
- * <p>Behavioural defaults (which statuses retry, attempt cap, backoff curve,
- * jitter, idempotency gate, {@code Retry-After} handling) are an implementation
- * concern, not SPI surface — see {@code CommunityHttpRetryPolicy}.
+ * <p><b>Thread confinement:</b> owner thread — {@link #decide} runs synchronously on the virtual
+ * thread issuing the request, between two attempts
+ * <p><b>Ownership:</b> the policy owns nothing — the request body buffer belongs to the façade,
+ * which re-encodes it for each attempt
  *
+ * @implSpec {@link #decide(HttpRequest, HttpAttemptOutcome, int)} is invoked once per completed
+ *           attempt that did not succeed, with the zero-based {@code attemptIndex} of that attempt.
+ *           An implementation:
+ *           <ul>
+ *             <li>MUST NOT read, retain, or close the request body {@code LoanedBuffer} reachable
+ *                 through {@link HttpRequest#body()} — it reads the method and the headers
+ *                 ({@code Idempotency-Key}, say) only;</li>
+ *             <li>MUST run synchronously on the caller's virtual thread: no thread-spawning, no
+ *                 blocking I/O. Returning {@link RetryDecision#retryAfter(long)} is how it asks for
+ *                 a delay, rather than sleeping itself;</li>
+ *             <li>SHOULD bound total attempts, so that a fleet of clients cannot amplify a
+ *                 server-side admission shed (ADR-010 {@code SHED_LOAD}) into a retry storm.</li>
+ *           </ul>
+ * @implNote The Community policy {@code CommunityHttpRetryPolicy} is where the shipped defaults
+ *           for those behaviours live.
  * @since 0.10
  */
 @FunctionalInterface

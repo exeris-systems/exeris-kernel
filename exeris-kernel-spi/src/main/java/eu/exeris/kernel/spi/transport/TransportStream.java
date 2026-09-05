@@ -21,24 +21,35 @@ import java.lang.foreign.MemorySegment;
  *
  * <h2>Zero-Copy Contract</h2>
  * <p>Both {@link #read} and {@link #write} operate on {@link MemorySegment} slices
- * within a {@link LoanedBuffer}. The transport implementation MUST NOT copy data
- * between heap and off-heap. Community implementations may read directly from the
- * underlying connection into the segment; Enterprise implementations use native
- * asynchronous I/O completions that write into pre-registered slab buffers.
+ * within a {@link LoanedBuffer}: payload moves between the wire and off-heap memory the
+ * caller already holds, never through an intermediate heap array.
  *
- * <h2>Threading Model</h2>
- * <p>Each stream is owned by exactly one virtual thread (the "1 VT per stream" model).
- * Calls to {@link #read} may block the virtual thread (which unmounts from the carrier),
- * but MUST NOT pin the carrier thread.
+ * <p><b>Allocation:</b> zero-alloc is the Enterprise-tier bar; the Community tier is bounded
+ * instead (see {@code TransportZeroAllocTck}). On every tier, {@link #read}, {@link #write} and
+ * {@link #queueWrite} carry bytes through off-heap memory supplied by the caller and return no
+ * new object as their result — but a driver's own I/O plumbing underneath the call may still
+ * allocate.
+ * <p><b>Thread confinement:</b> owner thread — a stream is owned by exactly one virtual
+ * thread (the "1 VT per stream" model), the thread on which the engine invokes
+ * {@link StreamHandler#handle(TransportStream)}.
+ * <p><b>Ownership:</b> the {@link StreamHandler} that receives a stream closes it;
+ * {@link #queueWrite} takes ownership of the loan it is handed on normal return and gives it
+ * back to the caller on any throw; segments passed to {@link #read} and {@link #write} stay
+ * with the caller throughout.
  *
- * <h2>Valhalla Readiness</h2>
- * <p>Implementations MUST avoid identity operations ({@code ==}, {@code synchronized})
- * on this interface. Future migration to a value-class-backed inline representation
- * is planned for hot-path stream metadata.
- *
+ * @implSpec Implementations must not copy stream payload between heap and off-heap memory.
+ *           A {@link #read} may block the owning virtual thread — which unmounts from its
+ *           carrier — but must never pin the carrier thread.
+ * @implNote A carrier driven by native asynchronous I/O completions writes into pre-registered
+ *           slab buffers; the Community carrier reads directly from the underlying connection
+ *           into the caller's segment. A future migration of hot-path stream metadata to a
+ *           value-class-backed representation would want implementations to avoid identity
+ *           operations ({@code ==}, {@code synchronized}) on this interface; no such guard
+ *           exists yet, and the Community binding currently synchronizes internally (e.g. to
+ *           serialize TLS handshake setup).
+ * @since 0.5
  * @see TransportConnection
  * @see StreamHandler
- * @since 0.5
  */
 public interface TransportStream extends AutoCloseable {
 
@@ -49,50 +60,52 @@ public interface TransportStream extends AutoCloseable {
      * Returns the number of bytes actually read, or {@code -1} if the stream
      * has been cleanly closed by the remote peer (EOF).
      *
-     * <h2>Non-positive {@code maxBytes}</h2>
-     * <p>A {@code maxBytes <= 0} request returns {@code 0} immediately: no I/O is
-     * performed and no stream state changes (the stream remains readable, and a
-     * remote-close / EOF that has not yet been observed is <em>not</em> consumed —
-     * a subsequent positive-{@code maxBytes} read still reports it). This makes a
-     * zero/negative request a pure no-op rather than a blocking call, an error, or
-     * an EOF probe, so it is safe in a hot read loop that computes its request size
-     * from a (possibly drained) budget. Implementations MUST NOT throw on
-     * non-positive {@code maxBytes}.
+     * <p><b>Non-positive {@code maxBytes}.</b> A {@code maxBytes <= 0} request returns
+     * {@code 0} immediately: no I/O is performed and no stream state changes (the stream
+     * remains readable, and a remote-close / EOF that has not yet been observed is
+     * <em>not</em> consumed — a subsequent positive-{@code maxBytes} read still reports it).
+     * This makes a zero/negative request a pure no-op rather than a blocking call, an error,
+     * or an EOF probe, so it is safe in a hot read loop that computes its request size
+     * from a (possibly drained) budget.
      *
      * <p>The no-op takes precedence over closed state: a non-positive request returns
      * {@code 0} even after this stream has been closed, rather than raising the
      * {@code IllegalStateException} that a positive-{@code maxBytes} read on a closed
      * stream throws.
      *
-     * <h2>Zero-Copy</h2>
-     * <p>Enterprise implementations fill the target segment directly from the
-     * native asynchronous I/O completion buffer (zero intermediate copy). Community
-     * implementations read directly into the off-heap segment from the underlying
-     * connection.
-     *
      * @param target   off-heap segment to read into (from {@link LoanedBuffer#segment()})
      * @param maxBytes maximum number of bytes to read (must be ≤ {@code target.byteSize()});
      *                 a value {@code <= 0} is a no-op that returns {@code 0}
      * @return number of bytes read, {@code 0} if {@code maxBytes <= 0}, or {@code -1} on EOF
-     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure —
+     *         {@code EX-NET-4003} when a TLS handshake this read has to wait for does not
+     *         complete within the driver's deadline
      * @throws IllegalStateException if this stream has been closed
+     * @implSpec Implementations must not throw on non-positive {@code maxBytes}, and must fill
+     *           {@code target} from the transport's receive path with no intermediate heap copy.
+     * @implNote A carrier driven by native asynchronous I/O fills the target segment directly
+     *           from the completion buffer; the Community carrier reads into it from the
+     *           underlying connection.
      */
     int read(MemorySegment target, int maxBytes);
 
     /**
      * Writes {@code length} bytes from the given segment to this stream.
      *
-     * <p>The caller retains ownership of the segment. The transport implementation
-     * MUST NOT hold a reference to the segment after this call returns.
+     * <p>The caller retains ownership of the segment.
      *
-     * <h2>Backpressure</h2>
-     * <p>If the peer's receive window is full, this call blocks the virtual thread
-     * until space becomes available or the stream is reset.
+     * <p><b>Backpressure.</b> If the peer's receive window is full, this call blocks the
+     * virtual thread until space becomes available or the stream is reset.
      *
      * @param source off-heap segment containing data to send
      * @param length number of bytes to write (must be ≤ {@code source.byteSize()})
-     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure —
+     *         {@code EX-NET-4002} when the send itself fails, {@code EX-NET-4003} when a TLS
+     *         handshake this write has to wait for does not complete within the driver's
+     *         deadline
      * @throws IllegalStateException if this stream has been closed
+     * @implSpec Implementations must not hold a reference to {@code source} after this call
+     *           returns.
      */
     void write(MemorySegment source, int length);
 
@@ -111,28 +124,30 @@ public interface TransportStream extends AutoCloseable {
      *       if an implementation happened to release the loan while unwinding.</li>
      * </ul>
      * The rule is simply: the callee closes on success, the caller closes on throw. A caller
-     * that never frees on exception (as some earlier revisions of this doc implied) leaks one
-     * buffer per failed write against transports that release only on success.
+     * that never frees on exception leaks one buffer per failed write against a transport that
+     * releases only on success.
      *
      * <p><strong>Blocking is implementation-defined.</strong> Despite the {@code queue} in the
      * name, the call is not guaranteed to be non-blocking: a synchronous transport completes
      * the write before returning (blocking until the bytes are sent), while an asynchronous
      * transport enqueues the buffer and flushes it on a carrier loop (returning before
-     * transmission). Callers MUST NOT rely on non-blocking semantics.
+     * transmission).
      *
      * @param buffer loaned buffer to send; ownership transferred on normal return, retained by
      *               the caller on any thrown exception (the caller must then close it)
      * @param length number of valid bytes in the buffer (from offset 0); must be in
      *               {@code [0, buffer.capacity()]}
-     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure — the
-     *         caller owns and must close {@code buffer}
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on failure —
+     *         {@code EX-NET-4002} when the send fails, {@code EX-NET-4003} when a TLS handshake
+     *         this write has to wait for does not complete within the driver's deadline; in
+     *         either case the caller owns and must close {@code buffer}
      * @throws IllegalStateException if this stream has been closed — the caller owns and must
      *         close {@code buffer}
      * @throws IllegalArgumentException if {@code length} is negative or exceeds
-     *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}.
-     *         Stated here because the TCK gates it: the in-tree driver has always rejected an
-     *         out-of-range length, but a contract that named only the other two throws left an
-     *         out-of-tree implementation free to read past the buffer instead
+     *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}
+     * @apiNote Callers must not rely on non-blocking semantics: a stream whose transport writes
+     *          synchronously will park the calling virtual thread here for the duration of the
+     *          send.
      */
     void queueWrite(LoanedBuffer buffer, int length);
 

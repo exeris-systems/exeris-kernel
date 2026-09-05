@@ -37,9 +37,6 @@ public enum WebSocketCloseCode {
      * 1007 — the payload was not what the frame's type promised. For a text frame that means the
      * bytes are not valid UTF-8, which RFC 6455 §8.1 requires closing on rather than substituting a
      * replacement character and handing the application something the peer did not send.
-     *
-     * <p>Added in the same milestone as the rest, once implementing the frame codec showed the enum
-     * could not express a case the specification mandates.
      */
     INVALID_PAYLOAD_DATA(1007, true),
 

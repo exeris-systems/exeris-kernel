@@ -37,6 +37,8 @@ public final class WebSocketClosedException extends ExerisKernelException {
     private static final String MSG_PEER_GONE = "WebSocket send on a closed connection";
 
     /**
+     * General-purpose constructor — used when no specific factory method matches the scenario.
+     *
      * @param errorCode structured error code
      * @param message   static message; never formatted from connection content
      * @param rawArgs   connection-scoped counters for Glass-Box telemetry

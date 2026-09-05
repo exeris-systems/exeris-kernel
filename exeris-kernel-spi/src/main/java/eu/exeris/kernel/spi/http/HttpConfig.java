@@ -106,14 +106,14 @@ public record HttpConfig(
     /**
      * Default maximum concurrent connections (ADR-081).
      *
-     * <p>Matches the standalone carrier's {@code transport.maxConnections} default. It is one field
-     * on one record enforced at one point, so two defaults for it were an accident rather than a
-     * policy — and 4 096 is the side the evidence pointed to: the project's own benchmark runs had
-     * to raise the previous 1 000 to get through.
+     * <p>The same number as the standalone carrier's {@code transport.maxConnections} default: the
+     * cap is one field on one record enforced at one point, so a second, different default for it
+     * would be a disagreement rather than a policy.
      *
-     * <p><b>Check the process file-descriptor limit against this.</b> The cap can only refuse
-     * cleanly while it is the ceiling that is reached first; above {@code ulimit -n} the failure
-     * mode is the operating system's, not the kernel's, and it is worse — see ADR-081 §Consequences.
+     * @apiNote <b>Check the process file-descriptor limit against this.</b> The cap can only refuse
+     *          cleanly while it is the ceiling that is reached first; above {@code ulimit -n} the
+     *          failure mode is the operating system's, not the kernel's, and it is worse — see
+     *          ADR-081 §Consequences.
      */
     public static final int DEFAULT_MAX_CONNECTIONS = 4_096;
 
@@ -127,26 +127,25 @@ public record HttpConfig(
     public static final int DEFAULT_MAX_HEADER_SIZE = 8_192;
 
     /**
-     * Default HTTP/2 header-block bound in bytes — the value the assembler enforced
-     * unconditionally before 0.12, kept so this key changes reachability and not behaviour.
+     * Default HTTP/2 header-block bound in bytes — what the header-block assembler enforces on an
+     * assembled HEADERS + CONTINUATION block when a deployment names no value of its own.
      *
      * @since 0.12
      */
     public static final int DEFAULT_MAX_HEADER_BLOCK_SIZE = 65_536;
 
     /**
-     * Default HTTP/2 decoded-field-section bound in bytes — the value the HPACK decoder was
-     * constructed with unconditionally before 0.12, kept so this key changes reachability and
-     * not behaviour.
+     * Default HTTP/2 decoded-field-section bound in bytes — what the HPACK decoder enforces, and
+     * advertises as {@code SETTINGS_MAX_HEADER_LIST_SIZE}, when a deployment names no value of
+     * its own.
      *
      * @since 0.12
      */
     public static final int DEFAULT_MAX_HEADER_LIST_SIZE = 65_536;
 
     /**
-     * Default HPACK single-literal bound in bytes — the value {@code HpackDecoder} held as a
-     * constant before 0.12, kept on the same reachability-not-behaviour grounds. Named by
-     * ADR-071 as the other half of its deferred HTTP/2 tail.
+     * Default HPACK single-literal bound in bytes — the ceiling checked against one decoded name or
+     * value's declared length when a deployment names no value of its own (ADR-071).
      *
      * @since 0.12
      */
@@ -165,6 +164,20 @@ public record HttpConfig(
     public static final long DEFAULT_MAX_RESPONSE_BODY_BYTES = 10L * 1_024 * 1_024;
 
 
+    /**
+     * Validates every key against the mode it will run in, so that a misconfigured deployment fails
+     * at construction with a message naming the key rather than per request, where the same defect
+     * reads as a client problem.
+     *
+     * <p>{@link HttpMode#DISABLED} skips validation entirely: an engine that is never started binds
+     * no port and reads no limit, so refusing a sentinel value there would refuse a configuration
+     * that cannot misbehave.
+     *
+     * @throws NullPointerException     if {@code mode} or {@code maxVersion} is {@code null}
+     * @throws IllegalArgumentException if any limit, the port, the bind host or the default
+     *                                  authority is invalid for {@code mode}; the message names the
+     *                                  configuration key
+     */
     public HttpConfig {
         Objects.requireNonNull(mode,       "mode must not be null");
         Objects.requireNonNull(maxVersion, "maxVersion must not be null");
@@ -182,11 +195,13 @@ public record HttpConfig(
     }
 
     /**
-     * Creates a configuration with no default client peer.
+     * Creates a configuration with no default client peer and the shipped HTTP/2 header bounds.
      *
-     * <p>This is the canonical constructor as it stood before 0.12, retained as a compatibility
-     * bridge so that adding {@link #defaultAuthority()} to a {@code stable} carrier does not break
-     * existing callers. It delegates with a {@code null} default authority.
+     * <p>A compatibility overload for callers that name neither a {@link #defaultAuthority()} nor
+     * the three HTTP/2 limits: it delegates with a {@code null} default authority — so an
+     * unaddressed request is refused rather than sent somewhere unintended — and with
+     * {@link #DEFAULT_MAX_HEADER_BLOCK_SIZE}, {@link #DEFAULT_MAX_HEADER_LIST_SIZE} and
+     * {@link #DEFAULT_MAX_STRING_LITERAL_SIZE}.
      *
      * @param mode                  operating mode
      * @param bindHost              listener bind address for SERVER / DUAL modes
@@ -220,13 +235,14 @@ public record HttpConfig(
     /**
      * Creates a configuration whose client response ceiling is its request ceiling.
      *
-     * <p>The canonical constructor as it stood before {@link #maxResponseBodyBytes()} existed,
-     * retained as a compatibility bridge. It delegates {@code maxRequestBodyBytes} into the response
-     * ceiling rather than the new default, and that asymmetry with the configuration keys is
-     * deliberate: a caller who wrote this shape passed <em>one</em> number for an engine they built
-     * themselves, and lowering their client silently to a default they never named would turn an
-     * upgrade into a run-time truncation. An operator setting {@code http.maxRequestBodyBytes} said
-     * something narrower — bound this server's ingress — so the key resolves the two independently.
+     * <p>A compatibility overload for callers that name no {@link #maxResponseBodyBytes()}. It
+     * delegates {@code maxRequestBodyBytes} into the response ceiling rather than
+     * {@link #DEFAULT_MAX_RESPONSE_BODY_BYTES}, and the asymmetry with the configuration keys is
+     * deliberate: a caller passing <em>one</em> number to an engine they construct themselves means
+     * it for both directions, and silently lowering their client to a default they never named
+     * would truncate responses they had asked for. An operator setting
+     * {@code http.maxRequestBodyBytes} says something narrower — bound this server's ingress — so
+     * the configuration key resolves the two independently.
      *
      * @param mode                  operating mode
      * @param bindHost              listener bind address for SERVER / DUAL modes

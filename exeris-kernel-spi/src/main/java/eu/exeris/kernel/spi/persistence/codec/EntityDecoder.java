@@ -10,7 +10,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  * SPI: Off-heap entity decoder — deserialises a domain entity from a {@link LoanedBuffer}.
  *
  * <h2>Intent</h2>
- * <p>Replaces the legacy {@code EntityDeserializer<T>} with a stricter, zero-copy contract:
+ * <p>The contract is deliberately narrow, and zero-copy:
  * <ul>
  *   <li>Reads from a {@link LoanedBuffer} slice at a given {@code offset}</li>
  *   <li>Explicit {@code length} parameter prevents over-reads and enables bounds checking</li>
@@ -18,50 +18,47 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *       {@link eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException}</li>
  * </ul>
  *
- * <h2>Zero-Copy Contract (Enterprise Hot Path)</h2>
- * <p>Enterprise implementations of this interface MUST read directly from the
- * {@code source} {@link LoanedBuffer} using {@link java.lang.foreign.MemorySegment#get}
- * with the appropriate {@link java.lang.foreign.ValueLayout}. They MUST NOT copy
- * data into a heap {@code byte[]} in the hot path.
- *
- * <h2>Valhalla Readiness</h2>
- * <p>Implementations SHOULD be stateless to allow JIT scalarisation and
- * cross-VT sharing without synchronisation.
- *
  * <h2>Usage (Enterprise)</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * EntityDecoder<Event> decoder = new EventDecoder();
- * // cursor is the flyweight NativeRowCursor backed by the recv LoanedBuffer
+ * // cursor is the flyweight row cursor backed by the recv LoanedBuffer
  * MemorySegment segment = cursor.getSegment(0);   // zero-copy column slice
  * // decode directly from segment — no heap byte[] allocation
- * }</pre>
+ * }
  *
  * <h2>Usage (Community)</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * EntityDecoder<Event> decoder = new EventDecoder();
  * byte[] bytes = resultSet.getBytes("payload");   // JDBC heap copy — acceptable in community
  * try (LoanedBuffer buf = allocator.allocate(AllocationHint.SMALL)) {
  *     buf.segment().copyFrom(MemorySegment.ofArray(bytes));
  *     Event event = decoder.decode(buf, 0, bytes.length);
  * }
- * }</pre>
+ * }
  *
- * <h2>The Wall (SPI Compliance)</h2>
- * <p>No reference to JDBC, HikariCP, io_uring, or any driver-specific class.
+ * <p><b>Allocation:</b> allocates (the returned entity, one per call); the bytes themselves are
+ * read in place, and no intermediate heap {@code byte[]} is created.
+ * <p><b>Thread confinement:</b> any thread — a stateless decoder is shared across virtual threads
+ * without synchronisation.
+ * <p><b>Ownership:</b> the caller allocates and releases the {@link LoanedBuffer}; ownership does
+ * not move across the call, and the decoded entity belongs to the caller.
  *
  * @param <T> the entity type to decode (SHOULD be an immutable record)
- * @see EntityEncoder
+ * @implSpec An Enterprise-tier implementation MUST read directly from the {@code source}
+ *           {@link LoanedBuffer} through {@link java.lang.foreign.MemorySegment#get} with the
+ *           appropriate {@link java.lang.foreign.ValueLayout}, and MUST NOT stage the data in a
+ *           heap {@code byte[]} first. An implementation SHOULD be stateless, which is what
+ *           permits cross-thread sharing and JIT scalarisation, and MUST NOT reference JDBC,
+ *           HikariCP, io_uring or any driver-specific class.
  * @since 0.5
+ * @see EntityEncoder
  */
 @FunctionalInterface
 public interface EntityDecoder<T> {
 
     /**
-     * Decodes an entity from the off-heap {@code source} buffer.
-     *
-     * <p>The decoder MUST read from {@code source} starting at {@code offset}
-     * and consuming at most {@code length} bytes. It MUST NOT allocate heap objects
-     * in the hot path (Enterprise contract).
+     * Decodes one entity from the {@code length} bytes of {@code source} that begin at
+     * {@code offset}.
      *
      * @param source the off-heap buffer containing the serialised entity; never {@code null}
      * @param offset byte offset within {@code source} where the entity starts; must be &ge; 0
@@ -69,6 +66,10 @@ public interface EntityDecoder<T> {
      * @return the decoded entity; never {@code null}
      * @throws eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException
      *         on deserialisation failure or malformed data
+     * @implSpec An implementation MUST confine its reads to {@code [offset, offset + length)} —
+     *           the bound is what turns a truncated or malformed payload into an exception rather
+     *           than into a neighbouring row's bytes — and beyond the entity it returns MUST NOT
+     *           allocate on the hot path.
      */
     T decode(LoanedBuffer source, int offset, int length);
 }

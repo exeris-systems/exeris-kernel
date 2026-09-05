@@ -15,9 +15,10 @@ import eu.exeris.kernel.spi.events.EventDescriptor;
  * primitive fields (ordinals, UUIDs as {@code long} pairs, flags) and not on any
  * broker or infrastructure type.
  *
- * <h2>Thread Safety</h2>
- * <p>Implementations MUST be safe for concurrent invocation from multiple virtual threads.
+ * <p><b>Thread confinement:</b> any thread — one mapper serves every arrival of the event types it
+ * was registered for, so it must be safe for concurrent invocation from multiple virtual threads.
  *
+ * @implSpec A mapper must be safe for concurrent invocation from multiple virtual threads.
  * @since 0.5
  * @see ChoreographyDecision
  * @see FlowEngine#registerChoreographyMapper
@@ -26,10 +27,12 @@ import eu.exeris.kernel.spi.events.EventDescriptor;
 public interface FlowChoreographyMapper {
 
     /**
-     * Determines what action the flow engine should take in response to the given event.
+     * Decides what this event means for the flow subsystem: nothing, a wake of a named parked
+     * instance, or the start of a new one.
      *
      * @param descriptor routing metadata for the arriving event; never {@code null}
-     * @return the choreography decision; never {@code null}
+     * @return the decision the engine acts on; never {@code null} — an event this mapper has no
+     *         interest in is {@link ChoreographyDecision.Ignore}, not {@code null}
      */
     ChoreographyDecision map(EventDescriptor descriptor);
 }

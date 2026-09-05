@@ -44,6 +44,13 @@ public record WebSocketSession(
         Optional<String> isolationKey
 ) {
 
+    /**
+     * Validates that no component is {@code null}; absence is expressed with
+     * {@link Optional#empty()}, never with a {@code null} field.
+     *
+     * @throws NullPointerException if {@code id}, {@code subprotocol} or {@code isolationKey} is
+     *                              {@code null}
+     */
     public WebSocketSession {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(subprotocol, "subprotocol must not be null");

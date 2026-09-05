@@ -41,11 +41,11 @@ final class CronFieldBounds {
      * run of digits cannot be in bounds anyway, and capping the length means the parse cannot
      * overflow and needs no {@code NumberFormatException} path.
      *
-     * <p>It does <em>not</em> also reject a step wider than its field, which this javadoc claimed
-     * until v0.11: the cap counts digits, so it stops a step of 100 and admits one of 99. Nothing
-     * else rejects it either, and deliberately. A step wider than its field is not nonsense — it
-     * strides past every value but the first, so it fires exactly once per field cycle, which is
-     * what {@code 0 &#42;/24 * * *} means as the common spelling of "daily". A bound at the field's
+     * <p>It does <em>not</em> also reject a step wider than its field: the cap counts digits, so it
+     * stops a step of 100 and admits one of 99. Nothing else rejects it either, and deliberately.
+     * A step wider than its field is not nonsense — it strides past every value but the first, so
+     * it fires exactly once per field cycle, which is what {@code 0 &#42;/24 * * *} means as the
+     * common spelling of "daily". A bound at the field's
      * upper value would have admitted a step of 59 on minutes, which fires twice an hour, while
      * rejecting 60, which fires once: backwards from the reading that motivates it.
      */

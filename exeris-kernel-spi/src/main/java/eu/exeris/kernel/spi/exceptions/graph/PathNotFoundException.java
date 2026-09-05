@@ -27,6 +27,10 @@ import java.util.UUID;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5004}
  *
+ * <p><b>Allocation:</b> allocates (one {@code rawArgs} array per instance, boxing its four
+ * {@code long} components); no constructor formats a string, and the message text is a
+ * shared constant.
+ *
  * @since 0.5
  */
 public final class PathNotFoundException extends ExerisKernelException {

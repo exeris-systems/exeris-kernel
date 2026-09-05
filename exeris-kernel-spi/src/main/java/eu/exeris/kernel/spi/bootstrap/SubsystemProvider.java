@@ -25,21 +25,17 @@ import java.util.List;
  * <p>Priority convention: Community = 0, Enterprise = 100.
  *
  * <h2>ServiceLoader Registration</h2>
- * <pre>
+ * {@snippet lang="properties" :
  * # META-INF/services/eu.exeris.kernel.spi.bootstrap.SubsystemProvider
  * eu.exeris.kernel.community.bootstrap.CommunitySubsystemProvider
- * </pre>
+ * }
  *
- * <h2>Implementation Contract</h2>
- * <ul>
- *   <li>{@link #getSubsystems(ConfigProvider)} MUST be pure — no side effects,
- *       no I/O, no locks. It is called once during bootstrap.</li>
- *   <li>The returned list MUST NOT contain two subsystems with the same
- *       {@link Subsystem#name()}.</li>
- *   <li>Implementations MUST be discoverable via a public no-arg constructor
- *       (required by {@link java.util.ServiceLoader}).</li>
- * </ul>
- *
+ * @implSpec Implementations must be discoverable through a public no-arg constructor, as
+ *           {@link java.util.ServiceLoader} requires, and must not return two subsystems
+ *           sharing one {@link Subsystem#name()} from a single
+ *           {@link #getSubsystems(ConfigProvider)} call: the registry is keyed by subsystem
+ *           name and keeps the first entry it sees, so the duplicate is dropped rather than
+ *           reported as an error.
  * @since 0.5
  * @see Subsystem
  * @see BootstrapSelector
@@ -50,20 +46,21 @@ public interface SubsystemProvider {
     /**
      * Returns all subsystems provided by this module.
      *
-     * <p>Called once during L0 bootstrap. The {@link ConfigProvider} is available
-     * for subsystems that need to read config to decide whether to activate
-     * (e.g., skip transport if no port is configured).
-     *
-     * <p>Implementations MUST:
-     * <ul>
-     *   <li>Return a non-null, possibly empty list.</li>
-     *   <li>Not mutate the returned list after returning it.</li>
-     *   <li>Not perform network I/O or heavy initialization here —
-     *       that belongs in {@link Subsystem#initialize()}.</li>
-     * </ul>
+     * <p>Called once during L0 bootstrap, before any subsystem is initialized and before the
+     * dependency graph is built. The {@link ConfigProvider} is available for subsystems that
+     * need to read config to decide whether to activate (e.g., skip transport if no port is
+     * configured); it is the same configuration the returned subsystems will later see bound
+     * to {@code KernelProviders.CURRENT_CONFIG}.
      *
      * @param config the active kernel configuration; never {@code null}
-     * @return list of subsystems provided; never {@code null}
+     * @return the subsystems this module contributes to the boot graph, possibly empty;
+     *         never {@code null}
+     * @implSpec Implementations must be pure — no side effects, no I/O, no locks — must not
+     *           mutate the returned list afterwards, and must leave every acquisition of
+     *           resources to {@link Subsystem#initialize()}. Constructing a subsystem here
+     *           must not open a socket, a pool or a file: nothing in this call is covered by
+     *           the failure policy, and a subsystem returned here may still be dropped before
+     *           {@code initialize()} by the active {@link BootstrapSelector}.
      */
     List<Subsystem> getSubsystems(ConfigProvider config);
 

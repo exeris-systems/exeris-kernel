@@ -15,16 +15,14 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@link KernelErrorCodes#EX_SEC_2003} — insufficient privileges.
  *
- * <h2>Sentinel Pattern</h2>
- * <p>On the hot path, code SHOULD NOT allocate a new instance per rejected request.
- * Use {@code CitadelGuard} which holds pre-allocated
- * Sentinel instances (stack-trace disabled) to honour the zero-allocation contract.
- *
  * <h2>rawArgs layout (Glass-Box Telemetry)</h2>
  * <ul>
  *   <li>index 0 – {@code String} requiredRole — the role that was missing</li>
  * </ul>
  *
+ * @apiNote On the hot path, do not allocate a new instance per rejected request. Obtain one from
+ *          {@link #sentinel(String)} and cache it — {@code CitadelGuard} does this per role — so
+ *          rejection carries no allocation cost.
  * @since 0.5
  * @see eu.exeris.kernel.spi.security.PrincipalContext#hasRole(String)
  */

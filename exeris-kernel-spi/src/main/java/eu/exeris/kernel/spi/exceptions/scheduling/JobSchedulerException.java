@@ -44,7 +44,7 @@ public final class JobSchedulerException extends ExerisKernelException {
      *
      * @param schedulerName scheduler display name
      * @param jobName       the job that could not be registered
-     * @return exception with rawArgs: [schedulerName, jobName]
+     * @return exception carrying {@value KernelErrorCodes#EX_JOB_9002} with rawArgs: [schedulerName, jobName]
      */
     public static JobSchedulerException schedulerClosed(String schedulerName, String jobName) {
         return new JobSchedulerException(
@@ -59,7 +59,7 @@ public final class JobSchedulerException extends ExerisKernelException {
      * an application submit jobs that never run, which is worse than refusing to start.
      *
      * @param component the bootstrap component that attempted the selection
-     * @return exception with rawArgs: [component]
+     * @return exception carrying {@value KernelErrorCodes#EX_JOB_9004} with rawArgs: [component]
      */
     public static JobSchedulerException noProvider(String component) {
         return new JobSchedulerException(

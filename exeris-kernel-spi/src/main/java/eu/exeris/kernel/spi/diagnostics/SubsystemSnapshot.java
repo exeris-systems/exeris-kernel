@@ -27,6 +27,13 @@ public record SubsystemSnapshot(
         String requestedName,
         Optional<SubsystemDescriptor> subsystem) {
 
+    /**
+     * Rejects a {@code null} component: a miss is carried as {@link Optional#empty()} in
+     * {@code subsystem}, never as a {@code null} component.
+     *
+     * @throws NullPointerException if {@code schemaVersion}, {@code capturedAt}, {@code requestedName}
+     *                              or {@code subsystem} is {@code null}
+     */
     public SubsystemSnapshot {
         Objects.requireNonNull(schemaVersion, "schemaVersion");
         Objects.requireNonNull(capturedAt, "capturedAt");
@@ -35,7 +42,18 @@ public record SubsystemSnapshot(
     }
 
     /**
-     * Captures a snapshot now, stamping the current {@link KernelDiagnostics#SCHEMA_VERSION}.
+     * Pairs a lookup key with its result in a snapshot stamped with
+     * {@link KernelDiagnostics#SCHEMA_VERSION} and the instant of this call, which is how a
+     * {@link KernelDiagnostics} implementation answers
+     * {@link KernelDiagnostics#describeSubsystem(String)} — including on a miss.
+     *
+     * @param requestedName the name that was looked up; echoed back verbatim so the snapshot is
+     *                      self-describing even when nothing matched. Must not be {@code null}
+     * @param subsystem     the detail found for that name, or {@link Optional#empty()} when no subsystem
+     *                      of that name exists in this runtime. Must not be {@code null}
+     * @return a new snapshot carrying {@code requestedName}, {@code subsystem}, the current schema
+     *         version and a {@code capturedAt} taken at this call
+     * @throws NullPointerException if {@code requestedName} or {@code subsystem} is {@code null}
      */
     public static SubsystemSnapshot capture(String requestedName, Optional<SubsystemDescriptor> subsystem) {
         return new SubsystemSnapshot(KernelDiagnostics.SCHEMA_VERSION, Instant.now(), requestedName, subsystem);

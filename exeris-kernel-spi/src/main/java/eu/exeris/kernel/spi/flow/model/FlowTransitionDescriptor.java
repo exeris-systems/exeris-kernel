@@ -5,17 +5,8 @@
 package eu.exeris.kernel.spi.flow.model;
 
 /**
- * Descriptor for a directed transition between two steps in a {@link FlowDefinition}.
- *
- * <h2>Valhalla Readiness</h2>
- * <p>All fields are primitives or {@code String} — no identity operations.
- * JIT can scalarise on hot paths via Escape Analysis.
- * Ready for {@code value record} when JEP 401 is stable.
- *
- * <h2>Enterprise Off-Heap Mapping</h2>
- * <p>In the Enterprise tier, transitions are stored in a flat slab array with adjacency
- * indexed by {@code fromStep}. The {@code conditionTag} is stored as an FNV-1a hash
- * (long) in the slab to avoid heap {@code String} references on the hot lookup path.
+ * A directed edge between two steps of a {@link FlowDefinition}, tagged with the condition under
+ * which routing takes it.
  *
  * @param fromStep     the source step id (must reference a registered step)
  * @param toStep       the target step id (must reference a registered step)
@@ -23,6 +14,12 @@ package eu.exeris.kernel.spi.flow.model;
  *                     use {@code "default"} for unconditional transitions;
  *                     never {@code null}
  *
+ * @implNote All components are primitives or {@code String} and the record performs no identity
+ *           operation, so C2 can scalarise it via escape analysis and it is ready for
+ *           {@code value record} when JEP 401 is stable. In the Enterprise tier transitions live in
+ *           a flat slab array with adjacency indexed by {@code fromStep}, and {@code conditionTag}
+ *           is stored as an FNV-1a hash ({@code long}) so the hot lookup path holds no heap
+ *           {@code String}.
  * @since 0.5
  * @see FlowStepDescriptor
  * @see FlowDefinition
@@ -33,7 +30,13 @@ public record FlowTransitionDescriptor(
         String conditionTag
 ) {
 
-    /** Compact constructor — validates required fields. */
+    /**
+     * Validates that both endpoints are addressable and that the condition is nameable, so an edge
+     * that could never be resolved never reaches a definition.
+     *
+     * @throws IllegalArgumentException if {@code fromStep} or {@code toStep} is negative, or if
+     *                                  {@code conditionTag} is {@code null} or blank
+     */
     public FlowTransitionDescriptor {
         if (fromStep < 0) {
             throw new IllegalArgumentException("fromStep must be >= 0, got: " + fromStep);
@@ -47,7 +50,15 @@ public record FlowTransitionDescriptor(
         }
     }
 
-    /** Convenience factory for an unconditional (default) transition. */
+    /**
+     * Builds an edge that routing always takes, by tagging it {@code "default"} — the conventional
+     * name for "no condition", since {@code conditionTag} may not be blank.
+     *
+     * @param fromStep the source step id; must not be negative
+     * @param toStep   the target step id; must not be negative
+     * @return an unconditional transition between the two steps
+     * @throws IllegalArgumentException if either step id is negative
+     */
     public static FlowTransitionDescriptor unconditional(int fromStep, int toStep) {
         return new FlowTransitionDescriptor(fromStep, toStep, "default");
     }

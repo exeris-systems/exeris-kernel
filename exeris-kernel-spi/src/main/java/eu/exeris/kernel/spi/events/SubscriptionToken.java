@@ -31,9 +31,11 @@ public record SubscriptionToken(int busId, long subscriptionOrdinal) {
     public static final SubscriptionToken INVALID = new SubscriptionToken(-1, -1L);
 
     /**
-     * Returns {@code true} if this token is valid (i.e. not the {@link #INVALID} sentinel).
+     * Distinguishes a token that names a subscription slot from the {@link #INVALID} sentinel.
      *
-     * @return {@code true} if the subscription is potentially active
+     * @return {@code true} when both components are non-negative, meaning the token addresses a
+     *         real slot. It does not follow that the subscription is still live — an
+     *         already-unsubscribed token stays structurally valid
      */
     public boolean isValid() {
         return busId >= 0 && subscriptionOrdinal >= 0L;

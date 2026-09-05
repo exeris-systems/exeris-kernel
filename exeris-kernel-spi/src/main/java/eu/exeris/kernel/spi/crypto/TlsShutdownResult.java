@@ -12,13 +12,16 @@ package eu.exeris.kernel.spi.crypto;
  * At that point the {@code sentCloseNotify}/{@code receivedCloseNotify} booleans
  * and the status ordinal can be flattened to minimize header and pointer overhead.
  *
- * <h2>Zero-Allocation Contract</h2>
- * <p>{@link #COMPLETE} and {@link #ERROR} are pre-allocated singletons.
- * Partial-shutdown results carry two boolean flags and are cheap value types.
+ * <p><b>Allocation:</b> zero-alloc on hot path for the two terminal outcomes — {@link #COMPLETE}
+ * and {@link #ERROR} are pre-allocated constants; {@link #partial(boolean, boolean)} allocates
+ * one small carrier per partial step.
  *
  * @param status              semantic outcome of this shutdown step
  * @param sentCloseNotify     whether the local side has sent a TLS close-notify alert
  * @param receivedCloseNotify whether the peer's close-notify has been received
+ * @apiNote Compare with the predicates ({@link #isComplete()}, {@link #needsMoreIo()},
+ *          {@link #isError()}) rather than by identity against the constants: a partial result is
+ *          a fresh instance and never one of them.
  * @since 0.5
  */
 public record TlsShutdownResult(Status status,
@@ -47,17 +50,31 @@ public record TlsShutdownResult(Status status,
     }
 
 
-    /** Returns {@code true} if both close-notify alerts have been exchanged. */
+    /**
+     * Indicates that both sides have exchanged close-notify and the session may be released.
+     *
+     * @return {@code true} when {@link #status()} is {@link Status#COMPLETE}
+     */
     public boolean isComplete() {
         return status == Status.COMPLETE;
     }
 
-    /** Returns {@code true} if further I/O is needed to complete the shutdown. */
+    /**
+     * Indicates that the shutdown is half-done and the caller must step it again.
+     *
+     * @return {@code true} when {@link #status()} is {@link Status#NEED_MORE_IO}; the two flags
+     *         {@link #sentCloseNotify()} and {@link #receivedCloseNotify()} say which half is
+     *         still outstanding
+     */
     public boolean needsMoreIo() {
         return status == Status.NEED_MORE_IO;
     }
 
-    /** Returns {@code true} if a fatal error occurred during shutdown. */
+    /**
+     * Indicates that the shutdown failed and no graceful close is reachable on this session.
+     *
+     * @return {@code true} when {@link #status()} is {@link Status#ERROR}
+     */
     public boolean isError() {
         return status == Status.ERROR;
     }

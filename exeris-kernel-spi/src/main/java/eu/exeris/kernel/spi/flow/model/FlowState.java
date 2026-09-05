@@ -41,7 +41,12 @@ public enum FlowState {
     /** Flow has completed backward compensation after a failure. Terminal state. */
     FAILED_ROLLEDBACK(5);
 
-    /** Integer code stored off-heap in the flow context slab. */
+    /**
+     * Numeric encoding of this state — what a binding writes where it cannot hold an enum reference,
+     * and what {@link #fromCode(int)} resolves back.
+     *
+     * @implNote This is the value stored in the off-heap flow context slab.
+     */
     public final int code;
 
     FlowState(int code) {
@@ -67,7 +72,13 @@ public enum FlowState {
         };
     }
 
-    /** Returns {@code true} if this is a terminal state (no further transitions possible). */
+    /**
+     * Reports whether the instance has finished — one way or the other — and can make no further
+     * transition.
+     *
+     * @return {@code true} for {@link #COMPLETED} and {@link #FAILED_ROLLEDBACK}, {@code false} for
+     *         every other state
+     */
     public boolean isTerminal() {
         return this == COMPLETED || this == FAILED_ROLLEDBACK;
     }

@@ -22,6 +22,13 @@ public record ProviderDescriptor(
         int priority,
         Optional<String> displayName) {
 
+    /**
+     * Rejects a {@code null} component: an absent {@code displayName} is carried as
+     * {@link Optional#empty()}, never as {@code null}.
+     *
+     * @throws NullPointerException if {@code providerName}, {@code spiType} or {@code displayName}
+     *                              is {@code null}
+     */
     public ProviderDescriptor {
         Objects.requireNonNull(providerName, "providerName");
         Objects.requireNonNull(spiType, "spiType");

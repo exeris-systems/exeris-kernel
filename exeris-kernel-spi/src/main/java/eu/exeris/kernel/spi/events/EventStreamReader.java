@@ -17,9 +17,7 @@ import java.time.Instant;
  * <p>An implementation is bound to
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_STREAM_READER}
  * by the bootstrapper before {@link EventEngine#start()} (analogous to
- * {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}). When unbound, replay
- * APIs are not available — application code SHOULD treat the absence as
- * "broker does not support replay" rather than as a hard error.
+ * {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}).
  *
  * <h2>Use Cases</h2>
  * <ul>
@@ -30,10 +28,8 @@ import java.time.Instant;
  * </ul>
  *
  * <h2>Cursor Lifecycle</h2>
- * <p>Each method returns a fresh {@link EventStream} that owns an underlying cursor.
- * Callers MUST close every returned stream. {@link #close()} on the reader itself
- * releases shared driver resources (connection pool slot, consumer group session) and
- * is idempotent.
+ * <p>Each method returns a fresh {@link EventStream} that owns an underlying cursor. The reader
+ * and the streams it hands out are released independently.
  *
  * <h2>Ordering (ADR-049)</h2>
  * <p>Replay honours the per-stream total order the {@link EventStreamAppender} established:
@@ -42,6 +38,15 @@ import java.time.Instant;
  * side of the ordering boundary the durable log owns; the transient {@link EventBus} makes no
  * ordering promise.
  *
+ * <p><b>Ownership:</b> the caller closes every {@link EventStream} it is handed, and closes the
+ * reader itself when done with it; closing the reader does not close the streams it has already
+ * returned
+ *
+ * @implSpec {@link #close()} releases the reader's shared driver resources (connection-pool slot,
+ *           consumer-group session) and is idempotent. Every query returns a live stream, never
+ *           {@code null} — an empty result is an empty stream.
+ * @apiNote The slot may be unbound: a broker with no replay capability binds nothing here. Treat
+ *          the absence as "this broker does not support replay" rather than as a hard error.
  * @since 0.7
  * @see EventStream
  * @see EventStreamAppender
@@ -54,9 +59,11 @@ public interface EventStreamReader extends AutoCloseable {
      *
      * @param streamId      the stream to replay; must not be {@code null}
      * @param fromTimestamp inclusive lower bound on {@code occurredAt}; must not be {@code null}
-     * @return live {@link EventStream}; the caller MUST close it
+     * @return a live {@link EventStream} over the matching events, never {@code null}; the
+     *         caller closes it
      * @throws eu.exeris.kernel.spi.exceptions.events.EventEngineException
-     *         on driver-level failure (connection lost, cursor open rejected, etc.)
+     *         {@code EX-EVENT-6001} on driver-level failure (connection lost, cursor open
+     *         rejected), unless the binding raises a more specific {@code EX-EVENT-*} code
      */
     EventStream replayFrom(StreamId streamId, Instant fromTimestamp);
 
@@ -71,9 +78,11 @@ public interface EventStreamReader extends AutoCloseable {
      *
      * @param streamId    the stream to replay; must not be {@code null}
      * @param fromVersion inclusive lower bound on the per-stream version; {@code >= 0}
-     * @return live {@link EventStream}; the caller MUST close it
+     * @return a live {@link EventStream} over the matching events, never {@code null}; the
+     *         caller closes it
      * @throws eu.exeris.kernel.spi.exceptions.events.EventEngineException
-     *         on driver-level failure
+     *         {@code EX-EVENT-6001} on driver-level failure, unless the binding raises a more
+     *         specific {@code EX-EVENT-*} code
      */
     EventStream replayFromVersion(StreamId streamId, long fromVersion);
 
@@ -85,17 +94,20 @@ public interface EventStreamReader extends AutoCloseable {
      *
      * @param eventType     non-blank event type name as registered in {@link EventRegistry}
      * @param fromTimestamp inclusive lower bound on {@code occurredAt}; must not be {@code null}
-     * @return live {@link EventStream}; the caller MUST close it
+     * @return a live {@link EventStream} over the matching events, never {@code null}; the
+     *         caller closes it
      * @throws eu.exeris.kernel.spi.exceptions.events.EventEngineException
-     *         on driver-level failure
+     *         {@code EX-EVENT-6001} on driver-level failure, unless the binding raises a more
+     *         specific {@code EX-EVENT-*} code
      */
     EventStream replayByType(String eventType, Instant fromTimestamp);
 
     /**
-     * Releases shared driver resources held by the reader.
-     * Idempotent. Open {@link EventStream} instances returned earlier remain valid
-     * until they themselves are closed; {@code close()} on the reader does not
-     * cancel them.
+     * Gives back the driver resources the reader holds across all of its queries — the
+     * connection-pool slot or consumer-group session, not any individual cursor.
+     *
+     * @implSpec Idempotent. Streams returned earlier remain valid until they themselves are
+     *           closed; closing the reader neither cancels nor drains them.
      */
     @Override
     void close();

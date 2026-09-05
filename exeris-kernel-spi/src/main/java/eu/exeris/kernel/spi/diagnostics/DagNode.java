@@ -24,6 +24,14 @@ public record DagNode(
         boolean running,
         boolean optional) {
 
+    /**
+     * Rejects a {@code null} {@code name} or {@code phase} and replaces {@code dependsOn} with an
+     * unmodifiable copy, so a node published into a snapshot cannot be mutated through the list the
+     * caller passed in.
+     *
+     * @throws NullPointerException if {@code name}, {@code phase} or {@code dependsOn} is {@code null},
+     *                              or if {@code dependsOn} contains a {@code null} element
+     */
     public DagNode {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(phase, "phase");

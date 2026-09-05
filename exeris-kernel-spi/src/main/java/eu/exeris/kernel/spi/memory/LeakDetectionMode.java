@@ -10,27 +10,41 @@ package eu.exeris.kernel.spi.memory;
  * <h2>Valhalla Readiness</h2>
  * <p>Enum constants are JVM singletons — no heap allocation on comparison.
  *
- * @see MemoryProviderConfig#leakDetection()
  * @since 0.5
+ * @see MemoryProviderConfig#leakDetection()
  */
 public enum LeakDetectionMode {
 
     /**
-     * No leak detection.
-     * <p>Use in production. Zero allocation overhead on buffer creation/release paths.
+     * Abandoned buffers go unreported: nothing is registered at allocation, so buffer
+     * creation and release carry no tracking overhead at all.
+     *
+     * @apiNote The production setting. A leak under this mode is invisible until it shows up
+     *          as exhaustion ({@code EX-MEM-1001}).
      */
     DISABLED,
 
     /**
-     * Sampling-based detection: ~1% of allocations are tracked via phantom references.
-     * <p>Low overhead; suitable for canary deployments. Reports leaks to JFR asynchronously.
+     * A sampled subset of allocations is tracked, so a persistent leak surfaces
+     * statistically while the untracked majority pays nothing.
+     *
+     * @apiNote Cheap enough for a canary deployment. It will not catch a specific one-off
+     *          leak — for that, use {@link #PARANOID}.
+     * @implNote The kernel's Core leak tracker registers one allocation in 128 with a
+     *           {@link java.lang.ref.Cleaner} and captures no allocation stack in this mode;
+     *           detections are reported asynchronously from the cleaner thread as
+     *           {@code EX-MEM-1002} JFR events.
      */
     SAMPLED,
 
     /**
-     * Full detection: every allocation is tracked.
-     * <p>High overhead (~2× allocation cost). Use only in integration tests or
-     * when hunting a specific leak in a controlled environment.
+     * Every allocation is tracked, so any buffer collected without {@code close()} is
+     * reported, with the stack that allocated it.
+     *
+     * @apiNote For integration tests and controlled leak hunts only: the per-allocation
+     *          registration and stack capture roughly double the cost of an allocation.
+     * @implNote Detections are reported as {@code EX-MEM-1002} JFR events from the cleaner
+     *           thread — no {@code System.err}, no logging framework.
      */
     PARANOID
 }

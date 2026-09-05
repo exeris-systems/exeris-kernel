@@ -16,9 +16,8 @@ import java.util.Objects;
  * ({@link #staleFetchBudget()}).
  *
  * <p>It is intentionally free of any wire-format, key-algorithm or transport vocabulary (no JWKS /
- * RSA / HTTP terms) so it can describe the rotation timing of any {@link IdentityProvider} driver.
- * Introduced in the Community tier at 0.9.0 and promoted to this SPI seam at 0.10.0 alongside the
- * {@code IdentityProvider} SPI (ADR-040).
+ * RSA / HTTP terms) so it can describe the rotation timing of any {@link IdentityProvider} driver
+ * (ADR-040).
  *
  * <p><b>Configuration coupling:</b> {@link #overlapWindow()} and {@link #staleFetchBudget()} are
  * independent knobs, but configuring {@code overlapWindow > staleFetchBudget} widens acceptance: a

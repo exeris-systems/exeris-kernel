@@ -12,9 +12,10 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * because the off-heap tier has reached capacity.
  *
  * <h2>Zero-Allocation Contract (The Wall)</h2>
- * <p>This constructor performs <strong>zero String formatting</strong>. The numeric context
- * ({@code requestedBytes}, {@code availableBytes}) is stored in {@link #rawArgs()} at
- * indices {@code [0]} and {@code [1]} respectively, ready for binary Glass-Box serialization.
+ * <p>Construction performs <strong>zero String formatting</strong>: the message is a
+ * constant, and the numeric context ({@code requestedBytes}, {@code availableBytes}) is
+ * carried in {@link #rawArgs()} at indices {@code [0]} and {@code [1]}, ready for binary
+ * Glass-Box serialization. Formatting, if any is wanted, happens at the reporting end.
  *
  * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <pre>
@@ -25,20 +26,9 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_MEM_1001}
  *
- * <h2>Legacy Migration Note</h2>
- * <p>The legacy {@code kernel-legacy/spi} version used:
- * <pre>{@code
- * // ❌ BANNED – allocates a StringBuilder + String on every throw:
- * super("Memory exhausted: requested %d bytes, available %d bytes"
- *       .formatted(requestedBytes, availableBytes));
- * }</pre>
- * <p>The new version passes raw {@code long} values:
- * <pre>{@code
- * // ✅ CORRECT – zero String allocation:
- * super(KernelErrorCodes.EX_MEM_1001, "Off-heap allocator exhausted", null,
- *       requestedBytes, availableBytes);
- * }</pre>
- *
+ * @apiNote Catching this is a load-shedding decision, not a retry: the tier is full, and the
+ *          allocator will not grow it. The documented response is backpressure —
+ *          {@code H3_EXCESSIVE_LOAD} — rather than an immediate second attempt.
  * @since 0.5
  */
 public final class MemoryExhaustedException extends ExerisKernelException {
@@ -50,23 +40,23 @@ public final class MemoryExhaustedException extends ExerisKernelException {
     private static final String MESSAGE = "Off-heap allocator exhausted";
 
     /**
-     * Primary constructor – called by the {@code MemoryAllocator} SPI on allocation failure.
-     *
-     * <p>Both {@code requestedBytes} and {@code availableBytes} are stored as raw
-     * {@code long} primitives (auto-boxed to {@code Long} by the varargs mechanism –
-     * a single, short-lived allocation per throw, which is acceptable because an
-     * {@code OutOfMemory}-class event is not a steady-state hot-path).
+     * Records an allocation failure with the two numbers that explain it, for a
+     * {@code MemoryAllocator} implementation that has run out of tier capacity.
      *
      * @param requestedBytes number of bytes the caller requested; must be {@code > 0}
      * @param availableBytes number of bytes remaining in the allocator tier at the time of failure
+     * @implNote The two values reach {@link #rawArgs()} through a varargs array, so each
+     *           throw boxes them — one short-lived allocation on a path that is by
+     *           definition not steady state.
      */
     public MemoryExhaustedException(long requestedBytes, long availableBytes) {
         super(KernelErrorCodes.EX_MEM_1001, MESSAGE, null, requestedBytes, availableBytes);
     }
 
     /**
-     * Chained constructor – wraps a lower-level {@link Throwable} (e.g. an FFM
-     * {@code IllegalStateException} from the arena).
+     * Records an allocation failure that was surfaced by a lower-level throwable — an
+     * {@code OutOfMemoryError} from the JVM or an {@code IllegalStateException} from an FFM
+     * arena — keeping that original as the cause.
      *
      * @param requestedBytes number of bytes the caller requested
      * @param availableBytes number of bytes remaining in the allocator tier
@@ -82,10 +72,11 @@ public final class MemoryExhaustedException extends ExerisKernelException {
     // -----------------------------------------------------------------------
 
     /**
-     * Returns the number of bytes that were requested at the time of failure.
+     * Returns the byte count the allocator could not satisfy — {@code rawArgs()[0]}, read
+     * back with its meaning attached.
      *
-     * <p>This is a convenience accessor over {@code ((Number) rawArgs()[0]).longValue()}
-     * with an explicit semantic name for Community-tier logging paths.
+     * <p>Community-tier logging paths use this; Enterprise Glass-Box reads
+     * {@link #rawArgs()} directly.
      *
      * @return requested byte count; always {@code > 0}
      */
@@ -94,10 +85,8 @@ public final class MemoryExhaustedException extends ExerisKernelException {
     }
 
     /**
-     * Returns the number of bytes that were available in the allocator tier
-     * at the time of failure.
-     *
-     * <p>This is a convenience accessor over {@code ((Number) rawArgs()[1]).longValue()}.
+     * Returns how much room the tier had left when the request was refused — {@code
+     * rawArgs()[1]}, read back with its meaning attached.
      *
      * @return available byte count; may be {@code 0}
      */

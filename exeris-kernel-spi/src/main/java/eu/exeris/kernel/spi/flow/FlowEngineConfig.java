@@ -43,7 +43,8 @@ import java.util.concurrent.TimeUnit;
  *                               least-recently-accessed entry; the engine then falls back to the
  *                               durable {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore}
  *                               (when {@code persistenceEnabled = true}) to honor the idempotency
- *                               fence — see {@code flow.md} §Lifecycle. (since 0.7.0)
+ *                               fence — see {@code docs/subsystems/flow.md}
+ *                               §Terminal-State Catalog Retention. (since 0.7.0)
  * @param defaultSagaTimeoutShortNanos baseline timeout for short-lived (transactional) sagas;
  *                                     {@link #DEFAULT_SAGA_TIMEOUT_SHORT_NANOS} = 30 s. Exposed for
  *                                     callers that classify saga lifetimes when constructing a
@@ -83,7 +84,19 @@ public record FlowEngineConfig(
     public static final long DEFAULT_SAGA_TIMEOUT_LONG_NANOS = TimeUnit.DAYS.toNanos(30L);
 
 
-    /** Compact constructor — validates invariants eagerly (fail-fast bootstrap). */
+    /**
+     * Validates every bound at construction, so a misconfigured engine fails during bootstrap
+     * rather than at the first flow that trips over the field.
+     *
+     * @throws NullPointerException     if {@code engineName} is {@code null}
+     * @throws IllegalArgumentException if {@code engineName} is blank, if any bounded field is
+     *                                  outside its range, if {@code schedulerQueueCapacity} is not
+     *                                  a power of 2 while {@code partitionBytes > 0}, if
+     *                                  {@code partitionName} is absent while
+     *                                  {@code partitionBytes > 0}, or if
+     *                                  {@code defaultSagaTimeoutLongNanos} is below
+     *                                  {@code defaultSagaTimeoutShortNanos}
+     */
     public FlowEngineConfig {
         Objects.requireNonNull(engineName, "engineName must not be null");
         if (engineName.isBlank()) {
@@ -137,11 +150,32 @@ public record FlowEngineConfig(
     }
 
     /**
-     * Backward-compatible 11-arg constructor — preserves the v0.6 call shape so existing callers
-     * (community bootstrap, tests, external operators) compile unchanged. Defaults the new 0.7
-     * fields to: {@code terminalCatalogMaxSize = 0} (unbounded — preserves prior behavior),
-     * {@link #DEFAULT_SAGA_TIMEOUT_SHORT_NANOS}, and {@link #DEFAULT_SAGA_TIMEOUT_LONG_NANOS}.
+     * Builds a configuration from the eleven fields a caller has to decide, leaving the three
+     * retention and saga-timeout fields at their defaults: {@code terminalCatalogMaxSize = 0}
+     * (unbounded terminal catalog), {@link #DEFAULT_SAGA_TIMEOUT_SHORT_NANOS} and
+     * {@link #DEFAULT_SAGA_TIMEOUT_LONG_NANOS}.
      *
+     * @param engineName             human-readable engine name (for JFR / logging); must not be
+     *                               {@code null} or blank
+     * @param maxConcurrentFlows     maximum number of simultaneously active flow instances;
+     *                               must be &gt; 0
+     * @param timeoutDurationNanos   default flow duration limit in nanoseconds; must be &gt; 0
+     * @param maxSteps               maximum number of distinct step types (Enterprise: slab
+     *                               sizing); must be &gt; 0
+     * @param maxTransitions         maximum number of registered transitions (Enterprise: slab
+     *                               sizing); must be &gt;= 0
+     * @param maxExecutionPlans      maximum number of compiled execution plans retained by the plan
+     *                               catalog, each definition version counting as one; must be &gt; 0
+     * @param schedulerQueueCapacity ring buffer capacity for the flow scheduler; must be &gt; 0, and
+     *                               a power of 2 when {@code partitionBytes > 0}
+     * @param partitionName          memory partition name for off-heap allocation; must not be
+     *                               {@code null} or blank when {@code partitionBytes > 0}
+     * @param partitionBytes         bytes to claim for the flow memory partition; must be &gt;= 0,
+     *                               and {@code 0} selects the heap-only path
+     * @param persistenceEnabled     whether flow snapshot persistence via SPI is enabled
+     * @param compensationEnabled    whether backward compensation (saga rollback) is enabled
+     * @throws NullPointerException     if {@code engineName} is {@code null}
+     * @throws IllegalArgumentException if any other bound above is violated
      * @since 0.7
      */
     public FlowEngineConfig(
@@ -176,12 +210,19 @@ public record FlowEngineConfig(
     }
 
     /**
-     * Sensible defaults suitable for <b>Community (heap-based)</b> usage.
+     * Produces a heap-only baseline: no off-heap partition ({@code partitionBytes = 0},
+     * {@code partitionName = null}), snapshot persistence off, compensation on, an unbounded
+     * terminal-state catalog, and both saga-timeout defaults at their constants.
      *
-     * <p>Off-heap partitioning is disabled ({@code partitionBytes=0}, {@code partitionName=null}),
-     * matching the Community tier which uses standard heap structures.
-     * Enterprise operators should use {@link #enterpriseDefaults(String)} as a starting point
-     * and then override {@code partitionBytes} and slab-sizing fields as needed.
+     * @param engineName human-readable engine name (for JFR / logging); must not be {@code null}
+     *                   or blank
+     * @return a configuration whose every field is set for the heap path; never {@code null}
+     * @throws NullPointerException     if {@code engineName} is {@code null}
+     * @throws IllegalArgumentException if {@code engineName} is blank
+     * @apiNote Persistence is off here, so cross-restart choreography wake is unsupported by
+     *          contract until the caller enables it. Operators sizing an off-heap deployment start
+     *          from {@link #enterpriseDefaults(String)} instead and override {@code partitionBytes}
+     *          and the slab-sizing fields.
      */
     public static FlowEngineConfig defaults(String engineName) {
         return new FlowEngineConfig(
@@ -203,11 +244,20 @@ public record FlowEngineConfig(
     }
 
     /**
-     * Baseline defaults for <b>Enterprise (off-heap / slab-based)</b> usage.
+     * Produces an off-heap baseline: a 32 MB partition named {@code "flow"}, snapshot persistence
+     * and compensation on, and a terminal-state catalog bounded at 100 000 entries — the bounded
+     * mode, which is why persistence is enabled with it.
      *
-     * <p>Enables a 32 MB off-heap partition and snapshot persistence. Enterprise
-     * operators should further tune {@code partitionBytes}, {@code maxSteps},
-     * and {@code schedulerQueueCapacity} to match their deployment density targets.
+     * @param engineName human-readable engine name (for JFR / logging); must not be {@code null}
+     *                   or blank
+     * @return a configuration whose every field is set for the off-heap path; never {@code null}
+     * @throws NullPointerException     if {@code engineName} is {@code null}
+     * @throws IllegalArgumentException if {@code engineName} is blank
+     * @apiNote Tune {@code partitionBytes}, {@code maxSteps} and {@code schedulerQueueCapacity} to
+     *          the deployment's density target before using this in production. Keep
+     *          {@code persistenceEnabled} on while {@code terminalCatalogMaxSize > 0}: an evicted
+     *          catalog entry has to stay recoverable from the snapshot store for the resubmit fence
+     *          to hold.
      */
     public static FlowEngineConfig enterpriseDefaults(String engineName) {
         return new FlowEngineConfig(

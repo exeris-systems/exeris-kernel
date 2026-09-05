@@ -24,6 +24,14 @@ public record BootstrapDagSnapshot(
         Instant capturedAt,
         List<DagNode> nodes) {
 
+    /**
+     * Rejects a {@code null} {@code schemaVersion} or {@code capturedAt} and replaces {@code nodes} with
+     * an unmodifiable copy, so a published snapshot cannot be mutated through the list the producer
+     * passed in.
+     *
+     * @throws NullPointerException if {@code schemaVersion}, {@code capturedAt} or {@code nodes} is
+     *                              {@code null}, or if {@code nodes} contains a {@code null} element
+     */
     public BootstrapDagSnapshot {
         Objects.requireNonNull(schemaVersion, "schemaVersion");
         Objects.requireNonNull(capturedAt, "capturedAt");
@@ -31,7 +39,15 @@ public record BootstrapDagSnapshot(
     }
 
     /**
-     * Captures a snapshot now, stamping the current {@link KernelDiagnostics#SCHEMA_VERSION}.
+     * Wraps a DAG in a snapshot stamped with {@link KernelDiagnostics#SCHEMA_VERSION} and the instant of
+     * this call, which is how a {@link KernelDiagnostics} implementation publishes bootstrap topology.
+     *
+     * @param nodes the DAG nodes to publish, in topological order where the caller has one; copied
+     *              defensively, so later mutation of the argument is not visible through the snapshot.
+     *              Must not be {@code null} and must not contain {@code null}
+     * @return a new snapshot carrying an unmodifiable copy of {@code nodes}, the current schema version
+     *         and a {@code capturedAt} taken at this call
+     * @throws NullPointerException if {@code nodes} is {@code null} or contains a {@code null} element
      */
     public static BootstrapDagSnapshot capture(List<DagNode> nodes) {
         return new BootstrapDagSnapshot(KernelDiagnostics.SCHEMA_VERSION, Instant.now(), nodes);

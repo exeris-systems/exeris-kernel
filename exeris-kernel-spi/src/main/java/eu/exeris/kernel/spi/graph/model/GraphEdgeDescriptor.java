@@ -7,15 +7,13 @@ package eu.exeris.kernel.spi.graph.model;
 import java.util.Objects;
 
 /**
- * Valhalla-Ready: Immutable descriptor of a graph edge type.
+ * Immutable descriptor of the <em>shape</em> of a graph edge type — not the data — created
+ * once during metadata discovery and shared immutably via {@code ScopedValue}.
  *
- * <p>Will be migrated to {@code value record} once JEP 401 is mainline.
- * Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
- * Avoid identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
- *
- * <h2>Zero-Copy Contract</h2>
- * <p>This record describes the <em>shape</em> of an edge type — not the data.
- * Created once during metadata discovery and shared immutably via {@code ScopedValue}.
+ * <h2>Valhalla Readiness</h2>
+ * <p>Structured so it can be migrated to a {@code value record} once JEP 401 is mainline;
+ * until then it relies on C2 JIT escape analysis for scalarization on hot paths. Avoid
+ * identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
  *
  * @param sourceNode    the source node label (e.g. "User")
  * @param edgeType      the edge type (e.g. "FOLLOWS", "SIMILAR_TO")
@@ -49,7 +47,12 @@ public record GraphEdgeDescriptor(
     }
 
     /**
-     * Compact constructor with validation.
+     * Rejects a {@code null} {@code sourceNode}, {@code edgeType} or {@code targetNode}, and
+     * fills in {@code direction} and {@code tableName} defaults when the caller passes
+     * {@code null} for either.
+     *
+     * @throws NullPointerException if {@code sourceNode}, {@code edgeType} or
+     *                               {@code targetNode} is {@code null}
      */
     public GraphEdgeDescriptor {
         Objects.requireNonNull(sourceNode, "sourceNode");
@@ -60,7 +63,8 @@ public record GraphEdgeDescriptor(
     }
 
     /**
-     * Quick factory for simple edges.
+     * Returns an outgoing, unidirectional edge descriptor with weight {@code 1.0} and a
+     * table name derived from {@code edgeType}.
      *
      * @param sourceNode source node label
      * @param edgeType   edge type

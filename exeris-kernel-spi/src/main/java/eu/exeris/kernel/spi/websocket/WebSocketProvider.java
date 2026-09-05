@@ -24,6 +24,11 @@ public interface WebSocketProvider {
      *
      * @param config endpoint configuration; must not be null
      * @return an initialised engine in the created state; never {@code null}
+     * @implSpec Must work with no ambient kernel binding present — an implementation that requires
+     *           {@code MEMORY_ALLOCATOR} or any other bound provider to be constructible defeats
+     *           the reason this method exists (ADR-084 §1): a consumer that never boots the kernel
+     *           still needs a working engine. {@code AbstractWebSocketProviderTck} binds nothing
+     *           and boots nothing, so a provider that quietly requires a kernel scope fails it.
      */
     WebSocketServerEngine createServerEngine(WebSocketConfig config);
 

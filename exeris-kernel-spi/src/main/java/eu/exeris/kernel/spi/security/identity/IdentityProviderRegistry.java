@@ -20,11 +20,21 @@ import java.util.Objects;
  * selected. {@code null} is returned when no provider claims the token — the dispatcher
  * ({@code SecurityProvider}) maps that to a terminal {@code EX-SEC-2002} deny, never fail-open.
  *
- * <h2>Fail-closed dispatch (ADR-012)</h2>
- * <p>This registry selects <b>exactly one</b> provider. The caller MUST treat the selected
- * provider's {@link IdentityProvider#authenticate} failure as terminal and MUST NOT re-select a
- * different provider for the same token — re-dispatch on failure is token-confusion / fail-open.
+ * <p><b>Allocation:</b> {@link #of} allocates once, at registry construction, to build the
+ * immutable priority-ordered snapshot; the {@code select} it returns then walks that snapshot
+ * with no further explicit allocation (whether the per-call {@code List} iteration is
+ * escape-analyzed away is unverified).
+ * <p><b>Thread confinement:</b> any thread — the registry returned by {@link #of} closes over an
+ * immutable snapshot with no mutable state, so {@code select} may be called concurrently from any
+ * number of threads.
+ * <p><b>Ownership:</b> the caller owns {@code rawToken}; a registry passes it through to
+ * {@link IdentityProvider#canAttempt} for routing only and retains no reference to it beyond the
+ * call.
  *
+ * @apiNote This registry selects <b>exactly one</b> provider. Treat the selected provider's
+ *          {@link IdentityProvider#authenticate} failure as terminal — do not re-select a
+ *          different provider for the same token; re-dispatch on failure is token-confusion /
+ *          fail-open.
  * @since 0.10
  * @see IdentityProvider
  */

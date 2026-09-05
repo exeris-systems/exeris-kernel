@@ -19,6 +19,9 @@ import java.util.Set;
  *       named OAuth2 scopes.</li>
  * </ul>
  *
+ * <p>{@link #abstain()} is a fourth answer but not a fourth shape: it declares that this policy does
+ * not describe the route at all, which is what lets two policies share one URL space.
+ *
  * <p>Roles are deliberately absent. Scopes are what the transport edge checks — {@code security.md}
  * states it plainly: "scopes are used for HTTP admission control and Bearer token permission checks",
  * while roles resolve through {@code @RequiresRole} at the method level, against a build-time
@@ -33,15 +36,23 @@ import java.util.Set;
  * no request-scoped persistence session across a {@code LONG_RUNNING} route). Another driver may
  * draw a different one, or none.
  *
- * <p>The default reproduces the behaviour that shipped before the facet existed, so a policy that
- * never names execution is unaffected by its arrival.
+ * <p>The facet is opt-in: a policy that names no execution declares {@link Execution#PROMPT}.
  *
- * <h2>Allocation</h2>
- * <p>Instances are immutable and meant to be built once, at policy-declaration time, and returned
- * repeatedly. A {@link HttpRoutePolicy} that constructs a requirement per request moves allocation
- * onto the admission path and breaks the performance contract ADR-014 §5 fixes for the neighbouring
- * RBAC decision. {@link #permitAll()} and {@link #authenticated()} return shared constants.
+ * <p><b>Allocation:</b> zero-alloc on hot path — {@link #kind()}, {@link #execution()},
+ * {@link #scopeCount()} and {@link #scopeAt(int)} allocate nothing, while {@link #permitAll()},
+ * {@link #authenticated()} and {@link #abstain()} hand back shared constants, as does
+ * {@link #longRunning()} on the first two; the scope-carrying factories allocate, once, at
+ * policy-declaration time.
+ * <p><b>Thread confinement:</b> any thread — instances are immutable and expose no mutable state,
+ * so one built at policy-declaration time is read safely from every thread that later decides a
+ * request.
+ * <p><b>Ownership:</b> nothing to release — a requirement is a plain value the policy that built it
+ * may hold and hand out for the life of the process.
  *
+ * @apiNote Build a requirement once, at policy-declaration time, and return it repeatedly. An
+ *          {@link HttpRoutePolicy} that constructs one per request moves allocation onto the
+ *          admission path and breaks the performance contract ADR-014 §5 fixes for the neighbouring
+ *          RBAC decision.
  * @since 0.11
  */
 // TooManyMethods: twelve methods on an immutable value carrier — four factories (one per shape the
@@ -103,9 +114,12 @@ public final class RouteRequirement {
         /** The handler returns promptly; request-scoped resources may be held for its duration. */
         PROMPT,
         /**
-         * The handler blocks. A driver must not hold request-scoped resources across it — on the
-         * Community HTTP path that means no request-scoped persistence session, because a handler
-         * that blocks while holding a pooled connection waits on work that draws from the same pool.
+         * The handler blocks, so the route may occupy its thread for an unbounded time.
+         *
+         * @implNote On the Community HTTP path, a route declared this way gets no request-scoped
+         *           persistence session bound, because a handler that blocks while holding a pooled
+         *           connection waits on work that draws from the same pool; another driver may draw
+         *           a different consequence, or none.
          */
         LONG_RUNNING
     }
@@ -142,12 +156,11 @@ public final class RouteRequirement {
      * because nothing downstream will fold for it — an abstention that reaches the decision point is
      * treated as the defect it is and denies, in the same shape a {@code null} answer does.
      *
-     * <p>This is not {@link #permitAll()}. That describes a route as public; this describes nothing,
-     * and the difference is the whole point: a generated policy that answered {@code permitAll()} for
-     * routes it did not generate would silently overrule the stance the application already chose for
-     * its unmatched routes.
-     *
      * @return the shared abstention
+     * @apiNote This is not {@link #permitAll()}. That describes a route as public; this describes
+     *          nothing, and the difference is the whole point: a generated policy that answered
+     *          {@code permitAll()} for routes it did not generate would silently overrule the stance
+     *          the application already chose for its unmatched routes.
      * @since 0.12
      */
     public static RouteRequirement abstain() {
@@ -220,14 +233,18 @@ public final class RouteRequirement {
     }
 
     /**
-     * Returns this requirement declared {@link Execution#LONG_RUNNING}.
-     *
-     * <p>There is no inverse: {@link Execution#PROMPT} is what every factory already returns, so a
-     * route that wants it names nothing. Idempotent, and free on the scope-free shapes — both return
-     * shared constants rather than allocating, which is what keeps a policy that builds requirements
-     * eagerly from paying for the facet.
+     * Returns a requirement deciding exactly as this one does, but declaring
+     * {@link Execution#LONG_RUNNING}.
      *
      * @return an equal requirement whose execution is {@link Execution#LONG_RUNNING}
+     * @throws IllegalStateException if this is {@link #abstain()} — an abstention declares nothing
+     *                               about a route, its execution mode included, so marking one
+     *                               would hand back a non-declaration the caller would read as
+     *                               declaring {@link Execution#LONG_RUNNING}
+     * @apiNote There is no inverse: {@link Execution#PROMPT} is what every factory already returns,
+     *          so a route that wants it names nothing. Idempotent, and free on the scope-free
+     *          shapes — both return shared constants rather than allocating, which is what keeps a
+     *          policy that builds requirements eagerly from paying for the facet.
      * @since 0.12
      */
     public RouteRequirement longRunning() {
@@ -253,12 +270,12 @@ public final class RouteRequirement {
     /**
      * Returns how many scopes this requirement declares.
      *
-     * <p>Paired with {@link #scopeAt(int)} so the decision path can walk the scopes without
-     * allocating an iterator, and without the carrier handing out its mutable backing array. This
-     * pair is the only read: a {@code Set}-returning accessor beside it would be a second way to the
-     * same field, and the convenient one is the one that allocates on the admission path.
-     *
      * @return the scope count; zero for {@link Kind#PERMIT_ALL} and {@link Kind#AUTHENTICATED}
+     * @apiNote Paired with {@link #scopeAt(int)} so the decision path can walk the scopes without
+     *          allocating an iterator, and without the carrier handing out its mutable backing
+     *          array. This pair is the only read: a {@code Set}-returning accessor beside it would
+     *          be a second way to the same field, and the convenient one is the one that allocates
+     *          on the admission path.
      */
     public int scopeCount() {
         return scopeArray.length;

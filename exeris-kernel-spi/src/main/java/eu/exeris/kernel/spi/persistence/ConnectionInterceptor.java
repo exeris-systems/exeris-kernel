@@ -18,6 +18,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * <h2>Isolation Strategies</h2>
  * <table>
+ *   <caption>What each isolation strategy adds on connection acquisition</caption>
  *   <tr><th>Strategy</th><th>Interceptor action</th></tr>
  *   <tr><td>SHARED (RLS)</td>
  *       <td>{@code SET LOCAL exeris.tenant_id = ?} via parameterised statement</td></tr>
@@ -32,20 +33,22 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * the {@code ConnectionInterceptorRegistry}. The Persistence engine calls each registered
  * interceptor in order during {@link PersistenceEngine#openConnection(StorageContext)}.
  *
- * <h2>SPI Compliance (The Wall)</h2>
- * <p>Interceptor implementations MUST NOT import any JDBC, HikariCP, or driver-specific
- * classes. They operate purely via {@link PersistenceConnection} and {@link StorageContext}.
+ * <p><b>Thread confinement:</b> owner thread — an interceptor runs on the thread that
+ * acquired the connection, before that connection is handed to the caller.
+ * <p><b>Ownership:</b> the engine owns the connection passed to
+ * {@link #onConnectionAcquired}; an interceptor MUST NOT close it, and the engine discards
+ * rather than pools a connection whose interceptor threw.
  *
- * <h2>Error Handling</h2>
- * <p>If initialisation fails (e.g., the {@code SET} command is rejected by the DB),
- * the interceptor MUST throw {@link PersistenceProviderException} with error code
- * {@code EX-PERS-5006} (Interceptor Initialization Error). The engine will then
- * discard the connection and propagate the exception to the caller.
- *
+ * @implSpec Implementations MUST NOT import any JDBC, HikariCP, or driver-specific class —
+ *           they operate purely via {@link PersistenceConnection} and {@link StorageContext}.
+ *           When initialisation fails (for example, the {@code SET} command is rejected by
+ *           the database), an implementation MUST throw {@link PersistenceProviderException}
+ *           with error code {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5006};
+ *           the engine then discards the connection and propagates the exception to the caller.
+ * @since 0.5
  * @see PersistenceEngine#openConnection(StorageContext)
  * @see PersistenceConnection
  * @see StorageContext
- * @since 0.5
  */
 @FunctionalInterface
 public interface ConnectionInterceptor {
@@ -57,13 +60,12 @@ public interface ConnectionInterceptor {
      *
      * <p><b>Why this is a constant.</b> The name is a contract between code the kernel ships and SQL
      * the kernel does not — the policy lives in the deployment's own migrations, and the kernel
-     * "cannot introspect" it. Both sides therefore used to spell the string by transcription, with no
-     * compiler between them, and a policy naming a key the runtime never publishes fails in the worst
+     * cannot introspect it. A policy naming a key the runtime never publishes fails in the worst
      * possible way: every read returns zero rows and every write is refused, with nothing pointing at
-     * the five characters responsible. A downstream consumer shipped exactly that (policies reading
-     * {@code app.tenant_id}) and only found it once row-level security was actually being enforced.
-     * A generator or a migration tool can now reference this instead of retyping it.
+     * the characters responsible.
      *
+     * @apiNote A generator or a migration tool emitting the policy SQL should reference this constant
+     *          rather than retyping the string, so that the two sides cannot drift apart silently.
      * @since 0.12
      */
     String SESSION_KEY_TENANT_ID = "exeris.tenant_id";
@@ -85,11 +87,8 @@ public interface ConnectionInterceptor {
      * Invoked immediately after a connection is checked out from the pool and before
      * it is returned to the caller.
      *
-     * <p>The interceptor MUST be idempotent and MUST complete in O(1) time.
-     * It MUST NOT block on external I/O beyond issuing the initialisation SQL.
-     *
      * <p><b>Example — RLS injection (SHARED strategy):</b>
-     * <pre>{@code
+     * {@snippet lang="java" :
      * StorageContext sc = KernelProviders.STORAGE_CONTEXT.get();
      * sc.isolationKey().ifPresent(key -> {
      *     try (PersistenceStatement stmt =
@@ -97,13 +96,17 @@ public interface ConnectionInterceptor {
      *         stmt.bindString(0, key).executeUpdate();
      *     }
      * });
-     * }</pre>
+     * }
      *
      * @param connection     the freshly acquired connection; MUST NOT be closed by the interceptor
      * @param storageContext the isolation descriptor for the current request scope;
      *                       MUST NOT be {@code null}
-     * @throws PersistenceProviderException with {@code EX-PERS-5006} if the connection
-     *                                      cannot be properly initialised for the given context
+     * @throws PersistenceProviderException {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5006}
+     *                                      if the connection cannot be initialised for the given context
+     * @implNote The reference Community RLS interceptor completes in O(1) round trips per
+     *           strategy and performs no I/O beyond the session-key/schema-setting SQL; other
+     *           implementations should aim for the same shape, but neither that timing bound nor
+     *           idempotency is enforced by the TCK.
      */
     void onConnectionAcquired(PersistenceConnection connection, StorageContext storageContext);
 }

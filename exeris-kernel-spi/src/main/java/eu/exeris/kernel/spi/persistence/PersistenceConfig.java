@@ -56,8 +56,8 @@ import java.util.Objects;
  *                               Never {@code null} — use {@link Map#of()} for empty.
  *                               Nested entries MUST NOT themselves have non-empty
  *                               {@code dedicatedDataSources} maps (nesting depth = 1).
- * @see PersistenceProvider
  * @since 0.5
+ * @see PersistenceProvider
  */
 public record PersistenceConfig(
         String connectionUrl,
@@ -92,7 +92,19 @@ public record PersistenceConfig(
     private static final int DEFAULT_MAX_TENANT_POOLS = 100;
 
     /**
-     * Strict validation at construction time — fail fast, not silently.
+     * Validates every component at construction time and takes defensive copies of both maps, so
+     * that an invalid pool sizing or warm-up property is rejected at configuration time rather
+     * than on the first connection.
+     *
+     * @throws NullPointerException     if {@code connectionUrl}, {@code username},
+     *                                  {@code password}, {@code properties} or
+     *                                  {@code dedicatedDataSources} is {@code null}
+     * @throws IllegalArgumentException if {@code maxPoolSize} is below 1,
+     *                                  {@code minIdleConnections} is negative or exceeds
+     *                                  {@code maxPoolSize}, {@code connectionTimeoutMs} is not
+     *                                  positive, {@code maxTenantPools} is negative, a dedicated
+     *                                  datasource nests further dedicated datasources, or a
+     *                                  {@code pool.warmup.*} property is unparsable or out of range
      */
     public PersistenceConfig {
         Objects.requireNonNull(connectionUrl, "connectionUrl must not be null");
@@ -130,12 +142,35 @@ public record PersistenceConfig(
     }
 
     /**
-     * Backward-compatible constructor — delegates to the canonical constructor with an empty
-     * {@code dedicatedDataSources} map.
+     * Builds a configuration that declares no dedicated datasources, delegating to the canonical
+     * constructor with an empty {@code dedicatedDataSources} map.
      *
-     * <p>Preserves source compatibility for all callers written against the pre-dedicated-datasources
-     * record shape. New callers that need {@code dedicatedDataSources} should use the
-     * canonical 14-component constructor directly.
+     * @param connectionUrl       JDBC or URI-style connection URL, e.g.
+     *                            {@code "jdbc:postgresql://localhost:5432/exeris"}
+     * @param username            database username
+     * @param password            database password — a credential; it is never logged, and
+     *                            {@link #toString()} redacts it
+     * @param maxPoolSize         maximum number of connections in the shared pool; at least 1
+     * @param minIdleConnections  minimum idle connections maintained; between 0 and
+     *                            {@code maxPoolSize}
+     * @param connectionTimeoutMs maximum wait for a connection from the pool, in milliseconds;
+     *                            positive. Exceeding it raises
+     *                            {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5002}
+     * @param idleTimeoutMs       maximum idle time before a connection is evicted, in milliseconds
+     * @param maxLifetimeMs       maximum connection lifetime before forced recycle, in milliseconds
+     * @param rlsEnabled          whether Row-Level Security is active
+     * @param perTenantPooling    whether to create per-tenant connection pools
+     * @param useTls              whether TLS is required for the connection
+     * @param maxTenantPools      maximum number of per-tenant pools; not negative, and only
+     *                            consulted when {@code perTenantPooling} is set
+     * @param properties          opaque key-value properties for tier-specific native options;
+     *                            never {@code null} — use {@link Map#of()} for none
+     * @throws NullPointerException     on a {@code null} reference component
+     * @throws IllegalArgumentException on a component outside the range stated above
+     * @apiNote A caller that needs
+     *          {@link eu.exeris.kernel.spi.security.StorageContext.IsolationStrategy#DEDICATED}
+     *          routing calls the canonical 14-component constructor instead; this overload cannot
+     *          express it.
      */
     @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge
     public PersistenceConfig(
@@ -153,8 +188,11 @@ public record PersistenceConfig(
     }
 
     /**
-     * Whether to pre-warm shared connection pool on engine startup.
-     * @return true if warm-up is enabled; default true
+     * Reads the {@code pool.warmup.enabled} property, which decides whether the shared pool opens
+     * connections at engine startup instead of on first use.
+     *
+     * @return {@code true} when the property is absent — the default — or set to {@code "true"}
+     *         in any case; {@code false} only for an explicit {@code "false"}
      */
     public boolean poolWarmupEnabled() {
         String val = properties.get(POOL_WARMUP_ENABLED_KEY);
@@ -165,9 +203,11 @@ public record PersistenceConfig(
     }
 
     /**
-     * Number of connections to pre-warm in shared pool on startup.
-     * Range: 1–8, default 2.
-     * @return number of connections to warm
+     * Reads the {@code pool.warmup.connections} property, which says how many connections the
+     * shared pool opens at startup when warm-up is enabled.
+     *
+     * @return the configured count, in {@code [1, 8]}, or {@code 2} when the property is absent;
+     *         a value outside that range is rejected at construction rather than clamped here
      */
     public int poolWarmupConnections() {
         String val = properties.get(POOL_WARMUP_CONNECTIONS_KEY);

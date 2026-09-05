@@ -61,7 +61,16 @@ public record EventEngineConfig(
 ) {
 
     /**
-     * Compact constructor — validates invariants eagerly (fail-fast bootstrap).
+     * Compact constructor — rejects an incoherent configuration at construction time rather than
+     * at engine start, so a mis-set property surfaces during bootstrap and not on the first publish.
+     *
+     * @throws NullPointerException     if {@code engineName} is {@code null}
+     * @throws IllegalArgumentException if {@code engineName} is blank; if {@code queueCapacity} or
+     *         {@code batchSize} is not positive; if any slab count is negative; if
+     *         {@code slabDescriptorCount} is positive while every payload slab count is zero; if
+     *         {@code partitionBytes} is negative, or is positive while {@code partitionName} is
+     *         {@code null} or blank; or if {@code outboxEnabled} is {@code true} while
+     *         {@code outboxBatchSize} is not positive
      */
     public EventEngineConfig {
         Objects.requireNonNull(engineName, "engineName must not be null");
@@ -87,6 +96,22 @@ public record EventEngineConfig(
      * Convenience 11-arg constructor — for callers that do not care about the publish-overflow
      * policy. Defaults {@code busPublishFailFast = false} (blocking mode: never-drop).
      *
+     * @param engineName          human-readable engine name (for JFR/logging); non-null, non-blank
+     * @param queueCapacity       maximum event queue capacity; must be {@code > 0}
+     * @param batchSize           maximum events drained per loop tick; must be {@code > 0}
+     * @param partitionName       memory partition name for off-heap allocation; must be non-blank
+     *                            when {@code partitionBytes > 0}
+     * @param partitionBytes      total bytes to claim for the event memory partition;
+     *                            {@code 0} means "no partition" (heap-only bindings)
+     * @param slabDescriptorCount number of pre-allocated event descriptor slab slots; {@code >= 0}
+     * @param slabPayloadSmall    number of small (256 B) payload slab slots; {@code >= 0}
+     * @param slabPayloadMedium   number of medium (4 KB) payload slab slots; {@code >= 0}
+     * @param slabPayloadLarge    number of large (64 KB) payload slab slots; {@code >= 0}
+     * @param outboxEnabled       whether the transactional outbox writer is enabled
+     * @param outboxBatchSize     maximum events written per outbox flush cycle; must be
+     *                            {@code > 0} when {@code outboxEnabled} is {@code true}
+     * @throws NullPointerException     if {@code engineName} is {@code null}
+     * @throws IllegalArgumentException on any invariant the canonical constructor rejects
      * @since 0.7
      */
     public EventEngineConfig(
@@ -157,6 +182,11 @@ public record EventEngineConfig(
      * <p>Queue capacity: 65 536 events.
      * Batch size: 512 events per loop tick.
      * No memory partition (Community uses heap).
+     *
+     * @return a config with all slab counts and {@code partitionBytes} at zero, the outbox
+     *         enabled at a 500-event flush batch, and {@code busPublishFailFast = false} — a full
+     *         queue parks the publishing virtual thread rather than raising
+     *         {@code EX-EVENT-6002}
      */
     public static EventEngineConfig communityDefaults() {
         return new EventEngineConfig(
@@ -180,6 +210,10 @@ public record EventEngineConfig(
      * Memory partition: 64 MB.
      * Descriptor slabs: 1 000 000.
      * Payload slabs: 100 000 small / 10 000 medium / 1 000 large.
+     *
+     * @return a config that claims a 64 MB {@code "events"} partition, pre-sizes the descriptor
+     *         and payload slab pools, and sets {@code busPublishFailFast = true} — a full queue
+     *         raises {@code EX-EVENT-6002} instead of parking the publisher
      */
     public static EventEngineConfig enterpriseDefaults() {
         return new EventEngineConfig(

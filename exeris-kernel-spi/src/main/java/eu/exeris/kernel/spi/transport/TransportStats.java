@@ -40,8 +40,8 @@ package eu.exeris.kernel.spi.transport;
  *                          looking at a capacity problem or a defect, and folding the two together
  *                          removes the one distinction that changes what they do next. A driver with
  *                          no such failure mode reports {@code 0}.
- * @see TransportEngine#stats()
  * @since 0.5
+ * @see TransportEngine#stats()
  */
 public record TransportStats(
         int activeConnections,

@@ -22,17 +22,26 @@ public sealed interface JobTrigger {
     /**
      * Fires on a five-field cron schedule.
      *
-     * <p>The expression is validated here rather than in each driver, so obligation 7's "a driver
-     * cannot quietly widen it" is a property of the type rather than a rule drivers are asked to
-     * follow. Computing the next fire time from a valid expression remains driver work.
+     * <p>The expression is validated here rather than in each driver, so a driver cannot quietly
+     * widen the accepted subset — that guarantee is a property of the type, not a rule drivers are
+     * asked to follow.
      *
      * @param expression a five-field cron expression, validated at construction
+     * @implSpec Computing the next fire time from a valid expression is driver work. A compliant
+     *           implementation must interpret day-of-month and day-of-week as OR'd when both fields
+     *           are restricted (not AND'd), and must resolve every field in UTC rather than the
+     *           host's local time zone.
+     * @apiNote A step wider than its field is not an error: it strides past every value but the
+     *          first, so it fires exactly once per cycle — {@code 0 &#42;/24 * * *} is therefore the
+     *          common spelling of "daily", and {@code &#42;/23} on the same field fires twice
+     *          (at 0 and 23) where {@code &#42;/24} fires once.
      */
     record Cron(String expression) implements JobTrigger {
 
         /**
          * Canonical constructor.
          *
+         * @param expression a five-field cron expression, validated at construction
          * @throws NullPointerException     if {@code expression} is {@code null}
          * @throws IllegalArgumentException if the expression is not a valid five-field cron
          */
@@ -45,18 +54,20 @@ public sealed interface JobTrigger {
     /**
      * Fires repeatedly, waiting a fixed interval between the end of one run and the start of the next.
      *
-     * <p>Fixed <em>delay</em>, not fixed <em>rate</em>: a run that overruns its interval delays the
-     * next one rather than causing a burst of catch-up runs. Catch-up is the behaviour that turns a
-     * temporary slowdown into an outage, so the contract does not offer it.
-     *
      * @param initialDelay how long to wait before the first run; must not be negative
      * @param interval     the gap between runs; must be positive
+     * @implSpec Fixed <em>delay</em>, not fixed <em>rate</em>: an implementation must delay the next
+     *           run by the full interval measured from when the current run ends, and must not
+     *           schedule a burst of catch-up runs when a run overruns its interval — catch-up is
+     *           what turns a temporary slowdown into an outage.
      */
     record FixedInterval(Duration initialDelay, Duration interval) implements JobTrigger {
 
         /**
          * Canonical constructor.
          *
+         * @param initialDelay how long to wait before the first run; must not be negative
+         * @param interval     the gap between runs; must be positive
          * @throws NullPointerException     if either duration is {@code null}
          * @throws IllegalArgumentException if {@code initialDelay} is negative or {@code interval} is
          *                                  not positive
@@ -83,6 +94,7 @@ public sealed interface JobTrigger {
         /**
          * Canonical constructor.
          *
+         * @param delay how long to wait before the single run; must not be negative
          * @throws NullPointerException     if {@code delay} is {@code null}
          * @throws IllegalArgumentException if {@code delay} is negative
          */

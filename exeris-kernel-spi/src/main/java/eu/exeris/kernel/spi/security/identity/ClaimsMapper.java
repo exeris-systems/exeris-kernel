@@ -21,15 +21,16 @@ import eu.exeris.kernel.spi.security.PrincipalContext;
  * keeps the customisable surface (identity shape) separate from the non-negotiable surface
  * (isolation deny semantics).
  *
- * <h2>Contract</h2>
- * <ul>
- *   <li>Pure and side-effect-free; O(1) over the supplied claims (no I/O, no DB lookups).</li>
- *   <li>Returns a deeply-immutable {@link PrincipalContext}; never {@code null}.</li>
- *   <li>If a required identity claim cannot be mapped (e.g. a non-UUID subject), raise
- *       {@link eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException} rather than
- *       returning a degraded principal (fail-closed).</li>
- * </ul>
- *
+ * @implSpec Implementations must return a deeply-immutable {@link PrincipalContext} that is never
+ *           {@code null}. When a required identity claim cannot be mapped (for example a non-UUID
+ *           subject), an implementation must raise
+ *           {@link eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException}
+ *           ({@code EX-SEC-2002}) rather than return a degraded principal (fail-closed).
+ * @implNote The Community implementation ({@code CommunityClaimsMapper}) is pure and side-effect-free
+ *           — O(1) over the supplied claims, with no I/O and no database lookups. That is a property
+ *           of the Community binding, not a requirement this interface imposes on every mapper: this
+ *           is the one application-customisable seam in the identity pipeline, and a deployment may
+ *           legitimately enrich identity from a user-profile store here.
  * @since 0.10
  * @see VerifiedClaims
  * @see IdentityStorageMapping
@@ -38,12 +39,12 @@ import eu.exeris.kernel.spi.security.PrincipalContext;
 public interface ClaimsMapper {
 
     /**
-     * Maps verified claims onto a principal identity.
+     * Maps one token's verified claims onto the principal identity this deployment recognises it as.
      *
      * @param claims the verified claims; never {@code null}
      * @return the mapped principal; never {@code null}
      * @throws eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException
-     *         if a required identity claim is missing or unmappable
+     *         {@code EX-SEC-2002} — if a required identity claim is missing or unmappable
      */
     PrincipalContext map(VerifiedClaims claims);
 }

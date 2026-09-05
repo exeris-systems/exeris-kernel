@@ -9,20 +9,23 @@ package eu.exeris.kernel.spi.scheduling;
  *
  * <h2>Identity crosses the boundary by capture</h2>
  * <p>{@link #submit(JobDescriptor)} captures the ambient {@code PrincipalContext} and
- * {@code StorageContext} and rebinds them on the dispatching thread. A job submitted with neither
- * bound fails closed at dispatch: it does not run under an ambient or default identity (ADR-057 §5).
- * The capture is a <em>snapshot</em> — a job firing an hour later carries the authority that
- * scheduled it, which may since have been revoked.
+ * {@code StorageContext} and rebinds them on the dispatching thread. The capture is a
+ * <em>snapshot</em> — a job firing an hour later carries the authority that scheduled it, which may
+ * since have been revoked.
  *
  * <h2>Lifecycle boundary</h2>
  * <p>Jobs dispatch on virtual threads rather than inside a structured scope, so containment comes
- * from {@link JobHandle#cancel()} plus the drain in {@link #close()} (ADR-057 §6). Together they are
- * the structured lifecycle boundary; a driver must not dispatch work that no handle can reach.
+ * from {@link JobHandle#cancel()} plus the drain in {@link #close()} (ADR-057 §6): together they
+ * stand in for the guarantee a structured scope would otherwise give, that no work outlives it.
  *
  * <h2>Timing</h2>
  * <p>Drivers own their timing loop against an injected time source rather than delegating to a
  * scheduled executor, which is what makes trigger behaviour testable without sleeping (ADR-057 §3-4).
  *
+ * @implSpec A submission captured with neither {@code PrincipalContext} nor {@code StorageContext}
+ *           bound must fail closed at dispatch — it must not run under an ambient or default
+ *           identity — and a driver must not dispatch work that no {@link JobHandle} can reach, so
+ *           that {@link #close()} can drain everything still outstanding.
  * @since 0.11
  */
 public interface JobScheduler extends AutoCloseable {
@@ -34,7 +37,7 @@ public interface JobScheduler extends AutoCloseable {
      * @return a handle to the registered job
      * @throws NullPointerException if {@code descriptor} is {@code null}
      * @throws eu.exeris.kernel.spi.exceptions.scheduling.JobSchedulerException if the scheduler is
-     *         already closed
+     *         already closed ({@code EX-JOB-9002})
      */
     JobHandle submit(JobDescriptor descriptor);
 
@@ -49,9 +52,10 @@ public interface JobScheduler extends AutoCloseable {
     /**
      * Stops the scheduler and drains outstanding work.
      *
-     * <p>No job fires after this returns. Runs already in flight are awaited rather than abandoned —
-     * abandoning them would leave the lifetime containment of ADR-057 §6 unenforced at exactly the
-     * moment it matters. Idempotent.
+     * @implSpec Implementations must guarantee that no job fires after this method returns, must
+     *           await runs already in flight rather than abandoning them — abandoning them would
+     *           leave the lifetime containment of ADR-057 §6 unenforced at exactly the moment it
+     *           matters — and must make this method idempotent.
      */
     @Override
     void close();

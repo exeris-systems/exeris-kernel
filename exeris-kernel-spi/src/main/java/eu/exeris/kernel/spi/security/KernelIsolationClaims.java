@@ -25,11 +25,11 @@ package eu.exeris.kernel.spi.security;
  *       <td>Key matching an entry in {@link eu.exeris.kernel.spi.persistence.PersistenceConfig#dedicatedDataSources()}
  *   </td></tr>
  *   <tr><td>{@link #SHARED_SCOPE_KEY}</td><td>Never — orthogonal to the strategy, not a sub-claim</td>
- *       <td>Shared-scope partition identifier; absent means tenant-private. Currently always denied —
- *       see the constant's own documentation</td></tr>
+ *       <td>Shared-scope partition identifier; absent means tenant-private. Honoured only where the
+ *       deployment asserts it can enforce one — see the constant's own documentation</td></tr>
  * </table>
  *
- * <h2>Fail-Closed Rule (ADR-012 §4a, amended 2026-06-10 — S-P0-07)</h2>
+ * <h2>Fail-Closed Rule (ADR-012 §4a)</h2>
  * <p>Absence and breakage are <b>not</b> the same case:
  * <ul>
  *   <li><b>Absent/blank</b> {@link #ISOLATION_STRATEGY} — no isolation intent was expressed, so the
@@ -42,25 +42,27 @@ package eu.exeris.kernel.spi.security;
  * <p>Producing {@code SHARED} for a declared-but-broken strategy is <b>fail-OPEN</b>: it silently drops
  * the tenant to the weakest isolation tier and grants a session on malformed or injected security input.
  *
- * <h3>Which layer enforces which case — driver implementors read this</h3>
- * <p>The deny is mandatory in every case above, but it is <b>not</b> enforced in one place:
- * <ul>
- *   <li><b>Unrecognised strategy value</b> and <b>missing/blank sub-claim</b> — enforced by
- *       {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims}, the single
- *       kernel-owned mapping every {@code IdentityProvider} routes through. Drivers get this for free.</li>
- *   <li><b>Wrong-typed claim</b> (present but not representable as a single string) — a
- *       <b>{@code TokenValidator} obligation</b>, <i>not</i> covered by {@code fromClaims}. Per
- *       {@link eu.exeris.kernel.spi.security.identity.VerifiedClaims#claim(String)} such a claim is
- *       reported as <i>absent</i>, so it reaches the mapping as the permissive no-intent case and would
- *       resolve to {@code SHARED}. A driver that does not type-check the claim during validation
- *       therefore re-creates the fail-OPEN downgrade at its own layer. The first-party Community driver
- *       discharges this in its token validator; every other driver MUST do the equivalent.</li>
- * </ul>
- *
  * <h2>The Wall</h2>
  * <p>This class is part of {@code exeris-kernel-spi} and carries no runtime
  * dependencies — no JWT library, no persistence driver, no framework code.
  *
+ * @implSpec The deny is mandatory in every case above, but it is <b>not</b> discharged in one
+ *           place, and a driver author owns the second half:
+ *           <ul>
+ *             <li><b>Unrecognised strategy value</b> and <b>missing/blank sub-claim</b> — enforced by
+ *                 {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims},
+ *                 the single kernel-owned mapping every {@code IdentityProvider} routes through.
+ *                 Drivers get this for free.</li>
+ *             <li><b>Wrong-typed claim</b> (present but not representable as a single string) — a
+ *                 {@code TokenValidator} obligation, <i>not</i> covered by {@code fromClaims}. Per
+ *                 {@link eu.exeris.kernel.spi.security.identity.VerifiedClaims#claim(String)} such a
+ *                 claim is reported as <i>absent</i>, so it reaches the mapping as the permissive
+ *                 no-intent case and would resolve to {@code SHARED}. A driver that does not
+ *                 type-check the claim during validation therefore re-creates the fail-OPEN
+ *                 downgrade at its own layer, and MUST deny it during validation instead.</li>
+ *           </ul>
+ * @implNote The first-party Community driver discharges the wrong-typed case in its token
+ *           validator.
  * @since 0.5
  * @see StorageContext.IsolationStrategy
  * @see ImmutableStorageContext
@@ -124,12 +126,13 @@ public final class KernelIsolationClaims {
      * isolation-strategy sub-claim, and naming it under {@code isolation-} would re-weld it to the
      * placement axis ADR-012 §4b separates it from.
      *
-     * <p><b>Currently always denied.</b> No persistence binding implements the read-widen /
-     * owner-scoped-write mode yet, so a token declaring this claim is a terminal deny
-     * ({@code EX-SEC-2002}, reason {@code shared-scope-unsupported}). Resolving it to a tenant-private
-     * context instead would silently narrow what the caller asked for, and resolving it to a widened one
-     * would grant visibility nothing enforces — ADR-012 §4b.5 forbids both. The deny lifts, per
-     * deployment, when a binding can honour it.
+     * <p><b>Denied unless the deployment asserts it can enforce the mode.</b> The kernel ships no
+     * RLS policy, so a token declaring this claim is a terminal deny ({@code EX-SEC-2002}, reason
+     * {@code shared-scope-unsupported}) wherever
+     * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#SHARED_SCOPE_ENFORCED_KEY}
+     * is unset. Resolving it to a tenant-private context instead would silently narrow what the
+     * caller asked for, and honouring it unenforced would grant visibility nothing enforces —
+     * ADR-012 §4b.5 forbids both.
      *
      * @since 0.11
      */

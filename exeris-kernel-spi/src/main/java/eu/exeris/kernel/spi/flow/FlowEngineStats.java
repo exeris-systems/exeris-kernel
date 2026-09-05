@@ -7,11 +7,6 @@ package eu.exeris.kernel.spi.flow;
 /**
  * Point-in-time snapshot of {@link FlowEngine} runtime statistics.
  *
- * <h2>Usage</h2>
- * <p>Returned by {@link FlowEngine#stats()} for diagnostic and JFR emission purposes.
- * MUST NOT be called from the hot dispatch loop — treat as an O(1) read of pre-computed
- * atomic counters.
- *
  * <h2>Valhalla Readiness</h2>
  * <p>All fields are primitives. No identity operations used. Ready for {@code value record}.
  *
@@ -26,6 +21,10 @@ package eu.exeris.kernel.spi.flow;
  * @param schedulerQueueDepth current depth of the scheduler queue (Enterprise: ring buffer fill level)
  * @param slabUtilizationPct  percentage of off-heap slab pool in use (Enterprise); -1 for Community
  *
+ * @apiNote Obtained from {@link FlowEngine#stats()} for diagnostics and JFR emission — an O(1) read
+ *          of pre-computed counters, but not one to take from the dispatch loop. The totals count
+ *          the current lifecycle generation only: a {@link FlowEngine#close()} followed by a
+ *          {@link FlowEngine#start()} restarts them from zero.
  * @since 0.5
  */
 public record FlowEngineStats(
@@ -52,7 +51,12 @@ public record FlowEngineStats(
 
     // CHECKSTYLE.ON: DeclarationOrder
 
-    /** Returns a zero-value stats snapshot (useful as a safe default before engine start). */
+    /**
+     * Hands back the shared all-zero snapshot — the safe stand-in for a runtime that has no
+     * counters to report yet, such as an engine that has not been started.
+     *
+     * @return {@link #ZERO}; never {@code null}, and never a freshly allocated record
+     */
     public static FlowEngineStats empty() {
         return ZERO;
     }

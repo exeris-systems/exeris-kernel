@@ -33,6 +33,12 @@ public record HttpResponseDecodingContext(
         MemoryAllocator allocator
 ) {
 
+    /**
+     * Rejects a null header list; {@code allocator} stays nullable, which is the whole point of the
+     * field, and {@code status} is an {@code int} the caller has already read off the wire.
+     *
+     * @throws NullPointerException if {@code headers} is {@code null}
+     */
     public HttpResponseDecodingContext {
         Objects.requireNonNull(headers, "headers must not be null");
     }

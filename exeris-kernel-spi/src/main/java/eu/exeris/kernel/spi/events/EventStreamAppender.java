@@ -23,23 +23,13 @@ package eu.exeris.kernel.spi.events;
  * <h2>Discovery &amp; Wiring</h2>
  * <p>An implementation is bound to
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_STREAM_APPENDER}
- * by the bootstrapper before {@link EventEngine#start()}. When unbound, callers MUST
- * fall back to the {@link EventBus} dispatch path; absence is not a hard error.
- *
- * <h2>RAII Ownership</h2>
- * <p>Same protocol as {@link EventBus#publish}: the appender takes ownership of
- * {@code payload} on entry. After the call returns (success or thrown exception),
- * the caller MUST NOT call {@link EventPayload#close()} on the same reference.
+ * by the bootstrapper before {@link EventEngine#start()}.
  *
  * <h2>Sequencing &amp; Optimistic Concurrency (ADR-049)</h2>
- * <p>The durable log is the kernel's ordering / optimistic-concurrency boundary. Per
- * <b>ADR-049</b>, every {@code EventStreamAppender} binding MUST provide, for each
- * {@link StreamId}, a <b>per-stream total order</b>: concurrent appends to the same stream
- * are linearized and assigned strictly monotonic, 1-based sequence numbers, and
- * {@link EventStreamReader#replayFromVersion(StreamId, long)} reads them back in that order.
- * This is the contract log-derived views (event sourcing, KV-as-projection, the replicated
- * distributed log) rely on; it is owned <b>here</b>, on the Events SPI — not by the transient
- * {@link EventBus} (unordered by design) and not by Persistence. The separate
+ * <p>The durable log is the kernel's ordering / optimistic-concurrency boundary. This contract is
+ * what log-derived views (event sourcing, KV-as-projection, the replicated distributed log) rely
+ * on; it is owned <b>here</b>, on the Events SPI — not by the transient {@link EventBus}
+ * (unordered by design) and not by Persistence. The separate
  * {@link eu.exeris.kernel.spi.flow.model.FlowSnapshot} {@code schemaVersion} CAS (ADR-013) is
  * flow-snapshot state concurrency, a distinct mechanism — not the event-log append OCC.
  *
@@ -56,6 +46,24 @@ package eu.exeris.kernel.spi.events;
  *       the first event of a new stream.</li>
  * </ul>
  *
+ * <p><b>Thread confinement:</b> any thread — concurrent appends to one {@link StreamId} are
+ * linearized by the binding rather than rejected, so callers need no external lock per stream
+ * <p><b>Ownership:</b> {@link #append} takes the caller's payload reference on entry, exactly as
+ * {@link EventBus#publish} does; the caller does not close it afterwards, on success or on
+ * failure
+ *
+ * @implSpec Per <b>ADR-049</b>, every binding provides a <b>per-stream total order</b>:
+ *           concurrent appends to the same {@link StreamId} are linearized and assigned strictly
+ *           monotonic, 1-based sequence numbers, and
+ *           {@link EventStreamReader#replayFromVersion(StreamId, long)} reads them back in that
+ *           order. The optimistic-concurrency check fails closed — a mismatch appends nothing and
+ *           leaves the head where it was. Bindings realize both privately, so no broker or JDBC
+ *           type reaches this contract.
+ * @apiNote The slot may be unbound: a kernel whose broker offers no durable-append capability
+ *          binds nothing here. Treat that as "capability absent" and fall back to the
+ *          {@link EventBus} dispatch path — it is not a hard error. Direct use of this SPI is for
+ *          sites that need topic or partition control; most callers route through the
+ *          transactional outbox instead.
  * @since 0.7
  * @see EventStreamReader
  * @see AppendResult
@@ -65,20 +73,19 @@ public interface EventStreamAppender {
 
     /**
      * Sentinel {@code expectedVersion} for {@link #append} that skips the optimistic-concurrency
-     * check — the event is appended unconditionally at the stream head. For append-only producers
-     * that do not enforce per-stream compare-and-set.
+     * check — the event is appended unconditionally at the stream head, and an append made with
+     * it never raises
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventStreamAppendConflictException}. For
+     * append-only producers that do not enforce per-stream compare-and-set.
      */
     long ANY_VERSION = -1L;
 
     /**
-     * Appends a single event to the durable log identified by {@code streamId}, honouring the
-     * per-stream ordering + optimistic-concurrency contract (ADR-049).
+     * Commits a single event to the durable log identified by {@code streamId}, taking a position
+     * in that stream's total order — or refusing, if another writer took the position first.
      *
      * <p>Synchronous on the contract surface — the call returns only after the binding has
-     * accepted ownership of the payload and assigned the committed sequence (Kafka producer
-     * enqueue + sequence, JDBC outbox INSERT commit, etc.). Implementations MAY perform the
-     * actual broker round-trip asynchronously off the caller thread, but the returned
-     * {@link AppendResult} MUST reflect the committed per-stream sequence.
+     * accepted ownership of the payload and assigned the committed sequence.
      *
      * @param streamId        target stream; {@link StreamId#streamIdHigh()} /
      *                        {@link StreamId#streamIdLow()} MUST match the stream UUID carried by
@@ -93,11 +100,21 @@ public interface EventStreamAppender {
      * @return the committed per-stream sequence assigned to this event (the stream's new head)
      * @throws NullPointerException if {@code streamId}, {@code descriptor}, or {@code payload} is null
      * @throws eu.exeris.kernel.spi.exceptions.events.EventStreamAppendConflictException
-     *         when {@code expectedVersion != }{@link #ANY_VERSION} and it does not match the
-     *         stream's current head ({@code EX-EVENT-6008}); the head is left unchanged
+     *         {@code EX-EVENT-6008} when {@code expectedVersion != }{@link #ANY_VERSION} and it
+     *         does not match the stream's current head; the head is left unchanged and
+     *         {@code rawArgs} carry
+     *         {@code [String streamType, long expectedVersion, long actualVersion]}
      * @throws eu.exeris.kernel.spi.exceptions.events.EventEngineException
-     *         when the binding cannot accept the append (broker disconnected, outbox INSERT
-     *         rejected, etc.)
+     *         {@code EX-EVENT-6001} when the binding cannot accept the append at all (broker
+     *         disconnected, outbox INSERT rejected), unless the binding raises a more specific
+     *         {@code EX-EVENT-*} code
+     * @implSpec The binding may perform the broker round-trip asynchronously off the caller
+     *           thread, but the {@link AppendResult} it returns reflects the sequence the event
+     *           actually committed at — never a provisional or predicted one.
+     * @apiNote On {@code EX-EVENT-6008} the caller re-reads the stream (through
+     *          {@link EventStreamReader#replayFromVersion(StreamId, long)}) and retries against
+     *          the head it observes; retrying with the same {@code expectedVersion} conflicts
+     *          again.
      */
     AppendResult append(StreamId streamId, long expectedVersion,
                         EventDescriptor descriptor, EventPayload payload);

@@ -22,11 +22,14 @@ package eu.exeris.kernel.spi.http;
  *   engine.close()                           → engine (CLOSED, resources released)
  * </pre>
  *
- * <h2>JFR-First</h2>
- * <p>Implementations MUST emit a {@code jdk.jfr.Event} annotated with
- * {@code @StackTrace(false)} on {@link #start()} and {@link #stop()} for
- * zero-overhead lifecycle telemetry.
+ * <p><b>Ownership:</b> the engine owns everything it binds — the listening port, its connections
+ * and their off-heap buffers — and releases them on {@link #close()}, which stops a running engine
+ * first and is idempotent
  *
+ * @implSpec An implementation emits a {@code jdk.jfr.Event} annotated
+ *           {@code @StackTrace(false)} on {@link #start()} and {@link #stop()}: lifecycle
+ *           telemetry is part of the contract, and a stack trace on an event that fires twice per
+ *           process is cost with no reader.
  * @since 0.5
  */
 public interface HttpServerEngine extends AutoCloseable {
@@ -35,11 +38,14 @@ public interface HttpServerEngine extends AutoCloseable {
      * Registers the {@link HttpHandler} that will receive every inbound
      * {@link HttpExchange}.
      *
-     * <p>MUST be called <strong>before</strong> {@link #start()}. The engine spawns
-     * a virtual thread per inbound request and invokes the handler on that thread.
-     *
      * @param handler application request handler; must not be {@code null}
-     * @throws IllegalStateException if the engine has already been started
+     * @throws IllegalStateException if the engine has already been started — a running engine
+     *                               cannot swap handlers, because a request already in flight
+     *                               would then be answered by neither of them
+     * @implSpec Dispatch each inbound request to this handler on a virtual thread of its own, so
+     *           that a handler which blocks holds up nothing but its own request.
+     * @apiNote Call it before {@link #start()}; an engine with no handler has nothing to serve
+     *          accepted connections with.
      */
     void setHandler(HttpHandler handler);
 
@@ -47,22 +53,20 @@ public interface HttpServerEngine extends AutoCloseable {
      * Starts the engine — binds the port, initialises acceptor loops.
      *
      * <p>After this call the engine is ready to accept inbound connections.
-     * This is a potentially blocking call (socket bind, TLS context setup).
-     * MUST NOT be called on a virtual thread expected to be non-blocking.
      *
      * @throws IllegalStateException if the engine has already been started or closed
+     * @apiNote Potentially blocking (socket bind, TLS context setup); do not call it from a virtual
+     *          thread that is expected never to park.
      */
     void start();
 
     /**
      * Stops the engine — drains in-flight exchanges and releases the bound port.
      *
-     * <p>In-flight exchanges are allowed to complete before the port is released.
-     * New inbound connections are rejected immediately after this call.
-     * This method blocks until all active exchanges have completed or the
-     * implementation's drain timeout expires.
-     *
      * @throws IllegalStateException if the engine has not been started
+     * @implSpec Refuse new inbound connections immediately, let the exchanges already in flight
+     *           finish, and only then release the port; block the caller until the drain completes
+     *           or the implementation's own drain timeout expires.
      */
     void stop();
 

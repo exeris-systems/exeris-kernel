@@ -13,12 +13,11 @@ import java.util.Objects;
  * Immutable definition of a named flow — the blueprint from which executable
  * {@link FlowExecutionPlan} instances are compiled.
  *
- * <h2>Valhalla Readiness</h2>
- * <p>The {@code steps} list is always an immutable {@link List#copyOf} snapshot.
- * The {@code String name} field is only on the bootstrap path, not the hot path.
- * No identity operations. Ready for {@code value record} when JEP 401 is stable.
- *
  * @param name                  unique flow definition name (used as a key in the registry)
+ * @param version               version of this definition, {@code >=} {@link #INITIAL_VERSION}.
+ *                              Several versions of one name may be registered at once, and a parked
+ *                              saga resumes on the version it recorded rather than on whichever is
+ *                              newest (ADR-064)
  * @param steps                 ordered list of step descriptors; must not be empty, and step names
  *                              must be distinct — a parked saga records the name it stopped at, and
  *                              two steps sharing one would let resume bind to the wrong step while
@@ -28,6 +27,10 @@ import java.util.Objects;
  *                              {@code System.nanoTime() + timeoutDurationNanos}
  * @param maxRetries            maximum number of step-level retries before triggering compensation
  *
+ * @implNote The {@code steps} list is always an immutable {@link List#copyOf} snapshot, the
+ *           {@code String name} field is read on the bootstrap path rather than the hot path, and
+ *           the record performs no identity operations — so it is ready for {@code value record}
+ *           when JEP 401 is stable.
  * @since 0.5
  * @see FlowStepDescriptor
  * @see FlowExecutionPlan
@@ -43,7 +46,17 @@ public record FlowDefinition(
     /** The version a definition carries when its author declared none. */
     public static final int INITIAL_VERSION = 1;
 
-    /** Compact constructor — validates invariants and defensively copies the step list. */
+    /**
+     * Validates every invariant eagerly and replaces {@code steps} with an immutable copy, so a
+     * definition cannot be mutated through the list its author passed in.
+     *
+     * @throws NullPointerException     if {@code name} or {@code steps} is {@code null}
+     * @throws IllegalArgumentException if {@code name} is blank; if {@code version} is below
+     *                                  {@link #INITIAL_VERSION}; if {@code steps} is empty or holds
+     *                                  two steps with the same {@link FlowStepDescriptor#name()};
+     *                                  if {@code timeoutDurationNanos} is not positive; or if
+     *                                  {@code maxRetries} is negative
+     */
     public FlowDefinition {
         Objects.requireNonNull(name, "flow definition name must not be null");
         if (name.isBlank()) {
@@ -70,14 +83,20 @@ public record FlowDefinition(
     }
 
     /**
-     * Convenience constructor for a definition whose author declared no version, defaulting it to
+     * Builds a definition whose author declared no version, defaulting it to
      * {@link #INITIAL_VERSION}.
      *
-     * <p>Unlike {@code FlowSnapshot}'s pre-0.11 shim, this one is <em>not</em> a route to a
-     * fail-closed outcome: a definition without a declared version is a perfectly valid definition,
-     * and an application that never versions its flows keeps the behaviour it had before ADR-064.
+     * <p>Unlike {@code FlowSnapshot}'s compatibility constructors, this one is <em>not</em> a route
+     * to a fail-closed outcome: a definition without a declared version is a perfectly valid
+     * definition, and an application whose flows never carry one runs unaffected by versioning.
      * Versioning is a choice the application makes, not an obligation it inherits.
      *
+     * @param name                 unique flow definition name
+     * @param steps                ordered, non-empty step descriptors with distinct names
+     * @param timeoutDurationNanos default duration limit in nanoseconds; must be positive
+     * @param maxRetries           step-level retries before compensation is triggered; {@code >= 0}
+     * @throws NullPointerException     if {@code name} or {@code steps} is {@code null}
+     * @throws IllegalArgumentException under the same conditions as the canonical constructor
      * @since 0.11
      */
     public FlowDefinition(String name,

@@ -30,44 +30,52 @@ public class EventEngineException extends ExerisKernelException {
     private static final String DEFAULT_EVENT_ENGINE_ERROR_CODE = KernelErrorCodes.EX_EVENT_6001;
 
     /**
-     * Constructs a generic event engine exception with the default error code.
+     * Constructs a generic engine failure — the fallback shape for a condition none of the
+     * specialised subclasses covers.
      *
      * @param message static message template — no runtime formatting
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6001} and leaves {@code rawArgs} empty. Use
+     *          the error-code constructors when the failure has structured detail worth carrying.
      */
     public EventEngineException(String message) {
         super(DEFAULT_EVENT_ENGINE_ERROR_CODE, message, (Throwable) null);
     }
 
     /**
-     * Constructs a generic event engine exception with cause.
+     * Constructs a generic engine failure that carries an upstream cause.
      *
      * @param message static message template — no runtime formatting
      * @param cause   upstream throwable; may be {@code null}
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6001} and leaves {@code rawArgs} empty.
      */
     public EventEngineException(String message, Throwable cause) {
         super(DEFAULT_EVENT_ENGINE_ERROR_CODE, message, cause);
     }
 
     /**
-     * Constructs an event engine exception with a specific error code and raw domain args.
-     *
-     * <p>Subclasses should use this constructor when they carry domain-specific telemetry data.
+     * Constructs an engine failure under a specific error code, carrying the domain values a
+     * Glass-Box decoder needs to reconstruct what happened.
      *
      * @param errorCode an {@code EX-EVENT-*} code from {@link KernelErrorCodes}
      * @param message   static message template — no runtime formatting
-     * @param rawArgs   raw domain arguments for binary Glass-Box serialization
+     * @param rawArgs   raw domain arguments for binary Glass-Box serialization, in the order the
+     *                  code's documented layout specifies
+     * @apiNote This is the constructor a subclass uses when it has telemetry data to carry.
+     *          {@code rawArgs} reach a decoder verbatim, so keep secrets out of them.
      */
     public EventEngineException(String errorCode, String message, Object... rawArgs) {
         super(errorCode, message, null, rawArgs);
     }
 
     /**
-     * Constructs an event engine exception with a specific error code, cause, and raw domain args.
+     * Constructs an engine failure under a specific error code, carrying both an upstream cause
+     * and the domain values a Glass-Box decoder needs.
      *
      * @param errorCode an {@code EX-EVENT-*} code from {@link KernelErrorCodes}
      * @param message   static message template — no runtime formatting
      * @param cause     upstream throwable; may be {@code null}
-     * @param rawArgs   raw domain arguments for binary Glass-Box serialization
+     * @param rawArgs   raw domain arguments for binary Glass-Box serialization, in the order the
+     *                  code's documented layout specifies
      */
     public EventEngineException(String errorCode, String message, Throwable cause, Object... rawArgs) {
         super(errorCode, message, cause, rawArgs);

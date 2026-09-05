@@ -12,7 +12,7 @@ import eu.exeris.kernel.spi.flow.model.FlowTransitionDescriptor;
  * SPI: Fluent builder for constructing a {@link FlowDefinition}.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * FlowDefinition def = engine.plans()
  *     .newDefinition("order-fulfillment")
  *     .step("reserve-stock",    this::reserveStock,    this::releaseStock)
@@ -23,18 +23,16 @@ import eu.exeris.kernel.spi.flow.model.FlowTransitionDescriptor;
  *     .timeoutDuration(300_000_000_000L)
  *     .maxRetries(3)
  *     .build();
- * }</pre>
+ * }
  *
  * <h2>Design</h2>
- * <p>This interface replaces the legacy {@code SagaBuilder}. It separates the
- * <em>definition construction</em> concern (fluent step/transition accumulation) from
- * the <em>compilation</em> concern ({@link FlowExecutionPlanFactory#compile}).
- * Both concerns are accessed through {@link FlowExecutionPlanFactory} via
- * {@link FlowEngine#plans()} — a single entry point, no duplicate interfaces.
+ * <p>The builder separates the <em>definition construction</em> concern (fluent step and
+ * transition accumulation) from the <em>compilation</em> concern
+ * ({@link FlowExecutionPlanFactory#compile}). Both are reached through
+ * {@link FlowExecutionPlanFactory} via {@link FlowEngine#plans()} — a single entry point.
  *
- * <h2>Thread Safety</h2>
- * <p>Builder instances are <strong>not</strong> thread-safe. Create one builder per
- * definition and do not share it across threads.
+ * <p><b>Thread confinement:</b> owner thread — a builder is <strong>not</strong> thread-safe;
+ * create one per definition and do not share it across threads.
  *
  * @since 0.5
  * @see FlowExecutionPlanFactory
@@ -98,39 +96,32 @@ public interface FlowDefinitionBuilder {
     FlowDefinitionBuilder maxRetries(int maxRetries);
 
     /**
-     * Sets the definition version (ADR-064). Defaults to
-     * {@link eu.exeris.kernel.spi.flow.model.FlowDefinition#INITIAL_VERSION} when not set.
-     *
-     * <h2>Why this exists</h2>
-     * <p>ADR-064 made {@code (name, version)} the plan's identity: the catalog is keyed by the pair,
-     * a parked saga resumes on the exact version it parked under, and an unhosted version fails
-     * closed. {@link FlowDefinition} carries the version accordingly — but until 0.12 this builder,
-     * the only supported way to assemble a definition, had no way to set it. Every definition built
-     * through the fluent API was version 1, and a second version was unexpressible.
-     *
-     * <p>The workaround was to build through the builder and then rebuild the record by hand with
-     * the five-argument {@link FlowDefinition} constructor, which the kernel's own versioning TCK
-     * did. That works only by side effect: the Core factory records a definition's transitions when
-     * {@link #build()} runs and hands them to {@code compile}, so the hand-built record inherits
-     * them. An application
-     * that constructed a versioned {@code FlowDefinition} <em>without</em> first building one under
-     * the same name compiled to a plan with steps and <b>no declared edges</b>, and no diagnostic.
-     * That linearises rather than stalls — a step with no outgoing transition falls back to
-     * {@code index + 1} — so a sequential definition is unaffected and one declaring a skip or a
-     * branch silently runs a path it never declared.
-     *
-     * <h2>Default behaviour</h2>
-     * <p>{@code default}, and it throws. An interface this old cannot grow an abstract method
-     * without breaking every out-of-tree implementation at invoke time — the same constraint that
-     * gave {@link eu.exeris.kernel.spi.flow.model.FlowExecutionPlan#definitionVersion()} its
-     * default. But the choice of default differs on purpose: returning a value there is safe,
-     * whereas silently ignoring a requested version here would build a v1 definition that claims to
-     * be v3, which is precisely the confusion ADR-064 exists to prevent. A builder that cannot
-     * version says so.
+     * Declares the version this definition carries, making {@code (name, version)} its identity in
+     * the plan catalog (ADR-064): registering a new version does not evict the old one, a parked
+     * saga resumes on the exact version it parked under, and a version this engine does not host
+     * fails closed rather than rebinding. A definition built without this call is
+     * {@link eu.exeris.kernel.spi.flow.model.FlowDefinition#INITIAL_VERSION}.
      *
      * @param version definition version; must be &gt;= {@code FlowDefinition.INITIAL_VERSION}
      * @return {@code this} builder for chaining
      * @throws UnsupportedOperationException if this builder does not support versioning
+     * @implSpec A builder that cannot record a version must throw rather than ignore the argument:
+     *           building a version-1 definition that claims to be version 3 is exactly the confusion
+     *           ADR-064 exists to prevent, and a builder that cannot version says so. The method is
+     *           a {@code default} because an interface this stable cannot grow an abstract method
+     *           without breaking every out-of-tree implementation at invoke time — the same
+     *           constraint that gave
+     *           {@link eu.exeris.kernel.spi.flow.model.FlowExecutionPlan#definitionVersion()} its
+     *           default, where returning a value is the safe disposition and here it is not.
+     * @apiNote Declare the version here rather than rebuilding the record by hand through the
+     *          five-argument {@link FlowDefinition} constructor. A hand-built versioned definition
+     *          whose name was never assembled through this builder compiles to a plan that carries
+     *          its steps and <b>no declared edges</b>, with no diagnostic: a step with no outgoing
+     *          transition falls back to {@code index + 1}, so a sequential definition is unaffected
+     *          and one declaring a skip or a branch silently runs a path it never declared.
+     * @implNote Edges survive such a hand-rebuild only by side effect — the Core factory records a
+     *           definition's transitions when {@link #build()} runs and hands them to
+     *           {@code compile}, so a record rebuilt under a name that was built first inherits them.
      * @since 0.12
      */
     default FlowDefinitionBuilder version(int version) {
@@ -142,8 +133,8 @@ public interface FlowDefinitionBuilder {
      * Builds and returns the immutable {@link FlowDefinition}.
      *
      * @return a validated, immutable flow definition; never {@code null}
-     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if the definition
-     *         is invalid (e.g., no steps, step count exceeds slab capacity in Enterprise)
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException {@code EX-FLOW-7002} if the
+     *         definition is invalid (e.g., no steps, step count exceeds slab capacity in Enterprise)
      */
     FlowDefinition build();
 }

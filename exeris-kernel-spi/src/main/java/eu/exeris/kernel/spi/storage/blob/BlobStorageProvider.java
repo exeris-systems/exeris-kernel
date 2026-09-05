@@ -31,9 +31,15 @@ public interface BlobStorageProvider {
     String providerName();
 
     /**
-     * Returns the selection priority: {@code 0} for Community, {@code 100} for Enterprise.
+     * Returns the selection priority: {@code 0} for Community, {@code 100} for Enterprise, per the
+     * ecosystem-wide open-core convention.
      *
-     * @return non-negative priority; higher wins
+     * @return non-negative priority
+     * @implNote The bootstrap that selects a blob driver does not rank candidates by this value: the
+     *           two Community drivers register at the same priority and are not interchangeable —
+     *           one needs a writable directory, the other credentials and a reachable endpoint — so
+     *           selection is by the configured driver id instead. The value is retained so this
+     *           provider follows the same shape every sibling SPI does.
      */
     default int priority() {
         return 0;

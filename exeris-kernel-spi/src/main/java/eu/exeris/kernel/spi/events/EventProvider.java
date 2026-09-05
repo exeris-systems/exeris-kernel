@@ -31,18 +31,19 @@ import java.util.Optional;
  *   <li>On shutdown: call {@link EventEngine#close()}.</li>
  * </ol>
  *
+ * @since 0.5
  * @see EventEngine
  * @see eu.exeris.kernel.spi.context.KernelProviders#EVENT_ENGINE
- * @since 0.5
  */
 public interface EventProvider {
 
     /**
-     * Human-readable provider name.
+     * Names this provider for a human reading a log line or a JFR recording — free-form, and not
+     * the value anything routes on.
      *
      * <p>Examples: {@code "StandardEvents"}, {@code "NativeEvents"}.
      *
-     * @return non-null, non-blank name
+     * @return a non-null, non-blank display name; {@link #providerId()} is the stable identifier
      */
     String providerName();
 
@@ -54,11 +55,14 @@ public interface EventProvider {
      * Examples: {@code "community"}, {@code "enterprise"}.
      *
      * @return provider identifier; never {@code null}
+     * @implSpec A stable string constant that does not change between releases — configuration
+     *           and diagnostics key on it.
      */
     String providerId();
 
     /**
-     * Selection priority. Higher value wins when multiple providers are on the classpath.
+     * Decides which provider wins when several are on the classpath: the highest value is the one
+     * the bootstrapper instantiates, and every other discovered provider is passed over.
      *
      * <p>Convention:
      * <ul>
@@ -67,26 +71,32 @@ public interface EventProvider {
      *   <li>Test/Noop: {@code -1}</li>
      * </ul>
      *
-     * @return priority value used for provider selection (higher wins)
+     * @return this provider's rank; defaults to {@code 0}, the Community slot
+     * @apiNote Values between the tier anchors express intra-tier precedence rather than tier: a
+     *          Community driver at {@code 50} outranks the in-memory default at {@code 0} while
+     *          still yielding to the Enterprise slot at {@code 100}.
      */
     default int priority() {
         return 0;
     }
 
     /**
-     * Creates the {@link EventEngine} instance for the given configuration.
-     *
-     * <p>This method is called <b>once</b> during kernel bootstrap, before {@link EventEngine#start()}.
-     * Implementations MUST NOT perform I/O, allocate native memory, or start threads here —
-     * defer all heavy initialisation to {@link EventEngine#start()}.
+     * Constructs the engine this provider offers, in an inert state — wired but holding no
+     * resource, so a failure here costs nothing to unwind.
      *
      * <p>The engine obtains the required {@link eu.exeris.kernel.spi.memory.MemoryAllocator}
      * directly from the {@link eu.exeris.kernel.spi.context.KernelProviders#MEMORY_ALLOCATOR}
      * scoped value slot to prevent parameter pollution.
      *
      * @param config the event engine configuration (non-null)
-     * @return a newly created (but not yet started) {@link EventEngine} instance
-     * @throws EventProviderException if the engine cannot be created from the given configuration
+     * @return a newly created {@link EventEngine} that has not been started
+     * @throws EventProviderException {@code EX-EVENT-6004} if the engine cannot be created from
+     *         the given configuration; {@code rawArgs} carry
+     *         {@code [String providerName, String reason]}
+     * @implSpec Performs no I/O, allocates no native memory and starts no thread — every such
+     *           cost is deferred to {@link EventEngine#start()}, so that a kernel which fails
+     *           later during bootstrap has nothing here to release.
+     * @apiNote The bootstrapper calls this once, on the winning provider only.
      */
     EventEngine createEngine(EventEngineConfig config);
 
@@ -103,7 +113,9 @@ public interface EventProvider {
      * method additive: a provider without a codec still bootstraps events, and the
      * producer falls back to {@link EventPayload#empty()}.
      *
-     * @return the codec registry, or empty when this provider ships none
+     * @return the codec registry, or {@link Optional#empty()} when this provider ships none — in
+     *         which case the producer falls back to {@link EventPayload#empty()} rather than
+     *         failing
      * @since 0.10
      */
     default Optional<EventPayloadCodecRegistry> eventPayloadCodecRegistry() {

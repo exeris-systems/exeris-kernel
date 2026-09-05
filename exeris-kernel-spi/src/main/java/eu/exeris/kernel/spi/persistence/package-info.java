@@ -16,18 +16,24 @@
  *   <li>{@link eu.exeris.kernel.spi.persistence.PersistenceEngine} — connection factory + pool management</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.PersistenceConnection} — single connection lifecycle</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.PersistenceStatement} — zero-allocation typed binder
- *       (replaces {@code Object... params} autoboxing — ADR-010 L0 fix)</li>
+ *       for parameterised queries (ADR-010)</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.QueryResult} — tier-aware result iteration (flyweight)</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.RowCursor} — zero-copy row cursor</li>
+ *   <li>{@link eu.exeris.kernel.spi.persistence.BulkInserter} — streaming bulk-insert path,
+ *       present only where the provider offers one</li>
+ *   <li>{@link eu.exeris.kernel.spi.persistence.TransactionalExecutor} — transaction lifecycle and
+ *       retry, with the executor owning the connection</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.TransactionIsolation} — SQL isolation levels</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.PersistenceConfig} — immutable config with opaque properties</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.EngineStats} — pool metrics snapshot</li>
+ *   <li>{@link eu.exeris.kernel.spi.persistence.PersistenceHealthStatus} — observable engine state</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} — plug-and-play isolation hook
  *       (RLS injection, schema switching); registered by Core, invoked on every connection checkout</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.BaseRepository} — generic aggregate-root CRUD contract
  *       ({@code <T, K>} where {@code K} is the identifier/key type)</li>
  *   <li>{@link eu.exeris.kernel.spi.persistence.EventStore} — Transactional Outbox contract;
  *       at-least-once domain event delivery co-committed with the aggregate transaction</li>
+ *   <li>{@link eu.exeris.kernel.spi.persistence.codec} — off-heap entity encode/decode contracts</li>
  * </ul>
  *
  * <h2>Tier Separation (The Wall)</h2>
@@ -53,12 +59,12 @@
  * <h2>Zero-Allocation Query Binding</h2>
  * <p>The {@link eu.exeris.kernel.spi.persistence.PersistenceStatement} interface provides
  * typed primitive binders ({@code bindInt}, {@code bindLong}, {@code bindDouble}) that
- * write directly to off-heap memory in Enterprise tier, avoiding the autoboxing and
- * {@code Object[]} allocation of the legacy {@code Object... params} pattern.
+ * write directly to off-heap memory in the Enterprise tier, so that a parameterised query
+ * boxes nothing and allocates no {@code Object[]}.
  *
+ * @since 0.5
  * @see eu.exeris.kernel.spi.persistence.PersistenceProvider
  * @see eu.exeris.kernel.spi.persistence.PersistenceStatement
  * @see eu.exeris.kernel.spi.persistence.QueryResult
- * @since 0.5
  */
 package eu.exeris.kernel.spi.persistence;

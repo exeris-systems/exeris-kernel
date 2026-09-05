@@ -49,23 +49,26 @@ import java.util.UUID;
  * allocation and a byte-copy for <em>every single request</em>,
  * destroying the zero-GC contract.
  *
- * <p>External identity systems that use string-based IDs (Auth0, SAML)
- * MUST map to internal UUIDv7 identifiers at the API Gateway edge,
- * before the request enters the kernel.
+ * <p><b>Allocation:</b> zero-alloc on hot path — the fixed-arity {@code hasAnyRole} and
+ * {@code hasAnyScope} overloads allocate nothing; only the varargs forms allocate one
+ * {@code String[]} per call
+ * <p><b>Thread confinement:</b> any thread — a principal is deeply immutable and is read from every
+ * thread that inherits the {@code PRINCIPAL_CONTEXT} binding, forked subtasks included
+ * <p><b>Ownership:</b> the Security edge binds it once for the request scope; nothing downstream
+ * mutates, rebinds or releases it
  *
- * <h2>Valhalla Readiness</h2>
- * <p>Implementations SHOULD be {@code record}-based (deeply immutable,
- * no identity ops). Ready for {@code value record} migration (JEP 401).
- *
- * <h2>Contract</h2>
- * <ul>
- *   <li>All accessors MUST be O(1) — no lazy loading, no DB calls.</li>
- *   <li>All returned {@code Set<String>} are immutable.</li>
- *   <li>Implementations MUST be thread-safe (deep immutability).</li>
- *   <li>All UUIDs SHOULD be v7 (time-ordered) for B-Tree-friendly
- *       database indexing — sequential inserts, no page splits.</li>
- * </ul>
- *
+ * @implSpec Implementations MUST satisfy:
+ *           <ul>
+ *             <li>All accessors MUST be O(1) — no lazy loading, no DB calls.</li>
+ *             <li>All returned {@code Set<String>} are immutable.</li>
+ *             <li>Implementations MUST be thread-safe (deep immutability), which a
+ *                 {@code record} gives for free and readies for {@code value record}
+ *                 migration (JEP 401).</li>
+ *             <li>All UUIDs SHOULD be v7 (time-ordered) for B-Tree-friendly
+ *                 database indexing — sequential inserts, no page splits.</li>
+ *           </ul>
+ * @apiNote  External identity systems that use string-based IDs (Auth0, SAML) MUST map to internal
+ *           UUIDv7 identifiers at the API Gateway edge, before the request enters the kernel.
  * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#PRINCIPAL_CONTEXT
  * @see StorageContext
@@ -84,11 +87,11 @@ public interface PrincipalContext {
      * <p>For JWT tokens this is the {@code sub} claim parsed as UUID.
      * For system operations use a well-known system UUID constant.
      *
-     * <p><b>Zero-GC path:</b> UUID is 128 bits — two {@code long}
-     * primitives extracted directly from the off-heap token buffer
-     * via {@code MemorySegment.get(JAVA_LONG, offset)}.
-     *
      * @return principal UUID, never {@code null}
+     * @implNote The Enterprise binding reads the 128 bits as two {@code long} primitives straight
+     *           from the off-heap token buffer via
+     *           {@code MemorySegment.get(JAVA_LONG, offset)} — no heap allocation on the
+     *           authentication path.
      */
     UUID principalId();
 
@@ -124,7 +127,8 @@ public interface PrincipalContext {
     Set<String> roles();
 
     /**
-     * Quick check for a single role.
+     * Reports whether the principal holds the given role — an exact, case-sensitive membership
+     * test over {@link #roles()}.
      *
      * @param role role name to check (case-sensitive)
      * @return {@code true} if the principal holds the role
@@ -134,16 +138,13 @@ public interface PrincipalContext {
     }
 
     /**
-     * Quick check for any of the given roles.
-     *
-     * <p><b>Hot-path overloads (zero allocation):</b> The single-, two-, and
-     * three-argument forms below are the preferred choices for latency-sensitive
-     * code. They avoid the varargs {@code String[]} array allocation that this
-     * general-purpose varargs overload incurs on every call.
-     * Use the varargs version only when the arity is unknown at compile time.
+     * Reports whether the principal holds at least one of the given roles.
      *
      * @param checkRoles role names to check
      * @return {@code true} if the principal holds at least one
+     * @apiNote This general-purpose form allocates a {@code String[]} on every call. In
+     *          latency-sensitive code prefer the fixed-arity overloads below, which allocate
+     *          nothing; reach for the varargs form only when the arity is unknown at compile time.
      * @see #hasAnyRole(String)
      * @see #hasAnyRole(String, String)
      * @see #hasAnyRole(String, String, String)
@@ -210,17 +211,17 @@ public interface PrincipalContext {
      *
      * <p>The bitmask is the runtime carrier behind {@code @RequiresRole} checks
      * — a {@code RoleCheckEnforcer} performs a single primitive AND/EQ between
-     * this value and the per-method required mask. Implementations populate the
-     * mask at authentication time by translating the principal's role names
-     * through {@code roleNameToBit(...)} on the registry.
+     * this value and the per-method required mask.
      *
-     * <p>Default returns {@code 0L} so existing principal implementations remain
-     * source-compatible. A {@code 0L} mask makes every {@code @RequiresRole}
-     * check on a non-empty required mask deny, which is the correct fail-closed
-     * default.
+     * <p>The default {@code 0L} makes every {@code @RequiresRole} check against a non-empty
+     * required mask deny, which is the correct fail-closed default for an implementation that does
+     * not populate the mask.
      *
      * @return packed role bitmask; {@code 0L} when the principal has no
      *         registry-resolved roles
+     * @implSpec An implementation that participates in {@code @RequiresRole} enforcement populates
+     *           the mask at authentication time, by translating the principal's role names through
+     *           {@link RoleRegistry#roleNameToBit(String)}.
      * @since 0.7
      */
     default long roleMask() {
@@ -248,7 +249,8 @@ public interface PrincipalContext {
     Set<String> scopes();
 
     /**
-     * Quick check for a single OAuth2 scope.
+     * Reports whether the token carries the given OAuth2 scope — an exact, case-sensitive
+     * membership test over {@link #scopes()}.
      *
      * @param scope scope identifier (e.g., {@code "read:orders"})
      * @return {@code true} if the token carries the scope
@@ -258,16 +260,13 @@ public interface PrincipalContext {
     }
 
     /**
-     * Quick check for any of the given scopes.
-     *
-     * <p><b>Hot-path overloads (zero allocation):</b> The single-, two-, and
-     * three-argument forms below are the preferred choices for latency-sensitive
-     * code. They avoid the varargs {@code String[]} array allocation that the
-     * general-purpose varargs overload {@code hasAnyScope(String...)} incurs on every call.
-     * Use the varargs version only when the arity is unknown at compile time.
+     * Reports whether the token carries at least one of the given OAuth2 scopes.
      *
      * @param checkScopes scope identifiers to check
      * @return {@code true} if the token carries at least one
+     * @apiNote This general-purpose form allocates a {@code String[]} on every call. In
+     *          latency-sensitive code prefer the fixed-arity overloads below, which allocate
+     *          nothing; reach for the varargs form only when the arity is unknown at compile time.
      * @see #hasAnyScope(String)
      * @see #hasAnyScope(String, String)
      * @see #hasAnyScope(String, String, String)

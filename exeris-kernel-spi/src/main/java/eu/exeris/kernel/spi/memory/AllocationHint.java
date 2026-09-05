@@ -17,6 +17,7 @@ package eu.exeris.kernel.spi.memory;
  *
  * <h2>Sizing Contract</h2>
  * <table>
+ *   <caption>Canonical buffer size and intended payload for each hint</caption>
  *   <tr><th>Hint</th><th>Size</th><th>Typical use</th></tr>
  *   <tr><td>MICRO</td><td>512 B</td><td>Error codes, ACK frames, ping/pong</td></tr>
  *   <tr><td>SMALL</td><td>4 KB</td><td>Single entity, health-check, short RPC reply</td></tr>
@@ -26,8 +27,8 @@ package eu.exeris.kernel.spi.memory;
  *   <tr><td>NETWORK_FRAME</td><td>64 KB</td><td>Maximum IP datagram / UDP payload size</td></tr>
  * </table>
  *
- * @see MemoryAllocator#allocate(AllocationHint)
  * @since 0.5
+ * @see MemoryAllocator#allocate(AllocationHint)
  */
 public enum AllocationHint {
 
@@ -80,9 +81,9 @@ public enum AllocationHint {
      * track session memory budgets and apply backpressure ({@code EX-MEM-1001})
      * when session memory pressure is detected.
      *
-     * <p><strong>Contract:</strong> provider implementations MUST use this hint for
-     * per-session native context allocations — never obtain an off-heap region directly
-     * from a platform-specific API, bypassing the allocator.
+     * @implSpec Provider implementations must use this hint for per-session native context
+     *           allocations — never obtain an off-heap region directly from a
+     *           platform-specific API, bypassing the allocator.
      */
     SESSION(4 * 1_024);
 
@@ -93,13 +94,16 @@ public enum AllocationHint {
     }
 
     /**
-     * Returns the canonical buffer size in bytes for this hint.
+     * Returns the canonical buffer size in bytes this hint asks the allocator for.
      *
-     * <p>This is a {@code int} to allow the JIT to inline it as a compile-time constant
-     * at call sites. Do NOT treat this as an upper bound; the allocator may return a
-     * buffer with {@code capacity() > sizeBytes()} due to alignment/pool rounding.
+     * <p>The value is an {@code int} so the JIT can inline it as a compile-time constant
+     * at call sites.
      *
-     * @return canonical size in bytes
+     * @return canonical size in bytes; always positive
+     * @apiNote This is a request, not an upper bound: the allocator may return a buffer
+     *          with {@code capacity() > sizeBytes()} because of alignment or pool-bucket
+     *          rounding. Size a write against {@link LoanedBuffer#capacity()}, never
+     *          against this value.
      */
     public int sizeBytes() {
         return sizeBytes;

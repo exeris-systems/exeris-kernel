@@ -20,6 +20,13 @@ public record HttpResponseEncodingContext(
         MemoryAllocator allocator
 ) {
 
+    /**
+     * Rejects both components: an encoder's job is to produce off-heap bytes, so a context without
+     * an allocator describes work that cannot be done, and the request is what an encoder resolves
+     * content negotiation against.
+     *
+     * @throws NullPointerException if {@code request} or {@code allocator} is {@code null}
+     */
     public HttpResponseEncodingContext {
         Objects.requireNonNull(request, "request must not be null");
         Objects.requireNonNull(allocator, "allocator must not be null");

@@ -5,19 +5,8 @@
 package eu.exeris.kernel.spi.flow.model;
 
 /**
- * Descriptor for a single executable step within a {@link FlowDefinition}.
- *
- * <h2>Valhalla Readiness</h2>
- * <p>Immutable record — all fields are primitives or effectively immutable references.
- * No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}).
- * JIT C2 can scalarise this record on hot paths via Escape Analysis.
- * Ready for {@code value record} migration when JEP 401 is stable.
- *
- * <h2>Enterprise Off-Heap Mapping</h2>
- * <p>In the Enterprise tier, the {@code action} and {@code compensation} references are
- * stored as indices into a dispatch table (not raw addresses) within the step registry slab.
- * The {@code stepId} field maps directly to the slab slot:
- * {@code address = stepSlabBase + stepId * STEP_DESCRIPTOR_STRIDE}.
+ * One step of a {@link FlowDefinition}: where it sits, what identifies it, what it does, and what
+ * undoes it.
  *
  * @param stepId       the step's <b>position</b> in the definition (0-based) and its slab slot
  *                     address. Not an identity: it changes when steps are reordered, which is
@@ -29,6 +18,13 @@ package eu.exeris.kernel.spi.flow.model;
  * @param action       the action to execute; must not be {@code null}
  * @param compensation the compensation action for backward recovery; {@code null} if not defined
  *
+ * @implNote All components are primitives or effectively immutable references and the record
+ *           performs no identity operation ({@code ==}, {@code synchronized},
+ *           {@code identityHashCode}), so C2 can scalarise it via escape analysis and it is ready
+ *           for {@code value record} when JEP 401 is stable. In the Enterprise tier {@code action}
+ *           and {@code compensation} live as dispatch-table indices rather than raw addresses in the
+ *           step-registry slab, and {@code stepId} addresses the slot directly:
+ *           {@code address = stepSlabBase + stepId * STEP_DESCRIPTOR_STRIDE}.
  * @since 0.5
  * @see FlowStepAction
  * @see FlowDefinition
@@ -40,7 +36,15 @@ public record FlowStepDescriptor(
         FlowStepAction compensation
 ) {
 
-    /** Compact constructor — validates required fields. */
+    /**
+     * Validates the components a step cannot do without, so an unusable descriptor never reaches a
+     * definition.
+     *
+     * @throws IllegalArgumentException if {@code stepId} is negative, if {@code name} is
+     *                                  {@code null} or blank, or if {@code action} is {@code null}
+     * @apiNote {@code compensation} is the one component allowed to be {@code null}: a step with
+     *          nothing to undo declares none. Use {@link #hasCompensation()} rather than testing it.
+     */
     public FlowStepDescriptor {
         if (stepId < 0) {
             throw new IllegalArgumentException("Step stepId must be >= 0, got: " + stepId);
@@ -54,7 +58,11 @@ public record FlowStepDescriptor(
         // compensation is intentionally nullable — not all steps define rollback logic
     }
 
-    /** Returns {@code true} if this step has a backward compensation action defined. */
+    /**
+     * Reports whether this step declares anything to undo it on the rollback path.
+     *
+     * @return {@code true} when {@link #compensation()} is non-{@code null}
+     */
     public boolean hasCompensation() {
         return compensation != null;
     }

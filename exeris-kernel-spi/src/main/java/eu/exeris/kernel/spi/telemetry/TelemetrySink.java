@@ -12,30 +12,43 @@ package eu.exeris.kernel.spi.telemetry;
  * <p>This interface has zero knowledge of file paths, JFR event types, or binary
  * off-heap structures. Community and Enterprise implementations live behind this wall.
  *
- * <h2>Tier Implementations</h2>
- * <ul>
- *   <li><b>Community</b>: {@code ConsoleSink}, {@code FileSink}, {@code JfrTelemetrySink} — text/JFR.</li>
- *   <li><b>Enterprise</b>: {@code BinaryGlassBoxSink} — direct off-heap mmap dump of
- *       {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()}.
- *       Zero String allocation on the critical path.</li>
- * </ul>
+ * <p><b>Allocation:</b> zero-alloc on hot path for {@link #increment}, {@link #gauge} and
+ * {@link #latency} — their arguments are a constant name and a primitive; {@link #emit} adds no
+ * {@code String} formatting, so an emission costs the {@link KernelEvent} the caller already built
+ * plus whatever carrier the sink's own output channel needs.
+ * <p><b>Thread confinement:</b> any thread — one sink instance is built at bootstrap and shared by
+ * every emitting subsystem, so calls arrive from arbitrary kernel threads, and behind an
+ * asynchronous dispatcher from its consumer virtual thread rather than from the producer.
+ * <p><b>Ownership:</b> whoever obtained the sink from
+ * {@link TelemetryProvider#createSinks(TelemetryConfig)} closes it; the sink owns the handles and
+ * buffers it opened and releases them in {@link #close()}.
  *
- * @see TelemetryProvider
+ * @implSpec An implementation must accept every {@link EventLevel}, and a {@link KernelEvent} whose
+ *           {@link KernelEvent#exception()} is {@code null}, without throwing; must make
+ *           {@link #close()} idempotent; must drop events emitted after {@code close()} silently
+ *           rather than throwing; and must return a non-blank {@link #sinkName()}.
+ * @implNote Community ships {@code ConsoleSink}, {@code FileSink}, {@code Slf4jTelemetrySink} and a
+ *           Flight Recorder sink — text and JFR output. The Enterprise {@code BinaryGlassBoxSink}
+ *           dumps {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()} straight
+ *           into an off-heap mmap region, with zero {@code String} allocation on the critical path.
  * @since 0.5
+ * @see TelemetryProvider
  */
 public interface TelemetrySink extends AutoCloseable {
 
     /**
-     * Emits a kernel event to this sink.
-     *
-     * <p><b>Hot-path contract</b>: implementations MUST NOT allocate {@code String} objects
-     * by calling
-     * {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#getMessage()} or similar.
-     * They MUST read
-     * {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()}
-     * directly for zero-copy serialization.
+     * Records a kernel event on this sink's output channel.
      *
      * @param event the kernel event to record; never {@code null}
+     * @implSpec After {@link #close()} the call is a silent no-op.
+     * @implNote The Core {@code JfrTelemetrySink}'s typed {@code EX-MEM-}/{@code EX-NET-}/
+     *           {@code EX-RUN-} fast paths read
+     *           {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#rawArgs()} directly
+     *           and never call {@code getMessage()}; its fallback path and Community's diagnostic
+     *           sinks ({@code ConsoleSink}, {@code FileSink}, {@code Slf4jTelemetrySink}) call
+     *           {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException#getMessage()} and
+     *           allocate {@code String}s by design, since those are cold, low-frequency paths
+     *           rather than the hot path the zero-allocation goal targets.
      */
     void emit(KernelEvent event);
 
@@ -64,10 +77,22 @@ public interface TelemetrySink extends AutoCloseable {
     void latency(String name, long nanoseconds);
 
     /**
-     * Returns the unique name of this sink (used in bootstrap diagnostics).
+     * Returns the name under which this sink appears in bootstrap diagnostics and in the records of
+     * events dropped on its behalf.
+     *
+     * @return a non-null, non-blank name that identifies this sink uniquely and does not change
+     *         while it is open, such as {@code "ExerisCore/JfrTelemetrySink"}
      */
     String sinkName();
 
+    /**
+     * Releases the output channel and every handle or buffer this sink opened.
+     *
+     * <p>Narrows {@link AutoCloseable#close()}: closing a sink throws no checked exception.
+     *
+     * @implSpec Must be idempotent — a second call does nothing and does not throw — and must leave
+     *           the sink in a state where {@link #emit} drops silently.
+     */
     @Override
     void close();
 }

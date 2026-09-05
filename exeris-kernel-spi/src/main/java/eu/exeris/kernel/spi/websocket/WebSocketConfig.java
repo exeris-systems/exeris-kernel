@@ -61,6 +61,19 @@ public record WebSocketConfig(
     /** 1024, matching {@code HttpConfig}'s connection default. */
     public static final int DEFAULT_MAX_CONNECTIONS = 1024;
 
+    /**
+     * Validates every invariant eagerly and copies {@code allowedOrigins} into an immutable set, so
+     * a constructed configuration cannot be changed through a reference the caller retained.
+     *
+     * @throws NullPointerException     if {@code bindHost} or {@code allowedOrigins} is
+     *                                  {@code null}
+     * @throws IllegalArgumentException if {@code bindHost} is blank; if {@code port} is outside
+     *                                  {@code [0, 65535]}; if {@code maxConnections},
+     *                                  {@code idleTimeoutMillis}, {@code keepAliveIntervalMillis}
+     *                                  or {@code maxMessageBytes} is not positive; or if
+     *                                  {@code keepAliveIntervalMillis} is not below
+     *                                  {@code idleTimeoutMillis}
+     */
     public WebSocketConfig {
         Objects.requireNonNull(bindHost, "bindHost must not be null");
         Objects.requireNonNull(allowedOrigins, "allowedOrigins must not be null");

@@ -40,12 +40,12 @@ public interface JobHandle {
     /**
      * Cancels the job: it will not fire again.
      *
-     * <p>Idempotent. A run already in flight is <em>not</em> interrupted — the contract promises no
-     * further dispatches, not that a running job stops mid-work, because interrupting arbitrary
-     * application code at an arbitrary point is not something a scheduler can do safely.
-     *
      * @return {@code true} if this call moved the job to {@link JobState#CANCELLED}, {@code false} if
      *         it was already cancelled or had already reached a terminal state
+     * @implSpec Implementations must make this idempotent and must not interrupt a run already in
+     *           flight — the contract promises no further dispatches, not that a running job stops
+     *           mid-work, because interrupting arbitrary application code at an arbitrary point is
+     *           not something a scheduler can do safely.
      */
     boolean cancel();
 }

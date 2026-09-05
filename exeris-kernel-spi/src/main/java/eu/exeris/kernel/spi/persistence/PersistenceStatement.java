@@ -10,25 +10,13 @@ import java.util.UUID;
 /**
  * SPI: Zero-allocation query binder and executor.
  *
- * <h2>The Autoboxing Kill (ADR-010 L0 Fix)</h2>
- * <p>This interface replaces the legacy {@code executeQuery(String sql, Object... params)}
- * pattern that caused autoboxing and {@code Object[]} allocation on every parameterised query.
- * With {@code PersistenceStatement}, primitive values are bound directly — no boxing,
- * no array allocation, no heap pressure at 1M+ QPS.
- *
- * <h2>Tier Separation</h2>
- * <ul>
- *   <li><b>Community:</b> Wraps a JDBC {@code PreparedStatement}. Binding calls
- *       delegate to {@code setInt}, {@code setString}, etc.</li>
- *   <li><b>Enterprise:</b> Backed by off-heap memory. Binding calls write binary
- *       data directly into the PostgreSQL Bind message buffer using
- *       {@code MemorySegment.set(ValueLayout.JAVA_INT, offset, value)}.
- *       Zero heap allocation for primitive types.</li>
- * </ul>
+ * <h2>The Autoboxing Kill (ADR-010)</h2>
+ * <p>Primitive values are bound through typed binders rather than an {@code Object...} varargs —
+ * no boxing, no array allocation, no heap pressure at 1M+ QPS.
  *
  * <h2>Fluent API</h2>
  * <p>All {@code bind*} methods return {@code this} to enable fluent chaining:
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (PersistenceStatement stmt = conn.prepare(
  *         "SELECT * FROM users WHERE id = $1 AND score > $2")) {
  *     stmt.bindInt(0, userId)
@@ -39,17 +27,28 @@ import java.util.UUID;
  *         }
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>Parameter Indexing</h2>
  * <p>Parameters are <b>zero-based</b> ({@code $1} = index 0, {@code $2} = index 1).
  *
- * <h2>Thread Safety</h2>
- * <p>NOT thread-safe. Bound to the {@link PersistenceConnection} that created it.
+ * <p><b>Allocation:</b> zero-alloc on hot path for the primitive binders and
+ * {@link #bindNull(int)}; allocates for {@link #bindString}, {@link #bindBytes},
+ * {@link #bindUuid} and {@link #bindInstant}, whose values are heap objects already at the call
+ * site, and one {@link QueryResult} per {@link #executeQuery()}.
+ * <p><b>Thread confinement:</b> owner thread — not thread-safe, bound to the
+ * {@link PersistenceConnection} that created it.
+ * <p><b>Ownership:</b> the caller closes the statement, and separately closes each
+ * {@link QueryResult} obtained from {@link #executeQuery()}.
  *
+ * @implNote Community wraps a JDBC {@code PreparedStatement}, delegating each binder to
+ *           {@code setInt}, {@code setString} and so on. Enterprise is backed by off-heap memory
+ *           and writes binary data straight into the PostgreSQL Bind message buffer through
+ *           {@code MemorySegment.set(ValueLayout.JAVA_INT, offset, value)}, allocating nothing
+ *           for primitive types.
+ * @since 0.5
  * @see PersistenceConnection
  * @see QueryResult
- * @since 0.5
  */
 // SPI contract: one method per JVM primitive type + String/bytes/null + execute/close
 @SuppressWarnings("PMD.TooManyMethods") // intentional: one binder per JVM primitive type (zero-boxing contract)
@@ -62,11 +61,10 @@ public interface PersistenceStatement extends AutoCloseable {
     /**
      * Binds an {@code int} value at the given parameter index.
      *
-     * <p><b>Enterprise:</b> Writes 4 bytes Big Endian directly to off-heap Bind buffer.
-     *
      * @param index zero-based parameter index
      * @param value int value to bind
-     * @return this statement (fluent)
+     * @return this statement, for chaining
+     * @implNote Enterprise writes 4 big-endian bytes straight into the off-heap Bind buffer.
      */
     PersistenceStatement bindInt(int index, int value);
 
@@ -75,7 +73,7 @@ public interface PersistenceStatement extends AutoCloseable {
      *
      * @param index zero-based parameter index
      * @param value long value to bind
-     * @return this statement (fluent)
+     * @return this statement, for chaining
      */
     PersistenceStatement bindLong(int index, long value);
 
@@ -84,7 +82,7 @@ public interface PersistenceStatement extends AutoCloseable {
      *
      * @param index zero-based parameter index
      * @param value short value to bind
-     * @return this statement (fluent)
+     * @return this statement, for chaining
      */
     PersistenceStatement bindShort(int index, short value);
 
@@ -93,7 +91,7 @@ public interface PersistenceStatement extends AutoCloseable {
      *
      * @param index zero-based parameter index
      * @param value float value to bind
-     * @return this statement (fluent)
+     * @return this statement, for chaining
      */
     PersistenceStatement bindFloat(int index, float value);
 
@@ -102,7 +100,7 @@ public interface PersistenceStatement extends AutoCloseable {
      *
      * @param index zero-based parameter index
      * @param value double value to bind
-     * @return this statement (fluent)
+     * @return this statement, for chaining
      */
     PersistenceStatement bindDouble(int index, double value);
 
@@ -111,7 +109,7 @@ public interface PersistenceStatement extends AutoCloseable {
      *
      * @param index zero-based parameter index
      * @param value boolean value to bind
-     * @return this statement (fluent)
+     * @return this statement, for chaining
      */
     PersistenceStatement bindBoolean(int index, boolean value);
 
@@ -122,53 +120,44 @@ public interface PersistenceStatement extends AutoCloseable {
     /**
      * Binds a {@link String} value at the given parameter index.
      *
-     * <p><b>⚠ ALLOCATING:</b> In Enterprise tier, encodes String to UTF-8 off-heap.
-     * Acceptable because the String already exists at the call site.
+     * <p><b>⚠ ALLOCATING:</b> Acceptable because the String already exists at the call site.
      *
      * @param index zero-based parameter index
      * @param value String value (may be {@code null} — treated as SQL NULL)
-     * @return this statement (fluent)
+     * @return this statement, for chaining
+     * @implNote Enterprise encodes the String to UTF-8 off-heap.
      */
     PersistenceStatement bindString(int index, String value);
 
     /**
-     * Binds a {@link UUID} value at the given parameter index.
-     *
-     * <p><b>Community:</b> Delegates to {@code PreparedStatement.setObject(index, uuid)},
-     * which the pgjdbc driver maps to PostgreSQL OID 2950 (uuid) — no implicit
-     * {@code varchar→uuid} cast required.
-     *
-     * <p><b>Enterprise:</b> Writes the 16-byte binary UUID representation directly
-     * to the off-heap Bind message buffer.
+     * Binds a {@link UUID} value at the given parameter index, typed as a native {@code uuid}
+     * column rather than as text.
      *
      * @param index zero-based parameter index
      * @param value UUID value (may be {@code null} — treated as SQL NULL)
-     * @return this statement (fluent)
+     * @return this statement, for chaining
+     * @implNote Community delegates to {@code PreparedStatement.setObject(index, uuid)}, which
+     *           the pgjdbc driver maps to PostgreSQL OID 2950 ({@code uuid}), so no implicit
+     *           {@code varchar→uuid} cast is required; Enterprise writes the 16-byte binary UUID
+     *           representation straight into the off-heap Bind message buffer.
      */
     PersistenceStatement bindUuid(int index, UUID value);
 
     /**
      * Binds raw bytes at the given parameter index.
      *
-     * <p><b>⚠ ALLOCATING:</b> The byte array is a heap object. In Enterprise tier,
-     * bytes are copied to off-heap buffer.
+     * <p><b>⚠ ALLOCATING:</b> The byte array is a heap object.
      *
      * @param index zero-based parameter index
      * @param value byte array (may be {@code null} — treated as SQL NULL)
-     * @return this statement (fluent)
+     * @return this statement, for chaining
+     * @implNote Enterprise copies the bytes into the off-heap Bind buffer.
      */
     PersistenceStatement bindBytes(int index, byte[] value);
 
     /**
      * Binds a {@link Instant} value at the given parameter index. {@code null}
      * is treated as SQL NULL (typed as {@code TIMESTAMP WITH TIME ZONE}).
-     *
-     * <p><b>Community:</b> Delegates to {@code PreparedStatement.setTimestamp(index + 1,
-     * Timestamp.from(value))}; allocates one {@code java.sql.Timestamp} per call.
-     *
-     * <p><b>Enterprise:</b> Writes 8 bytes (microseconds since Postgres epoch
-     * 2000-01-01 UTC, big-endian) directly to the off-heap Bind message buffer.
-     * Zero heap allocation on the hot path.
      *
      * <p>The {@code Instant.MAX ↔ SQL NULL} convention used by {@code FlowSnapshot.timeout()}
      * is a caller-side concern — this binder treats {@code null} as NULL and any other
@@ -177,7 +166,12 @@ public interface PersistenceStatement extends AutoCloseable {
      *
      * @param index zero-based parameter index
      * @param value Instant value (may be {@code null} — treated as SQL NULL)
-     * @return this statement (fluent)
+     * @return this statement, for chaining
+     * @implNote Community delegates to {@code PreparedStatement.setTimestamp(index + 1,
+     *           Timestamp.from(value))}, allocating one {@code java.sql.Timestamp} per call;
+     *           Enterprise writes 8 bytes — microseconds since the Postgres epoch
+     *           2000-01-01 UTC, big-endian — straight into the off-heap Bind message buffer,
+     *           allocating nothing.
      * @since 0.8
      */
     PersistenceStatement bindInstant(int index, Instant value);
@@ -185,10 +179,9 @@ public interface PersistenceStatement extends AutoCloseable {
     /**
      * Binds a SQL NULL at the given parameter index.
      *
-     * <p>Zero allocation in both tiers.
-     *
      * @param index zero-based parameter index
-     * @return this statement (fluent)
+     * @return this statement, for chaining
+     * @implNote Allocates nothing in either tier.
      */
     PersistenceStatement bindNull(int index);
 
@@ -197,12 +190,12 @@ public interface PersistenceStatement extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Executes the bound query and returns a result set.
-     *
-     * <p><b>Enterprise:</b> Sends Parse/Bind/Describe/Execute/Sync pipeline.
-     * <p><b>Community:</b> Delegates to JDBC {@code PreparedStatement.executeQuery()}.
+     * Executes the statement with the parameters bound so far and returns a result set
+     * positioned before the first row.
      *
      * @return query result cursor; caller MUST close
+     * @implNote Enterprise sends the Parse/Bind/Describe/Execute/Sync pipeline; Community
+     *           delegates to JDBC {@code PreparedStatement.executeQuery()}.
      */
     QueryResult executeQuery();
 
@@ -214,7 +207,8 @@ public interface PersistenceStatement extends AutoCloseable {
     long executeUpdate();
 
     /**
-     * Releases statement resources. Idempotent.
+     * Releases the statement's resources — the prepared handle and, in the Enterprise tier, the
+     * off-heap Bind buffer. Idempotent.
      */
     @Override
     void close();

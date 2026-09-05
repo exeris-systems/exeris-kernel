@@ -39,9 +39,17 @@ import java.util.Optional;
  *      → engine.close()
  * </pre>
  *
+ * <p><b>Allocation:</b> allocates — {@link #createEngine} may open connections, register
+ * io_uring buffers, or claim memory partitions in one bootstrap-time reservation; nothing on
+ * this interface runs on a hot path.
+ * <p><b>Thread confinement:</b> owner thread — the bootstrap thread calls
+ * {@link #createEngine} once, and that call may block on syscalls.
+ * <p><b>Ownership:</b> the caller owns the returned {@link PersistenceEngine} and closes it via
+ * {@link PersistenceEngine#close()} at kernel shutdown.
+ *
+ * @since 0.5
  * @see PersistenceEngine
  * @see PersistenceConfig
- * @since 0.5
  */
 public interface PersistenceProvider {
 
@@ -64,12 +72,12 @@ public interface PersistenceProvider {
     String providerName();
 
     /**
-     * Selection priority when multiple providers are on the classpath.
-     *
-     * <p>Higher value wins. Community implementations MUST return {@code 0};
-     * Enterprise implementations MUST return {@code 100}.
+     * Selection priority when several providers are on the classpath — the highest value wins.
      *
      * @return priority; default {@code 0}
+     * @implSpec A Community binding MUST return {@code 0} and an Enterprise binding {@code 100},
+     *           so that an Enterprise jar on the classpath displaces the Community one without
+     *           either binding knowing about the other.
      */
     default int priority() {
         return 0;
@@ -79,28 +87,29 @@ public interface PersistenceProvider {
      * Creates and initialises a {@link PersistenceEngine} from the given configuration.
      *
      * <p>This is a potentially blocking call — it may open connections, register
-     * io_uring buffers, or claim memory partitions. It MUST NOT be called on a
-     * virtual thread that is expected to be non-blocking.
-     *
-     * <h3>SPI Dependency Injection</h3>
-     * <p>Implementations obtain their {@link eu.exeris.kernel.spi.memory.MemoryAllocator}
-     * and {@link eu.exeris.kernel.spi.crypto.KernelCryptoProvider} from
-     * {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots — they do NOT
-     * receive them as constructor parameters. This ensures clean SPI isolation.
+     * io_uring buffers, or claim memory partitions.
      *
      * @param config persistence configuration (connection URL, pool sizing, etc.)
-     * @return fully initialised engine ready for connection creation
-     * @throws PersistenceProviderException if the engine cannot be created
+     * @return fully initialised engine ready for connection creation; the caller owns it and
+     *         closes it via {@link PersistenceEngine#close()} at kernel shutdown
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5001} if the
+     *         engine cannot be created — the connection URL carried in {@code rawArgs} has its
+     *         {@code user:password@} userinfo stripped before capture
+     * @implSpec An implementation obtains its {@link eu.exeris.kernel.spi.memory.MemoryAllocator}
+     *           and {@link eu.exeris.kernel.spi.crypto.KernelCryptoProvider} from
+     *           {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots, and MUST NOT
+     *           take them as constructor parameters — that is what keeps the SPI boundary clean.
+     * @apiNote Call this from the bootstrap path, not from a virtual thread that is expected to
+     *          stay non-blocking.
      */
     PersistenceEngine createEngine(PersistenceConfig config);
 
     /**
      * Optional raw entity encoder binding for payload-oriented persistence paths.
      *
-     * <p>Default is empty to preserve compatibility for providers that do not
-     * expose a raw {@link MemorySegment} codec.
-     *
-     * @return raw encoder binding, if supported by this provider
+     * @return the provider's raw {@link MemorySegment} encoder, or {@link Optional#empty()} —
+     *         the default — when it exposes no such codec
      * @since 0.5
      */
     default Optional<EntityEncoder<MemorySegment>> rawEntityEncoder() {
@@ -110,10 +119,8 @@ public interface PersistenceProvider {
     /**
      * Optional raw entity decoder binding for payload-oriented persistence paths.
      *
-     * <p>Default is empty to preserve compatibility for providers that do not
-     * expose a raw {@link MemorySegment} codec.
-     *
-     * @return raw decoder binding, if supported by this provider
+     * @return the provider's raw {@link MemorySegment} decoder, or {@link Optional#empty()} —
+     *         the default — when it exposes no such codec
      * @since 0.5
      */
     default Optional<EntityDecoder<MemorySegment>> rawEntityDecoder() {

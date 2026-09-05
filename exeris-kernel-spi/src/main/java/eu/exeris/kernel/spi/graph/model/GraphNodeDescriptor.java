@@ -8,16 +8,14 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Valhalla-Ready: Immutable descriptor of a graph node label.
+ * Immutable descriptor of the <em>shape</em> of a graph node label — not the data itself —
+ * created once during bootstrap (metadata discovery) and shared immutably across all
+ * virtual threads via {@code ScopedValue} propagation.
  *
- * <p>Will be migrated to {@code value record} once JEP 401 is mainline.
- * Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
- * Avoid identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
- *
- * <h2>Zero-Copy Contract</h2>
- * <p>This record describes the <em>shape</em> of a node label — not the data itself.
- * It is created once during bootstrap (metadata discovery) and shared immutably
- * across all virtual threads via {@code ScopedValue} propagation.
+ * <h2>Valhalla Readiness</h2>
+ * <p>Structured so it can be migrated to a {@code value record} once JEP 401 is mainline;
+ * until then it relies on C2 JIT escape analysis for scalarization on hot paths. Avoid
+ * identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
  *
  * @param nodeLabel    the label in the graph (e.g. "User", "Product")
  * @param sourceTable  the relational table backing this node
@@ -35,7 +33,11 @@ public record GraphNodeDescriptor(
         boolean syncToGraph
 ) {
     /**
-     * Compact constructor with validation.
+     * Rejects a {@code null} {@code nodeLabel}, and fills in {@code sourceTable},
+     * {@code idProperty} and {@code properties} defaults when the caller passes
+     * {@code null} for any of them.
+     *
+     * @throws NullPointerException if {@code nodeLabel} is {@code null}
      */
     public GraphNodeDescriptor {
         Objects.requireNonNull(nodeLabel, "nodeLabel");
@@ -45,7 +47,9 @@ public record GraphNodeDescriptor(
     }
 
     /**
-     * Quick factory for simple nodes.
+     * Returns a node descriptor for {@code nodeLabel} backed by {@code sourceTable}, with
+     * {@code idProperty} defaulted to {@code "id"}, an empty property list, and
+     * {@code syncToGraph} enabled.
      *
      * @param nodeLabel   node label
      * @param sourceTable source table name

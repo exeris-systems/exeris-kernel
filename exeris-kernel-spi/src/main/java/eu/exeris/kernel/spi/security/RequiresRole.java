@@ -26,31 +26,27 @@ import java.lang.annotation.Target;
  * <p>{@link #match()} controls how the declared roles are combined into a single
  * bitmask check at runtime:
  *
- * <pre>{@code
- * @RequiresRole({"ROLE_ADMIN"})                       // any admin → permitted
- * @RequiresRole({"ROLE_ADMIN", "ROLE_OPERATOR"})      // admin OR operator
- * @RequiresRole(value = {"ROLE_ADMIN", "ROLE_AUDITOR"}, match = RoleMatch.ALL)
- *                                                     // both required
- * }</pre>
+ * {@snippet lang="java" :
+ *   @RequiresRole({"ROLE_ADMIN"})                       // any admin → permitted
+ *   @RequiresRole({"ROLE_ADMIN", "ROLE_OPERATOR"})      // admin OR operator
+ *   @RequiresRole(value = {"ROLE_ADMIN", "ROLE_AUDITOR"}, match = RoleMatch.ALL)
+ *                                                       // both required
+ * }
  *
- * <h2>Coexistence with {@code CitadelGuard}</h2>
- * <p>{@code CitadelGuard.requireRole(String)} remains the runtime fallback for
- * dynamic role decisions (the required role is computed from request data).
- * Static {@code @RequiresRole} checks short-circuit before {@code CitadelGuard}
- * is consulted; both produce {@code EX-SEC-2003} on denial so operators see
- * uniform telemetry.
- *
- * <h2>Build-time validation</h2>
- * <p>The APT processor MUST fail compilation when {@link #value()} contains a
- * role name that is not present in the canonical {@link KernelRoles} table or in
- * the application-defined role mapping resolved at build time. Build failures
- * are preferred over runtime warnings — this is a security contract, not a
- * style preference.
- *
+ * @implSpec The APT processor assigns any role name absent from the canonical {@link KernelRoles}
+ *           table a fresh application-scoped bit in {@code [8, 64)}, alphabetically, at build
+ *           time. It fails compilation only when {@link #value()} is empty or the application-role
+ *           bit budget (56 roles) is exceeded — never for an unrecognised role name, because no
+ *           such rejection exists.
+ * @apiNote  {@code CitadelGuard.requireRole(String)} is the runtime companion for dynamic role
+ *           decisions, where the required role is computed from request data. A static
+ *           {@code @RequiresRole} check short-circuits before {@code CitadelGuard} is consulted,
+ *           and both raise {@code EX-SEC-2003} on denial so operators see one telemetry shape for
+ *           both paths.
+ * @since 0.7
  * @see KernelRoles
  * @see RoleMatch
  * @see <a href="../../../../../../docs/adr/ADR-014-requiresrole-compile-time-rbac-generation.md">ADR-014</a>
- * @since 0.7
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target({ElementType.METHOD, ElementType.TYPE})

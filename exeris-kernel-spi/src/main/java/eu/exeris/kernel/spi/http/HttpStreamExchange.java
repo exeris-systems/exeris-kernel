@@ -19,16 +19,14 @@ import java.util.Map;
  *
  * <h2>Threading Model</h2>
  * <p>Each {@code HttpStreamExchange} is owned by exactly one virtual thread — the "1 VT per stream"
- * model, mirroring "1 VT per request". The handler body is an imperative emit loop. Handlers MUST NOT
- * park carrier threads (no {@code synchronized} on identity objects, no {@link ThreadLocal});
- * {@code ScopedValue} is the correct mechanism for stream-scoped state.
+ * model, mirroring "1 VT per request" — and the handler body is an imperative emit loop on that
+ * thread. What a handler owes that model is stated on {@link HttpStreamHandler}.
  *
  * <h2>Backpressure — park the VT, never an on-heap queue</h2>
  * <p>{@link #emit(StreamEvent)} is flow-aware. When the egress window (TLS record / HTTP/2 flow-control
  * window) is full, {@code emit} <strong>blocks the calling virtual thread</strong> until window credit is
- * available — exactly as the transport's response-body write loop already does. It MUST NOT buffer to an
- * unbounded heap queue (No Waste Compute). A virtual thread parked in {@code emit} costs nothing but its
- * stack; there is no backpressure timeout in this contract (see {@link #emit(StreamEvent)}).
+ * available — exactly as the transport's response-body write loop does. A virtual thread parked in
+ * {@code emit} costs nothing but its stack, and there is no backpressure timeout in this contract.
  *
  * <h2>Disconnect Signal</h2>
  * <p>There is no {@code awaitDisconnect()}. On client disconnect, dead key, or fail-closed teardown, the
@@ -51,6 +49,17 @@ import java.util.Map;
  * literals, io_uring SQEs). SSE framing is owned by Core; the held-open transport mechanics live in the
  * Community (NIO) and Enterprise (native) tiers.
  *
+ * <p><b>Allocation:</b> allocates (the engine frames each event into an egress buffer); a full
+ * egress window parks the emitting thread rather than growing an on-heap queue, so a slow consumer
+ * costs no memory that grows with the backlog
+ * <p><b>Thread confinement:</b> owner thread — one stream belongs to the single virtual thread its
+ * handler runs on, "1 VT per stream" as {@link HttpExchange} is 1 VT per request
+ * <p><b>Ownership:</b> the engine owns the framing buffer and releases it after each write; the
+ * handler owns the {@link StreamEvent} values it builds and nothing else
+ *
+ * @implSpec {@link #emit(StreamEvent)} MUST NOT buffer to an unbounded heap queue under
+ *           backpressure (No Waste Compute): it parks the calling virtual thread until the egress
+ *           window has credit, which is what makes a slow consumer bounded rather than expensive.
  * @since 0.10
  */
 public interface HttpStreamExchange {
@@ -75,13 +84,17 @@ public interface HttpStreamExchange {
      * through a template, returns an empty map.
      *
      * <p>Without this a templated stream route would resolve and then drop the one value that made it
-     * worth templating — the handler would know a stream is open, but not what it is a stream *of*.
+     * worth templating — the handler would know a stream is open, but not what it is a stream <em>of</em>.
      *
      * <p>The returned map is immutable and carries no wire-format types — values are the already-decoded
      * path segments as received on the request target.
      *
      * @return an immutable map of captured path parameters; never {@code null}, empty when the route
      *         declared no placeholders
+     * @implSpec The default implementation returns an empty map, the correct answer for a stream
+     *           not opened through a template. An implementation that overrides it must return an
+     *           immutable map: the captured values are routing state, so a handler able to write to
+     *           it could change what a later request resolves to.
      * @since 0.11
      */
     default Map<String, String> pathParams() {
@@ -94,23 +107,28 @@ public interface HttpStreamExchange {
      * <p><strong>Backpressure:</strong> if the egress window is full, this call parks the calling virtual
      * thread until credit is available. There is no timeout — the park ends on credit or on disconnect.
      *
-     * <p><strong>Ownership transfer:</strong> where the event payload is framed into a
-     * {@link eu.exeris.kernel.spi.memory.LoanedBuffer}, the engine takes ownership and releases it after the
-     * write completes; the caller MUST NOT close or retain it — identical to
-     * {@link HttpExchange#respond(HttpResponse)}. No defensive copy is made on the emit path.
-     *
      * @param event the event to emit; must not be {@code null}
-     * @throws StreamClosedException if the stream has closed (peer disconnect, graceful close, or
-     *                               fail-closed teardown on token expiry); unchecked, so an imperative
-     *                               emit loop unwinds naturally
+     * @throws StreamClosedException if the stream has closed — {@code EX-HTTP-4011} for a peer
+     *                               disconnect, a graceful close or an emit after close, and
+     *                               {@code EX-HTTP-4012} when the principal's token expired while
+     *                               the stream was held open (fail-closed, ADR-012 §5). Unchecked,
+     *                               so an imperative emit loop unwinds naturally
+     * @implSpec Where the event is framed into a {@link eu.exeris.kernel.spi.memory.LoanedBuffer},
+     *           the engine takes ownership of that buffer and releases it once the write completes
+     *           — as {@link HttpExchange#respond(HttpResponse)} does. Make no defensive copy of the
+     *           event on this path.
+     * @apiNote Do not close or retain any buffer reachable from an emitted event; it belongs to the
+     *          engine from the call onwards.
      */
     void emit(StreamEvent event);
 
     /**
      * Gracefully ends the stream (writes end-of-stream / FIN and finalises this exchange).
      *
-     * <p>Idempotent: calling {@code close} on an already-closed stream is a no-op and never throws. After
-     * {@code close}, any subsequent {@link #emit(StreamEvent)} throws {@link StreamClosedException}.
+     * @implSpec Idempotent: a {@code close} on an already-closed stream is a no-op and never
+     *           throws, so an emit loop unwinding on {@link StreamClosedException} may still close
+     *           in a {@code finally} block. Any later {@link #emit(StreamEvent)} throws
+     *           {@link StreamClosedException} ({@code EX-HTTP-4011}).
      */
     void close();
 }

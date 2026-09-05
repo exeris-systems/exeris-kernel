@@ -45,9 +45,9 @@ package eu.exeris.kernel.spi.transport;
  *                          {@link #UNBOUNDED_ACTIVE_STREAMS} removes the ceiling — see that
  *                          constant for what remains protecting the engine when it is set;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
+ * @since 0.5
  * @see TransportProvider
  * @see TransportEngine
- * @since 0.5
  */
 public record TransportConfig(
         TransportMode mode,

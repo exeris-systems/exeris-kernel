@@ -43,6 +43,13 @@ package eu.exeris.kernel.spi.events;
  * @param topic      optional binding-agnostic routing target ({@code null}/blank = no override);
  *                   see the "Binding-Agnostic Topic" section above
  *
+ * @implSpec Every {@link EventRegistry} binding round-trips {@code topic} unchanged: a spec
+ *           resolved back out of the registry carries the value it was registered with. Whether
+ *           the binding then <em>routes</em> on it is a binding concern.
+ * @implNote The in-memory {@link EventBus} is topic-blind — it routes on
+ *           {@link EventDescriptor#eventTypeOrdinal()} only, so delivery there is unaffected by
+ *           whether a type carries a topic. The Kafka binding resolves the override on both the
+ *           publish and the subscribe path.
  * @since 0.5
  * @see EventRegistry
  * @see EventDescriptor#eventTypeOrdinal()
@@ -124,9 +131,13 @@ public record EventTypeSpec(
     }
 
     /**
-     * Derives the appropriate {@link EventDescriptor} flags from this spec.
+     * Projects this type's durability and ordering attributes onto the per-event flag bitmask a
+     * publisher puts in {@link EventDescriptor#flags()}.
      *
-     * @return bitmask of flags to use in {@link EventDescriptor#flags()}
+     * @return {@link EventDescriptor#FLAG_PERSISTENT} when {@link #persistent()} and
+     *         {@link EventDescriptor#FLAG_ORDERED} when {@link #ordered()}, OR-ed together;
+     *         {@code 0} when neither. {@code FLAG_ASYNC} and {@code FLAG_BROADCAST} are
+     *         per-publication choices and are never set here.
      */
     public int toDescriptorFlags() {
         int flagsBitmask = 0;
@@ -140,10 +151,13 @@ public record EventTypeSpec(
     }
 
     /**
+     * Reports whether a binding must honour an explicit routing target for this type, or may fall
+     * back to its own default (for the Kafka binding, a topic derived from {@link #name()}).
+     *
      * @return {@code true} if this spec carries a {@code topic} override; {@code false} when a
-     *         binding should fall back to its default routing (e.g. the event-type name). A blank
-     *         {@code topic} is normalized to {@code null} in the canonical constructor, so this is
-     *         equivalent to {@code topic != null}.
+     *         binding should fall back to its default routing. A blank {@code topic} is
+     *         normalized to {@code null} in the canonical constructor, so this is equivalent to
+     *         {@code topic != null}.
      */
     public boolean hasTopic() {
         return topic != null;
