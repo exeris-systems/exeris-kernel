@@ -62,9 +62,11 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   confinement, Ownership, in that order) appear nowhere: `Thread confinement` occurs in zero files.
   Rules 6 and 3 are `[L2]`, so no gate will ever produce those numbers; they are here because the
   gate's silence about them is not evidence of compliance.
-  It becomes requirable when the gated counts are zero. Runs under the `javadoc-gate` profile,
-  which exists only for this job — the `release` profile keeps `doclint none` so publishing never
-  waits on prose.
+  It becomes requirable when the gated counts are zero. Runs under the `javadoc-gate` profile in
+  `exeris-kernel-spi/pom.xml` — in that pom and not the root one, because the gate invokes
+  `-pl exeris-kernel-spi -am` and `-am` drags every dependency into the reactor: from the root
+  the profile gated `exeris-kernel-build-config` too and the first run failed there without ever
+  reaching the SPI. The `release` profile keeps `doclint none` so publishing never waits on prose.
   **Open defect:** the gate's Checkstyle half audits nothing here. `checkstyle:check` on
   `exeris-kernel-spi` writes an empty `<checkstyle/>` report — zero files, zero violations, exit 0 —
   against the bundle ruleset *and* against this repository's own `checkstyle.xml` under the bound

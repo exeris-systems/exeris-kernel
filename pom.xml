@@ -654,55 +654,6 @@
             </build>
         </profile>
 
-        <!--
-            The Javadoc gate — ADR-085 §F.21, run by .github/workflows/guardrails.yml, never by a
-            normal build.
-
-            It is a profile and not a change to the `release` block above, deliberately. That block
-            keeps `doclint none` and `failOnError false` because the ability to publish must not
-            depend on the state of the prose: the comment there calls tightening it "quality work
-            with its own slice", and this is that slice, held separately so a red gate never stops a
-            release from being cut.
-
-            Measured before switching on, on exeris-kernel-spi: 63 doclint errors and 100 warnings.
-            The gate is therefore expected to be red on the day it lands, and that is the point —
-            it is the worklist, and it is a reported check rather than a required one until the
-            list is empty.
-
-            The three custom tags are registered so the standard can be followed, NOT because the
-            code follows it: across 276 SPI sources there is exactly one @apiNote, no @implSpec and
-            no @implNote. Unregistered, that single tag is itself a doclint error — which is how it
-            was found — and every tag added by rule 6 of javadoc-conventions.md would be another.
-            Registering them makes writing the tags possible; writing them is L2 work no gate
-            measures.
-
-            The preview flag is deliberately absent: this line dropped preview from the whole build
-            (see the MAVEN_OPTS comment in maven.yml), and javadoc accepts that flag only when
-            `-source` equals the running JDK.
-        -->
-        <profile>
-            <id>javadoc-gate</id>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-javadoc-plugin</artifactId>
-                        <version>3.11.2</version>
-                        <configuration>
-                            <doclint>all</doclint>
-                            <failOnWarnings>true</failOnWarnings>
-                            <failOnError>true</failOnError>
-                            <quiet>false</quiet>
-                            <tags>
-                                <tag><name>apiNote</name><placement>a</placement><head>API Note:</head></tag>
-                                <tag><name>implSpec</name><placement>a</placement><head>Implementation Requirements:</head></tag>
-                                <tag><name>implNote</name><placement>a</placement><head>Implementation Note:</head></tag>
-                            </tags>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
 
     </profiles>
 
