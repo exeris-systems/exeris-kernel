@@ -28,9 +28,19 @@ permissions:
   issues: read
   id-token: write
 
+# Pinned by commit SHA, like every other `uses:` in this repository — `dependabot.yml` explains
+# why: a SHA is immune to a moved tag but invisible to a reader, and Dependabot is what keeps it
+# current, rewriting the SHA and the trailing comment together. SonarCloud enforces the same rule
+# and it is a required check here.
+#
+# The trailing comment carries a date rather than a version because `exeris-systems/.github`
+# publishes no tags. Bump this pin when the follow-up bundle change lands (exeris-systems/.github#12):
+# until then the javadoc job fails on `Could not find artifact ...build-config` rather than on
+# anything about Javadoc, because the step that resolves the reactor first is not in this SHA.
+
 jobs:
   docs:
-    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@main
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
     with:
       # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
       # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
@@ -41,15 +51,15 @@ jobs:
       # Fifteen subsystem pages exist and none has the section set yet.
       section-check: false
   commits:
-    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@main
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
   pr-body:
-    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@main
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
   # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
   # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
   # against the documentation standards. They are different questions and both are wanted.
   # Skips itself when no Markdown or Java changed.
   docs-review:
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@main
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
     # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
     # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
     # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
@@ -64,7 +74,7 @@ jobs:
   # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
   # the strict settings there instead would have made a red gate block a release.
   javadoc:
-    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@main
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
     with:
       modules: exeris-kernel-spi
       extra-maven-args: "-Pjavadoc-gate"

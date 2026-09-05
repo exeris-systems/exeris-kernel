@@ -17,10 +17,20 @@ on:
 permissions:
   issues: write
 
+# Pinned by commit SHA, like every other `uses:` in this repository — `dependabot.yml` explains
+# why: a SHA is immune to a moved tag but invisible to a reader, and Dependabot is what keeps it
+# current, rewriting the SHA and the trailing comment together. SonarCloud enforces the same rule
+# and it is a required check here.
+#
+# The trailing comment carries a date rather than a version because `exeris-systems/.github`
+# publishes no tags. Bump this pin when the follow-up bundle change lands (exeris-systems/.github#12):
+# until then the javadoc job fails on `Could not find artifact ...build-config` rather than on
+# anything about Javadoc, because the step that resolves the reactor first is not in this SHA.
+
 jobs:
   labels:
-    uses: exeris-systems/.github/.github/workflows/labels-sync.yml@main
+    uses: exeris-systems/.github/.github/workflows/labels-sync.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
     with:
       dry-run: ${{ inputs.dry-run == true }}
   hygiene:
-    uses: exeris-systems/.github/.github/workflows/issue-hygiene.yml@main
+    uses: exeris-systems/.github/.github/workflows/issue-hygiene.yml@06bc45beddaa1a95e8550b242b7ce3e0f8d1f2ad # main @ 2026-09-05
