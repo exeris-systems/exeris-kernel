@@ -46,7 +46,7 @@ permissions:
 
 jobs:
   docs:
-    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@5144f771223069ee7bac0d1c9a0fc6a39bf210c2 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
     with:
       # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
       # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
@@ -57,15 +57,15 @@ jobs:
       # Fifteen subsystem pages exist and none has the section set yet.
       section-check: false
   commits:
-    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@5144f771223069ee7bac0d1c9a0fc6a39bf210c2 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
   pr-body:
-    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@5144f771223069ee7bac0d1c9a0fc6a39bf210c2 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
   # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
   # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
   # against the documentation standards. They are different questions and both are wanted.
   # Skips itself when no Markdown or Java changed.
   docs-review:
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@5144f771223069ee7bac0d1c9a0fc6a39bf210c2 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
     # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
     # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
     # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
@@ -80,7 +80,16 @@ jobs:
   # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
   # the strict settings there instead would have made a red gate block a release.
   javadoc:
-    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@5144f771223069ee7bac0d1c9a0fc6a39bf210c2 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
     with:
-      modules: exeris-kernel-spi
+      # The two published surfaces that are neither Core, Community nor tooling — the set
+      # javadoc-conventions.md rule 11 sends to diff-aware checking instead of a hard gate. Every
+      # jar module here reaches Maven Central, so "published" alone does not narrow anything; what
+      # narrows it is rule 11, and what is left after it is the SPI and the TCK.
+      #
+      # Measured before adding the TCK: 13 doclint errors, warnings capped at javadoc's default
+      # -Xmaxwarns of 100. The others, for the record and for whoever revisits rule 11:
+      # core 31/100+, community 6/91, community-testkit 0/24, community-kafka 0/11,
+      # diagnostics-cli and build-config clean.
+      modules: exeris-kernel-spi,exeris-kernel-tck
       extra-maven-args: "-Pjavadoc-gate"

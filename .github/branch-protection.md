@@ -54,7 +54,11 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with
   `needs:`.
 - **`javadoc-gate`** — red by design on arrival, and the doclint half is the smaller half.
-  Measured on `exeris-kernel-spi`, 2026-09-05: **62 doclint errors, 100 warnings**; on top of that
+  Gated modules are `exeris-kernel-spi` and `exeris-kernel-tck` — the two published surfaces that
+  are neither Core, Community nor tooling, which is the set `javadoc-conventions.md` rule 11 sends
+  to diff-aware checking instead. Every jar module here reaches Maven Central, so "published"
+  alone narrows nothing; rule 11 is what narrows it. Measured 2026-09-05: SPI **62 doclint
+  errors, 100 warnings**, TCK **13 and 100** (javadoc caps warnings at 100, so both are floors); on top of that
   **all 383 `@since` tags** use `major.minor.patch` where `javadoc-conventions.md` rule 4 mandates
   `major.minor`, and **60 `<pre>{@code}` blocks** stand where rule 8 mandates `{@snippet}`. The
   tag vocabulary of rule 6 is effectively unwritten — one `@apiNote` across 276 files, no
