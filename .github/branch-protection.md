@@ -53,10 +53,23 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   Requiring it by name pins the ruleset to a version string and a matrix edit silently drops the
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with
   `needs:`.
-- **`javadoc-gate`** — red by design on arrival: 62 doclint errors and 100 warnings on
-  `exeris-kernel-spi`, measured 2026-09-05. It is the worklist for the Javadoc sweep and becomes
-  requirable when that count is zero. Runs under the `javadoc-gate` profile, which exists only for
-  this job — the `release` profile keeps `doclint none` so publishing never waits on prose.
+- **`javadoc-gate`** — red by design on arrival, and the doclint half is the smaller half.
+  Measured on `exeris-kernel-spi`, 2026-09-05: **62 doclint errors, 100 warnings**; on top of that
+  **all 383 `@since` tags** use `major.minor.patch` where `javadoc-conventions.md` rule 4 mandates
+  `major.minor`, and **60 `<pre>{@code}` blocks** stand where rule 8 mandates `{@snippet}`. The
+  tag vocabulary of rule 6 is effectively unwritten — one `@apiNote` across 276 files, no
+  `@implSpec`, no `@implNote` — and the three contract lines of rule 3 (Allocation, Thread
+  confinement, Ownership, in that order) appear nowhere: `Thread confinement` occurs in zero files.
+  Rules 6 and 3 are `[L2]`, so no gate will ever produce those numbers; they are here because the
+  gate's silence about them is not evidence of compliance.
+  It becomes requirable when the gated counts are zero. Runs under the `javadoc-gate` profile,
+  which exists only for this job — the `release` profile keeps `doclint none` so publishing never
+  waits on prose.
+  **Open defect:** the gate's Checkstyle half audits nothing here. `checkstyle:check` on
+  `exeris-kernel-spi` writes an empty `<checkstyle/>` report — zero files, zero violations, exit 0 —
+  against the bundle ruleset *and* against this repository's own `checkstyle.xml` under the bound
+  `validate-architecture` execution. It therefore predates this gate and is not caused by it, but
+  until it is understood a green Checkstyle result from this module means nothing.
 - **`docs-review`** — an L2 review (ADR-085 §J.33). It produces findings for a human to weigh, and
   a reviewer's judgement is not a merge gate.
 - **`Analyze (java-kotlin)`** (CodeQL), **`Scan PR Dependencies`**, **`security/snyk`** — advisory
