@@ -74,8 +74,10 @@ public interface BulkInserter extends AutoCloseable {
      *         never {@code null}
      * @apiNote The binder is reused rather than replaced, so callers MUST reset all bindings
      *          before binding the next row.
-     * @implNote The Enterprise tier resets off-heap column buffers in place, so a call allocates
-     *           nothing.
+     * @implNote Reuse bounds how often the binder itself is allocated. It does not bound what
+     *           binding a value allocates, which depends on how an implementation holds bound
+     *           values until {@link #flush()} — this interface establishes no per-row allocation
+     *           limit.
      */
     PersistenceStatement row();
 
@@ -86,9 +88,9 @@ public interface BulkInserter extends AutoCloseable {
      *
      * @param row the row binder (MUST be the instance returned by {@link #row()})
      * @throws PersistenceProviderException on serialisation failure
-     * @implNote Enterprise writes the binary-encoded row into a {@code LoanedBuffer} COPY frame,
-     *           with no heap allocation per row; Community buffers the bound parameters for a
-     *           subsequent {@code executeBatch()}.
+     * @implNote Buffering is the whole of what this method promises. An implementation may keep
+     *           the bound parameters for a later batch execution or encode the row into a binary
+     *           frame as it arrives; neither reaches the database before {@link #flush()}.
      */
     void writeRow(PersistenceStatement row);
 

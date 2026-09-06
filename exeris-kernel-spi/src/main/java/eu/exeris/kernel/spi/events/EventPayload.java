@@ -73,12 +73,13 @@ import java.lang.foreign.MemorySegment;
  *           reaches zero, and its retain/close are no-ops.
  * @apiNote Prefer {@code try-with-resources}; on an off-heap binding a missed {@link #close()} is
  *          a slab-pool leak that shows up as exhaustion far from its cause.
- * @implNote Community backs the payload with a heap {@code byte[]} or a
- *           {@link eu.exeris.kernel.spi.memory.LoanedBuffer}, and {@link #retain()} /
- *           {@link #close()} are lightweight because the GC reclaims the memory. Enterprise backs
- *           it with a slot from the tiered off-heap payload pool (256 B / 4 KB / 64 KB), where
- *           retain and close are a {@link java.lang.invoke.VarHandle} CAS on a per-slab refCount
- *           field and the slot returns to its pool at zero — no GC involvement at all.
+ * @implNote The bindings that ship in this repository back the payload with a heap {@code byte[]}
+ *           and count references with an {@link java.util.concurrent.atomic.AtomicInteger}, so a
+ *           missed {@link #close()} costs no more than the collector's own timing. That is the
+ *           cheap case rather than the general one: a binding that serves the payload from a pool
+ *           has no collector behind it, and there the reference count is the only thing that
+ *           returns the memory. The contract above is written in terms of the count, not of any
+ *           backing store, so that one sentence describes both.
  * @since 0.5
  * @see EventDescriptor
  * @see EventBus
