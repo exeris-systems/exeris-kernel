@@ -31,6 +31,16 @@ public final class NativeTcpTransportProvider implements TransportProvider {
     private static final String PROVIDER_NAME = "ExerisCommunity/NativeTcpCarrier";
 
     /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link TransportProvider}; not meant to be
+     * constructed directly.
+     */
+    public NativeTcpTransportProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Builds a {@link NativeTcpCarrier} for the given configuration, resolving the bound
      * {@link MemoryAllocator} and, if present, the bound {@link KernelCryptoProvider} and its TLS
      * configuration for this transport.

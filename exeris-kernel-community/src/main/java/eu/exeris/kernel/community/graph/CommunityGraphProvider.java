@@ -39,6 +39,16 @@ public final class CommunityGraphProvider implements GraphProvider {
     private static final String PROVIDER_NAME = "ExerisCommunity/JdbcGraph";
 
     /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community-tier {@link GraphProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.graph.GraphProvider}.
+     */
+    public CommunityGraphProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates a {@link CommunityGraphEngine} for {@code config}.
      *
      * @param config graph subsystem configuration

@@ -19,6 +19,15 @@ public final class JfrTelemetrySink implements TelemetrySink {
 
     private final TelemetrySink delegate = new eu.exeris.kernel.core.telemetry.JfrTelemetrySink();
 
+    /**
+     * Built by {@code CommunityTelemetryProvider} as the standard JFR sink for the Community
+     * runtime, and directly by tests that need the Community sink identity in isolation.
+     */
+    public JfrTelemetrySink() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     /** Delegates to the wrapped core sink's JFR event emission. */
     @Override
     public void emit(KernelEvent event) {

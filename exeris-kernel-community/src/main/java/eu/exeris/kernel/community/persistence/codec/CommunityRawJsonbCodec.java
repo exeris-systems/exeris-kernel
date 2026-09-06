@@ -25,6 +25,16 @@ public final class CommunityRawJsonbCodec implements EntityEncoder<MemorySegment
     private static final long ZERO_OFFSET = 0L;
     private static final long EMPTY_PAYLOAD_BYTES = 0L;
 
+    /**
+     * Built once by {@link eu.exeris.kernel.community.persistence.CommunityPersistenceProvider} and
+     * held as a shared constant: stateless, so the same instance serves every raw-JSONB
+     * {@link java.lang.foreign.MemorySegment} column the provider encodes or decodes.
+     */
+    public CommunityRawJsonbCodec() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public int encode(MemorySegment entity, LoanedBuffer target) {
         validateEncodeInputs(entity, target);

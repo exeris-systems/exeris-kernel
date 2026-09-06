@@ -24,6 +24,16 @@ public final class CommunityFlowSnapshotStore implements FlowSnapshotStore {
     private final ConcurrentMap<FlowKey, FlowSnapshot> snapshots = new ConcurrentHashMap<>();
 
     /**
+     * Built by {@code CommunityFlowSubsystem} as the heap-resident snapshot store used when no
+     * {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} is bound at boot, and directly by
+     * tests that need a fresh, isolated in-memory store.
+     */
+    public CommunityFlowSnapshotStore() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Stores {@code snapshot} under its instance UUID, replacing any snapshot previously stored
      * for the same instance.
      *

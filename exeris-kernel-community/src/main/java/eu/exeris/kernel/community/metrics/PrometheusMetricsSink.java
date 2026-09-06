@@ -76,6 +76,16 @@ public final class PrometheusMetricsSink implements TelemetrySink {
     private final ConcurrentHashMap<String, LatencyAggregate> latencies = new ConcurrentHashMap<>();
 
     /**
+     * Built by the application wiring Prometheus metrics collection — typically paired with a
+     * {@link PrometheusMetricsHandler} that serves {@link #exposeText()} over {@code GET /metrics}
+     * — or directly by tests exercising the sink in isolation.
+     */
+    public PrometheusMetricsSink() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * No-op — this sink is metric-only. Pair it with {@code JfrTelemetrySink} or
      * {@code Slf4jTelemetrySink} to also surface events.
      */

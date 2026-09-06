@@ -42,6 +42,16 @@ public final class EventLoopFailureEvent extends Event {
     public int affectedCount;
 
     /**
+     * Constructed by {@link #emit} once {@link FlightRecorder#isInitialized()} holds — and,
+     * reflectively, by the JFR runtime when this event type is registered — with every field
+     * left unset; {@code emit} assigns them and commits only if the event is enabled.
+     */
+    public EventLoopFailureEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Commits this event, recording the loop name, failure phase, the triggering exception's
      * simple class name, and the number of events affected.
      *

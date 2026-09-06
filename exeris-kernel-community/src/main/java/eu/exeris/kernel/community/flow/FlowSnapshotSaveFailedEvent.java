@@ -54,6 +54,16 @@ public final class FlowSnapshotSaveFailedEvent extends Event {
     @Description("Exception message — secret-safe; JDBC credentials are never included")
     /* default */ String exceptionMessage;
 
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public FlowSnapshotSaveFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     /* default */ static void emit(String engineName,
                                    String sqlState,
                                    String exceptionClass,

@@ -18,6 +18,16 @@ public final class CommunityJobSchedulerProvider implements JobSchedulerProvider
     private static final String PROVIDER_ID = "job-loom-community";
     private static final String PROVIDER_NAME = "ExerisCommunity/LoomJobScheduler";
 
+    /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link JobSchedulerProvider}; not meant to be
+     * constructed directly.
+     */
+    public CommunityJobSchedulerProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public JobScheduler createScheduler(JobSchedulerConfig config) {
         return new CommunityJobScheduler(config, new CommunitySystemSchedulerClock());

@@ -34,6 +34,16 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
     private static final String PROVIDER_NAME = "ExerisCommunity/TextTelemetry";
 
     /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link TelemetryProvider}; not meant to be
+     * constructed directly.
+     */
+    public CommunityTelemetryProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the Community sink set selected by {@code config}: the JFR sink when
      * {@link TelemetryConfig#jfrSinkEnabled()} is set (the SLF4J sink otherwise),
      * plus the console and file sinks when their respective config flags request them.

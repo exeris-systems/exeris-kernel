@@ -37,6 +37,15 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
  */
 public final class CommunityMemoryProvider implements MemoryProvider {
 
+    /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link MemoryProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.memory.MemoryProvider}.
+     */
+    public CommunityMemoryProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Creates a {@link CommunityMemoryAllocator} for {@code config}, validating that the

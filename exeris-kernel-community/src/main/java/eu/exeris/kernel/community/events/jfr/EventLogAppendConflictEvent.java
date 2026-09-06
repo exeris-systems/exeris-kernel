@@ -65,6 +65,16 @@ public final class EventLogAppendConflictEvent extends Event {
     /* default */ long actualVersion;
 
     /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public EventLogAppendConflictEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Commits this event, recording the engine name, conflict phase, stream type, and the
      * expected/actual version pair.
      *

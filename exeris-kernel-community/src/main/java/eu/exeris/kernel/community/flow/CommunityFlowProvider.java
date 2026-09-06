@@ -25,6 +25,16 @@ public final class CommunityFlowProvider implements FlowProvider {
             FlowEngineCapabilities.COMMUNITY.withProvider(PROVIDER_ID);
 
     /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link FlowProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.flow.FlowProvider}.
+     */
+    public CommunityFlowProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns this provider's identifier, {@code "community"}.
      */
     @Override

@@ -58,6 +58,16 @@ public final class CommunityEventQueueOverflowEvent extends Event {
     /* default */ int queueCapacity;
 
     /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public CommunityEventQueueOverflowEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Commits this event, recording the engine name, event type, and the queue depth/capacity
      * observed at the moment of the refused push.
      *

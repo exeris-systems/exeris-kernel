@@ -55,6 +55,16 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
     private CountDownLatch stopSignal;
     private Thread runtimeThread;
 
+    /**
+     * Built by {@link EmbeddedHttpEngineFixtures#kernelBootstrapFixture()} for tests that need a
+     * real, booted {@code http} subsystem behind {@link EmbeddedHttpEngineFixture}; each instance
+     * owns exactly one fixture lifecycle, so callers construct a fresh one per test.
+     */
+    public KernelBootstrapHttpEngineFixture() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public void start(HttpHandler handler) {
         Objects.requireNonNull(handler, "handler must not be null");

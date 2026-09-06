@@ -48,6 +48,16 @@ public final class CommunityHttpProvider implements HttpProvider {
             HttpRequestBodyDecoderRegistry.of(List.of(new CommunityJsonRequestBodyDecoder(
                     CommunityJsonMappers.forScope(JsonMapperScope.HTTP_REQUEST_DECODE))));
 
+    /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link HttpProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.http.HttpProvider}.
+     */
+    public CommunityHttpProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     private static HttpResponseBodyEncoderRegistry buildDefaultRegistry() {
         JsonBodyEncoder encoder =
                 new JsonBodyEncoder(CommunityJsonMappers.forScope(JsonMapperScope.HTTP_RESPONSE_ENCODE));

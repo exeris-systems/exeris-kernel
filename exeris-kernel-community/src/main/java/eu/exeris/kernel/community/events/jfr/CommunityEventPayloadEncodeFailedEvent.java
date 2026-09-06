@@ -57,6 +57,16 @@ public final class CommunityEventPayloadEncodeFailedEvent extends Event {
     /* default */ String failureClass;
 
     /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public CommunityEventPayloadEncodeFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Commits this event, recording only the failing payload's runtime class, the requested
      * content-type, the event-type name, and the failure's class name.
      *
