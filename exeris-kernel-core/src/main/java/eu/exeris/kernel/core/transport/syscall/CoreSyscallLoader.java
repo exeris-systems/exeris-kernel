@@ -45,8 +45,8 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * <p>Zero knowledge of {@code io_uring}, {@code msghdr}, Enterprise internals, QUIC,
  * or {@code GlobalMemoryArbiter}. Strictly the portable Berkeley socket surface.
  *
- * @see SyscallHandles
  * @since 0.5
+ * @see SyscallHandles
  */
 public final class CoreSyscallLoader {
 

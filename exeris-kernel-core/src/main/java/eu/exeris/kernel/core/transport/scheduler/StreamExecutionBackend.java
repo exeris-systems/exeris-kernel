@@ -9,9 +9,8 @@ package eu.exeris.kernel.core.transport.scheduler;
  * is started.
  *
  * <p>The default backend used by {@link PaqsScheduler} spawns one Virtual Thread per stream
- * using {@link Thread#ofVirtual()}, preserving the VT root-per-stream guarantee. It is
- * behaviourally identical to the prior inline spawn and changes no admission, load-shed, or
- * JFR behaviour — extracting the spawn behind this seam is refactor-neutral.
+ * using {@link Thread#ofVirtual()}, preserving the VT root-per-stream guarantee, without altering
+ * admission, load-shedding, or JFR behaviour.
  *
  * <p>The seam lets an alternative execution strategy be injected <em>without</em> touching the
  * scheduler's admission or load-shedding path. Two intended (non-default) consumers:

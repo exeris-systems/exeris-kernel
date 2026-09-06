@@ -31,15 +31,25 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 public final class StreamAcceptedEvent extends Event {
 
+    /** SPI stream identifier of the admitted stream. */
     @Label("Stream ID")
     public long streamId;
 
+        /**
+         * {@link eu.exeris.kernel.spi.transport.StreamPriority} enum constant name resolved for
+         * this stream at admission.
+         */
     @Label("Priority")
     public String priority;
 
+    /** Name of the transport engine that admitted the stream. */
     @Label("Engine Name")
     public String engineName;
 
+        /**
+         * Name of the virtual thread spawned to run the stream handler; format
+         * {@code paqs/<engineName>/<priority>/<streamId>}.
+         */
     @Label("Virtual Thread Name")
     public String virtualThreadName;
 

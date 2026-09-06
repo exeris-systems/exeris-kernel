@@ -36,6 +36,11 @@ public final class BootstrapProviderSelector {
      * {@code comparator}. No availability filtering is applied. Use
      * {@link #loadHighestPriority(Class, Comparator, Predicate)} for SPI types that
      * declare a platform-availability predicate.
+     *
+     * @param providerType SPI type loaded via {@code ServiceLoader}
+     * @param comparator   ranking comparator (higher rank wins)
+     * @param <T>          provider type
+     * @return highest-ranked provider, or empty if none is registered
      */
     public static <T> Optional<T> loadHighestPriority(Class<T> providerType,
                                                       Comparator<? super T> comparator) {

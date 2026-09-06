@@ -17,9 +17,10 @@ import jdk.jfr.StackTrace;
  * completes bootstrap and is ready to accept connections.
  *
  * <h2>JFR-First Contract</h2>
- * <p>Every persistence engine bootstrap — regardless of tier — MUST emit this event.
- * Production SRE tooling relies on this event to verify that the persistence layer
- * started cleanly and within expected latency bounds.
+ * <p>Every {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} implementation —
+ * Community and Enterprise alike — emits this event once bootstrap completes; production SRE
+ * tooling relies on it to verify that the persistence layer started cleanly and within
+ * expected latency bounds.
  *
  * @since 0.5
  */

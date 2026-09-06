@@ -111,7 +111,11 @@ public final class HuffmanTable {
         return HUFFMAN_LENS_INT[symbol];
     }
 
-    /** Returns the number of symbols in the Huffman alphabet (257: 0–255 + EOS). */
+    /**
+     * Returns the number of symbols in the Huffman alphabet.
+     *
+     * @return the alphabet size (257: byte values 0–255 plus the EOS symbol)
+     */
     public static int symbolCount() {
         return HUFFMAN_LENS.length;
     }

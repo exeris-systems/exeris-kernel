@@ -18,32 +18,33 @@ import jdk.jfr.StackTrace;
  * JFR event emitted each time a connection is acquired from the persistence pool.
  *
  * <h2>Usage — single-phase commit</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * long startNs = System.nanoTime();
- * PersistenceConnection conn = engine.openConnection(ctx);   // ← blocking checkout (may park a VT)
+ * PersistenceConnection conn = engine.openConnection(ctx);   // blocking checkout (may park a VT)
  * ConnectionAcquireEvent.commitAcquire(providerId, tenantKey, fromPool, startNs);
- * }</pre>
+ * }
  *
  * <h2>Virtual-thread safety — single-phase <em>and</em> off-thread commit</h2>
  * <p>The pool checkout this event measures is a <em>blocking</em> operation. On a
  * virtual thread a blocking park unmounts the carrier, and the thread may remount
  * on a different carrier when the connection is handed out. JFR's {@code EventWriter}
  * is carrier-bound, so a {@code commit()} on the remounted carrier can flush a stale
- * {@code JfrBuffer}, crashing the JVM in {@code JfrStorage::flush_regular_buffer}
- * (observed on JDK 26 GA, build 26+35).
+ * {@code JfrBuffer} and crash the JVM.
  * <p>Single-phase construction (the event is built entirely <em>after</em> the checkout
  * returns, latency carried in {@link #acquireLatencyNs} rather than JFR begin/end) is
- * <em>necessary but not sufficient</em>: the staleness is established by the earlier
- * park/remount, not by a begin/commit straddle, so this event crashed in production
- * despite being single-phase. The actual {@code commit()} is therefore handed to a
+ * <em>necessary but not sufficient</em>: the staleness comes from the earlier
+ * park/remount, not from a begin/commit straddle, so single-phase construction alone
+ * does not remove the hazard. The actual {@code commit()} is therefore handed to a
  * dedicated platform thread via {@link JfrCommitGate} / {@code JfrEventCommitter};
  * the field-populated event is constructed on the caller (safe — pure heap writes) and
  * committed off the request virtual thread.
  *
  * <h2>Hot-Path Guard</h2>
- * <p>{@link #commitAcquire} guards on {@link FlightRecorder#isInitialized()} and
- * {@link Event#isEnabled()} before allocating — when JFR recording is inactive it
- * returns with zero heap allocation.
+ * <p>{@link #commitAcquire} returns immediately, with zero heap allocation, when
+ * {@link FlightRecorder#isInitialized()} is {@code false}. Once the recorder is
+ * initialised it constructs the event before checking {@link Event#isEnabled()}, so a
+ * disabled event type still costs one short-lived, field-empty allocation — it is never
+ * populated or committed, but it is not free.
  * {@link StackTrace @StackTrace(false)} eliminates stack-walk overhead on the
  * connection-acquire hot path.
  *
@@ -78,7 +79,9 @@ public final class ConnectionAcquireEvent extends Event {
      * <p>Must be called <em>after</em> the pool checkout returns. The event is both
      * allocated and committed here so it is never held across the blocking checkout
      * — see the virtual-thread safety note in the class Javadoc.
-     * Returns with zero heap allocation if JFR recording is inactive (cold path).
+     * Returns with zero heap allocation whenever {@link FlightRecorder#isInitialized()}
+     * is {@code false}; see the class Javadoc's Hot-Path Guard note for the allocation
+     * cost once the recorder is initialised but this event type is disabled.
      *
      * @param providerId  stable provider identifier
      * @param tenantKey   tenant isolation key, or {@code "shared"}

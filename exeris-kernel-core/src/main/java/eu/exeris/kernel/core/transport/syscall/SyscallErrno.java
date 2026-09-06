@@ -86,7 +86,7 @@ public final class SyscallErrno {
      *
      * @param errno current socket errno / last-error value
      * @return {@code true} for retryable results such as would-block, interrupted syscall,
-     * or temporarily unavailable errno state on the non-blocking hot path
+     *     or temporarily unavailable errno state on the non-blocking hot path
      */
     public static boolean isRetryable(int errno) {
         if (errno <= 0) {

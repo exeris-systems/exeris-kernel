@@ -12,6 +12,15 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Emitted once per engine when the probe for a {@code FlowProgress} event-type ordinal exhausts
+ * its window, permanently disabling progress publication for the rest of that engine's lifetime.
+ *
+ * <p>Without this event the disablement is invisible: {@link FlowProgressPublisher#publishProgress}
+ * then returns silently on the cached sentinel on every terminal step, and a consumer subscribed
+ * to {@code FlowProgress} simply never receives anything — indistinguishable from a system in
+ * which no flow ever terminates.
+ */
 @Name("eu.exeris.kernel.flow.ProgressDisabled")
 @Label("Flow Progress Publication Disabled")
 @Category({"Exeris Kernel", "Flow"})
@@ -37,6 +46,14 @@ final class FlowProgressDisabledEvent extends Event {
     @Description("Number of consecutive candidates tried before giving up")
     /* default */ int probeLimit;
 
+    /**
+     * Emits the {@code ProgressDisabled} event recording which ordinal window was exhausted, or
+     * does nothing if the flight recorder was never initialised or the event type is disabled.
+     *
+     * @param eventTypeName the event type whose ordinal could not be claimed
+     * @param baseOrdinal   the first candidate probed; the window runs upward from here
+     * @param probeLimit    the number of consecutive candidates tried before giving up
+     */
     /* default */ static void emit(String eventTypeName, int baseOrdinal, int probeLimit) {
         // Guard order matches this cycle's other new events (CommunityConnectionIdleTimeout,
         // CommunityAcceptFault): no allocation at all when JFR was never initialised.

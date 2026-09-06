@@ -35,9 +35,9 @@ import java.util.Objects;
  * <p>The shed counter is a raw {@code long} field updated via {@link VarHandle}
  * {@code getAndAdd}. No {@code AtomicLong} object header — the VarHandle is a JVM constant.
  *
+ * @since 0.5
  * @see AdmissionController
  * @see PaqsScheduler
- * @since 0.5
  */
 public final class StreamLoadShedder {
 

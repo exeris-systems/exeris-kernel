@@ -32,6 +32,12 @@ final class TlsPhaseTransitionEvent extends Event {
     /* default */ @Label("From Phase") String fromPhase;
     /* default */ @Label("To Phase")   String toPhase;
 
+    /**
+     * Emits the phase-transition event.
+     *
+     * @param from         phase the state machine transitioned from
+     * @param targetPhase  phase the state machine transitioned to
+     */
     /* default */ static void emit(TlsPhase from, TlsPhase targetPhase) {
         if (!FlightRecorder.isInitialized()) {
             return;

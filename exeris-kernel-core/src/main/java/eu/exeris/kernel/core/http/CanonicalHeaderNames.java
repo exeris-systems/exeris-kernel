@@ -37,9 +37,9 @@ import java.util.Set;
  * <h2>Both spellings, deliberately</h2>
  * <p>Every entry is registered in its conventional spelling <em>and</em> in lowercase. HTTP/1 clients
  * conventionally send title case, but HTTP/2 <b>requires</b> lowercase field names (RFC 9113 §8.2.1)
- * and current browsers already send some HTTP/1 fields lowercase — {@code sec-ch-ua} is one, and it
- * missed a title-case-only table during the spike that justified this class. Carrying both costs
- * nothing at lookup time, because entries are bucketed by length.
+ * and current browsers already send some HTTP/1 fields lowercase — {@code sec-ch-ua} is one — so a
+ * title-case-only table would miss real traffic. Carrying both costs nothing at lookup time, because
+ * entries are bucketed by length.
  *
  * <h2>Thread safety</h2>
  * <p>Thread-safe. Immutable state, pure lookup.

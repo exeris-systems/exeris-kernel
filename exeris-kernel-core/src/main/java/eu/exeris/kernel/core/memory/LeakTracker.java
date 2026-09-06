@@ -42,9 +42,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>Detected leaks are emitted as {@link LeakDetectedEvent} JFR events bearing
  * error code {@code EX-MEM-1002}. No {@code System.err} or logging framework is used.
  *
+ * @since 0.5
  * @see AbstractLoanedBuffer
  * @see LeakDetectedEvent
- * @since 0.5
  */
 public final class LeakTracker {
 
@@ -69,6 +69,7 @@ public final class LeakTracker {
      * Creates a new {@link LeakTracker} with the given detection mode.
      *
      * @param mode detection strictness; must not be {@code null}
+     * @throws IllegalArgumentException if {@code mode} is {@code null}
      */
     public LeakTracker(LeakDetectionMode mode) {
         if (mode == null) {
@@ -98,6 +99,8 @@ public final class LeakTracker {
      * @param allocationStack stack trace string captured at allocation time; pass {@code "<sampled>"}
      *                        for SAMPLED mode (no stack capture for performance)
      * @return a {@link LeakHandle} to cancel when the buffer is properly closed
+     * @throws IllegalArgumentException if {@code referent} or {@code allocationStack}
+     *         is {@code null}
      */
     public LeakHandle track(Object referent,
                             long capacityBytes,

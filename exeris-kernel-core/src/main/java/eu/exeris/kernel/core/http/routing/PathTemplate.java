@@ -13,10 +13,9 @@ import java.util.Map;
 /**
  * A compiled path template: literal and {@code {name}} placeholder segments, matched by position.
  *
- * <p>Extracted from {@code PathTemplateRoute} when the streaming table gained templates. The two
- * tables carry different handler types and nothing else, so leaving the matching inside the
- * respond-once route would have meant a second copy of the placeholder rules — and a copy is exactly
- * how the two tables would drift into disagreeing about what {@code /x/{id}} means.
+ * <p>Shared by both the respond-once and the streaming route tables, which carry different handler
+ * types and nothing else: keeping the placeholder rules in one type is what stops the two tables from
+ * drifting into disagreeing about what {@code /x/{id}} means.
  *
  * @param segments   ordered literal and placeholder segments
  * @param paramCount number of placeholder segments, sized once for the capture map
@@ -80,11 +79,9 @@ record PathTemplate(List<Segment> segments, int paramCount) {
     /**
      * Returns whether {@code path} matches this template.
      *
-     * <p>Walks the {@code '/'}-separated segments of {@code path} in place. It used to take the path
-     * pre-split into a {@code String[]}, which cost an array plus a {@code String} per segment on
-     * every request — and the router split twice, once for the stream table and once for its own
-     * template list. Nothing here needs those objects: a literal segment is a region comparison and a
-     * placeholder only needs its bounds.
+     * <p>Walks the {@code '/'}-separated segments of {@code path} in place rather than pre-splitting it
+     * into a {@code String[]}: a literal segment is a region comparison and a placeholder only needs
+     * its bounds, so no per-segment array or {@code String} is needed to decide a match.
      *
      * <p>Separate from {@link #capture} so a miss — the common case when a router walks its template
      * list — costs nothing at all. A hit walks the segments a second time, which is a handful of

@@ -33,6 +33,35 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
+/**
+ * Executes and tracks every {@link RuntimeFlowInstance} a {@link CoreFlowEngine} schedules — plan
+ * compilation lives in {@link CoreFlowPlanFactory}; this class owns submission, park, wake,
+ * compensation and terminal-state accounting.
+ *
+ * <p>Each launched instance runs its steps on its own bare virtual thread (see {@link #launch}),
+ * tracked in {@code runningThreads} so {@link #close()} can interrupt and join every one of them
+ * within a bounded per-thread deadline. A {@code lifecycleGeneration} counter distinguishes threads
+ * belonging to the current {@link #start()}/{@link #close()} cycle from stragglers left behind by a
+ * prior cycle that outlived that join — see {@link #isActiveLifecycle} and its callers.
+ *
+ * <p>The snapshot store, idempotency guard and time source are provider seams captured once in
+ * {@link #start()} from {@link KernelProviders} rather than read per call: a flow's virtual thread
+ * inherits no {@code ScopedValue} binding, so a read on that thread would silently resolve to a
+ * default instead of whatever the caller bound around {@code start()} (ADR-082).
+ *
+ * <p><b>Allocation:</b> allocates one virtual thread per launched flow instance, and one
+ * {@code StepPlan} record per step dispatch. Whether the JIT scalarizes that record away is not
+ * established here — no benchmark in this repository measures it.
+ * <p><b>Thread confinement:</b> any thread — {@link #schedule}, {@link #park} and {@link #wake} may
+ * be called from whichever thread submission or a choreography bridge runs on. A given instance's
+ * state transitions are serialized under that instance's own {@code monitor()}, never a
+ * runtime-wide lock.
+ * <p><b>Ownership:</b> one runtime belongs to the {@link CoreFlowEngine} that constructed it, which
+ * drives {@link #start()} and {@link #close()}. {@code close()} interrupts every virtual thread the
+ * runtime launched and then waits up to five seconds for each one; a thread still running when that
+ * budget expires is left behind rather than waited on, so {@code close()} returning is not proof
+ * that every flow has stopped.
+ */
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowRuntime { // NOPMD
 
@@ -90,6 +119,14 @@ final class CoreFlowRuntime { // NOPMD
         this.terminalStateCatalog = new TerminalStateCatalog(config.terminalCatalogMaxSize());
     }
 
+    /**
+     * Returns the {@link FlowScheduler} through which flows are submitted, parked and woken.
+     *
+     * @return the same {@link Scheduler} instance for the life of this runtime; never {@code null}
+     * @implNote Does not itself check that {@link #start()} has run — the calling
+     *           {@link CoreFlowEngine#scheduler()} performs that check before returning this value
+     *           to a caller.
+     */
     public FlowScheduler scheduler() {
         return scheduler;
     }
@@ -106,6 +143,23 @@ final class CoreFlowRuntime { // NOPMD
         parkedLookupMisses.clearAll();
     }
 
+    /**
+     * Reads the runtime's counters as one point-in-time snapshot.
+     *
+     * @return active, parked, completed and failed flow counts, compensations run and step
+     *         executions for the current lifecycle generation; never {@code null}
+     * @implNote {@code completedFlows}, {@code failedFlows}, {@code compensationsRun} and
+     *           {@code stepExecutions} are each {@code totalSinceForever -
+     *           baselineAtLifecycleTransition} (PERF-064): the underlying {@link LongAdder}s
+     *           accumulate for the process lifetime, and {@link #start()}/{@link #close()} snapshot
+     *           the baseline atomically instead of resetting the adder, which would race under
+     *           concurrent updates. {@code activeFlows} is read directly, since
+     *           {@link #resetLifecycleTotals} sets it to zero outright rather than baselining it.
+     *           {@code schedulerQueueDepth} is always reported as {@code 0} — this binding does not
+     *           surface the internal {@code queueDepth} counter here — and
+     *           {@code slabUtilizationPct} is always {@code -1}, matching the heap-only Community
+     *           tier {@link FlowEngineStats} documents that value for.
+     */
     public FlowEngineStats stats() {
         return new FlowEngineStats(
                 activeFlows.get(),
@@ -119,6 +173,20 @@ final class CoreFlowRuntime { // NOPMD
         );
     }
 
+    /**
+     * Opens this runtime for a new lifecycle generation: captures the snapshot store, idempotency
+     * guard and time source from {@link KernelProviders}, advances {@code lifecycleGeneration}, and
+     * resets the counters {@link #stats()} reports to zero.
+     *
+     * @throws FlowEngineException {@code EX-FLOW-7002} with {@code phase="START"} and
+     *         {@code reasonCode="STARTUP_FAILED"} if {@link FlowEngineConfig#persistenceEnabled()}
+     *         is {@code true} but no {@link FlowSnapshotStore} is bound to
+     *         {@link KernelProviders#flowSnapshotStore()}
+     * @implNote A no-op if already started and not yet closed. Reads every provider seam here rather
+     *           than at first use (ADR-082): each launched flow runs on a bare virtual thread, which
+     *           inherits no {@code ScopedValue} binding, so a seam read from inside a running flow
+     *           would silently resolve to a default instead of whatever was bound around this call.
+     */
     public void start() {
         if (started && !closed) {
             return;
@@ -146,6 +214,24 @@ final class CoreFlowRuntime { // NOPMD
         started = true;
     }
 
+    /**
+     * Interrupts every running flow's virtual thread and joins each within a bounded per-thread
+     * deadline, then clears the in-memory live, parked, terminal-state and lookup-miss indices.
+     *
+     * @implNote A no-op if already closed. Rebaselines {@code parkedFlows}, and sets
+     *           {@code activeFlows} and the internal {@code queueDepth} counter to zero outright, but
+     *           does <b>not</b> rebaseline {@code completedFlows}, {@code failedFlows},
+     *           {@code compensationsRun} or {@code stepExecutions} — those four remain at whatever
+     *           {@link #stats()} would have reported the instant before this call, and only reset
+     *           when {@link #start()} next runs {@link #resetLifecycleTotals}. Setting
+     *           {@code shutdownFinalized} before this method returns keeps any straggler thread that
+     *           outlives the join from changing these counters or the terminal-state catalog
+     *           afterward, but a terminal finalization (a late {@code FAILED_ROLLEDBACK}, or a
+     *           {@code COMPLETED} snapshot delete) is deliberately exempt and may still be persisted
+     *           through the {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore} after this
+     *           method returns — which is why {@link #nonDurableParkedFlows()} freezes its own count
+     *           as of this call rather than recomputing it afterward.
+     */
     public void close() {
         if (closed) {
             return;
@@ -187,6 +273,17 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    /**
+     * Confirms this runtime is started and not closed, for a caller — such as
+     * {@link CoreFlowEngine#scheduler()} — that must reject a call made outside that window.
+     *
+     * @throws FlowEngineException {@code EX-FLOW-7002} with {@code phase="START"} and
+     *         {@code reasonCode="STARTUP_FAILED"} if {@link #start()} has not run since
+     *         construction or the most recent {@link #close()}, or if {@link #close()} has run since
+     *         the most recent {@link #start()}
+     * @implNote Reuses {@code STARTUP_FAILED} for both cases above; the reason code does not
+     *           distinguish "never started" from "already closed".
+     */
     public void assertStarted() {
         ensureStarted();
     }
@@ -330,10 +427,10 @@ final class CoreFlowRuntime { // NOPMD
     /**
      * Key-addressed wake (SPI {@code FlowScheduler.wake(long, long)}).
      *
-     * <p>Resolves inside the engine, so a choreography bridge no longer probes first: the
-     * two-call form could not see a live instance on its way to PARK, and paid a second
-     * store read on a genuine miss. The fallback event that probe emitted still fires from
-     * the one store read that remains - see {@link #resolveParkedInstance}.
+     * <p>Resolves the instance — parked, still live and already {@code PARKED}, or recoverable from
+     * the durable store — through the single call to {@link #resolveParkedInstance}, so the fallback
+     * event a durable-store read emits is recorded exactly once per wake regardless of which branch
+     * resolves it.
      */
     private void wake(FlowKey key, FlowState requestedState) {
         parkedLookupMisses.clearMiss(key);
@@ -509,10 +606,10 @@ final class CoreFlowRuntime { // NOPMD
      * Applies the version guard to a caller-supplied plan (ADR-064 obligation 4).
      *
      * <p>{@code schedule()} resubmits against a plan the application already holds — plausibly the
-     * newest it compiled — for an instance that may be parked under an older one. Without this the
-     * guarantee held only on {@code wake()}: where the two versions happen to line up at the parked
-     * index, the saga resumes on the wrong definition exactly as it did before this epic, reached
-     * through a different entry point rather than fixed.
+     * newest it compiled — for an instance that may be parked under an older one. Without this
+     * guard, a caller-supplied plan whose version happens to place a valid step at the parked index
+     * would let the saga resume silently on the wrong definition version through {@code schedule()},
+     * even though {@code wake()}'s resume path already rejects the same mismatch.
      */
     private void validateSnapshotVersion(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
         if (persisted.state().isTerminal()) {

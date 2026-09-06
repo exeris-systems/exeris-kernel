@@ -38,8 +38,9 @@ public final class HpackDynamicTable {
     private long maxSize;
 
     /**
-     * Valhalla-Ready: Will be migrated to {@code value record} once JEP 401 is mainline.
-     * Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
+     * Valhalla-ready: a candidate for a {@code value record} once JEP 401 is mainline. Until
+     * then each instance is a heap object referenced from the {@code entries} array for as
+     * long as it remains in the table, so it does not escape-analyze away.
      */
     private record Entry(String name, String value) {
         /* package */ long byteSize() {
@@ -53,6 +54,7 @@ public final class HpackDynamicTable {
      * Creates a dynamic table with the given maximum size in bytes.
      *
      * @param maxTableSize maximum size in bytes (per SETTINGS_HEADER_TABLE_SIZE)
+     * @throws IllegalArgumentException if {@code maxTableSize} is negative
      */
     public HpackDynamicTable(long maxTableSize) {
         if (maxTableSize < MIN_TABLE_SIZE) {
@@ -108,8 +110,12 @@ public final class HpackDynamicTable {
     }
 
     /**
-     * Inserts a new entry at the beginning of the dynamic table.
-     * Evicts oldest entries as needed to satisfy the size constraint (§4.4).
+     * Inserts a new entry at the beginning of the dynamic table, evicting the oldest entries
+     * as needed to satisfy the size constraint (§4.4).
+     *
+     * <p>An entry whose own size is larger than the current {@link #maxSize()} is not stored:
+     * insertion empties the table instead, per §4.4's "not an error" clause for oversized
+     * entries.
      *
      * @param name  header field name
      * @param value header field value
@@ -141,6 +147,7 @@ public final class HpackDynamicTable {
      * Updates the maximum table size. Evicts entries as needed (§4.3).
      *
      * @param newMaxSize new maximum size in bytes
+     * @throws IllegalArgumentException if {@code newMaxSize} is negative
      */
     public void setMaxSize(long newMaxSize) {
         if (newMaxSize < MIN_TABLE_SIZE) {

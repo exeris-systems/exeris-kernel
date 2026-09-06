@@ -25,16 +25,40 @@ public final class EventBootstrap {
             "No EventProvider found on classpath. "
             + "Add exeris-kernel-community or exeris-kernel-enterprise to your dependencies.";
 
+    /**
+     * The provider selected off the classpath together with the engine it created.
+     *
+     * @param provider the highest-priority {@link EventProvider} found on the classpath
+     * @param engine   the {@link EventEngine} created by {@code provider}
+     */
     public record BootstrapResult(EventProvider provider, EventEngine engine) {
     }
 
     private EventBootstrap() {
     }
 
+    /**
+     * Selects the highest-priority {@link EventProvider} on the classpath and returns the
+     * {@link EventEngine} it creates.
+     *
+     * @param config the engine configuration passed to {@link EventProvider#createEngine}
+     * @return the engine created by the selected provider
+     * @throws EventProviderException ({@code EX-EVENT-6004}) if no {@link EventProvider} is
+     *         found on the classpath, or if the selected provider fails to create its engine
+     */
     public static EventEngine load(EventEngineConfig config) {
         return loadWithProvider(config).engine();
     }
 
+    /**
+     * Selects the highest-priority {@link EventProvider} on the classpath, creates its engine,
+     * and returns both for ScopedValue binding by the bootstrap layer.
+     *
+     * @param config the engine configuration passed to {@link EventProvider#createEngine}
+     * @return the selected provider paired with the engine it created
+     * @throws EventProviderException ({@code EX-EVENT-6004}) if no {@link EventProvider} is
+     *         found on the classpath, or if the selected provider fails to create its engine
+     */
     public static BootstrapResult loadWithProvider(EventEngineConfig config) {
         EventProvider provider = BootstrapProviderSelector.loadHighestPriority(
                         EventProvider.class,

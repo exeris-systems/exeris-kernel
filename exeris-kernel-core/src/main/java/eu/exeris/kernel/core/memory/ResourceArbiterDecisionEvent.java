@@ -28,12 +28,12 @@ import jdk.jfr.StackTrace;
  *   action         — String: ALLOW | THROTTLE | REJECT | SHED_LOAD
  *   contextName    — String: TRANSPORT_IO | KERNEL_LOGIC
  *   utilizationPct — int:   memory utilization percentage [0..100]
- *   decisionNs     — long:  VarHandle CAS decision cache timestamp (nanos)
+ *   decisionNs     — long:  nanosecond timestamp of this decision ({@code System.nanoTime()})
  * </pre>
  *
+ * @since 0.5
  * @see ResourceArbiter
  * @see ResourceArbiter.Action
- * @since 0.5
  */
 @Name("eu.exeris.kernel.core.ResourceArbiterDecision")
 @Label("Resource Arbiter Decision")

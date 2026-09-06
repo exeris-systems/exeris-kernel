@@ -36,6 +36,13 @@ final class GraphMetadataDiscoveryEvent extends Event {
     @Description("Total number of classes scanned")
     /* default */ int scannedCount;
 
+    /**
+     * Emits the metadata-discovery event if JFR recording is active; a no-op otherwise.
+     *
+     * @param descriptorType  {@code "NODE"} or {@code "EDGE"} — which discovery pass ran
+     * @param discoveredCount number of annotated classes that produced a descriptor
+     * @param scannedCount    total number of candidate classes scanned
+     */
     /* default */ static void emit(String descriptorType, int discoveredCount, int scannedCount) {
         if (!FlightRecorder.isInitialized()) {
             return;

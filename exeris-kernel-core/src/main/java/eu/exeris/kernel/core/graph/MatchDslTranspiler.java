@@ -56,7 +56,8 @@ public final class MatchDslTranspiler {
     private final GraphDialect dialect;
 
     /**
-     * Constructs the transpiler bound to the given dialect.
+     * Binds this transpiler to a single {@link GraphDialect}; every transpile call below
+     * delegates the actual query-string construction to it.
      *
      * @param dialect active graph dialect for the current engine (must not be {@code null})
      */
@@ -93,6 +94,7 @@ public final class MatchDslTranspiler {
      * @param edge     edge type to traverse (must not be {@code null})
      * @param maxDepth maximum path depth (≥ 1)
      * @return dialect-specific shortest-path query; never {@code null}
+     * @throws IllegalArgumentException if {@code maxDepth} is less than 1
      */
     public String transpileShortestPath(GraphEdgeDescriptor edge, int maxDepth) {
         Objects.requireNonNull(edge, "edge must not be null");

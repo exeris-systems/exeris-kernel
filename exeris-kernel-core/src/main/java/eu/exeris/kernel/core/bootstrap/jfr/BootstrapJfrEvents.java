@@ -16,6 +16,18 @@ import jdk.jfr.StackTrace;
 
 import java.util.Set;
 
+/**
+ * Container for the kernel bootstrap lifecycle's {@code jdk.jfr.Event} subclasses and their
+ * emission helpers.
+ *
+ * <p>Most nested events fire from {@link eu.exeris.kernel.core.bootstrap.SubsystemOrchestrator}
+ * during a single boot or shutdown pass. Two exceptions: {@link ConfigSettingsResolvedEvent}
+ * fires earlier, from {@link eu.exeris.kernel.core.bootstrap.KernelBootstrap}, and
+ * {@link SubsystemHealthTransitionEvent} fires later, from
+ * {@link eu.exeris.kernel.core.bootstrap.health.KernelHealthMonitor} on a post-boot
+ * {@code RUNNING}/{@code DEGRADED} flip. This class holds no state of its own beyond grouping the
+ * events under one JFR category and is never instantiated.
+ */
 // UseExplicitTypes: 'var' is used for JFR event locals; explicit type would duplicate
 // the inner class name on the same line, harming readability with zero type-safety gain.
 @SuppressWarnings("PMD.UseExplicitTypes")
@@ -38,26 +50,35 @@ public final class BootstrapJfrEvents {
     @StackTrace(false)
     public static final class SubsystemInitializedEvent extends Event {
 
+        /** Unique identifier of the subsystem that completed {@code initialize()}, e.g. {@code "memory"}. */
         @Label("Subsystem Name")
         @Description("Unique subsystem identifier (e.g., 'memory', 'persistence')")
         public String subsystemName;
 
+        /** Wall-clock duration of the {@code initialize()} call, in milliseconds. */
         @Label("Duration (ms)")
         @Description("Wall-clock time for initialize() in milliseconds")
         public long durationMs;
 
+        /** Kernel profile ({@code dev}/{@code test}/{@code prod}) active while the subsystem initialized. */
         @Label("Profile")
         @Description("Active kernel profile (dev/test/prod)")
         public KernelProfile profile;
 
+        /**
+         * Name of the bootstrap phase the subsystem belongs to: {@code FOUNDATION}, {@code SERVICES},
+         * or {@code RUNTIME}.
+         */
         @Label("Phase")
         @Description("Bootstrap phase: FOUNDATION, SERVICES, or RUNTIME")
         public String phase;
 
+        /** {@code true} when {@code initialize()} returned normally; {@code false} when it threw. */
         @Label("Success")
         @Description("Whether initialize() completed without exception")
         public boolean success;
 
+        /** The thrown exception's message when {@link #success} is {@code false}; the empty string otherwise. */
         @Label("Error Message")
         @Description("Exception message if success=false, empty otherwise")
         public String errorMessage = "";
@@ -76,12 +97,18 @@ public final class BootstrapJfrEvents {
     @StackTrace(false)
     public static final class SubsystemStartedEvent extends Event {
 
+        /** Unique identifier of the subsystem that completed {@code start()}, e.g. {@code "memory"}. */
         @Label("Subsystem Name")
         public String subsystemName;
 
+        /** Wall-clock duration of the {@code start()} call, in milliseconds. */
         @Label("Duration (ms)")
         public long durationMs;
 
+        /**
+         * Name of the bootstrap phase the subsystem belongs to: {@code FOUNDATION}, {@code SERVICES},
+         * or {@code RUNTIME}.
+         */
         @Label("Phase")
         @Description("Bootstrap phase: FOUNDATION, SERVICES, or RUNTIME")
         public String phase;
@@ -100,9 +127,11 @@ public final class BootstrapJfrEvents {
     @StackTrace(false)
     public static final class SubsystemStoppedEvent extends Event {
 
+        /** Unique identifier of the subsystem that completed {@code stop()}, e.g. {@code "memory"}. */
         @Label("Subsystem Name")
         public String subsystemName;
 
+        /** Wall-clock duration of the {@code stop()} call, in milliseconds. */
         @Label("Duration (ms)")
         public long durationMs;
     }
@@ -123,12 +152,15 @@ public final class BootstrapJfrEvents {
     @StackTrace(false)
     public static final class SubsystemHealthTransitionEvent extends Event {
 
+        /** Identifier of the subsystem whose health state changed. */
         @Label("Subsystem Name")
         public String subsystemName;
 
+        /** {@code SubsystemState} name the subsystem transitioned from, e.g. {@code "RUNNING"}. */
         @Label("From State")
         public String fromState;
 
+        /** {@code SubsystemState} name the subsystem transitioned to, e.g. {@code "DEGRADED"}. */
         @Label("To State")
         public String toState;
     }
@@ -149,18 +181,23 @@ public final class BootstrapJfrEvents {
     @StackTrace(false)
     public static final class KernelBootReadyEvent extends Event {
 
+        /** Wall-clock duration from boot start to every subsystem reaching {@code RUNNING}, in milliseconds. */
         @Label("Total Duration (ms)")
         public long totalDurationMs;
 
+        /** Number of subsystems that reached {@code RUNNING} in this boot. */
         @Label("Subsystem Count")
         public int subsystemCount;
 
+        /** Kernel profile ({@code dev}/{@code test}/{@code prod}) this boot resolved to. */
         @Label("Profile")
         public KernelProfile profile;
 
+        /** Node identifier from the {@code exeris.node.id} system property, or {@code "local"} when unset. */
         @Label("Node ID")
         public String nodeId;
 
+        /** String form of the bootstrap selector that chose this boot's subsystem set. */
         @Label("Selector")
         public String selector;
     }
@@ -178,9 +215,15 @@ public final class BootstrapJfrEvents {
     @StackTrace(false)
     public static final class KernelShutdownCompleteEvent extends Event {
 
+        /** Wall-clock duration from shutdown start to every subsystem being stopped, in milliseconds. */
         @Label("Total Duration (ms)")
         public long totalDurationMs;
 
+        /**
+         * Total number of subsystems the orchestrator tracked at shutdown, in reverse boot order.
+         * Includes subsystems that were not running (skipped) and any whose {@code stop()} call
+         * threw — a thrown {@code stop()} is logged and swallowed, not subtracted from this count.
+         */
         @Label("Subsystem Count")
         @Description("Number of subsystems that were stopped")
         public int subsystemCount;
@@ -202,15 +245,22 @@ public final class BootstrapJfrEvents {
     @StackTrace(false)
     public static final class ConfigSettingsResolvedEvent extends Event {
 
+        /** {@code ConfigProvider.providerName()} of the {@code ConfigProvider} the ServiceLoader selected. */
         @Label("Provider Name")
         public String providerName;
 
+        /** Resolved kernel profile as a string, e.g. {@code "prod"}. */
         @Label("Profile")
         public String profile;
 
+        /**
+         * Wall-clock time from resolving the provider to the lazy {@code kernelSettings()}
+         * completing, in milliseconds.
+         */
         @Label("Duration (ms)")
         public long durationMs;
 
+        /** Where config was loaded from. Always {@code "serviceloader"} at the current single call site. */
         @Label("Source")
         @Description("Where config was loaded from: 'env', 'file', 'classpath'")
         public String source;
@@ -232,10 +282,15 @@ public final class BootstrapJfrEvents {
     @StackTrace(true) // stack trace IS useful here — this is a fatal defect
     public static final class CircularDependencyDetectedEvent extends Event {
 
+        /** Comma-and-space-joined subsystem names forming the dependency cycle, in cycle order. */
         @Label("Cycle Members")
         @Description("Comma-separated list of subsystem names forming the cycle")
         public String cycleMembers;
 
+        /**
+         * The {@code EX-BOOT-*} code identifying this fatal defect; currently always
+         * {@link SubsystemCircularDependencyException#ERROR_CODE}.
+         */
         @Label("Error Code")
         public String errorCode = SubsystemCircularDependencyException.ERROR_CODE;
     }
@@ -423,6 +478,14 @@ public final class BootstrapJfrEvents {
         event.commit();
     }
 
+    /**
+     * Begins timing {@code event} and returns it, or returns {@code null} when Flight Recorder is
+     * not initialized or the event type is disabled.
+     *
+     * @param event the newly constructed event to begin timing
+     * @param <E>   the JFR event type
+     * @return {@code event} after {@link Event#begin()}, or {@code null} when recording is inactive
+     */
     public static <E extends Event> E beginIfEnabled(E event) {
         return BootstrapJfrEventSupport.beginIfEnabled(event);
     }

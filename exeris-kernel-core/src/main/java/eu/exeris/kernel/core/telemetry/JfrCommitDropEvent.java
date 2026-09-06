@@ -41,6 +41,11 @@ public final class JfrCommitDropEvent extends Event {
      * Records a single drop. Constructed and committed inline here — the drop path is cold and
      * runs on the producer thread, but it is rare; the committer's own steady-state commits run
      * on the platform thread.
+     *
+     * @param committer    identifier for the committer whose ring dropped the event (the
+     *                     {@link JfrEventCommitter} consumer thread name)
+     * @param droppedCount running total of events dropped by that committer since construction
+     * @param capacity     configured ring capacity of that committer, in events
      */
     public static void emit(String committer, long droppedCount, int capacity) {
         if (!FlightRecorder.isInitialized()) {

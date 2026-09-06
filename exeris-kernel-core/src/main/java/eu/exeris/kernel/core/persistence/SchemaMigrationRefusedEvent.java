@@ -82,6 +82,8 @@ public final class SchemaMigrationRefusedEvent extends Event {
      * package this one does allocate when JFR is inactive — one record, once, on a path that is
      * about to end the boot. Trading that for a call site where two checksums cannot be silently
      * transposed is the right way round.
+     *
+     * @param payload the refusal's four fields, allocated by the caller; see {@link Payload}
      */
     public static void commitRefusal(Payload payload) {
         if (!FlightRecorder.isInitialized()) {
