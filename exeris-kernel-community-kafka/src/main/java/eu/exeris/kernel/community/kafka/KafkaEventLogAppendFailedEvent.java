@@ -56,6 +56,16 @@ public final class KafkaEventLogAppendFailedEvent extends Event {
     /* default */ String failureClass;
 
     /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public KafkaEventLogAppendFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits this event with the given fields when JFR recording is enabled; a no-op otherwise.
      *
      * @param engineName human-readable engine name from {@code EventEngineConfig.engineName()}

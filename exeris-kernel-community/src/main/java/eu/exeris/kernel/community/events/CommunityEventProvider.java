@@ -44,6 +44,16 @@ public final class CommunityEventProvider implements EventProvider {
                     CommunityJsonMappers.forScope(JsonMapperScope.EVENTS))));
 
     /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link EventProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.events.EventProvider}.
+     */
+    public CommunityEventProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns this provider's fixed human-readable name.
      *
      * @return the constant {@code "ExerisCommunity/Events"}

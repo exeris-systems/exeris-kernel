@@ -23,6 +23,16 @@ import java.util.List;
 public final class CommunitySubsystemProvider implements SubsystemProvider {
 
     /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community-tier {@link SubsystemProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.bootstrap.SubsystemProvider}.
+     */
+    public CommunitySubsystemProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns every subsystem the Community tier registers with the orchestrator.
      *
      * @param config the resolved kernel configuration; unused — the Community subsystem set is

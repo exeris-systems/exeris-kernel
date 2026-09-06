@@ -71,6 +71,16 @@ public final class RouteExecutionEvent extends Event {
     public long handlerDurationNs;
 
     /**
+     * Constructed by {@link #emitLongRunning} once {@link #EVENT_TYPE} is confirmed enabled — and,
+     * reflectively, by the JFR runtime when this event type is registered — with every field left
+     * unset until {@code emitLongRunning} assigns them and commits.
+     */
+    public RouteExecutionEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits the completion of a {@code LONG_RUNNING} route.
      *
      * @param method            the request method name

@@ -36,6 +36,16 @@ public final class CommunityTextResponseBodyDecoder implements HttpResponseBodyD
 
     private static final long EMPTY_SIZE = 0L;
 
+    /**
+     * Built directly by any caller assembling a decoder registry that must resolve
+     * {@code String.class} to raw bytes instead of a JSON-object decoder — most notably the JWKS
+     * fetch registry described above — and by tests exercising this decoder in isolation.
+     */
+    public CommunityTextResponseBodyDecoder() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public boolean supports(Class<?> targetType, String contentType) {
         return targetType == String.class;

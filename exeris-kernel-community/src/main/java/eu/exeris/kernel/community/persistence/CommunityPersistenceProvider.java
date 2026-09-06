@@ -40,6 +40,16 @@ public final class CommunityPersistenceProvider implements PersistenceProvider {
     private static final String PROVIDER_NAME = "ExerisCommunity/JDBC+HikariCP";
     private static final CommunityRawJsonbCodec RAW_JSONB_CODEC = new CommunityRawJsonbCodec();
 
+    /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link PersistenceProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.persistence.PersistenceProvider}.
+     */
+    public CommunityPersistenceProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public String providerId() {
         return CommunityPersistenceConstants.PROVIDER_ID;

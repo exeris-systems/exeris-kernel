@@ -22,6 +22,16 @@ public final class CommunityKernelDiagnosticsProvider implements KernelDiagnosti
     private static final String PROVIDER_NAME = "ExerisCommunity/KernelDiagnostics";
 
     /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link KernelDiagnosticsProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.diagnostics.KernelDiagnosticsProvider}.
+     */
+    public CommunityKernelDiagnosticsProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns a new {@link CommunityKernelDiagnostics} bound to the current in-process kernel
      * state.
      *

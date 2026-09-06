@@ -51,6 +51,16 @@ public final class KafkaEventProvider implements EventProvider {
     private static final String CFG_LINGER_MS          = "events.kafka.producer-linger-ms";
     private static final String CFG_POLL_TIMEOUT_MS    = "events.kafka.consumer-poll-timeout-ms";
 
+    /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link EventProvider}; not meant to be
+     * constructed directly.
+     */
+    public KafkaEventProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public String providerName() {
         return PROVIDER_NAME;
