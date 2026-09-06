@@ -20,22 +20,21 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * Core: Stateless utility that reads the ALPN protocol string negotiated by OpenSSL
  * via {@code SSL_get0_alpn_selected} and decodes it to a Java {@link String}.
  *
- * <h2>Extraction Rationale</h2>
- * <p>This logic was extracted from {@link OffHeapTlsEngine} to
- * reduce the parent class's {@code CyclomaticComplexity} and {@code TooManyMethods}
- * PMD scores. The reader is stateless — it carries no lifecycle and allocates only
- * the single {@link LoanedBuffer} scratch slot supplied by the caller.
+ * <h2>Design</h2>
+ * <p>Kept separate from {@link OffHeapTlsEngine}, which is its only caller. The reader
+ * is stateless — it carries no lifecycle and allocates only the single
+ * {@link LoanedBuffer} scratch slot supplied by the caller.
  *
  * <h2>Zero-Allocation Contract</h2>
- * <p>The 12-byte scratch buffer is allocated from the provided {@link MemoryAllocator}
- * (backed by an off-heap ScopedValue slab) and released before this method returns.
- * The only heap allocation on this path is the final {@link String} result — which is
- * cached by the caller for the engine's lifetime, so it occurs at most once per session.
+ * <p>The 12-byte scratch buffer is allocated from the caller-supplied {@link MemoryAllocator}
+ * (backed by an off-heap ScopedValue slab) and released before {@link #read} returns.
+ * The only heap allocation on this path is the returned {@link String} — {@link OffHeapTlsEngine}
+ * caches it for the session's lifetime, so decoding happens at most once per session.
  *
  * <h2>RFC 7301 §3.1</h2>
  * <p>ALPN protocol names are 1–255 bytes of UTF-8. A {@code data} pointer of zero or
- * a length outside {@code [1, 255]} means no ALPN was negotiated; the method returns
- * an empty string in that case.
+ * a length outside {@code [1, 255]} means no ALPN was negotiated; {@link #read} then
+ * returns an empty string.
  *
  * @since 0.5
  */

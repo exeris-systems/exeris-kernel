@@ -14,20 +14,24 @@ import java.util.List;
  * Core: Ordered registry of {@link ConnectionInterceptor} instances.
  *
  * <h2>Responsibility (The Brain)</h2>
- * <p>This class is the single authoritative source of which interceptors run on
- * every connection checkout. It is populated during kernel bootstrap by the operator
- * code (or the TCK harness) and then passed to {@link PersistenceBootstrap#load}
- * which forwards each interceptor to the engine via
- * {@link PersistenceEngine#registerInterceptor}.
+ * <p>An optional ordering-and-sealing helper for the interceptor list a bootstrap assembles
+ * for {@link PersistenceBootstrap#load}, which forwards each interceptor to the engine via
+ * {@link PersistenceEngine#registerInterceptor}. Using it is not required — a bootstrap MAY
+ * build the {@code List<ConnectionInterceptor>} directly instead, as the Community subsystem
+ * does; this class earns its place for a bootstrap that composes interceptors from more than
+ * one source and needs a fixed registration order plus a guarantee that nothing more is added
+ * once the engine goes live.
  *
  * <h2>Typical Registrations</h2>
- * <ul>
- *   <li>{@code RlsConnectionInterceptor} — {@code SET LOCAL exeris.tenant_id = ?}
- *       (Row-Level Security, SHARED strategy)</li>
- *   <li>{@code SchemaConnectionInterceptor} — {@code SET search_path TO [schema]}
- *       (SEPARATED_SCHEMA strategy)</li>
- *   <li>{@code AuditConnectionInterceptor} — sets audit user for DB-side triggers</li>
- * </ul>
+ * <p>The reference Community interceptor is a single {@code RlsConnectionInterceptor} that
+ * covers all three isolation strategies and, on every one of them, publishes the session keys
+ * PostgreSQL RLS policies read via a parameterised {@code set_config} statement: SHARED issues
+ * only that statement; SEPARATED_SCHEMA additionally issues {@code SET search_path TO [schema]}
+ * first; DEDICATED issues no routing SQL — its pool selection is handled by the engine — but
+ * still publishes the session keys, since a strategy whose own isolation does not depend on a
+ * given key still hands the next request on that connection whatever the previous one
+ * published. Nothing here requires one interceptor per strategy, and nothing prevents an
+ * operator from registering several — they run in the order {@link #seal()} captured them.
  *
  * <h2>Thread Safety</h2>
  * <p>Registration is not thread-safe — do it once during bootstrap, before the engine
@@ -49,8 +53,9 @@ public final class InterceptorRegistry {
      * Registers a new interceptor at the end of the chain.
      *
      * @param interceptor interceptor to add; must not be {@code null}
-     * @throws IllegalStateException if the registry is already sealed
-     *                               (i.e., engine is live)
+     * @throws IllegalStateException if the registry is already sealed by an earlier
+     *                               call to {@link #seal()}
+     * @throws IllegalArgumentException if {@code interceptor} is {@code null}
      */
     public void register(ConnectionInterceptor interceptor) {
         if (sealed != null) {
@@ -66,12 +71,14 @@ public final class InterceptorRegistry {
     /**
      * Returns an immutable snapshot of the registered interceptors.
      *
-     * <p>Seals the registry — no further registrations are allowed after this call.
-     * Each call returns a fresh defensive copy of the sealed snapshot so that the
-     * caller cannot obtain a reference to the internal field.
+     * <p>Seals the registry on the first call — no further registrations are allowed
+     * after that. Every call, including calls after the first, returns an unmodifiable
+     * list backed by {@link List#copyOf}; because that list is already immutable,
+     * later calls may return the same instance as an earlier one, but the returned
+     * list can never be used to add, remove or reorder this registry's interceptors.
      * Intended for bootstrap use only — not a hot-path operation.
      *
-     * @return ordered, immutable defensive copy of the interceptor list
+     * @return ordered, immutable list of the registered interceptors
      */
     public List<ConnectionInterceptor> seal() {
         if (sealed == null) {
@@ -80,12 +87,22 @@ public final class InterceptorRegistry {
         return List.copyOf(sealed);
     }
 
-    /** Returns the number of registered interceptors. */
+    /**
+     * Returns the number of registered interceptors.
+     *
+     * @return the count of interceptors in the sealed snapshot if {@link #seal()} has been
+     *         called, otherwise the count registered so far
+     */
     public int size() {
         return sealed != null ? sealed.size() : mutable.size();
     }
 
-    /** {@code true} if the registry has been sealed by a {@link #seal()} call. */
+    /**
+     * Reports whether this registry has been sealed.
+     *
+     * @return {@code true} if {@link #seal()} has been called at least once, meaning further
+     *         {@link #register} calls will fail
+     */
     public boolean isSealed() {
         return sealed != null;
     }

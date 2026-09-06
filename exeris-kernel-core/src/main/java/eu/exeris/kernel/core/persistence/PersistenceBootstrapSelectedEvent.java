@@ -16,9 +16,10 @@ import jdk.jfr.StackTrace;
  * JFR event emitted by {@link PersistenceBootstrap} when a provider is selected.
  *
  * <h2>JFR-First Contract</h2>
- * <p>The bootstrapper MUST emit this event so that JFR recordings contain a clear
- * record of which provider (Community/Enterprise) was activated and at what priority.
- * SRE tooling uses this to confirm Enterprise was chosen over Community in production.
+ * <p>{@link PersistenceBootstrap} emits this once per successful engine bootstrap — after the
+ * engine is created and every interceptor has registered without error — so a JFR recording
+ * carries a record of which provider (Community or Enterprise) was activated and at what
+ * priority; SRE tooling reads it to confirm Enterprise was chosen over Community in production.
  *
  * @since 0.5
  */
@@ -46,7 +47,7 @@ final class PersistenceBootstrapSelectedEvent extends Event {
     /* default */ int interceptorCount;
 
     /**
-     * Emits the bootstrap selected event.
+     * Emits the bootstrap-selected event if JFR recording is active; a no-op otherwise.
      *
      * @param providerClass    FQN of the selected {@link eu.exeris.kernel.spi.persistence.PersistenceProvider}
      * @param priority         provider priority

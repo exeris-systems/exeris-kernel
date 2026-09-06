@@ -42,9 +42,9 @@ import java.lang.invoke.VarHandle;
  * {@code io_uring} ring buffers is entirely absent from this class. It reads only
  * the {@link MemoryStats} contract.
  *
+ * @since 0.5
  * @see WatermarkLevel
  * @see ResourceArbiter
- * @since 0.5
  */
 public final class WatermarkManager {
 
@@ -53,9 +53,10 @@ public final class WatermarkManager {
     private static final VarHandle LAST_TOTAL_BYTES;
 
     /**
-     * Sentinel value for {@link eu.exeris.kernel.spi.memory.MemoryStats#totalBytes()} indicating
-     * that the allocator operates without a fixed off-heap budget (e.g., Community tier).
-     * Matches the {@code -1} sentinel defined in {@link eu.exeris.kernel.spi.memory.MemoryStats}.
+     * Threshold at or below which {@link eu.exeris.kernel.spi.memory.MemoryStats#totalBytes()}
+     * is treated as "no fixed off-heap budget" (e.g., Community tier). The {@code <=} comparison
+     * in {@link #currentUtilizationPct()} also covers the {@code -1} "unknown" sentinel defined
+     * by {@link eu.exeris.kernel.spi.memory.MemoryStats}.
      */
     private static final long NO_BUDGET_SENTINEL = 0L;
 
@@ -84,10 +85,11 @@ public final class WatermarkManager {
 
     /**
      * Last sampled allocation stats — written by {@link #refresh()}, read by
-     * {@link #currentUtilizationPct()}. VarHandle setRelease/getAcquire semantics
-     * ensure the two fields are always observed in a consistent state on the same
-     * thread that called {@link #refresh()}, and are visible to ResourceArbiter
-     * after a cache-miss read of {@link #currentLevel()}.
+     * {@link #currentUtilizationPct()}. Each field is written independently via VarHandle
+     * {@code setRelease} and read via {@code getAcquire}; a reader racing a concurrent
+     * {@link #refresh()} call may observe the two fields from different refresh cycles,
+     * but {@link #currentUtilizationPct()} clamps the resulting ratio to {@code [0, 100]}
+     * regardless.
      */
     /* default */ volatile long lastAllocatedBytes;
     /* default */ volatile long lastTotalBytes;
@@ -98,6 +100,7 @@ public final class WatermarkManager {
      * Creates a new {@link WatermarkManager} monitoring the given allocator.
      *
      * @param allocator the allocator whose {@link MemoryStats} will be sampled; must not be {@code null}
+     * @throws IllegalArgumentException if {@code allocator} is {@code null}
      */
     public WatermarkManager(MemoryAllocator allocator) {
         if (allocator == null) {
@@ -146,12 +149,12 @@ public final class WatermarkManager {
      * Samples the allocator's {@link MemoryStats} and updates the cached
      * {@link WatermarkLevel} atomically.
      *
-     * <p>Called by the kernel background maintenance Virtual Thread — typically every
-     * 10 seconds. NOT called from any carrier thread or io_uring event loop.
+     * <p>Called by the kernel's {@link MemoryMaintenanceTask} background Virtual Thread —
+     * every 5 seconds by default, though the interval is configurable. NOT called from any
+     * carrier thread or io_uring event loop.
      *
-     * <h2>JFR Event</h2>
-     * <p>A {@link MemoryPressureEvent} is emitted only when the level actually changes.
-     * Repeated calls at the same level are silent.
+     * <p><b>JFR Event:</b> a {@link MemoryPressureEvent} is emitted only when the level
+     * actually changes. Repeated calls at the same level are silent.
      *
      * @return the newly computed level (may equal the previous level)
      */
@@ -186,6 +189,7 @@ public final class WatermarkManager {
      * to allow deterministic scenario testing of {@link ResourceArbiter} reactions.
      *
      * @param level the level to force; must not be {@code null}
+     * @throws IllegalArgumentException if {@code level} is {@code null}
      */
     /* default */ void forceLevel(WatermarkLevel level) {
         if (level == null) {

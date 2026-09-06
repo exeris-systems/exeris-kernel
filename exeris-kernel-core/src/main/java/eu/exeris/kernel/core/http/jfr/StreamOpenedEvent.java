@@ -13,8 +13,8 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR lifecycle event emitted when a server-push (SSE) stream is opened and its response head
- * has been written (ADR-043 obligation 8).
+ * JFR lifecycle event emitted from {@code HttpStreamEngine.open(...)} when a server-push (SSE)
+ * stream is opened and its response head has been written (ADR-043 obligation 8).
  *
  * <p>Single-phase commit ({@code @StackTrace(false)}): construct, set, commit with no blocking
  * operation in between — safe to emit from the stream's virtual thread (no carrier-bound
@@ -29,9 +29,18 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 public final class StreamOpenedEvent extends Event {
 
+    /**
+     * Identifies the transport stream that opened; the same value {@code TransportStream.streamId()}
+     * returns for that stream.
+     */
     @Label("Stream ID")
     public long streamId;
 
+    /**
+     * {@code true} when the stream was opened with an auth-expiry deadline greater than zero and is
+     * therefore subject to fail-closed enforcement on JWT expiry; {@code false} when no such deadline
+     * was configured for the stream (ADR-043 obligation 6).
+     */
     @Label("Has Auth Deadline")
     @Description("True when the stream carries a JWT-expiry fail-closed deadline (ADR-043 obligation 6).")
     public boolean hasAuthDeadline;

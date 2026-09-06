@@ -57,7 +57,8 @@ public final class StorageBootstrap {
      * @param providerId the configured provider id; must name a discovered driver
      * @param config     the store configuration
      * @return the provider and its store
-     * @throws BlobStorageException if no driver is present, or none matches {@code providerId}
+     * @throws BlobStorageException ({@code EX-BLOB-8007}) if no driver is present, or
+     *                               ({@code EX-BLOB-8008}) if none matches {@code providerId}
      */
     public static BootstrapResult loadWithProvider(String providerId, BlobStorageConfig config) {
         Objects.requireNonNull(providerId, "providerId must not be null");
@@ -88,7 +89,8 @@ public final class StorageBootstrap {
      * @param discovered the providers on the classpath
      * @param providerId the configured id
      * @return the matching provider; never {@code null}
-     * @throws BlobStorageException if {@code discovered} is empty, or no element matches
+     * @throws BlobStorageException ({@code EX-BLOB-8007}) if {@code discovered} is empty, or
+     *                               ({@code EX-BLOB-8008}) if no element matches
      */
     public static BlobStorageProvider select(List<BlobStorageProvider> discovered, String providerId) {
         Objects.requireNonNull(discovered, "discovered must not be null");

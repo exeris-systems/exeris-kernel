@@ -17,7 +17,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * restart clears the entry for the key it touches. FIFO eviction past
  * {@value #MAX_ENTRIES} bounds the memory this can hold under an unbounded stream of unknown keys.
  *
- * <p>Extracted from {@code CoreFlowRuntime} unchanged, behaviour for behaviour.
+ * @apiNote Every method is safe to call from any thread; a single internal lock serializes the
+ *          miss set and its FIFO eviction order.
  */
 final class ParkedLookupMissCache {
 
@@ -27,12 +28,24 @@ final class ParkedLookupMissCache {
     private final Deque<FlowKey> order = new ArrayDeque<>();
     private final Object lock = new Object();
 
+    /**
+     * Returns whether {@code key} is currently recorded as a miss.
+     *
+     * @param key the lookup key to check
+     * @return {@code true} if {@code key} was recorded by {@link #recordMiss} and not since cleared
+     */
     /* default */ boolean hasMiss(FlowKey key) {
         synchronized (lock) {
             return misses.contains(key);
         }
     }
 
+    /**
+     * Records {@code key} as a miss, evicting the oldest recorded miss first if this pushes the
+     * cache past {@value #MAX_ENTRIES} entries.
+     *
+     * @param key the lookup key that missed the durable store
+     */
     /* default */ void recordMiss(FlowKey key) {
         synchronized (lock) {
             if (misses.add(key)) {
@@ -42,6 +55,11 @@ final class ParkedLookupMissCache {
         }
     }
 
+    /**
+     * Removes any recorded miss for {@code key}; a no-op if none is recorded.
+     *
+     * @param key the lookup key whose entry, if any, should be cleared
+     */
     /* default */ void clearMiss(FlowKey key) {
         synchronized (lock) {
             if (misses.remove(key)) {
@@ -53,6 +71,7 @@ final class ParkedLookupMissCache {
         }
     }
 
+    /** Discards every recorded miss. */
     /* default */ void clearAll() {
         synchronized (lock) {
             misses.clear();

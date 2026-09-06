@@ -50,8 +50,10 @@ import jdk.jfr.StackTrace;
  * via {@link JfrCommitGate}. Neither half is sufficient alone.
  *
  * <h2>Hot-Path Guard</h2>
- * <p>{@link #commitHold} guards on {@link FlightRecorder#isInitialized()} and
- * {@link Event#isEnabled()} before allocating, so an inactive recording costs no heap.
+ * <p>{@link #commitHold} returns immediately, with zero heap allocation, when
+ * {@link FlightRecorder#isInitialized()} is {@code false}. Once the recorder is
+ * initialised it constructs the event before checking {@link Event#isEnabled()}, so a
+ * disabled event type still costs one short-lived, field-empty allocation.
  * {@link StackTrace @StackTrace(false)} keeps the release path off the stack-walker.
  *
  * @since 0.12
@@ -104,7 +106,9 @@ public final class ConnectionHoldEvent extends Event {
      *
      * <p>Both allocation and commit happen here, so nothing is held across the hold itself —
      * see the virtual-thread safety note in the class Javadoc. Returns with zero heap allocation
-     * if JFR recording is inactive.
+     * whenever {@link FlightRecorder#isInitialized()} is {@code false}; see the class Javadoc's
+     * Hot-Path Guard note for the allocation cost once the recorder is initialised but this
+     * event type is disabled.
      *
      * @param providerId              stable provider identifier
      * @param tenantKey               tenant isolation key, or {@code "shared"}

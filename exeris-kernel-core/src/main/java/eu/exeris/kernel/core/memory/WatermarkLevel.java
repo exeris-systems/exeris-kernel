@@ -10,13 +10,13 @@ package eu.exeris.kernel.core.memory;
  *
  * <h2>Level Semantics</h2>
  * <pre>
- *   NORMAL   ─ utilization < WARNING threshold (default: 70%)
+ *   NORMAL   ─ utilization &lt; WARNING threshold (default: 70%)
  *              Action: ALLOW all traffic.
  *
- *   WARNING  ─ utilization >= 70%, < CRITICAL threshold (default: 85%)
- *              Action: THROTTLE non-critical work; proactive refill if applicable.
+ *   WARNING  ─ utilization >= 70%, &lt; CRITICAL threshold (default: 85%)
+ *              Action: THROTTLE non-critical work.
  *
- *   CRITICAL ─ utilization >= 85%, < SHEDDING threshold (default: 95%)
+ *   CRITICAL ─ utilization >= 85%, &lt; SHEDDING threshold (default: 95%)
  *              Action: REJECT new non-essential requests; preserve in-flight work.
  *
  *   SHEDDING ─ utilization >= 95%
@@ -26,15 +26,16 @@ package eu.exeris.kernel.core.memory;
  * <h2>Valhalla Readiness (JEP 401)</h2>
  * <p>This enum is a JVM singleton per constant — zero heap allocation on comparison,
  * no identity overhead. The threshold fields are {@code final double} primitives,
- * enabling C2 JIT constant-folding in branch predicates on the hot decision path.
+ * read directly by the branch predicates on the hot decision path with no boxing
+ * or indirection.
  *
  * <h2>Performance Contract</h2>
  * <p>All threshold comparisons are O(1) double comparisons — no string parsing,
  * no map lookups, no allocation. This is safe for the hot ResourceArbiter path.
  *
+ * @since 0.5
  * @see WatermarkManager
  * @see ResourceArbiter
- * @since 0.5
  */
 public enum WatermarkLevel {
 
@@ -105,9 +106,9 @@ public enum WatermarkLevel {
     /**
      * Resolves the {@link WatermarkLevel} for a given utilization ratio.
      *
-     * <p>O(1) — iterates at most 4 constants. The JIT will typically inline and
-     * constant-fold this into a chain of two double comparisons after profile-guided
-     * optimisation (NORMAL is the expected hot branch).
+     * <p>O(1) — at most three double comparisons, against the {@code WARNING},
+     * {@code CRITICAL} and {@code SHEDDING} lower bounds in turn; {@code NORMAL} is
+     * the expected hot branch, matched by the first comparison.
      *
      * @param utilization ratio in [0.0, 1.0]; values > 1.0 map to {@code SHEDDING}
      * @return the matching watermark level; never {@code null}

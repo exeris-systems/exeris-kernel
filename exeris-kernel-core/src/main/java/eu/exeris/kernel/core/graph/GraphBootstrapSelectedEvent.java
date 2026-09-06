@@ -45,6 +45,15 @@ final class GraphBootstrapSelectedEvent extends Event {
     @Description("Human-readable engine name from GraphEngine.engineName()")
     /* default */ String engineName;
 
+    /**
+     * Emits the bootstrap-selected event if JFR recording is active; a no-op otherwise.
+     *
+     * @param providerClass FQN of the selected {@link eu.exeris.kernel.spi.graph.GraphProvider}
+     * @param priority      {@code ServiceLoader} priority of the selected provider
+     * @param providerId    stable identifier reported by the selected provider
+     * @param engineName    human-readable name of the {@link eu.exeris.kernel.spi.graph.GraphEngine}
+     *                      the provider created
+     */
     /* default */ static void emit(String providerClass, int priority,
                                    String providerId, String engineName) {
         GraphBootstrapSelectedEvent event = BootstrapJfrEvents.beginIfEnabled(

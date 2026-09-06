@@ -104,6 +104,8 @@ public final class HpackEncoder {
      * @param pos     byte offset
      * @param newSize new maximum table size
      * @return new byte position
+     * @throws IllegalArgumentException if {@code newSize} is negative or greater than
+     *                                  {@code 2^32-1}
      */
     public long encodeSizeUpdate(MemorySegment output, long pos, long newSize) {
         if (newSize < MIN_DYNAMIC_TABLE_SIZE) {

@@ -18,8 +18,8 @@ import java.util.Map;
  *
  * <p>Its own type because it is its own table. Folding it back into {@link HttpRouter} would put two
  * independent resolution strategies in one class and, more to the point, would hide that the streaming
- * table has exactly the precedence rules the respond-once one does — which is the property that stopped
- * being true when this table was a bare {@code Map} and templated stream routes silently never matched.
+ * table must keep exactly the precedence rules the respond-once one has — an exact route wins over a
+ * template — rather than the two tables silently drifting apart.
  *
  * @since 0.11
  */

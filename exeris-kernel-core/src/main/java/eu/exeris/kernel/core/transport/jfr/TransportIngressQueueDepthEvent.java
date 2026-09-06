@@ -13,12 +13,15 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when TLS ingress queue depth crosses monitoring thresholds.
+ * JFR event emitted by {@code NativeTcpStream.offerIngress(LoanedBuffer)} when a stream's
+ * inbound queue depth is at or above a monitoring threshold — for plaintext and TLS ingress
+ * alike, since both feed the same per-stream inbound queue.
  *
  * <h2>Memory Tracking</h2>
- * <p>Monitors per-stream ingress buffer queue to detect accumulation patterns.
- * Emitted at thresholds: 100, 500, 1000 retained buffers.
- * Peak depth should remain ≤200 under normal load.
+ * <p>Level-triggered, not edge-triggered: this fires on every {@code offerIngress} call while
+ * the depth stays at or above the lowest threshold (100), not only on the call that first
+ * crosses one. Exactly one event fires per call, at the highest of the three thresholds (100,
+ * 500, 1000 retained buffers) the current depth has reached.
  *
  * @since 0.5
  */
@@ -29,26 +32,41 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 public final class TransportIngressQueueDepthEvent extends Event {
 
-    /** Stream ID being monitored. */
+    /** SPI stream identifier of the stream whose ingress queue this event reports on. */
     @Label("Stream ID")
     public long streamId;
 
-    /** Current queue depth (number of retained buffers). */
+    /**
+     * Number of buffers already retained in the stream's inbound queue at the moment this
+     * buffer is offered — the backlog ahead of the current buffer, not the depth including it.
+     */
     @Label("Queue Depth")
     public int queueDepth;
 
-    /** Threshold that triggered this event (100, 500, 1000, etc.). */
+    /**
+     * The exact threshold value that was met to trigger this event: 100, 500 or 1000 retained
+     * buffers ({@code QUEUE_DEPTH_THRESHOLD_LOW}/{@code MID}/{@code HIGH} in the Community
+     * carrier). Never any other value.
+     */
     @Label("Threshold")
     public int threshold;
 
-    /** Whether queue depth is trending up or down. */
+    /**
+     * Literal {@code "up"} when this stream's queue depth is greater than or equal to its
+     * previous recorded depth, {@code "down"} otherwise; no other value is produced.
+     */
     @Label("Trend")
     public String trend;
 
     /**
-     * Emit an ingress queue depth event.
+     * Emits an ingress queue depth event.
      *
      * <p>Guards on {@link FlightRecorder#isInitialized()} to avoid allocation when JFR is off.
+     *
+     * @param streamId   the SPI stream identifier of the stream being monitored
+     * @param queueDepth the backlog depth observed before this call's buffer is reserved
+     * @param threshold  the threshold value that was met (100, 500 or 1000)
+     * @param trend      {@code "up"} or {@code "down"}, per the field's contract
      */
     public static void emit(long streamId, int queueDepth, int threshold, String trend) {
         if (!FlightRecorder.isInitialized()) {

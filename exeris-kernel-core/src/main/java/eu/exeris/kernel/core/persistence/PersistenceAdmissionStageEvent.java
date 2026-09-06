@@ -28,10 +28,21 @@ public final class PersistenceAdmissionStageEvent {
     private PersistenceAdmissionStageEvent() {
     }
 
+    /**
+     * Reports whether this event's JFR event type is currently enabled.
+     *
+     * @return {@code true} if an active recording would accept this event; {@code false} if
+     *         {@link #emit} would return immediately without allocating a payload-backed event
+     */
     public static boolean isEnabled() {
         return EVENT_TYPE.isEnabled();
     }
 
+    /**
+     * Records a persistence admission stage event.
+     *
+     * @param payload immutable stage snapshot for the admission request-path stage
+     */
     public static void emit(Payload payload) {
         if (!EVENT_TYPE.isEnabled()) {
             return;
@@ -49,6 +60,17 @@ public final class PersistenceAdmissionStageEvent {
         }
     }
 
+    /**
+     * Immutable payload for a single persistence admission stage event.
+     *
+     * @param providerId     stable identifier of the provider tier, e.g. {@code "postgres-community"}
+     * @param stage          request-path stage name, one of {@code "queue_enter"}, {@code "queue_wait"}
+     *                       or {@code "persistence_admission"}
+     * @param queueDepth     depth of pending connection requests at this stage
+     * @param queueWaitP95Ms P95 queue wait, in milliseconds, over the recent fairness window
+     * @param accepted       {@code true} if the request was admitted at this stage; {@code false} if rejected
+     * @param decisionReason deterministic reason code for this stage's decision
+     */
     public record Payload(String providerId,
                           String stage,
                           int queueDepth,

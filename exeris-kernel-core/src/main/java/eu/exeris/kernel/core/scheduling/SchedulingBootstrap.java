@@ -42,7 +42,7 @@ public final class SchedulingBootstrap {
      *
      * @param config scheduler configuration
      * @return the provider and its scheduler
-     * @throws JobSchedulerException if no provider is on the classpath
+     * @throws JobSchedulerException ({@code EX-JOB-9004}) if no provider is on the classpath
      */
     public static BootstrapResult loadWithProvider(JobSchedulerConfig config) {
         Objects.requireNonNull(config, "config must not be null");

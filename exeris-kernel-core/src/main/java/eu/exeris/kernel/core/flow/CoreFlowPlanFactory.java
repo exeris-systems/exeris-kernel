@@ -22,6 +22,22 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
+/**
+ * Compiles {@link FlowDefinition}s, assembled via the {@link Builder} returned from
+ * {@link #newDefinition}, into {@link CoreFlowExecutionPlan}s.
+ *
+ * <p>{@link #compile} derives, for each step, the full adjacency of outgoing transitions and a
+ * single precomputed next-step index: the unconditional ({@code "default"}-tagged) transition if
+ * the step declares one, otherwise the first declared transition, otherwise {@code stepIndex + 1}
+ * when the step declares none at all. {@link CoreFlowRuntime} advances a running instance through
+ * that precomputed index rather than re-scanning the adjacency on every step. A successful
+ * compilation also replaces the shared {@link CoreFlowRegistry}'s step and transition descriptors,
+ * and discards the pending edges {@link Builder#build()} recorded for the compiled
+ * {@code (name, version)} key.
+ *
+ * <p>{@link #registerMigration} delegates admission to the separate {@link CoreMigrationRegistry} —
+ * see that type's comment for why plan compilation and migration admission are kept apart.
+ */
 // compile() and compile helpers are individually simple; aggregate is inflated by Builder inner class
 @SuppressWarnings("PMD.CyclomaticComplexity")
 final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
@@ -62,6 +78,20 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         return new Builder(definitionName);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException {@code EX-FLOW-7002} with
+     *         {@code phase="COMPILE"} and {@code reasonCode="COMPILE_FAILED"} if {@code definition}
+     *         is {@code null}, names no steps, exceeds {@link FlowEngineConfig#maxSteps()} or
+     *         {@link FlowEngineConfig#maxTransitions()}, declares a transition to or from an
+     *         out-of-range step index, declares more than one unconditional outgoing transition for
+     *         a step, or would exceed {@link FlowEngineConfig#maxExecutionPlans()} distinct
+     *         {@code (name, version)} entries in the plan catalog
+     * @implNote The bound check against {@code maxExecutionPlans} and the catalog insert share one
+     *           {@code synchronized(planCatalog)} block, so two threads compiling different versions
+     *           of the same definition at the ceiling cannot both observe room and both land.
+     */
     @Override
     @SuppressWarnings("PMD.ExceptionAsFlowControl") // wrapping SPI validation at the compile boundary
     public FlowExecutionPlan compile(FlowDefinition definition) {
@@ -182,6 +212,15 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
         return nextSteps;
     }
 
+    /**
+     * Heap-backed {@link FlowDefinitionBuilder}: accumulates steps and transitions in plain
+     * {@link ArrayList}s and hands the transitions to the enclosing {@link CoreFlowPlanFactory} on
+     * {@link #build()}, keyed by {@code (name, version)} so {@link #compile} can find them.
+     *
+     * <p><b>Thread confinement:</b> owner thread — matches {@link FlowDefinitionBuilder}'s own
+     * contract; the accumulating lists are unsynchronized.
+     * <p><b>Ownership:</b> a caller-held builder confined to one definition; nothing is released.
+     */
     private final class Builder implements FlowDefinitionBuilder {
 
         private final String definitionName;
@@ -195,6 +234,13 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
             this.definitionName = Objects.requireNonNull(definitionName, "definitionName");
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @implNote Checks the duplicate-name rule immediately, with a linear scan of the steps
+         *           added so far, and throws {@link IllegalArgumentException} directly from this
+         *           call rather than deferring the check to {@link #build()} or {@link #compile}.
+         */
         @Override
         public FlowDefinitionBuilder step(String name, FlowStepAction action, FlowStepAction compensation) {
             Objects.requireNonNull(name, "step name must not be null");
@@ -208,34 +254,67 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
             return this;
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @implNote Records the transition without checking that {@code fromStep} or {@code toStep}
+         *           names a step added so far; out-of-range indices surface later, when
+         *           {@link #compile} validates the accumulated transitions against the definition's
+         *           final step count.
+         */
         @Override
         public FlowDefinitionBuilder transition(int fromStep, int toStep) {
             transitions.add(FlowTransitionDescriptor.unconditional(fromStep, toStep));
             return this;
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @implNote Same deferred bounds checking as {@link #transition(int, int)}.
+         */
         @Override
         public FlowDefinitionBuilder transition(int fromStep, int toStep, String conditionTag) {
             transitions.add(new FlowTransitionDescriptor(fromStep, toStep, conditionTag));
             return this;
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @implNote Stores {@code durationNanos} without checking it is positive; a non-positive
+         *           value surfaces only when {@link #build()} constructs the {@link FlowDefinition},
+         *           whose compact constructor enforces the bound.
+         */
         @Override
         public FlowDefinitionBuilder timeoutDuration(long durationNanos) {
             timeoutDurationNanos = durationNanos;
             return this;
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @implNote Stores {@code maxRetries} without checking it is non-negative; a negative value
+         *           surfaces only when {@link #build()} constructs the {@link FlowDefinition}, whose
+         *           compact constructor enforces the bound.
+         */
         @Override
         public FlowDefinitionBuilder maxRetries(int maxRetries) {
             this.maxRetries = maxRetries;
             return this;
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @implNote Unlike {@link #timeoutDuration(long)} and {@link #maxRetries(int)}, checks the
+         *           bound immediately rather than deferring to {@link #build()}: a caller that passes
+         *           a sub-initial version finds out at the call that named it, not three chained
+         *           methods later.
+         */
         @Override
         public FlowDefinitionBuilder version(int version) {
-            // Validated here rather than at build(): a caller that passes 0 finds out at the call
-            // site that named the version, not three chained methods later.
             if (version < FlowDefinition.INITIAL_VERSION) {
                 throw new IllegalArgumentException(
                         "flow definition version must be >= " + FlowDefinition.INITIAL_VERSION
@@ -245,6 +324,14 @@ final class CoreFlowPlanFactory implements FlowExecutionPlanFactory {
             return this;
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @implNote Also records this definition's accumulated transitions into the enclosing
+         *           factory's {@code transitionsByDefinition} map, keyed by {@code (name, version)},
+         *           so a later {@link #compile} call for the same key can find them; {@link #compile}
+         *           removes the entry once it has consumed it.
+         */
         @Override
         public FlowDefinition build() {
             FlowDefinition definition = new FlowDefinition(

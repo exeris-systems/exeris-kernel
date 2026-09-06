@@ -60,6 +60,17 @@ final class FlowDefinitionMigratedEvent extends Event {
         + " versions are being retired faster than parked sagas drain")
     /* default */ int hops;
 
+    /**
+     * Emits a {@code DefinitionMigrated} event recording one migration hop, or does nothing if
+     * the event type is disabled.
+     *
+     * @param engineName       the emitting engine's name
+     * @param definitionName   the migrated saga's flow definition name
+     * @param instanceIdMost   most-significant 64 bits of the flow instance UUID
+     * @param instanceIdLeast  least-significant 64 bits of the flow instance UUID
+     * @param fromVersion      the definition version the saga parked under
+     * @param toVersion        the definition version the saga resumes on
+     */
     /* default */ static void emit(
             String engineName,
             String definitionName,

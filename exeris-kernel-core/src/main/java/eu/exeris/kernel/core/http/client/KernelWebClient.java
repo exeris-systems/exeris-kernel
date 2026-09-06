@@ -126,6 +126,9 @@ public final class KernelWebClient {
      * @param responseDecoders registry of inbound body decoders
      * @param enricher         outbound request enricher (use {@link HttpClientRequestEnricher#noop()} for none)
      * @param retryPolicy      client-side retry policy (use {@link HttpRetryPolicy#none()} for no retry)
+     * @throws NullPointerException if {@code engine}, {@code allocator}, {@code requestEncoders},
+     *                               {@code responseDecoders}, {@code enricher}, or
+     *                               {@code retryPolicy} is {@code null}
      */
     public KernelWebClient(
             HttpClientEngine engine,
@@ -165,6 +168,8 @@ public final class KernelWebClient {
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
      * @param enricher         outbound request enricher (use {@link HttpClientRequestEnricher#noop()} for none)
+     * @throws NullPointerException if {@code engine}, {@code allocator}, {@code requestEncoders},
+     *                               {@code responseDecoders}, or {@code enricher} is {@code null}
      */
     public KernelWebClient(
             HttpClientEngine engine,
@@ -186,6 +191,8 @@ public final class KernelWebClient {
      * @param allocator        the kernel memory allocator
      * @param requestEncoders  registry of outbound body encoders
      * @param responseDecoders registry of inbound body decoders
+     * @throws NullPointerException if {@code engine}, {@code allocator}, {@code requestEncoders},
+     *                               or {@code responseDecoders} is {@code null}
      */
     public KernelWebClient(
             HttpClientEngine engine,
@@ -233,7 +240,8 @@ public final class KernelWebClient {
      * @param path         request-target path, relative to the addressed peer (see {@link #withAuthority(String)})
      * @param responseType target type, or {@code Void.class} to discard
      * @return the deserialised payload, or {@code null} when {@code responseType == Void.class}
-     * @throws WebClientException on any non-2xx response
+     * @throws NullPointerException if {@code path} or {@code responseType} is {@code null}
+     * @throws WebClientException   on any non-2xx response
      */
     public <T> T get(String path, Class<T> responseType) {
         return execute(HttpMethod.GET, path, null, responseType);
@@ -264,7 +272,8 @@ public final class KernelWebClient {
      * @param path        request-target path, relative to the addressed peer (see {@link #withAuthority(String)})
      * @param elementType the array's component type; must not be null
      * @return the decoded elements; never {@code null}, possibly empty
-     * @throws WebClientException on any non-2xx response, or when the body does not decode
+     * @throws NullPointerException if {@code path} or {@code elementType} is {@code null}
+     * @throws WebClientException   on any non-2xx response, or when the body does not decode
      * @since 0.12
      */
     public <T> List<T> getList(String path, Class<T> elementType) {
@@ -296,7 +305,9 @@ public final class KernelWebClient {
      * @param body         request payload (encoded via the request encoder registry); must not be null
      * @param responseType target type, or {@code Void.class} to discard
      * @return the deserialised payload, or {@code null} when {@code responseType == Void.class}
-     * @throws WebClientException on any non-2xx response or codec failure
+     * @throws NullPointerException if {@code body}, {@code path}, or {@code responseType} is
+     *                               {@code null}
+     * @throws WebClientException   on any non-2xx response or codec failure
      */
     public <T> T post(String path, Object body, Class<T> responseType) {
         Objects.requireNonNull(body, "body must not be null for POST");
@@ -304,8 +315,18 @@ public final class KernelWebClient {
     }
 
     /**
-     * Issues an HTTP {@code PATCH} with a typed body. Same contract as
+     * Issues an HTTP {@code PATCH} with a typed body and deserialises the
+     * response body as {@code responseType}. Same contract as
      * {@link #post(String, Object, Class)} otherwise.
+     *
+     * @param <T>          response payload type
+     * @param path         request-target path
+     * @param body         request payload (encoded via the request encoder registry); must not be null
+     * @param responseType target type, or {@code Void.class} to discard
+     * @return the deserialised payload, or {@code null} when {@code responseType == Void.class}
+     * @throws NullPointerException if {@code body}, {@code path}, or {@code responseType} is
+     *                               {@code null}
+     * @throws WebClientException   on any non-2xx response or codec failure
      */
     public <T> T patch(String path, Object body, Class<T> responseType) {
         Objects.requireNonNull(body, "body must not be null for PATCH");
@@ -316,8 +337,12 @@ public final class KernelWebClient {
      * Issues an HTTP {@code DELETE} against {@code path}. Most callers pass
      * {@code Void.class} as {@code responseType} to discard any response body.
      *
+     * @param <T>          response payload type
+     * @param path         request-target path
+     * @param responseType target type, or {@code Void.class} to discard
      * @return the deserialised payload, or {@code null} when {@code responseType == Void.class}
-     * @throws WebClientException on any non-2xx response
+     * @throws NullPointerException if {@code path} or {@code responseType} is {@code null}
+     * @throws WebClientException   on any non-2xx response
      */
     public <T> T delete(String path, Class<T> responseType) {
         return execute(HttpMethod.DELETE, path, null, responseType);
@@ -534,7 +559,10 @@ public final class KernelWebClient {
 
         private static final long serialVersionUID = 1L;
 
+        /** Backing field for {@link #status()}. */
         private final int status;
+
+        /** Backing field for {@link #responseBody()}. */
         private final String responseBody;
 
         /* default */ WebClientException(int status, String responseBody, String message, Throwable cause) {
@@ -543,17 +571,29 @@ public final class KernelWebClient {
             this.responseBody = responseBody == null ? "" : responseBody;
         }
 
-        /** Wire status code at the time of the failure; {@code 0} if no response was received. */
+        /**
+         * Wire status code at the time of the failure; {@code 0} if no response was received.
+         *
+         * @return the HTTP status code, or {@code 0} for a transport-level failure
+         */
         public int status() {
             return status;
         }
 
-        /** Raw response body decoded as UTF-8, or empty string when unavailable. */
+        /**
+         * Raw response body decoded as UTF-8, or empty string when unavailable.
+         *
+         * @return the raw response body, or an empty string when none was available
+         */
         public String responseBody() {
             return responseBody;
         }
 
-        /** {@code true} when {@link #status()} equals 404 — the canonical "not found" predicate. */
+        /**
+         * {@code true} when {@link #status()} equals 404 — the canonical "not found" predicate.
+         *
+         * @return {@code true} if this failure carries a 404 status
+         */
         public boolean isNotFound() {
             return status == HTTP_NOT_FOUND;
         }

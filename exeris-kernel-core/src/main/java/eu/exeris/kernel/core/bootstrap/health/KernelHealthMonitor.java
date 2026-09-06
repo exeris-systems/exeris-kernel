@@ -47,12 +47,27 @@ public final class KernelHealthMonitor implements HealthProbe {
         kernelFailed.set(false);
     }
 
-    /** Registers a subsystem tracked by this monitor. */
+    /**
+     * Registers a subsystem tracked by this monitor, at state {@link SubsystemState#REGISTERED}.
+     * A name already registered is left untouched.
+     *
+     * @param name                 subsystem name
+     * @param requiredForReadiness whether this subsystem must be {@link SubsystemState#RUNNING}
+     *                             for {@link #readiness()} to report ready
+     */
     public void registerSubsystem(String name, boolean requiredForReadiness) {
         Objects.requireNonNull(name, "name");
         subsystems.putIfAbsent(name, new SubsystemHealth(requiredForReadiness, SubsystemState.REGISTERED));
     }
 
+    /**
+     * Latches a kernel-level lifecycle flag for {@code state}: {@code INITIALIZED} is read by
+     * {@link #liveness()}; {@code STARTED} and {@code SHUTTING_DOWN} are read by
+     * {@link #readiness()}; {@code FAILED} is read by both. A flag is cleared only by
+     * {@link #reset()}.
+     *
+     * @param state the kernel lifecycle transition to record
+     */
     public void markKernelState(KernelState state) {
         Objects.requireNonNull(state, "state");
         switch (state) {
@@ -63,6 +78,16 @@ public final class KernelHealthMonitor implements HealthProbe {
         }
     }
 
+    /**
+     * Records a subsystem's lifecycle state transition. Silently does nothing if {@code name}
+     * was never registered via {@link #registerSubsystem(String, boolean)}. A transition into or
+     * out of {@link SubsystemState#DEGRADED} also emits a JFR health-transition event, since a
+     * post-boot flip has no dedicated boot-lifecycle event of its own.
+     *
+     * @param name     subsystem name
+     * @param newState the state to record
+     * @see <a href="../../../../../../../docs/adr/ADR-005-jfr-first-telemetry-strategy.md">ADR-005</a>
+     */
     public void markSubsystemState(String name, SubsystemState newState) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(newState, "newState");
@@ -81,7 +106,13 @@ public final class KernelHealthMonitor implements HealthProbe {
         }
     }
 
-    /** Current tracked state of a subsystem, or {@code null} if it is not registered. */
+    /**
+     * Looks up the current tracked state of a subsystem.
+     *
+     * @param name subsystem name
+     * @return the subsystem's current state, or {@code null} if {@code name} was never
+     *         registered via {@link #registerSubsystem(String, boolean)}
+     */
     public SubsystemState stateOf(String name) {
         Objects.requireNonNull(name, "name");
         SubsystemHealth health = subsystems.get(name);
@@ -140,23 +171,37 @@ public final class KernelHealthMonitor implements HealthProbe {
         return new ProbeSnapshot(STATUS_STARTING, false);
     }
 
+    /** Kernel-level lifecycle transitions tracked by {@link #markKernelState(KernelState)}. */
     public enum KernelState {
+        /** The kernel's subsystem initialize phase has completed. */
         INITIALIZED,
+        /** The kernel's subsystem start phase has completed. */
         STARTED,
+        /**
+         * Shutdown has begun; {@link #readiness()} reports {@code STARTING} while this holds,
+         * unless the kernel has also failed.
+         */
         SHUTTING_DOWN,
+        /** A mandatory subsystem failed; {@link #readiness()} and {@link #liveness()} both report down. */
         FAILED
     }
 
     private record SubsystemHealth(boolean requiredForReadiness, SubsystemState state) {
     }
 
+    /** Per-subsystem lifecycle states tracked by {@link #markSubsystemState(String, SubsystemState)}. */
     public enum SubsystemState {
+        /** Known to this monitor via {@link #registerSubsystem(String, boolean)}, not yet initialized. */
         REGISTERED,
+        /** The subsystem's {@code initialize()} has completed. */
         INITIALIZED,
+        /** The subsystem's {@code start()} has completed and it is currently running. */
         RUNNING,
         /** Live but impaired (e.g. a dependency failed after boot); reversible back to RUNNING. */
         DEGRADED,
+        /** The subsystem failed during {@code initialize()} or {@code start()}. */
         FAILED,
+        /** The subsystem's {@code stop()} has completed. */
         STOPPED
     }
 }

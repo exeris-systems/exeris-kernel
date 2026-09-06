@@ -31,6 +31,10 @@ final class MemoryMaintenanceEvents {
     // Cycle event
     // =========================================================================
 
+    /**
+     * JFR event emitted after each maintenance cycle in which
+     * {@link eu.exeris.kernel.spi.memory.MemoryAllocator#performMaintenance()} ran.
+     */
     @Name("eu.exeris.kernel.core.MemoryMaintenanceCycle")
     @Label("Memory Maintenance Cycle")
     @Category({"Exeris Kernel", "Memory"})
@@ -50,6 +54,14 @@ final class MemoryMaintenanceEvents {
         @Label("Total Budget Bytes")
         /* default */ long totalBytes;
 
+        /**
+         * Emits a maintenance-cycle event.
+         *
+         * @param level          the watermark level at the time of this cycle
+         * @param durationUs     wall-clock duration of the cycle, in microseconds
+         * @param allocatedBytes bytes currently allocated, as reported by the allocator
+         * @param totalBytes     total off-heap budget, as reported by the allocator
+         */
         /* default */
         static void emit(WatermarkLevel level, long durationUs,
                          long allocatedBytes, long totalBytes) {
@@ -71,6 +83,10 @@ final class MemoryMaintenanceEvents {
     // Failure event
     // =========================================================================
 
+    /**
+     * JFR event emitted when a maintenance task throws an exception that must not
+     * propagate out of the maintenance loop.
+     */
     @Name("eu.exeris.kernel.core.MemoryMaintenanceFailure")
     @Label("Memory Maintenance Failure")
     @Category({"Exeris Kernel", "Memory"})
@@ -84,6 +100,11 @@ final class MemoryMaintenanceEvents {
         @Label("Exception Message")
         /* default */ String exceptionMessage;
 
+        /**
+         * Emits a maintenance-failure event.
+         *
+         * @param runtimeEx the exception thrown by the maintenance task
+         */
         /* default */
         static void emit(RuntimeException runtimeEx) {
             if (!FlightRecorder.isInitialized()) {

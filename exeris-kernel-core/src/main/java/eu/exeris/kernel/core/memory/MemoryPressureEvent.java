@@ -21,7 +21,9 @@ import jdk.jfr.StackTrace;
  * pressure transitions observable. It is zero-cost when JFR recording is not active.
  * {@code @StackTrace(false)} removes per-event stack-capture overhead from the hot path.
  *
- * <h2>rawArgs Binary Layout (Glass-Box Telemetry)</h2>
+ * <h2>Event Field Layout</h2>
+ * <p>This is a {@code jdk.jfr.Event} with typed fields, not an
+ * {@code ExerisKernelException} — it carries no {@code rawArgs} array.
  * <pre>
  *   allocatedBytes  — long: bytes currently in use
  *   totalBytes      — long: total off-heap budget
@@ -30,9 +32,9 @@ import jdk.jfr.StackTrace;
  *   toLevel         — String: new WatermarkLevel name
  * </pre>
  *
+ * @since 0.5
  * @see WatermarkManager
  * @see WatermarkLevel
- * @since 0.5
  */
 @Name("eu.exeris.kernel.core.MemoryPressure")
 @Label("Memory Pressure Transition")

@@ -20,7 +20,7 @@ import java.util.Objects;
  *
  * <h2>Responsibility (The Brain)</h2>
  * <p>This class is the <b>only</b> place in the kernel that calls
- * {@link ServiceLoader#load(Class)} for {@link PersistenceProvider}.
+ * {@link java.util.ServiceLoader#load(Class)} for {@link PersistenceProvider}.
  * It selects the highest-priority provider, creates the engine, registers
  * pre-built interceptors, and emits provider-selection telemetry.
  * The resulting {@link PersistenceEngine} is returned to the caller ready
@@ -38,11 +38,11 @@ import java.util.Objects;
  * <h2>ScopedValue Binding</h2>
  * <p>The caller (typically {@code KernelBootstrap}) wraps its subsystem startup
  * code in:
- * <pre>{@code
+ * {@snippet lang="java" :
  * ScopedValue
  *     .where(KernelProviders.PERSISTENCE_ENGINE, engine)
  *     .run(kernel::startSubsystems);
- * }</pre>
+ * }
  * {@code PersistenceBootstrap.load()} returns the {@link PersistenceEngine} ready
  * for that binding — it does not bind it directly (that is {@code KernelBootstrap}'s job).
  *
@@ -63,7 +63,7 @@ public final class PersistenceBootstrap {
     }
 
     /**
-     * Loads the best available {@link PersistenceProvider} via {@link ServiceLoader},
+     * Loads the best available {@link PersistenceProvider} via {@link java.util.ServiceLoader},
      * then delegates to {@link #load(PersistenceProvider, PersistenceConfig, List)}.
      *
      * <p>Use this overload when the caller does not hold a pre-resolved provider.
@@ -74,7 +74,9 @@ public final class PersistenceBootstrap {
      * @param interceptors ordered list of interceptors to register; must not be {@code null} (may be empty)
      * @return a fully initialised {@link PersistenceEngine}
      * @throws NullPointerException      if {@code config} or {@code interceptors} is {@code null}
-     * @throws PersistenceProviderException with code {@code EX-PERS-5007} if no provider is available
+     * @throws PersistenceProviderException with code {@code EX-PERS-5007} if no provider is
+     *         available, or with code {@code EX-PERS-5001} if RLS is enabled in {@code config}
+     *         and {@code interceptors} is empty
      */
     public static PersistenceEngine load(PersistenceConfig config,
                                          List<ConnectionInterceptor> interceptors) {
@@ -96,13 +98,19 @@ public final class PersistenceBootstrap {
      *
      * <p>Prefer this overload when the caller has already performed provider selection
      * (e.g. a subsystem that also needs to bind the provider into {@link eu.exeris.kernel.spi.context.KernelProviders})
-     * so that the {@link ServiceLoader} scan happens exactly once per kernel lifecycle.
+     * so that the {@link java.util.ServiceLoader} scan happens exactly once per kernel lifecycle.
      *
      * @param provider     pre-resolved provider; must not be {@code null}
      * @param config       immutable persistence configuration; must not be {@code null}
      * @param interceptors ordered list of interceptors to register; must not be {@code null} (may be empty)
      * @return a fully initialised {@link PersistenceEngine}
      * @throws NullPointerException if any argument is {@code null}
+     * @throws PersistenceProviderException with code {@code EX-PERS-5001} if RLS is enabled in
+     *         {@code config} and {@code interceptors} is empty
+     * @implNote If interceptor registration or telemetry emission throws after the engine is
+     *           created, this method closes the engine before propagating the exception; a
+     *           failure from that close is attached to the original exception via
+     *           {@link Throwable#addSuppressed}.
      */
     public static PersistenceEngine load(PersistenceProvider provider,
                                          PersistenceConfig config,
@@ -143,10 +151,14 @@ public final class PersistenceBootstrap {
     }
 
     /**
-     * Convenience overload — no interceptors.
+     * Loads the best available {@link PersistenceProvider} with no interceptors registered.
      *
-     * @param config immutable persistence configuration
+     * @param config immutable persistence configuration; must not be {@code null}
      * @return a fully initialised {@link PersistenceEngine}
+     * @throws NullPointerException if {@code config} is {@code null}
+     * @throws PersistenceProviderException with code {@code EX-PERS-5007} if no provider is
+     *         available, or with code {@code EX-PERS-5001} if RLS is enabled in {@code config}
+     *         (RLS requires at least one interceptor, and this overload registers none)
      */
     public static PersistenceEngine load(PersistenceConfig config) {
         return load(config, List.of());

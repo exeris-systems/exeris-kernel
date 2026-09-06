@@ -9,6 +9,9 @@ import java.lang.foreign.ValueLayout;
 
 /**
  * Minimal UTF-8 helpers for HPACK hot paths without temporary {@code byte[]} allocation.
+ *
+ * <p>Neither method validates {@code target} capacity itself; an undersized destination
+ * segment surfaces as the bounds check {@link MemorySegment#set} already performs.
  */
 final class HpackUtf8 {
 
@@ -19,6 +22,13 @@ final class HpackUtf8 {
     private HpackUtf8() {
     }
 
+    /**
+     * Computes the UTF-8 encoded byte length of {@code str} without allocating an
+     * intermediate byte array.
+     *
+     * @param str string to measure
+     * @return the number of bytes {@code str} occupies when encoded as UTF-8
+     */
     /* package */ static int byteLength(String str) {
         int count = 0;
         final int len = str.length();
@@ -39,6 +49,14 @@ final class HpackUtf8 {
         return count;
     }
 
+    /**
+     * Encodes {@code str} as UTF-8 directly into {@code target}, starting at {@code offset}.
+     *
+     * @param str    string to encode
+     * @param target destination segment
+     * @param offset byte offset in {@code target} to start writing at; exactly
+     *               {@link #byteLength(String)} bytes are written from this position
+     */
     /* package */ static void writeToSegment(String str, MemorySegment target, long offset) {
         long cursor = offset;
         final int len = str.length();

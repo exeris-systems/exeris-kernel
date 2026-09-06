@@ -16,8 +16,11 @@ import jdk.jfr.StackTrace;
  * JFR event emitted when a per-tenant connection pool is created.
  *
  * <h2>Memory Tracking</h2>
- * <p>Used to correlate per-tenant pool proliferation with memory growth.
- * Peak concurrent tenant pool count should remain ≤3 under typical load.
+ * <p>Used to correlate per-tenant pool proliferation with memory growth. The number of
+ * concurrent per-tenant pools is bounded by {@code PersistenceConfig#maxTenantPools()}; a
+ * creation rate that keeps climbing toward that ceiling without matching
+ * {@link PersistenceTenantPoolReclaimedEvent} activity is the proliferation this event exists
+ * to surface.
  *
  * @since 0.5
  */
@@ -52,10 +55,16 @@ public final class PersistenceTenantPoolCreatedEvent extends Event {
     public int currentPoolCount;
 
     /**
-     * Emit a tenant pool creation event.
+     * Commits a tenant-pool-created event, or does nothing if the event type is disabled.
      *
      * <p>Guards on {@link EventType#isEnabled()} to avoid
      * allocation when JFR is off.
+     *
+     * @param providerId       stable provider identifier, e.g. {@code "postgres-community"}
+     * @param tenantKey        tenant key or schema name used as the pool identifier
+     * @param maxConnections   maximum connections configured for the new pool
+     * @param minIdle          minimum idle connections configured for the new pool
+     * @param currentPoolCount total per-tenant pools active immediately after this pool's creation
      */
     public static void emit(String providerId, String tenantKey, int maxConnections,
                            int minIdle, int currentPoolCount) {

@@ -47,6 +47,8 @@ public record MaskedPrincipal(PrincipalContext delegate, long roleMask) implemen
 
     /**
      * Compact constructor — fail-fast on a {@code null} delegate.
+     *
+     * @throws NullPointerException if {@code delegate} is {@code null}
      */
     public MaskedPrincipal {
         Objects.requireNonNull(delegate, "delegate must not be null");

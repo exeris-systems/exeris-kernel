@@ -301,6 +301,9 @@ public final class StructuredScope implements AutoCloseable {
         }
 
         /**
+         * Returns this task's outcome. Safe to poll before {@link StructuredScope#join()} as well
+         * as after, per this class's memory model.
+         *
          * @return the task's state; {@link State#RUNNING} until it terminates
          */
         public State state() {
@@ -308,6 +311,9 @@ public final class StructuredScope implements AutoCloseable {
         }
 
         /**
+         * Returns the value this task completed with, visible without further synchronization
+         * once {@link #state()} reports {@link State#SUCCESS} — see this class's memory model.
+         *
          * @return the value the task produced
          * @throws IllegalStateException if the task did not succeed
          */
@@ -319,6 +325,10 @@ public final class StructuredScope implements AutoCloseable {
         }
 
         /**
+         * Returns the throwable this task terminated with, visible without further
+         * synchronization once {@link #state()} reports {@link State#FAILED} — see this class's
+         * memory model.
+         *
          * @return the throwable the task terminated with
          * @throws IllegalStateException if the task did not fail
          */

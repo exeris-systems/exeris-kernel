@@ -21,10 +21,10 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * io_uring, or any transport driver class.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * TransportErrorCode code = ErrorMapperRegistry.map(exception);
  * int wireCode = code.wireCode(); // send as H3 / QUIC error frame
- * }</pre>
+ * }
  *
  * @since 0.5
  */

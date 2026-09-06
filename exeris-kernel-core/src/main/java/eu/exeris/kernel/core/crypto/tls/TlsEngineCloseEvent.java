@@ -38,6 +38,14 @@ final class TlsEngineCloseEvent extends Event {
     @Label("Final Phase")
     /* default */ String finalPhase;
 
+    /**
+     * Emits the close event.
+     *
+     * @param sslPtr     raw {@code SSL*} address
+     * @param graceful   {@code true} if the engine reached {@code SHUTDOWN_COMPLETE}
+     *                   before closing, {@code false} if closed from any other phase
+     * @param finalPhase name of the {@code TlsPhase} the state machine was in at close
+     */
     /* default */ static void emit(long sslPtr, boolean graceful, String finalPhase) {
         if (!FlightRecorder.isInitialized()) {
             return;

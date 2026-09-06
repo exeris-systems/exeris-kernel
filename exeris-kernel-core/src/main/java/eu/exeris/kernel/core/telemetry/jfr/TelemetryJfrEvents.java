@@ -11,6 +11,13 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Container for the Core module's strongly-typed {@code jdk.jfr.Event} subclasses.
+ *
+ * <p>Each nested class corresponds to one lifecycle transition or metric kind emitted by
+ * {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink} — this class holds no behaviour of its
+ * own beyond grouping them under one JFR event-category namespace and is never instantiated.
+ */
 public final class TelemetryJfrEvents {
 
     private TelemetryJfrEvents() {
@@ -90,9 +97,15 @@ public final class TelemetryJfrEvents {
     @Category({"Exeris Kernel", "Transport"})
     @StackTrace(false)
     public static final class TransportBindJfrEvent extends Event {
+        /**
+         * Either {@code EX-NET-4001} (bind failure) or {@code EX-NET-4005} (start failure).
+         */
         @Label("Error Code")
         public String errorCode;
 
+        /**
+         * Name of the transport engine that failed to bind or start.
+         */
         @Label("Transport Name")
         public String transportName;
 
@@ -102,6 +115,9 @@ public final class TelemetryJfrEvents {
         @Label("Port")
         public int port;
 
+        /**
+         * Kernel component that emitted the event (compile-time constant on call site).
+         */
         @Label("Component")
         public String component;
     }
@@ -118,7 +134,7 @@ public final class TelemetryJfrEvents {
      * {@code jdk.VirtualThreadPinned} event — the JFR Pinning Monitor reads that stream.
      * Duplicating the capture here would add O(depth) allocation per pinning event.
      *
-     * <p>rawArgs layout: index 0 = {@code long blockTimeMs}, index 1 = {@code String carrierName}.
+     * <p>rawArgs layout: index 0 = {@code long blockTimeMs}, index 1 = {@code String carrierThreadName}.
      */
     @Name("eu.exeris.kernel.telemetry.CarrierPinned")
     @Label("Carrier Thread Pinned")
@@ -126,15 +142,27 @@ public final class TelemetryJfrEvents {
     @Category({"Exeris Kernel", "Runtime"})
     @StackTrace(false)
     public static final class CarrierPinnedJfrEvent extends Event {
+        /**
+         * Always {@code EX-RUN-3002}, the sole error code this event reports.
+         */
         @Label("Error Code")
         public String errorCode;
 
+        /**
+         * Duration in milliseconds the carrier thread was blocked by the pinning virtual thread.
+         */
         @Label("Block Time (ms)")
         public long blockTimeMs;
 
+        /**
+         * Name of the pinned carrier thread.
+         */
         @Label("Carrier Thread Name")
         public String carrierThreadName;
 
+        /**
+         * Kernel component that emitted the event (compile-time constant on call site).
+         */
         @Label("Component")
         public String component;
     }
@@ -154,15 +182,27 @@ public final class TelemetryJfrEvents {
     @Category({"Exeris Kernel", "Memory"})
     @StackTrace(false)
     public static final class MemoryExhaustionJfrEvent extends Event {
+        /**
+         * Always {@code EX-MEM-1001}, the sole error code this event reports.
+         */
         @Label("Error Code")
         public String errorCode;
 
+        /**
+         * Number of bytes the failed allocation requested.
+         */
         @Label("Requested Bytes")
         public long requestedBytes;
 
+        /**
+         * Number of bytes available in the allocator at the time of failure.
+         */
         @Label("Available Bytes")
         public long availableBytes;
 
+        /**
+         * Kernel component that emitted the event (compile-time constant on call site).
+         */
         @Label("Component")
         public String component;
     }
@@ -183,6 +223,9 @@ public final class TelemetryJfrEvents {
     @Category({"Exeris Kernel", "Telemetry"})
     @StackTrace(false)
     public static final class KernelMetricJfrEvent extends Event {
+        /**
+         * Name of the counter or gauge this event records.
+         */
         @Label("Metric Name")
         public String metricName;
 
@@ -192,6 +235,9 @@ public final class TelemetryJfrEvents {
         @Label("Type")
         public String metricType;
 
+        /**
+         * Recorded value — the increment delta for a counter, or the absolute value for a gauge.
+         */
         @Label("Value")
         public long value;
     }
@@ -209,9 +255,15 @@ public final class TelemetryJfrEvents {
     @Category({"Exeris Kernel", "Telemetry"})
     @StackTrace(false)
     public static final class KernelLatencyJfrEvent extends Event {
+        /**
+         * Name of the latency metric this event records.
+         */
         @Label("Metric Name")
         public String metricName;
 
+        /**
+         * Latency sample in nanoseconds.
+         */
         @Label("Duration (ns)")
         public long nanoseconds;
     }

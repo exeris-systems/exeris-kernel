@@ -52,10 +52,16 @@ public final class PersistenceTenantPoolReclaimedEvent extends Event {
     public int remainingPoolCount;
 
     /**
-     * Emit a tenant pool reclamation event.
+     * Commits a tenant-pool-reclaimed event, or does nothing if the event type is disabled.
      *
      * <p>Guards on {@link EventType#isEnabled()} to avoid
      * allocation when JFR is off.
+     *
+     * @param providerId         stable provider identifier, e.g. {@code "postgres-community"}
+     * @param tenantKey          tenant key of the pool that was reclaimed
+     * @param reason             reclamation reason, e.g. {@code "idle_timeout"} or {@code "manual"}
+     * @param idleDurationMs     how long the pool sat idle before reclamation, in milliseconds
+     * @param remainingPoolCount total per-tenant pools remaining after this reclamation pass
      */
     public static void emit(String providerId, String tenantKey, String reason,
                            long idleDurationMs, int remainingPoolCount) {

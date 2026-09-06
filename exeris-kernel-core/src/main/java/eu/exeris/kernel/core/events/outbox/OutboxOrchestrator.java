@@ -238,7 +238,11 @@ public final class OutboxOrchestrator implements AutoCloseable {
     // Builder
     // =========================================================================
 
-    /** Creates a new {@link Builder}. */
+    /**
+     * Creates a new {@link Builder}.
+     *
+     * @return a new builder
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -254,19 +258,35 @@ public final class OutboxOrchestrator implements AutoCloseable {
         private long             pollIntervalNanos  = 100_000_000L; // 100 ms
         private int              maxRetries        = 5;
 
-        /** The store to poll for pending outbox events. */
+        /**
+         * Sets the store polled for pending outbox events.
+         *
+         * @param store the event store to poll; must be non-null
+         * @return this builder
+         */
         public Builder eventStore(OutboxEventStore store) {
             this.eventStore = Objects.requireNonNull(store, "eventStore");
             return this;
         }
 
-        /** The broker port to which flushed events are delivered. */
+        /**
+         * Sets the broker port to which flushed events are delivered.
+         *
+         * @param port the broker port; must be non-null
+         * @return this builder
+         */
         public Builder brokerPort(OutboxBrokerPort port) {
             this.brokerPort = Objects.requireNonNull(port, "brokerPort");
             return this;
         }
 
-        /** Maximum events per poll-flush cycle (default: 500). */
+        /**
+         * Sets the maximum number of events processed per poll-flush cycle.
+         *
+         * @param size the batch size (default: 500); must be positive
+         * @return this builder
+         * @throws IllegalArgumentException if {@code size <= 0}
+         */
         public Builder batchSize(int size) {
             if (size <= 0) {
                 throw new IllegalArgumentException("batchSize must be > 0");
@@ -275,7 +295,13 @@ public final class OutboxOrchestrator implements AutoCloseable {
             return this;
         }
 
-        /** Idle wait between empty polls in nanoseconds (default: 100 ms). */
+        /**
+         * Sets the idle wait between empty polls.
+         *
+         * @param nanos the poll interval in nanoseconds (default: 100 ms); must be positive
+         * @return this builder
+         * @throws IllegalArgumentException if {@code nanos <= 0}
+         */
         public Builder pollIntervalNanos(long nanos) {
             if (nanos <= 0) {
                 throw new IllegalArgumentException("pollIntervalNanos must be > 0");
@@ -284,7 +310,13 @@ public final class OutboxOrchestrator implements AutoCloseable {
             return this;
         }
 
-        /** Maximum per-event retry attempts before DLQ (default: 5). */
+        /**
+         * Sets the maximum per-event retry attempts before an event is routed to the DLQ.
+         *
+         * @param retries the maximum retry count (default: 5); must be non-negative
+         * @return this builder
+         * @throws IllegalArgumentException if {@code retries < 0}
+         */
         public Builder maxRetries(int retries) {
             if (retries < 0) {
                 throw new IllegalArgumentException("maxRetries must be >= 0");
@@ -293,7 +325,11 @@ public final class OutboxOrchestrator implements AutoCloseable {
             return this;
         }
 
-        /** Builds the orchestrator. Does not start the loop. */
+        /**
+         * Builds the orchestrator. Does not start the loop.
+         *
+         * @return a new, unstarted orchestrator
+         */
         public OutboxOrchestrator build() {
             Objects.requireNonNull(eventStore, "eventStore is required");
             Objects.requireNonNull(brokerPort, "brokerPort is required");

@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * semantic misuse that silently no-ops and could mask a use-after-free condition.
  *
  * <h2>Error Code</h2>
- * <p>Maps to {@code EX-MEM-1003} — AllocationHint/ownership misuse conflict.
+ * <p>Maps to {@code EX-MEM-1003} — peek-view ownership misuse.
  *
  * <h2>JFR-First Contract</h2>
  * <p>{@code @StackTrace(false)} — zero overhead on the hot path when JFR is not recording.

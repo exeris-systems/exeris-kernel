@@ -13,12 +13,17 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when HTTP aggregate buffer is held longer than expected.
+ * JFR event emitted when the HTTP/1.1 aggregate read buffer has been held, across one or more
+ * keep-alive iterations on the same connection, longer than a single fixed age threshold.
  *
  * <h2>Buffer Lifecycle Tracking</h2>
- * <p>Tracks aggregate buffer age across request boundaries.
- * Age should be &lt;10ms for non-pipelined requests, &lt;100ms for pipelined.
- * Emitted when age exceeds thresholds to detect buffer retention issues.
+ * <p>Tracks aggregate buffer age across request boundaries. Emitted, once per keep-alive
+ * iteration, whenever that age exceeds {@code CommunityHttpAggregateTelemetry}'s single
+ * 100&nbsp;ms warning threshold — the same threshold regardless of whether the connection's
+ * traffic is pipelined.
+ *
+ * <p>Emitted from {@code CommunityHttpAggregateTelemetry.applyAndRelease}, called at the end of
+ * every keep-alive iteration that is not being torn down.
  *
  * @since 0.5
  */
@@ -29,26 +34,42 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 public final class HttpAggregateBufferHeldEvent extends Event {
 
-    /** Age of buffer (ms) since allocation or last retained. */
+    /**
+     * Milliseconds elapsed since the current aggregate buffer instance was (re)allocated for this
+     * connection — not since the connection or the buffer's last individual request.
+     */
     @Label("Age (ms)")
     public long ageMs;
 
-    /** Buffered bytes at time of event. */
+    /** Bytes buffered in the aggregate, carried over from the connection's last request, at the moment of emission. */
     @Label("Buffered Bytes")
     public int bufferedBytes;
 
-    /** Capacity of aggregate buffer. */
+    /**
+     * The configured aggregate-buffer ceiling in bytes, as supplied by the caller — not this
+     * buffer's actual current allocated capacity, which starts smaller and grows on demand up to
+     * this ceiling.
+     */
     @Label("Capacity")
     public int capacity;
 
-    /** Current pipelined request fraction (moving average). */
+    /**
+     * Running fraction of this connection's requests that were pipelined (landed in a buffer that
+     * already held bytes from a prior request), measured over the connection's lifetime so far. A
+     * fraction in {@code [0,1]}, not a percentage.
+     */
     @Label("Pipelined Fraction")
     public double pipelinedFraction;
 
     /**
-     * Emit a buffer held event.
+     * Emits a buffer-held event, unless JFR is disabled or the event itself is disabled.
      *
      * <p>Guards on {@link FlightRecorder#isInitialized()} to avoid allocation when JFR is off.
+     *
+     * @param ageMs             milliseconds since the aggregate buffer was (re)allocated
+     * @param bufferedBytes     bytes currently buffered in the aggregate
+     * @param capacity          the configured aggregate-buffer ceiling in bytes
+     * @param pipelinedFraction running pipelined-request fraction, in {@code [0,1]}
      */
     public static void emit(long ageMs, int bufferedBytes, int capacity, double pipelinedFraction) {
         if (!FlightRecorder.isInitialized()) {

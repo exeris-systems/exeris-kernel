@@ -15,8 +15,9 @@ import java.util.Objects;
  * load-shedding kicks in. A {@code premium} tenant has wider headroom before rejection;
  * a {@code free} tenant is shed first when memory is tight.
  *
- * <p>The {@link ResourceArbiter} selects the appropriate {@code ScalingContext} based
- * on the active request's service tier (propagated via {@code ScopedValue}).
+ * <p>{@link ResourceArbiter#decide(ResourceArbiter.Context, ScalingContext)} takes a
+ * {@code ScalingContext} as an explicit argument; resolving which tier applies to the
+ * active request, and supplying that context, is the caller's responsibility.
  *
  * <h2>Valhalla Readiness (JEP 401)</h2>
  * <p>All fields are primitives or immutable value types. No identity operations
@@ -40,14 +41,14 @@ import java.util.Objects;
  * @param maxRttMs            maximum acceptable RTT in milliseconds for this tier before
  *                            the arbiter considers the context degraded
  *
- * @implNote INCUBATING — Full integration with {@link ResourceArbiter} planned for v0.5.0.
- *         Multi-tenant SLA shedding is currently at TRL-2. The {@code ResourceArbiter}
- *         presently uses hardcoded {@link WatermarkLevel} boundaries and does not yet
- *         consume {@code ScalingContext}. Do NOT use on production hot paths until
- *         {@code ResourceArbiter} integration is complete.
- * @see ResourceArbiter
- * @see <a href="../../../../docs/subsystems/memory.md">Memory Subsystem: ScalingContext</a>
  * @since 0.5
+ * @see ResourceArbiter
+ * @see "docs/subsystems/memory.md — ScalingContext (Multi-Tenant SLA Shedding)"
+ * @implNote {@link ResourceArbiter#decide(ResourceArbiter.Context, ScalingContext)} already
+ *         consumes this type directly, bypassing the fixed {@link WatermarkLevel} table.
+ *         The path has no TCK coverage and no bootstrap-managed propagation of its own —
+ *         a caller constructs or selects the {@code ScalingContext} and passes it explicitly
+ *         on every call.
  */
 public record ScalingContext(
         String tierName,
@@ -64,6 +65,11 @@ public record ScalingContext(
 
     /**
      * Compact canonical constructor with threshold ordering enforcement.
+     *
+     * @throws NullPointerException     if {@code tierName} is {@code null}
+     * @throws IllegalArgumentException if {@code tierName} is blank, a threshold ratio is
+     *                                   outside its required range, or {@code maxQueueDepth}
+     *                                   or {@code maxRttMs} is not positive
      */
     public ScalingContext {
         Objects.requireNonNull(tierName, "tierName must not be null");
