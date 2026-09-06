@@ -20,7 +20,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * bootstrap, real migrations, real pool. Nothing here is a stand-in.
  *
  * <h2>Lifecycle</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (EmbeddedPersistenceEngineFixture fixture = EmbeddedPersistenceEngineFixtures.inMemoryH2()) {
  *     fixture.start();
  *     try (PersistenceConnection connection = fixture.engine().openConnection()) {
@@ -29,7 +29,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  *         connection.rollback();
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>Which thread</h2>
  * <p>{@link #engine()} is safe to use directly from the test thread: the Community engine reads no

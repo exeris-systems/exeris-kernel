@@ -23,7 +23,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * KernelBootstrap-based fixture that keeps HTTP running until explicitly closed.
+ * {@link EmbeddedHttpEngineFixture} backed by a real {@code KernelBootstrap} run of the {@code http}
+ * subsystem.
+ *
+ * <p>The kernel scope a boot opens is a {@code ScopedValue} binding and cannot outlive the frame
+ * that opened it, so a dedicated platform thread stays parked inside the boot for as long as the
+ * engine must keep running. {@link #start(HttpHandler)} starts that thread, which binds
+ * {@code handler} to {@code HttpKernelProviders.HTTP_SERVER_HANDLER} for the scope of the boot it
+ * runs; the caller blocks until the thread signals the engine bound or failed. {@link #close()}
+ * signals the thread to stop and joins it.
+ *
+ * <p>Reserves an ephemeral port on the loopback interface before booting and publishes it through
+ * the same system properties the {@code http} subsystem reads at bootstrap; {@link FixtureBootLock}
+ * still serialises the boot itself, because those properties are JVM-global for the window in which
+ * the subsystem reads them.
  */
 @SuppressWarnings("PMD.AvoidUsingHardCodedIP")
 public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngineFixture {

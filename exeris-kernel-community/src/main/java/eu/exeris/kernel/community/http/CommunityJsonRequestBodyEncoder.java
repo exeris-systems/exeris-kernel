@@ -59,6 +59,11 @@ public final class CommunityJsonRequestBodyEncoder implements HttpRequestBodyEnc
         return payloadType != null;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalStateException if JSON serialization fails for {@code payload}
+     */
     @Override
     // CloseResource: the sink's buffer ownership transfers to the returned HttpEncodedBody on success,
     // and the finally releases it on every non-committed exit — no path leaks the off-heap loan.

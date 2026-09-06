@@ -19,6 +19,17 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Community: the {@code ServiceLoader}-discovered {@link HttpProvider} that builds the native TCP
+ * HTTP server engine (HTTP/1.1, plus HTTP/2 via h2c/prior-knowledge upgrade) and an HTTP/1.x-only
+ * client engine, and the default JSON body-codec registries.
+ *
+ * <p>Registers at {@link #priority()} {@code 0}, the Community-tier value in the convention
+ * {@link HttpProvider#priority()} documents; an Enterprise provider on the classpath at a higher
+ * priority is selected instead. Every returned encoder and decoder registry sources its Jackson
+ * mapper per codec quadrant through the {@link CommunityJsonMappers} customization seam; with no
+ * {@code JsonMapperCustomizer} registered, each mapper is the plain Jackson default.
+ */
 public final class CommunityHttpProvider implements HttpProvider {
 
     private static final String PROVIDER_ID = "community-http";

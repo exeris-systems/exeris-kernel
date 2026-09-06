@@ -41,7 +41,36 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 /**
- * Community native TCP carrier with FD-owner reactor and VT-per-stream dispatch via PAQS.
+ * Community native TCP carrier: the {@link TransportEngine} that owns the listening socket (or
+ * outbound reactors, in client mode), the reactor loops that drive all socket I/O, and the
+ * per-connection / per-stream bookkeeping that ties an accepted or dialled socket to a
+ * {@link NativeTcpStream} and a {@link NativeTcpConnection}.
+ *
+ * <p>One acceptor platform thread runs {@link #runAcceptorLoop()} in SERVER/DUAL mode; one or more
+ * {@link NativeTcpReactor} platform threads each own a {@link Selector} and dispatch READ/WRITE
+ * events back into this carrier ({@link #readIngress}, {@link #flushStream}, {@link #closeKeyStream}).
+ * Every stream admitted from an accepted inbound connection is then served by its own virtual
+ * thread through PAQS, never by the acceptor or a reactor thread; an outbound stream returned by
+ * {@link #connect(String, int)}, in contrast, bypasses PAQS entirely and is driven by the caller's
+ * own thread.
+ *
+ * <p><b>Allocation:</b> one {@link NativeTcpReactor} plus {@link Selector} per configured reactor
+ * at start; one {@link NativeTcpConnection} / {@link NativeTcpStream} pair per accepted or dialled
+ * socket, not per byte. {@link #readIngress} additionally allocates one {@link LoanedBuffer} per
+ * plaintext read to receive the incoming bytes; on the TLS fd-owner path it allocates none itself
+ * and the buffer comes from {@link NativeTcpStream} instead.
+ * <p><b>Thread confinement:</b> {@link #acceptsObserved} and the accept-retry streak are confined
+ * to the single acceptor thread; each reactor's selector is selected on and its keys iterated only
+ * by that reactor's own thread (see {@link NativeTcpReactor}) — other threads may call its
+ * {@code wakeup()} but never {@code select()}. Every counter or flag read across these threads
+ * ({@code running}, {@code draining}, {@code closed}, the stream/connection counters) is an
+ * atomic.
+ * <p><b>Ownership:</b> owns the listening {@link ServerSocketChannel} and every
+ * {@link NativeTcpReactor} (and the {@link Selector} each one owns); {@link #stop()} closes the
+ * listener first and the reactors last, in the phase order documented there. The
+ * {@link NativeTcpSocketBackend}'s native socket handles are released separately, from
+ * {@link #close()}, which runs {@link #stop()} and then the backend's own close — the terminal,
+ * idempotent teardown path.
  *
  * @since 0.5
  */
@@ -173,6 +202,15 @@ public final class NativeTcpCarrier implements TransportEngine {
         this.connectionHandler = Objects.requireNonNull(handler, "handler must not be null");
     }
 
+    /**
+     * Starts the carrier: in SERVER/DUAL mode, binds the listener and starts the acceptor and
+     * reactor threads; in CLIENT mode, starts the reactor(s) that {@link #connect} registers
+     * outbound channels against. A second call while already running is a no-op.
+     *
+     * @throws IllegalStateException if the engine is already closed, or SERVER/DUAL mode is
+     *                                started without a stream handler set
+     * @throws TransportException    if the listener could not be bound ({@code EX-NET-4005})
+     */
     @Override
     public void start() {
         if (closed.get()) {
@@ -206,16 +244,14 @@ public final class NativeTcpCarrier implements TransportEngine {
      * streams for a bounded period, then force-close whatever is left.
      *
      * <p>The drain machinery is {@link PaqsScheduler#close()} — it waits for the admission
-     * controller's active-stream count to reach zero under a 60-second hard deadline. It was already
-     * here, but it ran <em>last</em>, after {@code closeSelectorAndChannels()} had closed the sockets
-     * and the reactors had exited. Handlers were therefore drained against dead file descriptors:
-     * a request that had reached its handler completed, and its response went nowhere. The peer saw a
-     * connection closed with no reply, and an idempotent client retried into a listener that was
-     * already gone.
+     * controller's active-stream count to reach zero under a 60-second hard deadline. The three
+     * phases below run in a load-bearing order: draining must happen while the reactors are still
+     * serving, not after teardown — a response flushed once the sockets are already closed reaches
+     * no peer, so the client sees the connection close with no reply and, if idempotent, retries
+     * into a listener that is already gone.
      *
-     * <p>So the order below is the fix, not the mechanism. Ingress closes first, the reactors stay up
-     * to carry responses out, the drain runs while they can still flush, and only then does anything
-     * get torn down.
+     * <p>Ingress closes first, the reactors stay up to carry responses out, the drain runs while
+     * they can still flush, and only then does anything get torn down.
      */
     @Override
     public void stop() {
@@ -291,6 +327,16 @@ public final class NativeTcpCarrier implements TransportEngine {
         return localPaqs == null ? 0 : localPaqs.admissionController().activeStreamCount();
     }
 
+    /**
+     * Opens an outbound TCP connection and its single bidirectional stream, in CLIENT or DUAL mode.
+     *
+     * @param host remote host name or IP address to connect to
+     * @param port remote port to connect to
+     * @return the established connection, with its stream already registered on a reactor
+     * @throws IllegalStateException if the mode does not support outbound connect, or the engine
+     *                                is not running
+     * @throws TransportException    if the connection could not be established ({@code EX-NET-4001})
+     */
     @Override
     public TransportConnection connect(String host, int port) {
         if (mode() != TransportMode.CLIENT && mode() != TransportMode.DUAL) {
@@ -359,6 +405,12 @@ public final class NativeTcpCarrier implements TransportEngine {
         return config.mode();
     }
 
+    /**
+     * Returns a point-in-time snapshot of accept, connection and stream counters.
+     *
+     * @return the current snapshot, or {@link TransportStats#EMPTY} when the engine has not been
+     *         started
+     */
     @Override
     public TransportStats stats() {
         if (!running.get()) {
@@ -387,6 +439,10 @@ public final class NativeTcpCarrier implements TransportEngine {
         return ENGINE_NAME;
     }
 
+    /**
+     * Terminal, idempotent shutdown: runs {@link #stop()} and then releases the socket backend's
+     * native handles. Safe to call more than once, and safe to call without a prior {@link #start()}.
+     */
     @Override
     public void close() {
         if (!closed.compareAndSet(false, true)) {
@@ -541,9 +597,9 @@ public final class NativeTcpCarrier implements TransportEngine {
     /**
      * One pass over the listener — accepts until it would block on nothing, or throws.
      *
-     * <p>A seam, so a test can drive the loop below with a pass that fails and then recovers. The
-     * defect this loop had was that it <em>ended</em>, and only running it proves it no longer does;
-     * asserting a classification in isolation would test the judgement and not the consequence.
+     * <p>A seam so a test can drive the loop below with a pass that fails and then recovers,
+     * proving the loop continues rather than exits: asserting the retry classification in
+     * isolation would test the judgement and not the consequence.
      */
     /* default */ @FunctionalInterface
     interface AcceptPass {
@@ -551,31 +607,42 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /**
-     * Runs accept passes until the carrier stops, retrying a failed accept instead of ending.
+     * Runs accept passes until the carrier stops, retrying a failed accept instead of ending the
+     * listener.
      *
-     * <p>Until 0.12.0 any {@link IOException} from {@code accept()} took the listener down for the
-     * lifetime of the JVM. That is how descriptor exhaustion surfaces — {@code EMFILE} is an
-     * {@code IOException} with nothing in its type to distinguish it — and it is transient by
-     * nature: descriptors come back as connections close. A listener that dies of it needs a
-     * restart to serve again.
+     * <p>An {@link IOException} from {@code accept()} is retried rather than treated as fatal: it
+     * is how descriptor exhaustion surfaces — {@code EMFILE} is an {@code IOException} with nothing
+     * in its type to distinguish it — and the condition is transient by nature, since descriptors
+     * come back as connections close. Ending the listener on it would demand a process restart to
+     * serve again, for a condition that clears on its own.
      *
      * <p><b>Every {@code IOException} is retried, rather than a list of transient ones.</b> Java
-     * gives no typed signal here, so classifying means matching on the message, and a message that
-     * does not match reinstates exactly the defect being fixed — on a different JDK, OS or locale.
-     * The two directions are not symmetric: retrying a fatal condition costs a bounded delay before
-     * the same outcome, while refusing to retry a transient one loses the listener. So the bound
-     * does the work classification would have: {@link #MAX_CONSECUTIVE_ACCEPT_FAILURES} accepts in a
-     * row that all fail is a condition that is not clearing, and the fatal path is taken then.
+     * gives no typed signal here, so classifying would mean matching on the message, and a message
+     * that does not match leaves exactly this failure mode unhandled — on a different JDK, OS or
+     * locale. The two directions are not symmetric: retrying a fatal condition costs a bounded delay
+     * before the same outcome, while refusing to retry a transient one loses the listener. So the
+     * bound does the work classification would have: {@link #MAX_CONSECUTIVE_ACCEPT_FAILURES}
+     * accepts in a row that all fail is a condition that is not clearing, and the fatal path is
+     * taken then.
      *
-     * @param pass one accept pass
+     * @param pass             one accept pass
+     * @param acceptsObserved  running count of accepts that returned a socket, so a pass that
+     *                         served a connection before throwing can be told apart from one that
+     *                         served nothing
      */
     /* default */ void acceptorLoop(AcceptPass pass, LongSupplier acceptsObserved) {
         acceptorLoop(pass, acceptsObserved, MAX_CONSECUTIVE_ACCEPT_FAILURES);
     }
 
     /**
-     * @param ceiling consecutive failures tolerated before the fatal path; a parameter so a test can
-     *                reach the bound without spending the real backoff of the shipped one
+     * Overload of {@link #acceptorLoop(AcceptPass, LongSupplier)} exposing the failure ceiling as a
+     * parameter, for tests that need to reach the fatal path directly.
+     *
+     * @param pass             one accept pass
+     * @param acceptsObserved  running count of accepts that returned a socket
+     * @param ceiling          consecutive failures tolerated before the fatal path; a parameter so
+     *                         a test can reach the bound without spending the real backoff of the
+     *                         shipped one
      */
     /* default */ void acceptorLoop(AcceptPass pass, LongSupplier acceptsObserved, int ceiling) {
         int consecutiveFailures = 0;

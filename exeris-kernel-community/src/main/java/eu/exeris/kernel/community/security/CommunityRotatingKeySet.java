@@ -24,10 +24,12 @@ import java.util.concurrent.atomic.AtomicReference;
  *       {@link KeySetSource} refresh. A genuinely-new key set rotates: current becomes
  *       previous (stamped now), the new set becomes current.</li>
  *   <li>If refresh fails AND the current snapshot is over budget AND no previous generation
- *       is still inside its overlap window, deny terminally with reason {@code jwks-stale}.</li>
+ *       is still inside its overlap window, deny terminally ({@code EX-SEC-2002}) with reason
+ *       {@code jwks-stale}.</li>
  *   <li>{@code kid} in current → return key.</li>
  *   <li>{@code kid} only in previous, overlap still open → return key.</li>
- *   <li>{@code kid} only in previous, overlap expired → terminal deny {@code kid-rotated-out}.</li>
+ *   <li>{@code kid} only in previous, overlap expired → terminal deny ({@code EX-SEC-2002})
+ *       {@code kid-rotated-out}.</li>
  *   <li>{@code kid} in neither → return {@code null} (validator throws {@code unknown-kid}).</li>
  * </ul>
  *
@@ -75,6 +77,13 @@ import java.util.concurrent.atomic.AtomicReference;
         this.generations = new AtomicReference<>(new Generations(current, installedAtMillis, null, 0L));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Resolution follows the current/previous generation rules in the type comment; a
+     *           terminal deny — {@code jwks-stale} or {@code kid-rotated-out} — raises
+     *           {@link SecurityAuthenticationException} as {@code EX-SEC-2002}.
+     */
     @Override
     public RSAPublicKey resolve(String kid) {
         // Hot path: compare epoch-millis (no Instant/Duration allocation per request).

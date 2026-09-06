@@ -77,6 +77,8 @@ public record KafkaEventConfig(
      *
      * @param bootstrapServers comma-separated {@code host:port} list
      * @param consumerGroupId  consumer group id
+     * @return a {@link KafkaEventConfig} with an empty topic prefix, {@code requireAllAcks=true},
+     *         a 5&nbsp;ms producer linger, and a 250&nbsp;ms consumer poll timeout
      */
     public static KafkaEventConfig defaults(String bootstrapServers, String consumerGroupId) {
         return new KafkaEventConfig(

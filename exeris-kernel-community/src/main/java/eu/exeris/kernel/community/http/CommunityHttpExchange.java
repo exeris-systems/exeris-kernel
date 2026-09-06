@@ -25,6 +25,20 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Community: the HTTP/1.1 {@link HttpExchange} — writes a response straight to the
+ * {@link TransportStream} that carried the request, in one buffer per {@link #respond}, and decides
+ * whether the connection survives the write.
+ *
+ * <p>{@link #respond(HttpResponse)} may be called exactly once per instance, enforced by an atomic
+ * claim that {@link #isResponded()} exposes; a second call throws {@link IllegalStateException}
+ * rather than writing a second time to a socket already told its response.
+ *
+ * <p>Keep-alive is resolved when the response is written, not when the request was parsed: a
+ * connection with a graceful drain bound sees {@link #resolveKeepAlive()} answer {@code false} once
+ * the drain starts, so the in-flight response — even one that arrived requesting keep-alive — tells
+ * the peer to close instead of leaving it pooled against a connection that will never serve it again.
+ */
 final class CommunityHttpExchange implements HttpExchange {
 
     private static final int RESPONSE_HEADROOM_BYTES = 2048;

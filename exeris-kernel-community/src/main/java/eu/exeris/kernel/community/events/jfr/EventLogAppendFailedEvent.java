@@ -22,6 +22,9 @@ import jdk.jfr.StackTrace;
  * content). {@code @StackTrace(false)}, guarded by {@link Event#isEnabled()}.
  *
  * @since 0.10
+ * @implNote {@link #emit} commits in two phases — {@link Event#begin()}, then only local field
+ *           assignment, then {@link Event#commit()} — so the timed interval never straddles a
+ *           blocking operation on the emitting thread.
  */
 @Name("eu.exeris.kernel.events.EventLogAppendFailed")
 @Label("Event-Log Append Failed")
@@ -48,6 +51,19 @@ public final class EventLogAppendFailedEvent extends Event {
     @Description("Class name of the failing exception; no message is recorded (secret-safe)")
     /* default */ String failureClass;
 
+    /**
+     * Commits this event, recording the engine name, stream type, SQLSTATE, and the failing
+     * exception's class name.
+     *
+     * <p>A no-op when the event is disabled.
+     *
+     * @param engineName human-readable engine name from {@code EventEngineConfig.engineName()}
+     * @param streamType the target stream's type qualifier
+     * @param sqlState   SQLSTATE extracted from the failure's cause chain; recorded as empty
+     *                   when {@code null}
+     * @param failure    the failure that aborted the append; only its class name is recorded,
+     *                   never {@link Throwable#getMessage()}
+     */
     public static void emit(String engineName, String streamType, String sqlState, Throwable failure) {
         EventLogAppendFailedEvent event = new EventLogAppendFailedEvent();
         if (!event.isEnabled()) {

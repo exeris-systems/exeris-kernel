@@ -11,6 +11,14 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Emitted when the Kafka consumer poll loop inside {@code KafkaEventEngine.ConsumerLoop} exits via
+ * an unhandled exception (broker disconnect, deserialisation error, {@code KafkaException}). The
+ * consumer-side counterpart to {@link KafkaPublishFailedEvent}.
+ *
+ * <p>Captures the engine name, consumer group id, and the failing exception's class and message;
+ * the payload bytes and Kafka credentials are never recorded.
+ */
 @Name("eu.exeris.kernel.events.kafka.ConsumerLoopFailed")
 @Label("Kafka Consumer Loop Failed")
 @Category({"Exeris Kernel", "Events", "Kafka"})

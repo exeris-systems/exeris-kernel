@@ -50,15 +50,22 @@ public final class RouteExecutionEvent extends Event {
 
     private static final EventType EVENT_TYPE = EventType.getEventType(RouteExecutionEvent.class);
 
+    /** The completed request's method, as its wire token (e.g. {@code "GET"}). */
     @Label("Method")
     public String method;
 
+    /** The completed request's path. */
     @Label("Path")
     public String path;
 
+    /**
+     * The route's declared execution facet (ADR-077) that this event reports on; the only emitter
+     * in this class sets it to {@code "LONG_RUNNING"}.
+     */
     @Label("Declared Execution")
     public String declaredExecution;
 
+    /** How long the handler ran, in nanoseconds, as measured by the dispatcher. */
     @Label("Handler Duration")
     @Timespan(Timespan.NANOSECONDS)
     public long handlerDurationNs;

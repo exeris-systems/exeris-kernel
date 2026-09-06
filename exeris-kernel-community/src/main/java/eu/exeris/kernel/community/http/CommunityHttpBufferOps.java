@@ -10,11 +10,19 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Package-private byte-level primitives — CRLF and byte search, ASCII decoding, and aggregate
+ * buffer compaction — shared by the Community HTTP/1.x and HTTP/2 wire-parsing paths.
+ */
 /* default */ final class CommunityHttpBufferOps {
 
     private CommunityHttpBufferOps() {
     }
 
+    /**
+     * The offset of the first {@code CRLF} pair in {@code [start, endExclusive)}, or {@code -1}
+     * when none is found.
+     */
     /* default */ static long findCrLf(MemorySegment segment, long start, long endExclusive) {
         for (long index = start; index + 1 < endExclusive; index++) {
             if (segment.get(ValueLayout.JAVA_BYTE, index) == '\r'
@@ -64,6 +72,7 @@ import java.nio.charset.StandardCharsets;
         return (value & 0xFF) <= ' ';
     }
 
+    /** Decodes {@code [startInclusive, endExclusive)} as US-ASCII into a new {@link String}. */
     /* default */ static String asciiString(MemorySegment segment, long startInclusive, long endExclusive) {
         int length = Math.toIntExact(endExclusive - startInclusive);
         byte[] bytes = new byte[length];
@@ -71,11 +80,25 @@ import java.nio.charset.StandardCharsets;
         return new String(bytes, StandardCharsets.US_ASCII);
     }
 
+    /**
+     * Compacts {@code aggregate} down to the bytes past {@code consumedBytes} — the unread
+     * remainder of a keep-alive connection's buffer after one request or frame has been consumed
+     * from its front.
+     *
+     * @return the number of bytes retained
+     */
     /* default */ static long retainUnreadBytes(LoanedBuffer aggregate, long consumedBytes) {
         long total = aggregate.size();
         return compactUnreadBytes(aggregate, total, consumedBytes);
     }
 
+    /**
+     * Moves the {@code [offset, bufferedBytes)} slice of {@code aggregate} to its front and shrinks
+     * the buffer's logical size to match, so a subsequent read appends immediately after the
+     * retained bytes instead of past a consumed prefix.
+     *
+     * @return the number of bytes retained, i.e. {@code max(bufferedBytes - offset, 0)}
+     */
     /* default */ static long compactUnreadBytes(LoanedBuffer aggregate,
                                                  long bufferedBytes,
                                                  long offset) {

@@ -26,8 +26,8 @@ import java.util.Map;
  * provider (fail-closed; re-dispatch on failure would be token-confusion). When no provider claims
  * the token the dispatcher denies fail-closed with {@code EX-SEC-2002}.
  *
- * <p>This refactor moves the JWT pipeline into {@link CommunityOidcIdentityProvider} /
- * {@link CommunityOidcTokenValidator}; the static {@code kid → key} path is byte-for-byte unchanged.
+ * <p>The JWT verification pipeline lives in {@link CommunityOidcIdentityProvider} and
+ * {@link CommunityOidcTokenValidator}.
  *
  * <p>ServiceLoader-based discovery of {@link IdentityProvider} bindings and config-driven
  * construction (issuer / audience / JWKS endpoint) land with the config wiring step; today the
@@ -46,11 +46,29 @@ public final class CommunitySecurityProvider implements SecurityProvider {
     private final IdentityProviderRegistry registry;
     private final IdentityProvider identityProvider;
 
-    /** Public no-arg constructor required by {@link java.util.ServiceLoader}. */
+    /**
+     * Public no-arg constructor required by {@link java.util.ServiceLoader}.
+     *
+     * @throws IllegalStateException if more than one
+     *         {@link eu.exeris.kernel.spi.security.identity.ClaimsMapper} is registered on the
+     *         classpath
+     */
     public CommunitySecurityProvider() {
         this(Map.of(), EXPECTED_ISSUER, EXPECTED_AUDIENCE);
     }
 
+    /**
+     * Creates a provider that verifies tokens against a fixed key-set map, mapping claims with
+     * the {@link eu.exeris.kernel.spi.security.identity.ClaimsMapper} registered via
+     * {@link CommunityClaimsMapperResolver} (the Community default when none is registered).
+     *
+     * @param keysByKid a snapshot of verification keys ({@code kid} to RSA public key)
+     * @param expectedIssuer the {@code iss} claim value a token must present to be accepted
+     * @param expectedAudience the {@code aud} claim value a token must present to be accepted
+     * @throws IllegalStateException if more than one
+     *         {@link eu.exeris.kernel.spi.security.identity.ClaimsMapper} is registered on the
+     *         classpath
+     */
     public CommunitySecurityProvider(Map<String, RSAPublicKey> keysByKid,
                                      String expectedIssuer,
                                      String expectedAudience) {
@@ -77,29 +95,53 @@ public final class CommunitySecurityProvider implements SecurityProvider {
 
     /**
      * Package-private: lets the wiring test assert that this provider was assembled through
-     * {@link CommunityClaimsMapperResolver}. Without it the reachability fix has no failing test —
-     * reverting the wiring compiles and every other assertion still passes, which is exactly what a
-     * mutation run showed before this existed.
+     * {@link CommunityClaimsMapperResolver}, so a regression that stops routing through the
+     * resolver fails a test instead of silently reverting to the Community default mapper.
      */
     /* default */ IdentityProvider identityProvider() {
         return identityProvider;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Always {@code "jwt-community"}.
+     */
     @Override
     public String providerId() {
         return PROVIDER_ID;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Always {@code "ExerisCommunity/JWT"}.
+     */
     @Override
     public String providerName() {
         return PROVIDER_NAME;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Always {@code 0}, the Community-tier priority.
+     */
     @Override
     public int priority() {
         return 0;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws SecurityAuthenticationException ({@code EX-SEC-2002}) if {@code rawToken} is
+     *         {@code null}, if no registered {@link IdentityProvider} claims the token, or if
+     *         the selected provider denies validation
+     * @implNote Delegates to the single {@link IdentityProvider} this instance's
+     *           {@link eu.exeris.kernel.spi.security.identity.IdentityProviderRegistry} selects
+     *           for {@code rawToken}; there is no fallback to a second provider on denial.
+     */
     @Override
     public AuthenticationResult authenticate(LoanedBuffer rawToken) {
         if (rawToken == null) {
@@ -113,6 +155,12 @@ public final class CommunitySecurityProvider implements SecurityProvider {
         return provider.authenticate(rawToken);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Returns {@link ImmutableStorageContext#GLOBAL} — a {@code SHARED}-strategy
+     *           context with no isolation key, so it carries no tenant scoping.
+     */
     @Override
     public StorageContext systemStorageContext() {
         return ImmutableStorageContext.GLOBAL;

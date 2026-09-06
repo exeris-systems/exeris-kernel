@@ -53,13 +53,11 @@ import java.util.Optional;
  * <h2>Hot-path Discipline (ADR-013 §7)</h2>
  * <ul>
  *   <li>No {@code ThreadLocal} for context propagation.</li>
- *   <li>No {@code ByteBuffer.allocate(int)} on the hot path; {@code ByteBuffer.wrap(byte[])}
- *       wraps an already-allocated array.</li>
  *   <li>{@link PersistenceEngine} ownership stays with the bootstrapper that
  *       constructed this store.</li>
  * </ul>
  *
- * <h2>HikariCP Statement-Cache Requirement (DOC-090, v0.8 Sprint 5)</h2>
+ * <h2>HikariCP Statement-Cache Requirement</h2>
  * <p>This store relies on the underlying {@link PersistenceEngine}'s JDBC pool
  * having driver-side prepared-statement caching enabled. The two-step UPSERT
  * re-prepares the same {@code SQL_UPDATE_OCC} + {@code SQL_INSERT} statements
@@ -153,6 +151,13 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     private final PersistenceEngine engine;
     private final String engineName;
 
+    /**
+     * Wires this store to the persistence engine it acquires connections from.
+     *
+     * @param engine the persistence engine used to open connections for every operation
+     * @param engineName human-readable engine name recorded in the JFR events this store emits
+     * @throws NullPointerException if {@code engine} or {@code engineName} is {@code null}
+     */
     public JdbcFlowSnapshotStore(PersistenceEngine engine, String engineName) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.engineName = Objects.requireNonNull(engineName, "engineName");
@@ -166,6 +171,28 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
     // `catch (FlowEngineException occ)` is intentional: the OCC failure raised by
     // `optimisticLockConflict` MUST trigger rollback and re-throw without wrapping.
     // This is transactional control flow, not error-control-flow misuse.
+    /**
+     * Persists {@code snapshot} through a two-step UPDATE-then-INSERT optimistic-concurrency
+     * upsert (ADR-013 §5): an UPDATE guarded by {@link FlowSnapshot#schemaVersion()} first, and
+     * only when it matches no row, an INSERT — remapping a concurrent first-writer's
+     * integrity-constraint violation into the same conflict outcome as a stale-version UPDATE.
+     *
+     * <p>Runs inside its own transaction on a connection opened from the configured
+     * {@link PersistenceEngine}; committed on success, and rolled back when the inner
+     * try-block catches a {@link FlowEngineException} or {@code PersistenceProviderException}.
+     * A failure while opening the connection or beginning the transaction, or any other
+     * exception type, exits without an explicit rollback call.
+     *
+     * @param snapshot the snapshot to persist
+     * @throws NullPointerException if {@code snapshot} is {@code null}
+     * @throws FlowEngineException ({@code EX-FLOW-7002}, phase {@code OPTIMISTIC_LOCK_CONFLICT})
+     *         if a concurrent writer already advanced or created the row for this instance
+     * @throws FlowEngineException ({@code EX-FLOW-7002}) if the inner transactional try-block
+     *         catches a {@code PersistenceProviderException} for any other reason
+     * @throws PersistenceProviderException if opening the connection or beginning the
+     *         transaction fails; this propagates unwrapped, without emitting
+     *         {@link FlowSnapshotSaveFailedEvent}
+     */
     @Override
     @SuppressWarnings("PMD.ExceptionAsFlowControl")
     public void save(FlowSnapshot snapshot) {
@@ -265,6 +292,14 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         return FlowSnapshotSaveFailedEvent.SQLSTATE_UNKNOWN;
     }
 
+    /**
+     * Loads the row for the given flow instance, decoding it via {@link JdbcFlowSnapshotCodec}.
+     *
+     * @param instanceIdMost  most-significant bits of the flow instance UUID
+     * @param instanceIdLeast least-significant bits of the flow instance UUID
+     * @return the stored snapshot, or empty if no row exists for this instance
+     * @throws FlowEngineException ({@code EX-FLOW-7002}) if the underlying persistence call fails
+     */
     @Override
     public Optional<FlowSnapshot> load(long instanceIdMost, long instanceIdLeast) {
         try (PersistenceConnection conn = engine.openConnection();
@@ -282,6 +317,13 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         }
     }
 
+    /**
+     * Deletes the row for the given flow instance, if one exists.
+     *
+     * @param instanceIdMost  most-significant bits of the flow instance UUID
+     * @param instanceIdLeast least-significant bits of the flow instance UUID
+     * @throws FlowEngineException ({@code EX-FLOW-7002}) if the underlying persistence call fails
+     */
     @Override
     public void delete(long instanceIdMost, long instanceIdLeast) {
         try (PersistenceConnection conn = engine.openConnection();
@@ -294,6 +336,14 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         }
     }
 
+    /**
+     * Returns {@code true} if a row exists for the given flow instance.
+     *
+     * @param instanceIdMost  most-significant bits of the flow instance UUID
+     * @param instanceIdLeast least-significant bits of the flow instance UUID
+     * @return whether a row is stored for this instance
+     * @throws FlowEngineException ({@code EX-FLOW-7002}) if the underlying persistence call fails
+     */
     @Override
     public boolean exists(long instanceIdMost, long instanceIdLeast) {
         try (PersistenceConnection conn = engine.openConnection()) {
@@ -303,6 +353,13 @@ public final class JdbcFlowSnapshotStore implements FlowSnapshotStore {
         }
     }
 
+    /**
+     * Loads every row whose {@code state} is {@code PARKED}, decoding each via
+     * {@link JdbcFlowSnapshotCodec}.
+     *
+     * @return the parked snapshots; empty if none are stored
+     * @throws FlowEngineException ({@code EX-FLOW-7002}) if the underlying persistence call fails
+     */
     @Override
     public List<FlowSnapshot> listParked() {
         try (PersistenceConnection conn = engine.openConnection();

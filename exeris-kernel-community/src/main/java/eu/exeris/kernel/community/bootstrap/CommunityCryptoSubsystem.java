@@ -11,6 +11,19 @@ import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import java.util.List;
 import java.util.function.ToIntFunction;
 
+/**
+ * Discovers a {@link KernelCryptoProvider} and binds it into
+ * {@link KernelProviders#CRYPTO_PROVIDER}.
+ *
+ * <p>Depends on {@code memory} only, and runs in the SERVICES phase alongside persistence, graph and
+ * transport rather than FOUNDATION. The discovered provider's own {@code createTlsEngine} falls back
+ * to a private allocator when {@code KernelProviders.MEMORY_ALLOCATOR} is unbound at the point it is
+ * called — a caller reaching it through the kernel's own bound scope never takes that path.
+ *
+ * <p>Discovery finding nothing leaves the subsystem not running rather than failing the boot — a
+ * deployment with no crypto driver on the classpath is a legitimate configuration for a service that
+ * never calls into {@code CRYPTO_PROVIDER}.
+ */
 @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException"})
 final class CommunityCryptoSubsystem extends AbstractSingleProviderSubsystem<KernelCryptoProvider> {
 

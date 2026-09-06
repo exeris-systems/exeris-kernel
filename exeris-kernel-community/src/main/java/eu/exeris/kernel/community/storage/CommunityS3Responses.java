@@ -54,18 +54,17 @@ final class CommunityS3Responses {
     /**
      * Returns the object size a response reports, or {@link #SIZE_UNDECLARED} if it does not.
      *
-     * <p>This used to answer {@code 0} for a missing or unparseable {@code Content-Length},
-     * reasoning that refusing to describe an object over one malformed header turns a cosmetic fault
-     * at the store into an outage. That holds for {@code stat}, where an unknown size is a degraded
-     * description of an object the caller still learns exists. It does not hold for {@code download},
-     * which is the other consumer of this HEAD: there, {@code 0} does not read as "size unknown", it
-     * reads as "no bytes to fetch" — the range comes out empty, the download completes, and the
-     * caller is handed an empty object that is not empty. A successful wrong answer, not an outage
-     * avoided.
+     * <p>A missing or unparseable {@code Content-Length} is reported as {@link #SIZE_UNDECLARED}
+     * rather than folded into {@code 0}, because this HEAD serves two callers that need different
+     * answers to it. For {@code stat}, an unknown size is a degraded description of an object the
+     * caller still learns exists, and {@code 0} would serve that purpose. For {@code download}, it
+     * would not: there, {@code 0} does not read as "size unknown", it reads as "no bytes to fetch" —
+     * the range comes out empty, the download completes, and the caller is handed an empty object
+     * that is not empty. A successful wrong answer, not a degraded description.
      *
-     * <p>So the two cases are separated here and the caller decides. Distinguishing them is the whole
-     * change; nothing about the {@code 0}-versus-absent question can be recovered downstream once
-     * both have been flattened into a {@code long}.
+     * <p>The two cases are therefore separated here and left for the caller to decide between: once
+     * {@code 0} and "absent" are both flattened into one {@code long}, neither caller can recover
+     * which one applied.
      *
      * @param response the response to read
      * @return the size in bytes, or {@link #SIZE_UNDECLARED} when absent or malformed

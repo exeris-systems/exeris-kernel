@@ -4,6 +4,11 @@
  */
 package eu.exeris.kernel.community.persistence;
 
+/**
+ * Shared string constants for the Community persistence tier: the provider identity, the
+ * tenant key used when a request declares no isolation, and the prefix marking a resolved
+ * tenant key as addressing a dedicated data source.
+ */
 /* default */ final class CommunityPersistenceConstants {
 
     /* default */ static final String PROVIDER_ID          = "postgres-community";

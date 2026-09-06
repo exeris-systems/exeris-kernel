@@ -10,6 +10,16 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Maps a live {@link SocketChannel} to the {@link NativeTcpStream} reading and writing it and the
+ * {@link NativeTcpReactor} currently servicing it, for the carrier's off-reactor callers (write
+ * interest requests, close teardown) to look up.
+ *
+ * <p>Backed by {@link ConcurrentHashMap}, so any thread may register, resolve or remove an entry
+ * concurrently with a reactor dispatching events for other channels; there is no per-channel
+ * confinement. {@link #registerRuntime} is the single admission point and rejects a second
+ * registration for the same channel rather than silently overwriting the first.
+ */
 // CommentDefaultAccessModifier: package-private registry is intentionally scoped to transport internals.
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
 final class ChannelRuntimeRegistry {
@@ -18,6 +28,14 @@ final class ChannelRuntimeRegistry {
     final ConcurrentMap<SocketChannel, NativeTcpStream> streamByChannel = new ConcurrentHashMap<>();
     final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner = new ConcurrentHashMap<>();
 
+    /**
+     * Registers a new channel/stream pair. The single admission point for this registry.
+     *
+     * @param stream  the stream reading and writing {@code channel}
+     * @param channel the channel to register
+     * @return the runtime state created for this pair
+     * @throws IllegalStateException if {@code channel} is already registered
+     */
     ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel) {
         ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream, channelOwner);
         ChannelRuntimeState previous = runtimeByChannel.putIfAbsent(channel, runtime);
@@ -39,6 +57,14 @@ final class ChannelRuntimeRegistry {
         return runtime != null ? runtime.stream() : streamByChannel.get(channel);
     }
 
+    /**
+     * One channel's registered stream, resolved socket-backend name, and current reactor owner.
+     *
+     * <p>{@link #owner} and {@link #lifecycleCleanup} are the only fields that change after
+     * construction, and both are updated through atomics ({@link #bindOwner}, {@link #detachOwner},
+     * {@link #beginLifecycleCleanup}) so a reactor handing this channel to another reactor, or the
+     * carrier tearing it down, never races a concurrent reader.
+     */
     static final class ChannelRuntimeState {
 
         private final SocketChannel channel;

@@ -47,6 +47,14 @@ public final class CommunityJdbcEventStore implements EventStore {
 
     private final PersistenceConnection connection;
 
+    /**
+     * Wraps {@code connection} for outbox access; every operation requires it to already be
+     * inside a transaction.
+     *
+     * @param connection the connection to issue outbox statements against; not retained beyond
+     *                    this instance's lifetime and never closed by it
+     * @throws NullPointerException if {@code connection} is {@code null}
+     */
     public CommunityJdbcEventStore(PersistenceConnection connection) {
         this.connection = Objects.requireNonNull(connection, "connection must not be null");
     }

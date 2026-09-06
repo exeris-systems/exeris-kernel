@@ -19,13 +19,12 @@ import java.util.concurrent.atomic.LongAdder;
  * in concurrent maps keyed by metric name, and emits the Prometheus 0.0.4 text
  * exposition format on demand via {@link #exposeText()}.
  *
- * <h2>Why Prometheus pull (not OTLP push)</h2>
- * <p>The kernel ships a metrics sink + an HTTP handler. Operators wire both into
- * their HTTP server engine; Prometheus scrapes {@code /metrics} with no client-side
- * connection state to manage. OTLP push would require a long-lived gRPC client,
- * buffer + retry logic, and a Protobuf dependency — out of scope for the
- * Community best-effort baseline. Enterprise binding may add an OTLP exporter
- * later without touching this sink.
+ * <h2>Why pull, not push</h2>
+ * <p>This sink and {@link PrometheusMetricsHandler} implement the Prometheus pull
+ * model exclusively: operators wire both into their HTTP server engine and
+ * Prometheus scrapes {@code /metrics}, with no client-side connection state,
+ * retry logic, or push-protocol dependency for this sink to manage. Community
+ * ships no push-based metrics exporter and no distributed-tracing exporter.
  *
  * <h2>Metric mapping</h2>
  * <table border="1">
@@ -76,34 +75,70 @@ public final class PrometheusMetricsSink implements TelemetrySink {
     private final ConcurrentHashMap<String, AtomicLong> gauges = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LatencyAggregate> latencies = new ConcurrentHashMap<>();
 
+    /**
+     * No-op — this sink is metric-only. Pair it with {@code JfrTelemetrySink} or
+     * {@code Slf4jTelemetrySink} to also surface events.
+     */
     @Override
     public void emit(KernelEvent event) {
         // Metrics-only sink. Events are surfaced by paired event sinks (JFR/SLF4J).
     }
 
+    /**
+     * Adds {@code delta} to the named counter, creating it at zero on first use.
+     *
+     * @param name  metric name; never {@code null}
+     * @param delta increment value (usually {@code 1})
+     * @throws NullPointerException if {@code name} is {@code null}
+     */
     @Override
     public void increment(String name, long delta) {
         Objects.requireNonNull(name, "name");
         counters.computeIfAbsent(name, _ -> new LongAdder()).add(delta);
     }
 
+    /**
+     * Sets the named gauge to {@code value}, creating it on first use.
+     *
+     * @param name  metric name; never {@code null}
+     * @param value new gauge value
+     * @throws NullPointerException if {@code name} is {@code null}
+     */
     @Override
     public void gauge(String name, long value) {
         Objects.requireNonNull(name, "name");
         gauges.computeIfAbsent(name, _ -> new AtomicLong()).set(value);
     }
 
+    /**
+     * Records one latency sample into the named summary's {@code _count}/{@code _sum}
+     * aggregate, creating it on first use.
+     *
+     * @param name        metric name; never {@code null}
+     * @param nanoseconds latency sample
+     * @throws NullPointerException if {@code name} is {@code null}
+     */
     @Override
     public void latency(String name, long nanoseconds) {
         Objects.requireNonNull(name, "name");
         latencies.computeIfAbsent(name, _ -> new LatencyAggregate()).record(nanoseconds);
     }
 
+    /**
+     * Returns {@code "ExerisCommunity/PrometheusMetricsSink"}.
+     */
     @Override
     public String sinkName() {
         return SINK_NAME;
     }
 
+    /**
+     * Discards all recorded counters, gauges and latency aggregates.
+     *
+     * <p>Unlike the other Community sinks, this is not a closed-flag guard: the
+     * sink remains usable afterward and {@link #increment}/{@link #gauge}/
+     * {@link #latency} recreate metrics on their next call.
+     */
     @Override
     public void close() {
         counters.clear();
@@ -118,7 +153,8 @@ public final class PrometheusMetricsSink implements TelemetrySink {
      * and one or more sample lines. Names are sorted lexicographically within each
      * type group so the output is deterministic for snapshot tests.
      *
-     * @return non-null exposition text; trailing newline included
+     * @return non-null exposition text, each line newline-terminated; empty if no
+     *         counter, gauge or latency metric has been recorded yet
      */
     public String exposeText() {
         StringBuilder out = new StringBuilder(256);

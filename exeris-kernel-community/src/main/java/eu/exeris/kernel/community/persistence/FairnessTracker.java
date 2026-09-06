@@ -199,6 +199,7 @@ final class FairnessTracker {
             long waitSampleCount) {
     }
 
+    /** A computed, time-windowed fairness reading — see {@link #computeSnapshot()}. */
     /* default */ record FairnessSnapshot(double fairnessRatio, long queueDepthP95, long queueWaitP95Ms) {
     }
 

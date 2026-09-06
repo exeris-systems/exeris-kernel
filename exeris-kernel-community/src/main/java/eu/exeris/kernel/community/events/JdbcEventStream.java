@@ -38,11 +38,23 @@ final class JdbcEventStream implements EventStream {
         this.result = result;
     }
 
+    /**
+     * Returns a single-row-lookahead iterator over this stream's cursor.
+     *
+     * @return a new iterator over the remaining rows of this stream's cursor
+     * @implNote A second call returns a new {@code PayloadIterator} instance, but it advances
+     *           the same underlying {@link QueryResult} cursor as the first — the two are not
+     *           independent views over the rows.
+     */
     @Override
     public Iterator<EventPayload> iterator() {
         return new PayloadIterator();
     }
 
+    /**
+     * Releases the result, statement and connection this stream owns, in that order.
+     * Idempotent — a second call is a no-op.
+     */
     @Override
     public void close() {
         if (closed) {

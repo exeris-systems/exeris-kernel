@@ -18,11 +18,22 @@ import eu.exeris.kernel.spi.transport.TransportMode;
 import java.io.IOException;
 import java.net.ServerSocket;
 
+/**
+ * Package-private builder for the {@link TransportEngine} and {@link TransportConfig} that back a
+ * Community HTTP server or client engine — the seam that translates {@link HttpConfig} plus the
+ * bound {@link ConfigProvider} into the transport subsystem's own configuration shape.
+ */
 final class CommunityHttpTransportFactory {
 
     private CommunityHttpTransportFactory() {
     }
 
+    /**
+     * The bound memory allocator, required.
+     *
+     * @return the allocator bound at {@link KernelProviders#MEMORY_ALLOCATOR}
+     * @throws IllegalStateException if no allocator is bound
+     */
     /* default */ static MemoryAllocator resolveAllocator() {
         if (!KernelProviders.MEMORY_ALLOCATOR.isBound()) {
             throw new IllegalStateException("KernelProviders.MEMORY_ALLOCATOR is not bound");
@@ -30,6 +41,16 @@ final class CommunityHttpTransportFactory {
         return KernelProviders.MEMORY_ALLOCATOR.get();
     }
 
+    /**
+     * Builds and returns a {@link TransportEngine} configured from {@code config}, binding
+     * {@code allocator} to {@link KernelProviders#MEMORY_ALLOCATOR} for the call when nothing is
+     * already bound there.
+     *
+     * @param config    the HTTP engine configuration to derive transport settings from
+     * @param port      the port to bind, ignored for a client-mode transport
+     * @param allocator the allocator to bind if none is already bound
+     * @return a transport engine ready to {@code start()}
+     */
     /* default */ static TransportEngine buildTransport(HttpConfig config, int port, MemoryAllocator allocator) {
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.isBound()
             ? KernelProviders.CURRENT_CONFIG.get()
@@ -84,6 +105,17 @@ final class CommunityHttpTransportFactory {
                 .orElse(configProvider.getString(fallbackKey).orElse(null));
     }
 
+    /**
+     * An ephemeral TCP port free at the moment of the call, obtained by binding and immediately
+     * releasing an OS-assigned port. This is how a server engine configured with port {@code 0}
+     * resolves the concrete port it will bind, since the transport configuration it builds carries
+     * a definite port number rather than "any". Racy by nature — nothing reserves the port between
+     * this call returning and the later bind — so a caller relies on it for port <em>selection</em>,
+     * not for a guarantee that the port stays free until bound.
+     *
+     * @return a port number free at the time of the call
+     * @throws IllegalStateException if no ephemeral port could be allocated
+     */
     /* default */ static int nextFreePort() {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();

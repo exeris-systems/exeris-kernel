@@ -25,16 +25,19 @@ import java.util.regex.Matcher;
  * Community-internal SQL migration bootstrap helper. Extracted from
  * {@link CommunityPersistenceEngine} in QA-010 (v0.8 Sprint 1) to reduce the engine's
  * responsibility surface — the engine owns connection lifecycle and admission control;
- * this helper owns the "read SQL resources from the classpath, split into statements,
- * execute them inside one transaction" workflow.
+ * this helper owns reading SQL resources from the classpath, ordering them, and
+ * splitting each into statements. Deciding which migrations still need applying, and
+ * applying each in its own transaction, is {@link SchemaMigrationApplier}'s job
+ * (ADR-073).
  *
  * <h2>Workflow</h2>
  * <p>{@link #runIfEnabled(boolean, DataSource, List, String, String)} is a no-op when
  * the run-migrations flag is {@code false}; otherwise it acquires a single connection
- * from the supplied pool, sets auto-commit off, executes every statement from every
- * resource in {@link Comparator#naturalOrder() natural order} of the resource list,
- * and either commits on success or rolls back on any failure before restoring
- * auto-commit.
+ * from the supplied pool, orders {@code resources} by migration version — not
+ * {@link Comparator#naturalOrder() natural string order} of the resource path, see
+ * {@link #MIGRATION_ORDER} — and hands the connection and ordered list to
+ * {@link SchemaMigrationApplier#applyPending}, which applies every migration the
+ * ledger does not already carry, each in its own transaction.
  *
  * <h2>SQL splitting</h2>
  * <p>Statement boundaries are detected on top-level {@code ;} characters outside
@@ -61,14 +64,10 @@ import java.util.regex.Matcher;
 final class CommunityPersistenceMigrationRunner {
 
     /**
-     * Orders migrations by their {@code V<major>.<minor>.<patch>} version, numerically.
-     *
-     * <p>This used to be {@link Comparator#naturalOrder()} over the resource path, which is a string
-     * comparison: {@code V0.10.0} sorts before {@code V0.5.0} because {@code '1' < '5'}. That was
-     * harmless only for as long as no migration depended on an earlier one — every script so far
-     * created its own table with {@code IF NOT EXISTS}, so running them out of order changed nothing.
-     * The first {@code ALTER TABLE} against a table an earlier script creates fails outright, which is
-     * how the ordering was found.
+     * Orders migrations by their {@code V<major>.<minor>.<patch>} version, numerically — not by
+     * {@link Comparator#naturalOrder() natural string order} of the resource path, under which
+     * {@code V0.10.0} sorts before {@code V0.5.0} because {@code '1' < '5'} and a migration that
+     * depends on an earlier one's table could run first.
      *
      * <p>Anything that does not parse as a version sorts last, by path, rather than throwing: a
      * migration runner is not the right place to fail a boot over a file name.
@@ -100,17 +99,18 @@ final class CommunityPersistenceMigrationRunner {
     }
 
     /**
-     * Runs every migration in {@code resources} (ordered by semantic version) against the
-     * supplied {@code dataSource} inside a single transaction. Returns immediately when
-     * {@code enabled} is {@code false}.
+     * Runs every migration in {@code resources} (ordered by semantic version) against one
+     * connection acquired from {@code dataSource}, applying each migration the ledger does not
+     * already carry in its own transaction ({@link SchemaMigrationApplier}, ADR-073). Returns
+     * immediately when {@code enabled} is {@code false}.
      *
      * @param enabled        whether migrations should run (resolved from config)
      * @param dataSource     pooled JDBC datasource; one connection is acquired and released
      * @param resources      classpath migration resource paths (e.g. {@code db/migration/V…sql})
      * @param providerId     persistence-provider identifier used in bootstrap-failure reporting
      * @param connectionUrl  JDBC URL used in bootstrap-failure reporting
-     * @throws PersistenceProviderException when a resource cannot be read or any
-     *         statement fails to execute; the underlying cause is preserved.
+     * @throws PersistenceProviderException ({@code EX-PERS-5001}) when a resource cannot be
+     *         read or any statement fails to execute; the underlying cause is preserved
      */
     /* default */ static void runIfEnabled(boolean enabled,
                                            DataSource dataSource,

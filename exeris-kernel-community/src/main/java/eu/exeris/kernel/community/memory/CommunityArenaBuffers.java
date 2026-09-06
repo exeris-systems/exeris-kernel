@@ -6,6 +6,13 @@ package eu.exeris.kernel.community.memory;
 
 import eu.exeris.kernel.core.memory.AbstractLoanedBuffer;
 
+/**
+ * Community: assembles a pool-backed {@link CommunityLoanedBuffer} from a
+ * {@link CommunityArenaShardPool} allocation.
+ *
+ * <p>Holds no state of its own; {@link #allocateOwned} is the single seam between the
+ * shard pool's segment allocation and the buffer's reference-count lifecycle.
+ */
 final class CommunityArenaBuffers {
 
     private CommunityArenaBuffers() {

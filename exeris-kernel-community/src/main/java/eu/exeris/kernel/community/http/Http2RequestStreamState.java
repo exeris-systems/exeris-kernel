@@ -9,6 +9,22 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
 
+/**
+ * Community: one HTTP/2 stream's request under assembly — the decoded headers
+ * ({@link Http2DecodedRequest}) plus the DATA-frame body accumulated so far, held by
+ * {@link Http2SessionContext} between the stream's HEADERS and its end-of-stream DATA frame.
+ *
+ * <p><b>Allocation:</b> allocates its body buffer lazily, on the first non-empty
+ * {@link #appendBody}, and replaces it with a larger one, doubling toward the caller-supplied
+ * {@code needed} size, only when the next append would overflow the current capacity.
+ * <p><b>Thread confinement:</b> owner thread — confined to the connection's single
+ * frame-processing loop in {@link CommunityHttp2SessionProcessor}; a stream's frames are never
+ * processed concurrently with another frame on the same connection, even though many streams are
+ * multiplexed over it.
+ * <p><b>Ownership:</b> owns the body buffer until {@link #detachBody} transfers it to the caller,
+ * who must then close it, or {@link #close()} releases it; after either, the instance no longer
+ * owns a buffer, even though {@link #detachBody} leaves the field referencing the one it gave away.
+ */
 /* default */ final class Http2RequestStreamState implements AutoCloseable {
     private static final int INITIAL_BODY_BUFFER_BYTES = 1024;
 

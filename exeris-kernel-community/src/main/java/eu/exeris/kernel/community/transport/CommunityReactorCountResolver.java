@@ -7,7 +7,14 @@ package eu.exeris.kernel.community.transport;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 
 /**
- * Resolves Community transport reactor count from explicit config or deterministic CPU auto-tuning.
+ * Resolves the number of reactor loops the Community carrier starts, from explicit configuration
+ * or deterministic CPU-count auto-tuning.
+ *
+ * <p>Precedence: {@code transport.reactorCount}, then {@code network.reactorCount}, then an
+ * auto-tuned value — {@code availableProcessors() - reserveCores}, clamped to
+ * {@code [transport.auto.minReactors, transport.auto.maxReactors]} (defaulting to {@code 1} and
+ * the CPU count when those keys are unset) — so an explicit count always wins over auto-tuning,
+ * and either config key is honoured regardless of which subsystem reads it.
  */
 public final class CommunityReactorCountResolver {
 
@@ -20,6 +27,14 @@ public final class CommunityReactorCountResolver {
     private CommunityReactorCountResolver() {
     }
 
+    /**
+     * Resolves the reactor count for this JVM, using {@link Runtime#availableProcessors()} as the
+     * CPU count auto-tuning is based on.
+     *
+     * @param configProvider the resolved provider, or {@code null} when none is bound — auto-tuning
+     *                       still applies the default reserved-core tiering with no provider
+     * @return the number of reactor loops to start; always {@code >= 1}
+     */
     public static int resolve(ConfigProvider configProvider) {
         return resolve(configProvider, Runtime.getRuntime().availableProcessors());
     }

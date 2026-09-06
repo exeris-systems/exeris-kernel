@@ -50,6 +50,9 @@ public final class KafkaEventBrokerPort implements OutboxBrokerPort {
     private final IntFunction<String>      ordinalToTopic;
 
     /**
+     * Constructs a port that publishes outbox entries through {@code producer}, resolving each
+     * entry's destination topic via {@code ordinalToTopic}.
+     *
      * @param producer        a configured Kafka producer; the port does NOT close it
      * @param ordinalToTopic  resolves a registered event-type ordinal to its destination topic.
      *                        To stay consistent with the {@code KafkaEventEngine} publish path,

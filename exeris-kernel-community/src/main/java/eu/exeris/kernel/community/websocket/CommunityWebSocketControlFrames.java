@@ -31,7 +31,8 @@ final class CommunityWebSocketControlFrames {
      *
      * <p>The echo is <em>reported</em> rather than sent here so the exchange can flip its state
      * first. Sending the close and then marking the connection closed lets a peer observe the echo
-     * and still get a successful {@code send()} back — a race CI found and a fast machine hides.
+     * and still get a successful {@code send()} back — a race that a fast machine can mask
+     * entirely.
      */
     /* default */ record Reaction(boolean closing, int closeCode, WebSocketCloseCode echoCode) {
         /* default */ static final Reaction NONE =

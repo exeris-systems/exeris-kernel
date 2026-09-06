@@ -24,14 +24,22 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
  * Each shard maintains a lock-free queue of unreturned buffers. On allocation,
  * the pool attempts to reuse a buffer from the queue; on release, the buffer
  * is returned to the queue for future reuse. <strong>All allocations, including
- * those exceeding 1 MB, now use the shared arena:</strong> this enforces deterministic
+ * those exceeding 1 MB, use the shared arena:</strong> this enforces deterministic
  * release semantics across LoanedBuffer hand-offs (e.g., queue-based cross-VT
  * transfer).
  *
- * <h2>Ownership</h2>
- * <p>The pool owns shard arenas and all buffers allocated from them. On pool close,
- * shard arenas are closed in deterministic order, invalidating outstanding buffers.
- * Subsequent allocations throw IllegalStateException.
+ * <p><b>Allocation:</b> a free-list hit returns a previously pooled {@link MemorySegment}
+ * without allocating new native memory; a miss (or a request above the largest size
+ * class) allocates a new segment from the shard's shared {@link Arena}. Every call to
+ * {@link #allocateSegment} also heap-allocates one {@link Allocation} record to carry the
+ * segment and its origin shard back to the caller.
+ * <p><b>Thread confinement:</b> any thread — {@link #allocateSegment} hashes the calling
+ * thread's ID to a shard index and {@link #returnSegment} takes the origin shard
+ * explicitly, so both are safe to call from any thread without external synchronization.
+ * <p><b>Ownership:</b> the pool owns every shard {@link Arena} and every segment allocated
+ * from them. {@link #close()} closes shard arenas in deterministic order, invalidating
+ * outstanding buffers; {@link #allocateSegment} on a closed pool throws
+ * {@link IllegalStateException}.
  *
  * @since 0.5
  */

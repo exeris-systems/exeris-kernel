@@ -16,18 +16,21 @@ import java.util.Objects;
 /**
  * Reads one HTTP/1.x response off a {@link TransportStream} into a single contiguous buffer.
  *
- * <p>The buffer starts small and grows to what the response says it needs. Until 0.12 the client
- * allocated the configured ceiling up front for every response, so a {@code HEAD} against a 10 MiB
- * ceiling cost 10 MiB — the allocation was sized by configuration rather than by the response, on a
- * path that runs once per request. {@code Content-Length} is the signal that ends the guessing:
- * once the decoder has resolved it the next allocation is the last one, and for the common small
- * response there is no second allocation at all.
+ * <p>The buffer starts small and grows to what the response says it needs. {@code Content-Length}
+ * is the signal that ends the guessing: once the decoder has resolved it the next allocation is
+ * the last one, and for the common small response there is no second allocation at all. The
+ * configured ceiling still bounds how far the buffer may grow — reaching it ends the read and
+ * leaves the decoder to refuse the overrun with the same message, which is what lets a caller
+ * size an engine deliberately and rely on the refusal.
  *
- * <p>The ceiling did not go away, it stopped being the starting point. Reaching it still ends the
- * read and leaves the decoder to refuse the overrun with the same message, which is what lets a
- * caller size an engine deliberately and rely on the refusal.
- *
- * <p>Not thread-safe, and not meant to be: one instance reads one response on the calling thread.
+ * <p><b>Allocation:</b> allocates the initial buffer at construction and, on overflow, one
+ * replacement buffer per growth step (copying the bytes read so far and releasing the previous
+ * buffer); bounded above by the {@code ceiling} passed to the constructor.
+ * <p><b>Thread confinement:</b> owner thread — one instance reads one response on the thread that
+ * constructed it; not safe for concurrent use.
+ * <p><b>Ownership:</b> owns the aggregate buffer for the reader's life; {@link #close()} releases
+ * it. {@link #decode(HttpVersion)} copies any body into a separate buffer owned by the returned
+ * {@link HttpResponse}, so the reader may be closed immediately after decoding.
  *
  * @since 0.12
  */

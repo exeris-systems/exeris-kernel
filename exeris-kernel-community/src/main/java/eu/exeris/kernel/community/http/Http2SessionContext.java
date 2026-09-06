@@ -25,11 +25,7 @@ import java.util.Map;
 
 /**
  * Package-private per-connection HTTP/2 session state used by
- * {@link CommunityHttp2SessionProcessor}.
- *
- * <p>Extracted from {@link CommunityHttp2SessionProcessor} in v0.8 Sprint 3
- * (QA-018a) as one of four seams of the processor's God-class decomposition.
- * Owns:
+ * {@link CommunityHttp2SessionProcessor}. Owns:
  * <ul>
  *   <li>The per-connection HPACK encoder/decoder pair (RFC 7541) and their
  *       dynamic tables.</li>
@@ -44,6 +40,17 @@ import java.util.Map;
  * <p>Lifetime is one HTTP/2 connection; the processor wraps each session in a
  * try-with-resources so {@link #close()} discards any unprocessed assembler
  * state and request streams.
+ *
+ * <p><b>Allocation:</b> the HPACK tables, frame codec and header-block assembler are allocated once,
+ * in {@link #create}, for the connection's whole life; the per-stream {@link Http2RequestStreamState}
+ * registry adds one entry per stream admitted by {@link #admitClientStreamId}, up to
+ * {@link #maxConcurrentStreams()}.
+ * <p><b>Thread confinement:</b> owner thread — every accessor is called from the single
+ * frame-processing loop {@link CommunityHttp2SessionProcessor} runs for this connection, never
+ * concurrently and never from another connection's loop.
+ * <p><b>Ownership:</b> owns every {@link Http2RequestStreamState} it admits until
+ * {@link #takeRequestStream} hands it to the caller, {@link #resetRequestStream} discards it, or
+ * {@link #close()} closes every entry still open when the connection ends.
  */
 // Retained suppressions:
 // - TooManyMethods: session state requires accessors for assembler + codec + per-stream registry.
@@ -65,10 +72,10 @@ final class Http2SessionContext implements AutoCloseable {
     private static final String UPGRADE_TOKEN = "upgrade";
 
     /**
-     * Default max concurrent client-initiated streams per connection (RFC 7540 §5.1.2).
-     * Matches the recommended floor in §6.5.2 — operators tuning for high-fanout workloads
-     * can raise this via a future SETTINGS extension; for v0.8 it's a fixed conservative
-     * cap that protects the server from stream-table exhaustion (HTTP-112).
+     * Default max concurrent client-initiated streams per connection (RFC 7540 §5.1.2). Matches
+     * the recommended floor in §6.5.2 — a fixed conservative cap that protects the server from
+     * stream-table exhaustion; raising it for high-fanout workloads would need a SETTINGS
+     * extension this session does not yet send.
      */
     private static final int HTTP2_DEFAULT_MAX_CONCURRENT_STREAMS = 100;
 
@@ -193,9 +200,9 @@ final class Http2SessionContext implements AutoCloseable {
     }
 
     /**
-     * Admission decision for a newly-arriving peer-initiated HEADERS frame's stream-id
-     * (HTTP-112, v0.8 Sprint 5). Captures the three cases RFC 7540 distinguishes between
-     * an acceptable new stream and the two refuse-reasons:
+     * Admission decision for a newly-arriving peer-initiated HEADERS frame's stream-id. Captures
+     * the three cases RFC 7540 distinguishes between an acceptable new stream and the two
+     * refuse-reasons:
      *
      * <ul>
      *   <li>{@link #ACCEPT} — odd id, strictly greater than {@code lastClientStreamId},

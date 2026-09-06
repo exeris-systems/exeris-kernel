@@ -13,6 +13,11 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Community TCP connection model: one connection maps to one bidirectional stream.
  *
+ * <p>State ({@code open}, the attachment, the bound stream) is held in atomics so any thread may
+ * query or close a connection concurrently with the carrier reactor serving its stream. This class
+ * owns no buffer and no native resource of its own; {@link #close()} delegates the actual teardown
+ * to the bound {@link NativeTcpStream}.
+ *
  * @since 0.5
  */
 final class NativeTcpConnection implements TransportConnection {
@@ -40,6 +45,12 @@ final class NativeTcpConnection implements TransportConnection {
         }
     }
 
+    /**
+     * Returns this connection's single stream.
+     *
+     * @return the bound stream
+     * @throws IllegalStateException if the connection is closed, or no stream has been bound yet
+     */
     @Override
     public TransportStream openStream() {
         NativeTcpStream stream = streamRef.get();
@@ -49,41 +60,80 @@ final class NativeTcpConnection implements TransportConnection {
         return stream;
     }
 
+    /**
+     * Always fails: the Community TCP driver has no unidirectional stream type — every
+     * connection carries exactly one bidirectional stream.
+     *
+     * @throws UnsupportedOperationException always
+     */
     @Override
     public TransportStream openUnidirectionalStream() {
         throw new UnsupportedOperationException("Community TCP does not support unidirectional streams");
     }
 
+    /**
+     * Returns the remote peer's address, as resolved when the connection was accepted or dialled.
+     *
+     * @return the remote host address
+     */
     @Override
     public String remoteAddress() {
         return remoteAddress;
     }
 
+    /**
+     * Returns the remote peer's port, as resolved when the connection was accepted or dialled.
+     *
+     * @return the remote port
+     */
     @Override
     public int remotePort() {
         return remotePort;
     }
 
+    /**
+     * Whether this connection is still open.
+     *
+     * @return {@code true} until {@link #close()} (or carrier-driven teardown) has run
+     */
     @Override
     public boolean isOpen() {
         return open.get();
     }
 
+    /**
+     * Returns the caller-set attachment.
+     *
+     * @return the current attachment, or {@code null} if none has been set
+     */
     @Override
     public Object attachment() {
         return attachment.get();
     }
 
+    /**
+     * Replaces the attachment.
+     *
+     * @param newAttachment the value to attach; may be {@code null}
+     */
     @Override
     public void setAttachment(Object newAttachment) {
         attachment.set(newAttachment);
     }
 
+    /**
+     * No-op: the Community TCP driver has no per-connection periodic work for a caller to drive.
+     *
+     * @return {@code false}, always
+     */
     @Override
     public boolean tick() {
         return false;
     }
 
+    /**
+     * Closes this connection and its bound stream, if any. Idempotent.
+     */
     @Override
     public void close() {
         if (!open.compareAndSet(true, false)) {

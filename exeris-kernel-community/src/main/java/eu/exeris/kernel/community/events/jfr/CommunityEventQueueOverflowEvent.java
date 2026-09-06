@@ -13,7 +13,7 @@ import jdk.jfr.StackTrace;
 
 /**
  * Emitted when {@code CommunityEventQueue} refuses a push because the bus is in
- * fail-fast mode and the queue is at capacity (EVENT-111, v0.8 Sprint 5).
+ * fail-fast mode and the queue is at capacity.
  *
  * <p>Operators rely on this event to attribute publish overflow rates to
  * specific event types and to track backpressure trends over time — the
@@ -25,6 +25,10 @@ import jdk.jfr.StackTrace;
  * {@code TransportIngressQueueDepthEvent} (transport ingress),
  * {@code OutboxDlqEvent} (DLQ transitions). All four can be aggregated into
  * a single operator dashboard for system-wide backpressure visibility.
+ *
+ * @implNote {@link #emit} commits in two phases — {@link Event#begin()}, then only local field
+ *           assignment, then {@link Event#commit()} — so the timed interval never straddles a
+ *           blocking operation on the emitting thread.
  */
 @Name("eu.exeris.kernel.events.CommunityEventQueueOverflow")
 @Label("Community Event Queue Overflow")
@@ -53,6 +57,17 @@ public final class CommunityEventQueueOverflowEvent extends Event {
     @Description("Configured queue capacity from EventEngineConfig.queueCapacity()")
     /* default */ int queueCapacity;
 
+    /**
+     * Commits this event, recording the engine name, event type, and the queue depth/capacity
+     * observed at the moment of the refused push.
+     *
+     * <p>A no-op when the event is disabled.
+     *
+     * @param engineName    human-readable engine name from {@code EventEngineConfig.engineName()}
+     * @param eventType     event type name; recorded as empty when {@code null}
+     * @param queueDepth    queue size observed at the moment of overflow
+     * @param queueCapacity configured queue capacity
+     */
     public static void emit(String engineName,
                             String eventType,
                             int queueDepth,
