@@ -28,10 +28,17 @@ import java.util.concurrent.TimeUnit;
  * <ul>
  *   <li><b>Warmup:</b> 3 × 2 s — allows C2 JIT to compile and inline hot paths
  *       (especially VarHandle CAS loops in Enterprise slab pools)</li>
- *   <li><b>Measurement:</b> 5 × 5 s — sufficient steady-state window for JMH's
- *       statistical analysis to yield low-noise throughput estimates</li>
+ *   <li><b>Measurement:</b> 5 × 5 s — the iteration window JMH reports statistics
+ *       over</li>
  *   <li><b>Mode:</b> {@link Mode#Throughput} — operations/second; the primary SLA
  *       metric for kernel subsystems</li>
+ *   <li><b>Fork:</b> 1 — every warmup and measurement iteration of a run executes inside
+ *       a single JVM process. The five measurement iterations are five windows of that
+ *       one process, not five independent samples: JIT compilation state and any
+ *       driver/OS scheduling bias are shared across all of them. Comparing two
+ *       implementations, or trusting a single run's result, requires running the
+ *       benchmark across multiple fresh JVM invocations and treating each invocation,
+ *       not each iteration, as one sample.</li>
  * </ul>
  *
  * <h2>Valhalla Readiness</h2>

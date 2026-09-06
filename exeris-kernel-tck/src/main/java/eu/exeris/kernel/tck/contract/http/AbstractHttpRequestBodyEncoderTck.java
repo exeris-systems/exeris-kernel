@@ -57,7 +57,7 @@ import java.util.Locale;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityJsonRequestBodyEncoderTckTest extends AbstractHttpRequestBodyEncoderTck {
  *     @Override
  *     protected HttpRequestBodyEncoder createEncoder() {
@@ -74,7 +74,7 @@ import java.util.Locale;
  *         return "application/json";
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>The Wall (SPI compliance)</h2>
  * <p>This TCK imports only from {@code exeris-kernel-spi}. Drivers may not leak

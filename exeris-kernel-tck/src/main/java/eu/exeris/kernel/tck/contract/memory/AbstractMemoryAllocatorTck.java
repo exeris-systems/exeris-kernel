@@ -32,14 +32,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>How to use</h2>
  * <p>In the {@code community} or {@code enterprise} module, create a single concrete subclass:
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityAllocatorTest extends AbstractMemoryAllocatorTck {
  *     @Override
  *     protected MemoryAllocator createAllocator() {
  *         return new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>The Wall</h2>
  * <p>This class imports ONLY from {@code exeris-kernel-spi}. It must never import
@@ -53,6 +53,8 @@ public abstract class AbstractMemoryAllocatorTck {
 
     /**
      * Subclass supplies the allocator under test. Called once before each test.
+     *
+     * @return allocator; must not be {@code null}
      */
     protected abstract MemoryAllocator createAllocator();
 
@@ -62,6 +64,8 @@ public abstract class AbstractMemoryAllocatorTck {
      * that fits within their pool capacity (e.g. slab count in TRANSPORT_TCP partition).
      *
      * <p>Default: {@value #DEFAULT_AVALANCHE_THREADS}.
+     *
+     * @return number of concurrent Virtual Threads to run in the avalanche test
      */
     protected int avalancheThreadCount() {
         return DEFAULT_AVALANCHE_THREADS;
@@ -73,6 +77,8 @@ public abstract class AbstractMemoryAllocatorTck {
      * test is enabled; when {@code false}, it is skipped.
      *
      * <p>Default: {@code false} (Community: no hard limit).
+     *
+     * @return {@code true} if the allocator under test enforces a fixed slab budget
      */
     protected boolean hasFixedSlabBudget() {
         return false;
@@ -81,6 +87,8 @@ public abstract class AbstractMemoryAllocatorTck {
     /**
      * Override to return the number of slabs available in the TRANSPORT_TCP partition.
      * Used only when {@link #hasFixedSlabBudget()} returns {@code true}.
+     *
+     * @return number of slabs available in the TRANSPORT_TCP partition
      */
     protected int fixedSlabCount() {
         return 0;

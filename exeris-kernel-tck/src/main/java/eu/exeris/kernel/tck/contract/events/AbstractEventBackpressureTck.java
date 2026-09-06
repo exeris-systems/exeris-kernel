@@ -27,13 +27,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * TCK: Abstract base for {@link EventBus} back-pressure contract verification.
  *
- * <h2>EVENT-205b — Closing the Backpressure TCK Gap</h2>
- * <p>{@code events.md} has long flagged {@code EX-EVENT-6002} as a TCK gap. This suite is the
- * binding-agnostic contract that every <em>queueing-bus</em> {@link EventEngine} implementation
- * built with a <em>fail-fast</em> {@link EventEngineConfig} must satisfy when the bus queue is at
- * capacity. Drivers that bypass the local queue entirely (e.g. the Kafka driver, where the broker
- * itself is the durable queue) are out of scope for this contract — overflow surfaces via
- * driver-native error paths there, not via {@code EX-EVENT-6002} on the local queue.
+ * <h2>Backpressure Contract</h2>
+ * <p>This suite is the binding-agnostic contract that every <em>queueing-bus</em>
+ * {@link EventEngine} implementation built with a <em>fail-fast</em> {@link EventEngineConfig}
+ * must satisfy when the bus queue is at capacity. Drivers that bypass the local queue entirely
+ * (e.g. the Kafka driver, where the broker itself is the durable queue) are out of scope for
+ * this contract — overflow surfaces via driver-native error paths there, not via
+ * {@code EX-EVENT-6002} on the local queue.
  *
  * <h2>Verified Constraints</h2>
  * <ol>
@@ -49,13 +49,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityEventBackpressureTckTest extends AbstractEventBackpressureTck {
- *     \@Override protected EventEngine createEngine(EventEngineConfig failFastConfig) {
+ *     @Override protected EventEngine createEngine(EventEngineConfig failFastConfig) {
  *         return new CommunityEventProvider().createEngine(failFastConfig);
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.7
  */
@@ -63,17 +63,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractEventBackpressureTck {
 
     /**
-     * Creates a fresh, not-yet-started {@link EventEngine} configured with the supplied
-     * {@code failFastConfig} (which always carries {@code busPublishFailFast=true} and a tiny
-     * {@code queueCapacity}). The TCK calls {@code start()}.
+     * Creates a fresh {@link EventEngine} configured with the supplied {@code failFastConfig}.
+     *
+     * @param failFastConfig the fail-fast queue configuration under test; carries
+     *                       {@code busPublishFailFast=true} and a tiny {@code queueCapacity}
+     * @return a fresh {@link EventEngine} that has not yet been started
+     * @implSpec The returned engine must not be started; the TCK calls {@code start()} itself.
      */
     protected abstract EventEngine createEngine(EventEngineConfig failFastConfig);
 
     /**
      * Optional template hook — the binding-specific config builder that the suite uses to
-     * fabricate a fail-fast config with the requested queue capacity. The default implementation
-     * uses {@link EventEngineConfig}'s 11-arg backward-compat constructor and overrides
-     * {@code busPublishFailFast} via the canonical 12-arg constructor.
+     * fabricate a fail-fast config with the requested queue capacity.
+     *
+     * @param queueCapacity the queue capacity to configure
+     * @return an {@link EventEngineConfig} with {@code busPublishFailFast} enabled and
+     *         {@code queueCapacity} set to the supplied value
+     * @apiNote The default implementation uses {@link EventEngineConfig}'s 11-arg
+     *          backward-compat constructor and overrides {@code busPublishFailFast} via the
+     *          canonical 12-arg constructor; override only where a binding's config type differs.
      */
     protected EventEngineConfig failFastConfig(int queueCapacity) {
         EventEngineConfig defaults = EventEngineConfig.communityDefaults();

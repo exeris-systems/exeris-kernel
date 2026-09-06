@@ -77,7 +77,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityJsonRequestBodyDecoderTckTest extends AbstractHttpRequestBodyDecoderTck {
  *     @Override
  *     protected HttpRequestBodyDecoder createDecoder() {
@@ -101,7 +101,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  *     @Override
  *     protected byte[] malformedEncodedBytes() {
- *         return "{ \"k\": ".getBytes(StandardCharsets.UTF_8);
+ *         return "&#123; \"k\": ".getBytes(StandardCharsets.UTF_8);   // truncated, no closing brace
  *     }
  *
  *     @Override
@@ -109,7 +109,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *         return Map.class;
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>The Wall (SPI compliance)</h2>
  * <p>This TCK imports only from {@code exeris-kernel-spi}. Drivers may not leak
@@ -127,7 +127,9 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
     private MemoryAllocator allocator;
 
     /**
-     * @return the decoder under test; never null
+     * Creates the {@link HttpRequestBodyDecoder} under test.
+     *
+     * @return the decoder under test; never {@code null}
      */
     protected abstract HttpRequestBodyDecoder createDecoder();
 
@@ -443,6 +445,16 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
             }
         }
 
+        /**
+         * Confirms the call compiles and its result flows through a variable of static type
+         * {@code Object}, consistent with the generics-free {@code decode} signature.
+         *
+         * @apiNote This does not exercise runtime identity or casting behaviour — {@code decode}
+         *          returns {@code Object} by interface declaration, so any non-throwing call
+         *          satisfies this regardless of what the decoder produces. That the decoded value
+         *          is actually an instance of the target type is asserted separately by
+         *          {@link #decodeHappyPath()}.
+         */
         @Test
         @DisplayName("decode returns Object (generics-free SPI surface)")
         void decodeReturnsObjectType() {

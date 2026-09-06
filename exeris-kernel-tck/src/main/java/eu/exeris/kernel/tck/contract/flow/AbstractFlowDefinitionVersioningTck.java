@@ -67,9 +67,17 @@ public abstract class AbstractFlowDefinitionVersioningTck {
      * <p>The store is a parameter rather than something the binding wires privately so a case can
      * hand the engine an instrument — see {@link OptimisticLock}, which needs a store that enforces
      * the version contract most bindings' stores are entitled to ignore.
+     *
+     * @param store the store the returned engine persists snapshots through
+     * @return a new, unstarted {@link FlowEngine} bound to {@code store}
      */
     protected abstract FlowEngine createEngine(FlowSnapshotStore store);
 
+    /**
+     * Returns the store backing the engine this suite creates in {@code setUpEngine}.
+     *
+     * @return the {@link FlowSnapshotStore} the default engine persists snapshots through
+     */
     protected abstract FlowSnapshotStore snapshotStore();
 
     private FlowEngine engine;
@@ -85,10 +93,6 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         engine.close();
     }
 
-    /**
-     * Registers a version whose single step records that it ran, so a resume can be observed by
-     * <em>which</em> version executed rather than merely by the flow completing.
-     */
     /**
      * As {@link #register}, but on a caller-supplied engine and parking instead of completing.
      *
@@ -130,6 +134,11 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                 .build();
     }
 
+    /**
+     * Compiles a plan for the given version whose second step records that it ran, into
+     * {@code executions}, so a resume can be observed by <em>which</em> version's step executed
+     * rather than merely by the flow completing.
+     */
     private FlowExecutionPlan register(int version, AtomicInteger executions) {
         // Two steps on purpose. A saga parked AT step 0 resumes at step 0+1, so a single-step
         // definition has nothing to run on wake and the resume looks identical to a refusal.
@@ -950,23 +959,6 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     }
 
     /**
-     * The compensation stack carries step identities, and resume refuses when they disagree with the
-     * plan (ADR-064 amendment A5).
-     *
-     * <h2>Why this half is the dangerous one</h2>
-     * <p>{@link Refusals#compensationStackOutsideThePlanIsRefused} covers an entry that does not index
-     * the plan. That one is loud: {@code plan.stepAt} throws inside failure handling, the unwind is
-     * truncated, and the parked row survives to be fixed. An entry that <em>does</em> index the plan but
-     * addresses a different step throws nothing at all. The unwind resolves a perfectly valid
-     * descriptor and either skips a compensation that was owed — the addressed step happens to declare
-     * none — or runs a different step's compensation. Both are silent, and neither is undoable: a
-     * compensation is a side effect that has already happened by the time anyone can observe it.
-     *
-     * <p>So these cases assert a <em>refusal on resume</em> rather than an observable rollback. There is
-     * no assertion that could distinguish the two silent outcomes after the fact, which is the whole
-     * argument for moving the check to the resume path.
-     */
-    /**
      * Migration bookkeeping, measured against a store that actually enforces the version.
      *
      * <p>Every case in {@link Migration} passes against a runtime whose migration write leaves the
@@ -1019,6 +1011,23 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         }
     }
 
+    /**
+     * The compensation stack carries step identities, and resume refuses when they disagree with the
+     * plan (ADR-064 amendment A5).
+     *
+     * <h2>Why this half is the dangerous one</h2>
+     * <p>{@link Refusals#compensationStackOutsideThePlanIsRefused} covers an entry that does not index
+     * the plan. That one is loud: {@code plan.stepAt} throws inside failure handling, the unwind is
+     * truncated, and the parked row survives to be fixed. An entry that <em>does</em> index the plan but
+     * addresses a different step throws nothing at all. The unwind resolves a perfectly valid
+     * descriptor and either skips a compensation that was owed — the addressed step happens to declare
+     * none — or runs a different step's compensation. Both are silent, and neither is undoable: a
+     * compensation is a side effect that has already happened by the time anyone can observe it.
+     *
+     * <p>So these cases assert a <em>refusal on resume</em> rather than an observable rollback. There is
+     * no assertion that could distinguish the two silent outcomes after the fact, which is the whole
+     * argument for moving the check to the resume path.
+     */
     @Nested
     @DisplayName("Compensation-stack step identity (ADR-064 A5)")
     class StackIdentity {

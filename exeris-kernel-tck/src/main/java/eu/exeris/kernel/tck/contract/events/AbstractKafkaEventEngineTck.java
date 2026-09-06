@@ -26,9 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * TCK: Abstract base for Kafka {@link EventEngine} contract verification (since 0.7.0).
+ * TCK: Abstract base for Kafka {@link EventEngine} contract verification.
  *
- * <h2>EVENT-206 — Kafka Driver Contract</h2>
+ * <h2>Kafka Driver Contract</h2>
  * <p>This suite asserts the binding-agnostic obligations every Kafka-backed
  * {@link EventEngine} must satisfy:
  * <ol>
@@ -40,7 +40,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       (set-equality / no drops). Strict per-stream ordering is preserved at the Kafka
  *       partition level by per-key routing, but the in-memory bus dispatches each event onto
  *       its own virtual thread — so subscriber-observed order is unspecified by this TCK.</li>
- *   <li>Engine close is idempotent and stops the consumer poll loop deterministically.</li>
+ *   <li>Engine {@code close()} is idempotent — a second call raises no exception. This suite does
+ *       not directly assert that the consumer poll loop has stopped afterward.</li>
  *   <li>(ADR-050) A type carrying a binding-agnostic {@code topic} override still round-trips:
  *       the publish path and the subscribe path both resolve to the override topic, so the event
  *       reaches the local subscriber. If they diverged (publish → override, subscribe →
@@ -59,6 +60,8 @@ public abstract class AbstractKafkaEventEngineTck {
     /**
      * Creates a fresh, NOT-yet-started {@link EventEngine} bound to a working Kafka broker.
      * The TCK calls {@code start()} after registering event types.
+     *
+     * @return a fresh {@link EventEngine}
      */
     protected abstract EventEngine createEngine();
 

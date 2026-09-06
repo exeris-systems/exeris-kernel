@@ -40,7 +40,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractRowCursorTypeSetTck {
 
-    /** Creates a bootstrapped engine against the measured server. */
+    /**
+     * Creates a bootstrapped engine against the measured server.
+     *
+     * @return an engine connected to the server version this type set was measured against
+     */
     protected abstract PersistenceEngine createEngine();
 
     /**
@@ -48,6 +52,8 @@ public abstract class AbstractRowCursorTypeSetTck {
      *
      * <p>Not a default anyone should be comfortable inheriting silently — each line here is the
      * reason one column of the measured set has a fixed answer at all.
+     *
+     * @param conn the connection to pin before any Tier A/B/C row is rendered on it
      */
     protected void pinSession(PersistenceConnection conn) {
         conn.executeUpdate("SET client_encoding TO 'UTF8'");

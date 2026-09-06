@@ -44,10 +44,22 @@ public abstract class CryptoZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     // Template methods
     // =========================================================================
 
-    /** Creates the {@link KernelCryptoProvider} under test. */
+    /**
+     * Creates the {@link KernelCryptoProvider} under test.
+     *
+     * @return a fresh provider instance
+     * @implSpec Return a new instance; {@link #bootstrapSubsystem()} opens exactly one
+     *           {@link TlsEngine} from it for the whole measured run.
+     */
     protected abstract KernelCryptoProvider createProvider();
 
-    /** Creates the {@link MemoryAllocator} for off-heap cipher buffers. */
+    /**
+     * Creates the {@link MemoryAllocator} for off-heap cipher buffers.
+     *
+     * @return a fresh allocator instance
+     * @implSpec Return a new instance; {@link #bootstrapSubsystem()} draws one plaintext and
+     *           one ciphertext buffer from it and reuses that pair for every iteration.
+     */
     protected abstract MemoryAllocator createAllocator();
 
     // =========================================================================

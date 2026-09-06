@@ -22,10 +22,18 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
  */
 public abstract class SecurityZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
-    /** Creates the {@link SecurityProvider} under test. */
+    /**
+     * Creates the {@link SecurityProvider} under test.
+     *
+     * @return a configured provider instance
+     */
     protected abstract SecurityProvider createProvider();
 
-    /** Creates a {@link LoanedBuffer} containing a valid, parseable token. */
+    /**
+     * Creates a {@link LoanedBuffer} containing a valid, parseable token.
+     *
+     * @return a loaned buffer holding a valid token
+     */
     protected abstract LoanedBuffer createValidTokenBuffer();
 
     private SecurityProvider provider;

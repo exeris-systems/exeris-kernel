@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHttpRoutePolicyTckTest extends AbstractHttpRoutePolicyTck {
  *     @Override
  *     protected Decision decide(RouteRequirement requirement, PrincipalContext principal) {
@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *         };
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.11
  */

@@ -39,15 +39,32 @@ public final class VersionEnforcingSnapshotStore implements FlowSnapshotStore {
     private final AtomicInteger conflicts = new AtomicInteger();
     private final AtomicInteger writes = new AtomicInteger();
 
+    /**
+     * Installs {@code snapshot} as the current row for its instance, bypassing the
+     * optimistic-lock check {@link #save} enforces.
+     *
+     * @param snapshot the row to install as the starting state for a later {@link #save} or
+     *                 {@link #load}
+     */
     public void seed(FlowSnapshot snapshot) {
         rows.put(keyOf(snapshot.instanceIdMost(), snapshot.instanceIdLeast()), snapshot);
     }
 
+    /**
+     * Returns the number of {@link #save} calls rejected because the incoming
+     * {@code schemaVersion} did not match the row's current version.
+     *
+     * @return the count of rejected optimistic-lock conflicts observed so far
+     */
     public int conflicts() {
         return conflicts.get();
     }
 
-    /** Attempts, conflicts included — so a caller waiting on write count is not hung by a rejection. */
+    /**
+     * Attempts, conflicts included — so a caller waiting on write count is not hung by a rejection.
+     *
+     * @return the total number of {@link #save} calls made so far, accepted or rejected
+     */
     public int writes() {
         return writes.get();
     }

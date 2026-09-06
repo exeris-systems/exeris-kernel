@@ -68,6 +68,10 @@ public abstract class AbstractKernelDiagnosticsTck {
     private static final List<Subsystem> SUBSYSTEMS = List.of(MEMORY, TRANSPORT);
 
     /**
+     * Supplies the {@link KernelDiagnostics} implementation under test; called directly by each
+     * test method rather than cached, since several tests call it both inside and outside a bound
+     * {@link java.lang.ScopedValue} scope to compare the two.
+     *
      * @return the {@link KernelDiagnostics} under test (stateless; reads ScopedValue slots per call)
      */
     protected abstract KernelDiagnostics diagnostics();

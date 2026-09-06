@@ -27,16 +27,23 @@ public abstract class TransportZeroAllocTck extends AbstractSubsystemZeroAllocTc
 
     /**
      * Creates a started {@link TransportEngine} with loopback binding.
+     *
+     * @return a running engine ready to accept the writable stream returned by
+     *         {@link #createWritableStream()}
      */
     protected abstract TransportEngine createEngine();
 
     /**
      * Creates a {@link MemoryAllocator} for buffer allocation.
+     *
+     * @return an allocator the hot path uses to obtain each iteration's {@link LoanedBuffer}
      */
     protected abstract MemoryAllocator createAllocator();
 
     /**
      * Creates a writable {@link TransportStream} connected to the engine.
+     *
+     * @return a stream open for writing on the engine returned by {@link #createEngine()}
      */
     protected abstract TransportStream createWritableStream();
 

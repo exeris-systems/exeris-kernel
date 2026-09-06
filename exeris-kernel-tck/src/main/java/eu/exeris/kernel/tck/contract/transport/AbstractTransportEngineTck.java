@@ -38,6 +38,11 @@ import java.util.concurrent.TimeUnit;
  *   <li>{@code mode()} correctly reports the configured {@link TransportMode}</li>
  *   <li>{@code engineName()} is non-blank</li>
  *   <li>{@code stats()} returns valid diagnostics snapshot</li>
+ *   <li>a connection refused at a configured ceiling is reflected in {@code stats().totalRejected()}</li>
+ *   <li>that refusal is never counted in {@code stats().acceptFaults()} — declining work at a
+ *       configured limit is a policy decision, not an accept-path defect</li>
+ *   <li>{@code stop()} lets a stream that is already mid-exchange finish and deliver its response
+ *       before the transport is torn down</li>
  * </ul>
  *
  * @since 0.5
@@ -54,7 +59,9 @@ public abstract class AbstractTransportEngineTck {
 
     /**
      * Creates a fully initialised (but not yet started) {@link TransportEngine} in SERVER mode.
-     * The engine MUST have a stream handler already registered.
+     *
+     * @return an unstarted engine
+     * @implSpec A stream handler must already be registered on the returned engine.
      */
     protected abstract TransportEngine createEngine();
 
@@ -71,6 +78,8 @@ public abstract class AbstractTransportEngineTck {
      *                       clamp it to something it finds more reasonable
      * @param port           the port to bind; supplied by the suite so it can drive clients at the
      *                       engine without needing a binding-specific way to read the bound address
+     * @return an unstarted engine bound to {@code port} whose concurrent-connection ceiling is
+     *         {@code maxConnections}
      */
     protected abstract TransportEngine createEngineWithConnectionCeiling(int maxConnections, int port);
 
@@ -84,11 +93,15 @@ public abstract class AbstractTransportEngineTck {
      *
      * @param port    the port to bind
      * @param handler the handler the engine must invoke for each admitted stream
+     * @return an unstarted engine bound to {@code port} that invokes {@code handler} for every
+     *         admitted stream
      */
     protected abstract TransportEngine createEngineWithHandler(int port, StreamHandler handler);
 
     /**
      * Returns the expected {@link TransportMode} of the engine created by {@link #createEngine()}.
+     *
+     * @return {@link TransportMode#SERVER} unless the binding under test configures another mode
      */
     protected TransportMode expectedMode() {
         return TransportMode.SERVER;

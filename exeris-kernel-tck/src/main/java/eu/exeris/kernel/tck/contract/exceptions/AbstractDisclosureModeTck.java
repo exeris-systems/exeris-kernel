@@ -27,11 +27,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityDisclosureModeTckTest extends AbstractDisclosureModeTck {
  *     // No overrides required — the contract is profile-driven and binding-agnostic.
  * }
- * }</pre>
+ * }
  *
  * <p>Bindings that wrap {@code ExceptionDisclosure} in a sink (e.g.,
  * {@code Slf4jTelemetrySink}) should add their own concrete tests asserting the

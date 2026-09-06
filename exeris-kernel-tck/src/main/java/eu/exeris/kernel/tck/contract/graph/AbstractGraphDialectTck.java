@@ -27,7 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ol>
  *   <li>No blank or null strings are returned for valid inputs</li>
  *   <li>{@link GraphDialect#dialectName()} is non-blank</li>
- *   <li>Multi-hop bounds are reflected in the output (detected by min/max hop numbers)</li>
+ *   <li>Multi-hop bounds are reflected in the output — checked by asserting that two
+ *       different {@code (minHops, maxHops)} pairs produce different query text, not by
+ *       parsing the hop numbers back out of it</li>
  *   <li>DDL generation is idempotent for the same schema inputs</li>
  * </ol>
  *
@@ -36,22 +38,42 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("TCK: GraphDialect — MATCH DSL parity contract")
 public abstract class AbstractGraphDialectTck {
 
-    /** Creates a dialect instance under test (PostgreSQL PGQ, Cypher, etc.). */
+    /**
+     * Creates a dialect instance under test (PostgreSQL PGQ, Cypher, etc.).
+     *
+     * @return the dialect implementation under test
+     */
     protected abstract GraphDialect createDialect();
 
     // =========================================================================
     // Shared fixtures
     // =========================================================================
 
+    /**
+     * Returns a shared {@code FOLLOWS} edge descriptor fixture, {@code User} to {@code User}.
+     *
+     * @return the {@code FOLLOWS} edge descriptor fixture
+     */
     protected GraphEdgeDescriptor follows() {
         return GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
     }
 
+    /**
+     * Returns a shared, weighted, bidirectional {@code SIMILAR_TO} edge descriptor fixture
+     * between {@code Product} nodes.
+     *
+     * @return the {@code SIMILAR_TO} edge descriptor fixture
+     */
     protected GraphEdgeDescriptor similarTo() {
         return new GraphEdgeDescriptor("Product", "SIMILAR_TO", "Product",
                 0.8, true, GraphEdgeDescriptor.Direction.BOTH, "similar_to_edges");
     }
 
+    /**
+     * Returns a shared {@code User} node descriptor fixture.
+     *
+     * @return the {@code User} node descriptor fixture
+     */
     protected GraphNodeDescriptor userNode() {
         return GraphNodeDescriptor.create("User", "users");
     }

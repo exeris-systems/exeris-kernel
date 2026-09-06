@@ -23,11 +23,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * imports only {@code java.lang} and {@code java.util}. Anyone tempted to collapse the duplication
  * will hit the cycle; that is why it is written down here.
  *
- * <p>The fixtures previously used {@code StructuredTaskScope}, a preview API: every class using it is
- * stamped {@code minor_version 0xFFFF} and will not load without {@code --enable-preview}. This module
- * has no {@code src/main} — its whole distributed surface IS the test-jar, and a provider author
- * binding {@code Abstract*Tck} consumes exactly these classes. Leaving them stamped forces the flag,
- * and the exact JDK, on every such author.
+ * <p>This deliberately avoids {@code StructuredTaskScope}: it is a preview API, and a class compiled
+ * against it is stamped {@code minor_version 0xFFFF}, refusing to load without
+ * {@code --enable-preview}. This module has no {@code src/main} — its whole distributed surface IS
+ * the test-jar, and a provider author binding {@code Abstract*Tck} consumes exactly these classes, so
+ * that stamp would force the flag, and the exact JDK, on every such author.
  *
  * <h2>Semantics</h2>
  * <ul>
@@ -76,12 +76,20 @@ public final class TckScope implements AutoCloseable {
         this.failuresAreTheSignal = failuresAreTheSignal;
     }
 
-    /** A scope that waits for every task and reports all failures together. */
+    /**
+     * A scope that waits for every task and reports all failures together.
+     *
+     * @return a new scope in fail-together mode
+     */
     public static TckScope open() {
         return new TckScope(false, false, false);
     }
 
-    /** A scope that cancels its remaining tasks on the first failure, then rethrows it. */
+    /**
+     * A scope that cancels its remaining tasks on the first failure, then rethrows it.
+     *
+     * @return a new scope in fail-fast mode
+     */
     public static TckScope openFailFast() {
         return new TckScope(true, true, false);
     }
@@ -92,6 +100,8 @@ public final class TckScope implements AutoCloseable {
      * <p>For fixtures that assert cancellation itself — that parked work is actually torn down when a
      * sibling blows up. Those throw deliberately to start the teardown, so the failure is the trigger
      * and not the verdict; rethrowing it would fail the test with its own stimulus.
+     *
+     * @return a new scope in cancel-on-failure mode
      */
     public static TckScope openCancelOnFailure() {
         return new TckScope(false, true, true);

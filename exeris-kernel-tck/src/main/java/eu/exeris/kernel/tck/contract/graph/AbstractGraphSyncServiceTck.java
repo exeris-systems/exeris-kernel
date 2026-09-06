@@ -24,20 +24,30 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 /**
  * TCK: Abstract base for L1→L2 dual-write contract verification via {@link GraphEngine}.
  *
- * <h2>Contract (graph.md §4 Dual-Write Consistency)</h2>
+ * <h2>What this TCK asserts</h2>
  * <ul>
- *   <li>Successful node/edge writes are committed atomically in the graph session</li>
- *   <li>Driver-level failures roll back the graph write and propagate
- *       {@link GraphSyncException} with error code {@code EX-GRPH-5003}</li>
- *   <li>The error code in {@link GraphSyncException#rawArgs()}[0] identifies the
- *       edge type or node label involved in the failure</li>
+ *   <li>Node and edge upsert/delete complete without exception across a full
+ *       {@code beginTransaction()}/{@code commit()} block when the session is healthy</li>
+ *   <li>When {@link #setSessionFailMode(boolean)} is armed, the write operation or its
+ *       {@code commit()} throws — caught here as a generic {@link RuntimeException}, the
+ *       only type {@link #setSessionFailMode(boolean)} promises — and the session's
+ *       {@link GraphSession#rollback()} can then be invoked without itself throwing</li>
+ *   <li>{@link GraphSyncException#errorCode()} reports {@code EX-GRPH-5003} and
+ *       {@link GraphSyncException#rawArgs()}[0] carries the edge type or node label passed
+ *       to its constructor</li>
  * </ul>
+ *
+ * <p>The last bullet is asserted against a directly-constructed {@link GraphSyncException},
+ * not one thrown by a session under fail mode: this TCK does not assert that a driver's own
+ * fail-mode failure is specifically a {@link GraphSyncException}, or that its code is
+ * {@code EX-GRPH-5003} — the session-level failure/rollback contract and the exception
+ * type's own accessor contract are verified independently of each other.
  *
  * <h2>Test approach</h2>
  * <p>Implementations supply a {@link GraphEngine} whose sessions can be put into
  * "fail mode" via {@link #setSessionFailMode(boolean)} to exercise the rollback path.
  * Tests operate directly on {@link GraphSession} to verify session-level write, rollback,
- * and error-propagation contracts.
+ * and failure-signalling behaviour.
  *
  * @since 0.5
  */
@@ -47,6 +57,8 @@ public abstract class AbstractGraphSyncServiceTck {
     /**
      * Creates a {@link GraphEngine} whose sessions support failure injection
      * via {@link #setSessionFailMode(boolean)}.
+     *
+     * @return a graph engine whose sessions can be switched into failure mode
      */
     protected abstract GraphEngine createEngine();
 

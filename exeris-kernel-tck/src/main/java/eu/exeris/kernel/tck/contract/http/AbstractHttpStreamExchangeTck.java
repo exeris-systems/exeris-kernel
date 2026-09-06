@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <h2>How to bind</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
  *     @Override
  *     protected StreamScenario openStream(HttpStreamHandler handler) {
@@ -68,7 +68,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *     }
  *     // override the capability hooks the Community tier actually wires (backpressure, auth, shed)
  * }
- * }</pre>
+ * }
  *
  * @since 0.10
  */

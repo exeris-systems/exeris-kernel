@@ -41,13 +41,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunitySubsystemProviderTest extends AbstractSubsystemProviderTck {
- *     \@Override protected SubsystemProvider createProvider() {
+ *     @Override protected SubsystemProvider createProvider() {
  *         return new CommunitySubsystemProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -57,7 +57,11 @@ public abstract class AbstractSubsystemProviderTck {
     // Template method
     // =========================================================================
 
-    /** Creates the {@link SubsystemProvider} under test. */
+    /**
+     * Creates the {@link SubsystemProvider} under test.
+     *
+     * @return a fresh {@link SubsystemProvider} instance
+     */
     protected abstract SubsystemProvider createProvider();
 
     private SubsystemProvider provider;

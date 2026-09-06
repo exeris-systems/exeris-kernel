@@ -56,14 +56,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * validator. They are explicit so the coverage gap is visible.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityKernelContextEnricherTckTest extends AbstractHttpClientRequestEnricherTck {
  *     @Override
  *     protected HttpClientRequestEnricher createEnricher() {
  *         return new CommunityKernelContextEnricher();
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.8
  */

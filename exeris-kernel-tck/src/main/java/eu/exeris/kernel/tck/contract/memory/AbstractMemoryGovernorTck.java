@@ -41,14 +41,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>The Four Governor Thresholds</h2>
  * <p>The Core's {@code WatermarkLevel} classifies utilization into four zones:
  * <table>
+ *   <caption>Governor utilization zones and their arbiter action</caption>
  *   <tr><th>Zone</th><th>Utilization</th><th>Arbiter Action</th></tr>
  *   <tr><td>NORMAL</td><td>&lt; 70%</td><td>ALLOW</td></tr>
  *   <tr><td>WARNING</td><td>70–85%</td><td>THROTTLE</td></tr>
  *   <tr><td>CRITICAL</td><td>85–95%</td><td>REJECT (transport) / SHED (logic)</td></tr>
  *   <tr><td>SHEDDING</td><td>&ge; 95%</td><td>SHED_LOAD</td></tr>
  * </table>
- * For an allocator with a <em>fixed budget</em> ({@code totalBytes > 0}), this TCK
- * verifies that the utilization signal it emits correctly traverses each zone boundary.
+ * For an allocator with a <em>fixed budget</em> ({@code totalBytes > 0}), this TCK verifies
+ * that the utilization signal stays within {@code [0.0, 1.0]} throughout a load/release
+ * cycle, returns to {@code 0.0} once idle, and stays arithmetically consistent with
+ * {@code allocatedBytes} and {@code freeBytes}; it does not assert a crossing of any one
+ * zone boundary in isolation — that belongs to the governor's own test suite.
  *
  * <h2>The Wall (SPI Compliance)</h2>
  * <p>This class imports ONLY from {@code exeris-kernel-spi}. It has zero knowledge of
@@ -56,21 +60,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the <em>signal</em> that the governor consumes, not the governor itself.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * // In the Community or Enterprise test module:
  * class CommunityGovernorSignalTest extends AbstractMemoryGovernorTck {
- *     \@Override
+ *     @Override
  *     protected MemoryProvider createProvider() {
  *         return new CommunityMemoryProvider();
  *     }
- *     \@Override
+ *     @Override
  *     protected boolean hasFixedBudget() { return false; }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see MemoryStats#utilization()
  * @see MemoryStats#allocatedBytes()
- * @since 0.5
  */
 public abstract class AbstractMemoryGovernorTck {
 
@@ -93,6 +97,8 @@ public abstract class AbstractMemoryGovernorTck {
      * ratio assertions. Dynamic allocators (Community tier) skip ratio tests.
      *
      * <p>Default: {@code false}.
+     *
+     * @return {@code true} if the allocator under test has a fixed off-heap budget
      */
     protected boolean hasFixedBudget() {
         return false;
@@ -103,6 +109,8 @@ public abstract class AbstractMemoryGovernorTck {
      * Subclasses with small slab budgets should reduce this to avoid exhaustion.
      *
      * <p>Default: {@code 32}.
+     *
+     * @return number of buffers to allocate when probing the WARNING zone
      */
     protected int warningZoneBufferCount() {
         return 32;

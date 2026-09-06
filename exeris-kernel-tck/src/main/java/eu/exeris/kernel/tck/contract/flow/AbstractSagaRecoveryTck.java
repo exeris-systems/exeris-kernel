@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * TCK: Abstract base for Flow / Saga recovery verification.
  *
- * <h2>Contract (#25)</h2>
+ * <h2>Contract</h2>
  * <p>Verifies that the {@link FlowEngine} correctly resumes or compensates a saga
  * after a catastrophic failure, and that replayed flows never trigger duplicate
  * business actions.
@@ -65,13 +65,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityFlowSagaRecoveryTest extends AbstractSagaRecoveryTck {
- *     \@Override protected FlowEngine  createEngine()  { return provider.createEngine(cfg); }
- *     \@Override protected FlowEngine  rebuildEngine() { return provider.createEngine(cfg); }
- *     \@Override protected FlowSnapshotStore snapshotStore() { return sharedStore; }
+ *     @Override protected FlowEngine  createEngine()  { return provider.createEngine(cfg); }
+ *     @Override protected FlowEngine  rebuildEngine() { return provider.createEngine(cfg); }
+ *     @Override protected FlowSnapshotStore snapshotStore() { return sharedStore; }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  * @see AbstractFlowEngineTck
@@ -84,19 +84,27 @@ public abstract class AbstractSagaRecoveryTck {
     // Template methods
     // =========================================================================
 
-    /** Creates an unstarted fresh {@link FlowEngine} (first boot). The TCK calls {@code start()}. */
+    /**
+     * Creates an unstarted fresh {@link FlowEngine} (first boot). The TCK calls {@code start()}.
+     *
+     * @return a new, unstarted engine instance
+     */
     protected abstract FlowEngine createEngine();
 
     /**
      * Creates an unstarted second {@link FlowEngine} backed by the <em>same</em>
      * {@link FlowSnapshotStore} — simulates JVM restart without snapshot loss.
      * The TCK calls {@code start()} after this method returns.
+     *
+     * @return a new, unstarted engine instance sharing the same snapshot store
      */
     protected abstract FlowEngine rebuildEngine();
 
     /**
      * Returns the {@link FlowSnapshotStore} shared between both engine instances.
      * Must be the same store used by both {@link #createEngine()} and {@link #rebuildEngine()}.
+     *
+     * @return the store shared by {@link #createEngine()} and {@link #rebuildEngine()}
      */
     protected abstract FlowSnapshotStore snapshotStore();
 
@@ -105,9 +113,11 @@ public abstract class AbstractSagaRecoveryTck {
      * scenario ({@link RestartUnderLoad}). Mirrors
      * {@code AbstractFlowSchedulerTck.avalancheScheduleCount()} so bindings can tune N.
      *
-     * <p>The default ({@value} ) MUST stay deterministic on a 2-vCPU runner — larger N
+     * <p>The default ({@code 16}) MUST stay deterministic on a 2-vCPU runner — larger N
      * is a benchmark, not a contract gate. Enterprise ring-buffer-bounded bindings may
      * override down, never up for the always-on unit lane.
+     *
+     * @return the number of concurrent instances the restart-under-load scenario drives
      */
     protected int restartLoadCount() { return 16; }
 
@@ -430,11 +440,11 @@ public abstract class AbstractSagaRecoveryTck {
     }
 
     // =========================================================================
-    // FLOW-110 — Restart under load (N concurrent contexts survive force-close)
+    // Restart under load (N concurrent contexts survive force-close)
     // =========================================================================
 
     /**
-     * FLOW-110: the mid-saga kill contract scaled to N concurrent instances on a single
+     * The mid-saga kill contract scaled to N concurrent instances on a single
      * definition. Half are driven to {@link FlowState#PARKED} mid-flow, half are left
      * {@link FlowState#RUNNING} at a no-op continue step at the moment of force-close.
      *
@@ -450,8 +460,8 @@ public abstract class AbstractSagaRecoveryTck {
      * </ul>
      *
      * <p>N is bounded by {@link #restartLoadCount()} (default 16) and MUST stay deterministic
-     * on a 2-vCPU runner — TCK-064 deadlocked a transport stress gate under thread pressure
-     * on exactly such a runner; this gate keeps N small on purpose.
+     * on a 2-vCPU runner: this gate keeps N small on purpose, and larger N is a benchmark
+     * concern rather than a contract one.
      */
     @Nested
     @DisplayName("Restart under load — N concurrent flows survive force-close and resume")
@@ -823,8 +833,7 @@ public abstract class AbstractSagaRecoveryTck {
     // =========================================================================
 
     /**
-     * The version a saga parked under has to survive a <b>restart</b>, not only a wake (ADR-073
-     * merge gate; ADR-064).
+     * The version a saga parked under has to survive a <b>restart</b>, not only a wake (ADR-064).
      *
      * <p>Two suites already stand either side of this and neither crosses it.
      * {@code AbstractFlowDefinitionVersioningTck} covers version-bound resume exhaustively and

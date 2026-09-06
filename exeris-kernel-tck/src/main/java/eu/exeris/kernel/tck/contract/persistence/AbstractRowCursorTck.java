@@ -43,28 +43,39 @@ public abstract class AbstractRowCursorTck {
 
     /**
      * Creates a bootstrapped {@link PersistenceEngine} with a test table.
+     *
+     * @return a ready-to-use engine whose connections can run {@link #testQuery()} and
+     *         {@link #nullRowQuery()}
      */
     protected abstract PersistenceEngine createEngine();
 
     /**
      * Returns the SQL query that produces at least one row with known column values.
-     * The query must return columns: (int, bigint, text) in that order.
-     * Example: {@code "SELECT 42, 9999999999, 'hello'"}.
+     *
+     * @return a single-row query
+     * @implSpec The result must have exactly the columns {@code (int, bigint, text)}, in that
+     *           order, e.g. {@code "SELECT 42, 9999999999, 'hello'"}.
      */
     protected abstract String testQuery();
 
     /**
-     * Expected int value in column 0 of the test query result.
+     * Expected int value in column 0 of {@link #testQuery()}'s result.
+     *
+     * @return the value column 0 of {@link #testQuery()} must yield
      */
     protected abstract int expectedInt();
 
     /**
-     * Expected long value in column 1 of the test query result.
+     * Expected long value in column 1 of {@link #testQuery()}'s result.
+     *
+     * @return the value column 1 of {@link #testQuery()} must yield
      */
     protected abstract long expectedLong();
 
     /**
-     * Expected String value in column 2 of the test query result.
+     * Expected String value in column 2 of {@link #testQuery()}'s result.
+     *
+     * @return the value column 2 of {@link #testQuery()} must yield
      */
     protected abstract String expectedString();
 
@@ -74,6 +85,8 @@ public abstract class AbstractRowCursorTck {
      *
      * <p>The default is portable SQL. A binding whose engine types a bare {@code CAST(NULL AS ...)}
      * differently overrides it — but the shape must hold: three columns, all NULL, in that order.
+     *
+     * @return a single all-NULL row query
      */
     protected String nullRowQuery() {
         return "SELECT CAST(NULL AS INTEGER), CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR)";

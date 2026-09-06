@@ -102,43 +102,77 @@ public abstract class GraphChurnRatioTck {
     // Template methods
     // =========================================================================
 
-    /** Creates a bootstrapped, running {@link GraphEngine}. */
+    /**
+     * Creates a bootstrapped, running {@link GraphEngine}.
+     *
+     * @return a running graph engine ready to open sessions
+     */
     protected abstract GraphEngine createEngine();
 
-    /** Returns the UUID of the node the measured traversal starts from. */
+    /**
+     * Returns the UUID of the node the measured traversal starts from.
+     *
+     * @return the start node UUID for the measured traversal
+     */
     protected abstract UUID startNodeId();
 
-    /** Returns the edge descriptor used for test traversals. */
+    /**
+     * Returns the edge descriptor used for test traversals.
+     *
+     * @return the edge descriptor for the seeded fan-out edges
+     */
     protected abstract GraphEdgeDescriptor testEdge();
 
     /**
      * Returns {@code true} if this is the Enterprise implementation, whose {@code < 1x} target is
      * the contract itself — an off-heap path has no second regime to leave room for.
+     *
+     * @return {@code true} for the Enterprise tier, {@code false} for Community
      */
     protected boolean isEnterpriseTier() { return false; }
 
     /**
      * The bound this test enforces. Enterprise: 1.0, graph.md's contract. Community: a regression
      * bound above the slow regime — see the class Javadoc for why it is not graph.md's 20x.
+     *
+     * @return the churn-to-data ratio this test fails above
      */
     protected double churnBound() { return isEnterpriseTier() ? 1.0 : 23.0; }
 
-    /** The ratio graph.md publishes for this tier, reported alongside the measurement. */
+    /**
+     * The ratio graph.md publishes for this tier, reported alongside the measurement.
+     *
+     * @return the churn-to-data ratio documented in graph.md for this tier
+     */
     protected double documentedContract() { return isEnterpriseTier() ? 1.0 : 20.0; }
 
     /**
      * Edges seeded from the start node, and therefore ids each measured traversal returns. Large
      * enough that per-round-trip setup is not the whole measurement.
+     *
+     * @return the number of edges seeded from {@link #startNodeId()}
      */
     protected int traversalFanOut() { return 500; }
 
-    /** Bytes of useful data per returned id — a UUID is 128 bits. */
+    /**
+     * Bytes of useful data per returned id — a UUID is 128 bits.
+     *
+     * @return the number of semantic payload bytes counted per returned id
+     */
     protected int bytesPerResultId() { return 16; }
 
-    /** Traversals in the measured window. */
+    /**
+     * Traversals in the measured window.
+     *
+     * @return the number of traversals sampled for the ratio measurement
+     */
     protected int measurementIterations() { return 300; }
 
-    /** Traversals discarded first; sized from the convergence curve in this class's Javadoc. */
+    /**
+     * Traversals discarded first; sized from the convergence curve in this class's Javadoc.
+     *
+     * @return the number of warm-up traversals run and discarded before measurement
+     */
     protected int warmupIterations() { return 300; }
 
     // =========================================================================

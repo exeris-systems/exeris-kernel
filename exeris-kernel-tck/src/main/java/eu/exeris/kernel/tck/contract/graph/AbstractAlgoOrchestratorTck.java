@@ -45,24 +45,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractAlgoOrchestratorTck {
 
     /**
-     * Creates a {@link PathFinder} implementation under test backed by a test graph
-     * containing at least one reachable path from {@link #reachableSource()} to
-     * {@link #reachableTarget()}.
+     * Creates the {@link PathFinder} implementation under test.
+     *
+     * @return a path finder backed by the fixture's test graph
+     * @implSpec The backing graph MUST contain at least one reachable path from
+     *           {@link #reachableSource()} to {@link #reachableTarget()}.
      */
     protected abstract PathFinder createPathFinder();
 
     /**
      * Returns a source node UUID that has at least one reachable path in the test graph.
+     *
+     * @return a source node UUID with a reachable path to {@link #reachableTarget()}
      */
     protected abstract UUID reachableSource();
 
     /**
      * Returns a target node UUID reachable from {@link #reachableSource()}.
+     *
+     * @return a target node UUID reachable from {@link #reachableSource()}
      */
     protected abstract UUID reachableTarget();
 
     /**
      * Returns a source UUID that has no path to any target (isolated node).
+     *
+     * @return a node UUID with no path to {@link #reachableTarget()} in the test graph
      */
     protected abstract UUID isolatedNode();
 
@@ -233,6 +241,12 @@ public abstract class AbstractAlgoOrchestratorTck {
     // Concurrent access
     // =========================================================================
 
+    /**
+     * Asserts that no exception escapes any of the 100 concurrent {@code findShortestPath()}
+     * calls. Each call's returned {@link PathResult} is discarded rather than checked for
+     * correctness, so this does not independently verify that a race leaves no call with
+     * another call's result — only that concurrent access does not throw.
+     */
     @Test
     @DisplayName("100 VTs calling findShortestPath() concurrently — no crash, no data corruption")
     @Timeout(30)

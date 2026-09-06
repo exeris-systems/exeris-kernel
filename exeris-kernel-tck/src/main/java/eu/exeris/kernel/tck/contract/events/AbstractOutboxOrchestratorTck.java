@@ -39,20 +39,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>GOLDEN: persistent events (FLAG_PERSISTENT) reach the registered
  *       {@link EventBatchProcessor} — the outbox hook fires.</li>
  *   <li>Non-persistent events are NOT delivered to the outbox processor.</li>
- *   <li>EventLoop batch processor receives correct descriptor metadata.</li>
+ *   <li>EventLoop batch processor receives the correct {@code eventTypeOrdinal} on the
+ *       descriptor delivered for a published event.</li>
  *   <li>At-least-once: processor receives all persisted events even under
  *       rapid sequential publish.</li>
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityOutboxTckTest extends AbstractOutboxOrchestratorTck {
- *     \@Override
+ *     @Override
  *     protected EventEngine createEngine() {
  *         return new CommunityEventProvider().createEngine(EventEngineConfig.communityDefaults());
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */

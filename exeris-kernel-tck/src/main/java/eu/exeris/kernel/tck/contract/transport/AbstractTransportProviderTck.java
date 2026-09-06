@@ -32,6 +32,8 @@ public abstract class AbstractTransportProviderTck {
 
     /**
      * Creates the {@link TransportProvider} under test.
+     *
+     * @return a provider instance; a fresh one per case
      */
     protected abstract TransportProvider createProvider();
 

@@ -35,19 +35,40 @@ public abstract class AbstractIdentityProviderTck {
     // Template methods — binding supplies the SUT + token buffers
     // =========================================================================
 
-    /** Creates the {@link IdentityProvider} under test. */
+    /**
+     * Creates the {@link IdentityProvider} under test.
+     *
+     * @return a configured provider instance
+     */
     protected abstract IdentityProvider createProvider();
 
-    /** A token this provider should both claim ({@code canAttempt}) and successfully validate. */
+    /**
+     * A token this provider should both claim ({@code canAttempt}) and successfully validate.
+     *
+     * @return a loaned buffer holding a token this provider owns and can verify
+     */
     protected abstract LoanedBuffer validTokenBuffer();
 
-    /** A well-formed token belonging to a <em>different</em> issuer — this provider must NOT claim it. */
+    /**
+     * A well-formed token belonging to a <em>different</em> issuer — this provider must NOT
+     * claim it.
+     *
+     * @return a loaned buffer holding a well-formed token this provider does not own
+     */
     protected abstract LoanedBuffer foreignIssuerTokenBuffer();
 
-    /** A token this provider claims but cannot verify (e.g. unknown signing key) — must deny. */
+    /**
+     * A token this provider claims but cannot verify (e.g. unknown signing key) — must deny.
+     *
+     * @return a loaned buffer holding a claimed but unverifiable token
+     */
     protected abstract LoanedBuffer unverifiableTokenBuffer();
 
-    /** A token whose signature verifies but whose expiry is in the past — must deny. */
+    /**
+     * A token whose signature verifies but whose expiry is in the past — must deny.
+     *
+     * @return a loaned buffer holding a signature-valid, time-expired token
+     */
     protected abstract LoanedBuffer expiredTokenBuffer();
 
     /**
@@ -57,6 +78,8 @@ public abstract class AbstractIdentityProviderTck {
      *
      * <p>The same buffer drives both sides of the seam: {@link #createProvider()} must deny it, and
      * {@link #createSharedScopeEnforcingProvider()} must honour it (ADR-012 §4b.5 / §4b.7).
+     *
+     * @return a loaned buffer holding a verifiable token declaring a shared-scope key
      */
     protected abstract LoanedBuffer sharedScopeTokenBuffer();
 
@@ -68,10 +91,16 @@ public abstract class AbstractIdentityProviderTck {
      * <p>Abstract rather than a hook defaulting to "skip": ADR-012 §4a routes every provider through the
      * one kernel-owned mapping, so no binding is exempt from the enforced path, and a skipping default
      * would make this contract vacuous for precisely the bindings that never looked at it.
+     *
+     * @return a provider instance configured to enforce the shared-scope policy contract
      */
     protected abstract IdentityProvider createSharedScopeEnforcingProvider();
 
-    /** A scope expected on the principal produced from {@link #validTokenBuffer()}. */
+    /**
+     * A scope expected on the principal produced from {@link #validTokenBuffer()}.
+     *
+     * @return the scope string {@link #validTokenBuffer()}'s principal must carry
+     */
     protected String expectedGrantedScope() {
         return "security:read";
     }

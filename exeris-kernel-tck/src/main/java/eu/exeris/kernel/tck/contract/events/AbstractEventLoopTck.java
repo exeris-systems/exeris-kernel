@@ -57,14 +57,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityEventLoopTckTest extends AbstractEventLoopTck {
- *     \@Override
+ *     @Override
  *     protected EventEngine createEngine() {
  *         return new CommunityEventProvider().createEngine(EventEngineConfig.communityDefaults());
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */

@@ -46,26 +46,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </pre>
  *
  * <h2>Usage</h2>
- * <pre>{@code
- * \@DisplayName("Transport carrier pinning TCK")
+ * {@snippet lang="java" :
+ * @DisplayName("Transport carrier pinning TCK")
  * public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
  *
  *     protected abstract TransportEngine createEngine();
  *
  *     private TransportEngine engine;
  *
- *     \@Override protected String subsystemName()        { return "TransportEngine"; }
- *     \@Override protected String hotPathDescription()   { return "channel.send(buffer)"; }
+ *     @Override protected String subsystemName()        { return "TransportEngine"; }
+ *     @Override protected String hotPathDescription()   { return "channel.send(buffer)"; }
  *
- *     \@Override protected void bootstrapSubsystem()  { engine = createEngine(); engine.start(); }
- *     \@Override protected void runSingleIteration()  { engine.channel().send(PRE_ALLOC_BUFFER); }
- *     \@Override protected void tearDownSubsystem()   { engine.close(); }
+ *     @Override protected void bootstrapSubsystem()  { engine = createEngine(); engine.start(); }
+ *     @Override protected void runSingleIteration()  { engine.channel().send(PRE_ALLOC_BUFFER); }
+ *     @Override protected void tearDownSubsystem()   { engine.close(); }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see AbstractSubsystemZeroAllocTck
  * @see JfrPinningMonitor
- * @since 0.5
  */
 public abstract class AbstractSubsystemCarrierPinningTck {
 
@@ -107,30 +107,40 @@ public abstract class AbstractSubsystemCarrierPinningTck {
 
     /**
      * Human-readable subsystem name (e.g. {@code "TransportEngine"}, {@code "FlowEngine"}).
+     *
+     * @return the subsystem name used to label the JFR recording and the assertion message
      */
     protected abstract String subsystemName();
 
     /**
      * Human-readable hot-path description for assertion messages.
+     *
+     * @return the operation under test, e.g. {@code "channel.send(buffer)"}
      */
     protected abstract String hotPathDescription();
 
     /**
      * Bootstrap phase: create all SPI objects.
-     * Called <em>before</em> JFR recording starts. Must not perform any business logic.
+     *
+     * @implSpec Called <em>before</em> JFR recording starts; must not perform any business
+     *           logic and must leave the subsystem ready for {@link #runSingleIteration()}.
      */
     protected abstract void bootstrapSubsystem();
 
     /**
      * Execute one iteration of the hot-path under observation.
-     * Called N times inside the JFR recording window from virtual threads.
-     * Must NOT create SPI objects — only exercise an already-bootstrapped subsystem.
+     *
+     * @implSpec Called from a virtual thread, once per warm-up and once per steady-state
+     *           thread, inside the JFR recording window during the steady-state phase. Must
+     *           not create SPI objects — only exercise the subsystem {@link #bootstrapSubsystem()}
+     *           already prepared.
      */
     protected abstract void runSingleIteration();
 
     /**
      * Release all resources created in {@link #bootstrapSubsystem()}.
-     * Called after measurement completes.
+     *
+     * @implSpec Called once, after measurement completes.
      */
     protected abstract void tearDownSubsystem();
 
@@ -138,11 +148,17 @@ public abstract class AbstractSubsystemCarrierPinningTck {
     // JUnit lifecycle
     // =========================================================================
 
+    /**
+     * Runs {@link #bootstrapSubsystem()} before each test, with JFR still dark.
+     */
     @BeforeEach
     public final void setUpCarrierPinningTck() {
         bootstrapSubsystem();
     }
 
+    /**
+     * Runs {@link #tearDownSubsystem()} after each test.
+     */
     @AfterEach
     public final void tearDownCarrierPinningTck() {
         tearDownSubsystem();
@@ -152,6 +168,14 @@ public abstract class AbstractSubsystemCarrierPinningTck {
     // The Test — single, final, non-overridable
     // =========================================================================
 
+    /**
+     * Asserts that running {@link #steadyVtCount()} virtual threads through
+     * {@link #runSingleIteration()} produces no {@code jdk.VirtualThreadPinned} event above
+     * {@link JfrPinningMonitor#DEFAULT_THRESHOLD_MS} ms, after a discarded warm-up batch of
+     * {@link #warmupVtCount()} threads.
+     *
+     * @throws Exception if bootstrapping, the warm-up batch or the measured batch fails
+     */
     @Test
     @Timeout(value = 120, unit = TimeUnit.SECONDS)
     @DisplayName("Hot-path virtual threads produce zero carrier pinning events > 20 ms")

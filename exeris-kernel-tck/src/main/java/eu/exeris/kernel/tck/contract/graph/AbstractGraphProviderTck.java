@@ -22,6 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractGraphProviderTck {
 
+    /**
+     * Creates the {@link GraphProvider} implementation under test.
+     *
+     * @return the provider implementation under test
+     */
     protected abstract GraphProvider createProvider();
 
     private GraphProvider provider;
@@ -65,6 +70,14 @@ public abstract class AbstractGraphProviderTck {
             assertThat(count).isGreaterThanOrEqualTo(1);
         }
 
+        /**
+         * Recomputes the highest-priority provider from {@link ServiceLoader} with the same
+         * max-by-priority reduction the kernel bootstrapper uses, then asserts it is at least
+         * {@link #provider}'s priority. Because the compared value is itself the maximum over
+         * the set {@link #provider} is drawn from, this holds whenever {@link #provider} is
+         * among the discovered providers; it does not independently verify that a
+         * lower-priority binding is passed over when several are on the classpath.
+         */
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {

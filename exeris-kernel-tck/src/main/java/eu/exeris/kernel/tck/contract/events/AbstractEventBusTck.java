@@ -39,16 +39,23 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *
  * <h2>Verified Constraints</h2>
  * <ol>
- *   <li>Routing is O(1) by ordinal — no String comparison on the hot path.</li>
- *   <li>subscribe() / unsubscribe() maintain correct handler counts.</li>
+ *   <li>{@code publish()} dispatches purely by the descriptor's {@code eventTypeOrdinal} — the
+ *       descriptors this suite publishes carry no event-type name, and the handler registered
+ *       against that ordinal's type still receives the event. Algorithmic complexity (O(1), no
+ *       {@code String} comparison) is an SPI contract claim this suite does not measure.</li>
+ *   <li>{@code subscribe()} returns a valid, non-{@code INVALID} token, and {@code unsubscribe()}
+ *       does not throw for either a live token or {@link SubscriptionToken#INVALID}.</li>
  *   <li>publish() with N=0 handlers calls payload.close() immediately (no leak).</li>
  *   <li>publish() with N=1 handler: handler receives exactly 1 payload, closes it.</li>
  *   <li>publish() with N=3 handlers: retain() called (N-1)=2 times, total refCount=3,
  *       every handler closes — refCount reaches 0.</li>
- *   <li><b>Golden Test:</b> ScopedValue propagation on structured dispatch
- *       ({@code publishAndAwait}) — handlers read the same
- *       {@code KernelProviders.CURRENT_CONFIG} that was bound in the publish scope.</li>
- *   <li>Broadcast RAII: handler that forgets close() causes refCount leak → TCK detects it.</li>
+ *   <li><b>Golden Test:</b> on the blocking dispatch path ({@code publishAndAwait}), a handler
+ *       reads a caller-defined {@code ScopedValue} unknown to the kernel that was bound in the
+ *       publish scope — proof that inheritance is structural (JEP 506), not special-cased for
+ *       kernel-known bindings.</li>
+ *   <li>Broadcast fan-out: with N=3 handlers, the payload's total close-call count reaches 3
+ *       only once every handler has closed its own reference; this suite does not simulate a
+ *       handler that omits {@code close()} to verify that a leak is separately flagged.</li>
  *   <li>publishAndAwait() blocks until all handlers complete.</li>
  * </ol>
  *
@@ -68,13 +75,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * value round-trips through the registry is covered by {@code AbstractEventRegistryTck}.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityEventBusTest extends AbstractEventBusTck {
- *     \@Override protected EventEngine createEngine() {
+ *     @Override protected EventEngine createEngine() {
  *         return new CommunityEventProvider().createEngine(EventEngineConfig.defaults());
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -84,7 +91,11 @@ public abstract class AbstractEventBusTck {
     // Template method
     // =========================================================================
 
-    /** Creates a fully configured, but not yet started, {@link EventEngine}. */
+    /**
+     * Creates a fully configured, but not yet started, {@link EventEngine}.
+     *
+     * @return a fresh {@link EventEngine}
+     */
     protected abstract EventEngine createEngine();
 
     private static final int  ORDINAL_USER_CREATED  = 100;

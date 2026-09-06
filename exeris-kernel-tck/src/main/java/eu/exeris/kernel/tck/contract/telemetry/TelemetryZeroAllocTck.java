@@ -9,12 +9,17 @@ import eu.exeris.kernel.spi.telemetry.TelemetrySink;
 import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
 
 /**
- * TCK: JFR Zero-Allocation monitor for the Telemetry emit() hot path.
+ * Verifies the {@code eu.exeris.*} heap-allocation budget of repeated
+ * {@code sink.emit(KernelEvent.info(...))} calls.
  *
  * <h2>Hot Path Under Test</h2>
- * <p>Repeated {@code sink.emit(KernelEvent.info(...))} calls. Enterprise
- * binary sinks must achieve zero {@code eu.exeris.*} heap allocations.
- * Community sinks (ConsoleSink, FileSink) are bounded.
+ * <p>As declared here, this class runs the bounded-allocation assertion inherited from
+ * {@link AbstractSubsystemZeroAllocTck}: at most {@link #maxExerisAllocationsPerIteration()}
+ * (lowered here to {@code 2}) {@code eu.exeris.*} heap allocations per iteration. It does not
+ * itself override {@link AbstractSubsystemZeroAllocTck#supportsZeroGcHotPath()}, so it does not
+ * assert a zero-allocation contract; a binding for a sink that must be zero-allocating —
+ * Enterprise's off-heap ring-buffer sink — establishes that by overriding
+ * {@code supportsZeroGcHotPath()} to {@code true} in its own subclass.
  *
  * @since 0.5
  */
@@ -22,6 +27,9 @@ public abstract class TelemetryZeroAllocTck extends AbstractSubsystemZeroAllocTc
 
     /**
      * Creates the {@link TelemetrySink} under test.
+     *
+     * @return a newly created, open sink; created in {@link #bootstrapSubsystem()}, before the
+     *         JFR allocation window opens, and closed in {@link #tearDownSubsystem()}
      */
     protected abstract TelemetrySink createSink();
 

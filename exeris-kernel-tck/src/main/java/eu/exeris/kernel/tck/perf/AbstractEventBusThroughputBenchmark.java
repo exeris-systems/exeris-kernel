@@ -30,7 +30,8 @@ import org.openjdk.jmh.infra.Blackhole;
  * virtual threads via {@code StructuredTaskScope} per publish. Enterprise
  * implementations write a 56-byte descriptor to a lock-free off-heap ring buffer
  * in O(1). This benchmark forces both tiers to reveal the true cost of their
- * dispatch path — the difference will typically be one to two orders of magnitude.
+ * dispatch path, so the gap between the two strategies can be read from the
+ * throughput report rather than assumed.
  *
  * <h2>Handler lifecycle</h2>
  * <p>The registered dummy handler correctly calls {@link EventPayload#close()} so
@@ -39,16 +40,16 @@ import org.openjdk.jmh.infra.Blackhole;
  * and produce misleading results (OOM or allocation-failure JFR events).
  *
  * <h2>Implementing this benchmark</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public class MyCommunityEventBusBenchmark
  *         extends AbstractEventBusThroughputBenchmark {
  *
- *     \@Override
+ *     @Override
  *     protected EventEngine createTargetEngine() {
  *         return new CommunityEventEngine(new EventEngineConfig(...));
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  * @see AbstractExerisBenchmark

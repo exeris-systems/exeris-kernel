@@ -47,24 +47,24 @@ import org.openjdk.jmh.infra.Blackhole;
  * blocking here simply unmounts the carrier without pinning it.
  *
  * <h2>Implementing this benchmark</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public class MyCommunityTransportBenchmark
  *         extends AbstractTransportThroughputBenchmark {
  *
- *     \@Override
+ *     @Override
  *     protected TransportProvider getProvider() {
  *         return new CommunityTcpProvider();
  *     }
  *
- *     \@Override
+ *     @Override
  *     protected MemoryAllocator getAllocator() {
  *         return new CommunityHeapAllocator();
  *     }
  * }
- * }</pre>
+ * }
  *
- * @see AbstractExerisBenchmark
  * @since 0.5
+ * @see AbstractExerisBenchmark
  */
 public abstract class AbstractTransportThroughputBenchmark extends AbstractExerisBenchmark {
 

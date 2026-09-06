@@ -36,7 +36,11 @@ public abstract class EventBusZeroAllocTck extends AbstractSubsystemZeroAllocTck
     private static final String EVENT_TYPE    = "ZeroAllocTestEvent";
     private static final int    EVENT_ORDINAL = 99;
 
-    /** Creates a fully configured, not-yet-started {@link EventEngine}. */
+    /**
+     * Creates a fully configured, not-yet-started {@link EventEngine}.
+     *
+     * @return a fresh {@link EventEngine}
+     */
     protected abstract EventEngine createEngine();
 
     private EventEngine     engine;

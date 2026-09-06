@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * TCK: Abstract base for carrier thread pinning verification.
  *
- * <h2>Contract (#24)</h2>
+ * <h2>Contract</h2>
  * <p>Verifies that no operation in an Exeris implementation pins a carrier thread
  * for longer than {@value JfrPinningMonitor#DEFAULT_THRESHOLD_MS} ms.
  * Uses {@code jdk.VirtualThreadPinned} JFR events via {@link JfrPinningMonitor} —
@@ -37,9 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityCarrierPinningTest extends AbstractCarrierPinningTck {
- *     \@Override
+ *     @Override
  *     protected Runnable subsystemWorkload(SubsystemUnderTest s) {
  *         return switch (s) {
  *             case FLOW        -> () -> flowEngine.scheduler().schedule(plan, ctx);
@@ -48,11 +48,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *         };
  *     }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see JfrPinningMonitor
  * @see AbstractFlowEngineTck
- * @since 0.5
  */
 @DisplayName("Carrier Pinning TCK")
 public abstract class AbstractCarrierPinningTck {
@@ -67,8 +67,12 @@ public abstract class AbstractCarrierPinningTck {
 
     /**
      * Returns a {@link Runnable} exercising one hot-path unit of work for the given
-     * subsystem via its existing SPI contracts. Subsystems must be fully started
-     * before the test runs — no setup/teardown inside the workload.
+     * subsystem via its existing SPI contracts.
+     *
+     * @param subsystem the subsystem whose hot-path unit of work is exercised
+     * @return a runnable that performs one hot-path operation; never {@code null}
+     * @implSpec The subsystem must already be fully started when this method is called;
+     *           the returned runnable must perform no setup or teardown of its own.
      */
     protected abstract Runnable subsystemWorkload(SubsystemUnderTest subsystem);
 
@@ -292,7 +296,24 @@ public abstract class AbstractCarrierPinningTck {
      * All nine Exeris Kernel subsystems covered by the pinning audit.
      */
     public enum SubsystemUnderTest {
-        MEMORY, TRANSPORT, SECURITY, PERSISTENCE, GRAPH, EVENTS, FLOW, BOOTSTRAP, CONFIG
+        /** The memory subsystem — allocators and buffer lifecycle. */
+        MEMORY,
+        /** The transport subsystem — connection and channel I/O. */
+        TRANSPORT,
+        /** The security subsystem — authentication and token handling. */
+        SECURITY,
+        /** The persistence subsystem — event store reads and writes. */
+        PERSISTENCE,
+        /** The graph subsystem — traversal and projection. */
+        GRAPH,
+        /** The events subsystem — publish and dispatch. */
+        EVENTS,
+        /** The flow subsystem — plan scheduling and execution. */
+        FLOW,
+        /** The bootstrap subsystem — provider discovery and startup. */
+        BOOTSTRAP,
+        /** The config subsystem — configuration resolution. */
+        CONFIG
     }
 
     /**

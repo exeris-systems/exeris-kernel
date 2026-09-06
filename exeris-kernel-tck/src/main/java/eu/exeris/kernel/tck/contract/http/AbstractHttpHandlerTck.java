@@ -46,7 +46,12 @@ public abstract class AbstractHttpHandlerTck {
      */
     protected abstract HttpExchange createRecordingExchange(HttpRequest request);
 
-    /** Minimal GET / HTTP/1.1 request for use in tests. */
+    /**
+     * Returns a minimal {@code GET / HTTP/1.1} request carrying no headers and no body, for use
+     * as a baseline fixture across this class's tests.
+     *
+     * @return a minimal GET request; never {@code null}
+     */
     protected static HttpRequest minimalRequest() {
         return HttpRequest.noBody(HttpMethod.GET, "/", HttpVersion.HTTP_1_1, List.of());
     }

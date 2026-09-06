@@ -39,14 +39,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHealthEndpointTckTest extends AbstractHealthEndpointTck {
  *     @Override
  *     protected HttpHandler newHandler(HealthProbe probe) {
  *         return new HealthEndpointHandler(probe);
  *     }
  * }
- * }</pre>
+ * }
  *
  * <p>The abstract drives state transitions through a stub {@link HealthProbe}; bindings
  * supply only the handler factory.

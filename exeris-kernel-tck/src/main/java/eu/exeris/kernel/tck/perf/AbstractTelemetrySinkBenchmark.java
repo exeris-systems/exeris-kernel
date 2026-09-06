@@ -24,26 +24,24 @@ import java.util.concurrent.TimeUnit;
 /**
  * JMH Benchmark: Telemetry sink emission throughput.
  *
- * <h2>Front 4 — Arena wydajności (Telemetry SLO)</h2>
  * <p>Measures the hot-path emission cost:
  * <ol>
  *   <li><b>{@code emit()} throughput</b> — pre-built {@link KernelEvent} dispatched to a single sink.
  *       Isolates routing overhead from event construction overhead.</li>
- *   <li><b>No-op baseline</b> — verifies that a discard sink achieves near-zero cost
- *       (the fast-path branch prediction should eliminate all subsequent work).</li>
+ *   <li><b>No-op baseline</b> — measures whether a discard sink reaches near-zero cost
+ *       (the fast-path branch prediction should eliminate all subsequent work); not
+ *       asserted by this benchmark.</li>
  * </ol>
  *
- * <h2>SLO</h2>
+ * <h2>SLO targets</h2>
+ * <p>None of these figures are enforced by this class — JMH does not fail the build on a
+ * miss, so conformance means comparing the printed throughput report to these targets by
+ * hand.
  * <ul>
  *   <li>JFR sink throughput: {@code ≥ 2 000 000 ops/s} (pre-built event).</li>
  *   <li>Enterprise binary ring-buffer sink: {@code ≥ 5 000 000 ops/s}, {@code 0 B/op}.</li>
  *   <li>No-op discard sink: {@code ≥ 50 000 000 ops/s} (branch eliminated).</li>
  * </ul>
- *
- * <h2>Glass-Box alignment (telemetry.md)</h2>
- * <p>The doc mandates: "Emission of 1M MemoryAllocationEvent samples adds &lt; 50 µs/req overhead."
- * This benchmark validates that SLO by extrapolation: at 2M ops/s, 1M samples cost &lt; 500 ms total,
- * meaning per-request overhead &lt; 50 µs at 1% sampling (1 sample per 100 requests).
  *
  * @since 0.5
  */
@@ -58,13 +56,19 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
     // Template methods
     // =========================================================================
 
-    /** Creates the {@link TelemetrySink} under test (started, ready to emit). */
+    /**
+     * Creates the {@link TelemetrySink} under test (started, ready to emit).
+     *
+     * @return non-null, ready-to-use sink
+     */
     protected abstract TelemetrySink createSink();
 
     /**
      * Creates a no-op {@link TelemetrySink} that discards all events immediately.
      * Used to establish a zero-work baseline for overhead measurement.
      * Default: anonymous no-op implementation.
+     *
+     * @return non-null sink whose methods discard every call
      */
     protected TelemetrySink createNoOpSink() {
         return new TelemetrySink() {
@@ -86,6 +90,10 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
     private KernelEvent   hotInfoEvent;
     private KernelEvent   hotWarnEvent;
 
+    /**
+     * Trial-level setup: creates the sink under test and the no-op baseline sink, and
+     * pre-builds the INFO/WARN events reused by every measurement iteration.
+     */
     @Setup(Level.Trial)
     public void setUpTrial() {
         sink     = createSink();
@@ -94,6 +102,9 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
         hotWarnEvent = KernelEvent.warn("EX-TCK-BENCH-002", "TelemetrySinkBenchmark.warn", null);
     }
 
+    /**
+     * Trial-level teardown: closes both the sink under test and the no-op baseline sink.
+     */
     @TearDown(Level.Trial)
     public void tearDownTrial() {
         if (sink     != null) sink.close();
@@ -103,6 +114,8 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
     /**
      * Returns the sink under test for use in subclass {@code @Benchmark} methods.
      * Populated during {@link #setUpTrial()}.
+     *
+     * @return the sink under test, or {@code null} before {@link #setUpTrial()} runs
      */
     protected final TelemetrySink getSink() {
         return sink;
@@ -122,6 +135,8 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
      *
      * <p>Enterprise binary ring-buffer: single {@code MemorySegment.set()} CAS
      * into the off-heap ring — true 0 B/op.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the pre-built event
      */
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
@@ -136,6 +151,12 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
     // WARN events may take a different routing path (severity filtering)
     // =========================================================================
 
+    /**
+     * Measures the throughput of emitting a pre-built WARN-level event, in case WARN
+     * severity takes a different routing path than INFO in {@link #emitInfoThroughput}.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the pre-built event
+     */
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
     @OutputTimeUnit(TimeUnit.SECONDS)
@@ -151,11 +172,14 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
 
     /**
      * No-op sink baseline: measures the irreducible overhead of calling {@code emit()}
-     * on an implementation that does nothing. Any real sink should be within 10x of this.
+     * on an implementation that does nothing. A real sink is expected to stay within 10x
+     * of this baseline.
      *
-     * <p>This replaces the isEnabled() fast-gate benchmark — TelemetrySink does not
-     * define isEnabled(). Callers that need filtering should check at the call site
-     * (e.g., {@code if (router.level().includes(INFO)) sink.emit(event)}).
+     * <p>{@code TelemetrySink} does not define an {@code isEnabled()} fast-gate; callers
+     * that need to skip event construction under a filtered severity must check at the
+     * call site (e.g., {@code if (router.level().includes(INFO)) sink.emit(event)}).
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the pre-built event
      */
     @Benchmark
     @BenchmarkMode(Mode.Throughput)

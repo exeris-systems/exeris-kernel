@@ -27,26 +27,26 @@ import java.util.concurrent.locks.LockSupport;
  * must be non-blocking and VT-safe (no {@code synchronized}, no blocking socket ops).
  *
  * <h2>Usage — Community</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public class CommunityTransportCarrierPinningTest extends TransportCarrierPinningTck {
- *     \@Override protected TransportEngine createEngine()         { return new CommunityTransportEngine(...); }
- *     \@Override protected MemoryAllocator createAllocator()      { return new CommunityMemoryAllocator(...); }
- *     \@Override protected TransportStream createWritableStream() { return engine().openStream(loopback); }
+ *     @Override protected TransportEngine createEngine()         { return new CommunityTransportEngine(...); }
+ *     @Override protected MemoryAllocator createAllocator()      { return new CommunityMemoryAllocator(...); }
+ *     @Override protected TransportStream createWritableStream() { return engine().openStream(loopback); }
  * }
- * }</pre>
+ * }
  *
  * <h2>Usage — Enterprise</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public class EnterpriseTransportCarrierPinningTest extends TransportCarrierPinningTck {
- *     \@Override protected TransportEngine createEngine()         { return new EnterpriseTransportEngine(...); }
- *     \@Override protected MemoryAllocator createAllocator()      { return new EnterpriseMemoryAllocator(...); }
- *     \@Override protected TransportStream createWritableStream() { return engine().openStream(loopback); }
+ *     @Override protected TransportEngine createEngine()         { return new EnterpriseTransportEngine(...); }
+ *     @Override protected MemoryAllocator createAllocator()      { return new EnterpriseMemoryAllocator(...); }
+ *     @Override protected TransportStream createWritableStream() { return engine().openStream(loopback); }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
  * @see TransportZeroAllocTck
- * @since 0.5
  */
 @DisplayName("Transport carrier pinning TCK")
 public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
@@ -57,16 +57,22 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
     /**
      * Creates and starts the {@link TransportEngine} under test (loopback binding).
+     *
+     * @return a running engine
      */
     protected abstract TransportEngine createEngine();
 
     /**
      * Creates the {@link MemoryAllocator} used to allocate network buffers.
+     *
+     * @return an allocator shared by every per-VT slot
      */
     protected abstract MemoryAllocator createAllocator();
 
     /**
      * Creates a writable {@link TransportStream} connected to the running engine.
+     *
+     * @return a stream open for writing, one per pre-allocated VT slot
      */
     protected abstract TransportStream createWritableStream();
 
@@ -111,6 +117,8 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
     /**
      * Returns the bootstrapped {@link TransportEngine} for use in {@link #createWritableStream()}.
+     *
+     * @return the engine created by {@link #createEngine()} for this run
      */
     protected final TransportEngine engine() {
         return engine;
@@ -125,6 +133,8 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
      * Returns the number of warm-up VT iterations (phase 1 — discarded).
      * Delegates to the base-class accessor so this value stays in sync
      * with the harness even if the constant changes.
+     *
+     * @return the warm-up virtual-thread count
      */
     protected int warmupIterations() {
         return warmupVtCount();
@@ -133,6 +143,8 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     /**
      * Returns the number of steady-state VT iterations (phase 2 — measured).
      * Delegates to the base-class accessor so this value stays in sync.
+     *
+     * @return the steady-state virtual-thread count
      */
     protected int hotPathIterations() {
         return steadyVtCount();
@@ -165,12 +177,12 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
     protected void tearDownSubsystem() {
         int usedSlots = vtIndex.get();
         if (streams != null && buffers != null) {
-            // TCK-064 (Sprint 0 v0.8): drain budget is now configurable. Default is 5s for local
-            // development boxes (>= 4 cores), but constrained CI runners (e.g. 2 vCPU GitHub
-            // Actions) need a wider window — under thread pressure the reactor key release that
-            // ends `hasPendingData()` may itself queue behind the test thread for several
-            // hundred ms per spin-cycle. Operators set the system property directly; the
-            // built-in default keeps the contract assertion strict where it can be honoured.
+            // The drain budget is configurable. The default of 5s suits local development boxes
+            // (>= 4 cores), but constrained CI runners (e.g. 2 vCPU GitHub Actions) need a wider
+            // window — under thread pressure the reactor key release that ends `hasPendingData()`
+            // may itself queue behind the test thread for several hundred ms per spin-cycle.
+            // Operators set the system property directly; the built-in default keeps the
+            // contract assertion strict where it can be honoured.
             long drainSeconds = Long.getLong("exeris.tck.transport.drainTimeoutSeconds", 5L);
             for (int i = 0; i < streams.length; i++) {
                 TransportStream s = streams[i];

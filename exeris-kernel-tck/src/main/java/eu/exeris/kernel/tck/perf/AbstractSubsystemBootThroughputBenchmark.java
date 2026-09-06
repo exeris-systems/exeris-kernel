@@ -27,16 +27,18 @@ import java.util.concurrent.TimeUnit;
 /**
  * JMH Benchmark: Subsystem Boot Throughput.
  *
- * <h2>Front 4 — Arena wydajności (SLO: &lt; 50 ms for L0 graph)</h2>
  * <p>Measures the time to initialise an <em>empty</em> L0 subsystem graph.
  * The {@link SubsystemProvider} under test is supplied by the concrete subclass
  * via {@link #createProvider()} — deliberately avoiding {@code ServiceLoader}
  * discovery overhead so that the benchmark isolates pure boot graph construction
  * and Kahn's topological sort, not classpath scanning.
  *
- * <h2>SLO</h2>
- * <p>{@code p99 < 50 ms} for the complete FOUNDATION-phase initialisation
- * of an empty (no SERVICES/RUNTIME subsystems) kernel graph.
+ * <h2>SLO target</h2>
+ * <p>{@code average time < 50 ms} for the complete FOUNDATION-phase initialisation
+ * of an empty (no SERVICES/RUNTIME subsystems) kernel graph — the class is configured
+ * with {@link Mode#AverageTime}, which reports the mean, not a percentile; this benchmark
+ * cannot itself report a p99. The target is not enforced by the benchmark; conformance
+ * means reading the printed average-time report and comparing it to this target.
  *
  * <h2>Why this matters</h2>
  * <p>Slow bootstrap means slow container restarts in cloud-native deployments.
@@ -58,17 +60,26 @@ public abstract class AbstractSubsystemBootThroughputBenchmark extends AbstractE
      *
      * <p>May return a minimal implementation with only FOUNDATION-phase subsystems
      * to isolate the L0 boot path.
+     *
+     * @return non-null provider whose {@code getSubsystems(ConfigProvider)} returns an
+     *         empty (no SERVICES/RUNTIME subsystems) L0 graph
      */
     protected abstract SubsystemProvider createProvider();
 
     /**
      * Subclass provides the {@link ConfigProvider} stub used during boot.
+     *
+     * @return non-null config provider sufficient for the FOUNDATION-phase subsystems
+     *         returned by {@link #createProvider()}
      */
     protected abstract ConfigProvider createConfigStub();
 
     private SubsystemProvider provider;
     private ConfigProvider    config;
 
+    /**
+     * Trial-level setup: creates the subsystem provider and its config stub.
+     */
     @Setup(Level.Trial)
     public void setUp() {
         provider = createProvider();
@@ -84,8 +95,12 @@ public abstract class AbstractSubsystemBootThroughputBenchmark extends AbstractE
      *   <li>Call {@code initialize()} on each FOUNDATION subsystem in sorted order.</li>
      * </ol>
      *
-     * <h2>SLO</h2>
-     * <p>Average time MUST be &lt; 50 ms for an empty L0 graph.
+     * <p><b>SLO target:</b> average time {@code &lt; 50 ms} for an empty L0 graph; not
+     * enforced by this benchmark.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the sorted list
+     * @throws SubsystemException if {@link SubsystemProvider#getSubsystems} fails
+     *         ({@code EX-BOOT-0002})
      */
     @Benchmark
     public void bootL0Graph(Blackhole bh) throws SubsystemException {
@@ -109,6 +124,11 @@ public abstract class AbstractSubsystemBootThroughputBenchmark extends AbstractE
     /**
      * Reference Kahn's sort — must be O(V + E), not O(n²).
      * Subclasses may override to use the real orchestrator.
+     *
+     * @param subsystems the subsystems to order by dependency
+     * @return {@code subsystems} in dependency order, every dependency before its dependents
+     * @throws IllegalStateException if the dependency graph has a cycle or a missing
+     *         dependency, so that not every subsystem can be ordered
      */
     protected List<Subsystem> topoSort(List<Subsystem> subsystems) {
         // Kahn's BFS — true O(V+E): adjacency list built once, no per-node full scan.
