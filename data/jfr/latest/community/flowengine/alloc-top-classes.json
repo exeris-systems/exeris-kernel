@@ -1,136 +1,141 @@
 [ {
   "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-  "count" : 84,
-  "bytes" : 903360,
+  "count" : 114,
+  "bytes" : 7934232,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.ConcurrentHashMap",
+  "count" : 96,
+  "bytes" : 8470504,
   "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-  "count" : 62,
-  "bytes" : 954160,
+  "count" : 74,
+  "bytes" : 295760,
   "category" : "JVM_NOISE"
 }, {
   "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
-  "count" : 27,
-  "bytes" : 5183376,
+  "count" : 73,
+  "bytes" : 172072,
   "category" : "PRODUCTION"
 }, {
   "class" : "eu.exeris.kernel.core.flow.FlowKey",
-  "count" : 25,
-  "bytes" : 361176,
+  "count" : 43,
+  "bytes" : 151936,
   "category" : "PRODUCTION"
 }, {
-  "class" : "java.util.concurrent.ConcurrentHashMap",
-  "count" : 24,
-  "bytes" : 221056,
-  "category" : "JVM_NOISE"
-}, {
   "class" : "java.lang.VirtualThread",
-  "count" : 12,
-  "bytes" : 1047672,
+  "count" : 19,
+  "bytes" : 871696,
   "category" : "LOOM_RUNTIME"
 }, {
   "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-  "count" : 7,
-  "bytes" : 6377696,
+  "count" : 14,
+  "bytes" : 47432,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation",
-  "count" : 7,
-  "bytes" : 455720,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-  "count" : 6,
-  "bytes" : 523264,
-  "category" : "LOOM_RUNTIME"
-}, {
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000003b89add0",
-  "count" : 5,
-  "bytes" : 620176,
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+  "count" : 8,
+  "bytes" : 342560,
   "category" : "TEST_HARNESS"
+}, {
+  "class" : "[B",
+  "count" : 7,
+  "bytes" : 152800,
+  "category" : "JVM_NOISE"
 }, {
   "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
-  "count" : 5,
-  "bytes" : 261840,
+  "count" : 6,
+  "bytes" : 201096,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "eu.exeris.kernel.core.flow.FlowKey",
+  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "count" : 5,
+  "bytes" : 523216,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "java.lang.VirtualThread$VThreadContinuation",
   "count" : 4,
-  "bytes" : 261664,
-  "category" : "TEST_HARNESS"
+  "bytes" : 44024,
+  "category" : "LOOM_RUNTIME"
 }, {
   "class" : "[I",
   "count" : 4,
-  "bytes" : 9168240,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
-  "count" : 4,
-  "bytes" : 385241784,
+  "bytes" : 101720,
   "category" : "JVM_NOISE"
 }, {
   "class" : "jdk.internal.vm.StackChunk",
   "count" : 3,
-  "bytes" : 8448,
+  "bytes" : 8552,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
+  "class" : "[Ljava.util.HashMap$Node;",
   "count" : 3,
-  "bytes" : 113472,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.util.concurrent.atomic.AtomicBoolean",
-  "count" : 2,
-  "bytes" : 97040,
+  "bytes" : 270048,
   "category" : "JVM_NOISE"
+}, {
+  "class" : "java.lang.VirtualThread$$Lambda.0x00000000755c43e0",
+  "count" : 3,
+  "bytes" : 261616,
+  "category" : "LOOM_RUNTIME"
+}, {
+  "class" : "java.lang.Object",
+  "count" : 3,
+  "bytes" : 6010504,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.atomic.Striped64$Cell",
+  "count" : 2,
+  "bytes" : 25816,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000007589c8c0",
+  "count" : 2,
+  "bytes" : 64,
+  "category" : "TEST_HARNESS"
 }, {
   "class" : "java.lang.String",
   "count" : 2,
-  "bytes" : 64,
+  "bytes" : 382962800,
   "category" : "JVM_NOISE"
 }, {
-  "class" : "java.util.concurrent.atomic.AtomicLong",
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
   "count" : 2,
-  "bytes" : 48504,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000003b89b690",
-  "count" : 2,
-  "bytes" : 97112,
-  "category" : "TEST_HARNESS"
-}, {
-  "class" : "java.lang.Object",
-  "count" : 2,
-  "bytes" : 48512,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.HashMap",
-  "count" : 1,
-  "bytes" : 261552,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.HashSet",
-  "count" : 1,
-  "bytes" : 24,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.lang.VirtualThread$$Lambda.0x000000003b5c43e0",
-  "count" : 1,
-  "bytes" : 24,
+  "bytes" : 25368,
   "category" : "LOOM_RUNTIME"
 }, {
-  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-  "count" : 1,
-  "bytes" : 128,
+  "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000007589c000",
+  "count" : 2,
+  "bytes" : 117424,
   "category" : "TEST_HARNESS"
 }, {
-  "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+  "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode",
   "count" : 1,
-  "bytes" : 32,
-  "category" : "LOOM_RUNTIME"
+  "bytes" : 48,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.HashMap$Node",
+  "count" : 1,
+  "bytes" : 261560,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
+  "count" : 1,
+  "bytes" : 40,
+  "category" : "TEST_HARNESS"
+}, {
+  "class" : "java.util.concurrent.atomic.AtomicBoolean",
+  "count" : 1,
+  "bytes" : 16,
+  "category" : "JVM_NOISE"
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$RunnableExecuteAction",
+  "count" : 1,
+  "bytes" : 40,
+  "category" : "JVM_NOISE"
 }, {
   "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
   "count" : 1,
-  "bytes" : 97024,
+  "bytes" : 58536,
   "category" : "JVM_NOISE"
 } ]
