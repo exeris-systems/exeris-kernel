@@ -1,0 +1,33 @@
+[ {
+  "t" : 1788677447860,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "size" : 261544,
+  "stackId" : "stk_0001",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1788677447890,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.LinkedHashMap$Entry",
+  "thread" : "main",
+  "size" : 241376,
+  "stackId" : "stk_0002",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1788677447891,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.LinkedHashMap$Entry",
+  "thread" : "main",
+  "size" : 56,
+  "stackId" : "stk_0002",
+  "category" : "JVM_NOISE"
+}, {
+  "t" : 1788677447891,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.lang.String",
+  "thread" : "main",
+  "size" : 261568,
+  "stackId" : "stk_0003",
+  "category" : "JVM_NOISE"
+} ]
