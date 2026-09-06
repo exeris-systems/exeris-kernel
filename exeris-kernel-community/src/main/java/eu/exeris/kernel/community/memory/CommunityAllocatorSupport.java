@@ -8,6 +8,14 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Community: static allocation-bookkeeping helpers used by {@link CommunityMemoryAllocator},
+ * factored out so the allocator's own methods stay focused on the {@link
+ * eu.exeris.kernel.spi.memory.MemoryAllocator} contract they implement.
+ *
+ * <p>Holds no state of its own — every method takes the caller's configuration or counters
+ * as parameters and mutates only what is passed in.
+ */
 final class CommunityAllocatorSupport {
 
     private CommunityAllocatorSupport() {

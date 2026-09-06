@@ -62,6 +62,17 @@ public final class JdbcEventStreamReader implements EventStreamReader {
     private final String engineName;
     private final ToIntFunction<String> typeOrdinalResolver;
 
+    /**
+     * Creates a reader bound to {@code engine}.
+     *
+     * @param engine              persistence engine used to open a fresh connection per replay
+     *                            (non-null)
+     * @param engineName          human-readable engine name attached to failure diagnostics
+     *                            (non-null)
+     * @param typeOrdinalResolver resolves an event type name to its registry ordinal for
+     *                            {@link #replayByType}, wired to the engine's
+     *                            {@code EventRegistry::ordinalOf} (non-null)
+     */
     public JdbcEventStreamReader(PersistenceEngine engine, String engineName,
                                  ToIntFunction<String> typeOrdinalResolver) {
         this.engine = Objects.requireNonNull(engine, "engine");
@@ -69,6 +80,15 @@ public final class JdbcEventStreamReader implements EventStreamReader {
         this.typeOrdinalResolver = Objects.requireNonNull(typeOrdinalResolver, "typeOrdinalResolver");
     }
 
+    /**
+     * Opens a cursor over {@code streamId}'s rows with {@code occurred_at >= fromTimestamp},
+     * ordered by {@code committed_sequence}.
+     *
+     * @param streamId      the stream to replay (non-null)
+     * @param fromTimestamp inclusive lower bound on {@code occurredAt} (non-null)
+     * @return a live {@link JdbcEventStream}; the caller MUST close it
+     * @throws EventEngineException EX-EVENT-6001 if the connection, statement, or query fails
+     */
     @Override
     public EventStream replayFrom(StreamId streamId, Instant fromTimestamp) {
         Objects.requireNonNull(streamId, "streamId");
@@ -80,6 +100,16 @@ public final class JdbcEventStreamReader implements EventStreamReader {
                 .bindLong(2, epochMilli));
     }
 
+    /**
+     * Opens a cursor over {@code streamId}'s rows with {@code committed_sequence >= fromVersion},
+     * ordered by {@code committed_sequence} — the read side of the ordering
+     * {@link JdbcEventStreamAppender} establishes.
+     *
+     * @param streamId    the stream to replay (non-null)
+     * @param fromVersion inclusive lower bound on {@code committed_sequence}
+     * @return a live {@link JdbcEventStream}; the caller MUST close it
+     * @throws EventEngineException EX-EVENT-6001 if the connection, statement, or query fails
+     */
     @Override
     public EventStream replayFromVersion(StreamId streamId, long fromVersion) {
         Objects.requireNonNull(streamId, "streamId");
@@ -89,6 +119,17 @@ public final class JdbcEventStreamReader implements EventStreamReader {
                 .bindLong(2, fromVersion));
     }
 
+    /**
+     * Opens a cross-stream cursor over rows of {@code eventType} with
+     * {@code occurred_at >= fromTimestamp}, ordered by occurrence time then stream then
+     * sequence — for projection rebuilds that observe one type across many streams.
+     *
+     * @param eventType     event type name, resolved to an ordinal via the resolver supplied
+     *                      at construction (non-null)
+     * @param fromTimestamp inclusive lower bound on {@code occurredAt} (non-null)
+     * @return a live {@link JdbcEventStream}; the caller MUST close it
+     * @throws EventEngineException EX-EVENT-6001 if the connection, statement, or query fails
+     */
     @Override
     public EventStream replayByType(String eventType, Instant fromTimestamp) {
         Objects.requireNonNull(eventType, "eventType");
@@ -100,6 +141,11 @@ public final class JdbcEventStreamReader implements EventStreamReader {
                 .bindLong(1, epochMilli));
     }
 
+    /**
+     * A no-op: this reader holds no shared resource of its own to release, since every replay
+     * opens (and hands off to its {@link JdbcEventStream}) a fresh connection, statement and
+     * cursor. Idempotent by construction; does not invalidate any stream returned earlier.
+     */
     @Override
     public void close() {
         // No shared resource to release: each replay opens (and its EventStream owns) a fresh

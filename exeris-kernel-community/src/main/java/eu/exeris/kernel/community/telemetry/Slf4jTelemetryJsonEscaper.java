@@ -7,8 +7,7 @@ package eu.exeris.kernel.community.telemetry;
 /**
  * Package-private JSON string-escape helper for {@link Slf4jTelemetrySink}.
  *
- * <p>Extracted from {@link Slf4jTelemetrySink} in v0.8 Sprint 1 (QA-012) as the
- * leaf of the JSON serialization split. Owns {@link #escapeJson(String)} and
+ * <p>The leaf of the JSON serialization split: owns {@link #escapeJson(String)} and
  * {@link #appendJsonString(StringBuilder, String)}, both consumed by
  * {@link Slf4jTelemetryJsonWriter} (top entry) and
  * {@link Slf4jTelemetryRawArgsWriter} (rawArgs walker).

@@ -30,6 +30,16 @@ public final class NativeTcpTransportProvider implements TransportProvider {
 
     private static final String PROVIDER_NAME = "ExerisCommunity/NativeTcpCarrier";
 
+    /**
+     * Builds a {@link NativeTcpCarrier} for the given configuration, resolving the bound
+     * {@link MemoryAllocator} and, if present, the bound {@link KernelCryptoProvider} and its TLS
+     * configuration for this transport.
+     *
+     * @param config the transport configuration to build an engine for
+     * @return a new, unstarted {@link NativeTcpCarrier}
+     * @throws TransportException if no {@link MemoryAllocator} is bound, the TLS material is
+     *                             misconfigured, or carrier construction fails ({@code EX-NET-4004})
+     */
     @Override
     public TransportEngine createEngine(TransportConfig config) {
         if (!KernelProviders.MEMORY_ALLOCATOR.isBound()) {
@@ -51,16 +61,31 @@ public final class NativeTcpTransportProvider implements TransportProvider {
         }
     }
 
+    /**
+     * Returns this provider's stable identifier.
+     *
+     * @return {@code "community-transport"}
+     */
     @Override
     public String providerId() {
         return PROVIDER_ID;
     }
 
+    /**
+     * Returns this provider's display name, used in telemetry and exception context.
+     *
+     * @return the fixed provider name
+     */
     @Override
     public String providerName() {
         return PROVIDER_NAME;
     }
 
+    /**
+     * Returns this provider's selection priority.
+     *
+     * @return {@code 0} — the Community baseline priority
+     */
     @Override
     public int priority() {
         return 0;

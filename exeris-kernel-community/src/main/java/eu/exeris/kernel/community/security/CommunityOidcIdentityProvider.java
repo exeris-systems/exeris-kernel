@@ -29,9 +29,9 @@ import java.util.Objects;
  * kernel-owned fail-closed {@link IdentityStorageMapping} into a single
  * {@link AuthenticationResult}.
  *
- * <p>The static {@code kid → RSAPublicKey} map path is byte-for-byte unchanged from the former
- * {@code CommunityJwksValidator}; the rotating-key-set path composes the v0.9
- * {@link CommunityRotatingKeySet} seam through the {@link JwksKeyResolver} constructor.
+ * <p>The static {@code kid → RSAPublicKey} map path resolves keys directly from a fixed snapshot;
+ * the rotating-key-set path composes the {@link CommunityRotatingKeySet} seam through the
+ * {@link JwksKeyResolver} constructor.
  *
  * @since 0.10
  */
@@ -46,6 +46,14 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
     private final String expectedIssuer;
     private final boolean sharedScopeEnforced;
 
+    /**
+     * Creates a provider that verifies tokens against a fixed, non-rotating key-set map.
+     *
+     * @param keysByKid a snapshot of verification keys ({@code kid} to RSA public key); never
+     *                  refreshed, so a rotated signing key requires constructing a new provider
+     * @param expectedIssuer the {@code iss} claim value a token must present to be accepted
+     * @param expectedAudience the {@code aud} claim value a token must present to be accepted
+     */
     public CommunityOidcIdentityProvider(Map<String, RSAPublicKey> keysByKid,
                                          String expectedIssuer,
                                          String expectedAudience) {
@@ -75,10 +83,10 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
      * instead of the Community default.
      *
      * <p>{@link ClaimsMapper} is documented as the only application-customisable point in the
-     * identity pipeline, and until 0.11 this provider gave no way to supply one — an application
-     * needing a different subject or scope shape had to reimplement {@link IdentityProvider}
-     * outright. It maps identity only: tenant-isolation routing stays kernel-owned and fail-closed
-     * (ADR-012), so a custom mapper cannot widen what a token may reach.
+     * identity pipeline: an application needing a different subject or scope shape supplies one
+     * here instead of reimplementing {@link IdentityProvider} outright. It maps identity only:
+     * tenant-isolation routing stays kernel-owned and fail-closed (ADR-012), so a custom mapper
+     * cannot widen what a token may reach.
      *
      * <p>Returns a new provider rather than mutating, for the same reason as
      * {@link #enforcingSharedScope()} — the mapping takes part in a security decision on every
@@ -119,6 +127,16 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
      * <p>{@code jwksClient} must decode a {@code String.class} response as the raw response text
      * (see {@link CommunityJwksHttpKeySetSource#overWebClient}) — wire it with a
      * {@link eu.exeris.kernel.community.http.CommunityTextResponseBodyDecoder}.
+     *
+     * @param jwksClient the HTTP client used to fetch the JWKS document; targets the IDP host
+     * @param jwksPath the path the JWKS document is served from on {@code jwksClient}
+     * @param initialKeys the key set installed before any refresh; may be empty to defer the
+     *                    first fetch to the first {@link #authenticate} call
+     * @param policy the overlap window and stale-fetch budget governing key rotation
+     * @param clock the clock driving both rotation timing and token-expiry checks
+     * @param expectedIssuer the {@code iss} claim value a token must present to be accepted
+     * @param expectedAudience the {@code aud} claim value a token must present to be accepted
+     * @return a provider that resolves verification keys through the rotating key set
      */
     public static CommunityOidcIdentityProvider overJwksEndpoint(
             KernelWebClient jwksClient, String jwksPath,
@@ -136,16 +154,31 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
         return claimsMapper;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Always {@code "oidc-community"}.
+     */
     @Override
     public String providerId() {
         return PROVIDER_ID;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Always {@code "ExerisCommunity/OIDC-JWKS"}.
+     */
     @Override
     public String providerName() {
         return PROVIDER_NAME;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Always {@code 0}, the Community-tier priority.
+     */
     @Override
     public int priority() {
         return 0;
@@ -168,6 +201,13 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
         }
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote On {@link SecurityAuthenticationException} ({@code EX-SEC-2002}) this commits an
+     *           {@code IdentityRejection} JFR event carrying the validator's failure reason
+     *           before rethrowing unchanged — the caller sees the same denial either way.
+     */
     @Override
     public AuthenticationResult authenticate(LoanedBuffer rawToken) {
         long startNanos = System.nanoTime();

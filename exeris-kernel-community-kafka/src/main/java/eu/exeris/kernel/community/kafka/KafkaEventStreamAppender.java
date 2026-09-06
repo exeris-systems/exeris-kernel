@@ -76,6 +76,9 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
     private final Map<StreamKey, ReentrantLock> streamLocks = new ConcurrentHashMap<>();
 
     /**
+     * Constructs an appender bound to {@code config}'s durable event-log topic, recovering each
+     * stream's head from the log tail on first use.
+     *
      * @param producer   a configured Kafka producer ({@code acks=all} recommended); NOT closed here
      * @param config     the Kafka binding config (bootstrap servers, log topic, poll timeout)
      * @param engineName human-readable engine name for JFR telemetry

@@ -17,6 +17,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 
+/**
+ * Bootstraps the Community graph engine, defaulting to the PostgreSQL-backed
+ * {@code graph.backendType} with an optional Neo4j configuration read alongside it.
+ *
+ * <p>Depends on {@code memory} and {@code persistence}, and runs in the SERVICES phase: sessions
+ * opened against the discovered {@link GraphEngine} read {@code KernelProviders.MEMORY_ALLOCATOR}
+ * and, for the relational backend, {@code KernelProviders.PERSISTENCE_ENGINE}. {@link
+ * #buildGraphConfig} reads the Neo4j connection properties ({@code graph.neo4j.uri}, {@code .user},
+ * {@code .password}, {@code .database}) only when they are present in config, so a PostgreSQL-only
+ * deployment configures none of them.
+ */
 final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
 
     private GraphProvider graphProvider;

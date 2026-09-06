@@ -19,14 +19,14 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  * Once deactivated, the connection is committed/rolled-back and released back to the pool by the HTTP subsystem.
  *
  * <h2>Usage in ScopedValue</h2>
- * <pre>
+ * {@snippet lang="java" :
  * var session = REQUEST_SESSION.orElse(null);
  * if (session != null && session.active()) {
  *     conn = session.connection();  // reuse within request
  * } else {
  *     conn = pool.acquire();  // fallback to legacy per-operation
  * }
- * </pre>
+ * }
  *
  * @param connection     Persistence connection from pool, transactionally open
  * @param isolation      Isolation level set at request entry (immutable for request lifetime)

@@ -165,6 +165,14 @@ final class JdbcQueryResult implements QueryResult {
         }
     }
 
+    /**
+     * Community: {@link RowCursor} over a single {@link ResultSet}, implementing the index,
+     * SQL-NULL and declared-type-domain rules of ADR-080 (see {@code docs/subsystems/persistence.md}).
+     *
+     * <p>One instance is shared by every row a {@link JdbcQueryResult} advances through — it is
+     * a flyweight, not a per-row object — and {@link #getString} is the only accessor whose
+     * per-column rendering verdict is cached, lazily, the first time that column is read.
+     */
     @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
     /* default */ static final class JdbcRowCursor implements RowCursor {
 

@@ -21,16 +21,28 @@ public final class CommunityKernelDiagnosticsProvider implements KernelDiagnosti
 
     private static final String PROVIDER_NAME = "ExerisCommunity/KernelDiagnostics";
 
+    /**
+     * Returns a new {@link CommunityKernelDiagnostics} bound to the current in-process kernel
+     * state.
+     *
+     * @return a new diagnostics view
+     */
     @Override
     public KernelDiagnostics create() {
         return new CommunityKernelDiagnostics();
     }
 
+    /**
+     * Returns this provider's display name, {@code "ExerisCommunity/KernelDiagnostics"}.
+     */
     @Override
     public String providerName() {
         return PROVIDER_NAME;
     }
 
+    /**
+     * Returns {@code 0}, this provider's fixed selection priority.
+     */
     @Override
     public int priority() {
         return 0;

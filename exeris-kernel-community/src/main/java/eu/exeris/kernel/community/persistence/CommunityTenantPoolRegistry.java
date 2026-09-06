@@ -20,6 +20,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.IntSupplier;
 
+/**
+ * Owns the Community engine's per-tenant and dedicated HikariCP pools: lazy creation up to
+ * {@link PersistenceConfig#maxTenantPools()}, periodic reclamation of tenant pools idle past
+ * {@code idleTimeoutMs}, and the {@link PoolShutdownPlan} that hands every pool this registry
+ * created to the engine for closing.
+ *
+ * <p>The shared pool is not owned here — it is supplied by the engine and returned as-is for
+ * the {@code SHARED} strategy and whenever per-tenant pooling is disabled; this registry only
+ * manages the tenant and dedicated pools it creates itself.
+ */
 @SuppressWarnings("PMD.CyclomaticComplexity")
 final class CommunityTenantPoolRegistry {
 
@@ -219,6 +229,7 @@ final class CommunityTenantPoolRegistry {
         return TimeUnit.MILLISECONDS.toNanos(cadenceMs);
     }
 
+    /** The pools to close, captured under {@link #lifecycleLock} and closed outside it. */
     /* default */ record PoolShutdownPlan(List<HikariDataSource> tenantPools, List<HikariDataSource> dedicatedPools) {
     }
 

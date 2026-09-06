@@ -27,8 +27,8 @@ import java.util.function.Supplier;
  * <h2>Lazy Initialization (JEP 526 Readiness)</h2>
  * <p>{@link #kernelSettings()} returns an {@link AtomicReference}-backed {@link Supplier}
  * that initializes exactly once — the same semantic as the proposed
- * {@code LazyConstant<KernelSettings>}. The JIT can constant-fold the result after
- * warm-up because the same object reference is always returned.
+ * {@code LazyConstant<KernelSettings>}: after the first successful CAS, every
+ * subsequent call returns that same {@link KernelSettings} reference.
  *
  * <h2>Zero External Dependencies</h2>
  * <p>L0 mandate: no SLF4J, no Jackson, no external libraries. Uses only JDK APIs.
@@ -49,8 +49,8 @@ public final class CommunityConfigProvider implements ConfigProvider {
      * Lazy, thread-safe {@link KernelSettings}.
      *
      * <p>Mirrors the semantics of the proposed {@code LazyConstant<KernelSettings>}
-     * (JEP 526): computed once on first access, effectively final after that,
-     * eligible for JIT constant-folding after warm-up.
+     * (JEP 526): computed once on first access, effectively final after that —
+     * every successful read after the first winning CAS returns the same reference.
      */
     private final AtomicReference<KernelSettings> cachedSettings = new AtomicReference<>();
 
@@ -88,11 +88,25 @@ public final class CommunityConfigProvider implements ConfigProvider {
         };
     }
 
+    /**
+     * Resolves {@code key} per the class-level resolution order (system property,
+     * then environment variable), with no type conversion.
+     *
+     * @param key dot-path key (e.g. {@code "network.port"})
+     * @return the raw string value, or empty if not set at either source
+     */
     @Override
     public Optional<String> getString(String key) {
         return resolveRaw(key);
     }
 
+    /**
+     * Resolves {@code key} per the class-level resolution order and parses it as an
+     * {@code int}.
+     *
+     * @param key dot-path key
+     * @return the parsed value, or empty if not set or not a valid integer
+     */
     @Override
     public Optional<Integer> getInt(String key) {
         return resolveRaw(key).flatMap(v -> {
@@ -107,6 +121,13 @@ public final class CommunityConfigProvider implements ConfigProvider {
         });
     }
 
+    /**
+     * Resolves {@code key} per the class-level resolution order and parses it as a
+     * {@code long}.
+     *
+     * @param key dot-path key
+     * @return the parsed value, or empty if not set or not a valid long
+     */
     @Override
     public Optional<Long> getLong(String key) {
         return resolveRaw(key).flatMap(v -> {
@@ -121,11 +142,28 @@ public final class CommunityConfigProvider implements ConfigProvider {
         });
     }
 
+    /**
+     * Resolves {@code key} per the class-level resolution order and parses it via
+     * {@link Boolean#parseBoolean(String)}.
+     *
+     * @param key dot-path key
+     * @return the parsed value, or empty if not set at either source
+     */
     @Override
     public Optional<Boolean> getBoolean(String key) {
         return resolveRaw(key).map(v -> Boolean.parseBoolean(v.strip()));
     }
 
+    /**
+     * Resolves {@code key} and delegates to {@link #getString}, {@link #getInt},
+     * {@link #getLong} or {@link #getBoolean} based on {@code type}.
+     *
+     * @param key  dot-path key
+     * @param type one of {@code String.class}, {@code Integer.class}, {@code Long.class}
+     *             or {@code Boolean.class}
+     * @return the resolved and converted value, or empty if not set or {@code type}
+     *         is none of the four supported classes
+     */
     @Override
     @SuppressWarnings("unchecked")
     public <T> Optional<T> get(String key, Class<T> type) {
@@ -154,11 +192,19 @@ public final class CommunityConfigProvider implements ConfigProvider {
         // Community: hot-reload not supported.
     }
 
+    /**
+     * Returns the fixed Community-tier priority, {@code 0}.
+     *
+     * @see ConfigProvider#priority()
+     */
     @Override
     public int priority() {
         return 0;
     }
 
+    /**
+     * Returns {@code "CommunityConfigProvider"}.
+     */
     @Override
     public String providerName() {
         return "CommunityConfigProvider";

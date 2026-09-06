@@ -22,6 +22,13 @@ import java.util.List;
  */
 public final class CommunitySubsystemProvider implements SubsystemProvider {
 
+    /**
+     * Returns every subsystem the Community tier registers with the orchestrator.
+     *
+     * @param config the resolved kernel configuration; unused — the Community subsystem set is
+     *               fixed and does not vary by configuration, unlike each subsystem's own behavior
+     * @return the complete, fixed Community subsystem list
+     */
     @Override
     public List<Subsystem> getSubsystems(ConfigProvider config) {
         return List.of(
@@ -40,6 +47,11 @@ public final class CommunitySubsystemProvider implements SubsystemProvider {
         );
     }
 
+    /**
+     * Returns this provider's module identifier, {@code "exeris-kernel-community"}.
+     *
+     * @return the Community module name
+     */
     @Override
     public String moduleName() {
         return "exeris-kernel-community";

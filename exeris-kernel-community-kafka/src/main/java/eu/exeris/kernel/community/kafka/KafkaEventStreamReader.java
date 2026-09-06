@@ -40,6 +40,8 @@ public final class KafkaEventStreamReader implements EventStreamReader {
     private final ToIntFunction<String> typeOrdinalResolver;
 
     /**
+     * Constructs a reader bound to {@code config}'s durable event-log topic.
+     *
      * @param config              the Kafka binding config (bootstrap servers, log topic, poll timeout)
      * @param typeOrdinalResolver resolves an event-type name to its ordinal for {@code replayByType}
      *                            (wire to {@code EventRegistry::ordinalOf}; {@code -1} = unknown)

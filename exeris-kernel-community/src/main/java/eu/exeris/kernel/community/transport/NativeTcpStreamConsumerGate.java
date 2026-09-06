@@ -11,11 +11,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * Package-private static helpers enforcing the single-consumer invariant on
  * the inbound and outbound queue gates of {@link NativeTcpStream}.
  *
- * <p>Extracted from {@link NativeTcpStream} in v0.8 Sprint 3 (QA-016) as the
- * first seam of the stream's God-class decomposition. The semantics are:
- * one virtual thread at a time owns a given consumer slot; reentrant
- * acquisitions by the same thread are no-ops; concurrent acquisition by a
- * different thread is fail-fast.
+ * <p>One virtual thread at a time owns a given consumer slot; a reentrant acquisition by the
+ * thread already holding it is a no-op, and a concurrent acquisition attempt by a different
+ * thread is fail-fast.
  */
 final class NativeTcpStreamConsumerGate {
 

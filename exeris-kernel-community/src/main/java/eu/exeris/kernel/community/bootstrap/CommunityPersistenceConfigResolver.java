@@ -11,6 +11,18 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Reads {@code persistence.*} configuration, plus the {@code exeris.persistence.properties.}/
+ * {@code EXERIS_PERSISTENCE_PROPERTIES_} property and environment overrides, into a
+ * {@link PersistenceConfig} for HikariCP.
+ *
+ * <p>{@code persistence.maxPoolSize} (or its {@code persistence.pool.maxSize} alias) takes an
+ * explicit value when set; otherwise the pool size is computed from the available processor count —
+ * {@code cores × 2}, clamped between 2 and 32 — and rejected outright if an explicit value comes in
+ * under 2. {@code persistence.minIdleConnections} (or its {@code persistence.pool.minSize} alias)
+ * defaults to the lesser of the caller's default and the resolved pool size when unset, but an
+ * explicit value passes through unclamped.
+ */
 public final class CommunityPersistenceConfigResolver {
 
     private static final String SYS_PROP_PREFIX = "exeris.persistence.properties.";

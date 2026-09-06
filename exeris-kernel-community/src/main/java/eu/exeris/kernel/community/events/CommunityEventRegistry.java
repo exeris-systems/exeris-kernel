@@ -32,6 +32,20 @@ final class CommunityEventRegistry implements EventRegistry {
     private final ConcurrentMap<String, EventTypeSpec> byName    = new ConcurrentHashMap<>();
     private final ConcurrentMap<Integer, String>       byOrdinal = new ConcurrentHashMap<>();
 
+    /**
+     * Inserts {@code spec} into both the name- and ordinal-keyed maps, or validates it against
+     * an existing entry when either key is already taken.
+     *
+     * <p>Registration may happen at any time — this registry places no ordering requirement
+     * relative to {@link eu.exeris.kernel.spi.events.EventEngine#start()}. On a name/ordinal
+     * conflict, the ordinal insertion this call may have already made is rolled back before
+     * throwing, so a rejected registration leaves no partial entry behind.
+     *
+     * @param spec the event type specification (non-null)
+     * @throws EventRegistryException EX-EVENT-6003 if {@code spec.ordinal()} is already bound
+     *         to a different name, or {@code spec.name()} is already bound to a
+     *         non-equal {@link EventTypeSpec}
+     */
     @Override
     public void register(EventTypeSpec spec) {
         String existingName = byOrdinal.putIfAbsent(spec.ordinal(), spec.name());
@@ -49,16 +63,32 @@ final class CommunityEventRegistry implements EventRegistry {
         }
     }
 
+    /**
+     * Looks up the registered spec by name in the backing {@link ConcurrentHashMap} — O(1).
+     *
+     * @param eventType the event type name (non-null)
+     * @return the registered spec, or {@code null} if not found
+     */
     @Override
     public EventTypeSpec resolve(String eventType) {
         return byName.get(eventType);
     }
 
+    /**
+     * Returns an immutable copy of the currently registered type names.
+     *
+     * @return immutable set of registered type names
+     */
     @Override
     public Set<String> registeredTypes() {
         return Set.copyOf(byName.keySet());
     }
 
+    /**
+     * Returns the number of entries in the name-keyed map.
+     *
+     * @return count &ge; 0
+     */
     @Override
     public int size() {
         return byName.size();

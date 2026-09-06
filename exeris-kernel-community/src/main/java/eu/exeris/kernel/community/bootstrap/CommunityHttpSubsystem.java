@@ -22,6 +22,28 @@ import java.util.List;
 import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
+/**
+ * Boots the Community HTTP subsystem: a server engine, a client engine, or both, depending on
+ * {@link HttpConfig#mode()}.
+ *
+ * <p>{@link CommunityHttpConfigResolver} decides the mode before this class sees it — an explicit
+ * {@code http.port}/{@code network.port} without {@code http.mode} is read as {@link HttpMode#SERVER};
+ * with neither, the subsystem builds no engine and {@link #providerBindings()} binds nothing.
+ *
+ * <p>Server and client engines are wrapped in {@link DeferredHttpServerEngine} /
+ * {@link DeferredHttpClientEngine} at {@code initialize()} but built only at {@code start()}, for the
+ * same reason {@link DeferredWebSocketServerEngine} exists: {@code KernelProviders.MEMORY_ALLOCATOR}
+ * is not yet bound while a subsystem is initializing, and a real engine resolves its allocator at
+ * construction.
+ *
+ * <p>A server engine with no application-supplied {@code HTTP_SERVER_HANDLER} falls back to
+ * {@link CommunityHttpHealthRoutes#healthHandler}, so a kernel boots with a working
+ * {@code /health}/{@code /health/ready} surface even before the application installs its own router.
+ * When a server engine is built, this subsystem also publishes whatever request body decoder
+ * registry the discovered {@link HttpProvider} offers into {@code HTTP_REQUEST_BODY_DECODER_REGISTRY}
+ * — optional, since a provider may offer none — so a generated handler can resolve it without DI
+ * (ADR-036).
+ */
 final class CommunityHttpSubsystem implements Subsystem {
 
     private HttpProvider provider;

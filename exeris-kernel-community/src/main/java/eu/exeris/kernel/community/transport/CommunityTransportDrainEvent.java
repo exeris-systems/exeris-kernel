@@ -25,8 +25,10 @@ import jdk.jfr.StackTrace;
  *
  * <p>{@code busyRemaining > 0} is the signal that matters: the deadline fired first. Pair it with
  * {@code durationNanos} to tell "handlers are genuinely slow" from "one handler is stuck". The gap
- * between {@code openAtStart} and {@code busyAtStart} is the idle connections that used to hold
- * shutdown open before 0.11.
+ * between {@code openAtStart} and {@code busyAtStart} approximates the idle connections that hold a
+ * slot without holding up the drain — the two counts are independent, non-atomic snapshots taken
+ * moments apart, not one atomic sample; {@code busyAtStart} is what the deadline is actually
+ * measured against.
  *
  * <p>Counts only — no peer identity, no request content. Single-phase {@code commit()} on the platform
  * thread driving shutdown; never on a virtual thread, so the carrier-pinning hazard that afflicts

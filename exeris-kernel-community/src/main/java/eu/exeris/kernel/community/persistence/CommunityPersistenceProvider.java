@@ -78,6 +78,8 @@ public final class CommunityPersistenceProvider implements PersistenceProvider {
 
     /**
      * Community binding for the SPI persistence entity encoder contract.
+     *
+     * @return the shared raw-JSONB codec instance
      */
     public EntityEncoder<MemorySegment> entityEncoder() {
         return RAW_JSONB_CODEC;
@@ -85,6 +87,8 @@ public final class CommunityPersistenceProvider implements PersistenceProvider {
 
     /**
      * Community binding for the SPI persistence entity decoder contract.
+     *
+     * @return the shared raw-JSONB codec instance
      */
     public EntityDecoder<MemorySegment> entityDecoder() {
         return RAW_JSONB_CODEC;

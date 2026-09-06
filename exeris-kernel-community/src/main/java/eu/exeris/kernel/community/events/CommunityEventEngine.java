@@ -27,6 +27,17 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Community binding of {@link EventEngine}: composes a {@link CommunityEventRegistry}, a
+ * {@link CommunityEventQueue}, a {@link CommunityEventLoop}, an {@link InMemoryEventBus}
+ * wrapped for persistent-event queueing, and — when {@link EventEngineConfig#outboxEnabled()}
+ * and a {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} are both available — an
+ * {@link OutboxOrchestrator} wired to a JDBC outbox store and a local bus broker port.
+ *
+ * <p>Without a bound persistence engine the outbox orchestrator is never constructed and
+ * {@link #start()} / {@link #close()} simply skip it: the engine still runs (bus, queue and
+ * loop are unconditional), it just has nothing to poll and re-deliver.
+ */
 final class CommunityEventEngine implements EventEngine {
 
     private final CommunityEventRegistry registry;
@@ -52,26 +63,61 @@ final class CommunityEventEngine implements EventEngine {
         this.outboxOrchestrator = buildOutboxOrchestrator(config, delegateBus, registry);
     }
 
+    /**
+     * Returns this engine's bus, a persistent-queueing decorator over the Core
+     * {@link InMemoryEventBus} that also enqueues persistent events into {@link #queue()}
+     * before delegating.
+     *
+     * @return the non-null event bus
+     */
     @Override
     public EventBus bus() {
         return bus;
     }
 
+    /**
+     * Returns this engine's {@link CommunityEventQueue}, the bounded, heap-backed in-memory
+     * buffer that persistent publishes are enqueued into and {@link #loop()} drains.
+     *
+     * @return the non-null event queue
+     */
     @Override
     public EventQueue queue() {
         return queue;
     }
 
+    /**
+     * Returns this engine's {@link CommunityEventLoop}, the single-virtual-thread drain loop
+     * that dispatches queued batches to registered
+     * {@link eu.exeris.kernel.spi.events.EventBatchProcessor}s.
+     *
+     * @return the non-null event loop
+     */
     @Override
     public EventLoop loop() {
         return loop;
     }
 
+    /**
+     * Returns this engine's {@link CommunityEventRegistry}, the heap-backed ordinal↔name
+     * mapping shared by the bus and the loop.
+     *
+     * @return the non-null event registry
+     */
     @Override
     public EventRegistry registry() {
         return registry;
     }
 
+    /**
+     * Starts the event loop and, when an outbox orchestrator was built, starts it too.
+     *
+     * <p>Idempotent: a second call while already started is a no-op (guarded by a
+     * compare-and-set on the started flag). If the orchestrator fails to start, this method
+     * compensates by stopping the loop it just started and resetting the started flag to
+     * {@code false} before rethrowing, so a failed {@code start()} leaves the engine in the
+     * same not-started state it began in rather than half-running.
+     */
     @Override
     @SuppressWarnings("PMD.AvoidCatchingGenericException") // partial-start compensation
     public void start() {
@@ -90,6 +136,13 @@ final class CommunityEventEngine implements EventEngine {
         }
     }
 
+    /**
+     * Stops the outbox orchestrator (if any) and then the event loop.
+     *
+     * <p>Idempotent: a call while not started is a no-op (guarded by a compare-and-set on the
+     * started flag). The orchestrator is stopped before the loop so no further outbox-relayed
+     * publish reaches a loop that has already begun draining down.
+     */
     @Override
     public void close() {
         if (!started.compareAndSet(true, false)) {
@@ -101,6 +154,12 @@ final class CommunityEventEngine implements EventEngine {
         loop.stop();
     }
 
+    /**
+     * Returns a point-in-time snapshot combining this engine's own published-count counter
+     * with the loop's processed/failed counters and the queue's current depth and capacity.
+     *
+     * @return the current engine stats snapshot
+     */
     @Override
     public EventEngineStats stats() {
         return new EventEngineStats(
@@ -134,6 +193,17 @@ final class CommunityEventEngine implements EventEngine {
                 .build();
     }
 
+    /**
+     * Decorates a delegate {@link EventBus} so that every publish of a persistent
+     * {@link EventDescriptor} is also pushed onto the engine's {@link EventQueue} before the
+     * delegate is invoked — the seam that lets the queue-backed {@link CommunityEventLoop}
+     * and the fire-and-forget in-memory bus share one publish call.
+     *
+     * <p>Non-persistent descriptors ({@code descriptor.isPersistent() == false}) bypass the
+     * queue entirely and go straight to the delegate. This queue is heap-backed and separate
+     * from the JDBC-backed {@link OutboxOrchestrator} this engine may also build: the two
+     * share no code path.
+     */
     private static final class PersistentQueueingBus implements EventBus {
 
         private final String engineName;
@@ -158,6 +228,22 @@ final class CommunityEventEngine implements EventEngine {
             this.failFastOnFull = failFastOnFull;
         }
 
+        /**
+         * Counts the publish, enqueues {@code payload} onto the engine queue when
+         * {@code descriptor} is persistent, then delegates to the wrapped bus.
+         *
+         * <p>The queue push retains its own reference to {@code payload} (per
+         * {@link EventQueue#push}); the payload handed to the delegate afterward is the same
+         * caller-owned instance, so both the queue and the delegate's fan-out see a correctly
+         * counted reference.
+         *
+         * @param descriptor routing metadata (non-null)
+         * @param payload    event payload; ownership transfers to this bus (non-null)
+         * @throws eu.exeris.kernel.spi.exceptions.events.EventBusException EX-EVENT-6002 if
+         *         {@code descriptor} is persistent and {@link EventQueue#push} either refuses
+         *         the event (queue full in fail-fast mode) or raises an unexpected
+         *         {@code RuntimeException}
+         */
         @Override
         public void publish(EventDescriptor descriptor, EventPayload payload) {
             publishedTotal.incrementAndGet();
@@ -165,16 +251,41 @@ final class CommunityEventEngine implements EventEngine {
             delegate.publish(descriptor, payload);
         }
 
+        /**
+         * Delegates subscription to the wrapped bus unchanged; this decorator has no
+         * subscribe-side behaviour of its own.
+         *
+         * @param eventType the event type name (non-null)
+         * @param handler   the handler (non-null)
+         * @return the token returned by the delegate
+         */
         @Override
         public SubscriptionToken subscribe(String eventType, EventHandler handler) {
             return delegate.subscribe(eventType, handler);
         }
 
+        /**
+         * Delegates unsubscription to the wrapped bus unchanged.
+         *
+         * @param token the token returned by {@link #subscribe}
+         */
         @Override
         public void unsubscribe(SubscriptionToken token) {
             delegate.unsubscribe(token);
         }
 
+        /**
+         * Same queueing-then-delegating behaviour as {@link #publish}, but blocks until the
+         * delegate's handlers have completed.
+         *
+         * @param descriptor routing metadata (non-null)
+         * @param payload    event payload; ownership transfers to this bus (non-null)
+         * @throws InterruptedException if the calling thread is interrupted while waiting
+         * @throws eu.exeris.kernel.spi.exceptions.events.EventBusException EX-EVENT-6002 if
+         *         {@code descriptor} is persistent and {@link EventQueue#push} either refuses
+         *         the event (queue full in fail-fast mode) or raises an unexpected
+         *         {@code RuntimeException}
+         */
         @Override
         public void publishAndAwait(EventDescriptor descriptor, EventPayload payload) throws InterruptedException {
             publishedTotal.incrementAndGet();
@@ -204,15 +315,16 @@ final class CommunityEventEngine implements EventEngine {
         }
 
         /**
-         * EVENT-205b: build the right {@code EX-EVENT-6002} variant for a failed push.
-         * Fail-fast mode uses the typed factory carrying the documented Glass-Box rawArgs
-         * {@code [eventType, queueDepth, queueCapacity]}; legacy mode falls back to the
-         * message-only constructor (interrupt path).
+         * Builds the {@code EX-EVENT-6002} exception for a failed persistent-queue push,
+         * choosing between the two failure shapes {@link CommunityEventQueue#push} can produce.
+         * Fail-fast mode uses the typed {@link EventBusException#publishOverflow} factory
+         * carrying the documented Glass-Box rawArgs {@code [eventType, queueDepth,
+         * queueCapacity]}; blocking mode's {@code false} return only happens on interrupt, so
+         * it falls back to the message-only constructor.
          *
-         * <p>EVENT-111 (v0.8 Sprint 5): also emit
-         * {@link CommunityEventQueueOverflowEvent} on the fail-fast branch so operator
-         * dashboards can attribute overflow rates to specific engine + event-type pairs
-         * — the publishing-caller exception is per-call and leaves no post-mortem trail.
+         * <p>On the fail-fast branch this also emits {@link CommunityEventQueueOverflowEvent}
+         * so operator dashboards can attribute overflow rates to specific engine + event-type
+         * pairs — the publishing-caller exception is per-call and leaves no post-mortem trail.
          */
         private EventBusException failedPushException(EventDescriptor descriptor) {
             String eventType = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());

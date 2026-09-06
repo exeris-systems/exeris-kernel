@@ -14,16 +14,31 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Heap-backed {@link EventPayload} carrying decoded Kafka record bytes for delivery to local
  * subscribers.
  *
- * <p>Functionally identical to {@code CommunityHeapEventPayload}; duplicated here so the Kafka
- * module does not depend on a package-private Community internal. The reference-count machinery
- * is preserved for symmetry with the broadcast RAII protocol — {@link #retain()} and
+ * <p>Mirrors the reference-count and lifecycle shape of {@code CommunityHeapEventPayload}
+ * (the package-private Community heap payload) — duplicated here so the Kafka module does not
+ * depend on a package-private Community internal — but the two are not functionally identical:
+ * {@link #wrap(MemorySegment)} stores the given segment as-is, with no read-only view applied,
+ * so a caller holding the segment returned by {@link #segment()} can write through it; Community's
+ * payload wraps its backing array as a read-only segment. The reference-count machinery is
+ * preserved for symmetry with the broadcast RAII protocol — {@link #retain()} and
  * {@link #close()} adjust an {@link AtomicInteger}, and the underlying buffer is released for
  * GC when the count reaches zero.
  *
- * <p>PERF-071: the payload now holds a {@link MemorySegment} directly (typically a zero-copy
- * slice over the Kafka consumer record's value array — see
- * {@link KafkaEventCodec#decodePayloadSegment(byte[])}). {@link #segment()} returns the held
- * segment as-is — no per-call {@link MemorySegment#ofArray(byte[])} wrapper allocation.
+ * <p>The payload holds a {@link MemorySegment} directly (typically a zero-copy slice over the
+ * Kafka consumer record's value array — see {@link KafkaEventCodec#decodePayloadSegment(byte[])}).
+ * {@link #segment()} returns the held segment as-is — no per-call
+ * {@link MemorySegment#ofArray(byte[])} wrapper allocation.
+ *
+ * <p><b>Allocation:</b> {@link #wrap(MemorySegment)} allocates only the payload instance and its
+ * reference-count holder — the segment itself is not copied; {@link #segment()} and
+ * {@link #length()} return already-held state with no further allocation.
+ * <p><b>Thread confinement:</b> none — {@link #retain()}, {@link #close()} and {@link #refCount()}
+ * mutate or read an {@link AtomicInteger} and are safe to call from any thread.
+ * <p><b>Ownership:</b> the holder of the last reference releases via {@link #close()}. Every
+ * segment this module wraps is heap-{@code byte[]}-backed (see
+ * {@link KafkaEventCodec#decodePayloadSegment(byte[])}), so release only drops the reference
+ * count — the backing array is reclaimed by ordinary GC once unreachable, not returned to a pool;
+ * {@link #wrap(MemorySegment)} does not itself inspect or enforce the segment's origin.
  *
  * @since 0.7
  */

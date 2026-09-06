@@ -20,12 +20,10 @@ import java.util.Optional;
  * Package-private codec for {@link FlowSnapshot} ↔ {@code exeris_saga_state}
  * row mapping used by {@link JdbcFlowSnapshotStore}.
  *
- * <p>Extracted from {@link JdbcFlowSnapshotStore} in v0.8 Sprint 3 (QA-017)
- * to close the store's God-class suppression block. Owns the binding
- * (snapshot → prepared statement parameters), the {@code compensation_stack}
- * BYTEA packing (4 bytes per int, big-endian, length {@code stackPointer * 4} —
- * H2 does not support native {@code INT[]}, see ADR-013 §5), and the row
- * decoder (cursor → snapshot).
+ * <p>Owns the binding (snapshot → prepared statement parameters), the
+ * {@code compensation_stack} BYTEA packing (4 bytes per int, big-endian, length
+ * {@code stackPointer * 4} — H2 does not support native {@code INT[]}, see ADR-013 §5), and the
+ * row decoder (cursor → snapshot).
  *
  * <h2>Column order</h2>
  * <p>Both {@link #readSnapshot} and the bind paths assume the canonical

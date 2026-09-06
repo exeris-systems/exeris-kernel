@@ -15,16 +15,26 @@ import java.lang.foreign.MemorySegment;
  * Package-private pending-write record held in {@link NativeTcpStream}'s
  * outbound MPSC queue.
  *
- * <p>Extracted from {@link NativeTcpStream} in v0.8 Sprint 3 (QA-016) as the
- * third seam of the stream's God-class decomposition. Carries the plaintext
- * payload, optionally a TLS-wrapped ciphertext buffer (lazily produced on
- * first drain attempt for TLS streams), and tracks offsets across partial
- * socket writes.
+ * <p>Carries the plaintext payload and, for a buffer-owner TLS engine, would carry a separately
+ * wrapped ciphertext buffer; tracks offsets across partial socket writes for either.
  *
  * <p>Construction takes a {@link TlsContext} (engine + lock + ciphertext placeholder) and a
  * {@link TryWriter} dispatcher so the stream's socket-backend selection stays
  * encapsulated in {@link NativeTcpStreamPlainSocketIo}; this class never
  * touches the underlying file descriptor directly.
+ *
+ * <p><b>Allocation:</b> allocates no buffer itself — {@code plainBuffer} is supplied by the caller
+ * at construction. {@code cipherBuffer} is the seam for a buffer-owner TLS engine but is never
+ * populated by the only engine {@link NativeTcpStream} constructs today ({@code CommunityTlsEngine},
+ * fd-owner BIO): {@link #prepareCipher()} writes ciphertext straight to the kernel socket and keeps
+ * the shared {@link TlsContext} placeholder at size zero rather than retaining a buffer here.
+ * <p><b>Thread confinement:</b> none of its own — every method runs on whichever thread currently
+ * holds the owning stream's outbound single-consumer slot (see {@link NativeTcpStreamConsumerGate}),
+ * which is one thread at a time but not always the same one.
+ * <p><b>Ownership:</b> holds one reference to {@code plainBuffer} (and, only for a buffer-owner
+ * engine, to {@code cipherBuffer}); {@link #close()} releases whichever is non-null and is
+ * idempotent — the fields are nulled after release, so a second close is a no-op — and must be
+ * called exactly once the write is fully drained or abandoned.
  */
 // plainBuffer/cipherBuffer reset to null after close() to release the reference.
 @SuppressWarnings("PMD.NullAssignment")
@@ -134,6 +144,9 @@ final class NativeTcpStreamPendingWrite implements AutoCloseable {
         return cipherBuffer != null ? cipherOffset : plainOffset;
     }
 
+    /**
+     * Releases {@code plainBuffer} and, if produced, {@code cipherBuffer}. Idempotent.
+     */
     @Override
     public void close() {
         if (cipherBuffer != null) {

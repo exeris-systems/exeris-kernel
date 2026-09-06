@@ -36,6 +36,20 @@ import java.util.Objects;
 // purposeful (CloseResource suppression covers the buffer flyweight that is shared
 // across loop iterations by design), and the keep-alive iteration / read-aggregate
 // branching dominates the residual cyclomatic complexity.
+/**
+ * Community: the per-connection HTTP request loop — reads HTTP/1.1 requests off a
+ * {@link TransportStream}, detects an h2c or prior-knowledge upgrade and hands the connection to
+ * {@link CommunityHttp2SessionProcessor}, and otherwise dispatches each parsed request (respond-once
+ * or SSE stream) through {@link CommunityHttpRequestDispatcher} / {@link CommunityHttpStreamDispatcher}.
+ *
+ * <p>One instance is built by {@link CommunityHttpServerEngine#start()} and shared by every accepted
+ * connection; {@link #process} is invoked once per connection, on that connection's own thread, and
+ * runs the keep-alive loop — reading, parsing, dispatching and re-arming the aggregate buffer between
+ * requests — until the peer closes, an unrecoverable stream error occurs, a graceful drain declines to
+ * keep it open, the request or response does not ask for keep-alive, a streaming route takes over the
+ * connection for its own lifetime, or the connection is handed off to
+ * {@link CommunityHttp2SessionProcessor} via an h2c/prior-knowledge upgrade.
+ */
 @SuppressWarnings({
     "PMD.AvoidCatchingGenericException",
     "PMD.CloseResource",
@@ -44,9 +58,9 @@ import java.util.Objects;
 public final class CommunityHttpRequestProcessor {
 
     /**
-     * Request-scoped persistence session box binding.
-     * Lazily acquires a JDBC connection on first subsystem access, consolidating connection +
-     * transaction state for the duration of an HTTP request.
+     * Carries the request-scoped {@link PersistenceSessionBox} bound for the duration of one HTTP
+     * request, lazily acquiring a pooled JDBC connection on the request's first persistence access.
+     *
      * <p>Accessible to subsystems (e.g., graph, persistence) to reuse the request-bound connection.
      */
     public static final ScopedValue<PersistenceSessionBox> REQUEST_SESSION =
@@ -229,6 +243,8 @@ public final class CommunityHttpRequestProcessor {
     }
 
     /**
+     * Re-arms the connection as busy with the bound drain coordinator, if any.
+     *
      * @return {@code false} only when the drain has committed to teardown; unbound means no drain
      *         coordinator is in play at all, which must not close connections
      */

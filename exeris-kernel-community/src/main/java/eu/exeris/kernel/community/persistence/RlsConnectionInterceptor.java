@@ -22,14 +22,17 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * <h2>Isolation Strategy Routing</h2>
  * <table>
+ *   <caption>SQL issued per isolation strategy</caption>
  *   <tr><th>Strategy</th><th>SQL issued</th></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SHARED}</td>
  *       <td>{@code set_config('exeris.tenant_id', $1, false)} and
- *           {@code set_config('exeris.shared_scope', $2, false)} in one statement</td></tr>
+ *           {@code set_config('exeris.shared_scope', $2, false)} in one statement,
+ *           then {@code RESET search_path}</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA}</td>
  *       <td>{@code SET search_path TO &lt;schemaName&gt;, public}, then the same session-key statement</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#DEDICATED}</td>
- *       <td>Routing is handled at the pool level by the engine; the session-key statement is issued anyway</td></tr>
+ *       <td>Routing is handled at the pool level by the engine; the session-key statement
+ *           is issued anyway, then {@code RESET search_path}</td></tr>
  * </table>
  *
  * <p><b>Every strategy publishes both session keys.</b> Physical placement decides which connection a
@@ -44,16 +47,16 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * does not ship and cannot introspect. A conforming policy widens the read predicate and leaves the write
  * predicate pinned to the owner:
  *
- * <pre>{@code
- * ALTER TABLE <table> ENABLE ROW LEVEL SECURITY;
- * ALTER TABLE <table> FORCE  ROW LEVEL SECURITY;
+ * {@snippet lang="sql" :
+ * ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ * ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
  *
- * CREATE POLICY tenant_isolation ON <table>
+ * CREATE POLICY tenant_isolation ON table_name
  *   USING (tenant_id = current_setting('exeris.tenant_id', true)
  *          OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL
  *              AND shared_scope = current_setting('exeris.shared_scope', true)))
  *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true));
- * }</pre>
+ * }
  *
  * <p><b>{@code FORCE} is not optional, and leaving it out fails open.</b> PostgreSQL exempts a table's
  * owner from that table's own policies unless the table is forced. A deployment whose application
@@ -62,8 +65,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * tenants' rows in every read. The three integration tests that hold this contract
  * ({@code CommunityPersistenceTenantIsolationIT}, {@code CommunityPersistenceSharedScopeIT},
  * {@code CommunityPersistenceIsolationLeakTckIT}) all issue both statements <em>and</em> connect as a
- * non-owner role, so what they verify is the property a forced table has. This snippet used to show
- * only the policy, which is the half that does not enforce anything on its own.
+ * non-owner role, so what they verify is the property a forced table has.
  *
  * <p><b>The comparison above is text-to-text, and that assumption is load-bearing.</b>
  * {@code current_setting} returns {@code text} and the tested schema declares {@code tenant_id TEXT},
@@ -268,6 +270,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         }
     }
 
+    /**
+     * Points {@code search_path} at the request's declared schema (SEPARATED_SCHEMA only).
+     *
+     * <p>Requires a non-blank schema name and refuses anything {@link PostgresIdentifier#isSafe}
+     * does not accept — {@code SET search_path} takes an identifier, not a bind parameter, so an
+     * unvalidated value would itself be the injection vector.
+     */
     private static void injectSchemaPath(PersistenceConnection connection,
                                          StorageContext storageContext) {
         String schemaName = storageContext.schemaName().orElse(null);

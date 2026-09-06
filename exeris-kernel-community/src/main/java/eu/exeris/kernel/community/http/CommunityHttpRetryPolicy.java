@@ -88,6 +88,8 @@ public final class CommunityHttpRetryPolicy implements HttpRetryPolicy {
      * @param baseDelayMillis exponential-backoff base in milliseconds; MUST be {@code >= 0}
      * @param maxDelayMillis  backoff cap in milliseconds; MUST be {@code >= baseDelayMillis}
      * @param jitter          supplier of a jitter fraction in {@code [0, 1)}; never {@code null}
+     * @throws IllegalArgumentException if {@code maxAttempts < 1}, if {@code baseDelayMillis < 0},
+     *     if {@code maxDelayMillis < baseDelayMillis}, or if {@code jitter} is {@code null}
      */
     public CommunityHttpRetryPolicy(int maxAttempts, long baseDelayMillis, long maxDelayMillis, DoubleSupplier jitter) {
         if (maxAttempts < MIN_ATTEMPTS) {

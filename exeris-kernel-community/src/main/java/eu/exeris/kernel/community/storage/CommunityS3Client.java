@@ -34,13 +34,9 @@ import java.util.Optional;
  *
  * <h2>Engine ownership</h2>
  * <p>This owns a {@code CLIENT}-mode engine of its own rather than borrowing the ambient
- * {@code HTTP_CLIENT_ENGINE}. It used to give two reasons and ADR-074 retired the one it called
- * load-bearing: an engine was bound to a single host, so a shared application client could not
- * address the storage endpoint at all. A request now names its own peer, so that objection is gone.
- *
- * <p>The remaining reason stands on its own: object transfers are large and long, and putting them
- * through the pool that serves application traffic would let one upload sit in front of every other
- * request. Head-of-line isolation, not addressability, is why this engine is private.
+ * {@code HTTP_CLIENT_ENGINE} (ADR-074): object transfers are large and long, and putting them through
+ * the pool that serves application traffic would let one upload sit in front of every other request.
+ * Head-of-line isolation is why this engine is private.
  *
  * @since 0.11
  */

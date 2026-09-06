@@ -7,10 +7,9 @@ package eu.exeris.kernel.community.telemetry;
 /**
  * Package-private rawArgs JSON-array writer for {@link Slf4jTelemetrySink}.
  *
- * <p>Extracted from {@link Slf4jTelemetrySink} in v0.8 Sprint 1 (QA-012) as the
- * middle layer of the JSON serialization split. Walks the disclosed rawArgs
- * array and serializes each element to JSON; delegates string escaping to
- * {@link Slf4jTelemetryJsonEscaper}.
+ * <p>The middle layer of the JSON serialization split: walks the disclosed
+ * rawArgs array and serializes each element to JSON, delegating string escaping
+ * to {@link Slf4jTelemetryJsonEscaper}.
  *
  * <p>Supported element types: boxed primitives, {@code String}, {@code Character},
  * {@code Enum}, and arrays of any of the above (recursive). Unknown types are

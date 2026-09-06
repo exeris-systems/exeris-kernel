@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 /**
- * Community Kafka / Redpanda binding for the Exeris Events SPI (since 0.7.0).
+ * Community Kafka / Redpanda binding for the Exeris Events SPI.
  *
  * <h2>Module Boundary (ADR-008)</h2>
  * <p>This package and its sub-packages are the <em>only</em> place where
@@ -20,25 +20,25 @@
  * operators who need Kafka add {@code exeris-kernel-community-kafka} to the
  * classpath; everyone else gets the lean Community jar.
  *
- * <h2>Status (0.7 Sprint 5b)</h2>
- * <p>The Kafka driver ships as a working binding: {@link KafkaEventConfig},
+ * <h2>Status</h2>
+ * <p>The Kafka driver is a working binding: {@link KafkaEventConfig},
  * {@link KafkaEventCodec} (48-byte fixed wire header + payload tail),
  * {@link KafkaEventBrokerPort} (Core {@code OutboxBrokerPort} adapter — built but not
  * yet wired into a runtime path; reserved for the outbox-driven delivery follow-up),
  * {@link KafkaEventEngine} ({@code KafkaPublishBus} + virtual-thread {@code ConsumerLoop}
  * + {@code NoOpQueue}), and {@link KafkaEventProvider} (ServiceLoader, priority 50 —
  * outranks the in-memory Community provider at 0, stays below the Enterprise tier slot at 100;
- * see {@link KafkaEventProvider#PRIORITY}, which this text contradicted until 0.11). Coverage:
+ * see {@link KafkaEventProvider#PRIORITY}). Coverage:
  * {@link eu.exeris.kernel.tck.contract.events.AbstractKafkaEventEngineTck}
  * (publish/consume roundtrip + idempotent close, Testcontainers Kafka 3.x).
  *
  * <p>The durable event-log bindings {@link KafkaEventStreamAppender} and
  * {@link KafkaEventStreamReader} (ADR-049 append-with-expected-version + per-stream ordering,
- * {@code @since 0.10}) are implemented; see {@code docs/subsystems/events.md}.
+ * {@code @since 0.10}) are implemented, including replay by wall-clock timestamp and by
+ * committed version; see {@code docs/subsystems/events.md}.
  *
  * <h2>Deferred</h2>
  * <ul>
- *   <li>Replay by wall-clock timestamp (offset-based tail read is implemented in the reader binding).</li>
  *   <li>Outbox-orchestrator-driven delivery wiring on top of {@link KafkaEventBrokerPort}.</li>
  *   <li>{@code enable.auto.commit=false} with manual commit-after-handler (today the
  *       loop runs auto-commit, which yields at-most-once semantics on consume).</li>

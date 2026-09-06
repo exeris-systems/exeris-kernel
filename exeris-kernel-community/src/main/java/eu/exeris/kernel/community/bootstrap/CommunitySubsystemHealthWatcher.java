@@ -43,6 +43,14 @@ public final class CommunitySubsystemHealthWatcher {
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread thread;
 
+    /**
+     * Creates a watcher bound to one {@link KernelHealthMonitor}, polling at the given interval once
+     * {@link #start()} is called.
+     *
+     * @param monitor       the monitor whose {@code RUNNING}/{@code DEGRADED} axis this watcher drives
+     * @param intervalNanos the delay between poll passes, in nanoseconds; must be positive
+     * @throws IllegalArgumentException if {@code intervalNanos} is not positive
+     */
     public CommunitySubsystemHealthWatcher(KernelHealthMonitor monitor, long intervalNanos) {
         this.monitor = Objects.requireNonNull(monitor, "monitor");
         if (intervalNanos <= 0) {
@@ -51,7 +59,12 @@ public final class CommunitySubsystemHealthWatcher {
         this.intervalNanos = intervalNanos;
     }
 
-    /** Registers a concrete subsystem's health source under its monitor name. */
+    /**
+     * Registers a concrete subsystem's health source under its monitor name.
+     *
+     * @param subsystemName the name {@code monitor} tracks this subsystem's state under
+     * @param source        reports whether that subsystem is currently healthy
+     */
     public void register(String subsystemName, HealthSource source) {
         Objects.requireNonNull(subsystemName, "subsystemName");
         Objects.requireNonNull(source, "source");
@@ -130,6 +143,11 @@ public final class CommunitySubsystemHealthWatcher {
     /** Health of one concrete subsystem; {@code true} = serving, {@code false} = impaired. */
     @FunctionalInterface
     public interface HealthSource {
+        /**
+         * Reports whether the registered subsystem can currently serve requests.
+         *
+         * @return {@code true} when serving, {@code false} when impaired
+         */
         boolean healthy();
     }
 }

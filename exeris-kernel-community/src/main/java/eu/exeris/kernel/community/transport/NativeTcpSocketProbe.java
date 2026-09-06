@@ -20,12 +20,10 @@ import java.util.Locale;
 /**
  * Package-private static helpers for socket bootstrap validation probes.
  *
- * <p>Extracted from {@link NativeTcpSocketBackend} in v0.8 Sprint 1 (QA-013a)
- * as the second-level split of the carrier's God-class suppression block.
- * Owns the native socket FFM helpers ({@code socket()} / {@code bind()} /
+ * <p>Holds the native socket FFM helpers ({@code socket()} / {@code bind()} /
  * {@code connect()} / {@code listen()} / {@code close()}), the IPv4 sockaddr
- * serializer, and the server/client validation probes that the backend invokes
- * once on first server-start / first client-connect.
+ * serializer, and the server/client validation probes that {@link NativeTcpSocketBackend}
+ * invokes once on first server-start / first client-connect.
  *
  * <p>All entry points are static — no instance state lives in this class.
  * Validation latches are held by {@link NativeTcpSocketBackend}.

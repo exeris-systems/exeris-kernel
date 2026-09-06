@@ -24,6 +24,9 @@ import jdk.jfr.StackTrace;
  * {@link Event#isEnabled()} so a disabled recording costs ~zero.
  *
  * @since 0.10
+ * @implNote {@link #emit} commits in two phases — {@link Event#begin()}, then only local field
+ *           assignment, then {@link Event#commit()} — so the timed interval never straddles a
+ *           blocking operation on the emitting thread.
  */
 @Name("eu.exeris.kernel.events.EventLogAppendConflict")
 @Label("Event-Log Append Conflict")
@@ -61,6 +64,18 @@ public final class EventLogAppendConflictEvent extends Event {
     @Description("The stream's actual head at conflict time (the sequence a concurrent writer holds)")
     /* default */ long actualVersion;
 
+    /**
+     * Commits this event, recording the engine name, conflict phase, stream type, and the
+     * expected/actual version pair.
+     *
+     * <p>A no-op when the event is disabled.
+     *
+     * @param engineName      human-readable engine name from {@code EventEngineConfig.engineName()}
+     * @param phase           {@link #PHASE_HEAD_MISMATCH} or {@link #PHASE_INSERT_TOCTOU}
+     * @param streamType      the target stream's type qualifier
+     * @param expectedVersion the version the caller expected
+     * @param actualVersion   the stream's actual head at conflict time
+     */
     public static void emit(String engineName, String phase, String streamType,
                             long expectedVersion, long actualVersion) {
         EventLogAppendConflictEvent event = new EventLogAppendConflictEvent();

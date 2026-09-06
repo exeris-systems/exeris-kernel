@@ -30,8 +30,9 @@ final class CypherIdentifiers {
      *
      * @param identifier candidate string
      * @return {@code identifier} unchanged when valid
-     * @throws GraphQueryException when {@code identifier} is null or contains characters
-     *                             other than ASCII letters, digits, or underscores
+     * @throws GraphQueryException ({@code EX-GRPH-5002}) when {@code identifier} is null or
+     *                             contains characters other than ASCII letters, digits, or
+     *                             underscores
      */
     /* default */ static String requireIdentifier(String identifier) {
         if (identifier == null || !PATTERN.matcher(identifier).matches()) {

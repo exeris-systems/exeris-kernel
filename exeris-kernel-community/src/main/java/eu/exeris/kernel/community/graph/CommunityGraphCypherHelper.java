@@ -25,6 +25,19 @@ import java.util.function.Function;
  * share this orchestrator as their {@link CypherExecutor}, so transactional cohesion is
  * preserved across reads and writes against a single session.
  *
+ * <p><b>Allocation:</b> opens a Neo4j driver {@code Session} lazily, either from
+ * {@link #beginTransaction()} or from the first {@link #executeRead} / {@link #executeWrite}
+ * call made with no transaction active; allocates a {@code Transaction} only from
+ * {@link #beginTransaction()}.
+ * <p><b>Thread confinement:</b> owner thread — {@code cypherSession} and
+ * {@code cypherTransaction} are plain fields mutated by every lifecycle method without
+ * synchronization; concurrent calls from more than one thread corrupt that state.
+ * <p><b>Ownership:</b> holds the session/transaction it opens and releases both from
+ * {@link #commit()}, {@link #rollback()}, or {@link #close()} — each is a no-op when no
+ * transaction is active. Does not own the {@link CommunityNeo4jClient} passed to its
+ * constructor; that client outlives this instance and is closed by
+ * {@link CommunityGraphEngine}.
+ *
  * @since 0.7
  */
 // CommunityGraphBackend is wide; orchestrator implements every method via delegation
@@ -103,6 +116,14 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
 
     // ─── CommunityGraphBackend — transaction lifecycle ───────────────────────────
 
+    /**
+     * Opens a Neo4j session and begins a transaction on it. A no-op if a transaction is
+     * already active.
+     *
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if opening the session or beginning the transaction fails; the partially
+     *         opened session, if any, is closed before this throws
+     */
     @Override
     @SuppressWarnings({PMD_AVOID_CATCHING_GENERIC_EXCEPTION, "PMD.NullAssignment"})
     public void beginTransaction() {
@@ -120,6 +141,13 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
         }
     }
 
+    /**
+     * Commits the active transaction and releases the session it ran on. A no-op if no
+     * transaction is active.
+     *
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the commit fails; the session and transaction are released either way
+     */
     @Override
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     public void commit() {
@@ -135,6 +163,13 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
         }
     }
 
+    /**
+     * Rolls back the active transaction and releases the session it ran on. A no-op if no
+     * transaction is active.
+     *
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the rollback fails; the session and transaction are released either way
+     */
     @Override
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     public void rollback() {
@@ -150,6 +185,13 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
         }
     }
 
+    /**
+     * Rolls back an active transaction and releases the session it ran on. A no-op if no
+     * transaction is active.
+     *
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the rollback fails; the session and transaction are released either way
+     */
     @Override
     @SuppressWarnings({PMD_AVOID_CATCHING_GENERIC_EXCEPTION, "PMD.NullAssignment"})
     public void close() {
@@ -175,6 +217,15 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
 
     // ─── CypherExecutor — session/transaction-aware run ──────────────────────────
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Runs inside the active transaction when one is open; otherwise opens and closes a
+     * session scoped to this call. Unlike {@link #executeWrite}, does not translate a
+     * failure into {@link eu.exeris.kernel.spi.exceptions.graph.GraphQueryException} — a
+     * Neo4j driver exception propagates to the caller unchanged, which is why every
+     * {@link CommunityGraphCypherReader} call site wraps its own {@code executeRead} call.
+     */
     @Override
     public <T> T executeRead(String query, Map<String, Object> params, Function<Result, T> readerFn) {
         if (cypherTransaction != null) {
@@ -185,6 +236,15 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
         }
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Runs inside the active transaction when one is open; otherwise opens and closes a
+     * session scoped to this call.
+     *
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the write fails
+     */
     @Override
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     public void executeWrite(String query, Map<String, Object> params) {

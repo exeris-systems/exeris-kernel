@@ -48,11 +48,33 @@ public final class CommunityJsonEventPayloadCodec implements EventPayloadCodec {
         this.mapper = Objects.requireNonNull(mapper, "mapper must not be null");
     }
 
+    /**
+     * Reports whether this codec can handle {@code payloadType} for {@code contentType}, per
+     * the class-level content-type matching rule (JSON family or absent).
+     *
+     * @param payloadType candidate payload type, or {@code null}
+     * @param contentType candidate content-type, or {@code null}/empty for "unspecified"
+     * @return {@code true} if {@code payloadType} is non-null and {@code contentType} is
+     *         JSON-compatible
+     */
     @Override
     public boolean supports(Class<?> payloadType, String contentType) {
         return payloadType != null && isJsonCompatible(contentType);
     }
 
+    /**
+     * Serializes {@code payload} to JSON bytes and wraps them in a fresh, caller-owned
+     * {@link CommunityHeapEventPayload} (refCount 1) — the bytes are not copied again after
+     * Jackson produces them.
+     *
+     * @param payload the domain object to serialize (non-null)
+     * @param ctx     codec context supplying the target content-type and event-type name for
+     *                diagnostics (non-null)
+     * @return a new, caller-owned {@link EventPayload} holding the serialized bytes
+     * @throws IllegalStateException if Jackson fails to serialize {@code payload}; the
+     *         underlying {@code tools.jackson.core.JacksonException} is the cause, kept out of
+     *         the method signature so no Jackson type crosses the SPI boundary (The Wall)
+     */
     @Override
     public EventPayload encode(Object payload, EventCodecContext ctx) {
         Objects.requireNonNull(payload, "payload must not be null");
@@ -75,6 +97,20 @@ public final class CommunityJsonEventPayloadCodec implements EventPayloadCodec {
         return CommunityHeapEventPayload.wrap(bytes);
     }
 
+    /**
+     * Deserializes {@code payload}'s bytes into {@code targetType}, or returns {@code null} for
+     * a zero-length payload.
+     *
+     * <p>Reads without closing or retaining {@code payload} — ownership stays with the caller.
+     *
+     * @param payload    the payload to read from (non-null)
+     * @param targetType the type to deserialize into (non-null)
+     * @param ctx        codec context (non-null); unused on this path today
+     * @return the deserialized object, or {@code null} if {@code payload} is empty
+     * @throws IllegalStateException if Jackson fails to deserialize the bytes; the underlying
+     *         {@code tools.jackson.core.JacksonException} is the cause, kept out of the method
+     *         signature so no Jackson type crosses the SPI boundary (The Wall)
+     */
     @Override
     public Object decode(EventPayload payload, Class<?> targetType, EventCodecContext ctx) {
         Objects.requireNonNull(payload, "payload must not be null");

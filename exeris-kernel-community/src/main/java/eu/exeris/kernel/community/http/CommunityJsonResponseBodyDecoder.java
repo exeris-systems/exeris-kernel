@@ -50,6 +50,11 @@ public final class CommunityJsonResponseBodyDecoder implements HttpResponseBodyD
         return targetType != null && JsonBodyCodecs.isJsonCompatible(contentType);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalStateException if the body does not decode into {@code targetType}
+     */
     @Override
     public Object decode(LoanedBuffer body, Class<?> targetType, HttpResponseDecodingContext context) {
         Objects.requireNonNull(context, "context must not be null");

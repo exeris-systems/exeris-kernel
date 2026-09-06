@@ -16,10 +16,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Heap-backed thread-safe {@link EventRegistry} implementation used by the Kafka driver.
  *
- * <p>Functionally identical to {@code CommunityEventRegistry} (the package-private
- * Community heap registry); duplicated here so the Kafka module does not depend on a
- * package-private Community internal. {@code AbstractEventRegistryTck} (Sprint 5a)
- * defines the obligation; this class satisfies it the same way the Community one does.
+ * <p>The name/ordinal registration and lookup logic mirrors {@code CommunityEventRegistry}
+ * (the package-private Community heap registry) — duplicated here so the Kafka module does
+ * not depend on a package-private Community internal. It is not a plain copy: this class
+ * additionally tracks a version counter ({@link #registeredVersion()}) and exposes a
+ * full-{@link EventTypeSpec} reverse lookup ({@link #specOfOrdinal(int)}), neither of which
+ * Community's registry has. {@code AbstractEventRegistryTck} defines the {@link EventRegistry}
+ * obligation; this class satisfies it the same way the Community one does.
  *
  * @since 0.7
  */

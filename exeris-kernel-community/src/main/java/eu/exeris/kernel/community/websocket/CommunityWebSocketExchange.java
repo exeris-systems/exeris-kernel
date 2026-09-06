@@ -35,6 +35,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>The two directions end differently on purpose. {@code receive()} returns {@code null} at close,
  * because that is the ordinary end of a loop and a handler should fall out of it; {@code send()}
  * throws, because a handler that had something to say and could not has to see it.
+ *
+ * <p><b>Allocation:</b> {@code receive()} and {@code send()} allocate no off-heap buffers of their
+ * own; both operate on the fixed per-connection buffers {@link CommunityWebSocketFrameStream} and
+ * {@link CommunityWebSocketEgress} already hold.
+ * <p><b>Thread confinement:</b> {@code receive()} runs only on the virtual thread the transport
+ * handed this exchange; {@code send()} may be called from any thread and is serialised by
+ * {@link CommunityWebSocketEgress}'s own lock.
+ * <p><b>Ownership:</b> this exchange owns the frame and egress buffers and releases both exactly
+ * once, guarded by an internal flag, whichever close path runs first.
  */
 final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseable {
 
@@ -98,6 +107,9 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
     }
 
     /**
+     * Consumes whole frames already in the buffer, one at a time, until a message completes, the
+     * connection closes, or none remain.
+     *
      * @return a completed message, or {@code null} when the buffer holds no further whole frame
      */
     private String drainBufferedFrames() {
@@ -159,11 +171,9 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
      *
      * <p>A handler that calls {@code close()} itself and then falls out of the engine's
      * try-with-resources reaches here twice. That is <em>not</em> a double-free: the SPI requires
-     * {@code LoanedBuffer.close()} to be idempotent and {@code AbstractLoanedBuffer} honours it with
-     * an explicit {@code prev <= 0} early return, which {@code AbstractLoanedBufferTest} and
-     * {@code CommunityLoanedBufferTest} have both been pinning all along. An earlier revision of
-     * this comment claimed the opposite, repeating a rule in CONTRIBUTING.md that contradicted the
-     * contract, the code and those two tests at once; that rule is corrected in the same change.
+     * {@code LoanedBuffer.close()} to be idempotent, and {@code AbstractLoanedBuffer} honours it
+     * with an explicit {@code prev <= 0} early return that {@code AbstractLoanedBufferTest} and
+     * {@code CommunityLoanedBufferTest} both pin.
      *
      * <p>The CAS stays because this exchange holds buffers from whatever {@code MemoryAllocator} was
      * bound, and a driver's own implementation is the one thing here that cannot be read from this

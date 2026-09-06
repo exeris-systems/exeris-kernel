@@ -31,6 +31,31 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
+/**
+ * Community binding of {@link EventLoop}: a single {@linkplain Thread#ofVirtual() virtual
+ * thread} that drains the given {@link EventQueue} in batches of up to {@code batchSize} and
+ * dispatches each ordinal's batch to its registered {@link EventBatchProcessor}s through a
+ * per-batch {@link StructuredScope}.
+ *
+ * <p><b>JFR commit protocol.</b> Every emit in this class ({@link EventLoopFailureEvent}) is a
+ * single-phase commit — the event is populated and {@code commit()}ted directly, with no
+ * {@code begin()} call and therefore no measured duration. It carries a point-in-time
+ * occurrence, not an interval, so it cannot straddle a blocking operation on the virtual
+ * thread that emits it.
+ *
+ * <p><b>Allocation:</b> allocates a {@code QueuedEvent} record per drained event and a
+ * {@code TrackingPayload} wrapper per payload per dispatch, plus the per-ordinal grouping maps
+ * in {@code dispatchByOrdinal} — not zero-alloc on the dispatch path.
+ * <p><b>Thread confinement:</b> {@link #runLoop()} runs on exactly one virtual thread, created
+ * and tracked by {@link #start()}/{@link #stop()}; {@link #registerProcessor} and the public
+ * accessors may be called from any thread.
+ * <p><b>Ownership:</b> every drained {@link EventPayload}'s original reference is closed
+ * exactly once via {@link #closePayloads}, whether or not a processor is registered for its
+ * ordinal. When processors are registered, each additionally receives its own
+ * {@link EventPayload#retain() retained} {@code TrackingPayload} wrapper, closed either by the
+ * processor itself or, as a safety net, by {@code forkProcessor}'s {@code finally} block for
+ * any wrapper the processor left open.
+ */
 @SuppressWarnings({
     "PMD.CyclomaticComplexity",      // aggregate across loop/dispatch/tracking helpers
     "PMD.TooManyMethods",            // deliberate: loop, dispatch, fork, tracking all belong here
@@ -67,6 +92,16 @@ final class CommunityEventLoop implements EventLoop {
         this.batchSize = batchSize;
     }
 
+    /**
+     * Starts the drain loop on a newly created, named virtual thread named
+     * {@code "community-event-loop"}.
+     *
+     * <p>Idempotent: a second call while already running is a no-op (compare-and-set guard).
+     * The thread's uncaught-exception handler marks the loop stopped and emits
+     * {@link EventLoopFailureEvent} with phase {@code "UNCAUGHT"} — an escape hatch for a
+     * failure {@link #runLoop} itself does not catch, not the normal per-batch failure path
+     * (that one goes through {@link #recordOutcome}).
+     */
     @Override
     public void start() {
         if (!running.compareAndSet(false, true)) {
@@ -93,6 +128,16 @@ final class CommunityEventLoop implements EventLoop {
         }
     }
 
+    /**
+     * Clears the running flag and joins the loop's virtual thread, blocking until it returns.
+     *
+     * <p>Because {@link #runLoop} keeps draining while {@code !queue.isEmpty()} even after
+     * {@code running} goes false, this call does not return until every event that was already
+     * queued has been dispatched — a graceful drain, not an abrupt halt. Idempotent: a call
+     * with no thread on record (never started, or already joined) is a no-op. If the calling
+     * thread is interrupted while joining, this method restores the interrupt status on itself
+     * and returns rather than propagating.
+     */
     @Override
     public void stop() {
         running.set(false);
@@ -109,11 +154,34 @@ final class CommunityEventLoop implements EventLoop {
         }
     }
 
+    /**
+     * Returns whether the loop's virtual thread is expected to be draining the queue.
+     *
+     * <p>Backed by a plain flag set by {@link #start()}/{@link #stop()} and cleared early by
+     * the uncaught-exception handler on an unrecovered failure — it does not itself confirm the
+     * thread is alive.
+     *
+     * @return {@code true} if the loop is running
+     */
     @Override
     public boolean isRunning() {
         return running.get();
     }
 
+    /**
+     * Registers {@code processor} to receive future batches of {@code eventType}, resolving
+     * the type name to its ordinal through the registry supplied at construction.
+     *
+     * <p>May be called before or after {@link #start()} — {@code processorsByOrdinal} is a
+     * {@link java.util.concurrent.ConcurrentHashMap} of {@link CopyOnWriteArrayList}s, so a
+     * registration is visible to the next drain regardless of when it happens. Multiple
+     * processors for the same ordinal are invoked in registration order.
+     *
+     * @param eventType the event type name to process (non-null)
+     * @param processor the batch processor (non-null)
+     * @throws EventEngineException EX-EVENT-6001 if {@code eventType} was never registered in
+     *         the {@link EventRegistry} this loop was constructed with
+     */
     @Override
     public void registerProcessor(String eventType, EventBatchProcessor processor) {
         Objects.requireNonNull(eventType, "eventType");
@@ -294,6 +362,11 @@ final class CommunityEventLoop implements EventLoop {
             delegate.retain();
         }
 
+        /**
+         * Closes the underlying delegate exactly once: the first caller (processor or the
+         * loop's own safety net) wins the compare-and-set and forwards the close; every
+         * subsequent call is a no-op.
+         */
         @Override
         public void close() {
             if (closed.compareAndSet(false, true)) {

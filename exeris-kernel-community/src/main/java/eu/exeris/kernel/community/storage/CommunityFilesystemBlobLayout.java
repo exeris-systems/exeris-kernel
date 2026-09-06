@@ -28,18 +28,18 @@ import java.util.UUID;
  * fixed names — {@code objects}, {@code sidecars}, {@code staging}.
  *
  * <h2>Why three trees rather than suffixes</h2>
- * <p>Content types and in-flight uploads used to be named by appending {@code .ctype} and
- * {@code .uploading} to the object's own path. Both are legal key endings: {@link BlobRef} rejects
- * traversal, not extensions, so {@code "report.uploading"} and {@code "photo.ctype"} are objects a
- * tenant may legitimately store. The suffix therefore did not name a private file — it named
- * <em>another object of the same tenant</em>, and every operation on the shorter key silently reached
- * the longer one: an upload to {@code "report"} truncated and then moved away whatever was stored at
- * {@code "report.uploading"}, and deleting {@code "photo"} deleted {@code "photo.ctype"} with it.
+ * <p>Content type and in-flight-upload state live in their own trees rather than as suffixes on the
+ * object's own path, because {@link BlobRef} rejects traversal, not extensions: {@code
+ * "report.uploading"} and {@code "photo.ctype"} are keys a tenant may legitimately store. A suffix
+ * would therefore not name a private file — it would name <em>another object of the same tenant</em>,
+ * so every operation on the shorter key would silently reach the longer one: an upload to
+ * {@code "report"} would truncate and then move away whatever was stored at {@code "report.uploading"},
+ * and deleting {@code "photo"} would delete {@code "photo.ctype"} with it.
  *
- * <p>A driver may restrict keys further than the contract does, so refusing the two endings would
- * have been permitted. It would also make one key work on one blob driver and fail on another for a
- * reason the caller cannot see. Separating the namespaces removes the collision instead of forbidding
- * the keys that expose it, and costs one path segment.
+ * <p>A driver may restrict keys further than the contract does, so refusing the two endings is
+ * permitted — but it would make one key work on one blob driver and fail on another for a reason the
+ * caller cannot see. Separating the namespaces removes the collision instead of forbidding the keys
+ * that expose it, and costs one path segment.
  *
  * <p>Disjointness is structural, not conventional: a container is always a child of {@code objects},
  * so a container named {@code sidecars} lands at {@code objects/sidecars} and collides with nothing.
@@ -103,11 +103,11 @@ final class CommunityFilesystemBlobLayout {
     /**
      * Returns a fresh staging path for one upload, inside the caller's tenant directory.
      *
-     * <p>Named by a random id rather than by the target key. That the old name collided with a real
-     * object is the headline, but the id also removes a second corruption the key-derived name
-     * carried: two concurrent uploads to the same key shared one staging file, and the later
-     * {@code TRUNCATE_EXISTING} cut the earlier transfer out from under itself. Uploads to one key
-     * are still last-commit-wins, which is the contract; they no longer interleave into one file.
+     * <p>Named by a random id rather than by the target key. A random id cannot collide with a real
+     * object under the tenant's {@code objects} tree, and it keeps two concurrent uploads to the same
+     * key from sharing one staging file, so one upload's {@code TRUNCATE_EXISTING} cannot cut the
+     * other's transfer out from under it. Uploads to one key remain last-commit-wins — the contract —
+     * but each writes to its own file until it commits or aborts.
      */
     /* default */ Path stagingFile(String operation) throws IOException {
         Path stagingDir =
@@ -156,9 +156,9 @@ final class CommunityFilesystemBlobLayout {
      * Records a content type, keeping the sidecar tree in step with an overwrite.
      *
      * <p>The default type is represented by <em>no</em> sidecar, so recording it means removing any
-     * the previous object left behind. Skipping the write without the delete — which is what this did
-     * — let an overwrite keep the old type: re-uploading a {@code text/csv} object as the default
-     * still reported {@code text/csv}, because absence was only ever written, never restored.
+     * the previous object left behind: writing without deleting would let an overwrite keep the old
+     * type — re-uploading a {@code text/csv} object as the default would still report {@code text/csv},
+     * because absence is only ever written here, never restored on its own.
      *
      * <p>A filesystem has nowhere tidier to keep this. Extended attributes would avoid the second file
      * but are not portable across the filesystems a Community driver has to run on.

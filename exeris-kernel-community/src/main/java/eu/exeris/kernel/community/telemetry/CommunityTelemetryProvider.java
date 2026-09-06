@@ -33,6 +33,16 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
 
     private static final String PROVIDER_NAME = "ExerisCommunity/TextTelemetry";
 
+    /**
+     * Creates the Community sink set selected by {@code config}: the JFR sink when
+     * {@link TelemetryConfig#jfrSinkEnabled()} is set (the SLF4J sink otherwise),
+     * plus the console and file sinks when their respective config flags request them.
+     *
+     * @param config telemetry configuration selecting which sinks to activate
+     * @return an immutable, non-empty list of the activated sinks, in creation order
+     * @throws TelemetryBootstrapException (EX-BOOT-3001) if a sink constructor throws;
+     *         any sink already created by this call is closed before the exception propagates
+     */
     @Override
     public List<TelemetrySink> createSinks(TelemetryConfig config) {
         List<TelemetrySink> sinks = new ArrayList<>(4);
@@ -65,11 +75,20 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
         }
     }
 
+    /**
+     * Returns {@code "ExerisCommunity/TextTelemetry"}, the identity this provider
+     * reports in bootstrap diagnostics.
+     */
     @Override
     public String providerName() {
         return PROVIDER_NAME;
     }
 
+    /**
+     * Returns the fixed Community-tier priority, {@code 0}.
+     *
+     * @see TelemetryProvider#priority()
+     */
     @Override
     public int priority() {
         return 0;

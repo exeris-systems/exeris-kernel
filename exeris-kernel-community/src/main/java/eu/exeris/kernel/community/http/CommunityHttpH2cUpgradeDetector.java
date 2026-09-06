@@ -18,11 +18,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Community-internal HTTP/2 upgrade-detection helper. Extracted from
- * {@link CommunityHttpRequestProcessor} in QA-011 (v0.8 Sprint 1) so the request
- * processor carries one less responsibility: the *"is this an h2c upgrade or HTTP/2
- * prior-knowledge connection? if yes, transition to the HTTP/2 frame loop"* workflow
- * lives here.
+ * Community-internal HTTP/2 upgrade-detection helper: decides whether the connection
+ * {@link CommunityHttpRequestProcessor} is reading is an h2c upgrade or an HTTP/2 prior-knowledge
+ * connection and, if so, transitions it to the HTTP/2 frame loop.
  *
  * <h2>Two upgrade paths</h2>
  * <ul>
@@ -40,10 +38,8 @@ import java.util.Objects;
  * <h2>State and lifecycle</h2>
  * <p>One detector instance per processor — owns the {@link HttpConfig} (for the
  * {@code h2cUpgradeEnabled} / {@code maxVersion} policy gates) and the
- * {@link CommunityHttp2SessionProcessor} (the actual frame-loop runner). Both are
- * already constructed by the processor in v0.7 — this helper just bundles the
- * decision logic that was previously spread across six instance methods plus a
- * private static.
+ * {@link CommunityHttp2SessionProcessor} (the actual frame-loop runner), both supplied by the
+ * processor at construction.
  *
  * @since 0.8
  */

@@ -20,6 +20,27 @@ import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
+/**
+ * Community-tier {@link GraphSession}: a thin facade that, at construction, picks one
+ * {@link CommunityGraphBackend} — {@link CommunityGraphCypherHelper} for a Cypher dialect,
+ * {@link CommunityGraphSqlHelper} otherwise — and forwards every {@link GraphSession}
+ * operation to it unchanged, except {@link #findShortestPath(UUID, UUID)} and
+ * {@link #findShortestPath(GraphEdgeDescriptor, UUID, UUID)}, which this class implements
+ * directly on top of {@link CommunityPathFinder}.
+ *
+ * <p><b>Allocation:</b> none of its own; {@link #streamBfsJson} forwards to the backend,
+ * which allocates the caller-owned {@link LoanedBuffer} it returns, and
+ * {@link #findShortestPath(GraphEdgeDescriptor, UUID, UUID)} builds a fresh
+ * {@link CommunityPathFinder} whenever {@code source} and {@code target} differ; the
+ * {@code source.equals(target)} case returns without building one.
+ * <p><b>Thread confinement:</b> not thread-safe — the {@code backend} field is set once and
+ * never reassigned, but the backend it points to mutates its own transaction state (see
+ * {@link CommunityGraphCypherHelper}) without synchronization; each virtual thread must
+ * obtain its own session from {@link CommunityGraphEngine#openSession()}.
+ * <p><b>Ownership:</b> {@link #close()} closes the backend. Buffers returned from
+ * {@link #streamBfsJson} are not touched by {@link #close()} — they remain the caller's
+ * responsibility per {@link GraphSession#streamBfsJson(GraphTraversal)}.
+ */
 // SPI contract: one method per graph operation; TooManyMethods are inherent.
 @SuppressWarnings("PMD.TooManyMethods")
 final class CommunityGraphSession implements GraphSession {
@@ -77,6 +98,17 @@ final class CommunityGraphSession implements GraphSession {
         return backend.getRootNode();
     }
 
+    /**
+     * Detects only the trivial {@code source.equals(target)} case: this overload carries no
+     * edge descriptor to load adjacency from, so every other pair reports not found. Use
+     * {@link #findShortestPath(GraphEdgeDescriptor, UUID, UUID)} to compute an actual path.
+     *
+     * @param source source node ID
+     * @param target target node ID
+     * @return a zero-cost single-node path when {@code source} equals {@code target};
+     *         {@link PathResult#notFound} otherwise
+     * @throws NullPointerException if {@code source} or {@code target} is {@code null}
+     */
     @Override
     public PathResult findShortestPath(UUID source, UUID target) {
         Objects.requireNonNull(source, "source must not be null");
@@ -87,6 +119,24 @@ final class CommunityGraphSession implements GraphSession {
         return PathResult.notFound(source, target, SHORTEST_PATH_ALGORITHM);
     }
 
+    /**
+     * For {@code source} equal to {@code target}, returns a zero-cost single-node path with
+     * no adjacency lookup; otherwise loads the full adjacency for {@code edge}'s relationship
+     * type from the backend into a fresh {@link CommunityPathFinder} and runs Dijkstra
+     * against it via {@link EdgeWeightFunction#DEFAULT} — nothing is cached between
+     * invocations of that path.
+     *
+     * @param edge   relationship type to restrict the search to
+     * @param source source node ID
+     * @param target target node ID
+     * @return a zero-cost single-node path when {@code source} equals {@code target};
+     *         otherwise the path {@link CommunityPathFinder} found, or
+     *         {@link PathResult#notFound} when none exists
+     * @throws NullPointerException if {@code edge}, {@code source}, or {@code target} is
+     *                               {@code null}
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if loading adjacency from the backend fails
+     */
     @Override
     public PathResult findShortestPath(GraphEdgeDescriptor edge, UUID source, UUID target) {
         Objects.requireNonNull(edge, "edge must not be null");

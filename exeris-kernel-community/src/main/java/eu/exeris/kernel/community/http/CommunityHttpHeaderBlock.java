@@ -17,9 +17,9 @@ import java.util.List;
  * Reads an HTTP/1 header block off a segment, for the client response path.
  *
  * <p>Its own class because a header block is read for two different reasons and only one of them
- * wants a list: the read loop needs {@code Content-Length} to know when to stop reading, and the
- * decoder needs the fields. Until v0.12 both went through one list-building parse, so every name and
- * value of every response was materialised twice.
+ * wants a list: the read loop needs only {@code Content-Length} to know when to stop reading
+ * ({@link #findContentLength}), while the decoder needs the full field list ({@link #parse}) — so
+ * each caller pays only for what it needs.
  */
 /* default */ final class CommunityHttpHeaderBlock {
 

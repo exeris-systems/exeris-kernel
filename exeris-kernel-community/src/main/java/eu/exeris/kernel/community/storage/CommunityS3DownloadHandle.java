@@ -18,8 +18,13 @@ import java.lang.foreign.MemorySegment;
  * chunked {@code read} shape is kept because it is the SPI's, and because a driver that does stream
  * (Enterprise) must be substitutable for this one without the caller noticing.
  *
- * <p>Owns the response buffer and releases it on {@link #close()}. That buffer came from the HTTP
- * engine's allocator, so failing to close it leaks a pooled segment rather than heap.
+ * <p><b>Allocation:</b> none — the response buffer is allocated by the HTTP client engine before this
+ * handle exists; {@link #read} only copies out of it.
+ * <p><b>Thread confinement:</b> owner thread — matches {@link BlobDownloadHandle}'s contract that one
+ * download is driven by one thread; the handle keeps no internal synchronization.
+ * <p><b>Ownership:</b> this handle owns the response buffer and releases it in {@link #close()}; the
+ * buffer comes from the HTTP engine's pool, so an unclosed handle leaks a pooled segment rather than
+ * heap.
  *
  * @since 0.11
  */
@@ -34,6 +39,9 @@ final class CommunityS3DownloadHandle implements BlobDownloadHandle {
     private boolean closed;
 
     /**
+     * Builds a handle over an already-fetched response, clamping the declared slice length to the
+     * bytes the buffer actually holds.
+     *
      * @param metadata  metadata of the whole object, not of the slice
      * @param body      the response buffer, or {@code null} when there is nothing to read
      * @param start     offset within {@code body} where the readable bytes begin — non-zero only when a
