@@ -50,6 +50,8 @@ public abstract class AbstractPersistenceEngineTck {
 
     /**
      * Creates a fully bootstrapped {@link PersistenceEngine}.
+     *
+     * @return a ready-to-use engine
      */
     protected abstract PersistenceEngine createEngine();
 
@@ -87,6 +89,8 @@ public abstract class AbstractPersistenceEngineTck {
     /**
      * Returns the datasource routing key used in {@link DedicatedRoutingContract} tests.
      * Default: {@code "ds-primary"}.
+     *
+     * @return the dedicated datasource key to configure and route against
      */
     protected String dedicatedKey() {
         return "ds-primary";
@@ -152,6 +156,15 @@ public abstract class AbstractPersistenceEngineTck {
             assertThat(conn.isOpen()).isFalse();
         }
 
+        /**
+         * Confirms only that the context-accepting overload succeeds and yields an open
+         * connection.
+         *
+         * @apiNote This does not establish tenant isolation. It opens one connection under
+         *          {@link ImmutableStorageContext#GLOBAL} and asserts the call does not fail;
+         *          it neither asserts that a tenant sees its own rows nor that a different
+         *          tenant is denied them, so it covers neither direction of that guarantee.
+         */
         @Test
         @DisplayName("openConnection(StorageContext) returns tenant-scoped connection")
         void openConnectionWithStorageContext() {

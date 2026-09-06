@@ -40,18 +40,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code eu.exeris.kernel.enterprise.*}.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityLoanedBufferTckTest extends AbstractLoanedBufferTck {
- *     \@Override
+ *     @Override
  *     protected MemoryAllocator createAllocator() {
  *         return new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
  *     }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see AbstractMemoryAllocatorTck
  * @see LoanedBuffer
- * @since 0.5
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

@@ -49,16 +49,16 @@ import org.openjdk.jmh.infra.Blackhole;
  * blackhole prevents the JIT from dead-code-eliminating the string construction.
  *
  * <h2>Implementing this benchmark</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public class MyCommunityRowCursorBenchmark
  *         extends AbstractRowCursorThroughputBenchmark {
  *
- *     \@Override
+ *     @Override
  *     protected PersistenceProvider getProvider() {
  *         return new CommunityJdbcProvider();
  *     }
  *
- *     \@Override
+ *     @Override
  *     protected void prepareBenchmarkData(PersistenceEngine engine) {
  *         // Insert 1 000 rows into an in-memory H2 table
  *         try (PersistenceConnection conn = engine.openConnection()) {
@@ -70,7 +70,7 @@ import org.openjdk.jmh.infra.Blackhole;
  *         }
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  * @see AbstractExerisBenchmark

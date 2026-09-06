@@ -34,7 +34,11 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @DisplayName("TCK: GraphSession — path and lifecycle contract")
 public abstract class AbstractGraphSessionContractTck {
 
-    /** Factory: creates a fresh, ready-to-use {@link GraphSession} for each test. */
+    /**
+     * Factory: creates a fresh, ready-to-use {@link GraphSession} for each test.
+     *
+     * @return a fresh graph session
+     */
     protected abstract GraphSession createSession();
 
     @Test

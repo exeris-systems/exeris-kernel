@@ -31,16 +31,32 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 /**
- * TCK: Abstract base for choreography-driven flow orchestration contract verification.
+ * L2 Contract: choreography-driven flow orchestration through a mapped
+ * {@link ChoreographyDecision}.
+ *
+ * <p>An implementation maps an inbound event to a decision via
+ * {@link FlowEngine#registerChoreographyMapper}, and this contract fixes what each decision must
+ * do: {@link ChoreographyDecision.Wake} resumes the exact parked instance the mapper names,
+ * {@link ChoreographyDecision.Start} schedules a new instance from the mapped plan, and
+ * {@link ChoreographyDecision.Ignore} leaves scheduler state unchanged. The bridge dispatching a
+ * decision must also release the inbound event payload on every branch.
  *
  * @since 0.5
  */
 public abstract class AbstractFlowChoreographyTck {
 
-    /** Creates a fully configured but not yet started {@link FlowEngine}. */
+    /**
+     * Creates a fully configured but not yet started {@link FlowEngine}.
+     *
+     * @return a new engine instance, not yet started
+     */
     protected abstract FlowEngine createFlowEngine();
 
-    /** Creates a configured but not yet started {@link EventEngine}. */
+    /**
+     * Creates a configured but not yet started {@link EventEngine}.
+     *
+     * @return a new event engine instance, not yet started
+     */
     protected abstract EventEngine createEventEngine();
 
     /**
@@ -48,6 +64,8 @@ public abstract class AbstractFlowChoreographyTck {
      * event to traverse the bus and reach the {@code FlowChoreographyBridge}. Tuned for
      * in-memory transports by default; broker-backed bindings (e.g. Testcontainers Kafka)
      * override to absorb consumer-rebalance + auto-create-topic latency.
+     *
+     * @return the round-trip wait budget, in milliseconds
      */
     protected long choreographyRoundtripTimeoutMs() {
         return 4_000L;
@@ -56,6 +74,8 @@ public abstract class AbstractFlowChoreographyTck {
     /**
      * Settle period for the Ignore-decision test — how long the suite waits before
      * asserting that no scheduler side-effect occurred. Override for slower transports.
+     *
+     * @return the settle window, in milliseconds
      */
     protected long choreographyIgnoreSettleMs() {
         return 100L;
@@ -130,6 +150,16 @@ public abstract class AbstractFlowChoreographyTck {
     // Tests
     // -------------------------------------------------------------------------
 
+    /**
+     * Verifies that a {@link ChoreographyDecision.Wake} resolved from a published event resumes
+     * the specific instance the mapper names. The scheduler's parked-flow count is observed
+     * rising to at least one while the flow is parked and falling back to zero only after the
+     * mapped event is published, which happens if and only if the bridge resolves the decision
+     * and the scheduler wakes that instance's identity.
+     *
+     * @throws InterruptedException if the polling thread is interrupted while waiting for the
+     *                               park or the wake to be observed
+     */
     @Test
     @Timeout(value = 180, unit = TimeUnit.SECONDS)
     @DisplayName("Wake decision — mapper wakes a parked flow when event arrives")

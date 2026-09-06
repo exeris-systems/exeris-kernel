@@ -27,11 +27,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * JMH Benchmark: Graph Engine session throughput and traversal latency.
  *
- * <h2>Front 4 — Arena wydajności (Graph SLO)</h2>
- * <p>Measures two critical hot-paths:
+ * <p>Measures two hot-paths:
  * <ol>
- *   <li><b>Session churn:</b> {@code openSession()} + {@code close()} — verifies that
- *       the Enterprise slab-pool pattern produces zero heap objects per cycle.</li>
+ *   <li><b>Session churn:</b> {@code openSession()} + {@code close()} — reveals whether
+ *       the Enterprise slab-pool pattern produces zero heap objects per cycle; run with
+ *       {@code -prof gc} to read {@code norm.alloc}, this benchmark does not assert it.</li>
  *   <li><b>Single-hop BFS:</b> {@link GraphSession#traverseBreadthFirst(GraphTraversal)}
  *       with depth=1 — the dominant read pattern in Exeris domain graphs.</li>
  * </ol>
@@ -60,22 +60,40 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
     // Template methods
     // =========================================================================
 
-    /** Creates a fully bootstrapped, running {@link GraphEngine}. */
+    /**
+     * Creates a fully bootstrapped, running {@link GraphEngine}.
+     *
+     * @return non-null, running engine with the benchmark's start node and edge already
+     *         registered
+     * @implSpec Implementations must pre-populate the graph so that
+     *           {@link #benchmarkStartNodeId()} and {@link #benchmarkEdgeDescriptor()}
+     *           resolve to a real node and edge before the first {@code @Benchmark}
+     *           method runs.
+     */
     protected abstract GraphEngine createEngine();
 
     /**
      * Returns the {@link UUID} of a node that exists in the benchmark graph.
      * The engine must have this node registered before {@link #setUpTrial()} returns.
+     *
+     * @return non-null identifier of a node present in the graph returned by
+     *         {@link #createEngine()}
      */
     protected abstract UUID benchmarkStartNodeId();
 
     /**
      * Returns the {@link GraphEdgeDescriptor} representing the edge type
      * used in the single-hop BFS benchmark query.
+     *
+     * @return non-null edge descriptor reachable from {@link #benchmarkStartNodeId()}
      */
     protected abstract GraphEdgeDescriptor benchmarkEdgeDescriptor();
 
-    /** Returns {@code true} for Enterprise-tier (zero-GC session pool). Default: false. */
+    /**
+     * Returns {@code true} for Enterprise-tier (zero-GC session pool). Default: false.
+     *
+     * @return {@code true} for an Enterprise-tier implementation, {@code false} otherwise
+     */
     protected boolean isEnterpriseTier() { return false; }
 
     // =========================================================================
@@ -85,6 +103,10 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
     private GraphEngine    engine;
     private GraphTraversal hotTraversal; // pre-built, Valhalla-ready record — reused every iteration
 
+    /**
+     * Trial-level setup: creates the engine and pre-builds the single-hop
+     * {@link GraphTraversal} record reused by every measurement iteration.
+     */
     @Setup(Level.Trial)
     public void setUpTrial() {
         engine = createEngine();
@@ -96,6 +118,9 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
                 1);
     }
 
+    /**
+     * Trial-level teardown: closes the engine and releases any resources it holds.
+     */
     @TearDown(Level.Trial)
     public void tearDownTrial() {
         if (engine != null) {
@@ -108,6 +133,14 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
     // SLO: ≥ 1 000 000 ops/s | Enterprise: 0 B/op (slab pool pop/push)
     // =========================================================================
 
+    /**
+     * Hot-path benchmark — measures one {@code openSession()} / {@code close()} cycle.
+     *
+     * <p>Enterprise: pop from Treiber-stack pool — O(1) CAS, required to be 0 B/op.
+     * Community: allocates a heap object wrapping a connection-pool checkout.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the session reference
+     */
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
     @OutputTimeUnit(TimeUnit.SECONDS)
@@ -125,6 +158,12 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
     // SLO: p99 ≤ 500 µs on in-memory/cache-warm graph
     // =========================================================================
 
+    /**
+     * Hot-path benchmark — measures one single-hop breadth-first traversal against the
+     * pre-built {@link #hotTraversal} record.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the traversal result
+     */
     @Benchmark
     @BenchmarkMode(Mode.SampleTime)
     @OutputTimeUnit(TimeUnit.MICROSECONDS)

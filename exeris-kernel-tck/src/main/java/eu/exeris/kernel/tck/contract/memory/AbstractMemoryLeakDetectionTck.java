@@ -24,18 +24,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * TCK: PARANOID leak detection contract for {@link MemoryAllocator} implementations.
  *
- * <h2>Front 3 — Memory Allocator Upgrade</h2>
+ * <h2>Contract</h2>
  * <p>This TCK mandates that implementations support {@link LeakDetectionMode#PARANOID},
  * which tracks <b>every</b> allocation. Unlike the base {@link AbstractMemoryAllocatorTck},
  * this class forces the allocator into PARANOID mode and verifies that:
  *
  * <ol>
- *   <li>Allocating 1 GB and calling {@code close()} on all buffers returns
+ *   <li>Allocating the configured stress volume (1 GB for Enterprise, 64 MB by default)
+ *       in fixed-size chunks and calling {@code close()} on every chunk returns
  *       {@link MemoryStats#allocatedBytes()} to 0 — no slab is held hostage.</li>
- *   <li>A deliberately un-closed buffer (leak simulation) is detected:
- *       {@link MemoryStats#leakCount()} increases by exactly 1 after GC.</li>
- *   <li>The allocator does NOT allow {@code Arena.ofConfined()} or
- *       {@code Arena.ofShared()} in its class hierarchy (The Wall).</li>
+ *   <li>A deliberately un-closed buffer (leak simulation) is detected: this TCK asserts
+ *       that {@link MemoryStats#leakCount()} increases after GC, not that it increases by
+ *       exactly one.</li>
+ *   <li>The allocator implementation resides in an {@code eu.exeris.*} package rather than
+ *       being a bare wrapper around {@code Arena.ofConfined()}/{@code Arena.ofShared()} —
+ *       this is checked by package-name convention, not by inspecting the class hierarchy
+ *       for raw Arena usage.</li>
  *   <li>After calling {@link MemoryAllocator#close()}, subsequent allocations throw
  *       {@link IllegalStateException} — no use-after-close.</li>
  * </ol>
@@ -46,20 +50,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * is non-negotiable in the test lifecycle.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityMemoryLeakTest extends AbstractMemoryLeakDetectionTck {
- *     \@Override
+ *     @Override
  *     protected MemoryProvider createProvider() {
  *         return new CommunityMemoryProvider();
  *     }
- *     \@Override
+ *     @Override
  *     protected long gigabyteAllocationSize() { return 64 * 1024 * 1024L; } // 64 MB for Community
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see AbstractMemoryAllocatorTck
  * @see LeakDetectionMode#PARANOID
- * @since 0.5
  */
 public abstract class AbstractMemoryLeakDetectionTck {
 
@@ -69,6 +73,8 @@ public abstract class AbstractMemoryLeakDetectionTck {
 
     /**
      * Creates the {@link MemoryProvider} under test.
+     *
+     * @return provider; must not be {@code null}
      */
     protected abstract MemoryProvider createProvider();
 
@@ -79,6 +85,8 @@ public abstract class AbstractMemoryLeakDetectionTck {
      * Community implementations should override to a smaller value
      * (e.g. 64 MB) since heap may not have 1 GB free in CI.
      * Default: {@code 64 * 1024 * 1024} (64 MB).
+     *
+     * @return total number of bytes to exercise across the stress-test chunks
      */
     protected long gigabyteAllocationSize() {
         return 64L * 1024L * 1024L;
@@ -87,6 +95,8 @@ public abstract class AbstractMemoryLeakDetectionTck {
     /**
      * Returns the chunk size for each individual allocation in the stress test.
      * Default: 64 KB (AllocationHint.LARGE equivalent).
+     *
+     * @return byte size of each chunk allocated in the stress test
      */
     protected int allocationChunkSize() {
         return 65_536;

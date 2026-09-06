@@ -39,7 +39,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractGraphEngineTck {
 
-    /** Creates a fully bootstrapped, running {@link GraphEngine}. */
+    /**
+     * Creates a fully bootstrapped, running {@link GraphEngine}.
+     *
+     * @return a running graph engine ready to open sessions
+     */
     protected abstract GraphEngine createEngine();
 
     private GraphEngine engine;
@@ -146,6 +150,12 @@ public abstract class AbstractGraphEngineTck {
     @DisplayName("Concurrent registry access")
     class ConcurrentRegistry {
 
+        /**
+         * Asserts that no exception escapes any of the 100 concurrent registrations and that
+         * the registry is non-empty afterward. It does not assert that all 100 distinct nodes
+         * survived — {@link GraphEngine#registerNodes} may merge or coalesce concurrent
+         * registrations, so a smaller-than-100 final count is not itself a failure here.
+         */
         @Test
         @DisplayName("100 VTs registering nodes concurrently — no crash, no data loss")
         @Timeout(30)

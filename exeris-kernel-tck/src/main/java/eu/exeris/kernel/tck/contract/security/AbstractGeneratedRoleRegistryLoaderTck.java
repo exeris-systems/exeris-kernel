@@ -63,12 +63,18 @@ public abstract class AbstractGeneratedRoleRegistryLoaderTck {
     protected abstract RoleRegistry loadPresent();
 
     /**
-     * Returns the allocation-free decision routine ({@code RoleCheckEnforcer}).
+     * Evaluates the binding's allocation-free authorization routine
+     * ({@code RoleCheckEnforcer}) for one {@code (methodId, principal, registry)} triple.
      *
-     * @param methodId  compile-time method id
-     * @param principal non-null principal
-     * @param registry  non-null registry
-     * @return {@code true} when permitted
+     * @param methodId  compile-time method id to authorize
+     * @param principal non-null principal whose role mask is checked against
+     *                  {@code registry}
+     * @param registry  non-null registry supplying the required-role masks for
+     *                  {@code methodId}
+     * @return {@code true} when {@code principal} is permitted for {@code methodId}
+     * @implSpec A {@code methodId} outside the registry's compiled range must propagate
+     *           as a thrown {@code RuntimeException}; it must never resolve to an
+     *           implicit allow.
      */
     protected abstract boolean isAllowed(int methodId, PrincipalContext principal, RoleRegistry registry);
 

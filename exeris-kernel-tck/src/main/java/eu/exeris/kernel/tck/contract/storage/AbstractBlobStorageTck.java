@@ -63,10 +63,22 @@ public abstract class AbstractBlobStorageTck {
     // Template methods
     // =========================================================================
 
-    /** Creates the {@link BlobStore} under test. */
+    /**
+     * Creates the {@link BlobStore} under test.
+     *
+     * @return a store ready to receive the fixtures in this suite
+     * @implSpec Return a fresh, usable store; the TCK opens and closes it once per test method.
+     */
     protected abstract BlobStore createStore();
 
-    /** Supplies the {@link MemoryProvider} whose PARANOID allocator drives every transfer here. */
+    /**
+     * Supplies the {@link MemoryProvider} whose PARANOID allocator drives every transfer here.
+     *
+     * @return a provider capable of producing the allocator used for every transfer in this suite
+     * @implSpec Return a fresh provider; the TCK itself applies
+     *           {@link LeakDetectionMode#PARANOID} via {@link MemoryProviderConfig#withLeakDetection}
+     *           before drawing an allocator from it.
+     */
     protected abstract MemoryProvider createMemoryProvider();
 
     /**
@@ -75,6 +87,8 @@ public abstract class AbstractBlobStorageTck {
      * <p>Default {@code false} — a store that cannot sign is a first-class outcome (ADR-056 §7), not a
      * degraded one. {@link SignedUrlContract} asserts the answer is <em>uniform</em> either way, which
      * is the property a caller actually needs.
+     *
+     * @return {@code true} if the store under test signs URLs, {@code false} if it never does
      */
     protected boolean supportsSignedUrls() {
         return false;

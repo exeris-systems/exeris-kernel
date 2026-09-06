@@ -47,9 +47,18 @@ public abstract class AbstractFlowSchedulerTck {
     /** Generous: this waits on a real flow resuming, not on a poll interval. */
     private static final long WAKE_TIMEOUT_SECONDS = 30L;
 
+    /**
+     * Creates a fully configured, but not yet started, {@link FlowEngine}.
+     *
+     * @return a new engine instance, not yet started
+     */
     protected abstract FlowEngine createEngine();
 
-    /** Override to reduce scope for ring-buffer-bounded Enterprise implementations. */
+    /**
+     * Override to reduce scope for ring-buffer-bounded Enterprise implementations.
+     *
+     * @return the number of concurrent schedules the avalanche stress test submits
+     */
     protected int avalancheScheduleCount() { return 10_000; }
 
     private FlowEngine        engine;

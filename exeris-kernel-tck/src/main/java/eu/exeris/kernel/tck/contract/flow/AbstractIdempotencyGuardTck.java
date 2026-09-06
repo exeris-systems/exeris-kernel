@@ -25,6 +25,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractIdempotencyGuardTck {
 
+    /**
+     * Creates a fresh {@link IdempotencyGuard} with no steps claimed.
+     *
+     * @return a new, empty guard instance
+     */
     protected abstract IdempotencyGuard createGuard();
 
     private IdempotencyGuard guard;

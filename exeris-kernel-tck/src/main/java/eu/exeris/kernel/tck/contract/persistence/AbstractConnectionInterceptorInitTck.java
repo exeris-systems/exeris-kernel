@@ -39,7 +39,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractConnectionInterceptorInitTck {
 
-    /** Creates a fully bootstrapped {@link PersistenceEngine} with no pre-registered interceptors. */
+    /**
+     * Creates a fully bootstrapped {@link PersistenceEngine} with no pre-registered interceptors.
+     *
+     * @return a ready-to-use engine with an empty interceptor chain
+     */
     protected abstract PersistenceEngine createEngine();
 
     private PersistenceEngine engine;

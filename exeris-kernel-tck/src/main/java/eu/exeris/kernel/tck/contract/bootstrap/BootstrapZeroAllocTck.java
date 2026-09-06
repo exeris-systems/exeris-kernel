@@ -30,14 +30,14 @@ import java.util.List;
  * </ul>
  *
  * <h2>How to implement</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CoreBootstrapZeroAllocTckTest extends BootstrapZeroAllocTck {
- *     \@Override
+ *     @Override
  *     protected List<Subsystem> runSort(List<Subsystem> input) {
  *         return BootstrapOrchestrator.sort(input);
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  * @see AbstractSubsystemZeroAllocTck

@@ -32,6 +32,8 @@ public abstract class AbstractPersistenceProviderTck {
 
     /**
      * Creates the {@link PersistenceProvider} under test.
+     *
+     * @return a provider under test
      */
     protected abstract PersistenceProvider createProvider();
 
@@ -82,6 +84,18 @@ public abstract class AbstractPersistenceProviderTck {
             assertThat(count).isGreaterThanOrEqualTo(1);
         }
 
+        /**
+         * Confirms {@link PersistenceProvider#priority()} yields a well-defined ordering over
+         * the {@link ServiceLoader}-discovered providers.
+         *
+         * @apiNote This does not prove that bootstrap wiring resolves a tie by selecting the
+         *          highest-priority provider: {@code selected} is independently recomputed here
+         *          as the maximum of the very set {@code provider} was drawn from, so the
+         *          assertion holds for any discovered provider regardless of how — or whether —
+         *          production selection logic uses {@code priority()}. Proving precedence
+         *          requires exercising the engine's own provider-selection path with two
+         *          competing providers registered.
+         */
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {

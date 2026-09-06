@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityRequiresRoleTckTest extends AbstractRequiresRoleTck {
  *     @Override
  *     protected BiPredicate<Integer, PrincipalContext> isAllowed(RoleRegistry registry) {
@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *         return (methodId, principal) -> RoleCheckEnforcer.check(methodId, principal, registry);
  *     }
  * }
- * }</pre>
+ * }
  *
  * <p>The abstract drives the enforcer with a stub {@link RoleRegistry}; bindings
  * supply the enforcer factory.
@@ -80,8 +80,9 @@ public abstract class AbstractRequiresRoleTck {
     protected abstract java.util.function.BiPredicate<Integer, PrincipalContext> isAllowed(RoleRegistry registry);
 
     /**
-     * Returns a consumer that delegates to the binding's deny-path enforcer.
-     * On deny the consumer MUST throw {@link InsufficientPrivilegesException}.
+     * Returns a consumer that delegates to the binding's enforcement routine: it returns
+     * silently when the principal is permitted for the given method id, and throws
+     * {@link InsufficientPrivilegesException} when it is not.
      *
      * @param registry registry supplied by the abstract; binding must read it
      * @return non-null consumer {@code (methodId, principal) → void}
@@ -170,6 +171,12 @@ public abstract class AbstractRequiresRoleTck {
                 });
     }
 
+    /**
+     * Asserts the stub registry's own {@code roleNameToBit}/{@code roleNameToMask} results;
+     * it does not invoke or verify the {@code SecurityInterceptor} mask-population path that
+     * the display name alludes to — that contract belongs to
+     * {@link AbstractRoleMaskPopulationTck}.
+     */
     @Test
     @DisplayName("roleNameToBit is consulted when populating the principal mask at auth time")
     void roleNameToBitResolves() {

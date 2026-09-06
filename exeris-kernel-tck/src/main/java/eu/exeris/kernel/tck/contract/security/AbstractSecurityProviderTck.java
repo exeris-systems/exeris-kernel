@@ -38,10 +38,26 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>{@code authenticate()} with invalid token throws {@link SecurityAuthenticationException}</li>
  *   <li>{@code systemStorageContext()} returns a valid, non-null context</li>
  *   <li>ServiceLoader discovery selects the highest-priority provider</li>
+ *   <li>An unsecured ({@code alg=none}) or algorithm-confused (symmetric MAC keyed on an
+ *       asymmetric public key) token is denied, never accepted (algorithm downgrade defense)</li>
+ *   <li>A token with an unknown or missing {@code kid}, an expired {@code exp}, a wrong
+ *       {@code iss}/{@code aud}, or a tampered signature is denied</li>
+ *   <li>An isolation strategy claim resolves to the matching {@link StorageContext}: absent
+ *       resolves to {@code SHARED} (the permissive no-intent default); a declared strong
+ *       strategy missing its required sub-claim, an unrecognised strategy value, or a
+ *       present-but-wrong-typed strategy claim is denied — never silently downgraded to
+ *       {@code SHARED}</li>
+ *   <li>A declared shared-scope claim is denied unless the provider was constructed for a
+ *       deployment asserting it enforces the shared-scope policy; a present-but-wrong-typed
+ *       shared-scope claim is denied by the binding's own validation</li>
+ *   <li>Where a binding supports key rotation ({@link #createRotationHarness()}), an
+ *       old-{@code kid} token still authenticates inside the overlap window, is denied once
+ *       the overlap expires, and a stale key set with a failed refresh denies deterministically
+ *       — never fail-open</li>
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
  *     @Override protected SecurityProvider createProvider() {
  *         return new CommunitySecurityProvider(jwtKeySupplier);
@@ -53,7 +69,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *         return TestTokens.corruptJwt(allocator);
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -63,13 +79,19 @@ public abstract class AbstractSecurityProviderTck {
     // Template methods — subclass supplies the SUT
     // =========================================================================
 
-    /** Creates the {@link SecurityProvider} under test. */
+    /**
+     * Creates the {@link SecurityProvider} under test.
+     *
+     * @return a configured provider instance
+     */
     protected abstract SecurityProvider createProvider();
 
     /**
      * Creates a {@link LoanedBuffer} containing a valid, parseable token.
      * The token MUST be decodable by the provider returned from {@link #createProvider()}.
      * Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token the provider can decode and verify
      */
     protected abstract LoanedBuffer createValidTokenBuffer();
 
@@ -77,6 +99,8 @@ public abstract class AbstractSecurityProviderTck {
      * Creates a {@link LoanedBuffer} containing an invalid / corrupt token.
      * The provider MUST reject this token by throwing {@link SecurityAuthenticationException}.
      * Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding an invalid or corrupt token
      */
     protected abstract LoanedBuffer createInvalidTokenBuffer();
 
@@ -98,6 +122,9 @@ public abstract class AbstractSecurityProviderTck {
      * The provider MUST accept this token (per ADR-013 §6: known-kid → accept).
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createValidTokenBuffer()} for providers that don't use kid.
+     *
+     * @return a loaned buffer holding a token whose {@code kid} matches a key in the
+     *         provider's key set
      */
     protected LoanedBuffer createTokenWithKnownKid() {
         return createValidTokenBuffer();
@@ -109,6 +136,9 @@ public abstract class AbstractSecurityProviderTck {
      * The provider MUST deny this token (ADR-013 §6: unknown-kid → deny).
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a token whose {@code kid} is absent from the
+     *         provider's key set
      */
     protected LoanedBuffer createTokenWithUnknownKid() {
         return createInvalidTokenBuffer();
@@ -120,6 +150,8 @@ public abstract class AbstractSecurityProviderTck {
      * The provider MUST deny this token (ADR-013 §6: ambiguous kid = deny).
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a token with no {@code kid} header claim
      */
     protected LoanedBuffer createTokenWithMissingKid() {
         return createInvalidTokenBuffer();
@@ -130,6 +162,8 @@ public abstract class AbstractSecurityProviderTck {
      * The provider MUST deny this token with {@link eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException}.
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a token whose {@code exp} claim is in the past
      */
     protected LoanedBuffer createExpiredTokenBuffer() {
         return createInvalidTokenBuffer();
@@ -140,6 +174,8 @@ public abstract class AbstractSecurityProviderTck {
      * The provider MUST deny this token (ADR-013 §4: issuer validation).
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a token with a wrong {@code iss} claim
      */
     protected LoanedBuffer createWrongIssuerTokenBuffer() {
         return createInvalidTokenBuffer();
@@ -150,6 +186,8 @@ public abstract class AbstractSecurityProviderTck {
      * The provider MUST deny this token (ADR-013 §4: audience validation).
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a token with a wrong {@code aud} claim
      */
     protected LoanedBuffer createWrongAudienceTokenBuffer() {
         return createInvalidTokenBuffer();
@@ -161,6 +199,8 @@ public abstract class AbstractSecurityProviderTck {
      * The provider MUST deny this token.
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()}.
+     *
+     * @return a loaned buffer holding a structurally valid token with a tampered signature
      */
     protected LoanedBuffer createTamperedSignatureBuffer() {
         return createInvalidTokenBuffer();
@@ -174,6 +214,9 @@ public abstract class AbstractSecurityProviderTck {
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()} so the contract is meaningful
      * even for bindings that cannot mint an {@code alg=none} token; security bindings SHOULD
      * override with a real unsecured token to exercise the algorithm gate directly.
+     *
+     * @return a loaned buffer holding an {@code alg=none} unsecured token, or the
+     *         invalid-token default for bindings that cannot mint one
      */
     protected LoanedBuffer createAlgNoneTokenBuffer() {
         return createInvalidTokenBuffer();
@@ -189,6 +232,9 @@ public abstract class AbstractSecurityProviderTck {
      * Caller owns the buffer lifecycle.
      * <p>Default: delegates to {@link #createInvalidTokenBuffer()}; security bindings SHOULD
      * override with a real confusion token.
+     *
+     * @return a loaned buffer holding an HS256-over-public-key confusion token, or the
+     *         invalid-token default for bindings that cannot mint one
      */
     protected LoanedBuffer createAlgConfusionTokenBuffer() {
         return createInvalidTokenBuffer();
@@ -197,6 +243,8 @@ public abstract class AbstractSecurityProviderTck {
     /**
      * Returns a scope expected to be granted for the principal returned from
      * {@link #createValidTokenBuffer()} authentication.
+     *
+     * @return the scope the valid-token principal must be granted
      */
     protected String expectedGrantedScope() {
         return "security:read";
@@ -205,6 +253,8 @@ public abstract class AbstractSecurityProviderTck {
     /**
      * Returns a scope expected to be denied for the principal returned from
      * {@link #createValidTokenBuffer()} authentication.
+     *
+     * @return the scope the valid-token principal must be denied
      */
     protected String expectedDeniedScope() {
         return "security:write";
@@ -219,6 +269,8 @@ public abstract class AbstractSecurityProviderTck {
      *
      * <p>Default: delegates to {@link #createValidTokenBuffer()}, since a standard valid token
      * carries no isolation claim.
+     *
+     * @return a loaned buffer holding a valid token with no isolation strategy claim
      */
     protected LoanedBuffer createTokenWithNoIsolationClaim() {
         return createValidTokenBuffer();
@@ -232,12 +284,17 @@ public abstract class AbstractSecurityProviderTck {
      * {@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA} strategy and
      * {@link StorageContext#schemaName()} equal to {@link #expectedSeparatedSchemaName()}.
      * Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token declaring the {@code SEPARATED_SCHEMA}
+     *         strategy and a valid schema name
      */
     protected abstract LoanedBuffer createTokenWithSeparatedSchemaStrategy();
 
     /**
      * Returns the expected {@link StorageContext#schemaName()} for the context produced from
      * the token returned by {@link #createTokenWithSeparatedSchemaStrategy()}.
+     *
+     * @return the schema name the {@code SEPARATED_SCHEMA} token declares
      */
     protected abstract String expectedSeparatedSchemaName();
 
@@ -249,12 +306,17 @@ public abstract class AbstractSecurityProviderTck {
      * {@link StorageContext.IsolationStrategy#DEDICATED} strategy and
      * {@link StorageContext#dataSourceKey()} equal to {@link #expectedDedicatedDataSourceKey()}.
      * Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token declaring the {@code DEDICATED} strategy and
+     *         a valid datasource key
      */
     protected abstract LoanedBuffer createTokenWithDedicatedStrategy();
 
     /**
      * Returns the expected {@link StorageContext#dataSourceKey()} for the context produced from
      * the token returned by {@link #createTokenWithDedicatedStrategy()}.
+     *
+     * @return the datasource key the {@code DEDICATED} token declares
      */
     protected abstract String expectedDedicatedDataSourceKey();
 
@@ -267,6 +329,9 @@ public abstract class AbstractSecurityProviderTck {
      * be downgraded to {@link StorageContext.IsolationStrategy#SHARED} — that is fail-OPEN
      * (silently weakening the provisioned isolation tier) per S-P0-07 / ADR-012 §4a (amended).
      * Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token declaring {@code SEPARATED_SCHEMA} without a
+     *         schema name claim
      */
     protected abstract LoanedBuffer createTokenWithSeparatedSchemaMissingSchemaName();
 
@@ -277,6 +342,9 @@ public abstract class AbstractSecurityProviderTck {
      * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
      * {@code EX-SEC-2002}) — not downgrade to {@link StorageContext.IsolationStrategy#SHARED}
      * (S-P0-07 / ADR-012 §4a amended). Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token declaring {@code DEDICATED} without a
+     *         datasource key claim
      */
     protected abstract LoanedBuffer createTokenWithDedicatedMissingDataSourceKey();
 
@@ -288,6 +356,9 @@ public abstract class AbstractSecurityProviderTck {
      * {@code EX-SEC-2002}). A strategy the kernel cannot honour must be rejected, not downgraded to
      * {@link StorageContext.IsolationStrategy#SHARED} (S-P0-07 / ADR-012 §4a amended).
      * Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token whose isolation strategy claim is a
+     *         non-empty, unrecognised value
      */
     protected abstract LoanedBuffer createTokenWithUnrecognizedStrategy();
 
@@ -301,7 +372,7 @@ public abstract class AbstractSecurityProviderTck {
      * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
      * {@code EX-SEC-2002}).
      *
-     * <h2>Why this case is the binding's own obligation</h2>
+     * <h4>Why this case is the binding's own obligation</h4>
      * <p>Every other isolation deny in this contract is enforced centrally: bindings route through
      * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping#fromClaims} and inherit
      * them for free. This one they do not inherit.
@@ -316,6 +387,9 @@ public abstract class AbstractSecurityProviderTck {
      * exists here rather than only in a binding-local unit test.
      *
      * <p>Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token whose isolation strategy claim is present but
+     *         not a single string
      */
     protected abstract LoanedBuffer createTokenWithWrongTypedStrategy();
 
@@ -328,7 +402,7 @@ public abstract class AbstractSecurityProviderTck {
      * <p>The provider MUST <b>deny</b> this token ({@link SecurityAuthenticationException},
      * {@code EX-SEC-2002}).
      *
-     * <h2>Why this is a second obligation and not the same one</h2>
+     * <h4>Why this is a second obligation and not the same one</h4>
      * <p>The structural cause is shared — {@code claim()} reports the wrong-typed value as absent, so
      * the mapping never sees it — but the resulting harm is not, so discharging one check does not
      * discharge the other. A wrong-typed strategy resolves to {@code SHARED} and weakens the
@@ -342,6 +416,9 @@ public abstract class AbstractSecurityProviderTck {
      * on the deployment (see §10).
      *
      * <p>Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token whose shared-scope claim is present but not
+     *         a single string
      */
     protected abstract LoanedBuffer createTokenWithWrongTypedSharedScope();
 
@@ -363,6 +440,8 @@ public abstract class AbstractSecurityProviderTck {
      * enforcing instance; this suite pins the unenforced default.
      *
      * <p>Caller owns the buffer lifecycle.
+     *
+     * @return a loaned buffer holding a token declaring a shared-scope key
      */
     protected abstract LoanedBuffer createTokenWithSharedScopeClaim();
 
@@ -380,10 +459,18 @@ public abstract class AbstractSecurityProviderTck {
      */
     protected interface RotationHarness extends AutoCloseable {
 
-        /** The provider wired with the rotating key set under test. */
+        /**
+         * The provider wired with the rotating key set under test.
+         *
+         * @return the provider under test
+         */
         SecurityProvider provider();
 
-        /** Advances the harness clock by the given amount (deterministic time travel). */
+        /**
+         * Advances the harness clock by the given amount (deterministic time travel).
+         *
+         * @param amount the duration to advance the harness clock by
+         */
         void advanceClock(Duration amount);
 
         /**
@@ -402,6 +489,8 @@ public abstract class AbstractSecurityProviderTck {
          * Mints a freshly-signed, otherwise-valid token under the ORIGINAL (pre-rotation)
          * {@code kid}. The JWT {@code exp} is far enough in the future that wall-clock
          * expiry never interferes with the rotation assertions.
+         *
+         * @return a loaned buffer holding a freshly-signed token under the pre-rotation kid
          */
         LoanedBuffer tokenUnderOriginalKid();
 
@@ -746,7 +835,10 @@ public abstract class AbstractSecurityProviderTck {
                     .map(ServiceLoader.Provider::get)
                     .max(Comparator.comparingInt(SecurityProvider::priority))
                     .orElseThrow();
-            // The selected provider must be the same tier as our test provider
+            // This computes the max directly over the classpath rather than exercising any
+            // dispatcher, so it only pins a floor: no provider visible to the ServiceLoader
+            // outranks the one under test. It does not assert that the max-priority provider
+            // found is this test's own provider instance.
             assertThat(selected.priority())
                     .isGreaterThanOrEqualTo(provider.priority());
         }
@@ -763,6 +855,10 @@ public abstract class AbstractSecurityProviderTck {
         @Test
         @DisplayName("100 concurrent VT authenticate() calls — no crashes, no data corruption")
         void concurrentAuthenticate() throws InterruptedException {
+            // Asserts the absence of a thrown exception and a non-null principalId on every
+            // call; it does not compare returned principals against each other, so a
+            // cross-thread mix-up that still yielded a non-null principalId would not be
+            // caught here.
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
             try (var scope = TckScope.open()) {

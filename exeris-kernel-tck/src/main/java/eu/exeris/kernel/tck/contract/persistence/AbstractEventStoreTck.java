@@ -38,11 +38,16 @@ public abstract class AbstractEventStoreTck {
 
     /**
      * Creates a fully bootstrapped {@link PersistenceEngine}.
+     *
+     * @return a ready-to-use engine
      */
     protected abstract PersistenceEngine createEngine();
 
     /**
      * Creates an {@link EventStore} bound to the given connection.
+     *
+     * @param connection the connection the returned store must read and write through
+     * @return an event store whose operations participate in {@code connection}'s transactions
      */
     protected abstract EventStore createEventStore(PersistenceConnection connection);
 

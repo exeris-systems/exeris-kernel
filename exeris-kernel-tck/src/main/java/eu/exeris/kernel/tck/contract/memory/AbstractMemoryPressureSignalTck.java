@@ -36,9 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>This TCK enforces that the pressure signal exposed via {@link MemoryStats} is:
  * <ol>
- *   <li><b>Monotonically growing</b> as buffers are allocated and held.</li>
- *   <li><b>Monotonically shrinking</b> as buffers are closed.</li>
- *   <li><b>Exactly zero</b> after all buffers are released.</li>
+ *   <li><b>Monotonically non-decreasing</b> as buffers are allocated and held — checked
+ *       after each individual allocation, not only at the end of the run.</li>
+ *   <li><b>Exactly zero</b> once every held buffer has been released — the release path
+ *       is exercised as one batch; no intermediate, buffer-by-buffer shrinkage is
+ *       asserted.</li>
  *   <li><b>Bounded by {@code totalBytes}</b> — utilization never exceeds 1.0.</li>
  *   <li><b>Consistent</b> — {@code allocatedBytes + freeBytes == totalBytes}
  *       when the allocator has a fixed budget ({@code totalBytes > 0}).</li>
@@ -50,18 +52,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <em>signal</em> that those classes consume, not the consumers themselves.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityPressureSignalTest extends AbstractMemoryPressureSignalTck {
- *     \@Override
+ *     @Override
  *     protected MemoryProvider createProvider() {
  *         return new CommunityMemoryProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see MemoryStats
  * @see MemoryAllocator#stats()
- * @since 0.5
  */
 public abstract class AbstractMemoryPressureSignalTck {
 
@@ -82,6 +84,8 @@ public abstract class AbstractMemoryPressureSignalTck {
      * their TRANSPORT_TCP partition capacity.
      *
      * <p>Default: {@code 64}.
+     *
+     * @return number of buffers to allocate in the monotonic growth test
      */
     protected int monotonicGrowthBufferCount() {
         return 64;
@@ -94,6 +98,8 @@ public abstract class AbstractMemoryPressureSignalTck {
      * <p>When {@code true}, the consistency invariant
      * {@code allocatedBytes + freeBytes == totalBytes} is verified.
      * Default: {@code false} (Community heap allocator has no fixed budget).
+     *
+     * @return {@code true} if the allocator under test exposes a fixed off-heap budget
      */
     protected boolean hasFixedBudget() {
         return false;

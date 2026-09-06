@@ -36,19 +36,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code providerName()} is non-null and non-blank</li>
  *   <li>{@code priority()} follows Open-Core convention (0 for Community, 100 for Enterprise)</li>
  *   <li>Provider is discoverable via {@link ServiceLoader}</li>
- *   <li>Highest-priority provider wins selection</li>
+ *   <li>The maximum priority among discovered providers is never lower than the provider under
+ *       test's own priority; real precedence between differently-prioritized providers sharing
+ *       one classpath is not exercised by this fixture</li>
  *   <li>Identity fields are stable across calls</li>
  * </ul>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHttpProviderTck extends AbstractHttpProviderTck {
  *     @Override
  *     protected HttpProvider createProvider() {
  *         return new CommunityHttpProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -225,6 +227,17 @@ public abstract class AbstractHttpProviderTck {
                     });
         }
 
+        /**
+         * Asserts that the maximum priority among all providers {@link #discoverProviders()}
+         * finds is never lower than the priority of the provider under test.
+         *
+         * <p>This does not exercise real precedence between competing providers of different
+         * priority: the discovered set typically also contains an instance of the same driver
+         * class as the provider under test, sharing its priority, so the comparison holds by
+         * construction whenever only one driver class is on the classpath. Verifying that a
+         * higher-priority provider actually displaces a lower one requires two distinct
+         * provider classes present at once, which this fixture does not stage.
+         */
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {

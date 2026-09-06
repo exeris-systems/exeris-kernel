@@ -19,8 +19,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * TCK: Carrier pinning verifier for the Flow step-transition hot path.
  *
  * <h2>Hot Path Under Test</h2>
- * <p>{@code scheduler.schedule(plan, ctx) → park(ctx) → wake(ctx)} — the step dispatch
- * loop must never pin a carrier thread.
+ * <p>{@code scheduler.schedule(plan, ctx)} — the synchronous dispatch entry into the flow
+ * engine — must never pin a carrier thread. {@code park()}/{@code wake()} are asynchronous
+ * state transitions that require a prior {@code schedule()} to complete, so driving them
+ * immediately afterward would race across implementations; they are exercised elsewhere, not
+ * as part of this hot path.
  *
  * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
@@ -29,6 +32,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 @DisplayName("Flow carrier pinning TCK")
 public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
+    /**
+     * Creates a fully configured, but not yet started, {@link FlowEngine}.
+     *
+     * @return a new engine instance, not yet started
+     */
     protected abstract FlowEngine createEngine();
 
     // =========================================================================
@@ -58,12 +66,16 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
     /**
      * Returns the number of warm-up VT iterations (phase 1 — discarded).
      * Delegates to the base-class accessor so this value stays in sync.
+     *
+     * @return the warm-up iteration count
      */
     protected int warmupIterations() { return warmupVtCount(); }
 
     /**
      * Returns the number of steady-state VT iterations (phase 2 — measured).
      * Delegates to the base-class accessor so this value stays in sync.
+     *
+     * @return the measured steady-state iteration count
      */
     protected int hotPathIterations() { return steadyVtCount(); }
 

@@ -40,13 +40,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * The default implementation runs the action directly with no additional context.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class MySubsystemLifecycleTckTest extends AbstractSubsystemLifecycleTck {
- *     \@Override protected Subsystem createSubsystem() {
+ *     @Override protected Subsystem createSubsystem() {
  *         return new MySubsystem();
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -56,7 +56,11 @@ public abstract class AbstractSubsystemLifecycleTck {
     // Template methods
     // =========================================================================
 
-    /** Creates a {@link Subsystem} instance ready for {@code initialize()} — not yet initialized. */
+    /**
+     * Creates a {@link Subsystem} instance ready for {@code initialize()} — not yet initialized.
+     *
+     * @return a fresh, not-yet-initialized {@link Subsystem} instance
+     */
     protected abstract Subsystem createSubsystem();
 
     /**
@@ -67,6 +71,8 @@ public abstract class AbstractSubsystemLifecycleTck {
      * The default implementation runs the action directly with no additional scope.
      *
      * <p>Implementations must propagate all unchecked exceptions thrown by {@code action}.
+     *
+     * @param action the lifecycle call (e.g. {@code subsystem::start}) to run in context
      */
     protected void withLifecycleContext(Runnable action) {
         action.run();
@@ -171,6 +177,15 @@ public abstract class AbstractSubsystemLifecycleTck {
                     .doesNotThrowAnyException();
         }
 
+        /**
+         * Asserts that {@code isRunning()} reports {@code false} after the
+         * {@code initialize() → start() → stop()} sequence run directly by this TCK. No test
+         * in this class asserts {@code isRunning()} is {@code true} after {@code start()};
+         * without that companion check, this assertion cannot distinguish a subsystem that
+         * correctly transitions running → stopped from one whose {@code isRunning()} always
+         * returns {@code false} — the default a {@link Subsystem} inherits when it never
+         * overrides it.
+         */
         @Test
         @DisplayName("isRunning() returns false after stop()")
         void isRunningFalseAfterStop() {

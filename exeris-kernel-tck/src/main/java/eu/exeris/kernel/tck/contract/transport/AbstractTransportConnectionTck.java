@@ -34,12 +34,18 @@ public abstract class AbstractTransportConnectionTck {
 
     /**
      * Creates a pair of connected {@link TransportConnection} instances (e.g., via loopback).
-     * Returns both as a record — the test verifies the server-side connection.
+     *
+     * @return a pair whose two ends are already connected to each other
+     * @implSpec Both connections must be open and joined to each other on return; the suite
+     *           performs no connection or handshake step of its own.
      */
     protected abstract ConnectionPair createConnectionPair();
 
     /**
      * Connection pair for testing — server side is the SUT.
+     *
+     * @param server the connection under test
+     * @param client the connection's peer
      */
     public record ConnectionPair(TransportConnection server, TransportConnection client) {
     }

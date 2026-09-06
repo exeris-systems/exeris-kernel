@@ -17,24 +17,34 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * TCK contract for {@link KernelPasswordEncoder}.
  *
  * <p>Usage:
- * <pre>
+ * {@snippet lang="java" :
  * class Argon2idPasswordEncoderTckTest extends AbstractPasswordEncoderTck {
- *     {@literal @}Override
+ *     @Override
  *     protected KernelPasswordEncoder encoderWithConfig(PasswordEncoderConfig config) {
  *         return new Argon2idPasswordEncoder(config);
  *     }
  * }
- * </pre>
+ * }
  *
  * @since 0.5
  */
 @SuppressWarnings("java:S2699")
 public abstract class AbstractPasswordEncoderTck {
 
-	/** Returns an encoder configured with the given config. Must return a fresh instance per call. */
+	/**
+	 * Returns an encoder configured with the given config. Must return a fresh instance per
+	 * call.
+	 *
+	 * @param config the encoder configuration to apply
+	 * @return a new encoder instance configured with {@code config}
+	 */
 	protected abstract KernelPasswordEncoder encoderWithConfig(PasswordEncoderConfig config);
 
-	/** Returns an encoder with default config. Delegates to {@link #encoderWithConfig}. */
+	/**
+	 * Returns an encoder with default config. Delegates to {@link #encoderWithConfig}.
+	 *
+	 * @return a new default-configured encoder instance
+	 */
 	protected final KernelPasswordEncoder encoder() {
 		return encoderWithConfig(PasswordEncoderConfig.defaults());
 	}

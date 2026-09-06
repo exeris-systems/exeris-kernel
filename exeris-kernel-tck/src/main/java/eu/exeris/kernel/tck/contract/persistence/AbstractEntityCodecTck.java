@@ -33,13 +33,30 @@ import static org.mockito.Mockito.when;
  */
 public abstract class AbstractEntityCodecTck {
 
+    /**
+     * Creates the {@link PersistenceProvider} under test.
+     *
+     * @return a provider under test
+     * @implSpec The provider must return a present {@link PersistenceProvider#rawEntityEncoder()}
+     *           and a present {@link PersistenceProvider#rawEntityDecoder()}.
+     */
     protected abstract PersistenceProvider createProvider();
 
+    /**
+     * Returns the raw entity encoder exposed by {@link #createProvider()}.
+     *
+     * @return the provider's raw {@link EntityEncoder}
+     */
     protected final EntityEncoder<MemorySegment> createEncoder() {
         return createProvider().rawEntityEncoder()
                 .orElseThrow(() -> new AssertionError("Provider must expose rawEntityEncoder()"));
     }
 
+    /**
+     * Returns the raw entity decoder exposed by {@link #createProvider()}.
+     *
+     * @return the provider's raw {@link EntityDecoder}
+     */
     protected final EntityDecoder<MemorySegment> createDecoder() {
         return createProvider().rawEntityDecoder()
                 .orElseThrow(() -> new AssertionError("Provider must expose rawEntityDecoder()"));

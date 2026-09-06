@@ -36,9 +36,7 @@ import static org.assertj.core.api.Assertions.fail;
  *   <li>{@code read()} and {@code write()} operate on {@link MemorySegment} slices</li>
  *   <li>{@code queueWrite(LoanedBuffer, length)} transfers buffer ownership <b>on normal return</b> —
  *       the caller MUST NOT close the buffer after a successful call, and MUST close it after a
- *       thrown one. The unconditional "never close" stated here until v0.11 contradicted the SPI
- *       javadoc, which puts the buffer back with the caller on any throw; a driver written against
- *       this wording closes on its own error paths, and then both sides release the same ref</li>
+ *       thrown one</li>
  *   <li>{@code close()} is idempotent</li>
  *   <li>{@code streamId()} returns a non-negative identifier</li>
  *   <li>{@code connection()} returns non-null parent</li>
@@ -55,11 +53,15 @@ public abstract class AbstractTransportStreamTck {
     /**
      * Creates a pair of connected streams for loopback I/O testing.
      * The writer stream sends data; the reader stream receives it.
+     *
+     * @return a connected stream pair
      */
     protected abstract StreamPair createStreamPair();
 
     /**
      * Provides a {@link MemoryAllocator} for buffer creation in tests.
+     *
+     * @return an allocator the suite uses for every buffer it creates
      */
     protected abstract MemoryAllocator createAllocator();
 
@@ -71,8 +73,8 @@ public abstract class AbstractTransportStreamTck {
      * <p>When {@code false} (the default), the abandon-vs-drain peer discriminator
      * ({@code resetAbandonsQueuedWriteAtPeer}) is SKIPPED via a JUnit assumption: a binding that
      * degrades reset to graceful close is <em>visibly exempt</em> (reported skipped) instead of
-     * silently passing abort semantics it does not provide. This is the contract gate of issue
-     * #180 — no binding may silently claim abort fidelity.
+     * silently passing abort semantics it does not provide — no binding may silently claim abort
+     * fidelity it does not implement.
      *
      * <p>When {@code true}, the binding asserts that data genuinely queued but unflushed at
      * {@code reset()} time is NOT delivered to the peer. Override to {@code true} only for a
@@ -157,6 +159,9 @@ public abstract class AbstractTransportStreamTck {
 
     /**
      * Stream pair for loopback testing.
+     *
+     * @param writer the stream that sends data
+     * @param reader the stream that receives it
      */
     public record StreamPair(TransportStream writer, TransportStream reader) {
     }
@@ -486,10 +491,8 @@ public abstract class AbstractTransportStreamTck {
         void queueWriteAfterResetThrows() {
             TransportStream writer = streams.writer();
             writer.reset(0L);
-            // try-with-resources, and the name no longer says "the buffer is released". It said that
-            // because the driver used to close on this branch — which the SPI never asked for and
-            // v0.11 removed, so from then on this test allocated a buffer, asserted the throw, and
-            // released nothing. A leak inside the suite that runs LeakDetectionMode.PARANOID.
+            // try-with-resources: after the throw the buffer is still the caller's, so this test
+            // must close it itself — leaving it open here would leak under LeakDetectionMode.PARANOID.
             try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
                 assertThatThrownBy(() -> writer.queueWrite(buf, 1))
                         .isInstanceOf(IllegalStateException.class);

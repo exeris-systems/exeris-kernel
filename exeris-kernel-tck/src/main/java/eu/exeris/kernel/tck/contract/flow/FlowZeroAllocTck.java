@@ -48,6 +48,11 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     // Template method — supply the engine
     // =========================================================================
 
+    /**
+     * Creates a fully configured, but not yet started, {@link FlowEngine}.
+     *
+     * @return a new engine instance, not yet started
+     */
     protected abstract FlowEngine createEngine();
 
     // =========================================================================

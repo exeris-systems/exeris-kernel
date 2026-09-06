@@ -22,10 +22,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * TCK: Abstract base for {@link EventRegistry} contract verification.
  *
- * <h2>EVENT-205 — Closing the Registry TCK Gap</h2>
- * <p>The {@code events.md} subsystem doc has long flagged
- * {@code EX-EVENT-6003} (registry conflict) as a TCK gap; this suite is the binding-agnostic
- * contract that every {@link EventRegistry} implementation must satisfy.
+ * <h2>Registry Conflict Contract</h2>
+ * <p>This suite is the binding-agnostic contract that every {@link EventRegistry}
+ * implementation must satisfy for ordinal- and identity-conflict detection
+ * ({@code EX-EVENT-6003}).
  *
  * <h2>Verified Constraints</h2>
  * <ol>
@@ -44,24 +44,30 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       registry unchanged; a spec registered without a topic reports
  *       {@link EventTypeSpec#hasTopic()}{@code == false} (bindings fall back to their default
  *       routing); and {@code topic} participates in spec identity — the same name+ordinal with a
- *       differing topic conflicts, the identical topic-carrying spec is idempotent.</li>
+ *       differing topic conflicts, the identical topic-carrying spec is idempotent, and a blank
+ *       topic normalizes to no-topic identity, so it does not conflict with a prior
+ *       no-topic registration of the same name+ordinal.</li>
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityEventRegistryTckTest extends AbstractEventRegistryTck {
- *     \@Override protected EventEngine createEngine() {
+ *     @Override protected EventEngine createEngine() {
  *         return new CommunityEventProvider().createEngine(EventEngineConfig.defaults());
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.7
  */
 @DisplayName("EventRegistry TCK — EVENT-205 ordinal conflict contract")
 public abstract class AbstractEventRegistryTck {
 
-    /** Creates a fresh, not-yet-started {@link EventEngine}. The TCK does not call {@code start()}. */
+    /**
+     * Creates a fresh, not-yet-started {@link EventEngine}. The TCK does not call {@code start()}.
+     *
+     * @return a fresh {@link EventEngine}
+     */
     protected abstract EventEngine createEngine();
 
     private static final int    ORDINAL_USER_CREATED  = 1_001;

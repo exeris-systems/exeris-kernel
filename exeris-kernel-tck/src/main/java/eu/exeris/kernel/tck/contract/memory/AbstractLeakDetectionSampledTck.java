@@ -36,13 +36,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>In SAMPLED mode the allocator MUST:
  * <ol>
  *   <li>Report {@link MemoryStats#leakDetectionMode()} == {@code SAMPLED}.</li>
- *   <li>Track a statistically meaningful subset of allocations (not every allocation,
- *       not zero allocations). Over 1024 allocations, at least one tracked sample is expected.</li>
+ *   <li>Count every physical allocation via {@link MemoryStats#allocationCount()} regardless
+ *       of the sampling rate. {@link MemoryStats} exposes no separate sampled-count signal,
+ *       so this TCK does not assert how large a subset is actually tracked internally for
+ *       leak detection — only that the coarse allocation counter is unaffected by sampling.</li>
  *   <li>Not increase {@link MemoryStats#leakCount()} for properly-closed buffers.</li>
- *   <li>Operate at lower overhead than PARANOID: the per-allocation cost in SAMPLED mode
- *       MUST be significantly lower than PARANOID (verified via allocationCount ratio).</li>
- *   <li>Remain correct under Virtual Thread concurrency — no race conditions in the
- *       sampling counter or Cleaner registration path.</li>
+ *   <li>Operating at lower overhead than PARANOID is the mode's design intent, but this TCK
+ *       does not measure or compare per-allocation cost between the two modes — there is no
+ *       timing or allocation-ratio assertion here for that comparison.</li>
+ *   <li>Remain correct under Virtual Thread concurrency: 10 000 concurrent allocate/close
+ *       pairs must complete without error and leave {@code releaseCount == allocationCount}
+ *       and {@code leakCount == 0}.</li>
  * </ol>
  *
  * <h2>The Wall (SPI Compliance)</h2>
@@ -50,18 +54,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the internal {@code LeakTracker} class in Core, or any Community/Enterprise detail.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityLeakDetectionSampledTest extends AbstractLeakDetectionSampledTck {
- *     \@Override
+ *     @Override
  *     protected MemoryProvider createProvider() {
  *         return new CommunityMemoryProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see AbstractMemoryLeakDetectionTck
  * @see LeakDetectionMode#SAMPLED
- * @since 0.5
  */
 public abstract class AbstractLeakDetectionSampledTck {
 
@@ -79,6 +83,8 @@ public abstract class AbstractLeakDetectionSampledTck {
     /**
      * Number of allocations to use in the sampling-density test.
      * Default: {@code 512} — enough to hit at least one sample with 1/128 rate.
+     *
+     * @return number of allocations to perform in the sampling-density probe
      */
     protected int samplingProbeCount() {
         return 512;

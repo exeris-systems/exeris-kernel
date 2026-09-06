@@ -26,18 +26,57 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * TCK: Abstract base for StorageContext bridge derivation verification.
+ * TCK: Abstract base for {@code StorageContextBridge}-style derivation of a
+ * {@link StorageContext} from a {@link PrincipalContext} (ADR-012).
+ *
+ * <h2>Contract</h2>
+ * <ul>
+ *   <li>A tenant principal derives a {@code SHARED}-strategy context whose isolation key is
+ *       the principal's tenant id.</li>
+ *   <li>A system principal (no tenant) derives {@link ImmutableStorageContext#GLOBAL}, the
+ *       same singleton instance on every call.</li>
+ *   <li>A {@code null} principal is rejected as {@link PrincipalContextMissingException}
+ *       ({@code EX-SEC-2001}), never silently mapped to a context.</li>
+ *   <li>{@link #deriveFromActivePrincipal()} resolves the same way from the principal bound
+ *       via {@link KernelProviders#PRINCIPAL_CONTEXT}; outside a bound scope it raises the
+ *       same {@code EX-SEC-2001}.</li>
+ * </ul>
  */
 public abstract class AbstractStorageContextBridgeTck {
 
+    /**
+     * Derives the {@link StorageContext} for {@code principal} directly.
+     *
+     * @param principal the principal to derive a storage context for
+     * @return the derived storage context
+     * @throws PrincipalContextMissingException if {@code principal} is {@code null}
+     */
     protected abstract StorageContext derive(PrincipalContext principal);
 
+    /**
+     * Derives the {@link StorageContext} for the principal bound via
+     * {@link KernelProviders#PRINCIPAL_CONTEXT} in the current scope.
+     *
+     * @return the derived storage context
+     * @throws PrincipalContextMissingException if no principal context is bound
+     */
     protected abstract StorageContext deriveFromActivePrincipal();
 
+    /**
+     * Returns the fixed tenant id used to build the fixture returned by
+     * {@link #createTenantPrincipal()}.
+     *
+     * @return a fixed tenant id
+     */
     protected UUID tenantId() {
         return UUID.fromString("00000000-0000-0000-0000-000000000042");
     }
 
+    /**
+     * Returns a principal scoped to {@link #tenantId()}, granted {@code ROLE_USER}.
+     *
+     * @return a tenant-scoped principal fixture
+     */
     protected PrincipalContext createTenantPrincipal() {
         return ImmutablePrincipal.ofTenant(
                 UUID.fromString("00000000-0000-0000-0000-000000000041"),
@@ -45,6 +84,11 @@ public abstract class AbstractStorageContextBridgeTck {
                 Set.of("ROLE_USER"));
     }
 
+    /**
+     * Returns a system principal carrying no tenant, granted {@code ROLE_SYSTEM}.
+     *
+     * @return a system principal fixture
+     */
     protected PrincipalContext createSystemPrincipal() {
         return ImmutablePrincipal.system(
                 UUID.fromString("00000000-0000-0000-0000-000000000001"),

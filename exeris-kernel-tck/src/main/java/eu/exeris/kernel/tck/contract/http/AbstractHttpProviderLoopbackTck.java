@@ -36,24 +36,65 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractHttpProviderLoopbackTck {
 
+    /**
+     * Creates the {@link HttpProvider} under test.
+     *
+     * @return the provider under test; never {@code null}
+     * @implSpec The same provider instance backs both {@link #createServerEngine} and
+     *           {@link #createClientEngine} within a given test, so the provider's server and
+     *           client engines must interoperate over its own transport.
+     */
     protected abstract HttpProvider createProvider();
 
+    /**
+     * Returns the loopback address the fixture's server binds to and the client dials.
+     *
+     * @return a loopback host address; defaults to {@code "127.0.0.1"}
+     * @apiNote Override to exercise a different loopback interface; the value must resolve
+     *          locally for both the server bind and the client connect.
+     */
     protected String loopbackHost() {
         return "127.0.0.1";
     }
 
+    /**
+     * Returns the request path the fixture sends and the server handler answers.
+     *
+     * @return a request path; defaults to {@code "/health"}
+     * @apiNote Override to exercise routing behaviour specific to a driver's engine.
+     */
     protected String requestPath() {
         return "/health";
     }
 
+    /**
+     * Returns the HTTP version the fixture's request is sent with.
+     *
+     * @return the request's HTTP version; defaults to {@link HttpVersion#HTTP_1_1}
+     * @apiNote Override to verify the loopback round-trip over a different negotiated version.
+     */
     protected HttpVersion requestVersion() {
         return HttpVersion.HTTP_1_1;
     }
 
+    /**
+     * Returns the status the fixture's server handler responds with and the test asserts.
+     *
+     * @return the expected response status; defaults to {@link HttpStatus#OK}
+     * @apiNote Override together with {@link #serverHandler()} to exercise a different status.
+     */
     protected HttpStatus expectedStatus() {
         return HttpStatus.OK;
     }
 
+    /**
+     * Returns the {@link HttpConfig} used to create the fixture's server engine.
+     *
+     * @param host the address the server binds to
+     * @param port the port the server binds to
+     * @return a server-mode configuration with HTTP/2 negotiation enabled and the module's
+     *         default connection, timeout, and header limits
+     */
     protected HttpConfig serverConfig(String host, int port) {
         return new HttpConfig(
                 eu.exeris.kernel.spi.http.HttpMode.SERVER,
@@ -69,6 +110,16 @@ public abstract class AbstractHttpProviderLoopbackTck {
         );
     }
 
+    /**
+     * Returns the {@link HttpConfig} used to create the fixture's client engine.
+     *
+     * @param host the server's address, used as the client's default dial authority
+     * @param port the server's port, used as the client's default dial authority
+     * @return a client-mode configuration whose default authority is {@code host:port}
+     * @apiNote The default authority is a dial address supplied to the client (ADR-074),
+     *          distinct from a server's bind address; a request naming its own authority
+     *          overrides it.
+     */
     protected HttpConfig clientConfig(String host, int port) {
         // ADR-074: the peer is now a DIAL address the client is given, not the SERVER/DUAL listener
         // address it used to read out of bindHost. This fixture happened to work before only
@@ -93,14 +144,39 @@ public abstract class AbstractHttpProviderLoopbackTck {
         );
     }
 
+    /**
+     * Returns the {@link HttpHandler} the fixture's server serves the loopback request with.
+     *
+     * @return a handler that responds with {@link #expectedStatus()} and no body
+     * @apiNote Override together with {@link #expectedStatus()} to exercise a different
+     *          response shape.
+     */
     protected HttpHandler serverHandler() {
         return exchange -> exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
     }
 
+    /**
+     * Creates the fixture's server engine from the given provider and configuration.
+     *
+     * @param provider the provider under test
+     * @param config   the server configuration to create the engine from
+     * @return a fresh, not-yet-started server engine; never {@code null}
+     * @apiNote Delegates to {@link HttpProvider#createServerEngine(HttpConfig)}; override only
+     *          to wrap or instrument the engine a driver under test produces.
+     */
     protected HttpServerEngine createServerEngine(HttpProvider provider, HttpConfig config) {
         return provider.createServerEngine(config);
     }
 
+    /**
+     * Creates the fixture's client engine from the given provider and configuration.
+     *
+     * @param provider the provider under test
+     * @param config   the client configuration to create the engine from
+     * @return a fresh, not-yet-started client engine; never {@code null}
+     * @apiNote Delegates to {@link HttpProvider#createClientEngine(HttpConfig)}; override only
+     *          to wrap or instrument the engine a driver under test produces.
+     */
     protected HttpClientEngine createClientEngine(HttpProvider provider, HttpConfig config) {
         return provider.createClientEngine(config);
     }

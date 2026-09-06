@@ -16,13 +16,19 @@ import org.junit.jupiter.api.DisplayName;
  * <p>{@code sink.emit(pre-built KernelEvent)} — telemetry emission must never
  * pin a carrier thread (no synchronized ring-buffer writes).
  *
+ * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
  * @see TelemetryZeroAllocTck
- * @since 0.5
  */
 @DisplayName("Telemetry carrier pinning TCK")
 public abstract class TelemetryCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
+    /**
+     * Creates the {@link TelemetrySink} under test.
+     *
+     * @return a newly created, open sink; created in {@link #bootstrapSubsystem()}, before the
+     *         JFR pinning window opens, and closed in {@link #tearDownSubsystem()}
+     */
     protected abstract TelemetrySink createSink();
 
     private TelemetrySink sink;

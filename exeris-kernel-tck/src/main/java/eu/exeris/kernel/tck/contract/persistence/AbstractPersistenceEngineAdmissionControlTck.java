@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 /**
  * TCK: Abstract contract for {@link PersistenceEngine#canServiceRequest()} admission control.
  *
- * <h2>Contract Semantics (universal, post ADR-035)</h2>
+ * <h2>Contract semantics (universal)</h2>
  * <p>Admission control gates prevent thread park storms when the underlying connection pool is
  * saturated. The cross-tier contract this TCK verifies is intentionally weak — only the
  * tier-invariant guarantees:
@@ -36,27 +36,24 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>Multiple calls to {@code canServiceRequest()} are consistent in the same state</li>
  * </ul>
  *
- * <h2>Shedding is a tunable tier policy, not a universal contract (ADR-035)</h2>
- * <p>Prior to ADR-035 this TCK mandated that a forming queue (idle==0 &amp;&amp; queued&gt;0) or
- * &gt;90% saturation shed immediately. That was a Community-specific heuristic, not a cross-tier
- * invariant, and it caused pathological 503 storms on CPU-constrained pools (pool size ≈ 2)
- * whose queue drained sub-millisecond. The <em>exact</em> shed trigger is now implementation- and
- * configuration-defined:
+ * <h2>Shedding is a tunable tier policy, not a universal contract</h2>
+ * <p>The <em>exact</em> shed trigger — when a forming queue or high saturation causes
+ * {@code canServiceRequest()} to return {@code false} — is implementation- and
+ * configuration-defined, not fixed by this TCK; see ADR-035 for the rationale:
  * <ul>
  *   <li>Community (HikariCP): sheds once pending acquires exceed a pool-size-scaled allowance
- *       ({@code queueDepthAllowanceRatio}); the strict pre-035 "shed on first waiter" behavior is
- *       still available via configuration. These tier-specific assertions live in the Community
+ *       ({@code queueDepthAllowanceRatio}); a strict "shed on first waiter" mode is also
+ *       available via configuration. These tier-specific assertions live in the Community
  *       admission tests.</li>
  *   <li>Enterprise: may shed predictively from native driver hints (e.g., io_uring SQE availability).</li>
  * </ul>
  *
- * <p><b>Binding obligation (not enforced here).</b> Because this suite no longer asserts any shed
- * direction other than {@code close()}, a binding that always admits under load would still pass it.
- * Shedding under a genuinely deep queue is a per-binding obligation recorded in ADR-035 §Consequences:
- * the Community tier proves it via {@code CommunityAdmissionConfig.STRICT} (the strict pre-035 reject
- * machine) in its own admission tests, and any Enterprise binding MUST carry an equivalent tier-specific
- * shed test. A future refinement may add an opt-in shed-direction hook to this abstract suite.
- *
+ * <p><b>Binding obligation (not enforced here).</b> Because this suite asserts no shed direction
+ * other than {@code close()}, a binding that always admits under load would still pass it.
+ * Shedding under a genuinely deep queue is a per-binding obligation recorded in ADR-035
+ * §Consequences: the Community tier proves it via {@code CommunityAdmissionConfig.STRICT} in its
+ * own admission tests, and any Enterprise binding MUST carry an equivalent tier-specific shed
+ * test. A future refinement may add an opt-in shed-direction hook to this abstract suite.
  */
 public abstract class AbstractPersistenceEngineAdmissionControlTck {
 
@@ -66,6 +63,8 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     /**
      * Creates a fully bootstrapped {@link PersistenceEngine} for testing.
      * Implementations should use a fixed max pool size (recommended: 4) for deterministic testing.
+     *
+     * @return a ready-to-use engine with a fixed, small connection pool
      */
     protected abstract PersistenceEngine createEngine();
 
@@ -90,9 +89,11 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     class CoreAdmissionControl {
 
         /**
-         * TEST 1: Returns true when pool is neither saturated nor queued
-         * Precondition: Fresh pool has no pending queue and is below saturation threshold
-         * Rationale: Admission should stay open even if the provider lazily initializes idles
+         * Returns {@code true} when the pool is neither saturated nor has a queue forming.
+         *
+         * <p>Precondition: a fresh pool has no pending acquires and is below the saturation
+         * threshold. Admission should stay open even if the provider lazily initializes idle
+         * connections.
          */
         @Test
         @DisplayName("canServiceRequest() returns true when pool has no saturation or queue")
@@ -232,9 +233,11 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
         }
 
         /**
-         * TEST 4: Returns false or throws PersistenceProviderException after engine shutdown
-         * Precondition: Engine.close() has been called
-         * Rationale: Cannot service requests after shutdown
+         * Returns {@code false} or throws {@link PersistenceProviderException} once the engine
+         * has been shut down.
+         *
+         * <p>Precondition: {@code engine.close()} has already been called. The engine cannot
+         * service further requests after shutdown.
          */
         @Test
         @DisplayName("canServiceRequest() returns false or throws when engine is closed")

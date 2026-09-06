@@ -31,6 +31,12 @@ public abstract class EventBusCarrierPinningTck extends AbstractSubsystemCarrier
     private static final String EVENT_TYPE    = "CarrierPinTestEvent";
     private static final int    EVENT_ORDINAL = 98;
 
+    /**
+     * Creates a fully configured {@link EventEngine} for the carrier-pinning probe to drive.
+     *
+     * @return a fresh {@link EventEngine}
+     * @implSpec The returned engine must not be started; {@link #bootstrapSubsystem()} starts it.
+     */
     protected abstract EventEngine createEngine();
 
     private EventEngine     engine;

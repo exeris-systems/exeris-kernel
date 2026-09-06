@@ -37,6 +37,8 @@ public abstract class AbstractZeroGcJfrMonitorTck extends AbstractSubsystemZeroA
 
     /**
      * Subclass supplies the allocator under test.
+     *
+     * @return allocator; must not be {@code null}
      */
     protected abstract MemoryAllocator createAllocator();
 

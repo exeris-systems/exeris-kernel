@@ -43,13 +43,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityConfigProviderTest extends AbstractConfigProviderTck {
- *     \@Override protected ConfigProvider createProvider() {
+ *     @Override protected ConfigProvider createProvider() {
  *         return new SimpleFileConfigProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -59,7 +59,11 @@ public abstract class AbstractConfigProviderTck {
     // Template method — subclass supplies the SUT
     // =========================================================================
 
-    /** Creates the {@link ConfigProvider} under test. Must NOT perform I/O in constructor. */
+    /**
+     * Creates the {@link ConfigProvider} under test. Must NOT perform I/O in constructor.
+     *
+     * @return a fresh {@link ConfigProvider} instance, not yet used by any prior test
+     */
     protected abstract ConfigProvider createProvider();
 
     private ConfigProvider provider;
@@ -206,6 +210,9 @@ public abstract class AbstractConfigProviderTck {
      * {@link #triggerReload(String, String, String)} to write the new value.
      *
      * <p>Default: {@code false} — safe baseline for Community tests.
+     *
+     * @return {@code true} if hot-reload is supported and {@link #triggerReload} is wired
+     *         to a real change source, {@code false} for the no-op Community contract
      */
     protected boolean supportsHotReload() {
         return false;
