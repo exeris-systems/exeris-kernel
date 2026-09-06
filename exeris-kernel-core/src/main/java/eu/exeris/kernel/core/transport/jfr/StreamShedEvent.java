@@ -81,6 +81,17 @@ public final class StreamShedEvent extends Event {
     public int activeStreamCount;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StreamShedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Factory: emits a stream shed event.
      *
      * @param streamId          the SPI stream identifier

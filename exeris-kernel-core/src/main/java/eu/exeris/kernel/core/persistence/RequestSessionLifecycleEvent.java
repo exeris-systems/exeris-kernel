@@ -53,6 +53,17 @@ public final class RequestSessionLifecycleEvent extends Event {
     public boolean hasSession;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public RequestSessionLifecycleEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Commits a request-session-lifecycle event, or does nothing if the event type is disabled.
      *
      * @param operation  lifecycle transition being reported; see {@link #operation}

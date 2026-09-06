@@ -40,4 +40,15 @@ public final class OutboxLoopFailureEvent extends Event {
      */
     @Label("State At Failure")
     public String stateAtFailure;
+/**
+ * Creates an unrecorded event.
+ *
+ * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+ * committed contributes nothing to a recording.
+ */
+public OutboxLoopFailureEvent() {
+    // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+    super();
+}
+
 }

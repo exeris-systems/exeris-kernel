@@ -54,6 +54,17 @@ public final class StreamAcceptedEvent extends Event {
     public String virtualThreadName;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StreamAcceptedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Factory: emits a stream accepted event.
      *
      * @param streamId          the SPI stream identifier

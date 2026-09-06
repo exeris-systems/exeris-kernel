@@ -82,6 +82,17 @@ public final class BootstrapJfrEvents {
         @Label("Error Message")
         @Description("Exception message if success=false, empty otherwise")
         public String errorMessage = "";
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SubsystemInitializedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -112,6 +123,17 @@ public final class BootstrapJfrEvents {
         @Label("Phase")
         @Description("Bootstrap phase: FOUNDATION, SERVICES, or RUNTIME")
         public String phase;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SubsystemStartedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -134,6 +156,17 @@ public final class BootstrapJfrEvents {
         /** Wall-clock duration of the {@code stop()} call, in milliseconds. */
         @Label("Duration (ms)")
         public long durationMs;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SubsystemStoppedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -163,6 +196,17 @@ public final class BootstrapJfrEvents {
         /** {@code SubsystemState} name the subsystem transitioned to, e.g. {@code "DEGRADED"}. */
         @Label("To State")
         public String toState;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SubsystemHealthTransitionEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -200,6 +244,17 @@ public final class BootstrapJfrEvents {
         /** String form of the bootstrap selector that chose this boot's subsystem set. */
         @Label("Selector")
         public String selector;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public KernelBootReadyEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -227,6 +282,17 @@ public final class BootstrapJfrEvents {
         @Label("Subsystem Count")
         @Description("Number of subsystems that were stopped")
         public int subsystemCount;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public KernelShutdownCompleteEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -264,6 +330,17 @@ public final class BootstrapJfrEvents {
         @Label("Source")
         @Description("Where config was loaded from: 'env', 'file', 'classpath'")
         public String source;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ConfigSettingsResolvedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -293,6 +370,17 @@ public final class BootstrapJfrEvents {
          */
         @Label("Error Code")
         public String errorCode = SubsystemCircularDependencyException.ERROR_CODE;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public CircularDependencyDetectedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================

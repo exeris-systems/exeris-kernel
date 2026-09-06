@@ -83,6 +83,19 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
      */
     private LeakTracker.LeakHandle leakHandle = LeakTracker.LeakHandle.NOOP;
 
+    /**
+     * Initialises a buffer that is already live.
+     *
+     * <p>The reference count starts at one, so a subclass is usable the moment it is constructed and
+     * the first {@link #close()} that drives the count to zero is the one that calls
+     * {@link #onRelease()}. The four close-action slots start empty and leak tracking starts at
+     * {@link LeakTracker.LeakHandle#NOOP} until an allocator enables it.
+     */
+    public AbstractLoanedBuffer() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Abstract contract
     // =========================================================================
@@ -112,6 +125,7 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     // =========================================================================
     // LoanedBuffer implementation
     // =========================================================================
+
 
     @Override
     public final MemorySegment segment() {

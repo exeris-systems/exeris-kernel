@@ -39,4 +39,15 @@ public final class ProjectionAppliedEvent extends Event {
     /** Low 64 bits of the applied event's aggregate stream UUID. */
     @Label("Stream ID Low")
     public long streamIdLow;
+/**
+ * Creates an unrecorded event.
+ *
+ * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+ * committed contributes nothing to a recording.
+ */
+public ProjectionAppliedEvent() {
+    // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+    super();
+}
+
 }

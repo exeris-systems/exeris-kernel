@@ -38,6 +38,17 @@ public final class KernelHealthMonitor implements HealthProbe {
     private final AtomicBoolean kernelShuttingDown = new AtomicBoolean(false);
     private final AtomicBoolean kernelFailed = new AtomicBoolean(false);
 
+    /**
+     * Creates a monitor with no subsystem registered and every kernel flag false.
+     *
+     * <p>A kernel that has not reported anything is therefore neither ready nor live, which is the
+     * answer a probe should get before bootstrap has run.
+     */
+    public KernelHealthMonitor() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     /** Resets monitor state for a fresh bootstrap lifecycle. */
     public void reset() {
         subsystems.clear();

@@ -46,6 +46,17 @@ public final class ImmutableReloadEvent {
         @Label("Key")
         @Description("Dot-path key of the sealed @Immutable field (never the value)")
         public String key;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ImmutableReloadRefusedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**

@@ -259,6 +259,17 @@ public final class OutboxOrchestrator implements AutoCloseable {
         private int              maxRetries        = 5;
 
         /**
+         * Creates a builder with every setting at its default.
+         *
+         * <p>Obtain one through {@link OutboxOrchestrator#builder()} rather than directly; the factory is the
+         * documented entry point and this constructor exists only because the class is public.
+         */
+        public Builder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+        }
+
+        /**
          * Sets the store polled for pending outbox events.
          *
          * @param store the event store to poll; must be non-null

@@ -71,6 +71,17 @@ public final class CitadelGuard {
     private volatile boolean sealedFlag;
 
     /**
+     * Creates a guard with an empty sentinel pool and the seal open.
+     *
+     * <p>The pool fills lazily, one pre-built exception per denial reason, so that a rejection on the
+     * hot path throws a cached instance rather than constructing one.
+     */
+    public CitadelGuard() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Pre-allocates a Sentinel {@link InsufficientPrivilegesException} for the given role.
      *
      * <p>Call this once per known role during bootstrap warm-up. Subsequent calls

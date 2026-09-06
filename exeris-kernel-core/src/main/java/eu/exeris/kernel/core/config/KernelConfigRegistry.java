@@ -99,6 +99,17 @@ public final class KernelConfigRegistry {
     // =========================================================================
 
     /**
+     * Creates an empty, unsealed registry with no callback registered for any key.
+     *
+     * <p>Registration is refused once the registry is sealed, which is what makes the immutable
+     * key set immutable in practice rather than by convention.
+     */
+    public KernelConfigRegistry() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Valhalla-ready data carrier for a single (file, key, callback) registration.
      *
      * @param file     config file name (relative to config dir), or {@code null} = any file

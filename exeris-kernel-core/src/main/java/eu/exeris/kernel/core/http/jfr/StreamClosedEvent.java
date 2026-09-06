@@ -44,6 +44,17 @@ public final class StreamClosedEvent extends Event {
     public long eventsEmitted;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StreamClosedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits a graceful stream-closed event.
      *
      * @param streamId      the transport stream identifier
