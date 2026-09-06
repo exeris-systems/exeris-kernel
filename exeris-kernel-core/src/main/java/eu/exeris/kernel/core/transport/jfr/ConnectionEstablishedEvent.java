@@ -71,6 +71,17 @@ public final class ConnectionEstablishedEvent extends Event {
     public long handlerDurationNanos;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ConnectionEstablishedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits a connection-established event.
      *
      * @param streamId              the SPI stream identifier

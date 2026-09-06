@@ -46,6 +46,17 @@ public final class StreamOpenedEvent extends Event {
     public boolean hasAuthDeadline;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StreamOpenedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits a stream-opened event.
      *
      * @param streamId        the transport stream identifier

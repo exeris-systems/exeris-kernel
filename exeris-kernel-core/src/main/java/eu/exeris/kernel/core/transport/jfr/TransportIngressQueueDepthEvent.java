@@ -59,6 +59,17 @@ public final class TransportIngressQueueDepthEvent extends Event {
     public String trend;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public TransportIngressQueueDepthEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits an ingress queue depth event.
      *
      * <p>Guards on {@link FlightRecorder#isInitialized()} to avoid allocation when JFR is off.

@@ -74,6 +74,17 @@ public final class ConnectionAcquireEvent extends Event {
     public long acquireLatencyNs;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ConnectionAcquireEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Commits a connection-acquire event with the measured acquire metadata.
      *
      * <p>Must be called <em>after</em> the pool checkout returns. The event is both

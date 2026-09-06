@@ -41,4 +41,15 @@ public final class OutboxStateTransitionEvent extends Event {
      */
     @Label("Polled Event Count")
     public int polledCount;
+/**
+ * Creates an unrecorded event.
+ *
+ * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+ * committed contributes nothing to a recording.
+ */
+public OutboxStateTransitionEvent() {
+    // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+    super();
+}
+
 }

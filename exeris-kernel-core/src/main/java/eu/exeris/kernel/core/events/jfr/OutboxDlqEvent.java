@@ -54,4 +54,15 @@ public final class OutboxDlqEvent extends Event {
      */
     @Label("Retry Count")
     public int retryCount;
+/**
+ * Creates an unrecorded event.
+ *
+ * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+ * committed contributes nothing to a recording.
+ */
+public OutboxDlqEvent() {
+    // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+    super();
+}
+
 }

@@ -101,6 +101,17 @@ public final class TlsStateMachine implements TlsSessionState {
     // Static helpers — build transition table
     // =========================================================================
 
+    /**
+     * Creates a machine in {@link TlsPhase#UNINITIALIZED}.
+     *
+     * <p>No handshake step has run and no transition is recorded; the first legal move out of this
+     * phase is the one the transition table permits.
+     */
+    public TlsStateMachine() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     private static int[] buildTransitionTable() {
         int[] table = new int[PHASE_COUNT];
         // UNINITIALIZED → HANDSHAKE_IN_PROGRESS | ERROR

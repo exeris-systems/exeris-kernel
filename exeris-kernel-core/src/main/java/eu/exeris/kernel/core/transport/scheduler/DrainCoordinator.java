@@ -100,6 +100,17 @@ public final class DrainCoordinator {
     private volatile int busyAtSeal;
 
     /**
+     * Creates a coordinator with no busy streams and draining not begun.
+     *
+     * <p>Until {@code seal} runs, every stream is admitted; the count recorded at the seal is what a
+     * graceful shutdown then waits for.
+     */
+    public DrainCoordinator() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Registers a starting stream as busy.
      *
      * <p>Called by {@link PaqsScheduler} for every admitted stream, before the handler runs.

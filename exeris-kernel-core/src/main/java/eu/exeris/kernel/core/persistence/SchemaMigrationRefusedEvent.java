@@ -57,6 +57,17 @@ public final class SchemaMigrationRefusedEvent extends Event {
     public String classpathChecksum;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SchemaMigrationRefusedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * The refusal's four fields, carried together.
      *
      * <p>Follows the {@code PersistenceAdmissionStageEvent.Payload} precedent rather than four bare

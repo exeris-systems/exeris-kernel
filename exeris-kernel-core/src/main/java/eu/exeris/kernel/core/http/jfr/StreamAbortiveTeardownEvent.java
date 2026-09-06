@@ -51,6 +51,17 @@ public final class StreamAbortiveTeardownEvent extends Event {
     public long eventsEmitted;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StreamAbortiveTeardownEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits an abortive-teardown event.
      *
      * @param streamId      the transport stream identifier

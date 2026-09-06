@@ -77,6 +77,17 @@ public final class TelemetryJfrEvents {
          */
         @Label("Message")
         public String message;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public KernelLifecycleJfrEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -120,6 +131,17 @@ public final class TelemetryJfrEvents {
          */
         @Label("Component")
         public String component;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public TransportBindJfrEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -165,6 +187,17 @@ public final class TelemetryJfrEvents {
          */
         @Label("Component")
         public String component;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public CarrierPinnedJfrEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -205,6 +238,17 @@ public final class TelemetryJfrEvents {
          */
         @Label("Component")
         public String component;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public MemoryExhaustionJfrEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -240,6 +284,17 @@ public final class TelemetryJfrEvents {
          */
         @Label("Value")
         public long value;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public KernelMetricJfrEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -266,5 +321,16 @@ public final class TelemetryJfrEvents {
          */
         @Label("Duration (ns)")
         public long nanoseconds;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public KernelLatencyJfrEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 }

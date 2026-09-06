@@ -53,6 +53,17 @@ public final class DynamicReloadEvent {
         @Label("Duration (µs)")
         @Description("Wall-clock time from reload callback entry to VarHandle.setRelease() in microseconds")
         public long durationUs;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public DynamicFieldReloadedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -87,6 +98,17 @@ public final class DynamicReloadEvent {
         @Label("Reason")
         @Description("Static failure description (no secret data)")
         public String reason;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public DynamicReloadFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================

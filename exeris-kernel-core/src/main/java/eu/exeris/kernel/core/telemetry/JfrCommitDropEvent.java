@@ -38,6 +38,17 @@ public final class JfrCommitDropEvent extends Event {
     private int capacity;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public JfrCommitDropEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Records a single drop. Constructed and committed inline here — the drop path is cold and
      * runs on the producer thread, but it is rare; the committer's own steady-state commits run
      * on the platform thread.

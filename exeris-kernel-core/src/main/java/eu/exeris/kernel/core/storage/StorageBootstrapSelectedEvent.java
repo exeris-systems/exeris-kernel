@@ -42,6 +42,17 @@ public final class StorageBootstrapSelectedEvent extends Event {
     /* default */ String location;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StorageBootstrapSelectedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Records the selection.
      *
      * @param providerClass implementation class name of the selected provider

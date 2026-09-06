@@ -482,6 +482,17 @@ public final class KernelBootstrap {
         private ClassLoader       classLoader;
 
         /**
+         * Creates a builder with every setting at its default.
+         *
+         * <p>Obtain one through {@link KernelBootstrap#builder()} rather than directly; the factory is the
+         * documented entry point and this constructor exists only because the class is public.
+         */
+        public Builder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+        }
+
+        /**
          * Sets the failure policy (default: {@link SubsystemOrchestrator.FailurePolicy#FAIL_FAST}).
          *
          * @param policy failure policy

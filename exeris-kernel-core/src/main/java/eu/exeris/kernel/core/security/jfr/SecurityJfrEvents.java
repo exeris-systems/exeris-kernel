@@ -77,6 +77,17 @@ public final class SecurityJfrEvents {
         @Label("Duration (µs)")
         @Description("Wall-clock time for authenticate() in microseconds")
         public long durationMicros;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public PrincipalBoundEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -130,6 +141,17 @@ public final class SecurityJfrEvents {
         @Description("One of SecurityDenialReason: NO_PROVIDER, TOKEN_MISSING, TOKEN_INVALID, "
                 + "PROVIDER_ERROR, PRE_AUTH_BRIDGE_ERROR")
         public String dropReason;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SecurityContextMissingEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -189,6 +211,17 @@ public final class SecurityJfrEvents {
         @Label("Principal ID Hash")
         @Description("Value-based hash of the principalId UUID — deterministic, safe for telemetry")
         public int principalIdHash;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public InsufficientPrivilegesEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -237,6 +270,17 @@ public final class SecurityJfrEvents {
         @Label("Has Tenant")
         @Description("Whether the derived context carries a tenant isolation key")
         public boolean hasTenant;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StorageContextDerivedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -288,6 +332,17 @@ public final class SecurityJfrEvents {
         @Label("Method Count")
         @Description("Number of @RequiresRole-annotated entry points compiled into the registry")
         public int methodCount;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public RoleRegistryLoadedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**

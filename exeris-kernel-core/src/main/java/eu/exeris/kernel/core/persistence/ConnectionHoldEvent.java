@@ -102,6 +102,17 @@ public final class ConnectionHoldEvent extends Event {
     public boolean discarded;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ConnectionHoldEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Commits a connection-hold event. Must be called when the connection goes back to the pool.
      *
      * <p>Both allocation and commit happen here, so nothing is held across the hold itself —

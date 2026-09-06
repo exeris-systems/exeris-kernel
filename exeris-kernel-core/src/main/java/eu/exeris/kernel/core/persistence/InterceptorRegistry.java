@@ -50,6 +50,17 @@ public final class InterceptorRegistry {
     private List<ConnectionInterceptor> sealed;
 
     /**
+     * Creates an empty, unsealed registry.
+     *
+     * <p>Interceptors run in the order they are added. The sealed view is built on the first read, and
+     * an add after that point is refused.
+     */
+    public InterceptorRegistry() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Registers a new interceptor at the end of the chain.
      *
      * @param interceptor interceptor to add; must not be {@code null}
