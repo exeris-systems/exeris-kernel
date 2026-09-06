@@ -38,6 +38,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractHttpHandlerTck {
 
     /**
+     * Creates the contract; subclasses supply the exchange under test via
+     * {@link #createRecordingExchange(HttpRequest)}.
+     */
+    public AbstractHttpHandlerTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates an {@link HttpExchange} wired to a simple recorder so tests can verify
      * which response was written. The exchange must start in an un-responded state.
      *

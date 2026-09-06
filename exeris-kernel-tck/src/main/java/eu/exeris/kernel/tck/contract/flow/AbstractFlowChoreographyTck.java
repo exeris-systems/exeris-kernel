@@ -86,6 +86,18 @@ public abstract class AbstractFlowChoreographyTck {
     private EventBus bus;
     private final AtomicInteger ordinalCounter = new AtomicInteger(1);
 
+    /**
+     * Creates the contract; subclasses supply the flow and event engines via
+     * {@link #createFlowEngine()} and {@link #createEventEngine()}.
+     *
+     * <p>The {@code engine}, {@code eventEngine} and {@code bus} fields start unset — {@link
+     * #setUp()} populates them before each test; {@code ordinalCounter} starts at one.
+     */
+    public AbstractFlowChoreographyTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         engine = createFlowEngine();

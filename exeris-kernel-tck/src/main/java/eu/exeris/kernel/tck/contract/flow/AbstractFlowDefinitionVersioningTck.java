@@ -82,6 +82,18 @@ public abstract class AbstractFlowDefinitionVersioningTck {
 
     private FlowEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engine and its backing store via
+     * {@link #createEngine(FlowSnapshotStore)} and {@link #snapshotStore()}.
+     *
+     * <p>The {@code engine} field starts unset — {@link #setUpEngine()} populates and starts it
+     * before each test.
+     */
+    public AbstractFlowDefinitionVersioningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine(snapshotStore());
@@ -259,6 +271,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @DisplayName("Version through the builder")
     class VersionThroughTheBuilder {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise passing a version through the fluent definition
+         * builder.
+         */
+        VersionThroughTheBuilder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("a version set on the builder reaches the definition and the compiled plan")
         void theBuilderCarriesTheVersionEndToEnd() {
@@ -336,6 +358,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @DisplayName("Coexistence")
     class Coexistence {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise version coexistence — a newly registered version
+         * does not evict in-flight instances of the old one.
+         */
+        Coexistence() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("registering a new version does not evict the one in-flight sagas parked under")
@@ -382,6 +414,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("Fail-closed refusals")
     class Refusals {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the fail-closed refusals a corrupted or
+         * unversioned snapshot must trigger.
+         */
+        Refusals() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -545,6 +587,15 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("In-flight migration")
     class Migration {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise in-flight migration across versions.
+         */
+        Migration() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /** Identity transform: the versions differ but the saga sits at the same named step. */
         private FlowMigrationState sameStep(FlowMigrationState parked) {
@@ -971,6 +1022,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @DisplayName("Optimistic lock: a migrated saga checkpoints against the row the migration wrote")
     class OptimisticLock {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise optimistic-lock checkpointing against a migrated
+         * row.
+         */
+        OptimisticLock() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("the checkpoint after a migration is not rejected as a conflict")
@@ -1031,6 +1092,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("Compensation-stack step identity (ADR-064 A5)")
     class StackIdentity {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise compensation-stack step identity checks
+         * (ADR-064 A5).
+         */
+        StackIdentity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -1236,6 +1307,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("SPI stability (spi.flow is stable since 0.5.0)")
     class StabilityCompatibility {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise SPI stability of the 0.10.0 canonical
+         * constructor.
+         */
+        StabilityCompatibility() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /**
          * The 0.10.0 canonical constructor still exists, and still fails closed.

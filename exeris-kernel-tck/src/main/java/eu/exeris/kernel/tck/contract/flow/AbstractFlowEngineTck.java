@@ -78,6 +78,16 @@ public abstract class AbstractFlowEngineTck {
 
     private FlowEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()}.
+     *
+     * <p>The {@code engine} field starts unset — {@link #setUp()} populates it before each test.
+     */
+    public AbstractFlowEngineTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         engine = createEngine();
@@ -95,6 +105,15 @@ public abstract class AbstractFlowEngineTck {
     @Nested
     @DisplayName("FlowEngine lifecycle contract")
     class Lifecycle {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the start/close lifecycle contract.
+         */
+        Lifecycle() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("start() then close() completes without exception")
@@ -121,6 +140,16 @@ public abstract class AbstractFlowEngineTck {
     @Nested
     @DisplayName("Component accessors — non-null after start()")
     class ComponentAccessors {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the non-null component accessors after
+         * {@code start()}.
+         */
+        ComponentAccessors() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @BeforeEach
         void startEngine() {
@@ -155,6 +184,15 @@ public abstract class AbstractFlowEngineTck {
     class PlanFactory {
 
         private FlowExecutionPlanFactory factory;
+
+        /**
+         * Creates a fixture whose {@code factory} field starts unset; {@link
+         * #startEngineAndGetFactory()} starts the engine and populates it before each test.
+         */
+        PlanFactory() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @BeforeEach
         void startEngineAndGetFactory() {
@@ -257,6 +295,15 @@ public abstract class AbstractFlowEngineTck {
 
         private static final String SHUTDOWN_EVENT = "eu.exeris.kernel.flow.Shutdown";
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the {@code Shutdown} JFR event on close().
+         */
+        JfrShutdownContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
         @DisplayName("close() emits the Shutdown JFR event with engine name + duration + counters")
@@ -328,6 +375,15 @@ public abstract class AbstractFlowEngineTck {
     @Nested
     @DisplayName("FlowEngine restart-aware semantics")
     class RestartAwareSemantics {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise cross-restart semantics.
+         */
+        RestartAwareSemantics() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @BeforeEach
         void startEngine() {
@@ -432,6 +488,15 @@ public abstract class AbstractFlowEngineTck {
 
         private static final String TIMEOUT_EVENT = "eu.exeris.kernel.flow.Timeout";
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the saga timeout contract.
+         */
+        SagaTimeoutContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @BeforeEach
         void startEngine() {
             engine.start();
@@ -513,6 +578,15 @@ public abstract class AbstractFlowEngineTck {
     class OutcomeTransitions {
 
         private static final String STEP_FAILED_EVENT = "eu.exeris.kernel.flow.StepFailed";
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise outcome-transition correctness.
+         */
+        OutcomeTransitions() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @BeforeEach
         void startEngine() {

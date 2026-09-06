@@ -91,6 +91,15 @@ public abstract class AbstractEventStreamReaderTck {
 
     private EventStreamReader reader;
 
+    /**
+     * Creates the contract; subclasses supply the {@link EventStreamReader} under test via
+     * {@link #createReader()} and populate it via {@link #seedStream(StreamId, int)}.
+     */
+    public AbstractEventStreamReaderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         reader = createReader();

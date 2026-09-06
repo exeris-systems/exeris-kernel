@@ -37,6 +37,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractHttpProviderLoopbackTck {
 
     /**
+     * Creates the contract; subclasses supply the provider under test via {@link #createProvider()}.
+     */
+    public AbstractHttpProviderLoopbackTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link HttpProvider} under test.
      *
      * @return the provider under test; never {@code null}

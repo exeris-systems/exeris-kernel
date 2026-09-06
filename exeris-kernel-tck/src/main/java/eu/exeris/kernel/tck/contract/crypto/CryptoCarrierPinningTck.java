@@ -80,6 +80,15 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
     /** Monotonic slot counter — each executing VT claims the next available index. */
     private final AtomicInteger vtIndex = new AtomicInteger(0);
 
+    /**
+     * Creates the contract; subclasses supply the {@link KernelCryptoProvider} and
+     * {@link MemoryAllocator} fixtures via {@link #createProvider()} and {@link #createAllocator()}.
+     */
+    public CryptoCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // AbstractSubsystemCarrierPinningTck bindings
     // =========================================================================

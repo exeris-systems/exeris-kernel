@@ -42,6 +42,15 @@ public abstract class EventBusCarrierPinningTck extends AbstractSubsystemCarrier
     private EventEngine     engine;
     private EventDescriptor hotDescriptor;
 
+    /**
+     * Creates the contract; subclasses supply the {@link EventEngine} the carrier-pinning probe
+     * drives via {@link #createEngine()}.
+     */
+    public EventBusCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override protected String subsystemName()      { return "EventBus"; }
     @Override protected String hotPathDescription() { return "EventBus.publish(pre-built descriptor, EventPayload.empty())"; }
 

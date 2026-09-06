@@ -78,6 +78,15 @@ public abstract class AbstractSubsystemBootThroughputBenchmark extends AbstractE
     private ConfigProvider    config;
 
     /**
+     * Creates the contract; subclasses supply the provider under test via
+     * {@link #createProvider()} and its config via {@link #createConfigStub()}.
+     */
+    public AbstractSubsystemBootThroughputBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Trial-level setup: creates the subsystem provider and its config stub.
      */
     @Setup(Level.Trial)

@@ -127,6 +127,18 @@ public abstract class AbstractSagaRecoveryTck {
 
     private FlowEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engines and shared store via
+     * {@link #createEngine()}, {@link #rebuildEngine()} and {@link #snapshotStore()}.
+     *
+     * <p>The {@code engine} field starts unset — {@link #setUp()} creates and starts it before
+     * each test.
+     */
+    public AbstractSagaRecoveryTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         engine = createEngine();
@@ -176,6 +188,15 @@ public abstract class AbstractSagaRecoveryTck {
     @Nested
     @DisplayName("Mid-Saga Kill — engine restarts from FlowSnapshotStore checkpoint")
     class MidSagaKillTest {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise mid-saga engine restart from checkpoint.
+         */
+        MidSagaKillTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -243,6 +264,15 @@ public abstract class AbstractSagaRecoveryTck {
     @Nested
     @DisplayName("Definition changed under a parked saga — fail-closed SCHEMA_MISMATCH")
     class SchemaMismatchOnResume {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the fail-closed SCHEMA_MISMATCH refusal.
+         */
+        SchemaMismatchOnResume() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -470,6 +500,15 @@ public abstract class AbstractSagaRecoveryTck {
         private static final String DEF_NAME = "restart-under-load-saga";
         private static final String WORKER_THREAD_PREFIX = "exeris-flow-";
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise restart-under-load recovery.
+         */
+        RestartUnderLoad() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         // 60s, not the suite's usual 30s: this method's own await budgets sum to 35s (10 + 5 + 15 +
         // 5), so a 30s ceiling can kill it mid-await and report an anonymous timeout instead of the
         // assertion that would name what actually went wrong.
@@ -638,6 +677,15 @@ public abstract class AbstractSagaRecoveryTck {
     @DisplayName("Saga Idempotency — re-scheduling a completed flow has no business effect")
     class SagaIdempotencyTest {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise idempotent re-scheduling of a completed flow.
+         */
+        SagaIdempotencyTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("Re-scheduling a COMPLETED context does not re-execute the business step")
@@ -739,6 +787,15 @@ public abstract class AbstractSagaRecoveryTck {
     @Nested
     @DisplayName("Saga Compensation — FAIL drives engine through COMPENSATING to FAILED_ROLLEDBACK")
     class SagaCompensationTest {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise reverse-order compensation on a failed step.
+         */
+        SagaCompensationTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -851,6 +908,15 @@ public abstract class AbstractSagaRecoveryTck {
     class CrossVersionUpgrade {
 
         private static final String DEFINITION = "upgrade-saga";
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise cross-version upgrade recovery.
+         */
+        CrossVersionUpgrade() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)

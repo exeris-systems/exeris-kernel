@@ -37,6 +37,16 @@ public abstract class AbstractIdempotencyGuardTck {
     private static final long MOST  = 0xABCDEF0123456789L;
     private static final long LEAST = 0x9876543210FEDCBAL;
 
+    /**
+     * Creates the contract; subclasses supply the guard via {@link #createGuard()}.
+     *
+     * <p>The {@code guard} field starts unset — {@link #setUp()} populates it before each test.
+     */
+    public AbstractIdempotencyGuardTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         guard = createGuard();

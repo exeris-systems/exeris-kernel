@@ -39,6 +39,14 @@ public abstract class GraphCarrierPinningTck extends AbstractSubsystemCarrierPin
     private UUID        src;
     private UUID        dst;
 
+    /**
+     * Creates the contract; subclasses supply the bootstrapped {@link GraphEngine} via {@link #createEngine()}.
+     */
+    public GraphCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override protected String subsystemName()      { return "Graph"; }
     @Override protected String hotPathDescription() { return "openSession() → findShortestPath(src, tgt) → close()"; }
 

@@ -66,6 +66,18 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     private FlowSnapshotStore store;
 
     /**
+     * Creates the contract; subclasses supply the durable binding via {@link #createStore()} and
+     * {@link #reopenStore(FlowSnapshotStore)}.
+     *
+     * <p>The {@code store} field starts unset — {@link #setUpStore()} populates it from
+     * {@link #createStore()} before each test.
+     */
+    public AbstractDistributedFlowSnapshotStoreTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns a fresh, empty store.
      *
      * @return a newly created {@link FlowSnapshotStore} holding no snapshots
@@ -142,6 +154,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @DisplayName("save → load round-trip")
     class SaveLoadRoundTrip {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the save → load round trip.
+         */
+        SaveLoadRoundTrip() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("First save (no row) inserts; load returns equivalent snapshot with bumped schemaVersion")
         void firstSaveInsertsRow() {
@@ -217,6 +238,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @DisplayName("delete + exists semantics")
     class DeleteAndExists {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise {@code delete} and {@code exists} semantics.
+         */
+        DeleteAndExists() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("delete removes the row; subsequent load is empty and exists is false")
         void deleteRemovesEntry() {
@@ -243,6 +273,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @Nested
     @DisplayName("listParked enumeration")
     class ListParkedContract {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise {@code listParked} enumeration.
+         */
+        ListParkedContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("listParked returns only PARKED snapshots; running/completed are excluded")
@@ -276,6 +315,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @DisplayName("Cross-restart recovery")
     class CrossRestartRecovery {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise cross-restart recovery.
+         */
+        CrossRestartRecovery() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("Snapshot saved through store-A is visible through reopened store-B")
         void persistedSnapshotSurvivesStoreReopen() {
@@ -298,6 +346,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @Nested
     @DisplayName("Concurrent save under contention")
     class ConcurrentSaveContention {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise concurrent saves under contention.
+         */
+        ConcurrentSaveContention() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("UPDATE race: two writers, same loaded version — one wins, the other observes OCC conflict")
@@ -378,6 +435,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
             final AtomicInteger successes = new AtomicInteger();
             final AtomicInteger conflicts = new AtomicInteger();
             final AtomicReference<Throwable> unexpected = new AtomicReference<>();
+
+            /**
+             * Creates an outcome with zero successes, zero conflicts, and no unexpected error
+             * recorded yet.
+             */
+            private RaceOutcome() {
+                // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+                super();
+            }
         }
     }
 }

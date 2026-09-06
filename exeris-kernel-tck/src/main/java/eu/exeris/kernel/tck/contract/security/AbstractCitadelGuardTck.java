@@ -34,6 +34,17 @@ import static org.junit.jupiter.api.Assertions.fail;
 public abstract class AbstractCitadelGuardTck<G> {
 
     /**
+     * Creates the contract; subclasses supply the guard binding via {@link #createGuard()}.
+     *
+     * <p>The {@code guard} field starts unset — {@link #setUpGuard()} populates it from
+     * {@link #createGuard()} before each test.
+     */
+    public AbstractCitadelGuardTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates a fresh guard instance to exercise in one test.
      *
      * @return a new, unsealed guard

@@ -71,6 +71,15 @@ public abstract class AbstractLoanedBufferTck {
 
     private MemoryAllocator allocator;
 
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryAllocator} under test via
+     * {@link #createAllocator()}.
+     */
+    public AbstractLoanedBufferTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpAllocator() {
         allocator = createAllocator();
@@ -89,6 +98,14 @@ public abstract class AbstractLoanedBufferTck {
     @DisplayName("Lifecycle & Reference Counting")
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class LifecycleAndRefCounting {
+
+        /**
+         * Groups the assertions for lifecycle and reference counting.
+         */
+        LifecycleAndRefCounting() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Order(1)
@@ -155,6 +172,14 @@ public abstract class AbstractLoanedBufferTck {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class SizeManagement {
 
+        /**
+         * Groups the assertions for size management.
+         */
+        SizeManagement() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Order(1)
         @DisplayName("capacity() >= requested size from AllocationHint.MICRO")
@@ -210,6 +235,14 @@ public abstract class AbstractLoanedBufferTck {
     @DisplayName("Zero-Copy Fragmentation — slice()")
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class SliceContract {
+
+        /**
+         * Groups the assertions for zero-copy fragmentation via {@code slice()}.
+         */
+        SliceContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Order(1)
@@ -293,6 +326,14 @@ public abstract class AbstractLoanedBufferTck {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class ViewContract {
 
+        /**
+         * Groups the assertions for zero-copy fragmentation via {@code view()}.
+         */
+        ViewContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Order(1)
         @DisplayName("view() returns a read-only view covering size() bytes")
@@ -332,6 +373,14 @@ public abstract class AbstractLoanedBufferTck {
     @DisplayName("Non-Owning Peek View — peek()")
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class PeekContract {
+
+        /**
+         * Groups the assertions for the non-owning peek view returned by {@code peek()}.
+         */
+        PeekContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Order(1)
@@ -382,6 +431,14 @@ public abstract class AbstractLoanedBufferTck {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class CloseActions {
 
+        /**
+         * Groups the assertions for close actions.
+         */
+        CloseActions() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Order(1)
         @DisplayName("addCloseAction() callback is invoked exactly once when refCount reaches 0")
@@ -428,6 +485,14 @@ public abstract class AbstractLoanedBufferTck {
     @DisplayName("Liveness checks")
     class LivenessChecks {
 
+        /**
+         * Groups the assertions for liveness checks.
+         */
+        LivenessChecks() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Order(1)
         @DisplayName("isAlive() returns true while refCount > 0, false after full release")
@@ -450,6 +515,14 @@ public abstract class AbstractLoanedBufferTck {
     @DisplayName("JMM Visibility — close-action happens-before")
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class JmmVisibility {
+
+        /**
+         * Groups the assertions for the close-action happens-before guarantee.
+         */
+        JmmVisibility() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Order(1)
@@ -527,6 +600,14 @@ public abstract class AbstractLoanedBufferTck {
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class PeekViewMisuseContract {
 
+        /**
+         * Groups the assertions for peek-view misuse.
+         */
+        PeekViewMisuseContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Order(1)
         @DisplayName("retain() on peek view does not change parent refCount")
@@ -574,6 +655,14 @@ public abstract class AbstractLoanedBufferTck {
     @DisplayName("Slice Ownership Isolation")
     @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
     class SliceOwnershipIsolation {
+
+        /**
+         * Groups the assertions for slice ownership isolation.
+         */
+        SliceOwnershipIsolation() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Order(1)

@@ -106,6 +106,19 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
      */
     private final AtomicInteger vtIndex = new AtomicInteger(0);
 
+    /**
+     * Creates the contract; subclasses supply the engine, allocator and writable stream via
+     * {@link #createEngine()}, {@link #createAllocator()} and {@link #createWritableStream()}.
+     *
+     * <p>{@code engine}, {@code allocator}, {@code streams} and {@code buffers} start unset and
+     * {@code vtSlotCount} starts at zero — {@link #bootstrapSubsystem()} populates all five
+     * before the hot-path loop runs.
+     */
+    public TransportCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // AbstractSubsystemCarrierPinningTck bindings
     // =========================================================================

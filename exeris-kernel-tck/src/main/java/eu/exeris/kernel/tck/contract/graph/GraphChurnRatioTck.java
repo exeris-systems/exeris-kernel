@@ -182,6 +182,15 @@ public abstract class GraphChurnRatioTck {
     private GraphEngine    engine;
     private GraphTraversal hotTraversal;
 
+    /**
+     * Creates the contract; subclasses supply the {@link GraphEngine} under test via {@link #createEngine()},
+     * the traversal start node via {@link #startNodeId()}, and the seeded fan-out edge via {@link #testEdge()}.
+     */
+    public GraphChurnRatioTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         engine = createEngine();

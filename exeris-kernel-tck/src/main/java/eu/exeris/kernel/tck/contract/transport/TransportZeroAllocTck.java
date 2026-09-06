@@ -51,6 +51,18 @@ public abstract class TransportZeroAllocTck extends AbstractSubsystemZeroAllocTc
     private MemoryAllocator allocator;
     private TransportStream stream;
 
+    /**
+     * Creates the contract; subclasses supply the engine, allocator and writable stream via
+     * {@link #createEngine()}, {@link #createAllocator()} and {@link #createWritableStream()}.
+     *
+     * <p>The {@code engine}, {@code allocator} and {@code stream} fields start unset —
+     * {@link #bootstrapSubsystem()} populates all three before the hot-path loop runs.
+     */
+    public TransportZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     protected String subsystemName() {
         return "Transport";

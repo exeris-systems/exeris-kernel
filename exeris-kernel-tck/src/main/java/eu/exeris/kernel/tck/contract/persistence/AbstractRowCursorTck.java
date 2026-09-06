@@ -94,6 +94,15 @@ public abstract class AbstractRowCursorTck {
 
     private PersistenceEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * fixture queries and expected values declared above.
+     */
+    public AbstractRowCursorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -111,6 +120,14 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("Flyweight contract")
     class FlyweightContract {
+
+        /**
+         * Groups the same-instance-across-rows flyweight assertion.
+         */
+        FlyweightContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("row() returns the same RowCursor instance across next() calls")
@@ -139,6 +156,15 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("Primitive access contract")
     class PrimitiveAccess {
+
+        /**
+         * Groups the {@code getInt}/{@code getLong}/{@code getString}/{@code columnCount}
+         * value assertions.
+         */
+        PrimitiveAccess() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("getInt() returns correct value")
@@ -189,6 +215,14 @@ public abstract class AbstractRowCursorTck {
     @DisplayName("Resource release contract")
     class ResourceRelease {
 
+        /**
+         * Groups the {@code QueryResult.close()} no-leak assertion.
+         */
+        ResourceRelease() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("QueryResult.close() releases resources — no leak")
         void closeReleasesResources() {
@@ -209,6 +243,15 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("SQL NULL contract")
     class SqlNullContract {
+
+        /**
+         * Groups the SQL-NULL {@code isNull()}/sentinel/throwing assertions and their
+         * non-NULL counterparts.
+         */
+        SqlNullContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("isNull() is true for every column of an all-NULL row")
@@ -300,6 +343,14 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("Column-index contract")
     class ColumnIndexContract {
+
+        /**
+         * Groups the out-of-range column-index rejection assertions across every accessor.
+         */
+        ColumnIndexContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("every accessor rejects a negative index")

@@ -112,6 +112,15 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
     protected MemoryAllocator allocator;
 
     /**
+     * Creates the contract; subclasses supply the transport provider under test via
+     * {@link #getProvider()} and its allocator via {@link #getAllocator()}.
+     */
+    public AbstractTransportThroughputBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Implementations must return the {@link TransportProvider} under test.
      *
      * @return non-null provider (Community or Enterprise)

@@ -60,6 +60,14 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
     /** {@code OWNER_A} declaring no shared scope — the tenant-private default. */
     protected static final StorageContext CTX_A_PRIVATE = ImmutableStorageContext.shared(OWNER_A);
 
+    /**
+     * Creates the contract; subclasses supply the store via {@link #seed} and {@link #readVisible}.
+     */
+    public AbstractSharedScopeAccessMatrixTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods — binding supplies the store
     // =========================================================================

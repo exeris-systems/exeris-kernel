@@ -80,6 +80,15 @@ public abstract class AbstractSubsystemCarrierPinningTck {
     private static final int STEADY_VT_COUNT = 1_000;
 
     /**
+     * Creates the contract; subclasses supply the subsystem binding via
+     * {@link #bootstrapSubsystem()}, {@link #runSingleIteration()} and {@link #tearDownSubsystem()}.
+     */
+    public AbstractSubsystemCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Exposes the warm-up virtual-thread count to subclasses so that per-VT
      * buffers/slots can be sized without duplicating the constant value.
      * Using this accessor prevents {@link ArrayIndexOutOfBoundsException} if the

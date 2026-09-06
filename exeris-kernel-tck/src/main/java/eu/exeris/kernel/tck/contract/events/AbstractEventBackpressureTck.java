@@ -107,6 +107,15 @@ public abstract class AbstractEventBackpressureTck {
 
     private EventEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the {@link EventEngine} under test via
+     * {@link #createEngine(EventEngineConfig)}.
+     */
+    public AbstractEventBackpressureTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         // The engine is intentionally NOT started in this suite: a running EventLoop would

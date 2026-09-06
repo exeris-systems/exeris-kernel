@@ -104,6 +104,14 @@ public abstract class AbstractMemoryLeakDetectionTck {
 
     private MemoryAllocator allocator;
 
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryProvider} under test via {@link #createProvider()}.
+     */
+    public AbstractMemoryLeakDetectionTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpParanoidAllocator() {
         MemoryProviderConfig config = MemoryProviderConfig.defaults()

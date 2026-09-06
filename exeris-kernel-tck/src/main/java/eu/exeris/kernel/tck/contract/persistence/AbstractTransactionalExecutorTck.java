@@ -110,6 +110,16 @@ public abstract class AbstractTransactionalExecutorTck {
     private PersistenceEngine engine;
     private TransactionalExecutor executor;
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * no-retry/retry executors via {@link #createExecutorNoRetry(PersistenceEngine)} and
+     * {@link #createExecutorWithRetry(PersistenceEngine, int, long)}.
+     */
+    public AbstractTransactionalExecutorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         engine = createEngine();
@@ -128,6 +138,14 @@ public abstract class AbstractTransactionalExecutorTck {
     @Nested
     @DisplayName("Query (read-only) contract")
     class QueryContract {
+
+        /**
+         * Groups the read-only {@code query()} result and connection-release assertions.
+         */
+        QueryContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("query() returns a non-null result")
@@ -183,6 +201,14 @@ public abstract class AbstractTransactionalExecutorTck {
     @DisplayName("Read-session contract")
     class ReadSessionContract {
 
+        /**
+         * Groups the {@code inReadSession()} connection-reuse assertion.
+         */
+        ReadSessionContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("inReadSession() reuses the same connection within scope")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -206,6 +232,14 @@ public abstract class AbstractTransactionalExecutorTck {
     @Nested
     @DisplayName("Managed transaction contract")
     class ManagedTransactionContract {
+
+        /**
+         * Groups the {@code executeManaged()} commit, rollback and single-invocation assertions.
+         */
+        ManagedTransactionContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("executeManaged() commits on success")
@@ -272,6 +306,15 @@ public abstract class AbstractTransactionalExecutorTck {
     @Nested
     @DisplayName("Retry behaviour contract")
     class RetryBehaviourContract {
+
+        /**
+         * Groups the attempt-count assertions for no-retry and retry-configured executors,
+         * including the non-retryable-SQLSTATE and eventual-success cases.
+         */
+        RetryBehaviourContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /**
          * Counts the work-lambda invocations directly, rather than only checking that the
@@ -464,6 +507,14 @@ public abstract class AbstractTransactionalExecutorTck {
     @DisplayName("VT isolation contract — no ThreadLocal bleed")
     // CHECKSTYLE:ON
     class VtIsolationContract {
+
+        /**
+         * Groups the concurrent-query no-connection-sharing assertion.
+         */
+        VtIsolationContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("concurrent queries complete without connection sharing")

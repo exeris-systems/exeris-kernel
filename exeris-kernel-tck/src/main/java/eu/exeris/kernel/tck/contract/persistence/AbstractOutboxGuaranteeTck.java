@@ -138,6 +138,15 @@ public abstract class AbstractOutboxGuaranteeTck {
 
     private PersistenceEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the first-boot engine via {@link #createEngine()}
+     * plus the broker and rebuild bindings declared above.
+     */
+    public AbstractOutboxGuaranteeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -181,6 +190,14 @@ public abstract class AbstractOutboxGuaranteeTck {
     @Nested
     @DisplayName("Pull-The-Plug Broker — events survive broker outage")
     class PullThePlugBrokerTest {
+
+        /**
+         * Groups the broker-outage accumulation and post-recovery delivery assertions.
+         */
+        PullThePlugBrokerTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 120, unit = TimeUnit.SECONDS)
@@ -248,6 +265,14 @@ public abstract class AbstractOutboxGuaranteeTck {
     @DisplayName("EventStore Durability — committed events survive engine rebuild")
     class EventStoreDurabilityTest {
 
+        /**
+         * Groups the engine-rebuild durability assertion for committed events.
+         */
+        EventStoreDurabilityTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("Committed events are visible in a fresh engine instance (simulates JVM restart)")
@@ -304,6 +329,15 @@ public abstract class AbstractOutboxGuaranteeTck {
     @Nested
     @DisplayName("Outbox Replay Idempotency — markPublished() prevents duplicate delivery")
     class OutboxReplayIdempotencyTest {
+
+        /**
+         * Groups the {@code markPublished()} replay-idempotency assertions, including under
+         * concurrent calls.
+         */
+        OutboxReplayIdempotencyTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)

@@ -49,6 +49,15 @@ public abstract class AbstractRoleMaskPopulationTck {
     protected static final int BIT_ADMIN = 1;
 
     /**
+     * Creates the contract; subclasses supply the interception binding via
+     * {@link #runIntercept(RoleRegistry, PrincipalContext, Runnable)}.
+     */
+    public AbstractRoleMaskPopulationTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Builds a {@code SecurityInterceptor} over a stub success provider that
      * authenticates to {@code principal} with the supplied {@code registry},
      * runs {@code intercept(...)}, and invokes {@code handler} inside the

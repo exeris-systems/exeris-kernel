@@ -47,6 +47,16 @@ public abstract class AbstractDisclosureModeTck {
     private static final long AVAILABLE_BYTES = 0L;
 
     /**
+     * Creates the contract; subclasses may override {@link #fixture()} to substitute a
+     * different SPI exception, though the profile-driven disclosure contract itself needs
+     * no binding.
+     */
+    public AbstractDisclosureModeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns a fixture exception with non-empty {@code rawArgs}. Concrete bindings may
      * override to substitute an SPI exception they actually throw; the default uses
      * {@link MemoryExhaustedException} which is part of the SPI baseline.

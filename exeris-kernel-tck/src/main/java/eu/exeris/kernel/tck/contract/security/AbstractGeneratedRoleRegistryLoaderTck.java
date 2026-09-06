@@ -44,6 +44,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractGeneratedRoleRegistryLoaderTck {
 
     /**
+     * Creates the contract; subclasses supply the absent-registry binding via {@link #loadAbsent()}
+     * and the present-registry binding via {@link #loadPresent()}.
+     */
+    public AbstractGeneratedRoleRegistryLoaderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns the registry the loader yields when <em>no</em> generated
      * {@code RoleCheckRegistry} is resolvable (the common case). Must be the
      * fail-closed empty registry.

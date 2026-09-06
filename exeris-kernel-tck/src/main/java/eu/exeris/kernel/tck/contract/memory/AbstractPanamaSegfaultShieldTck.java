@@ -55,6 +55,15 @@ public abstract class AbstractPanamaSegfaultShieldTck {
 
     private MemoryAllocator allocator;
 
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryAllocator} under test via
+     * {@link #createAllocator()}.
+     */
+    public AbstractPanamaSegfaultShieldTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         allocator = createAllocator();

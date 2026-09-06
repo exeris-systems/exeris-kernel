@@ -115,6 +115,15 @@ public abstract class PersistenceIsolationLeakTck {
 
     private PersistenceEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * sentinel write/read bindings via {@link #writeSentinelRow} and {@link #readSentinelRows}.
+     */
+    public PersistenceIsolationLeakTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         engine = createEngine();

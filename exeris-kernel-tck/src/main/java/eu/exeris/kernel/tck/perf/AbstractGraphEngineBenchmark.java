@@ -104,6 +104,14 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
     private GraphTraversal hotTraversal; // pre-built, Valhalla-ready record — reused every iteration
 
     /**
+     * Creates the contract; subclasses supply the engine under test via {@link #createEngine()}.
+     */
+    public AbstractGraphEngineBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Trial-level setup: creates the engine and pre-builds the single-hop
      * {@link GraphTraversal} record reused by every measurement iteration.
      */

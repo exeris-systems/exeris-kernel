@@ -37,6 +37,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractHttpExchangeTck {
 
     /**
+     * Creates the contract; subclasses supply the exchange under test via
+     * {@link #createExchange(HttpRequest)}.
+     */
+    public AbstractHttpExchangeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates an {@link HttpExchange} pre-loaded with the given request.
      *
      * @param request the request to associate with the exchange

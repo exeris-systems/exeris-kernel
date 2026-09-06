@@ -38,6 +38,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractHttpServerEngineTck {
 
     /**
+     * Creates the contract; subclasses supply the engine under test via {@link #createEngine(HttpConfig)}.
+     */
+    public AbstractHttpServerEngineTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates an {@link HttpServerEngine} under test bound to the given config.
      *
      * @param config server configuration

@@ -71,6 +71,15 @@ public abstract class AbstractGraphSyncServiceTck {
 
     private GraphEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the {@link GraphEngine} under test via {@link #createEngine()}
+     * and wire failure injection through {@link #setSessionFailMode(boolean)}.
+     */
+    public AbstractGraphSyncServiceTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -89,6 +98,14 @@ public abstract class AbstractGraphSyncServiceTck {
     @Nested
     @DisplayName("Happy path — session-level CRUD succeeds")
     class HappyPath {
+
+        /**
+         * Groups the assertions for the happy path, where session-level CRUD succeeds.
+         */
+        HappyPath() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("openSession().upsertNode() completes without exception")
@@ -156,6 +173,14 @@ public abstract class AbstractGraphSyncServiceTck {
     @Nested
     @DisplayName("Failure path — session throws, rollback expected")
     class FailurePath {
+
+        /**
+         * Groups the assertions for the failure path, where the session throws and rollback is expected.
+         */
+        FailurePath() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("session failure during node upsert \u2192 rollback is called")

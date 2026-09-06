@@ -60,6 +60,18 @@ public abstract class FlowCarrierPinningTck extends AbstractSubsystemCarrierPinn
     /** Monotonic slot counter — each executing VT claims the next available index. */
     private final AtomicInteger vtIndex = new AtomicInteger(0);
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()}.
+     *
+     * <p>The {@code engine}, {@code plan} and {@code contexts} fields start unset and
+     * {@code vtSlotCount} starts at zero — {@link #bootstrapSubsystem()} populates all four
+     * before the hot-path loop runs.
+     */
+    public FlowCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override protected String subsystemName()      { return "FlowEngine"; }
     @Override protected String hotPathDescription() { return "scheduler.schedule(plan, ctx)"; }
 

@@ -32,6 +32,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public abstract class AbstractPasswordEncoderTck {
 
 	/**
+	 * Creates the contract; subclasses supply the encoder binding via
+	 * {@link #encoderWithConfig(PasswordEncoderConfig)}.
+	 */
+	public AbstractPasswordEncoderTck() {
+		// Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+		super();
+	}
+
+	/**
 	 * Returns an encoder configured with the given config. Must return a fresh instance per
 	 * call.
 	 *

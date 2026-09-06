@@ -45,6 +45,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractStorageContextBridgeTck {
 
     /**
+     * Creates the contract; subclasses supply the derivation binding via
+     * {@link #derive(PrincipalContext)} and the active-scope binding via
+     * {@link #deriveFromActivePrincipal()}.
+     */
+    public AbstractStorageContextBridgeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Derives the {@link StorageContext} for {@code principal} directly.
      *
      * @param principal the principal to derive a storage context for

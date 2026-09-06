@@ -72,6 +72,15 @@ public abstract class AbstractEventBusThroughputBenchmark extends AbstractExeris
     protected EventDescriptor hotDescriptor;
 
     /**
+     * Creates the contract; subclasses supply the engine under test via
+     * {@link #createTargetEngine()}.
+     */
+    public AbstractEventBusThroughputBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Implementations must return a fully configured, but <em>not yet started</em>,
      * {@link EventEngine}. Memory allocators and {@code ScopedValue} context must be
      * prepared if the implementation requires them.

@@ -60,6 +60,14 @@ public abstract class AbstractHttpProviderTck {
             + HttpProvider.class.getName();
 
     /**
+     * Creates the contract; subclasses supply the provider under test via {@link #createProvider()}.
+     */
+    public AbstractHttpProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link HttpProvider} under test.
      *
      * @return a fresh provider instance; never {@code null}

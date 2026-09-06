@@ -23,6 +23,16 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 public abstract class AbstractDynamicConfigRegistryTck {
 
     /**
+     * Creates the contract; subclasses supply the binding via {@link #createRegistry()}.
+     *
+     * @since 0.5
+     */
+    public AbstractDynamicConfigRegistryTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the registry adapter under test.
      *
      * @return a fresh {@link DynamicConfigRegistryAdapter} with no callbacks registered

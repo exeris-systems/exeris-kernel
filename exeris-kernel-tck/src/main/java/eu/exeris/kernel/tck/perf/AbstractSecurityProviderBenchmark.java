@@ -107,6 +107,15 @@ public abstract class AbstractSecurityProviderBenchmark extends AbstractExerisBe
     private AuthenticationResult preAuthenticated;
 
     /**
+     * Creates the contract; subclasses supply the provider under test via
+     * {@link #createProvider()} and its token allocator via {@link #createAllocator()}.
+     */
+    public AbstractSecurityProviderBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Trial-level setup: creates the provider and allocator, copies the benchmark's
      * signed token into an off-heap buffer, and authenticates once so that
      * {@code hasRole}/{@code hasScope} benchmarks measure only the RBAC check, not

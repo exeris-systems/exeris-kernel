@@ -64,4 +64,13 @@ import java.util.concurrent.TimeUnit;
 public abstract class AbstractExerisBenchmark {
     // Base class for shared JVM configuration, JFR profiling hooks (future),
     // and Valhalla-readiness annotations inherited by all TCK benchmarks.
+
+    /**
+     * Creates the harness; this class declares no state of its own, only the shared JVM
+     * configuration subclasses inherit via the type-level JMH annotations.
+     */
+    public AbstractExerisBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 }
