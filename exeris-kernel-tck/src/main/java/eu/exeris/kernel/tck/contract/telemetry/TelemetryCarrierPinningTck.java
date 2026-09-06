@@ -34,6 +34,14 @@ public abstract class TelemetryCarrierPinningTck extends AbstractSubsystemCarrie
     private TelemetrySink sink;
     private KernelEvent preBuiltEvent;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createSink()}.
+     */
+    public TelemetryCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     protected String subsystemName() {
         return "Telemetry";

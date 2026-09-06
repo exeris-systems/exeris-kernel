@@ -98,6 +98,14 @@ public abstract class AbstractPersistenceEngineTck {
 
     private PersistenceEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()}.
+     */
+    public AbstractPersistenceEngineTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -115,6 +123,15 @@ public abstract class AbstractPersistenceEngineTck {
     @Nested
     @DisplayName("Connection contract")
     class ConnectionContract {
+
+        /**
+         * Groups the {@code openConnection()} assertions, including ambient-context propagation
+         * and try-with-resources closing.
+         */
+        ConnectionContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("openConnection() returns an open connection")
@@ -184,6 +201,15 @@ public abstract class AbstractPersistenceEngineTck {
     @DisplayName("Transaction isolation contract")
     class TransactionContract {
 
+        /**
+         * Groups the {@code beginTransaction()}/{@code commit()}/{@code rollback()}
+         * isolation-level assertions.
+         */
+        TransactionContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("beginTransaction() with READ_COMMITTED succeeds")
         void beginReadCommitted() {
@@ -245,6 +271,14 @@ public abstract class AbstractPersistenceEngineTck {
     @DisplayName("Health check & stats")
     class HealthAndStats {
 
+        /**
+         * Groups the {@code healthCheckDetailed()} and {@code stats()} assertions.
+         */
+        HealthAndStats() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("healthCheckDetailed() returns true for a reachable database")
         void healthCheckDetailedReturnsTrue() {
@@ -291,6 +325,14 @@ public abstract class AbstractPersistenceEngineTck {
     @Nested
     @DisplayName("BulkInserter capability contract")
     class BulkInserterCapability {
+
+        /**
+         * Groups the tier-gated {@code openBulkInserter()} presence and stability assertions.
+         */
+        BulkInserterCapability() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("openBulkInserter() returns Optional (empty or present based on tier)")
@@ -342,6 +384,14 @@ public abstract class AbstractPersistenceEngineTck {
     @Nested
     @DisplayName("Statement and query result lifecycle contract")
     class StatementLifecycleContract {
+
+        /**
+         * Groups the {@link PersistenceStatement}/{@link QueryResult} closing and reuse assertions.
+         */
+        StatementLifecycleContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("closing QueryResult keeps the same connection reusable for another prepared query")
@@ -406,6 +456,14 @@ public abstract class AbstractPersistenceEngineTck {
     @DisplayName("Lifecycle contract")
     class Lifecycle {
 
+        /**
+         * Groups the engine {@code close()} idempotency and post-close assertions.
+         */
+        Lifecycle() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("close() is idempotent")
         void closeIsIdempotent() {
@@ -429,6 +487,15 @@ public abstract class AbstractPersistenceEngineTck {
     @Nested
     @DisplayName("DEDICATED routing contract")
     class DedicatedRoutingContract {
+
+        /**
+         * Groups the DEDICATED-strategy routing assertions, skipped when
+         * {@link #createEngineWithDedicatedConfig} returns {@code null}.
+         */
+        DedicatedRoutingContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("DEDICATED strategy routes to configured dedicated datasource (connection opens successfully)")
@@ -490,6 +557,14 @@ public abstract class AbstractPersistenceEngineTck {
     @Nested
     @DisplayName("unwrap(Class) seam contract")
     class UnwrapSeamContract {
+
+        /**
+         * Groups the {@code unwrap(Class)} presence, emptiness and side-effect-free assertions.
+         */
+        UnwrapSeamContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /** A type no PersistenceConnection should ever be assignable to. */
         private interface UnrelatedFacility {

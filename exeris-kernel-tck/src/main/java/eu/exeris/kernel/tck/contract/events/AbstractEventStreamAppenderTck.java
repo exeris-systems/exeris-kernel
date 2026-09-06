@@ -71,6 +71,15 @@ public abstract class AbstractEventStreamAppenderTck {
 
     private EventStreamAppender appender;
 
+    /**
+     * Creates the contract; subclasses supply the {@link EventStreamAppender} under test via
+     * {@link #createAppender()}.
+     */
+    public AbstractEventStreamAppenderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         appender = createAppender();

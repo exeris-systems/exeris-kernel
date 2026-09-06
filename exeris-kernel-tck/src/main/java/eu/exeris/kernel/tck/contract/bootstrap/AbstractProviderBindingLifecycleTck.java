@@ -42,6 +42,15 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
     private static final ScopedValue<Boolean> BINDING_SEED  = ScopedValue.newInstance();
 
     /**
+     * Creates the contract; subclasses supply the binding via the inherited
+     * {@link AbstractBootstrapOrchestratorTck#runSort(List)}.
+     */
+    public AbstractProviderBindingLifecycleTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Validates that provider bindings are composed only for active (non-degraded) subsystems.
      *
      * <h2>Scenario</h2>

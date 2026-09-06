@@ -39,6 +39,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractGraphDialectTck {
 
     /**
+     * Creates the contract; subclasses supply the {@link GraphDialect} implementation under test via
+     * {@link #createDialect()}.
+     */
+    public AbstractGraphDialectTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates a dialect instance under test (PostgreSQL PGQ, Cypher, etc.).
      *
      * @return the dialect implementation under test
@@ -86,6 +95,14 @@ public abstract class AbstractGraphDialectTck {
     @DisplayName("buildMatchQuery()")
     class BuildMatchQuery {
 
+        /**
+         * Groups the assertions for {@code buildMatchQuery()}.
+         */
+        BuildMatchQuery() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("returns non-blank string for a valid edge descriptor")
         void nonBlankForValidEdge() {
@@ -110,6 +127,14 @@ public abstract class AbstractGraphDialectTck {
     @Nested
     @DisplayName("buildMultiHopQuery()")
     class BuildMultiHopQuery {
+
+        /**
+         * Groups the assertions for {@code buildMultiHopQuery()}.
+         */
+        BuildMultiHopQuery() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("returns non-blank string for valid bounds [1..3]")
@@ -137,6 +162,14 @@ public abstract class AbstractGraphDialectTck {
     @DisplayName("buildShortestPathQuery()")
     class BuildShortestPathQuery {
 
+        /**
+         * Groups the assertions for {@code buildShortestPathQuery()}.
+         */
+        BuildShortestPathQuery() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("returns non-blank string for valid edge and maxDepth")
         void nonBlankForValidInput() {
@@ -162,6 +195,14 @@ public abstract class AbstractGraphDialectTck {
     @Nested
     @DisplayName("DDL generation")
     class DdlGeneration {
+
+        /**
+         * Groups the assertions for DDL generation.
+         */
+        DdlGeneration() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("buildCreatePropertyGraph() returns non-null string")

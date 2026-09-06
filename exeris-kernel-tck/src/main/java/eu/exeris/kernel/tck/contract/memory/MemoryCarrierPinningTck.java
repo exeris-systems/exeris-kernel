@@ -36,6 +36,15 @@ public abstract class MemoryCarrierPinningTck extends AbstractSubsystemCarrierPi
     private MemoryAllocator allocator;
     private int counter;
 
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryAllocator} under test via
+     * {@link #createAllocator()}.
+     */
+    public MemoryCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     protected String subsystemName() {
         return "Memory";

@@ -127,6 +127,14 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
     private MemoryAllocator allocator;
 
     /**
+     * Creates the contract; subclasses supply the decoder under test via {@link #createDecoder()}.
+     */
+    public AbstractHttpRequestBodyDecoderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link HttpRequestBodyDecoder} under test.
      *
      * @return the decoder under test; never {@code null}

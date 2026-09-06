@@ -31,6 +31,15 @@ public abstract class AbstractGraphProviderTck {
 
     private GraphProvider provider;
 
+    /**
+     * Creates the contract; subclasses supply the {@link GraphProvider} implementation under test via
+     * {@link #createProvider()}.
+     */
+    public AbstractGraphProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpProvider() {
         provider = createProvider();
@@ -39,6 +48,14 @@ public abstract class AbstractGraphProviderTck {
     @Nested
     @DisplayName("Provider identity")
     class Identity {
+
+        /**
+         * Groups the assertions for provider identity.
+         */
+        Identity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("providerId() is non-blank")
@@ -62,6 +79,14 @@ public abstract class AbstractGraphProviderTck {
     @Nested
     @DisplayName("ServiceLoader integration")
     class ServiceLoaderContract {
+
+        /**
+         * Groups the assertions for {@code ServiceLoader} integration.
+         */
+        ServiceLoaderContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("GraphProvider is discoverable via ServiceLoader")

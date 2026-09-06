@@ -167,6 +167,15 @@ public abstract class AbstractCryptoEngineTck {
     private MemoryAllocator allocator;
 
     /**
+     * Creates the contract; subclasses supply the {@link KernelCryptoProvider} and
+     * {@link MemoryAllocator} fixtures via {@link #createProvider()} and {@link #createAllocator()}.
+     */
+    public AbstractCryptoEngineTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link #createProvider() provider} and {@link #createAllocator() allocator}
      * fixtures used by every test method in this class.
      */

@@ -48,6 +48,14 @@ public abstract class AbstractGraphEngineTck {
 
     private GraphEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the running {@link GraphEngine} via {@link #createEngine()}.
+     */
+    public AbstractGraphEngineTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -65,6 +73,14 @@ public abstract class AbstractGraphEngineTck {
     @Nested
     @DisplayName("Session contract")
     class SessionContract {
+
+        /**
+         * Groups the assertions for the session contract.
+         */
+        SessionContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("openSession() returns a non-null session")
@@ -100,6 +116,14 @@ public abstract class AbstractGraphEngineTck {
     @Nested
     @DisplayName("Node/Edge registry contract")
     class RegistryContract {
+
+        /**
+         * Groups the assertions for the node/edge registry contract.
+         */
+        RegistryContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("registerNodes() followed by registeredNodes() returns registered descriptors")
@@ -151,6 +175,14 @@ public abstract class AbstractGraphEngineTck {
     class ConcurrentRegistry {
 
         /**
+         * Groups the assertions for concurrent registry access.
+         */
+        ConcurrentRegistry() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
          * Asserts that no exception escapes any of the 100 concurrent registrations and that
          * the registry is non-empty afterward. It does not assert that all 100 distinct nodes
          * survived — {@link GraphEngine#registerNodes} may merge or coalesce concurrent
@@ -191,6 +223,14 @@ public abstract class AbstractGraphEngineTck {
     @Nested
     @DisplayName("Lifecycle contract")
     class Lifecycle {
+
+        /**
+         * Groups the assertions for the lifecycle contract.
+         */
+        Lifecycle() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("close() is idempotent")

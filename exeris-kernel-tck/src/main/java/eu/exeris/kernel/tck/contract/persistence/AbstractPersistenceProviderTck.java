@@ -39,6 +39,14 @@ public abstract class AbstractPersistenceProviderTck {
 
     private PersistenceProvider provider;
 
+    /**
+     * Creates the contract; subclasses supply the provider via {@link #createProvider()}.
+     */
+    public AbstractPersistenceProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpProvider() {
         provider = createProvider();
@@ -47,6 +55,15 @@ public abstract class AbstractPersistenceProviderTck {
     @Nested
     @DisplayName("Provider identity")
     class Identity {
+
+        /**
+         * Groups the {@code providerId()}/{@code providerName()}/{@code priority()} identity
+         * assertions.
+         */
+        Identity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("providerId() is non-blank")
@@ -76,6 +93,14 @@ public abstract class AbstractPersistenceProviderTck {
     @Nested
     @DisplayName("ServiceLoader integration")
     class ServiceLoaderContract {
+
+        /**
+         * Groups the {@link ServiceLoader} discoverability and priority-ordering assertions.
+         */
+        ServiceLoaderContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("PersistenceProvider is discoverable via ServiceLoader")

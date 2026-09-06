@@ -94,6 +94,14 @@ public abstract class AbstractTelemetryProviderTck {
 
     private TelemetryProvider provider;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createProvider()}.
+     */
+    public AbstractTelemetryProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpProvider() {
         provider = createProvider();

@@ -24,6 +24,15 @@ import org.junit.jupiter.api.DisplayName;
 public abstract class SecurityCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
     /**
+     * Creates the contract; subclasses supply the provider binding via {@link #createProvider()}
+     * and the token binding via {@link #createValidTokenBuffer()}.
+     */
+    public SecurityCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link SecurityProvider} under test.
      *
      * @return a configured provider instance

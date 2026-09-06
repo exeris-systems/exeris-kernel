@@ -102,6 +102,15 @@ public abstract class AbstractHttpStreamExchangeTck {
      */
     protected static final int BACKPRESSURE_FLOOD = 8_000;
 
+    /**
+     * Creates the contract; subclasses supply the stream under test via
+     * {@link #openStream(HttpStreamHandler)}.
+     */
+    public AbstractHttpStreamExchangeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // -------------------------------------------------------------------------
     // Mandatory binding hook — the real loopback round-trip
     // -------------------------------------------------------------------------

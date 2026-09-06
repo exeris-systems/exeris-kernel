@@ -74,6 +74,14 @@ public abstract class BootstrapZeroAllocTck extends AbstractSubsystemZeroAllocTc
     /** Pre-built linear chain of {@value #GRAPH_SIZE} subsystems. */
     private List<Subsystem> fixture;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #runSort(List)}.
+     */
+    public BootstrapZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // AbstractSubsystemZeroAllocTck overrides
     // =========================================================================

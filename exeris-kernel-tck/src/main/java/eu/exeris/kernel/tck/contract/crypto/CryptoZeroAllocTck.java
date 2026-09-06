@@ -72,6 +72,15 @@ public abstract class CryptoZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     private LoanedBuffer         plaintext;
     private LoanedBuffer         ciphertext;
 
+    /**
+     * Creates the contract; subclasses supply the {@link KernelCryptoProvider} and
+     * {@link MemoryAllocator} fixtures via {@link #createProvider()} and {@link #createAllocator()}.
+     */
+    public CryptoZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override protected String subsystemName()      { return "Crypto"; }
     @Override protected String hotPathDescription()  {
         return "TlsEngine.wrap(plaintext LoanedBuffer, ciphertext LoanedBuffer) — zero-copy cipher";

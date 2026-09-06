@@ -24,6 +24,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractFailurePolicyTck {
 
     /**
+     * Creates the contract; subclasses report the fail-fast, degrade and abort outcomes via
+     * {@link #missingDependencyFailsInAllSelector()}, {@link #degradeContinuesOnOptionalFailure()}
+     * and {@link #failFastAbortsOnOptionalFailure()}.
+     *
+     * @since 0.5
+     */
+    public AbstractFailurePolicyTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Reports whether a missing dependency causes bootstrap to fail immediately even when
      * the failure-policy selector is {@code ALL}.
      *

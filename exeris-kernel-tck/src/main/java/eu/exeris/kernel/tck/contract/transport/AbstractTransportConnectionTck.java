@@ -52,6 +52,18 @@ public abstract class AbstractTransportConnectionTck {
 
     private ConnectionPair pair;
 
+    /**
+     * Creates the contract; subclasses supply a connected pair via
+     * {@link #createConnectionPair()}.
+     *
+     * <p>The {@code pair} field starts unset — {@link #setUpConnection()} populates it before
+     * each test.
+     */
+    public AbstractTransportConnectionTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpConnection() {
         pair = createConnectionPair();
@@ -70,6 +82,15 @@ public abstract class AbstractTransportConnectionTck {
     @Nested
     @DisplayName("Liveness contract")
     class Liveness {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the liveness contract.
+         */
+        Liveness() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("isOpen() returns true after creation")
@@ -100,6 +121,15 @@ public abstract class AbstractTransportConnectionTck {
     @DisplayName("Remote endpoint contract")
     class RemoteEndpoint {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the remote endpoint contract.
+         */
+        RemoteEndpoint() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("remoteAddress() is non-null and non-blank")
         void remoteAddressNonNull() {
@@ -123,6 +153,15 @@ public abstract class AbstractTransportConnectionTck {
     @DisplayName("Stream creation contract")
     class StreamCreation {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the stream creation contract.
+         */
+        StreamCreation() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("openStream() returns a non-null stream on an open connection")
         void openStreamReturnsNonNull() {
@@ -139,6 +178,15 @@ public abstract class AbstractTransportConnectionTck {
     @Nested
     @DisplayName("Attachment pattern")
     class AttachmentPattern {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the attachment pattern.
+         */
+        AttachmentPattern() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("attachment() returns null by default")

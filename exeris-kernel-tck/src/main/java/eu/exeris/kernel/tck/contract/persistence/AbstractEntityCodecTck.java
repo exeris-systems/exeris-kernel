@@ -34,6 +34,14 @@ import static org.mockito.Mockito.when;
 public abstract class AbstractEntityCodecTck {
 
     /**
+     * Creates the contract; subclasses supply the provider via {@link #createProvider()}.
+     */
+    public AbstractEntityCodecTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link PersistenceProvider} under test.
      *
      * @return a provider under test
@@ -74,6 +82,14 @@ public abstract class AbstractEntityCodecTck {
     @DisplayName("Round-trip contract")
     class RoundTripContract {
 
+        /**
+         * Groups the encode-then-decode raw-payload round-trip assertion.
+         */
+        RoundTripContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("encode + decode preserves raw payload")
         void roundTripPreservesPayload() {
@@ -105,6 +121,14 @@ public abstract class AbstractEntityCodecTck {
     @Nested
     @DisplayName("Malformed and bounds contract")
     class MalformedAndBoundsContract {
+
+        /**
+         * Groups the malformed-input and out-of-bounds rejection assertions for encode and decode.
+         */
+        MalformedAndBoundsContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("encode throws PersistenceProviderException when target capacity is too small")

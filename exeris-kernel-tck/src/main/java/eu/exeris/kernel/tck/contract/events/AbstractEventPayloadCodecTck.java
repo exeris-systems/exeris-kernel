@@ -60,6 +60,15 @@ public abstract class AbstractEventPayloadCodecTck {
     protected static final java.nio.charset.Charset UTF_8 = StandardCharsets.UTF_8;
 
     /**
+     * Creates the contract; subclasses supply the {@link EventPayloadCodec} under test via
+     * {@link #createCodec()} and the fixtures the round-trip assertions need.
+     */
+    public AbstractEventPayloadCodecTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link EventPayloadCodec} under test.
      *
      * @return the codec under test; never null

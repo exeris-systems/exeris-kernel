@@ -75,6 +75,17 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 public abstract class AbstractSecurityProviderTck {
 
+    /**
+     * Creates the contract; subclasses supply the provider binding via {@link #createProvider()}.
+     *
+     * <p>The {@code provider} field starts unset — {@link #setUpProvider()} populates it from
+     * {@link #createProvider()} before each test.
+     */
+    public AbstractSecurityProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods — subclass supplies the SUT
     // =========================================================================

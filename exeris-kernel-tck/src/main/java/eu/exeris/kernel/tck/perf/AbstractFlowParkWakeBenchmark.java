@@ -79,6 +79,14 @@ public abstract class AbstractFlowParkWakeBenchmark extends AbstractExerisBenchm
     private FlowContext       preWiredContext;
 
     /**
+     * Creates the contract; subclasses supply the engine under test via {@link #createEngine()}.
+     */
+    public AbstractFlowParkWakeBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Trial-level setup: creates and starts the engine, compiles a two-step no-op flow
      * definition, and schedules a reusable {@link FlowContext} that every measurement
      * iteration parks and wakes.

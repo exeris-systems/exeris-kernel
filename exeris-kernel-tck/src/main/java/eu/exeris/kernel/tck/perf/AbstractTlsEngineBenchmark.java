@@ -108,6 +108,15 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
     private static final int PAYLOAD_BYTES = 1024;
 
     /**
+     * Creates the contract; subclasses supply the crypto provider under test via
+     * {@link #createCryptoProvider()} and its allocator via {@link #createAllocator()}.
+     */
+    public AbstractTlsEngineBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Trial-level setup: creates the allocator and TLS engine, pre-allocates the
      * plaintext/ciphertext/decrypted buffers reused across every iteration, fills the
      * plaintext payload, and drives the handshake to completion.

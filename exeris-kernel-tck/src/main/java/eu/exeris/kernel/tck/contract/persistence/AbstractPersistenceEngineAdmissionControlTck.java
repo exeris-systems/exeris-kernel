@@ -70,6 +70,14 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
 
     private PersistenceEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the fixed-pool engine via {@link #createEngine()}.
+     */
+    public AbstractPersistenceEngineAdmissionControlTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -87,6 +95,14 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     @Nested
     @DisplayName("Core admission control contract")
     class CoreAdmissionControl {
+
+        /**
+         * Groups the four fundamental {@code canServiceRequest()} admission assertions.
+         */
+        CoreAdmissionControl() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /**
          * Returns {@code true} when the pool is neither saturated nor has a queue forming.
@@ -282,6 +298,14 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     class PerformanceContract {
 
         /**
+         * Groups the non-blocking hot-path sanity check for {@code canServiceRequest()}.
+         */
+        PerformanceContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
          * Verify that canServiceRequest() does not block. The authoritative sub-millisecond bound
          * is enforced by JMH benchmarks; this TCK guard uses 50ms to catch regressions only.
          */
@@ -317,6 +341,14 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     @Nested
     @DisplayName("Consistency and idempotence")
     class ConsistencyAndIdempotence {
+
+        /**
+         * Groups the same-state consistency and capacity-change decision-flip assertions.
+         */
+        ConsistencyAndIdempotence() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /**
          * Multiple calls to canServiceRequest() in the same state should return consistent results.
@@ -382,6 +414,14 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     class EdgeCases {
 
         /**
+         * Groups the minimal-pool-size and fresh-engine-initial-state assertions.
+         */
+        EdgeCases() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
          * Verify behavior with minimal pool size (1 connection).
          */
         @Test
@@ -433,6 +473,14 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     class ExceptionHandling {
 
         /**
+         * Groups the post-shutdown graceful-handling assertion for {@code canServiceRequest()}.
+         */
+        ExceptionHandling() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
          * canServiceRequest() should handle engine shutdown gracefully.
          * Per contract, it should either return false or throw PersistenceProviderException.
          */
@@ -454,6 +502,15 @@ public abstract class AbstractPersistenceEngineAdmissionControlTck {
     @Nested
     @DisplayName("Memory safety (baseline check)")
     class MemorySafety {
+
+        /**
+         * Groups the baseline repeated-call safety check; the authoritative allocation analysis
+         * runs in the JFR-enabled integration test layer.
+         */
+        MemorySafety() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /**
          * This test verifies that repeated calls to canServiceRequest() do not cause

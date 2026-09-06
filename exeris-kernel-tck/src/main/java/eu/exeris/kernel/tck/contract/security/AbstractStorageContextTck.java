@@ -49,6 +49,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractStorageContextTck {
 
     /**
+     * Creates the contract; subclasses supply the per-strategy bindings via
+     * {@link #createShared(String)}, {@link #createSeparatedSchema(String, String)},
+     * {@link #createDedicated(String, String)} and {@link #createGlobal()}.
+     */
+    public AbstractStorageContextTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates a SHARED-strategy context with the given isolation key.
      *
      * @param isolationKey tenant isolation key

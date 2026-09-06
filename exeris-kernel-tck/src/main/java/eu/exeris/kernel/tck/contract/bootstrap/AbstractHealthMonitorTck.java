@@ -19,6 +19,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractHealthMonitorTck {
 
     /**
+     * Creates the contract; subclasses supply the binding via {@link #createMonitor()}.
+     *
+     * @since 0.5
+     */
+    public AbstractHealthMonitorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the health-monitor adapter under test.
      *
      * @return a fresh {@link HealthMonitorAdapter} with no subsystems registered

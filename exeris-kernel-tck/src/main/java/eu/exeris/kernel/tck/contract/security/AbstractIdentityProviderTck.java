@@ -31,6 +31,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractIdentityProviderTck {
 
+    /**
+     * Creates the contract; subclasses supply the provider binding via {@link #createProvider()}
+     * and the token fixtures the contract drives it with.
+     */
+    public AbstractIdentityProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods — binding supplies the SUT + token buffers
     // =========================================================================

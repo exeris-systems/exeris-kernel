@@ -111,6 +111,14 @@ public abstract class AbstractMemoryPressureSignalTck {
 
     private MemoryAllocator allocator;
 
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryProvider} under test via {@link #createProvider()}.
+     */
+    public AbstractMemoryPressureSignalTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpAllocator() {
         allocator = createProvider().createAllocator(
@@ -131,6 +139,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @Nested
     @DisplayName("L1: Baseline stats contract")
     class BaselineStats {
+
+        /**
+         * Groups the assertions for the baseline stats contract.
+         */
+        BaselineStats() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("stats() returns non-null snapshot")
@@ -174,6 +190,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @Nested
     @DisplayName("L2: Pressure signal monotonicity")
     class PressureSignalMonotonicity {
+
+        /**
+         * Groups the assertions for pressure-signal monotonicity.
+         */
+        PressureSignalMonotonicity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("allocatedBytes() grows as buffers are held open")
@@ -247,6 +271,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @DisplayName("L3: Budget consistency (fixed-budget tier)")
     class BudgetConsistency {
 
+        /**
+         * Groups the assertions for budget consistency on the fixed-budget tier.
+         */
+        BudgetConsistency() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("allocatedBytes + freeBytes == totalBytes when budget is fixed")
         void budgetConsistencyInvariant() {
@@ -317,6 +349,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @Nested
     @DisplayName("L4: Stats snapshot immutability")
     class StatsSnapshotImmutability {
+
+        /**
+         * Groups the assertions for stats-snapshot immutability.
+         */
+        StatsSnapshotImmutability() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("Two calls to stats() return independent snapshots")

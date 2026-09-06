@@ -82,6 +82,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractSecurityInterceptorTck<I> {
 
+    /**
+     * Creates the contract; subclasses supply the interceptor binding via
+     * {@link #createInterceptor(SecurityProvider)}, plus the success and failure provider
+     * bindings the contract drives it with.
+     *
+     * <p>The fixture fields start unset — {@link #setUpFixtures()} populates them before each test.
+     */
+    public AbstractSecurityInterceptorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods — subclass supplies the SUT
     // =========================================================================

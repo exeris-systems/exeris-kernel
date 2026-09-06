@@ -45,6 +45,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractAlgoOrchestratorTck {
 
     /**
+     * Creates the contract; subclasses supply the {@link PathFinder} implementation under test via
+     * {@link #createPathFinder()}.
+     */
+    public AbstractAlgoOrchestratorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link PathFinder} implementation under test.
      *
      * @return a path finder backed by the fixture's test graph
@@ -81,6 +90,14 @@ public abstract class AbstractAlgoOrchestratorTck {
     @Nested
     @DisplayName("Reachable path contract")
     class ReachablePath {
+
+        /**
+         * Groups the assertions for the reachable-path contract.
+         */
+        ReachablePath() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("findShortestPath() returns found=true for a connected pair")
@@ -137,6 +154,14 @@ public abstract class AbstractAlgoOrchestratorTck {
     @DisplayName("Not-found contract")
     class NotFound {
 
+        /**
+         * Groups the assertions for the not-found contract.
+         */
+        NotFound() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("isolated node → PathResult.found()=false")
         void notFoundReturnsNotFoundResult() {
@@ -178,6 +203,14 @@ public abstract class AbstractAlgoOrchestratorTck {
     @Nested
     @DisplayName("K-shortest paths contract")
     class KShortestPaths {
+
+        /**
+         * Groups the assertions for the k-shortest-paths contract.
+         */
+        KShortestPaths() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("findKShortestPaths() returns at most maxPaths results")

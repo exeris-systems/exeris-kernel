@@ -71,6 +71,15 @@ public abstract class AbstractMemoryAllocatorBenchmark extends AbstractExerisBen
     protected MemoryAllocator allocator;
 
     /**
+     * Creates the contract; subclasses supply the allocator under test via
+     * {@link #createAllocator()}.
+     */
+    public AbstractMemoryAllocatorBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Implementations must return a fully initialised {@link MemoryAllocator}
      * (off-heap slabs registered, VarHandle free-lists warm) before the first
      * benchmark iteration begins.

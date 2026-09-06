@@ -61,6 +61,15 @@ public abstract class AbstractCarrierPinningTck {
     private static final int AUDIT_VT_COUNT = 100;
     private static final int NATIVE_VT_COUNT = 50;
 
+    /**
+     * Creates the contract; subclasses supply the hot-path workload via
+     * {@link #subsystemWorkload(SubsystemUnderTest)}.
+     */
+    public AbstractCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods
     // =========================================================================
@@ -96,6 +105,14 @@ public abstract class AbstractCarrierPinningTck {
     @Nested
     @DisplayName("VT Spike — 10 000 virtual threads")
     class VtSpikePinningTest {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        VtSpikePinningTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
@@ -147,6 +164,14 @@ public abstract class AbstractCarrierPinningTck {
     @Nested
     @DisplayName("Subsystem Pinning Audit — all nine subsystems")
     class SubsystemPinningAuditTest {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        SubsystemPinningAuditTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(30)
@@ -247,6 +272,14 @@ public abstract class AbstractCarrierPinningTck {
     @Nested
     @DisplayName("Native Workload Pinning — implementation-declared workloads")
     class NativeWorkloadPinningTest {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        NativeWorkloadPinningTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)

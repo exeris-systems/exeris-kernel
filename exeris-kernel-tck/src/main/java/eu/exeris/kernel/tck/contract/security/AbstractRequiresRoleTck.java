@@ -71,6 +71,15 @@ public abstract class AbstractRequiresRoleTck {
     protected static final int BIT_AUDITOR = 8;
 
     /**
+     * Creates the contract; subclasses supply the allow-check binding via
+     * {@link #isAllowed(RoleRegistry)} and the enforcement binding via {@link #check(RoleRegistry)}.
+     */
+    public AbstractRequiresRoleTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Returns a function that delegates to the binding's allocation-free
      * decision routine.
      *
@@ -204,6 +213,15 @@ public abstract class AbstractRequiresRoleTck {
     protected static final class StubRegistry implements RoleRegistry {
 
         private static final long REQUIRED = (1L << BIT_ADMIN) | (1L << BIT_AUDITOR);
+
+        /**
+         * Creates a registry fixed to {@code METHOD_ANY} and {@code METHOD_ALL}, the only two
+         * method ids this suite drives.
+         */
+        protected StubRegistry() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Override
         public long requiredAny(int methodId) {

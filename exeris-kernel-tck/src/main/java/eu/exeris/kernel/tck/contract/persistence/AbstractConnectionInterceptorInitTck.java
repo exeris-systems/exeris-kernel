@@ -48,6 +48,14 @@ public abstract class AbstractConnectionInterceptorInitTck {
 
     private PersistenceEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()}.
+     */
+    public AbstractConnectionInterceptorInitTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -96,6 +104,17 @@ public abstract class AbstractConnectionInterceptorInitTck {
      * Static nested class for deterministic class-name assertion in {@code rawArgs[0]}.
      */
     static final class BoomInterceptor implements ConnectionInterceptor {
+
+        /**
+         * Creates an interceptor that unconditionally throws {@link IllegalStateException} from
+         * {@link #onConnectionAcquired}, so {@code rawArgs[0]} deterministically carries this
+         * class's own simple name.
+         */
+        BoomInterceptor() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Override
         public void onConnectionAcquired(PersistenceConnection connection, StorageContext storageContext) {
             throw new IllegalStateException("injected failure");
@@ -126,6 +145,16 @@ public abstract class AbstractConnectionInterceptorInitTck {
      * Static nested class that throws {@link PersistenceProviderException} directly.
      */
     static final class DirectExceptionInterceptor implements ConnectionInterceptor {
+
+        /**
+         * Creates an interceptor that throws {@link PersistenceProviderException} directly from
+         * {@link #onConnectionAcquired}, so the engine must propagate it without remapping.
+         */
+        DirectExceptionInterceptor() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Override
         public void onConnectionAcquired(PersistenceConnection connection, StorageContext storageContext) {
             throw PersistenceProviderException.interceptorInitFailed(
@@ -157,6 +186,15 @@ public abstract class AbstractConnectionInterceptorInitTck {
      */
     static final class FailOnceInterceptor implements ConnectionInterceptor {
         private volatile boolean failed = false;
+
+        /**
+         * Creates an interceptor whose {@code failed} flag starts {@code false}, so the first
+         * {@link #onConnectionAcquired} call throws and every call after it no-ops.
+         */
+        FailOnceInterceptor() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Override
         public void onConnectionAcquired(PersistenceConnection connection, StorageContext storageContext) {

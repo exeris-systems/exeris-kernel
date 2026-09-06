@@ -122,6 +122,14 @@ public abstract class AbstractMemoryGovernorTck {
 
     private MemoryAllocator allocator;
 
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryProvider} under test via {@link #createProvider()}.
+     */
+    public AbstractMemoryGovernorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         allocator = createProvider().createAllocator(
@@ -142,6 +150,14 @@ public abstract class AbstractMemoryGovernorTck {
     @Nested
     @DisplayName("L1: Governor signal baseline")
     class GovernorSignalBaseline {
+
+        /**
+         * Groups the assertions for the governor signal baseline.
+         */
+        GovernorSignalBaseline() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("stats() is non-null at idle — governor can always read the signal")
@@ -185,6 +201,14 @@ public abstract class AbstractMemoryGovernorTck {
     @Nested
     @DisplayName("L2: Signal under load — governor zone transitions")
     class GovernorZoneTransitions {
+
+        /**
+         * Groups the assertions for governor zone transitions under load.
+         */
+        GovernorZoneTransitions() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("allocatedBytes() grows as buffers are held — governor can detect WARNING zone")
@@ -249,6 +273,14 @@ public abstract class AbstractMemoryGovernorTck {
     @Nested
     @DisplayName("L3: Fixed-budget utilization ratio (governor precision)")
     class FixedBudgetPrecision {
+
+        /**
+         * Groups the assertions for fixed-budget utilization-ratio precision.
+         */
+        FixedBudgetPrecision() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("utilization() == 0.0 at idle — governor correctly classifies as NORMAL")
@@ -327,6 +359,14 @@ public abstract class AbstractMemoryGovernorTck {
     @Nested
     @DisplayName("L4: performMaintenance() signal stability")
     class MaintenanceSignalStability {
+
+        /**
+         * Groups the assertions for signal stability across {@code performMaintenance()}.
+         */
+        MaintenanceSignalStability() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("performMaintenance() does not alter allocatedBytes() — governor signal is stable after maintenance")

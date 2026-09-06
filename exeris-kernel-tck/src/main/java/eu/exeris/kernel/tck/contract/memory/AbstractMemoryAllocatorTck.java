@@ -96,6 +96,15 @@ public abstract class AbstractMemoryAllocatorTck {
 
     private MemoryAllocator allocator;
 
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryAllocator} under test via
+     * {@link #createAllocator()}.
+     */
+    public AbstractMemoryAllocatorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpAllocator() {
         allocator = createAllocator();
@@ -113,6 +122,14 @@ public abstract class AbstractMemoryAllocatorTck {
     @Nested
     @DisplayName("Basic Allocation Contract")
     class BasicAllocationContract {
+
+        /**
+         * Groups the assertions for the basic allocation contract.
+         */
+        BasicAllocationContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("allocate(MICRO) returns non-null buffer with capacity >= 512 bytes")
@@ -183,6 +200,14 @@ public abstract class AbstractMemoryAllocatorTck {
     @DisplayName("MemoryStats Contract")
     class MemoryStatsContract {
 
+        /**
+         * Groups the assertions for the {@link MemoryStats} contract.
+         */
+        MemoryStatsContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("allocationCount increments on each allocate()")
         void allocationCountIncrements() {
@@ -220,6 +245,14 @@ public abstract class AbstractMemoryAllocatorTck {
     @Nested
     @DisplayName("Virtual Thread Avalanche")
     class VirtualThreadAvalanche {
+
+        /**
+         * Groups the assertions for the virtual-thread avalanche stress test.
+         */
+        VirtualThreadAvalanche() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("100 000 Virtual Threads: allocate → write → verify → release — zero leaks")
@@ -297,6 +330,14 @@ public abstract class AbstractMemoryAllocatorTck {
     @Nested
     @DisplayName("OOM Behaviour")
     class OomBehaviour {
+
+        /**
+         * Groups the assertions for out-of-memory behaviour.
+         */
+        OomBehaviour() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("Enterprise: exhausting fixed slab budget throws MemoryExhaustedException")

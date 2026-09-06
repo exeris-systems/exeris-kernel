@@ -89,6 +89,14 @@ public abstract class AbstractHttpRequestBodyEncoderTck {
     private MemoryAllocator allocator;
 
     /**
+     * Creates the contract; subclasses supply the encoder under test via {@link #createEncoder()}.
+     */
+    public AbstractHttpRequestBodyEncoderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the encoder under test. Implementations may return a fresh instance
      * per call; the TCK does not assume reuse across tests.
      *

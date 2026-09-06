@@ -58,6 +58,15 @@ import java.io.IOException;
  */
 public abstract class AbstractSubsystemZeroAllocTck {
 
+    /**
+     * Creates the contract; subclasses supply the subsystem binding via
+     * {@link #bootstrapSubsystem()}, {@link #runSingleIteration()} and {@link #tearDownSubsystem()}.
+     */
+    public AbstractSubsystemZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods — MUST override
     // =========================================================================

@@ -169,6 +169,18 @@ public abstract class AbstractTransportStreamTck {
     private StreamPair streams;
     private MemoryAllocator allocator;
 
+    /**
+     * Creates the contract; subclasses supply the connected pair and allocator via
+     * {@link #createStreamPair()} and {@link #createAllocator()}.
+     *
+     * <p>The {@code streams} and {@code allocator} fields start unset — {@link #setUp()}
+     * populates both before each test.
+     */
+    public AbstractTransportStreamTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         allocator = createAllocator();
@@ -189,6 +201,15 @@ public abstract class AbstractTransportStreamTck {
     @Nested
     @DisplayName("Stream identity")
     class Identity {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise stream identity.
+         */
+        Identity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("streamId() returns non-negative value")
@@ -216,6 +237,15 @@ public abstract class AbstractTransportStreamTck {
     @Nested
     @DisplayName("write() + read() round-trip")
     class WriteReadRoundTrip {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the write/read zero-copy round trip.
+         */
+        WriteReadRoundTrip() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("write() followed by read() returns identical data (zero-copy)")
@@ -246,6 +276,15 @@ public abstract class AbstractTransportStreamTck {
     @Nested
     @DisplayName("read() bounds")
     class ReadBounds {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise {@code read()} argument bounds.
+         */
+        ReadBounds() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("read(target, 0) and read(target, -1) return 0 without consuming pending data")
@@ -304,6 +343,16 @@ public abstract class AbstractTransportStreamTck {
     @Nested
     @DisplayName("queueWrite() ownership transfer")
     class QueueWriteOwnership {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise buffer ownership transfer on
+         * {@code queueWrite()}.
+         */
+        QueueWriteOwnership() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("queueWrite() takes ownership — buffer refCount decremented or transferred")
@@ -389,6 +438,15 @@ public abstract class AbstractTransportStreamTck {
     @DisplayName("close() contract")
     class CloseContract {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the {@code close()} contract.
+         */
+        CloseContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("close() is idempotent")
         void closeIsIdempotent() {
@@ -416,6 +474,15 @@ public abstract class AbstractTransportStreamTck {
     @Nested
     @DisplayName("reset() abortive termination")
     class ResetContract {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the {@code reset()} contract.
+         */
+        ResetContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("reset() clears the pending-data flag (teardown liveness)")
@@ -510,6 +577,15 @@ public abstract class AbstractTransportStreamTck {
     @Nested
     @DisplayName("Remote close unblocks reader")
     class RemoteCloseUnblocksReader {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise a blocked reader unblocking on remote close.
+         */
+        RemoteCloseUnblocksReader() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("read() returns -1 within 500ms of remote close signal")

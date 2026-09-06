@@ -89,6 +89,15 @@ public abstract class AbstractEventLoopTck {
     private EventEngine engine;
 
     /**
+     * Creates the contract; subclasses supply the {@link EventEngine} under test via
+     * {@link #createEngine()}.
+     */
+    public AbstractEventLoopTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates a fully configured, not-yet-started {@link EventEngine} under test.
      *
      * @return non-null engine instance

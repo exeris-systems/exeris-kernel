@@ -80,6 +80,14 @@ public abstract class AbstractSubsystemLifecycleTck {
 
     private Subsystem subsystem;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createSubsystem()}.
+     */
+    public AbstractSubsystemLifecycleTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpSubsystem() {
         subsystem = createSubsystem();

@@ -78,6 +78,15 @@ public abstract class AbstractHttpRoutePolicyTck {
     private static final String UNRELATED = "billing:read";
 
     /**
+     * Creates the contract; subclasses supply the decision under test via
+     * {@link #decide(RouteRequirement, PrincipalContext)}.
+     */
+    public AbstractHttpRoutePolicyTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Decides one request against one requirement, using the binding under test.
      *
      * @param requirement what the route declares

@@ -64,6 +64,15 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
     protected EventDescriptor hotDescriptor;
 
     /**
+     * Creates the contract; subclasses supply the engine under test via
+     * {@link #createTargetEngine()}.
+     */
+    public AbstractEventBusDispatchLatencyBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Subclass provides a fully configured, not-yet-started {@link EventEngine}.
      *
      * @return non-null, pre-configured engine ready for {@link EventEngine#start()}

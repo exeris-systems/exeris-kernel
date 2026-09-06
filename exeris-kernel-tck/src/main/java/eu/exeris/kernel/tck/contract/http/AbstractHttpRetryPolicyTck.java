@@ -60,6 +60,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractHttpRetryPolicyTck {
 
     /**
+     * Creates the contract; subclasses supply the policy under test via {@link #createPolicy()} and its
+     * attempt cap via {@link #maxAttempts()}.
+     */
+    public AbstractHttpRetryPolicyTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Supplies the default policy under test, built with deterministic tuning (fixed jitter) and the
      * cap returned by {@link #maxAttempts()}.
      *

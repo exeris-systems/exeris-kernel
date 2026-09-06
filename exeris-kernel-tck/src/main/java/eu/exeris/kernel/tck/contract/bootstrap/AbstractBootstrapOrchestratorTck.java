@@ -56,6 +56,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractBootstrapOrchestratorTck {
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #runSort(List)}.
+     */
+    public AbstractBootstrapOrchestratorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template method — subclass wires the real orchestrator
     // =========================================================================

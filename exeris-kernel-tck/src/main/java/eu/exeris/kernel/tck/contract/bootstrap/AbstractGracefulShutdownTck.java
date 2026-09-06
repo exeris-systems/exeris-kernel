@@ -96,6 +96,14 @@ public abstract class AbstractGracefulShutdownTck {
 
     private static final int DRAINING_REQUEST_COUNT = 100_000;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #buildAndStartKernel()}.
+     */
+    public AbstractGracefulShutdownTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods
     // =========================================================================

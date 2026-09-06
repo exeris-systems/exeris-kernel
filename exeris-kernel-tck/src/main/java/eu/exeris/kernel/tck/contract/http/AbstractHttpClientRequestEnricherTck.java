@@ -70,6 +70,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractHttpClientRequestEnricherTck {
 
     /**
+     * Creates the contract; subclasses supply the enricher under test via {@link #createEnricher()}.
+     */
+    public AbstractHttpClientRequestEnricherTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the enricher under test. Subclasses that do not yet have a driver
      * implementation may return {@link HttpClientRequestEnricher#noop()} to
      * exercise only the SPI-level clauses; the validator clauses will continue

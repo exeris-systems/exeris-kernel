@@ -68,6 +68,14 @@ public abstract class AbstractConfigProviderTck {
 
     private ConfigProvider provider;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createProvider()}.
+     */
+    public AbstractConfigProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         provider = createProvider();

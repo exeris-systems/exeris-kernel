@@ -91,6 +91,14 @@ public abstract class AbstractTelemetrySinkBenchmark extends AbstractExerisBench
     private KernelEvent   hotWarnEvent;
 
     /**
+     * Creates the contract; subclasses supply the sink under test via {@link #createSink()}.
+     */
+    public AbstractTelemetrySinkBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Trial-level setup: creates the sink under test and the no-op baseline sink, and
      * pre-builds the INFO/WARN events reused by every measurement iteration.
      */

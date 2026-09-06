@@ -39,6 +39,18 @@ public abstract class AbstractTransportProviderTck {
 
     private TransportProvider provider;
 
+    /**
+     * Creates the contract; subclasses supply the provider under test via
+     * {@link #createProvider()}.
+     *
+     * <p>The {@code provider} field starts unset — {@link #setUpProvider()} populates it before
+     * each test.
+     */
+    public AbstractTransportProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpProvider() {
         provider = createProvider();
@@ -47,6 +59,15 @@ public abstract class AbstractTransportProviderTck {
     @Nested
     @DisplayName("Provider identity")
     class Identity {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise provider identity.
+         */
+        Identity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("providerName() is non-blank")
@@ -76,6 +97,15 @@ public abstract class AbstractTransportProviderTck {
     @Nested
     @DisplayName("ServiceLoader integration")
     class ServiceLoaderContract {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise {@link ServiceLoader} integration.
+         */
+        ServiceLoaderContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("TransportProvider is discoverable via ServiceLoader")

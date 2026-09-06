@@ -65,6 +65,14 @@ public abstract class AbstractHealthEndpointTck {
     protected static final String STATUS_HEADER = "X-Exeris-Health";
 
     /**
+     * Creates the contract; subclasses supply the handler binding via {@link #newHandler(HealthProbe)}.
+     */
+    public AbstractHealthEndpointTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Produces a fresh handler bound to the given probe. Bindings construct their
      * concrete handler and return it.
      *

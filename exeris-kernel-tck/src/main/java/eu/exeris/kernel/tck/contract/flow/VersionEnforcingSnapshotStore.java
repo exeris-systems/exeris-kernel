@@ -40,6 +40,14 @@ public final class VersionEnforcingSnapshotStore implements FlowSnapshotStore {
     private final AtomicInteger writes = new AtomicInteger();
 
     /**
+     * Creates a store with no rows and both counters at zero.
+     */
+    public VersionEnforcingSnapshotStore() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Installs {@code snapshot} as the current row for its instance, bypassing the
      * optimistic-lock check {@link #save} enforces.
      *

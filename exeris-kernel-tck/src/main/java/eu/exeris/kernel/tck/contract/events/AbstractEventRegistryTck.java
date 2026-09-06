@@ -86,6 +86,15 @@ public abstract class AbstractEventRegistryTck {
     private EventEngine engine;
     private EventRegistry registry;
 
+    /**
+     * Creates the contract; subclasses supply the {@link EventEngine} under test via
+     * {@link #createEngine()}.
+     */
+    public AbstractEventRegistryTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         engine = createEngine();

@@ -65,6 +65,14 @@ public abstract class AbstractJfrTelemetrySinkTck {
 
     private TelemetrySink sink;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createSink()}.
+     */
+    public AbstractJfrTelemetrySinkTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUp() {
         sink = createSink();

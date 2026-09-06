@@ -109,6 +109,19 @@ public abstract class AbstractTransportEngineTck {
 
     private TransportEngine engine;
 
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()},
+     * {@link #createEngineWithConnectionCeiling(int, int)} and
+     * {@link #createEngineWithHandler(int, StreamHandler)}.
+     *
+     * <p>The {@code engine} field starts unset — {@link #setUpEngine()} populates it before each
+     * test.
+     */
+    public AbstractTransportEngineTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @BeforeEach
     final void setUpEngine() {
         engine = createEngine();
@@ -126,6 +139,15 @@ public abstract class AbstractTransportEngineTck {
     @Nested
     @DisplayName("Lifecycle contract")
     class Lifecycle {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the start/stop/close lifecycle contract.
+         */
+        Lifecycle() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("start() → stop() → close() — happy path")
@@ -170,6 +192,15 @@ public abstract class AbstractTransportEngineTck {
     @DisplayName("TransportMode reporting")
     class ModeReporting {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the mode-reporting contract.
+         */
+        ModeReporting() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("mode() returns the configured transport mode")
         void modeMatchesConfig() {
@@ -186,6 +217,15 @@ public abstract class AbstractTransportEngineTck {
     @Nested
     @DisplayName("Diagnostics contract")
     class Diagnostics {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the diagnostics contract.
+         */
+        Diagnostics() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("engineName() is non-blank")
@@ -287,6 +327,15 @@ public abstract class AbstractTransportEngineTck {
     @Nested
     @DisplayName("stop() drains in-flight streams before tearing the transport down")
     class GracefulDrain {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise draining in-flight streams before shutdown.
+         */
+        GracefulDrain() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("a stream mid-exchange when stop() is called still delivers its response")

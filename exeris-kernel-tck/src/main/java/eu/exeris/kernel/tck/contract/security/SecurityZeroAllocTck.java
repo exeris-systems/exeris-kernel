@@ -23,6 +23,15 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
 public abstract class SecurityZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
     /**
+     * Creates the contract; subclasses supply the provider binding via {@link #createProvider()}
+     * and the token binding via {@link #createValidTokenBuffer()}.
+     */
+    public SecurityZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates the {@link SecurityProvider} under test.
      *
      * @return a configured provider instance

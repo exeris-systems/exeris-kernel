@@ -64,6 +64,15 @@ public abstract class AbstractWebSocketExchangeTck {
     /** An origin no test ever configures, used to assert the refusal path. */
     protected static final String UNLISTED_ORIGIN = "https://evil.example";
 
+    /**
+     * Creates the contract; subclasses supply the scenario under test via
+     * {@link #connect(WebSocketConfig, WebSocketHandler, WebSocketHandshakeHandler, String)}.
+     */
+    public AbstractWebSocketExchangeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // -------------------------------------------------------------------------
     // Mandatory binding hook
     // -------------------------------------------------------------------------

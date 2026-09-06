@@ -102,6 +102,16 @@ public abstract class AbstractRowCursorThroughputBenchmark extends AbstractExeri
     protected PersistenceConnection connection;
 
     /**
+     * Creates the contract; subclasses supply the provider under test via
+     * {@link #getProvider()} and the fixture data via
+     * {@link #prepareBenchmarkData(PersistenceEngine)}.
+     */
+    public AbstractRowCursorThroughputBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Implementations must return the {@link PersistenceProvider} under test.
      *
      * @return non-null provider (Community or Enterprise)
