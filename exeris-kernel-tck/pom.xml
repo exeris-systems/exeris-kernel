@@ -224,15 +224,18 @@
             never stops a release from being cut.
 
             Measured before switching on, on this module: 13 doclint errors and warnings capped at
-            javadoc's default -Xmaxwarns of 100, so the warning figure is a floor. The
-            gate is therefore expected to be red on the day it lands, and that is the point - it is
-            the worklist, and it is a reported check rather than a required one until the list is
-            empty.
+            javadoc's default -Xmaxwarns of 100, so the warning figure is a floor. That list was
+            cleared by the sweep in #464 before this gate reached main, so it lands green; it is a
+            reported check rather than a required one, and what it now does is hold the zero rather
+            than display the backlog.
 
-            The three custom tags are registered so the standard can be followed, NOT because the
-            code follows it. The SPI, measured, carries one @apiNote across 276 sources and neither of the
-            other two; this module was not counted separately. Unregistered, that single tag is itself a doclint error - which is how it
-            was found - and every tag added by rule 6 of javadoc-conventions.md would be another.
+            The three custom tags are registered because rule 6 of javadoc-conventions.md is written
+            in them and an unregistered tag is itself a doclint error - which is how the need was
+            found, from the single @apiNote the SPI carried across 276 sources when this profile was
+            written. The sweep in #464 then wrote the vocabulary here: 20 @apiNote and 35 @implSpec
+            across 131 sources. @implNote is zero and that is the correct number, not a gap - rule 6
+            defines it as facts about *this* implementation, and an abstract contract test has none;
+            what it has is what a binding must satisfy (@implSpec) and how to satisfy it (@apiNote).
             Registering them makes writing the tags possible; writing them is L2 work no gate
             measures.
 
