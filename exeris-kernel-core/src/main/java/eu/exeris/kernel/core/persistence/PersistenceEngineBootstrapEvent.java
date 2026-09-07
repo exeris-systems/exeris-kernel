@@ -17,9 +17,10 @@ import jdk.jfr.StackTrace;
  * completes bootstrap and is ready to accept connections.
  *
  * <h2>JFR-First Contract</h2>
- * <p>Every persistence engine bootstrap — regardless of tier — MUST emit this event.
- * Production SRE tooling relies on this event to verify that the persistence layer
- * started cleanly and within expected latency bounds.
+ * <p>Every {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} implementation —
+ * Community and Enterprise alike — emits this event once bootstrap completes; production SRE
+ * tooling relies on it to verify that the persistence layer started cleanly and within
+ * expected latency bounds.
  *
  * @since 0.5
  */
@@ -57,6 +58,17 @@ public final class PersistenceEngineBootstrapEvent extends Event {
     /** Transport layer in use (e.g., {@code "BlockingTCP"}, {@code "NativeAsync"}). */
     @Label("Transport")
     public String transport;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public PersistenceEngineBootstrapEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Emits the event if JFR recording is active. No-op otherwise.

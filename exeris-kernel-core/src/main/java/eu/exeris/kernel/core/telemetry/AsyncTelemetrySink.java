@@ -133,12 +133,20 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         return sink;
     }
 
-    /** Returns the configured ring capacity (informational; useful for diagnostics). */
+    /**
+     * Returns the configured ring capacity (informational; useful for diagnostics).
+     *
+     * @return the ring capacity in events, as passed to {@link #start(List, int, Duration)}
+     */
     public int capacity() {
         return capacity;
     }
 
-    /** Returns the running total of dropped events since construction. */
+    /**
+     * Returns the running total of dropped events since construction.
+     *
+     * @return the number of events discarded because the ring was full when {@link #emit} was called
+     */
     public long droppedCount() {
         return droppedCount.sum();
     }

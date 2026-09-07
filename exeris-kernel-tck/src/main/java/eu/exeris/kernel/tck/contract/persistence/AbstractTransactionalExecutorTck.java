@@ -53,7 +53,10 @@ public abstract class AbstractTransactionalExecutorTck {
 
     /**
      * Creates a fully bootstrapped {@link PersistenceEngine}.
-     * Must be backed by a real or in-memory database.
+     *
+     * @return an engine ready to open connections and run transactions
+     * @implSpec Must be backed by a real or in-memory database — the tests below run
+     *           genuine transactions, not stubs.
      */
     protected abstract PersistenceEngine createEngine();
 
@@ -81,19 +84,22 @@ public abstract class AbstractTransactionalExecutorTck {
 
     /**
      * Returns a SQL statement that writes a sentinel value atomically.
-     * Example: {@code "INSERT INTO sentinel_tck(val) VALUES ('ok')"}
+     *
+     * @return an insert statement, e.g. {@code "INSERT INTO sentinel_tck(val) VALUES ('ok')"}
      */
     protected abstract String writeSentinelSql();
 
     /**
      * Returns a SQL statement that reads sentinel row count (int at column 0).
-     * Example: {@code "SELECT COUNT(*) FROM sentinel_tck"}
+     *
+     * @return a count query, e.g. {@code "SELECT COUNT(*) FROM sentinel_tck"}
      */
     protected abstract String readSentinelCountSql();
 
     /**
      * Returns a SQL query that returns at least one row with an int at column 0.
-     * Example: {@code "SELECT 1"}
+     *
+     * @return a single-row query, e.g. {@code "SELECT 1"}
      */
     protected abstract String selectOneSql();
 
@@ -103,6 +109,16 @@ public abstract class AbstractTransactionalExecutorTck {
 
     private PersistenceEngine engine;
     private TransactionalExecutor executor;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * no-retry/retry executors via {@link #createExecutorNoRetry(PersistenceEngine)} and
+     * {@link #createExecutorWithRetry(PersistenceEngine, int, long)}.
+     */
+    public AbstractTransactionalExecutorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {
@@ -123,6 +139,14 @@ public abstract class AbstractTransactionalExecutorTck {
     @DisplayName("Query (read-only) contract")
     class QueryContract {
 
+        /**
+         * Groups the read-only {@code query()} result and connection-release assertions.
+         */
+        QueryContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("query() returns a non-null result")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -136,6 +160,15 @@ public abstract class AbstractTransactionalExecutorTck {
             assertThat(result).isNotNull();
         }
 
+        /**
+         * Proves that {@code query()} returns its connection to the pool between calls, by
+         * running six queries in sequence and asserting the sixth still succeeds.
+         *
+         * @apiNote Each of the six queries holds at most one connection at a time, so this
+         *          does not exercise a configured pool-size limit or concurrent pool
+         *          pressure — a binding with a pool of one connection satisfies it as
+         *          readily as one with a hundred.
+         */
         @Test
         @DisplayName("query() releases connection after each call (no exhaustion on repeat)")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -168,6 +201,14 @@ public abstract class AbstractTransactionalExecutorTck {
     @DisplayName("Read-session contract")
     class ReadSessionContract {
 
+        /**
+         * Groups the {@code inReadSession()} connection-reuse assertion.
+         */
+        ReadSessionContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("inReadSession() reuses the same connection within scope")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -191,6 +232,14 @@ public abstract class AbstractTransactionalExecutorTck {
     @Nested
     @DisplayName("Managed transaction contract")
     class ManagedTransactionContract {
+
+        /**
+         * Groups the {@code executeManaged()} commit, rollback and single-invocation assertions.
+         */
+        ManagedTransactionContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("executeManaged() commits on success")
@@ -258,6 +307,20 @@ public abstract class AbstractTransactionalExecutorTck {
     @DisplayName("Retry behaviour contract")
     class RetryBehaviourContract {
 
+        /**
+         * Groups the attempt-count assertions for no-retry and retry-configured executors,
+         * including the non-retryable-SQLSTATE and eventual-success cases.
+         */
+        RetryBehaviourContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
+         * Counts the work-lambda invocations directly, rather than only checking that the
+         * call fails, so a no-retry executor that silently retried once more before giving up
+         * would not pass by coincidence.
+         */
         @Test
         @DisplayName("no-retry executor: fails after exactly 1 attempt on 40001")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -276,6 +339,10 @@ public abstract class AbstractTransactionalExecutorTck {
             assertThat(attempts.get()).as("no-retry executor must attempt exactly once").isOne();
         }
 
+        /**
+         * The read-session counterpart of {@link #noRetryFailsAfterOneAttempt()}: the attempt
+         * counter, not the thrown exception alone, is what proves no retry occurred.
+         */
         @Test
         @DisplayName("no-retry executor: read-session fails after exactly 1 attempt on 40001")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -293,6 +360,11 @@ public abstract class AbstractTransactionalExecutorTck {
             assertThat(attempts.get()).as("no-retry executor must attempt exactly once").isOne();
         }
 
+        /**
+         * Establishes that a retry actually happens, not merely that the call eventually
+         * fails: the work lambda is asserted to run exactly {@code maxAttempts} times before
+         * the executor gives up and surfaces the failure.
+         */
         @Test
         @DisplayName("retry executor: retries up to maxAttempts on 40001")
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
@@ -316,6 +388,11 @@ public abstract class AbstractTransactionalExecutorTck {
                     .isEqualTo(maxAttempts);
         }
 
+        /**
+         * The read-session counterpart of {@link #retryExecutorRetriesUpToMax()}. The counter
+         * sits outside the inner {@code session.query} call, so it proves the whole session
+         * block re-runs on each attempt rather than only the failing query within it.
+         */
         @Test
         @DisplayName("retry executor: read-session retries whole block up to maxAttempts on 40001")
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
@@ -340,6 +417,11 @@ public abstract class AbstractTransactionalExecutorTck {
                     .isEqualTo(maxAttempts);
         }
 
+        /**
+         * Pairs with {@link #retryExecutorRetriesUpToMax()} to prove retry is conditioned on
+         * the SQLSTATE rather than blanket: the same retry-configured executor is asserted to
+         * attempt only once when the failure is {@code 42601} instead of {@code 40001}.
+         */
         @Test
         @DisplayName("retry executor: does NOT retry on non-retryable SQLSTATE 42601")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -362,6 +444,9 @@ public abstract class AbstractTransactionalExecutorTck {
                     .isOne();
         }
 
+        /**
+         * The read-session counterpart of {@link #retryExecutorDoesNotRetryOnSyntaxError()}.
+         */
         @Test
         @DisplayName("retry executor: does NOT retry read-session on non-retryable SQLSTATE 42601")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -383,6 +468,12 @@ public abstract class AbstractTransactionalExecutorTck {
                     .isOne();
         }
 
+        /**
+         * Establishes both halves of the recovery contract: the attempt counter reaching
+         * exactly 2 proves the retry actually re-invoked the work, and {@code execute}
+         * returning without throwing proves the retried attempt's success — not the first
+         * attempt's failure — is what the caller observes.
+         */
         @Test
         @DisplayName("retry executor: succeeds on second attempt after transient failure")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
@@ -417,6 +508,14 @@ public abstract class AbstractTransactionalExecutorTck {
     // CHECKSTYLE:ON
     class VtIsolationContract {
 
+        /**
+         * Groups the concurrent-query no-connection-sharing assertion.
+         */
+        VtIsolationContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("concurrent queries complete without connection sharing")
         @Timeout(value = 10, unit = TimeUnit.SECONDS)
@@ -448,6 +547,7 @@ public abstract class AbstractTransactionalExecutorTck {
      * Must NOT appear in production code.
      */
     public static final class TckForcedRollbackException extends RuntimeException {
+        /** Creates the sentinel exception thrown to force a rollback under test. */
         public TckForcedRollbackException() {
             super("TCK: forced rollback for rollback-contract verification");
         }

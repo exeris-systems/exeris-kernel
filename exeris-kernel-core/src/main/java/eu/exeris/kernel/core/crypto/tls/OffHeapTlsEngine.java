@@ -78,6 +78,19 @@ import java.lang.invoke.VarHandle;
  * multiple concurrent {@code close()} calls are safe; exactly one will invoke
  * {@link NativeCipherContext#release()}.
  *
+ * <p><b>Allocation:</b> zero-alloc on the {@link #wrap}/{@link #unwrap} hot path;
+ * allocates once at construction (the native {@code SSL*} handle via
+ * {@link NativeCipherContext}) and, at handshake completion, once for the cipher-name
+ * string ({@link CipherNameReader}) plus once more only if the negotiated ALPN protocol
+ * falls outside the pre-interned {@code h2}/{@code http/1.1}/{@code h3} set
+ * ({@link AlpnReader}).
+ * <p><b>Thread confinement:</b> owner thread — not thread-safe by design; each
+ * carrier or virtual thread owns its own {@code OffHeapTlsEngine} instance. Only the
+ * {@link #close()} CAS guard is safe under concurrent calls.
+ * <p><b>Ownership:</b> the caller closes the engine via {@link #close()}; the winning
+ * {@code close()} call releases the {@link NativeCipherContext} base reference exactly
+ * once, freeing the {@code SSL*} handle when no retained reference remains outstanding.
+ *
  * @since 0.5
  * @see TlsEngine
  * @see CoreSslHandles
@@ -193,7 +206,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @param serverMode {@code true} for server role ({@code SSL_accept}),
      *                   {@code false} for client ({@code SSL_connect})
      * @param allocator  {@link MemoryAllocator} used for {@link AllocationHint#SESSION} tracking
-     * @throws TlsException if {@code SSL_new} returns {@code NULL}
+     * @throws TlsException ({@code EX-NET-2001}) if {@code SSL_new} returns {@code NULL}
      * @throws eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException
      *         ({@code EX-MEM-1001}) if the {@link AllocationHint#SESSION} slab cannot be
      *         satisfied by the {@code WatermarkManager}
@@ -224,7 +237,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @param sslSetFd       pre-linked method handle for {@code SSL_set_fd(SSL*, int) → int}
      * @param fileDescriptor OS-level socket file descriptor to bind
      * @return raw return value of {@code SSL_set_fd} (1 = success, 0 = failure)
-     * @throws TlsHandshakeException if the engine is closed or the downcall throws
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed or
+     *         the downcall throws
      */
     public int bindTransportFd(MethodHandle sslSetFd, int fileDescriptor) {
         checkNotClosed();
@@ -257,8 +271,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * {@link TlsPhase#HANDSHAKE_IN_PROGRESS} and emits {@link TlsEngineBindEvent}
      * (JFR-First).
      *
-     * @throws TlsHandshakeException if the engine is not in {@link TlsPhase#UNINITIALIZED}
-     *                               or has already been closed
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is not in
+     *         {@link TlsPhase#UNINITIALIZED} or has already been closed
      */
     @Override
     public void notifyBound() {
@@ -314,6 +328,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @param outbound buffer for outbound handshake bytes; always empty in fd-owner BIO mode
      * @return {@link TlsStatus#FINISHED} on complete, {@link TlsStatus#NEED_UNWRAP} or
      *         {@link TlsStatus#NEED_WRAP} if more steps required
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed, or if
+     *         called while not in {@link TlsPhase#HANDSHAKE_IN_PROGRESS}
      */
     @Override
     public TlsStatus beginHandshake(LoanedBuffer outbound) {
@@ -398,6 +414,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
      *       that BIO-fill step; it only calls {@code SSL_read} and writes into
      *       {@code plaintext}.</li>
      * </ul>
+     *
+     * @throws TlsDecryptException ({@code EX-NET-2003}) if the engine is closed or not
+     *         in {@link TlsPhase#ACTIVE}
      */
     @Override
     public TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
@@ -456,6 +475,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
      *       own {@code BIO_read} handle, then transmits the contents.
      *       This class has zero knowledge of that BIO drain step.</li>
      * </ul>
+     *
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed or not
+     *         in {@link TlsPhase#ACTIVE}
      */
     @Override
     public TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
@@ -542,6 +564,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * </ul>
      *
      * @param outbound buffer for the {@code close_notify} alert; always empty in fd-owner BIO mode
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed
      */
     @Override
     public void initiateShutdown(LoanedBuffer outbound) {
@@ -664,12 +687,16 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * — an I/O error or unexpected peer EOF) is a terminal condition that maps to
      * {@link TlsStatus#CLOSED}.
      *
-     * <p>Mapping these terminal codes to {@link TlsStatus#NEED_HANDSHAKE} (the prior
-     * behaviour) caused an unbounded reactor busy-spin: a half-open or garbage probe
-     * connection stuck in {@code HANDSHAKE_IN_PROGRESS} was re-stepped on every
-     * level-triggered read, never torn down, emitting millions of phantom handshake
-     * "failure" events. Returning {@code CLOSED} lets the transport layer
-     * ({@code ensureTlsReady}/{@code unwrap}) tear the fd down after a single real failure.
+     * @apiNote A terminal code must map to {@link TlsStatus#CLOSED} rather than to a
+     *          status that requests another handshake step: a half-open or garbage
+     *          probe connection stuck in {@code HANDSHAKE_IN_PROGRESS} would otherwise
+     *          be re-stepped on every level-triggered read and never torn down.
+     *          {@code CLOSED} lets the transport layer ({@code ensureTlsReady}/
+     *          {@code unwrap}) tear the fd down after a single real failure.
+     * @param sslErrorCode raw {@code SSL_get_error} result code
+     * @return {@link TlsStatus#NEED_UNWRAP} for {@code SSL_ERROR_WANT_READ},
+     *         {@link TlsStatus#NEED_WRAP} for {@code SSL_ERROR_WANT_WRITE}, or
+     *         {@link TlsStatus#CLOSED} for any other code
      */
     /* default */ static TlsStatus mapSslError(int sslErrorCode) {
         return switch (sslErrorCode) {

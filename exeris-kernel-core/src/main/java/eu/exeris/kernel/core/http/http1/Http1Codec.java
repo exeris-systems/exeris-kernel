@@ -37,8 +37,14 @@ import java.util.Objects;
  *   </li>
  * </ul>
  *
- * <h2>Thread Safety</h2>
- * <p>Not thread-safe. Each HTTP/1.1 connection must own exactly one instance.
+ * <p><b>Allocation:</b> allocates a per-call header-parse-state object on every
+ * {@link #parseHeaders(MemorySegment, long, long, Http1RequestParser.HeaderVisitor)}
+ * invocation, plus whatever {@link Http1RequestParser} allocates for decoded header names and
+ * values; the codec keeps no buffer of its own between calls.
+ * <p><b>Thread confinement:</b> owner thread — not thread-safe; each HTTP/1.1 connection must
+ * own exactly one instance.
+ * <p><b>Ownership:</b> the codec holds no buffers or native resources; every segment it reads
+ * from or writes to is supplied by, and remains owned by, the caller.
  *
  * @since 0.5
  * @see Http1RequestParser
@@ -117,11 +123,12 @@ public final class Http1Codec {
      * built-in DoS limits — {@link Http1RequestParser#DEFAULT_MAX_HEADERS} and
      * {@link Http1RequestParser#DEFAULT_MAX_HEADER_SIZE}.
      *
-     * <p>For callers with no {@code HttpConfig} in hand (tests, tooling). Production dispatch uses
-     * {@link #Http1Codec(int, int)}, so the operator's configured limits are the ones enforced:
-     * until v0.12 every call site used this constructor, which is how
-     * {@code http.maxRequestHeaderCount} and {@code http.maxRequestHeaderSize} came to be read,
-     * validated, carried on {@code HttpConfig} and enforced nowhere (ADR-071).
+     * <p>For callers with no {@code HttpConfig} in hand (tests, tooling). Production dispatch
+     * uses {@link #Http1Codec(int, int)} instead, so that the operator's configured
+     * {@code http.maxRequestHeaderCount} and {@code http.maxRequestHeaderSize} are the limits
+     * actually enforced.
+     *
+     * @see <a href="../../../../../../../docs/adr/ADR-071-operational-limit-configuration-path.md">ADR-071</a>
      */
     public Http1Codec() {
         this(Http1RequestParser.DEFAULT_MAX_HEADERS, Http1RequestParser.DEFAULT_MAX_HEADER_SIZE);
@@ -207,6 +214,9 @@ public final class Http1Codec {
      * @param offset  offset to first header line (after the request-line CRLF)
      * @param length  available bytes
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
+     * @throws Http1RequestParser.Http1ParseException {@code EX-HTTP-4004} if a header field is
+     *         malformed, a field name is not a valid RFC 9110 token, or the header count or a
+     *         single field's size exceeds the limits this codec was constructed with
      */
     public long parseHeaders(MemorySegment seg, long offset, long length) {
         return parseHeaders(seg, offset, length, DISCARD_HEADERS);
@@ -218,9 +228,8 @@ public final class Http1Codec {
      *
      * <p>One pass, not two. The connection state this codec tracks and the header list a server
      * builds are both derived from the same bytes under the same bounds, so deriving them together
-     * removes a full re-materialisation of every field. It also removes a hazard rather than only a
-     * cost: with two passes the enforced limit depended on which pass reached it first unless both
-     * were handed identical bounds (ADR-071), and a single pass cannot express that mistake.
+     * removes a full re-materialisation of every field and guarantees the enforced limit and the
+     * visited header list agree on where those bounds are (ADR-071).
      *
      * <p>{@code visitor} is invoked <em>after</em> the field has updated connection state, so a
      * field this codec rejects — a malformed {@code Content-Length}, say — never reaches it. Fields
@@ -236,6 +245,10 @@ public final class Http1Codec {
      * @param length  available bytes
      * @param visitor callback for each parsed header field; non-null
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
+     * @throws NullPointerException if {@code visitor} is {@code null}
+     * @throws Http1RequestParser.Http1ParseException {@code EX-HTTP-4004} if a header field is
+     *         malformed, a field name is not a valid RFC 9110 token, or the header count or a
+     *         single field's size exceeds the limits this codec was constructed with
      */
     public long parseHeaders(MemorySegment seg, long offset, long length,
                              Http1RequestParser.HeaderVisitor visitor) {

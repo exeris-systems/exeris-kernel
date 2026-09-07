@@ -22,33 +22,36 @@ import java.util.concurrent.locks.LockSupport;
  *   <li>Calls {@link WatermarkManager#refresh()} every
  *       {@link #watermarkIntervalMs()} ms — updates the pressure level consumed by
  *       {@link ResourceArbiter#decide(ResourceArbiter.Context)}.</li>
- *   <li>Emits a {@code MemoryMaintenanceCycleEvent} JFR event on each maintenance
+ *   <li>Emits a {@link MemoryMaintenanceEvents.CycleEvent} JFR event on each maintenance
  *       iteration when {@link MemoryAllocator#performMaintenance()} runs.</li>
  * </ol>
  *
  * <h2>No {@code ScheduledExecutorService}</h2>
  * <p>Per the architectural ban on {@code ExecutorService} and {@code Executors}, timing
  * is implemented as a Virtual Thread loop using {@link LockSupport#parkNanos(long)}.
- * {@code parkNanos} is used instead of {@code Thread.sleep()} to avoid creating a
- * {@code Thread.sleep()} allocation (the SleepEvent) and to allow unparking for
- * graceful shutdown without {@code InterruptedException} handling complexity.
+ * Unlike {@code Thread.sleep()}, {@code parkNanos} declares no checked exception and can
+ * be woken early by {@link LockSupport#unpark(Thread)} — which is how {@link #stop()}
+ * signals the loop to exit without waiting out its current sleep.
  *
  * <h2>Lifecycle</h2>
- * <pre>
- *   start()  — launches the Virtual Thread, returns immediately
- *   stop()   — sets the stop flag, unparks the sleeping VT, waits for termination
- *   close()  — alias for stop() (implements AutoCloseable for try-with-resources)
- * </pre>
+ * <ul>
+ *   <li>{@link #start()} launches the maintenance Virtual Thread and returns immediately.</li>
+ *   <li>{@link #stop()} signals the loop to stop, unparks the sleeping thread, and waits
+ *       for it to terminate.</li>
+ *   <li>{@link #close()} is an alias for {@link #stop()}, so this task can be used in a
+ *       try-with-resources block.</li>
+ * </ul>
  *
  * <h2>Thread Safety</h2>
- * <p>The {@code running} flag is a {@code volatile boolean} read by the VT loop and
- * written by {@code stop()}, and it is also updated via a {@link VarHandle} compare-and-set
- * in {@code start()} to enforce at-most-once startup. Volatile provides the required
- * visibility; CAS is used solely for idempotent lifecycle control.</p>
+ * <p>The {@link #loopActive} flag is a {@code volatile boolean} read by the maintenance
+ * loop and written by {@link #stop()}, and it is also updated via a {@link VarHandle}
+ * compare-and-set in {@link #start()} to enforce at-most-once startup. Volatile provides
+ * the required visibility; the compare-and-set is used solely for idempotent lifecycle
+ * control, not for the loop's own visibility guarantee.</p>
  *
+ * @since 0.5
  * @see WatermarkManager
  * @see MemoryAllocator#performMaintenance()
- * @since 0.5
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class MemoryMaintenanceTask implements AutoCloseable {
@@ -94,6 +97,8 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      *
      * @param allocator        the allocator to maintain; must not be {@code null}
      * @param watermarkManager the watermark monitor to refresh; must not be {@code null}
+     * @throws IllegalArgumentException if {@code allocator} or {@code watermarkManager}
+     *         is {@code null}
      */
     public MemoryMaintenanceTask(MemoryAllocator allocator, WatermarkManager watermarkManager) {
         this(allocator, watermarkManager,
@@ -105,8 +110,12 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
      *
      * @param allocator             the allocator to maintain; must not be {@code null}
      * @param watermarkManager      the watermark monitor to refresh; must not be {@code null}
-     * @param maintenanceIntervalMs interval between performMaintenance() calls in ms
-     * @param watermarkIntervalMs   interval between watermark refresh calls in ms
+     * @param maintenanceIntervalMs interval between performMaintenance() calls in ms;
+     *                              must be {@code > 0}
+     * @param watermarkIntervalMs   interval between watermark refresh calls in ms;
+     *                              must be {@code > 0}
+     * @throws IllegalArgumentException if {@code allocator} or {@code watermarkManager}
+     *         is {@code null}, or if either interval is not positive
      */
     public MemoryMaintenanceTask(MemoryAllocator allocator,
                                  WatermarkManager watermarkManager,
@@ -194,21 +203,33 @@ public final class MemoryMaintenanceTask implements AutoCloseable {
     // =========================================================================
 
     /**
-     * Returns the configured maintenance interval in milliseconds.
+     * Returns the interval between successive {@link MemoryAllocator#performMaintenance()}
+     * calls, as configured at construction.
+     *
+     * @return the maintenance interval in milliseconds; fixed for the lifetime of
+     *         this instance
      */
     public long maintenanceIntervalMs() {
         return maintenanceIntervalMs;
     }
 
     /**
-     * Returns the configured watermark refresh interval in milliseconds.
+     * Returns the interval between successive {@link WatermarkManager#refresh()} calls,
+     * as configured at construction.
+     *
+     * @return the watermark refresh interval in milliseconds; fixed for the lifetime
+     *         of this instance
      */
     public long watermarkIntervalMs() {
         return watermarkIntervalMs;
     }
 
     /**
-     * Returns {@code true} if the maintenance thread is currently active.
+     * Reports whether the maintenance thread has been started and not yet stopped.
+     *
+     * @return {@code true} from {@link #start()} until {@link #stop()} is called;
+     *         {@code false} otherwise, including while {@link #stop()} is still
+     *         waiting for the thread to terminate
      */
     public boolean isRunning() {
         return (boolean) RUNNING.getAcquire(this);

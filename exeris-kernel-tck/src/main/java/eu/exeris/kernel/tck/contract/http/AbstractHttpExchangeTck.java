@@ -37,6 +37,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public abstract class AbstractHttpExchangeTck {
 
     /**
+     * Creates the contract; subclasses supply the exchange under test via
+     * {@link #createExchange(HttpRequest)}.
+     */
+    public AbstractHttpExchangeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates an {@link HttpExchange} pre-loaded with the given request.
      *
      * @param request the request to associate with the exchange
@@ -44,7 +53,12 @@ public abstract class AbstractHttpExchangeTck {
      */
     protected abstract HttpExchange createExchange(HttpRequest request);
 
-    /** Minimal GET / HTTP/1.1 request for use in tests. */
+    /**
+     * Returns a minimal {@code GET / HTTP/1.1} request carrying no headers and no body, for use
+     * as a baseline fixture across this class's tests.
+     *
+     * @return a minimal GET request; never {@code null}
+     */
     protected static HttpRequest minimalRequest() {
         return HttpRequest.noBody(HttpMethod.GET, "/", HttpVersion.HTTP_1_1, List.of());
     }

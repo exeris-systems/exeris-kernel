@@ -7,6 +7,15 @@ package eu.exeris.kernel.core.flow;
 import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowState;
 
+/**
+ * Core: the {@link FlowContext} view of a live or restored flow instance, reading straight
+ * through to a {@link RuntimeFlowContextStateView} rather than holding any mutable state itself.
+ *
+ * <p>Built once per {@link RuntimeFlowInstance} and handed to that instance's step and
+ * compensation actions and to lookup callers such as {@code FlowScheduler.lookupParked}. Because
+ * every accessor but {@link #instanceIdMost()} and {@link #instanceIdLeast()} delegates to the
+ * backing view, this object never falls out of sync with the instance it fronts.
+ */
 final class RuntimeFlowContext implements FlowContext {
 
     private final FlowKey key;

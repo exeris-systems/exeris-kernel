@@ -17,23 +17,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * TCK: Abstract base for {@link TelemetrySink} contract verification.
+ * Verifies that a {@link TelemetrySink} accepts every event shape {@link KernelEvent} can carry
+ * without throwing, and behaves correctly across {@code close()}.
  *
  * <h2>Contract</h2>
- * <p>Every conforming {@link TelemetrySink} implementation MUST:
  * <ul>
- *   <li>Accept all {@link EventLevel} values without throwing</li>
- *   <li>Accept {@code null} cause in {@link KernelEvent} without NPE</li>
- *   <li>Be idempotently closeable — {@link TelemetrySink#close()} twice must not throw</li>
- *   <li>Silently drop events emitted after {@link TelemetrySink#close()} (no exception)</li>
+ *   <li>Accepts {@link EventLevel#INFO}, {@link EventLevel#WARN} and {@link EventLevel#ERROR}
+ *       without throwing; {@link EventLevel#FATAL} is not exercised by this class (see
+ *       {@code AbstractTelemetryProviderTck#fatalBroadcast()} for that level)</li>
+ *   <li>Accepts a {@code null} {@link KernelEvent#exception()} without throwing</li>
+ *   <li>Is idempotently closeable — {@link TelemetrySink#close()} twice must not throw</li>
+ *   <li>{@code emit()} does not throw after {@link TelemetrySink#close()}; the test does not read
+ *       the sink's own output channel back, so it establishes the absence of an exception, not that
+ *       the event was actually dropped rather than delivered</li>
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class ConsoleSinkTckTest extends AbstractTelemetrySinkTck {
  *     @Override protected TelemetrySink createSink() { return new ConsoleSink(); }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -41,10 +45,20 @@ public abstract class AbstractTelemetrySinkTck {
 
     /**
      * Subclass supplies the sink under test. Called once before each test.
+     *
+     * @return a newly created, open sink
      */
     protected abstract TelemetrySink createSink();
 
     private TelemetrySink sink;
+
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createSink()}.
+     */
+    public AbstractTelemetrySinkTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {

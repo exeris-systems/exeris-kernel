@@ -43,7 +43,7 @@ import java.util.function.UnaryOperator;
  * <h2>Responsibilities</h2>
  * <ol>
  *   <li><b>Discovery:</b> Loads all {@link SubsystemProvider} implementations via
- *       {@link ServiceLoader}, sorted by priority descending. Higher-priority provider
+ *       {@link java.util.ServiceLoader}, sorted by priority descending. Higher-priority provider
  *       wins on name collision (Enterprise shadows Community).</li>
  *   <li><b>Closure:</b> Expands the {@link BootstrapSelector} to its full transitive
  *       dependency closure via BFS — requesting {@code "persistence"} automatically
@@ -290,6 +290,10 @@ public final class SubsystemOrchestrator {
      *
      * @param config the active kernel config
      * @return the selected subsystems in bootstrap (topological) order; never {@code null}
+     * @throws SubsystemCircularDependencyException if the selected subsystems contain a
+     *         dependency cycle (FAIL_FAST — cannot be suppressed)
+     * @throws BootstrapException if the selector requests a subsystem not present in the
+     *         registry, or the registry contains a duplicate subsystem name
      */
     public List<Subsystem> resolveTopology(ConfigProvider config) throws BootstrapException {
         Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
@@ -349,8 +353,9 @@ public final class SubsystemOrchestrator {
     }
 
     /**
-     * Graceful shutdown — stops all running subsystems in strict reverse topological
-     * order. Never throws — exceptions are logged as WARNING.
+     * Graceful shutdown — calls {@code stop()} on each subsystem for which
+     * {@link Subsystem#isRunning()} reports {@code true}, in strict reverse topological order.
+     * Never throws — a {@code stop()} that throws is caught and logged as WARNING.
      */
     public void shutdown() {
         if (terminated.get()) {
@@ -393,12 +398,22 @@ public final class SubsystemOrchestrator {
     // Query API
     // =========================================================================
 
-    /** @return {@code true} after a successful {@link #initialize(ConfigProvider)} */
+    /**
+     * Reports whether {@link #initialize(ConfigProvider)} has completed successfully and
+     * {@link #shutdown()} has not yet reset it.
+     *
+     * @return {@code true} after a successful {@link #initialize(ConfigProvider)}
+     */
     public boolean isInitialized() {
         return initialized.get();
     }
 
-    /** @return {@code true} after a successful {@link #start(ConfigProvider)} */
+    /**
+     * Reports whether {@link #start(ConfigProvider)} has completed successfully and
+     * {@link #shutdown()} has not yet reset it.
+     *
+     * @return {@code true} after a successful {@link #start(ConfigProvider)}
+     */
     public boolean isStarted() {
         return started.get();
     }
@@ -407,7 +422,7 @@ public final class SubsystemOrchestrator {
      * Builds a {@link ScopedValue.Carrier} from all provider bindings collected
      * during {@link #initialize(ConfigProvider)}.
      *
-     * <h2>Protocol</h2>
+     * <h4>Protocol</h4>
      * <p>Called by {@link KernelBootstrap} <em>after</em> {@link #initialize(ConfigProvider)}
      * returns and <em>before</em> {@link #start(ConfigProvider)} is called.
      * {@code KernelBootstrap} then executes both {@code start()} and the application
@@ -416,7 +431,7 @@ public final class SubsystemOrchestrator {
      * {@link eu.exeris.kernel.spi.context.KernelProviders#allocator()} etc. without
      * argument threading.
      *
-     * <h2>Type safety</h2>
+     * <h4>Type safety</h4>
      * <p>The previous implementation iterated a {@code Map<ScopedValue<?>, Object>} and
      * required {@code @SuppressWarnings({"unchecked","rawtypes"})} to build the carrier.
      * This implementation applies the {@link #composedEnricher} — a {@link UnaryOperator}
@@ -424,7 +439,7 @@ public final class SubsystemOrchestrator {
      * No casts, no wildcards, no suppressions. The compiler validates each
      * {@code .where(ScopedValue<T>, T)} binding at the subsystem's own call site.
      *
-     * <h2>Empty bindings</h2>
+     * <h4>Empty bindings</h4>
      * <p>If no subsystem overrode {@link Subsystem#providerBindings()}, the composed
      * enricher is the identity function and this method returns {@code null}.
      * {@link KernelBootstrap} treats {@code null} as "no additional scope required"
@@ -474,7 +489,11 @@ public final class SubsystemOrchestrator {
         return Collections.unmodifiableList(orderedSubsystems);
     }
 
-    /** Exposes readiness/liveness registry for probe wiring. */
+    /**
+     * Exposes readiness/liveness registry for probe wiring.
+     *
+     * @return the health monitor tracking this orchestrator's subsystems
+     */
     public KernelHealthMonitor healthMonitor() {
         return healthMonitor;
     }
@@ -825,7 +844,11 @@ public final class SubsystemOrchestrator {
     // Builder
     // =========================================================================
 
-    /** Creates a new {@link Builder}. */
+    /**
+     * Creates a new {@link Builder}.
+     *
+     * @return a new builder with default settings
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -839,7 +862,23 @@ public final class SubsystemOrchestrator {
         private BootstrapSelector selector      = BootstrapSelector.all();
         private ClassLoader       classLoader;
 
-        /** Sets the failure policy (default: {@link FailurePolicy#FAIL_FAST}). */
+        /**
+         * Creates a builder with every setting at its default.
+         *
+         * <p>Obtain one through {@link SubsystemOrchestrator#builder()} rather than directly; the factory is the
+         * documented entry point and this constructor exists only because the class is public.
+         */
+        public Builder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
+         * Sets the failure policy (default: {@link FailurePolicy#FAIL_FAST}).
+         *
+         * @param policy failure policy
+         * @return this builder
+         */
         public Builder failurePolicy(FailurePolicy policy) {
             this.failurePolicy = Objects.requireNonNull(policy);
             return this;
@@ -848,6 +887,9 @@ public final class SubsystemOrchestrator {
         /**
          * Sets which subsystems to activate (default: {@link BootstrapSelector#all()}).
          * The orchestrator expands the selector to its full transitive closure.
+         *
+         * @param sel bootstrap selector
+         * @return this builder
          */
         public Builder selector(BootstrapSelector sel) {
             this.selector = Objects.requireNonNull(sel);
@@ -855,15 +897,22 @@ public final class SubsystemOrchestrator {
         }
 
         /**
-         * Sets the {@link ClassLoader} for {@link ServiceLoader} discovery.
+         * Sets the {@link ClassLoader} for {@link java.util.ServiceLoader} discovery.
          * Defaults to {@code Thread.currentThread().getContextClassLoader()}.
+         *
+         * @param loaderClass class loader
+         * @return this builder
          */
         public Builder classLoader(ClassLoader loaderClass) {
             this.classLoader = loaderClass;
             return this;
         }
 
-        /** Builds the orchestrator. Does not start or initialize any subsystem. */
+        /**
+         * Builds the orchestrator. Does not start or initialize any subsystem.
+         *
+         * @return a new orchestrator configured from this builder
+         */
         public SubsystemOrchestrator build() {
             return new SubsystemOrchestrator(this);
         }
@@ -879,10 +928,21 @@ public final class SubsystemOrchestrator {
      */
     public static final class BootstrapException extends Exception {
 
+        /**
+         * Creates the exception with {@code message} and no cause.
+         *
+         * @param message failure detail message
+         */
         public BootstrapException(String message) {
             super(message);
         }
 
+        /**
+         * Creates the exception with {@code message} and the underlying {@code cause}.
+         *
+         * @param message failure detail message
+         * @param cause   the underlying failure
+         */
         public BootstrapException(String message, Throwable cause) {
             super(message, cause);
         }

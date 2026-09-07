@@ -36,13 +36,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>Both contexts are unbound after the handler returns</li>
  *   <li>Failed authentication drops the request without invoking the handler
  *       (Fail-Closed Gate)</li>
- *   <li>{@link KernelProviders#PRINCIPAL_CONTEXT} and {@link KernelProviders#STORAGE_CONTEXT}
- *       propagate to all child Virtual Threads via {@code StructuredTaskScope}</li>
+ *   <li>A child Virtual Thread forked inside a {@code StructuredTaskScope} and rebound with
+ *       the request's {@link KernelProviders#PRINCIPAL_CONTEXT} / {@link KernelProviders#STORAGE_CONTEXT}
+ *       observes exactly the values the interceptor established. Automatic {@code ScopedValue}
+ *       inheritance across the fork is a JDK property this contract does not itself pin; a
+ *       plain, unstructured virtual thread is pinned to inherit nothing.</li>
  *   <li>Concurrent requests do not cross-contaminate each other's contexts</li>
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunitySecurityInterceptorTckTest extends AbstractSecurityInterceptorTck {
  *
  *     @Override
@@ -72,12 +75,24 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *                 Set.of("ROLE_USER"));
  *     }
  * }
- * }</pre>
+ * }
  *
  * @param <I> the concrete interceptor type under test
  * @since 0.5
  */
 public abstract class AbstractSecurityInterceptorTck<I> {
+
+    /**
+     * Creates the contract; subclasses supply the interceptor binding via
+     * {@link #createInterceptor(SecurityProvider)}, plus the success and failure provider
+     * bindings the contract drives it with.
+     *
+     * <p>The fixture fields start unset — {@link #setUpFixtures()} populates them before each test.
+     */
+    public AbstractSecurityInterceptorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     // =========================================================================
     // Template methods — subclass supplies the SUT
@@ -129,7 +144,9 @@ public abstract class AbstractSecurityInterceptorTck<I> {
      * Invokes the interceptor with the given token and handler.
      *
      * <p>The implementation must call the equivalent of:
-     * <pre>{@code interceptor.intercept(token, handler)}</pre>
+     * {@snippet lang="java" :
+     * interceptor.intercept(token, handler)
+     * }
      *
      * @param interceptor   the interceptor instance
      * @param token         the token buffer
@@ -141,6 +158,11 @@ public abstract class AbstractSecurityInterceptorTck<I> {
     /**
      * Invokes {@code interceptPreAuthenticated} on the interceptor under test.
      * Delegate to {@code interceptor.interceptPreAuthenticated(principal, handler)}.
+     *
+     * @param interceptor the interceptor instance
+     * @param principal   the already-authenticated principal to bridge in
+     * @param handler     the request handler
+     * @return {@code true} if the handler was invoked; {@code false} if dropped
      */
     protected abstract boolean interceptPreAuthenticated(I interceptor,
                                                           PrincipalContext principal,
@@ -150,6 +172,8 @@ public abstract class AbstractSecurityInterceptorTck<I> {
      * Returns a {@link PrincipalContext} whose {@code tenantId()} call throws a
      * {@link RuntimeException}, exercising the bridge-failure fail-closed path.
      * All other methods must return non-throwing, valid values.
+     *
+     * @return a principal whose {@code tenantId()} accessor throws
      */
     protected abstract PrincipalContext createBridgeFailurePrincipal();
 

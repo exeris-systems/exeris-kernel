@@ -67,12 +67,32 @@ public abstract class AbstractFlowDefinitionVersioningTck {
      * <p>The store is a parameter rather than something the binding wires privately so a case can
      * hand the engine an instrument — see {@link OptimisticLock}, which needs a store that enforces
      * the version contract most bindings' stores are entitled to ignore.
+     *
+     * @param store the store the returned engine persists snapshots through
+     * @return a new, unstarted {@link FlowEngine} bound to {@code store}
      */
     protected abstract FlowEngine createEngine(FlowSnapshotStore store);
 
+    /**
+     * Returns the store backing the engine this suite creates in {@code setUpEngine}.
+     *
+     * @return the {@link FlowSnapshotStore} the default engine persists snapshots through
+     */
     protected abstract FlowSnapshotStore snapshotStore();
 
     private FlowEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the engine and its backing store via
+     * {@link #createEngine(FlowSnapshotStore)} and {@link #snapshotStore()}.
+     *
+     * <p>The {@code engine} field starts unset — {@link #setUpEngine()} populates and starts it
+     * before each test.
+     */
+    public AbstractFlowDefinitionVersioningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpEngine() {
@@ -85,10 +105,6 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         engine.close();
     }
 
-    /**
-     * Registers a version whose single step records that it ran, so a resume can be observed by
-     * <em>which</em> version executed rather than merely by the flow completing.
-     */
     /**
      * As {@link #register}, but on a caller-supplied engine and parking instead of completing.
      *
@@ -130,6 +146,11 @@ public abstract class AbstractFlowDefinitionVersioningTck {
                 .build();
     }
 
+    /**
+     * Compiles a plan for the given version whose second step records that it ran, into
+     * {@code executions}, so a resume can be observed by <em>which</em> version's step executed
+     * rather than merely by the flow completing.
+     */
     private FlowExecutionPlan register(int version, AtomicInteger executions) {
         // Two steps on purpose. A saga parked AT step 0 resumes at step 0+1, so a single-step
         // definition has nothing to run on wake and the resume looks identical to a refusal.
@@ -250,6 +271,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @DisplayName("Version through the builder")
     class VersionThroughTheBuilder {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise passing a version through the fluent definition
+         * builder.
+         */
+        VersionThroughTheBuilder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("a version set on the builder reaches the definition and the compiled plan")
         void theBuilderCarriesTheVersionEndToEnd() {
@@ -327,6 +358,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @DisplayName("Coexistence")
     class Coexistence {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise version coexistence — a newly registered version
+         * does not evict in-flight instances of the old one.
+         */
+        Coexistence() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
         @DisplayName("registering a new version does not evict the one in-flight sagas parked under")
@@ -373,6 +414,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("Fail-closed refusals")
     class Refusals {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the fail-closed refusals a corrupted or
+         * unversioned snapshot must trigger.
+         */
+        Refusals() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -536,6 +587,15 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("In-flight migration")
     class Migration {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise in-flight migration across versions.
+         */
+        Migration() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /** Identity transform: the versions differ but the saga sits at the same named step. */
         private FlowMigrationState sameStep(FlowMigrationState parked) {
@@ -950,23 +1010,6 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     }
 
     /**
-     * The compensation stack carries step identities, and resume refuses when they disagree with the
-     * plan (ADR-064 amendment A5).
-     *
-     * <h2>Why this half is the dangerous one</h2>
-     * <p>{@link Refusals#compensationStackOutsideThePlanIsRefused} covers an entry that does not index
-     * the plan. That one is loud: {@code plan.stepAt} throws inside failure handling, the unwind is
-     * truncated, and the parked row survives to be fixed. An entry that <em>does</em> index the plan but
-     * addresses a different step throws nothing at all. The unwind resolves a perfectly valid
-     * descriptor and either skips a compensation that was owed — the addressed step happens to declare
-     * none — or runs a different step's compensation. Both are silent, and neither is undoable: a
-     * compensation is a side effect that has already happened by the time anyone can observe it.
-     *
-     * <p>So these cases assert a <em>refusal on resume</em> rather than an observable rollback. There is
-     * no assertion that could distinguish the two silent outcomes after the fact, which is the whole
-     * argument for moving the check to the resume path.
-     */
-    /**
      * Migration bookkeeping, measured against a store that actually enforces the version.
      *
      * <p>Every case in {@link Migration} passes against a runtime whose migration write leaves the
@@ -978,6 +1021,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("Optimistic lock: a migrated saga checkpoints against the row the migration wrote")
     class OptimisticLock {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise optimistic-lock checkpointing against a migrated
+         * row.
+         */
+        OptimisticLock() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -1019,9 +1072,36 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         }
     }
 
+    /**
+     * The compensation stack carries step identities, and resume refuses when they disagree with the
+     * plan (ADR-064 amendment A5).
+     *
+     * <h2>Why this half is the dangerous one</h2>
+     * <p>{@link Refusals#compensationStackOutsideThePlanIsRefused} covers an entry that does not index
+     * the plan. That one is loud: {@code plan.stepAt} throws inside failure handling, the unwind is
+     * truncated, and the parked row survives to be fixed. An entry that <em>does</em> index the plan but
+     * addresses a different step throws nothing at all. The unwind resolves a perfectly valid
+     * descriptor and either skips a compensation that was owed — the addressed step happens to declare
+     * none — or runs a different step's compensation. Both are silent, and neither is undoable: a
+     * compensation is a side effect that has already happened by the time anyone can observe it.
+     *
+     * <p>So these cases assert a <em>refusal on resume</em> rather than an observable rollback. There is
+     * no assertion that could distinguish the two silent outcomes after the fact, which is the whole
+     * argument for moving the check to the resume path.
+     */
     @Nested
     @DisplayName("Compensation-stack step identity (ADR-064 A5)")
     class StackIdentity {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise compensation-stack step identity checks
+         * (ADR-064 A5).
+         */
+        StackIdentity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -1227,6 +1307,16 @@ public abstract class AbstractFlowDefinitionVersioningTck {
     @Nested
     @DisplayName("SPI stability (spi.flow is stable since 0.5.0)")
     class StabilityCompatibility {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise SPI stability of the 0.10.0 canonical
+         * constructor.
+         */
+        StabilityCompatibility() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /**
          * The 0.10.0 canonical constructor still exists, and still fails closed.

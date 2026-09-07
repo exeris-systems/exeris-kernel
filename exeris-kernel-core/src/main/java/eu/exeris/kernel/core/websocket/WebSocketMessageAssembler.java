@@ -34,6 +34,14 @@ import java.nio.charset.StandardCharsets;
  *       {@code new String(bytes, UTF_8)} would substitute U+FFFD and hand the handler something the
  *       peer did not send, which is the silent-corruption shape rather than a decode.</li>
  * </ul>
+ *
+ * <p><b>Allocation:</b> allocates — the internal buffer grows by doubling (bounded by the
+ * configured maximum) as fragments accumulate, and a new {@code String} is allocated once a
+ * message completes.
+ * <p><b>Thread confinement:</b> owner thread — confined to the single (virtual) thread that reads
+ * the connection it assembles for; concurrent use from another thread is not supported.
+ * <p><b>Ownership:</b> the instance owns its internal buffer exclusively for its full lifetime; the
+ * buffer is never exposed to a caller and needs no explicit release.
  */
 public final class WebSocketMessageAssembler {
 
@@ -45,6 +53,8 @@ public final class WebSocketMessageAssembler {
     private boolean fragmentInProgress;
 
     /**
+     * Creates an assembler that reassembles up to {@code maxMessageBytes} per message.
+     *
      * @param maxMessageBytes the configured ceiling on a reassembled message; must be positive and
      *                        must fit a {@code byte[]}
      * @throws IllegalArgumentException if the ceiling is not positive, or exceeds what this
@@ -80,6 +90,8 @@ public final class WebSocketMessageAssembler {
      * @param header the parsed header; must not be a control frame
      * @return the completed message when this frame finished one, otherwise {@code null}
      * @throws WebSocketProtocolException on a violation the connection must close for
+     *         ({@code EX-HTTP-4015})
+     * @throws IllegalArgumentException if {@code header} is a control frame
      */
     public String accept(MemorySegment seg, WebSocketFrameHeader header) {
         validate(header.opcode());
@@ -110,9 +122,13 @@ public final class WebSocketMessageAssembler {
      * RFC 6455 fragmentation rules plus this contract's text-only restriction.
      *
      * <p>PMD scores this 10 because it counts every arm of an enum switch as a path, including the
-     * three control opcodes the default covers. The method is four statements; splitting it would
-     * produce two methods that exist to satisfy a counter rather than to be read. The earlier
-     * if-chain scored 11, so the switch is the improvement, not the cause.
+     * three control opcodes the default covers; the method itself is four statements, and splitting
+     * it would produce two methods that exist to satisfy a counter rather than to be read.
+     *
+     * @throws WebSocketProtocolException if a data frame violates the fragmentation sequence, or
+     *         carries a binary opcode ({@code EX-HTTP-4015})
+     * @throws IllegalArgumentException if {@code opcode} is a control opcode; those are handled by
+     *                                  the engine before reaching the assembler
      */
     @SuppressWarnings("PMD.CyclomaticComplexity")
     private void validate(WebSocketOpcode opcode) {
@@ -137,6 +153,8 @@ public final class WebSocketMessageAssembler {
     }
 
     /**
+     * Reports whether a fragmented message is currently being reassembled.
+     *
      * @return whether a fragmented message is currently in progress
      */
     public boolean fragmentInProgress() {

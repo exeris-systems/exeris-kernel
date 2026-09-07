@@ -54,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       workload thread, AND records the exact per-thread allocated-bytes delta.</li>
  * </ol>
  *
- * <h2>Two Signals (issue #178)</h2>
+ * <h2>Two Signals</h2>
  * <p>The JFR event stream tells you <em>what</em> allocated, but
  * {@code ObjectAllocationInNewTLAB} only fires on a TLAB refill — small steady
  * allocations inside an already-active TLAB emit no event, so a JFR-only
@@ -111,6 +111,16 @@ public final class JfrAllocationMonitor {
             int warmupIterations,
             int hotPathIterations
     ) {
+        /**
+         * Validates the iteration counts.
+         *
+         * @param subsystemName     human-readable name (e.g. "Memory", "Transport")
+         * @param testClassName     simple class name of the calling test (for file naming)
+         * @param warmupIterations  iterations for the warm-up (discarded) phase
+         * @param hotPathIterations iterations for the steady-state (measured) phase
+         * @throws IllegalArgumentException if {@code warmupIterations} is negative or
+         *                                   {@code hotPathIterations} is less than 1
+         */
         public Config {
             if (warmupIterations < 0) {
                 throw new IllegalArgumentException("warmupIterations must be >= 0");
@@ -122,6 +132,10 @@ public final class JfrAllocationMonitor {
 
         /**
          * Default config: 1 000 warmup, 10 000 steady-state.
+         *
+         * @param subsystemName human-readable name (e.g. "Memory", "Transport")
+         * @param testClassName simple class name of the calling test (for file naming)
+         * @return a config with 1 000 warm-up and 10 000 steady-state iterations
          */
         public static Config ofDefaults(String subsystemName, String testClassName) {
             return new Config(subsystemName, testClassName, 1_000, 10_000);
@@ -129,6 +143,10 @@ public final class JfrAllocationMonitor {
 
         /**
          * High-density config for E2E integrity: 1 000 warmup, 1 000 000 steady-state.
+         *
+         * @param subsystemName human-readable name (e.g. "Memory", "Transport")
+         * @param testClassName simple class name of the calling test (for file naming)
+         * @return a config with 1 000 warm-up and 1 000 000 steady-state iterations
          */
         public static Config ofHighDensity(String subsystemName, String testClassName) {
             return new Config(subsystemName, testClassName, 1_000, 1_000_000);
@@ -147,7 +165,7 @@ public final class JfrAllocationMonitor {
      * @param allocatedBytesDelta total bytes allocated by the workload thread across the
      *                            steady-state {@code workload.run()}, from
      *                            {@code ThreadMXBean.getThreadAllocatedBytes} — a JFR-independent
-     *                            cross-check immune to TLAB-refill granularity (issue #178).
+     *                            cross-check immune to TLAB-refill granularity.
      *                            {@link #ALLOCATED_BYTES_UNAVAILABLE} if the JVM does not support
      *                            per-thread allocation accounting.
      * @param hotPathIterations   steady-state iteration count, used to assert a per-iteration
@@ -163,6 +181,8 @@ public final class JfrAllocationMonitor {
         /**
          * Returns a human-readable summary of allocated class names and counts, plus the
          * JFR-independent thread-allocated-bytes delta.
+         *
+         * @return the class×count summary followed by the thread-allocated-bytes delta
          */
         public String summary() {
             return summariseClasses(exerisAllocations)
@@ -212,7 +232,7 @@ public final class JfrAllocationMonitor {
         // JFR records all threads globally — we filter collected events by the workload thread id.
         long workloadThreadId = Thread.currentThread().threadId();
 
-        // JFR-independent cross-check (issue #178): ThreadMXBean reports exact per-thread allocated
+        // JFR-independent cross-check: ThreadMXBean reports exact per-thread allocated
         // bytes, immune to the TLAB-refill granularity that makes the JFR event stream under-report
         // small steady allocations. Bracketed TIGHTLY around workload.run() (inside rec.start()/
         // rec.stop() would fold the recording's own ~hundreds-of-KB calling-thread allocations into
@@ -274,10 +294,13 @@ public final class JfrAllocationMonitor {
      * Asserts the Enterprise zero-allocation contract: zero heap allocation in the steady-state
      * phase.
      *
-     * <p>Two independent signals are checked (issue #178): the {@code eu.exeris.*} JFR allocation
+     * <p>Two independent signals are checked: the {@code eu.exeris.*} JFR allocation
      * events (attribute <em>what</em> allocated, but under-report small steady allocations that fit
      * inside an active TLAB), and the {@code ThreadMXBean} per-thread allocated-bytes delta (exact,
      * TLAB-granularity-immune — proves the absence). A truly zero-allocation hot path satisfies both.
+     *
+     * @param result             result from {@link #measure}
+     * @param hotPathDescription human-readable description for assertion messages
      */
     public static void assertZeroExerisAllocations(Result result, String hotPathDescription) {
         assertThat(result.exerisAllocations())
@@ -288,7 +311,7 @@ public final class JfrAllocationMonitor {
                         hotPathDescription, result.summary())
                 .isEmpty();
 
-        // JFR-independent proof (issue #178): a zero-allocation hot path has no per-iteration
+        // JFR-independent proof: a zero-allocation hot path has no per-iteration
         // allocation. We assert the thread-allocated-bytes delta stays below the iteration count —
         // i.e. an average < 1 byte/iteration. The smallest heap object is ~16 bytes, so any genuine
         // per-iteration allocation blows far past this bound, while a small fixed one-time cost
@@ -337,8 +360,8 @@ public final class JfrAllocationMonitor {
     // =========================================================================
 
     private static void enableAllocationEvents(Recording rec) {
-        // Allocation events have no duration, so withThreshold(...) was a no-op on all three
-        // (issue #178). InNewTLAB/OutsideTLAB only fire on a TLAB refill / large allocation, so
+        // Allocation events have no duration, so withThreshold(...) is a no-op on all three.
+        // InNewTLAB/OutsideTLAB only fire on a TLAB refill / large allocation, so
         // small steady allocations inside an active TLAB emit no event — ObjectAllocationSample
         // (JEP 349) samples across the heap and catches those, but it is governed by `throttle`
         // (a rate), not a threshold. Disable the throttle to capture every sample point.

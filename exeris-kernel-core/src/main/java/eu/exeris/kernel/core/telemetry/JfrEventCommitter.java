@@ -74,7 +74,11 @@ public final class JfrEventCommitter implements AutoCloseable {
         this.consumer = Thread.ofPlatform().daemon(true).name(THREAD_NAME).unstarted(this::drain);
     }
 
-    /** Creates and starts a committer with default capacity and drain timeout. */
+    /**
+     * Creates and starts a committer with default capacity and drain timeout.
+     *
+     * @return a started committer ready to accept events
+     */
     public static JfrEventCommitter start() {
         return start(DEFAULT_CAPACITY, DEFAULT_DRAIN_TIMEOUT);
     }
@@ -96,12 +100,20 @@ public final class JfrEventCommitter implements AutoCloseable {
         return committer;
     }
 
-    /** Returns the configured ring capacity (informational; useful for diagnostics). */
+    /**
+     * Returns the configured ring capacity (informational; useful for diagnostics).
+     *
+     * @return the ring capacity in events, as passed to {@link #start(int, Duration)}
+     */
     public int capacity() {
         return capacity;
     }
 
-    /** Returns the running total of dropped events since construction. */
+    /**
+     * Returns the running total of dropped events since construction.
+     *
+     * @return the number of events discarded because the ring was full when {@link #offer} was called
+     */
     public long droppedCount() {
         return droppedCount.sum();
     }

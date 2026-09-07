@@ -27,21 +27,23 @@ import java.util.Objects;
  * the protected kernel internals.
  *
  * <h2>Fail-Closed Gate</h2>
- * <p>If the {@link SecurityProvider} is not bound (no provider on classpath or
- * not bootstrapped), or if authentication fails for any reason, the request is
- * <b>dropped immediately</b>. No fallback, no anonymous access. A JFR
- * {@code SecurityContextMissing} event is emitted for every drop so that
- * operators can observe the gate activation without log verbosity.
+ * <p>The constructor rejects a {@code null} {@link SecurityProvider}, so every bound
+ * {@code SecurityInterceptor} has one to call; the failure this class can itself produce is
+ * authentication failing for any reason, which <b>drops the request immediately</b> — the handler
+ * is never invoked, with no fallback and no anonymous access. A JFR {@code SecurityContextMissing}
+ * event is emitted for every such drop so operators can observe the gate activation without log
+ * verbosity. Whether a request reaches this gate at all — for example, when no provider was ever
+ * bootstrapped — is a decision the caller makes before invoking this class.
  *
  * <h2>ScopedValue Binding Protocol</h2>
  * <p>On successful authentication, both contexts are bound atomically into
  * a single {@link ScopedValue.Carrier}:
- * <pre>{@code
+ * {@snippet lang="java" :
  * ScopedValue
  *     .where(KernelProviders.PRINCIPAL_CONTEXT, result.principal())
  *     .where(KernelProviders.STORAGE_CONTEXT,   result.storage())
  *     .run(requestHandler);
- * }</pre>
+ * }
  * <p>Every virtual thread spawned within {@code requestHandler} inherits both
  * slots automatically — no constructor injection, no {@code ThreadLocal} (banned).
  *
@@ -51,8 +53,9 @@ import java.util.Objects;
  *   <li>Directly by the {@link SecurityProvider#authenticate(LoanedBuffer)} call
  *       (Enterprise path — authentication result already carries the correct
  *       strategy).</li>
- *   <li>Via {@link StorageContextBridge#derive(PrincipalContext)} when the provider
- *       returns a minimal result and bridge derivation is configured.</li>
+ *   <li>Via {@link StorageContextBridge#derive(PrincipalContext)}, unconditionally, on the
+ *       pre-authenticated path ({@link #interceptPreAuthenticated}) — that path accepts only a
+ *       principal and cannot accept a caller-supplied {@link StorageContext}.</li>
  * </ul>
  * <p>The Persistence subsystem reads {@link KernelProviders#STORAGE_CONTEXT} and
  * has zero knowledge of this Security class.
@@ -97,6 +100,7 @@ public final class SecurityInterceptor {
      *
      * @param provider the security provider to use for token authentication;
      *                 must not be {@code null}
+     * @throws NullPointerException if {@code provider} is {@code null}
      */
     public SecurityInterceptor(SecurityProvider provider) {
         this(provider, GeneratedRoleRegistryLoader.empty());
@@ -106,17 +110,18 @@ public final class SecurityInterceptor {
      * Constructs a {@code SecurityInterceptor} backed by the given provider and
      * a build-time {@link RoleRegistry} (ADR-014 §5).
      *
-     * <p>When {@code roleRegistry.methodCount() > 0} the interceptor resolves
-     * the authenticated principal's role names against the registry and binds a
-     * {@link MaskedPrincipal} carrying the precomputed {@code roleMask()} into
-     * the request scope, so downstream {@code @RequiresRole} checks resolve to a
-     * primitive {@code AND}/{@code EQ}. When the registry is empty (no
-     * {@code @RequiresRole} compiled anywhere) the original principal is bound
-     * unchanged — no allocation, mask stays {@code 0L}, fail-closed.
+     * <p>When {@code roleRegistry.methodCount() > 0} the interceptor resolves the authenticated
+     * principal's role names against the registry, and if that resolution yields a non-zero mask,
+     * binds a {@link MaskedPrincipal} carrying it into the request scope so downstream
+     * {@code @RequiresRole} checks resolve to a primitive {@code AND}/{@code EQ}. When the registry
+     * is empty (no {@code @RequiresRole} compiled anywhere), or the principal's role names resolve to
+     * no bit in this registry, the original principal is bound unchanged — no allocation, mask stays
+     * {@code 0L}, fail-closed.
      *
      * @param provider     the security provider; must not be {@code null}
      * @param roleRegistry the build-time role registry; must not be {@code null}
      *                     (pass {@link GeneratedRoleRegistryLoader#empty()} when none)
+     * @throws NullPointerException if {@code provider} or {@code roleRegistry} is {@code null}
      */
     public SecurityInterceptor(SecurityProvider provider, RoleRegistry roleRegistry) {
         this.provider = Objects.requireNonNull(provider, "provider must not be null");
@@ -127,7 +132,7 @@ public final class SecurityInterceptor {
      * Authenticates the raw token, binds identity into the current scope, and
      * runs {@code requestHandler} within that scope.
      *
-     * <h2>Fail-Closed Gate</h2>
+     * <h4>Fail-Closed Gate</h4>
      * <p>If authentication fails (expired token, malformed token, revoked credentials),
      * the handler is <b>never invoked</b>. A JFR {@code SecurityContextMissing} event
      * is emitted and {@code false} is returned to the caller so it can send the
@@ -137,7 +142,7 @@ public final class SecurityInterceptor {
      * {@link StackOverflowError}) are caught solely to emit the JFR event before
      * being <b>re-thrown unconditionally</b> — {@code Error} is never recoverable.
      *
-     * <h2>ScopedValue Binding</h2>
+     * <h4>ScopedValue Binding</h4>
      * <p>Both {@link KernelProviders#PRINCIPAL_CONTEXT} and
      * {@link KernelProviders#STORAGE_CONTEXT} are bound in a single atomic
      * {@link ScopedValue.Carrier} — they are always consistent within the scope.
@@ -185,14 +190,14 @@ public final class SecurityInterceptor {
     }
 
     /**
-     * Resolves the principal's role names against the registry into a precomputed
-     * {@code roleMask} and wraps the principal in a {@link MaskedPrincipal}.
+     * Resolves the principal's role names against the registry and, only when that resolution
+     * yields a non-zero mask, wraps the principal in a {@link MaskedPrincipal} carrying it.
      *
-     * <p>When the registry carries no {@code @RequiresRole} entry points
-     * ({@code methodCount() == 0}) the original principal is returned unchanged —
-     * no allocation, mask stays {@code 0L}. A principal that already exposes a
-     * non-zero {@code roleMask()} (e.g. a pre-masked system principal) is left
-     * untouched so it is never double-wrapped or downgraded.
+     * <p>The original principal is returned unchanged, with no allocation, in three cases: the
+     * registry carries no {@code @RequiresRole} entry points ({@code methodCount() == 0}); the
+     * principal already exposes a non-zero {@code roleMask()} (e.g. a pre-masked system principal),
+     * so it is never double-wrapped or downgraded; or the principal's role names resolve to no bit
+     * in this registry, leaving the mask at {@code 0L}.
      *
      * @param principal the authenticated principal
      * @return the principal to bind into the request scope
@@ -227,6 +232,7 @@ public final class SecurityInterceptor {
      *
      * @param systemPrincipal the principal representing the kernel/system actor
      * @param task            the task to run within the system scope
+     * @throws NullPointerException if {@code systemPrincipal} or {@code task} is {@code null}
      */
     public void runAsSystem(PrincipalContext systemPrincipal, Runnable task) {
         Objects.requireNonNull(systemPrincipal, "systemPrincipal must not be null");
@@ -244,7 +250,7 @@ public final class SecurityInterceptor {
      * Binds a pre-authenticated identity into the current scope and runs
      * {@code requestHandler} within that scope.
      *
-     * <h2>Citadel Contract — Isolation Invariant</h2>
+     * <h4>Citadel Contract — Isolation Invariant</h4>
      * <p>The caller supplies a pre-authenticated {@link PrincipalContext} (e.g., from a
      * trusted internal gateway, an mTLS service-mesh identity, or a resumed HTTP/2 session
      * with pre-validated credentials). The caller MUST NOT and CANNOT supply a
@@ -253,7 +259,7 @@ public final class SecurityInterceptor {
      * This is an unconditional invariant: the isolation strategy is always kernel-derived,
      * never caller-controlled.
      *
-     * <h2>Fail-Closed Bridge</h2>
+     * <h4>Fail-Closed Bridge</h4>
      * <p>If {@link StorageContextBridge#derive(PrincipalContext)} throws for any reason,
      * the request is dropped immediately — the handler is <b>never invoked</b>. A JFR
      * {@code SecurityContextMissing} event is emitted ({@code EX-SEC-2002},
@@ -261,14 +267,14 @@ public final class SecurityInterceptor {
      * {@link Error} subclasses are caught solely to emit the JFR event before being
      * <b>re-thrown unconditionally</b>.
      *
-     * <h2>JFR Waterfall</h2>
+     * <h4>JFR Waterfall</h4>
      * <pre>
      *   StorageContextDerived  ← emitted by StorageContextBridge.derive() on success
      *   PrincipalBound         ← emitted after successful derivation (durationMicros = bridge cost)
      *   SecurityContextMissing ← emitted on bridge failure (EX-SEC-2002 / PRE_AUTH_BRIDGE_ERROR)
      * </pre>
      *
-     * <h2>ScopedValue Binding</h2>
+     * <h4>ScopedValue Binding</h4>
      * <p>Both {@link eu.exeris.kernel.spi.context.KernelProviders#PRINCIPAL_CONTEXT} and
      * {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} are bound
      * atomically in a single {@link ScopedValue.Carrier}. Virtual threads forked within

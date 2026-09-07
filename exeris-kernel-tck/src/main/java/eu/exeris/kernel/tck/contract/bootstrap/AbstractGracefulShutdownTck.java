@@ -23,11 +23,12 @@ import java.util.function.IntSupplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * TCK: Abstract base for graceful shutdown sequence and zero-downtime draining verification.
+ * TCK: verifies that a kernel's shutdown sequence closes SPI engines in the canonical
+ * reverse-dependency order and drains in-flight work before the Persistence engine closes.
  *
- * <h2>Contract (#24)</h2>
- * <p>Verifies that an implementation closes subsystems in the canonical reverse-dependency
- * order and drains all in-flight work before closing the Persistence engine.
+ * <h2>Contract</h2>
+ * <p>An implementation must close its engines in the canonical reverse-dependency order and
+ * must drain all in-flight work before closing the Persistence engine.
  *
  * <h2>Canonical shutdown order</h2>
  * <pre>
@@ -36,33 +37,48 @@ import static org.assertj.core.api.Assertions.assertThat;
  * This is the strict reverse of the bootstrap dependency graph.
  *
  * <h2>How shutdown order is observed</h2>
- * <p>The subclass wraps each running SPI engine in a {@link TrackedEngine}. When
- * {@link TrackedEngine#close()} is called, the name is appended to an observed list.
- * The TCK then asserts pair-wise ordering against the canonical sequence.
- * No new SPI — existing {@link AutoCloseable} is the only hook needed.
+ * <p>The subclass wraps each running {@link AutoCloseable} engine handle it owns in a
+ * {@link TrackedEngine} and supplies a shutdown callback ({@code orchestratorShutdown},
+ * passed to {@link KernelHandle}) that triggers its own shutdown path. Each
+ * {@link TrackedEngine#close()} call appends the engine's name to the shared observed-order
+ * list, and this class asserts pairwise ordering against the canonical sequence. No new SPI
+ * is introduced — {@link AutoCloseable} is the only hook used.
+ *
+ * <p>This class observes only the order in which the {@code AutoCloseable} handles supplied
+ * by {@link #buildAndStartKernel()} are closed; it never calls a {@code Subsystem}'s own
+ * {@code stop()} directly. A binding that wraps {@code TrackedEngine} around its SPI engines
+ * but routes {@code orchestratorShutdown} through a path other than its shipped
+ * subsystem-shutdown sequence proves the ordering of that wiring, not the sequencing its
+ * real orchestrator applies to production subsystems.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityGracefulShutdownTest extends AbstractGracefulShutdownTck {
- *     \@Override
+ *     @Override
  *     protected KernelHandle buildAndStartKernel() {
- *         var order       = new java.util.concurrent.CopyOnWriteArrayList<String>();
- *         var transport   = new TrackedEngine("Transport",   new CommunityTransportEngine(...)).withObservedOrder(order);
- *         var persistence = new TrackedEngine("Persistence", new CommunityPersistenceEngine(...)).withObservedOrder(order);
- *         var flow        = new TrackedEngine("Flow",        new CommunityFlowEngine(...)).withObservedOrder(order);
- *         var events      = new TrackedEngine("Events",      new CommunityEventEngine(...)).withObservedOrder(order);
- *         transport.delegate().start(); persistence.delegate().start();
- *         flow.delegate().start();      events.delegate().start();
+ *         var order = new java.util.concurrent.CopyOnWriteArrayList<String>();
+ *         var transportEngine   = new CommunityTransportEngine(...);
+ *         var persistenceEngine = new CommunityPersistenceEngine(...);
+ *         var flowEngine        = new CoreFlowEngine(...);
+ *         var eventsEngine      = new CommunityEventEngine(...);
+ *         transportEngine.start(); persistenceEngine.start();
+ *         flowEngine.start();      eventsEngine.start();
+ *
+ *         var transport   = new TrackedEngine("Transport",   transportEngine).withObservedOrder(order);
+ *         var persistence = new TrackedEngine("Persistence", persistenceEngine).withObservedOrder(order);
+ *         var flow        = new TrackedEngine("Flow",        flowEngine).withObservedOrder(order);
+ *         var events      = new TrackedEngine("Events",      eventsEngine).withObservedOrder(order);
+ *
  *         return new KernelHandle(
  *             transport, persistence, flow, events, null, null,
- *             () -> transport.delegate().enqueue(TestPayloads.ping()),
- *             () -> persistence.delegate().eventStore(conn).pollPending(Integer.MAX_VALUE).size(),
+ *             () -> transportEngine.enqueue("ping"),
+ *             () -> persistenceEngine.eventStore(conn).pollPending(Integer.MAX_VALUE).size(),
  *             () -> { transport.close(); persistence.close(); flow.close(); events.close(); },
  *             order
  *         );
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  * @see AbstractBootstrapOrchestratorTck
@@ -80,6 +96,14 @@ public abstract class AbstractGracefulShutdownTck {
 
     private static final int DRAINING_REQUEST_COUNT = 100_000;
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #buildAndStartKernel()}.
+     */
+    public AbstractGracefulShutdownTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods
     // =========================================================================
@@ -88,6 +112,8 @@ public abstract class AbstractGracefulShutdownTck {
      * Builds and fully starts the kernel under test.
      * All SPI engines must be running before this method returns.
      * Wrap each engine in a {@link TrackedEngine} so the TCK records close() order.
+     *
+     * @return a handle bundling the started engines and workload hooks this TCK drives
      */
     protected abstract KernelHandle buildAndStartKernel();
 
@@ -95,6 +121,8 @@ public abstract class AbstractGracefulShutdownTck {
      * Returns the number of concurrent in-flight requests to fire during the
      * zero-downtime draining test. Default: {@code 100,000}.
      * <p>Override to reduce the workload on resource-constrained CI environments.
+     *
+     * @return the number of concurrent requests the draining test submits
      */
     protected int drainingRequestCount() { return DRAINING_REQUEST_COUNT; }
 
@@ -125,6 +153,22 @@ public abstract class AbstractGracefulShutdownTck {
         private final AtomicBoolean shutdownTriggered
                 = new AtomicBoolean(false);
 
+        /**
+         * Creates a handle bundling the engines and workload hooks this TCK drives.
+         * Pass {@code null} for any {@link TrackedEngine} the implementation does not
+         * provide; assertions about that engine are then skipped.
+         *
+         * @param transport            tracked {@code Transport} engine, or {@code null} if none
+         * @param persistence          tracked {@code Persistence} engine, or {@code null} if none
+         * @param flow                 tracked {@code Flow} engine, or {@code null} if none
+         * @param events               tracked {@code Events} engine, or {@code null} if none
+         * @param graph                tracked {@code Graph} engine, or {@code null} if none
+         * @param memory               tracked {@code Memory} engine, or {@code null} if none
+         * @param requestSender        submits one unit of in-flight work to the running kernel
+         * @param confirmedWrites      returns the number of writes durably confirmed so far
+         * @param orchestratorShutdown triggers the implementation's own shutdown path
+         * @param observedOrder        shared list every {@link TrackedEngine} appends its name to on close
+         */
         public KernelHandle(
                 TrackedEngine transport,
                 TrackedEngine persistence,
@@ -148,14 +192,67 @@ public abstract class AbstractGracefulShutdownTck {
             this.observedOrder       = observedOrder;
         }
 
+        /**
+         * Returns the tracked {@code Transport} engine.
+         *
+         * @return the tracked engine, or {@code null} if none was provided
+         */
         public TrackedEngine              transport()            { return transport; }
+
+        /**
+         * Returns the tracked {@code Persistence} engine.
+         *
+         * @return the tracked engine, or {@code null} if none was provided
+         */
         public TrackedEngine              persistence()          { return persistence; }
+
+        /**
+         * Returns the tracked {@code Flow} engine.
+         *
+         * @return the tracked engine, or {@code null} if none was provided
+         */
         public TrackedEngine              flow()                 { return flow; }
+
+        /**
+         * Returns the tracked {@code Events} engine.
+         *
+         * @return the tracked engine, or {@code null} if none was provided
+         */
         public TrackedEngine              events()               { return events; }
+
+        /**
+         * Returns the tracked {@code Graph} engine.
+         *
+         * @return the tracked engine, or {@code null} if none was provided
+         */
         public TrackedEngine              graph()                { return graph; }
+
+        /**
+         * Returns the tracked {@code Memory} engine.
+         *
+         * @return the tracked engine, or {@code null} if none was provided
+         */
         public TrackedEngine              memory()               { return memory; }
+
+        /**
+         * Returns the workload hook that submits one unit of in-flight work.
+         *
+         * @return the request-sending hook passed to the constructor
+         */
         public Runnable                   requestSender()        { return requestSender; }
+
+        /**
+         * Returns the count of writes the implementation has durably confirmed so far.
+         *
+         * @return the confirmed-writes hook passed to the constructor
+         */
         public IntSupplier                confirmedWrites()      { return confirmedWrites; }
+
+        /**
+         * Returns the shared close-order list.
+         *
+         * @return the list every {@link TrackedEngine} appends its name to on close
+         */
         public CopyOnWriteArrayList<String> observedOrder()      { return observedOrder; }
 
         /**
@@ -206,18 +303,40 @@ public abstract class AbstractGracefulShutdownTck {
                 = new AtomicBoolean(false);
         private CopyOnWriteArrayList<String> observedOrder = null;
 
+        /**
+         * Wraps {@code delegate} under {@code name} for close-order tracking.
+         *
+         * @param name     the name appended to the observed-order list when this engine closes
+         * @param delegate the engine {@link #close()} delegates to, or {@code null} for none
+         */
         public TrackedEngine(String name, AutoCloseable delegate) {
             this.name     = name;
             this.delegate = delegate;
         }
 
-        /** Binds the shared order list; call before shutdown is triggered. */
+        /**
+         * Binds the shared order list; call before shutdown is triggered.
+         *
+         * @param list the shared list this engine's name is appended to on {@link #close()}
+         * @return this instance, for chaining
+         */
         public TrackedEngine withObservedOrder(CopyOnWriteArrayList<String> list) {
             this.observedOrder = list;
             return this;
         }
 
+        /**
+         * Returns the name this engine was constructed with.
+         *
+         * @return the name appended to the observed-order list when this engine closes
+         */
         public String  name()     { return name; }
+
+        /**
+         * Reports whether this engine has closed.
+         *
+         * @return {@code true} once {@link #close()} has completed at least once
+         */
         public boolean isClosed() { return closed.get(); }
 
         @Override
@@ -323,6 +442,15 @@ public abstract class AbstractGracefulShutdownTck {
     @DisplayName("Zero-Downtime Draining — 100 000 in-flight requests")
     class ZeroDowntimeDrainingTest {
 
+        /**
+         * Asserts that Transport closes before Persistence and that every request
+         * {@link KernelHandle#requestSender()} accepted is durably confirmed afterward.
+         * The drained-count assertion establishes zero-downtime draining only if
+         * {@code requestSender} is asynchronous — returns before its write is durably
+         * persisted. If it is synchronous, every request is already durably written by the
+         * time shutdown is triggered below, and the drained-count assertion holds trivially
+         * regardless of whether shutdown actually waits for in-flight work.
+         */
         @Test
         @Timeout(value = 120, unit = TimeUnit.SECONDS)
         @DisplayName("Transport stops accepting new work before Persistence drains and closes")
@@ -390,6 +518,12 @@ public abstract class AbstractGracefulShutdownTck {
                     .containsExactlyElementsOf(present);
         }
 
+        /**
+         * Asserts the close order Flow → Events → Graph. Despite its name, this asserts
+         * close ordering only — no assertion in this class measures whether Flow or Events
+         * actually finished pending work before closing; "complete pending work" is inferred
+         * from the ordering claim, not independently observed.
+         */
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("Flow and Events complete pending work before close()")

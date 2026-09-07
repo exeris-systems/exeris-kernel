@@ -27,6 +27,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       resolves the authenticated principal's role names into a precomputed
  *       {@code roleMask()} and binds it into
  *       {@link KernelProviders#PRINCIPAL_CONTEXT}.</li>
+ *   <li>A principal that already carries a precomputed {@code roleMask()} is bound as the
+ *       same instance, unchanged — enrichment never recomputes or downgrades an
+ *       already-populated mask.</li>
  *   <li>When the registry is empty, the original principal is bound unchanged —
  *       {@code roleMask()} stays {@code 0L} and the principal is NOT wrapped.</li>
  * </ul>
@@ -44,6 +47,15 @@ public abstract class AbstractRoleMaskPopulationTck {
 
     /** Canonical system bit for {@code ROLE_ADMIN} (mirrors the processor). */
     protected static final int BIT_ADMIN = 1;
+
+    /**
+     * Creates the contract; subclasses supply the interception binding via
+     * {@link #runIntercept(RoleRegistry, PrincipalContext, Runnable)}.
+     */
+    public AbstractRoleMaskPopulationTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Builds a {@code SecurityInterceptor} over a stub success provider that

@@ -63,10 +63,22 @@ public abstract class AbstractBlobStorageTck {
     // Template methods
     // =========================================================================
 
-    /** Creates the {@link BlobStore} under test. */
+    /**
+     * Creates the {@link BlobStore} under test.
+     *
+     * @return a store ready to receive the fixtures in this suite
+     * @implSpec Return a fresh, usable store; the TCK opens and closes it once per test method.
+     */
     protected abstract BlobStore createStore();
 
-    /** Supplies the {@link MemoryProvider} whose PARANOID allocator drives every transfer here. */
+    /**
+     * Supplies the {@link MemoryProvider} whose PARANOID allocator drives every transfer here.
+     *
+     * @return a provider capable of producing the allocator used for every transfer in this suite
+     * @implSpec Return a fresh provider; the TCK itself applies
+     *           {@link LeakDetectionMode#PARANOID} via {@link MemoryProviderConfig#withLeakDetection}
+     *           before drawing an allocator from it.
+     */
     protected abstract MemoryProvider createMemoryProvider();
 
     /**
@@ -75,6 +87,8 @@ public abstract class AbstractBlobStorageTck {
      * <p>Default {@code false} — a store that cannot sign is a first-class outcome (ADR-056 §7), not a
      * degraded one. {@link SignedUrlContract} asserts the answer is <em>uniform</em> either way, which
      * is the property a caller actually needs.
+     *
+     * @return {@code true} if the store under test signs URLs, {@code false} if it never does
      */
     protected boolean supportsSignedUrls() {
         return false;
@@ -82,6 +96,15 @@ public abstract class AbstractBlobStorageTck {
 
     private BlobStore store;
     private MemoryAllocator allocator;
+
+    /**
+     * Creates the contract; subclasses supply the store via {@link #createStore()} and the
+     * memory provider via {@link #createMemoryProvider()}.
+     */
+    public AbstractBlobStorageTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpStoreAndAllocator() {
@@ -114,6 +137,14 @@ public abstract class AbstractBlobStorageTck {
     @Nested
     @DisplayName("Upload and download round-trip")
     class RoundTrip {
+
+        /**
+         * Groups the upload/download round-trip, metadata and delete-idempotency assertions.
+         */
+        RoundTrip() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("bytes written are the bytes read back")
@@ -193,6 +224,14 @@ public abstract class AbstractBlobStorageTck {
     @DisplayName("Ranged download")
     class RangedRead {
 
+        /**
+         * Groups the ranged-download slice, metadata and past-the-end assertions.
+         */
+        RangedRead() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("a range returns exactly its bytes")
         void rangeReturnsSlice() {
@@ -250,6 +289,14 @@ public abstract class AbstractBlobStorageTck {
     @Nested
     @DisplayName("Upload visibility (ADR-056 §3)")
     class UploadVisibility {
+
+        /**
+         * Groups the commit-visibility, abort, and short/overlong/zero-length write assertions.
+         */
+        UploadVisibility() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("nothing is visible until commit")
@@ -352,6 +399,14 @@ public abstract class AbstractBlobStorageTck {
     @DisplayName("Tenant isolation (ADR-056 §4/§5)")
     class Isolation {
 
+        /**
+         * Groups the per-tenant namespace and unscoped-context denial assertions.
+         */
+        Isolation() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("the identical reference addresses different objects for different tenants")
         void sameRefIsDistinctPerTenant() {
@@ -414,6 +469,14 @@ public abstract class AbstractBlobStorageTck {
     @Nested
     @DisplayName("Signed-URL contract (ADR-056 §7)")
     class SignedUrlContract {
+
+        /**
+         * Groups the uniform-signing-capability and time-to-live validation assertions.
+         */
+        SignedUrlContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("the store's answer is uniform — it signs for every input or for none")

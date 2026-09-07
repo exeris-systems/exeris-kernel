@@ -76,6 +76,18 @@ public abstract class AbstractJobSchedulerTck {
     private JobScheduler scheduler;
 
     /**
+     * Creates the contract; subclasses supply the scheduler binding via {@link #createScheduler()}
+     * and the clock binding via {@link #advanceTime(Duration)}.
+     *
+     * <p>The {@code scheduler} field starts unset — {@link #openScheduler()} populates it from
+     * {@link #createScheduler()} before each test.
+     */
+    public AbstractJobSchedulerTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Creates a scheduler bound to the binding's controllable clock.
      *
      * @return a started scheduler

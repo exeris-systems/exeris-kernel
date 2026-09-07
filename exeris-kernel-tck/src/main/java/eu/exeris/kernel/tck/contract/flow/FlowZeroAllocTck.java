@@ -48,6 +48,11 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     // Template method — supply the engine
     // =========================================================================
 
+    /**
+     * Creates a fully configured, but not yet started, {@link FlowEngine}.
+     *
+     * @return a new engine instance, not yet started
+     */
     protected abstract FlowEngine createEngine();
 
     // =========================================================================
@@ -62,6 +67,18 @@ public abstract class FlowZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     private eu.exeris.kernel.spi.flow.model.FlowContext[] testContexts;
     private AtomicInteger inFlight;
     private int contextIndex;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()}.
+     *
+     * <p>{@code engine}, {@code plan}, {@code testContexts} and {@code inFlight} start unset and
+     * {@code contextIndex} starts at zero — {@link #bootstrapSubsystem()} populates all five
+     * before the hot-path loop runs.
+     */
+    public FlowZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     protected String subsystemName() {

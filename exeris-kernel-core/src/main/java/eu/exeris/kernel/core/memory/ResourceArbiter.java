@@ -44,9 +44,13 @@ import java.lang.invoke.VarHandle;
  * throughput at the cost of background logic work.
  *
  * <h2>Performance Contract</h2>
- * <p>{@link #decide(Context)} is O(1): one {@code System.nanoTime()} call +
- * two VarHandle acquire reads (cached decision timestamp and action ordinal),
- * plus conditional VarHandle {@code setRelease} writes on cache miss. No locks, no allocations.
+ * <p>{@link #decide(Context)} is O(1) on a cache hit: one {@code System.nanoTime()} call
+ * plus two VarHandle acquire reads (cached decision timestamp and action ordinal), no locks,
+ * no allocations. On a cache miss it calls {@link #reEvaluate}, which reads the current
+ * {@link WatermarkLevel} from {@link WatermarkManager}, updates the cache via VarHandle
+ * {@code setRelease}, and emits a {@link ResourceArbiterDecisionEvent} — allocating a JFR
+ * event object whenever {@code FlightRecorder} is initialised, independent of whether
+ * recording is enabled.
  *
  * <h2>JFR-First</h2>
  * <p>Each cache-miss (re-evaluation) emits a {@link ResourceArbiterDecisionEvent} with the
@@ -55,15 +59,15 @@ import java.lang.invoke.VarHandle;
  *
  * <h2>Per-Tenant SLA Override (ScalingContext)</h2>
  * <p>The overloaded {@link #decide(Context, ScalingContext)} method bypasses the fixed
- * {@link WatermarkLevel} thresholds and applies tenant-specific SLA thresholds from a
- * {@link ScalingContext} propagated via {@code ScopedValue}. The raw utilization ratio
+ * {@link WatermarkLevel} thresholds and applies tenant-specific SLA thresholds from the
+ * {@link ScalingContext} the caller supplies explicitly. The raw utilization ratio
  * is derived from {@link WatermarkManager#currentUtilizationPct()} — zero allocation.
  *
+ * @since 0.5
  * @see WatermarkManager
  * @see WatermarkLevel
  * @see ScalingContext
  * @see ResourceArbiterDecisionEvent
- * @since 0.5
  */
 public final class ResourceArbiter {
 
@@ -85,7 +89,6 @@ public final class ResourceArbiter {
     /**
      * Pre-computed {@link Action} values array — avoids {@code Action.values()} allocation
      * on every cache-hit (each {@code values()} call returns a new defensive copy).
-     * Static final so C2 JIT constant-folds the array reference on the hot path.
      */
     private static final Action[] ACTIONS = Action.values();
 
@@ -126,12 +129,17 @@ public final class ResourceArbiter {
      * The four possible responses from the arbiter.
      *
      * <h2>Transport Layer Mapping</h2>
+     * <p>Each action carries a general backpressure meaning; the transport layer's actual
+     * admission decision additionally weighs the stream's business priority — see
+     * {@code AdmissionController}'s decision matrix for the mapping this kernel applies
+     * (for example, a {@code CRITICAL}-priority stream is still admitted under {@link #REJECT}).
      * <table>
-     *   <tr><th>Action</th><th>HTTP/3 Response</th><th>Semantics</th></tr>
-     *   <tr><td>ALLOW</td><td>200 / stream proceed</td><td>Full capacity — accept request</td></tr>
-     *   <tr><td>THROTTLE</td><td>503 Retry-After: 100ms</td><td>Soft backpressure — queue is high</td></tr>
-     *   <tr><td>REJECT</td><td>503 immediately</td><td>Hard backpressure — memory critical</td></tr>
-     *   <tr><td>SHED_LOAD</td><td>H3_EXCESSIVE_LOAD (0x107)</td><td>OOM risk — shed all new traffic</td></tr>
+     *   <caption>Load-shedding action to protocol-level meaning</caption>
+     *   <tr><th>Action</th><th>Protocol-level meaning</th><th>Semantics</th></tr>
+     *   <tr><td>ALLOW</td><td>request proceeds</td><td>Full capacity — accept request</td></tr>
+     *   <tr><td>THROTTLE</td><td>soft backpressure</td><td>Queue is high — lower priorities shed</td></tr>
+     *   <tr><td>REJECT</td><td>hard backpressure</td><td>Memory critical — only top priority admitted</td></tr>
+     *   <tr><td>SHED_LOAD</td><td>{@code H3_EXCESSIVE_LOAD}</td><td>OOM risk — shed all new traffic</td></tr>
      * </table>
      *
      * <p>Valhalla-ready: enum constants are JVM singletons — zero heap allocation on comparison,
@@ -189,6 +197,8 @@ public final class ResourceArbiter {
 
         /**
          * Returns the stable context name (never allocates — field read).
+         *
+         * @return the context name (e.g. {@code "TRANSPORT_IO"}); never {@code null}
          */
         public String contextName() {
             return name;
@@ -203,6 +213,7 @@ public final class ResourceArbiter {
      * Production constructor — grace period starts at current wall time.
      *
      * @param watermarkManager the pressure monitor; must not be {@code null}
+     * @throws IllegalArgumentException if {@code watermarkManager} is {@code null}
      */
     public ResourceArbiter(WatermarkManager watermarkManager) {
         this(watermarkManager, System.nanoTime());
@@ -214,6 +225,7 @@ public final class ResourceArbiter {
      *
      * @param watermarkManager the pressure monitor; must not be {@code null}
      * @param startNs          nanosecond timestamp to treat as construction time
+     * @throws IllegalArgumentException if {@code watermarkManager} is {@code null}
      */
     /* default */ ResourceArbiter(WatermarkManager watermarkManager, long startNs) {
         if (watermarkManager == null) {
@@ -272,14 +284,15 @@ public final class ResourceArbiter {
      * Returns the load-shedding {@link Action} applying per-tenant SLA thresholds from
      * the supplied {@link ScalingContext} instead of the fixed {@link WatermarkLevel} table.
      *
-     * <p>Use this overload when the request carries a tenant-specific SLA tier propagated
-     * via {@code ScopedValue}. The raw utilization ratio is read from
-     * {@link WatermarkManager#currentUtilizationPct()} — O(1), zero allocation.
+     * <p>Use this overload when the call site has already resolved a tenant-specific
+     * {@link ScalingContext} for the request and passes it explicitly. The raw utilization
+     * ratio is read from {@link WatermarkManager#currentUtilizationPct()} — O(1), zero
+     * allocation.
      *
      * <p>Unlike the single-argument {@link #decide(Context)}, this overload does NOT use
      * the decision cache — each call performs a fresh threshold evaluation to respect the
-     * per-tenant thresholds. This is intentional: SLA overrides are expected to be rare
-     * (Enterprise tier only) and the call site is responsible for caching if needed.
+     * per-tenant thresholds. This is intentional: SLA overrides are expected to be rare,
+     * and the call site is responsible for caching if needed.
      *
      * @param context        the arbitration context; must not be {@code null}
      * @param scalingContext the tenant-specific SLA thresholds; must not be {@code null}

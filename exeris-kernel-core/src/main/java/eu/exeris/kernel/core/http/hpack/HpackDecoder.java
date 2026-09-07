@@ -77,7 +77,8 @@ public final class HpackDecoder {
     @FunctionalInterface
     public interface HeaderListener {
         /**
-         * Called for each decoded header field.
+         * Receives one header field, invoked once per field in the order the fields appear
+         * in the header block.
          *
          * @param name       header field name
          * @param value      header field value
@@ -125,6 +126,8 @@ public final class HpackDecoder {
      * the decoder will reject any size update exceeding this limit.
      *
      * @param newProtocolMax new SETTINGS_HEADER_TABLE_SIZE value
+     * @throws IllegalArgumentException if {@code newProtocolMax} is negative or greater than
+     *                                  {@code 2^32-1}
      */
     public void setProtocolMaxTableSize(long newProtocolMax) {
         if (newProtocolMax < 0L || newProtocolMax > 0xFFFF_FFFFL) {
@@ -141,7 +144,18 @@ public final class HpackDecoder {
      * @param offset   byte offset into {@code block}
      * @param length   byte length of the header block
      * @param listener callback receiving decoded header fields
-     * @throws HpackDecodingException on any decoding error (RFC 7541 §3.1)
+     * @throws HpackDecodingException ({@code EX-HTTP-4002}) if {@code block} does not hold a
+     *                                well-formed header field representation sequence (RFC 7541
+     *                                §3.1, including a malformed or non-decodable string literal
+     *                                per §5.2), refers to an invalid table index, or exceeds a
+     *                                configured size bound (string literal, dynamic table, or
+     *                                cumulative header list)
+     * @implNote For a literal-with-incremental-indexing field, the dynamic table is updated
+     *           before the cumulative {@code maxHeaderListSize} bound is checked, so a field
+     *           that pushes the header list over that bound is still added to the table before
+     *           this method throws. This keeps the table's index numbering in step with the
+     *           peer's encoder, which already committed the entry to its own table when it
+     *           encoded the field with incremental indexing.
      */
     public void decode(MemorySegment block, long offset, long length,
                        HeaderListener listener) {
@@ -393,10 +407,24 @@ public final class HpackDecoder {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4002;
 
+        /**
+         * Creates an exception with no chained cause.
+         *
+         * @param messageTemplate static, pre-defined message template — no runtime formatting
+         * @param rawArgs         domain arguments for the {@code EX-HTTP-4002} Glass-Box payload
+         */
         public HpackDecodingException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
         }
 
+        /**
+         * Creates an exception chained to the failure that caused it, such as a Huffman
+         * decoding error.
+         *
+         * @param messageTemplate static, pre-defined message template — no runtime formatting
+         * @param cause           the underlying failure
+         * @param rawArgs         domain arguments for the {@code EX-HTTP-4002} Glass-Box payload
+         */
         public HpackDecodingException(String messageTemplate, Throwable cause, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, cause, rawArgs);
         }

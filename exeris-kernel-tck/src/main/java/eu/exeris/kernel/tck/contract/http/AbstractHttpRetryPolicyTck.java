@@ -32,7 +32,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       is a stable, non-retry verdict.</li>
  *   <li>{@link HttpAttemptOutcome} distinguishes a response ({@code statusCode > 0}, headers present,
  *       no failure) from a transport failure ({@code statusCode == 0}, empty headers, failure present),
- *       carries headers (never a body), and defensively copies the header list.</li>
+ *       and carries headers (never a body). The TCK asserts {@link HttpAttemptOutcome#responseHeaders()}
+ *       is unmodifiable; the fixture supplies an already-immutable input list, so this does not exercise
+ *       aliasing against a caller-mutable list.</li>
  *   <li>A conforming default policy ({@link #createPolicy()}) retries idempotent requests on transient
  *       conditions ({@code 502/503/504} or transport failure), gives up on non-idempotent requests
  *       without an {@code Idempotency-Key}, gives up on non-retryable statuses, honours {@code Retry-After}
@@ -46,16 +48,25 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@code HttpAttemptOutcome}) are exercised against the SPI itself and need no driver.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHttpRetryPolicyTckTest extends AbstractHttpRetryPolicyTck {
  *     @Override protected HttpRetryPolicy createPolicy() {
  *         return new CommunityHttpRetryPolicy(3, 100L, 2000L, () -> 0.5);
  *     }
  *     @Override protected int maxAttempts() { return 3; }
  * }
- * }</pre>
+ * }
  */
 public abstract class AbstractHttpRetryPolicyTck {
+
+    /**
+     * Creates the contract; subclasses supply the policy under test via {@link #createPolicy()} and its
+     * attempt cap via {@link #maxAttempts()}.
+     */
+    public AbstractHttpRetryPolicyTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Supplies the default policy under test, built with deterministic tuning (fixed jitter) and the

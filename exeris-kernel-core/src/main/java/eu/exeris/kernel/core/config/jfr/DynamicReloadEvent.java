@@ -39,17 +39,31 @@ public final class DynamicReloadEvent {
     @StackTrace(false)
     public static final class DynamicFieldReloadedEvent extends Event {
 
+        /** Name of the config file whose on-disk change triggered this reload. */
         @Label("File")
         @Description("Config file name that triggered the reload")
         public String file;
 
+        /** Dot-path key of the {@code @Dynamic} field that was reloaded. */
         @Label("Key")
         @Description("Dot-path key of the reloaded field")
         public String key;
 
+        /** Wall-clock duration of the reload callback invocation, in microseconds. */
         @Label("Duration (µs)")
         @Description("Wall-clock time from reload callback entry to VarHandle.setRelease() in microseconds")
         public long durationUs;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public DynamicFieldReloadedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -67,17 +81,34 @@ public final class DynamicReloadEvent {
     @StackTrace(false)
     public static final class DynamicReloadFailedEvent extends Event {
 
+        /** Name of the config file whose on-disk change triggered the failed reload attempt. */
         @Label("File")
         @Description("Config file that failed to reload")
         public String file;
 
+        /** Dot-path key of the {@code @Dynamic} field that failed to update. */
         @Label("Key")
         @Description("Dot-path key of the field that failed to update")
         public String key;
 
+        /**
+         * Static, secret-free failure description — never the attempted value. At the current call
+         * sites this is always {@code "error type: " + <exception class simple name>}.
+         */
         @Label("Reason")
         @Description("Static failure description (no secret data)")
         public String reason;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public DynamicReloadFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================

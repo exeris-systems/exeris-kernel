@@ -26,13 +26,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
- * TCK: Abstract base for {@link EventStreamReader} contract verification (since 0.7.0).
+ * TCK: Abstract base for {@link EventStreamReader} contract verification.
  *
  * <h2>Role</h2>
  * <p>This suite defines the binding-agnostic obligations every {@link EventStreamReader}
- * implementation must satisfy. Concrete bindings (Kafka driver in 0.7 Sprint 5b, Postgres
- * outbox replay, Enterprise off-heap log) extend it and provide {@link #createReader()}
- * plus {@link #seedStream(StreamId, int)} to populate the underlying durable log.
+ * implementation must satisfy. Concrete bindings (the Kafka driver, Postgres outbox replay,
+ * Enterprise off-heap log) extend it and provide {@link #createReader()} plus
+ * {@link #seedStream(StreamId, int)} to populate the underlying durable log.
  *
  * <h2>Verified Constraints</h2>
  * <ol>
@@ -41,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
  *   <li>The returned {@link EventStream} is {@link AutoCloseable} with an idempotent
  *       {@code close()} (calling twice does NOT throw).</li>
  *   <li>The reader's own {@link EventStreamReader#close()} is idempotent and does not invalidate
- *       previously returned streams.</li>
+ *       streams returned before the call.</li>
  *   <li>Each {@link EventPayload} handed to the iterator arrives at {@code refCount == 1};
  *       consumer closes own each payload (no broadcast retain protocol on replay).</li>
  *   <li>Replay from a stream that has no events returns an empty (but valid) stream.</li>
@@ -52,12 +52,12 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityKafkaEventStreamReaderTckIT extends AbstractEventStreamReaderTck {
- *     \@Override protected EventStreamReader createReader() { return kafkaReaderFromTestcontainer(); }
- *     \@Override protected void seedStream(StreamId id, int eventCount) { kafkaProducer.send(...); }
+ *     @Override protected EventStreamReader createReader() { return kafkaReaderFromTestcontainer(); }
+ *     @Override protected void seedStream(StreamId id, int eventCount) { kafkaProducer.send(...); }
  * }
- * }</pre>
+ * }
  *
  * @since 0.7
  * @see EventStreamReader
@@ -67,7 +67,12 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 @DisplayName("EventStreamReader TCK — replay contract")
 public abstract class AbstractEventStreamReaderTck {
 
-    /** Creates a fresh, ready-to-use {@link EventStreamReader}. The TCK calls {@code close()} on tearDown. */
+    /**
+     * Creates a fresh, ready-to-use {@link EventStreamReader}. The TCK calls {@code close()} on
+     * tearDown.
+     *
+     * @return a fresh {@link EventStreamReader}
+     */
     protected abstract EventStreamReader createReader();
 
     /**
@@ -78,10 +83,22 @@ public abstract class AbstractEventStreamReaderTck {
      * {@link #indexPayload(int) indexPayload(i)} as its payload, so the ordering test
      * ({@code replayFromVersionReturnsEventsInAppendOrder}) can decode each replayed payload and
      * assert the append order round-trips.
+     *
+     * @param streamId   the stream to seed
+     * @param eventCount the number of events to append to it
      */
     protected abstract void seedStream(StreamId streamId, int eventCount);
 
     private EventStreamReader reader;
+
+    /**
+     * Creates the contract; subclasses supply the {@link EventStreamReader} under test via
+     * {@link #createReader()} and populate it via {@link #seedStream(StreamId, int)}.
+     */
+    public AbstractEventStreamReaderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {

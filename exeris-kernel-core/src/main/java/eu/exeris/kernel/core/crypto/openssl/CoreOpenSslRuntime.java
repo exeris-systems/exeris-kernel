@@ -52,6 +52,8 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Returns the canonical Core TLS handle carrier resolved at bootstrap.
+     *
+     * @return the {@link CoreSslHandles} instance produced by {@link CoreOpenSslLoader#load}
      */
     public CoreSslHandles handles() {
         return handles;
@@ -59,6 +61,10 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Looks up a symbol in the merged {@code libssl.or(libcrypto)} view.
+     *
+     * @param symbol the exported native symbol name
+     * @return the resolved address, or {@link Optional#empty()} if neither library exports it
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
      */
     public Optional<MemorySegment> find(String symbol) {
         return mergedLookup.find(requireSymbol(symbol));
@@ -66,6 +72,11 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Looks up a symbol strictly in {@code libssl}.
+     *
+     * @param symbol the exported native symbol name
+     * @return the resolved address, or {@link Optional#empty()} if {@code libssl} does not
+     *         export it, regardless of whether {@code libcrypto} does
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
      */
     public Optional<MemorySegment> findSsl(String symbol) {
         return sslLookup.find(requireSymbol(symbol));
@@ -73,6 +84,11 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Looks up a symbol strictly in {@code libcrypto}.
+     *
+     * @param symbol the exported native symbol name
+     * @return the resolved address, or {@link Optional#empty()} if {@code libcrypto} does not
+     *         export it, regardless of whether {@code libssl} does
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
      */
     public Optional<MemorySegment> findCrypto(String symbol) {
         return cryptoLookup.find(requireSymbol(symbol));
@@ -80,6 +96,14 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Resolves a required downcall handle from the merged runtime lookup.
+     *
+     * @param symbol     the exported native symbol name
+     * @param descriptor the native function signature to bind the downcall to
+     * @return a downcall handle bound to {@code symbol}'s resolved address
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
+     * @throws NullPointerException     if {@code descriptor} is null
+     * @throws CryptoBootstrapException if {@code symbol} is not exported by either library
+     *                                  ({@code EX-NET-2002})
      */
     public MethodHandle requiredHandle(String symbol, FunctionDescriptor descriptor) {
         return requiredDowncall(mergedLookup, symbol, descriptor);
@@ -87,6 +111,13 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Resolves an optional downcall handle from the merged runtime lookup.
+     *
+     * @param symbol     the exported native symbol name
+     * @param descriptor the native function signature to bind the downcall to
+     * @return a downcall handle bound to {@code symbol}'s resolved address, or {@code null}
+     *         if neither library exports it
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
+     * @throws NullPointerException     if {@code descriptor} is null
      */
     public MethodHandle optionalHandle(String symbol, FunctionDescriptor descriptor) {
         return optionalDowncall(mergedLookup, symbol, descriptor);
@@ -94,6 +125,14 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Resolves a required downcall handle strictly from {@code libssl}.
+     *
+     * @param symbol     the exported native symbol name
+     * @param descriptor the native function signature to bind the downcall to
+     * @return a downcall handle bound to {@code symbol}'s resolved address
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
+     * @throws NullPointerException     if {@code descriptor} is null
+     * @throws CryptoBootstrapException if {@code symbol} is not exported by {@code libssl}
+     *                                  ({@code EX-NET-2002})
      */
     public MethodHandle requiredSslHandle(String symbol, FunctionDescriptor descriptor) {
         return requiredDowncall(sslLookup, symbol, descriptor);
@@ -101,6 +140,13 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Resolves an optional downcall handle strictly from {@code libssl}.
+     *
+     * @param symbol     the exported native symbol name
+     * @param descriptor the native function signature to bind the downcall to
+     * @return a downcall handle bound to {@code symbol}'s resolved address, or {@code null}
+     *         if {@code libssl} does not export it
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
+     * @throws NullPointerException     if {@code descriptor} is null
      */
     public MethodHandle optionalSslHandle(String symbol, FunctionDescriptor descriptor) {
         return optionalDowncall(sslLookup, symbol, descriptor);
@@ -108,6 +154,14 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Resolves a required downcall handle strictly from {@code libcrypto}.
+     *
+     * @param symbol     the exported native symbol name
+     * @param descriptor the native function signature to bind the downcall to
+     * @return a downcall handle bound to {@code symbol}'s resolved address
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
+     * @throws NullPointerException     if {@code descriptor} is null
+     * @throws CryptoBootstrapException if {@code symbol} is not exported by {@code libcrypto}
+     *                                  ({@code EX-NET-2002})
      */
     public MethodHandle requiredCryptoHandle(String symbol, FunctionDescriptor descriptor) {
         return requiredDowncall(cryptoLookup, symbol, descriptor);
@@ -115,6 +169,13 @@ public final class CoreOpenSslRuntime {
 
     /**
      * Resolves an optional downcall handle strictly from {@code libcrypto}.
+     *
+     * @param symbol     the exported native symbol name
+     * @param descriptor the native function signature to bind the downcall to
+     * @return a downcall handle bound to {@code symbol}'s resolved address, or {@code null}
+     *         if {@code libcrypto} does not export it
+     * @throws IllegalArgumentException if {@code symbol} is null or blank
+     * @throws NullPointerException     if {@code descriptor} is null
      */
     public MethodHandle optionalCryptoHandle(String symbol, FunctionDescriptor descriptor) {
         return optionalDowncall(cryptoLookup, symbol, descriptor);

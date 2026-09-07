@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * TCK: Abstract base for carrier thread pinning verification.
  *
- * <h2>Contract (#24)</h2>
+ * <h2>Contract</h2>
  * <p>Verifies that no operation in an Exeris implementation pins a carrier thread
  * for longer than {@value JfrPinningMonitor#DEFAULT_THRESHOLD_MS} ms.
  * Uses {@code jdk.VirtualThreadPinned} JFR events via {@link JfrPinningMonitor} —
@@ -37,9 +37,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityCarrierPinningTest extends AbstractCarrierPinningTck {
- *     \@Override
+ *     @Override
  *     protected Runnable subsystemWorkload(SubsystemUnderTest s) {
  *         return switch (s) {
  *             case FLOW        -> () -> flowEngine.scheduler().schedule(plan, ctx);
@@ -48,11 +48,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *         };
  *     }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see JfrPinningMonitor
  * @see AbstractFlowEngineTck
- * @since 0.5
  */
 @DisplayName("Carrier Pinning TCK")
 public abstract class AbstractCarrierPinningTck {
@@ -61,14 +61,27 @@ public abstract class AbstractCarrierPinningTck {
     private static final int AUDIT_VT_COUNT = 100;
     private static final int NATIVE_VT_COUNT = 50;
 
+    /**
+     * Creates the contract; subclasses supply the hot-path workload via
+     * {@link #subsystemWorkload(SubsystemUnderTest)}.
+     */
+    public AbstractCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Template methods
     // =========================================================================
 
     /**
      * Returns a {@link Runnable} exercising one hot-path unit of work for the given
-     * subsystem via its existing SPI contracts. Subsystems must be fully started
-     * before the test runs — no setup/teardown inside the workload.
+     * subsystem via its existing SPI contracts.
+     *
+     * @param subsystem the subsystem whose hot-path unit of work is exercised
+     * @return a runnable that performs one hot-path operation; never {@code null}
+     * @implSpec The subsystem must already be fully started when this method is called;
+     *           the returned runnable must perform no setup or teardown of its own.
      */
     protected abstract Runnable subsystemWorkload(SubsystemUnderTest subsystem);
 
@@ -92,6 +105,14 @@ public abstract class AbstractCarrierPinningTck {
     @Nested
     @DisplayName("VT Spike — 10 000 virtual threads")
     class VtSpikePinningTest {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        VtSpikePinningTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
@@ -143,6 +164,14 @@ public abstract class AbstractCarrierPinningTck {
     @Nested
     @DisplayName("Subsystem Pinning Audit — all nine subsystems")
     class SubsystemPinningAuditTest {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        SubsystemPinningAuditTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(30)
@@ -244,6 +273,14 @@ public abstract class AbstractCarrierPinningTck {
     @DisplayName("Native Workload Pinning — implementation-declared workloads")
     class NativeWorkloadPinningTest {
 
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        NativeWorkloadPinningTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("All declared native workloads produce zero carrier pinning > 20 ms")
@@ -292,7 +329,24 @@ public abstract class AbstractCarrierPinningTck {
      * All nine Exeris Kernel subsystems covered by the pinning audit.
      */
     public enum SubsystemUnderTest {
-        MEMORY, TRANSPORT, SECURITY, PERSISTENCE, GRAPH, EVENTS, FLOW, BOOTSTRAP, CONFIG
+        /** The memory subsystem — allocators and buffer lifecycle. */
+        MEMORY,
+        /** The transport subsystem — connection and channel I/O. */
+        TRANSPORT,
+        /** The security subsystem — authentication and token handling. */
+        SECURITY,
+        /** The persistence subsystem — event store reads and writes. */
+        PERSISTENCE,
+        /** The graph subsystem — traversal and projection. */
+        GRAPH,
+        /** The events subsystem — publish and dispatch. */
+        EVENTS,
+        /** The flow subsystem — plan scheduling and execution. */
+        FLOW,
+        /** The bootstrap subsystem — provider discovery and startup. */
+        BOOTSTRAP,
+        /** The config subsystem — configuration resolution. */
+        CONFIG
     }
 
     /**

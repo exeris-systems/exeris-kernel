@@ -29,15 +29,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ol>
  *
  * <h2>What each tier proves</h2>
+ * <p>Both tiers run the identical tests above through the {@code MemoryAllocator} and
+ * {@link LoanedBuffer} SPI only; this class has no visibility into how a tier reclaims
+ * memory internally. A pass establishes that the same observable contract — the segment
+ * stays valid until the last reference closes, and every access after that throws rather
+ * than crashing — holds for both:
  * <ul>
- *   <li><b>Community</b>: Verifies that {@code AbstractLoanedBuffer} calls
- *       {@code Arena.close()} exactly when the last slice releases — no premature dealloc,
- *       no leak.</li>
- *   <li><b>Enterprise</b>: Verifies the same ref-count logic, but after the final release
- *       the slab is returned to {@code PartitionedSlabPool} via the Treiber-stack CAS push,
- *       not Arena.close(). Proves the ABA-safe CAS works correctly under ref-count driven
- *       release.</li>
+ *   <li><b>Community</b>: internally returns the segment via {@code Arena.close()}.</li>
+ *   <li><b>Enterprise</b>: internally returns the slab to {@code PartitionedSlabPool} via a
+ *       Treiber-stack CAS push instead of {@code Arena.close()}.</li>
  * </ul>
+ * <p>Which mechanism runs, and whether that CAS is ABA-safe, is not observable from this
+ * SPI-only TCK; it is the tier's own binding-test responsibility.
  *
  * @since 0.5
  */
@@ -45,10 +48,21 @@ public abstract class AbstractPanamaSegfaultShieldTck {
 
     /**
      * Subclass supplies the allocator under test.
+     *
+     * @return allocator; must not be {@code null}
      */
     protected abstract MemoryAllocator createAllocator();
 
     private MemoryAllocator allocator;
+
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryAllocator} under test via
+     * {@link #createAllocator()}.
+     */
+    public AbstractPanamaSegfaultShieldTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {

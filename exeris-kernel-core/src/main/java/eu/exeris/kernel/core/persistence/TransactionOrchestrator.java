@@ -26,7 +26,7 @@ import java.util.function.Function;
  * zero-ThreadLocal, pure-functional API built on Virtual Threads and {@link ScopedValue}.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * TransactionOrchestrator tx = new TransactionOrchestrator(
  *     KernelProviders.PERSISTENCE_ENGINE.get(),
  *     TransactionRetryPolicy.exponential(3, 50L));
@@ -41,13 +41,14 @@ import java.util.function.Function;
  * long count = tx.query(conn ->
  *     conn.executeQuery("SELECT count(*) FROM events")
  *         .row().getLong(0));
- * }</pre>
+ * }
  *
  * <h2>Retry Semantics</h2>
  * <p>PostgreSQL {@code 40001} (serialization failure) and {@code 40P01} (deadlock)
- * are retried up to {@link TransactionRetryPolicy#maxAttempts()} times with
- * exponential back-off. The retry loop applies to both {@link #execute} and
- * {@link #executeManaged} variants.
+ * are retried up to {@link TransactionRetryPolicy#maxAttempts()} times, sleeping
+ * {@link TransactionRetryPolicy#delayFor(int)} between attempts. The retry loop runs in
+ * {@link #execute}, both {@link #executeManaged} overloads, and both {@link #inReadSession}
+ * overloads; {@link #query} makes exactly one attempt and propagates a failure directly.
  *
  * <h2>ScopedValue Flow</h2>
  * <p>The {@link StorageContext} is read from {@link KernelProviders#STORAGE_CONTEXT}.
@@ -108,12 +109,20 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
      * <p>Falls back to {@link ImmutableStorageContext#GLOBAL} (system scope, no tenant
      * isolation) when {@link KernelProviders#STORAGE_CONTEXT} is unbound. Use the
      * three-argument constructor if a different fallback is required.
+     *
+     * @param engine      persistence engine; must not be {@code null}
+     * @param retryPolicy retry policy; must not be {@code null}
      */
     public TransactionOrchestrator(PersistenceEngine engine, TransactionRetryPolicy retryPolicy) {
         this(engine, retryPolicy, ImmutableStorageContext.GLOBAL);
     }
 
-    /** Convenience constructor with {@link TransactionRetryPolicy#NONE}. */
+    /**
+     * Creates an orchestrator with {@link TransactionRetryPolicy#NONE} — every operation
+     * makes exactly one attempt.
+     *
+     * @param engine persistence engine; must not be {@code null}
+     */
     public TransactionOrchestrator(PersistenceEngine engine) {
         this(engine, TransactionRetryPolicy.NONE, ImmutableStorageContext.GLOBAL);
     }
@@ -223,7 +232,15 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         throw lastError;
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote When called while a read session started by this same instance is active on the
+     *           current thread (or one of its structured descendants), {@code query} reuses that
+     *           session's connection instead of opening one of its own — the same sharing
+     *           {@link ReadSession#query(Function)} provides, reachable here without a
+     *           {@link ReadSession} reference in hand.
+     */
     @Override
     public <T> T query(Function<PersistenceConnection, T> query) {
         Objects.requireNonNull(query, "query must not be null");
@@ -242,7 +259,16 @@ public final class TransactionOrchestrator implements TransactionalExecutor {
         return inReadSession(TransactionIsolation.READ_COMMITTED, work);
     }
 
-    /** {@inheritDoc} */
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Unlike the interface default, this override honours {@code isolation}: for
+     *           {@link TransactionIsolation#READ_COMMITTED} the session still runs on an
+     *           auto-commit connection with no boundary of its own, but for any other isolation
+     *           it opens a read-only transaction at that isolation, runs {@code work} inside it,
+     *           and commits before returning — retrying on {@code 40001} / {@code 40P01} per the
+     *           configured {@link TransactionRetryPolicy}, same as {@link #execute}.
+     */
     @Override
     public <T> T inReadSession(TransactionIsolation isolation, Function<ReadSession, T> work) {
         Objects.requireNonNull(isolation, "isolation must not be null");

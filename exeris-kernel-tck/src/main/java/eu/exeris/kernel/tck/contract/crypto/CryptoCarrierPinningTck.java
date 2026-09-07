@@ -31,7 +31,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 @DisplayName("Crypto carrier pinning TCK")
 public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
+    /**
+     * Creates the {@link KernelCryptoProvider} under test.
+     *
+     * @return a fresh provider instance
+     * @implSpec Return a new instance; {@link #bootstrapSubsystem()} opens one
+     *           {@link TlsEngine} per pre-allocated virtual-thread slot from it.
+     */
     protected abstract KernelCryptoProvider createProvider();
+
+    /**
+     * Creates the {@link MemoryAllocator} that backs the pre-allocated plaintext and
+     * ciphertext buffers exercised by the pinning run.
+     *
+     * @return a fresh allocator instance
+     * @implSpec Return a new instance; {@link #bootstrapSubsystem()} draws one buffer pair
+     *           per virtual-thread slot from it and releases them all in
+     *           {@link #tearDownSubsystem()}.
+     */
     protected abstract MemoryAllocator createAllocator();
 
     @Override protected String subsystemName()      { return "Crypto"; }
@@ -63,6 +80,15 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
     /** Monotonic slot counter — each executing VT claims the next available index. */
     private final AtomicInteger vtIndex = new AtomicInteger(0);
 
+    /**
+     * Creates the contract; subclasses supply the {@link KernelCryptoProvider} and
+     * {@link MemoryAllocator} fixtures via {@link #createProvider()} and {@link #createAllocator()}.
+     */
+    public CryptoCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // AbstractSubsystemCarrierPinningTck bindings
     // =========================================================================
@@ -70,12 +96,16 @@ public abstract class CryptoCarrierPinningTck extends AbstractSubsystemCarrierPi
     /**
      * Returns the number of warm-up VT iterations (phase 1 — discarded).
      * Delegates to the base-class accessor so this value stays in sync.
+     *
+     * @return the warm-up iteration count, from {@code warmupVtCount()}
      */
     protected int warmupIterations() { return warmupVtCount(); }
 
     /**
      * Returns the number of steady-state VT iterations (phase 2 — measured).
      * Delegates to the base-class accessor so this value stays in sync.
+     *
+     * @return the measured iteration count, from {@code steadyVtCount()}
      */
     protected int hotPathIterations() { return steadyVtCount(); }
 

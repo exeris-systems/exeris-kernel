@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * minimal SPI-only heap implementation, so no Core/Community payload type is required.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityJsonEventPayloadCodecTckTest extends AbstractEventPayloadCodecTck {
  *     @Override protected EventPayloadCodec createCodec() {
  *         return new CommunityJsonEventPayloadCodec(JsonMapper.builder().build());
@@ -46,9 +46,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *     @Override protected String structuredSuffixContentType() { return "application/vnd.exeris+json"; }
  *     @Override protected Object validPayloadObject() { return Map.of("k", "v"); }
  *     @Override protected Class<?> validTargetType() { return Map.class; }
- *     @Override protected byte[] malformedEncodedBytes() { return "{ \"k\": ".getBytes(UTF_8); }
+ *     @Override protected byte[] malformedEncodedBytes() { return "[".getBytes(UTF_8); }
  * }
- * }</pre>
+ * }
  *
  * @since 0.10
  */
@@ -60,6 +60,17 @@ public abstract class AbstractEventPayloadCodecTck {
     protected static final java.nio.charset.Charset UTF_8 = StandardCharsets.UTF_8;
 
     /**
+     * Creates the contract; subclasses supply the {@link EventPayloadCodec} under test via
+     * {@link #createCodec()} and the fixtures the round-trip assertions need.
+     */
+    public AbstractEventPayloadCodecTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Creates the {@link EventPayloadCodec} under test.
+     *
      * @return the codec under test; never null
      */
     protected abstract EventPayloadCodec createCodec();

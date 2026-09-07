@@ -59,6 +59,17 @@ public final class KernelStartEvent extends Event {
     public String jvmVersion;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public KernelStartEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Emits a {@link KernelStartEvent} if JFR recording is active.
      *
      * @param kernelVersion  exeris-kernel artifact version (e.g. {@code "0.5.0"})

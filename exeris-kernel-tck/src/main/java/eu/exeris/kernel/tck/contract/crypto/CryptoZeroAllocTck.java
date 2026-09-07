@@ -44,10 +44,22 @@ public abstract class CryptoZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     // Template methods
     // =========================================================================
 
-    /** Creates the {@link KernelCryptoProvider} under test. */
+    /**
+     * Creates the {@link KernelCryptoProvider} under test.
+     *
+     * @return a fresh provider instance
+     * @implSpec Return a new instance; {@link #bootstrapSubsystem()} opens exactly one
+     *           {@link TlsEngine} from it for the whole measured run.
+     */
     protected abstract KernelCryptoProvider createProvider();
 
-    /** Creates the {@link MemoryAllocator} for off-heap cipher buffers. */
+    /**
+     * Creates the {@link MemoryAllocator} for off-heap cipher buffers.
+     *
+     * @return a fresh allocator instance
+     * @implSpec Return a new instance; {@link #bootstrapSubsystem()} draws one plaintext and
+     *           one ciphertext buffer from it and reuses that pair for every iteration.
+     */
     protected abstract MemoryAllocator createAllocator();
 
     // =========================================================================
@@ -59,6 +71,15 @@ public abstract class CryptoZeroAllocTck extends AbstractSubsystemZeroAllocTck {
     private TlsEngine            engine;
     private LoanedBuffer         plaintext;
     private LoanedBuffer         ciphertext;
+
+    /**
+     * Creates the contract; subclasses supply the {@link KernelCryptoProvider} and
+     * {@link MemoryAllocator} fixtures via {@link #createProvider()} and {@link #createAllocator()}.
+     */
+    public CryptoZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override protected String subsystemName()      { return "Crypto"; }
     @Override protected String hotPathDescription()  {

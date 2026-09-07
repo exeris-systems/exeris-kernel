@@ -36,11 +36,24 @@ public abstract class EventBusZeroAllocTck extends AbstractSubsystemZeroAllocTck
     private static final String EVENT_TYPE    = "ZeroAllocTestEvent";
     private static final int    EVENT_ORDINAL = 99;
 
-    /** Creates a fully configured, not-yet-started {@link EventEngine}. */
+    /**
+     * Creates a fully configured, not-yet-started {@link EventEngine}.
+     *
+     * @return a fresh {@link EventEngine}
+     */
     protected abstract EventEngine createEngine();
 
     private EventEngine     engine;
     private EventDescriptor hotDescriptor;
+
+    /**
+     * Creates the contract; subclasses supply the {@link EventEngine} under test via
+     * {@link #createEngine()}.
+     */
+    public EventBusZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override protected String subsystemName()     { return "EventBus"; }
     @Override protected String hotPathDescription() {

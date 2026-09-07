@@ -56,18 +56,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * validator. They are explicit so the coverage gap is visible.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityKernelContextEnricherTckTest extends AbstractHttpClientRequestEnricherTck {
  *     @Override
  *     protected HttpClientRequestEnricher createEnricher() {
  *         return new CommunityKernelContextEnricher();
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.8
  */
 public abstract class AbstractHttpClientRequestEnricherTck {
+
+    /**
+     * Creates the contract; subclasses supply the enricher under test via {@link #createEnricher()}.
+     */
+    public AbstractHttpClientRequestEnricherTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Creates the enricher under test. Subclasses that do not yet have a driver

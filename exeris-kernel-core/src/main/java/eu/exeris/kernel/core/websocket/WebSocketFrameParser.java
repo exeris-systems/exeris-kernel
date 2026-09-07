@@ -60,6 +60,7 @@ public final class WebSocketFrameParser {
      * @param limit  one past the last readable byte
      * @return the header, or {@code null} when the bytes present do not yet contain a whole one
      * @throws WebSocketProtocolException on a violation the connection must close for
+     *         ({@code EX-HTTP-4015})
      */
     public static WebSocketFrameHeader parse(MemorySegment seg, long offset, long limit) {
         if (limit - offset < MIN_HEADER_BYTES) {
@@ -111,6 +112,8 @@ public final class WebSocketFrameParser {
     /**
      * RFC 6455 §5.5: a control frame is never fragmented and never exceeds 125 bytes. Checked before
      * the extended-length forms are read, because a control frame may not use them.
+     *
+     * @throws WebSocketProtocolException if either restriction is violated ({@code EX-HTTP-4015})
      */
     private static void validateControlFrame(WebSocketOpcode opcode, boolean fin, int lengthMarker) {
         if (!opcode.isControl()) {
@@ -126,7 +129,14 @@ public final class WebSocketFrameParser {
         }
     }
 
-    /** @return the payload length, or {@link #NEED_MORE} when its bytes have not all arrived */
+    /**
+     * Resolves the payload length for the header currently being parsed, decoding whichever of the
+     * RFC 6455 §5.2 length encodings the marker byte selected.
+     *
+     * @return the payload length, or {@link #NEED_MORE} when its bytes have not all arrived
+     * @throws WebSocketProtocolException if the 64-bit encoding carries a negative length
+     *         ({@code EX-HTTP-4015})
+     */
     private static long readPayloadLength(MemorySegment seg, long cursor, long limit,
                                           int lengthMarker) {
         if (lengthMarker < LENGTH_16_BIT_MARKER) {

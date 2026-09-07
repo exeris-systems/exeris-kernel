@@ -47,24 +47,24 @@ import org.openjdk.jmh.infra.Blackhole;
  * blocking here simply unmounts the carrier without pinning it.
  *
  * <h2>Implementing this benchmark</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public class MyCommunityTransportBenchmark
  *         extends AbstractTransportThroughputBenchmark {
  *
- *     \@Override
+ *     @Override
  *     protected TransportProvider getProvider() {
  *         return new CommunityTcpProvider();
  *     }
  *
- *     \@Override
+ *     @Override
  *     protected MemoryAllocator getAllocator() {
  *         return new CommunityHeapAllocator();
  *     }
  * }
- * }</pre>
+ * }
  *
- * @see AbstractExerisBenchmark
  * @since 0.5
+ * @see AbstractExerisBenchmark
  */
 public abstract class AbstractTransportThroughputBenchmark extends AbstractExerisBenchmark {
 
@@ -110,6 +110,15 @@ public abstract class AbstractTransportThroughputBenchmark extends AbstractExeri
      * Memory allocator for zero-copy write buffers.
      */
     protected MemoryAllocator allocator;
+
+    /**
+     * Creates the contract; subclasses supply the transport provider under test via
+     * {@link #getProvider()} and its allocator via {@link #getAllocator()}.
+     */
+    public AbstractTransportThroughputBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Implementations must return the {@link TransportProvider} under test.

@@ -14,6 +14,15 @@ import java.lang.foreign.MemorySegment;
  * {@link Http2FrameEncoder} (header → wire) with connection-level
  * validation (frame size limits, stream ID rules).
  *
+ * <p><b>Allocation:</b> {@link #parseAndValidate} allocates one
+ * {@link Http2FrameParser.FrameHeader} record per call, via the delegated parse; the
+ * {@code write*} methods delegate to {@link Http2FrameEncoder} and allocate nothing.
+ * <p><b>Thread confinement:</b> owner thread — {@link #maxFrameSize} is read and mutated
+ * without synchronization, so one instance must be owned by a single HTTP/2 connection
+ * and driven from one thread at a time.
+ * <p><b>Ownership:</b> the codec holds no buffers or native resources; every segment
+ * passed to it remains owned by the caller.
+ *
  * @since 0.5
  */
 public final class Http2FrameCodec {
@@ -40,6 +49,8 @@ public final class Http2FrameCodec {
      * Creates a codec with the given maximum frame size.
      *
      * @param maxFrameSize maximum frame payload size (16384–16777215)
+     * @throws Http2FrameEncoder.FrameEncodingException if {@code maxFrameSize} is outside the
+     *         RFC 7540 §4.2 range ({@code EX-HTTP-4006})
      */
     public Http2FrameCodec(int maxFrameSize) {
         if (maxFrameSize < MIN_MAX_FRAME_SIZE || maxFrameSize > MAX_MAX_FRAME_SIZE) {
@@ -54,6 +65,8 @@ public final class Http2FrameCodec {
      * Updates the maximum frame size (after SETTINGS negotiation).
      *
      * @param newMaxFrameSize new maximum (16384–16777215)
+     * @throws Http2FrameEncoder.FrameEncodingException if {@code newMaxFrameSize} is outside the
+     *         RFC 7540 §4.2 range ({@code EX-HTTP-4006})
      */
     public void setMaxFrameSize(int newMaxFrameSize) {
         if (newMaxFrameSize < MIN_MAX_FRAME_SIZE || newMaxFrameSize > MAX_MAX_FRAME_SIZE) {
@@ -64,7 +77,11 @@ public final class Http2FrameCodec {
         this.maxFrameSize = newMaxFrameSize;
     }
 
-    /** Returns the current maximum frame size. */
+    /**
+     * Returns the maximum frame payload size this codec currently enforces.
+     *
+     * @return the negotiated maximum frame size, in bytes
+     */
     public int maxFrameSize() {
         return maxFrameSize;
     }
@@ -76,7 +93,8 @@ public final class Http2FrameCodec {
      * @param seg    source segment
      * @param offset byte offset
      * @return parsed frame header
-     * @throws Http2FrameEncoder.FrameEncodingException if the frame length exceeds the negotiated max
+     * @throws Http2FrameEncoder.FrameEncodingException if the frame length exceeds the negotiated
+     *         maximum ({@code EX-HTTP-4006})
      */
     public Http2FrameParser.FrameHeader parseAndValidate(MemorySegment seg, long offset) {
         Http2FrameParser.FrameHeader header = Http2FrameParser.parseHeaderBigEndian(seg, offset);
@@ -96,6 +114,8 @@ public final class Http2FrameCodec {
      * @param streamId  stream identifier (must be &gt; 0)
      * @param length    payload length
      * @param endStream {@code true} to set END_STREAM flag
+     * @throws Http2FrameEncoder.FrameEncodingException if {@code streamId} is not greater than 0
+     *         ({@code EX-HTTP-4006})
      */
     public static void writeDataHeader(MemorySegment seg, long offset,
                                        int streamId, int length, boolean endStream) {
@@ -117,6 +137,8 @@ public final class Http2FrameCodec {
      * @param length     HPACK payload length
      * @param endStream  {@code true} to set END_STREAM flag
      * @param endHeaders {@code true} to set END_HEADERS flag
+     * @throws Http2FrameEncoder.FrameEncodingException if {@code streamId} is not greater than 0
+     *         ({@code EX-HTTP-4006})
      */
     public static void writeHeadersHeader(MemorySegment seg, long offset,
                                           int streamId, int length,

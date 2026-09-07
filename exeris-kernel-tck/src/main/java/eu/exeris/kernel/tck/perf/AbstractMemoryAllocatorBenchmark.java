@@ -28,10 +28,12 @@ import org.openjdk.jmh.infra.Blackhole;
  * <h2>Why this matters</h2>
  * <p>Community implementations back {@code LoanedBuffer} with heap {@code byte[]},
  * meaning every acquire is a GC-eligible {@code new} and every close is a no-op.
- * Enterprise implementations use tiered off-heap slab pools (256 B / 4 KB / 64 KB)
- * and return memory via an {@code AtomicLong} free-list CAS. This benchmark
- * exposes the gap between the two allocation strategies and verifies that the
- * Enterprise path generates zero heap allocations in the steady state.
+ * Enterprise implementations use tiered off-heap slab pools sized per
+ * {@link AllocationHint} (512 B up to 128 KB) and return memory via an
+ * {@code AtomicLong} free-list CAS. This benchmark exposes the gap between the two
+ * allocation strategies; run with {@code -prof gc} to check whether the Enterprise
+ * path generates zero heap allocations in the steady state — this benchmark does not
+ * assert it.
  *
  * <h2>Small-slab target</h2>
  * <p>{@link AllocationHint#MICRO} (512 bytes) is deliberately chosen to target the smallest
@@ -40,17 +42,17 @@ import org.openjdk.jmh.infra.Blackhole;
  * (event descriptors, small frame headers).
  *
  * <h2>Implementing this benchmark</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public class MyEnterpriseAllocatorBenchmark
  *         extends AbstractMemoryAllocatorBenchmark {
  *
- *     \@Override
+ *     @Override
  *     protected MemoryAllocator createAllocator() {
  *         // Return a fully initialised off-heap slab allocator
  *         return new EnterpriseMemoryAllocator(arenaConfig);
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  * @see AbstractExerisBenchmark
@@ -67,6 +69,15 @@ public abstract class AbstractMemoryAllocatorBenchmark extends AbstractExerisBen
 
     /** The allocator under test — initialised once per trial. */
     protected MemoryAllocator allocator;
+
+    /**
+     * Creates the contract; subclasses supply the allocator under test via
+     * {@link #createAllocator()}.
+     */
+    public AbstractMemoryAllocatorBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Implementations must return a fully initialised {@link MemoryAllocator}

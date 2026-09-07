@@ -23,18 +23,30 @@ public abstract class PersistenceZeroAllocTck extends AbstractSubsystemZeroAlloc
 
     /**
      * Creates a bootstrapped {@link PersistenceEngine} with connection pool warmed.
+     *
+     * @return an engine whose connections can run {@link #hotPathQuery()}
      */
     protected abstract PersistenceEngine createEngine();
 
     /**
      * Returns the SQL query to run on each hot-path iteration.
-     * Must return at least one row with an int column at index 0.
-     * Example: {@code "SELECT 1"}.
+     *
+     * @return a query, e.g. {@code "SELECT 1"}
+     * @implSpec Must return at least one row with an {@code int} column at index 0.
      */
     protected abstract String hotPathQuery();
 
     private PersistenceEngine engine;
     private String sql;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * hot-path query via {@link #hotPathQuery()}.
+     */
+    public PersistenceZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     protected String subsystemName() {

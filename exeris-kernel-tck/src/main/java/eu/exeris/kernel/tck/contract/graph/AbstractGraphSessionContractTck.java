@@ -34,7 +34,19 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 @DisplayName("TCK: GraphSession — path and lifecycle contract")
 public abstract class AbstractGraphSessionContractTck {
 
-    /** Factory: creates a fresh, ready-to-use {@link GraphSession} for each test. */
+    /**
+     * Creates the contract; subclasses supply a fresh {@link GraphSession} via {@link #createSession()}.
+     */
+    public AbstractGraphSessionContractTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Factory: creates a fresh, ready-to-use {@link GraphSession} for each test.
+     *
+     * @return a fresh graph session
+     */
     protected abstract GraphSession createSession();
 
     @Test

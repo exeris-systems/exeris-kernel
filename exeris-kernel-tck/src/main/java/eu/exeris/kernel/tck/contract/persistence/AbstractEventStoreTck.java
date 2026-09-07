@@ -38,15 +38,29 @@ public abstract class AbstractEventStoreTck {
 
     /**
      * Creates a fully bootstrapped {@link PersistenceEngine}.
+     *
+     * @return a ready-to-use engine
      */
     protected abstract PersistenceEngine createEngine();
 
     /**
      * Creates an {@link EventStore} bound to the given connection.
+     *
+     * @param connection the connection the returned store must read and write through
+     * @return an event store whose operations participate in {@code connection}'s transactions
      */
     protected abstract EventStore createEventStore(PersistenceConnection connection);
 
     private PersistenceEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * event store via {@link #createEventStore(PersistenceConnection)}.
+     */
+    public AbstractEventStoreTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpEngine() {
@@ -76,6 +90,14 @@ public abstract class AbstractEventStoreTck {
     @Nested
     @DisplayName("append() contract")
     class AppendContract {
+
+        /**
+         * Groups the {@code append(OutboxEvent)} persistence assertions.
+         */
+        AppendContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("append() persists event within transaction")
@@ -117,6 +139,14 @@ public abstract class AbstractEventStoreTck {
     @Nested
     @DisplayName("pollPending() contract")
     class PollPendingContract {
+
+        /**
+         * Groups the {@code pollPending(int)} ordering and batch-size assertions.
+         */
+        PollPendingContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("pollPending() returns events in insertion order")
@@ -166,6 +196,14 @@ public abstract class AbstractEventStoreTck {
     @Nested
     @DisplayName("markPublished() contract")
     class MarkPublishedContract {
+
+        /**
+         * Groups the {@code markPublished(UUID)} removal and idempotency assertions.
+         */
+        MarkPublishedContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("markPublished() removes event from pending")
@@ -220,6 +258,14 @@ public abstract class AbstractEventStoreTck {
     @Nested
     @DisplayName("Transactional atomicity")
     class TransactionalAtomicity {
+
+        /**
+         * Groups the rollback-visibility assertion for an appended event.
+         */
+        TransactionalAtomicity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("rollback discards appended event")

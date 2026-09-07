@@ -28,11 +28,24 @@ import java.util.UUID;
 @DisplayName("Graph carrier pinning TCK")
 public abstract class GraphCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
+    /**
+     * Creates a bootstrapped {@link GraphEngine}. Schema registration happens in bootstrap.
+     *
+     * @return a bootstrapped graph engine
+     */
     protected abstract GraphEngine createEngine();
 
     private GraphEngine engine;
     private UUID        src;
     private UUID        dst;
+
+    /**
+     * Creates the contract; subclasses supply the bootstrapped {@link GraphEngine} via {@link #createEngine()}.
+     */
+    public GraphCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override protected String subsystemName()      { return "Graph"; }
     @Override protected String hotPathDescription() { return "openSession() → findShortestPath(src, tgt) → close()"; }

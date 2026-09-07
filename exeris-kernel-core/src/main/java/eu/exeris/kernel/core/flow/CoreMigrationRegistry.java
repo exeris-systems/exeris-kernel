@@ -27,12 +27,40 @@ final class CoreMigrationRegistry {
     private final FlowEngineConfig config;
     private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations;
 
+    /**
+     * Wires this registry to the shared migration map and the config whose
+     * {@link FlowEngineConfig#maxExecutionPlans()} bounds it.
+     *
+     * @param config     the engine configuration; also read by {@link CoreFlowPlanFactory}
+     * @param migrations the map this registry admits into; shared with {@link CoreFlowRuntime}'s
+     *                    migration-chain walk, which only reads it
+     * @throws NullPointerException if {@code config} or {@code migrations} is {@code null}
+     */
     /* default */ CoreMigrationRegistry(FlowEngineConfig config,
                                         ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations) {
         this.config = Objects.requireNonNull(config, "config");
         this.migrations = Objects.requireNonNull(migrations, "migrations");
     }
 
+    /**
+     * Validates and admits an adjacent-hop migration transform (ADR-064); see
+     * {@link eu.exeris.kernel.spi.flow.FlowExecutionPlanFactory#registerMigration
+     * FlowExecutionPlanFactory.registerMigration} for the caller-facing contract.
+     *
+     * @param definitionName the definition these versions belong to; must not be {@code null} or
+     *                        blank
+     * @param fromVersion     the version being migrated away from; must be
+     *                        {@code >= }{@link FlowDefinition#INITIAL_VERSION}
+     * @param migration       the transform; must not be {@code null}
+     * @throws NullPointerException     if {@code definitionName} or {@code migration} is
+     *                                  {@code null}
+     * @throws IllegalArgumentException if {@code definitionName} is blank or {@code fromVersion} is
+     *                                  below {@link FlowDefinition#INITIAL_VERSION}
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException {@code EX-FLOW-7002} if the
+     *         registry is at {@link FlowEngineConfig#maxExecutionPlans()} and this
+     *         {@code (definitionName, fromVersion)} pair is new, or if a migration is already
+     *         registered for that pair
+     */
     /* default */ void register(String definitionName, int fromVersion, FlowDefinitionMigration migration) {
         Objects.requireNonNull(definitionName, "definitionName must not be null");
         Objects.requireNonNull(migration, "migration must not be null");

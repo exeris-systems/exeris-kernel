@@ -27,24 +27,36 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <ul>
  *   <li>{@link StorageContext#isolationKey()} returns a correct isolation key</li>
  *   <li>{@link StorageContext#attributes()} returns an unmodifiable map</li>
- *   <li>Strategy-exclusive validation rules are enforced</li>
+ *   <li>Each strategy exposes exactly the fields that apply to it — {@code schemaName()}
+ *       and {@code dataSourceKey()} are empty except under the one strategy that uses
+ *       them</li>
  *   <li><b>JFR Zero-Allocation:</b> 1M calls to {@code createGlobal()} must produce
  *       zero {@code eu.exeris.*} heap allocations in the steady-state phase
  *       (verifies "No Waste Compute" for the GLOBAL singleton path)</li>
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class MyStorageContextTest extends AbstractStorageContextTck {
  *     @Override protected StorageContext createShared(String key) {
  *         return new ImmutableStorageContext(Optional.of(key), SHARED, ...);
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
 public abstract class AbstractStorageContextTck {
+
+    /**
+     * Creates the contract; subclasses supply the per-strategy bindings via
+     * {@link #createShared(String)}, {@link #createSeparatedSchema(String, String)},
+     * {@link #createDedicated(String, String)} and {@link #createGlobal()}.
+     */
+    public AbstractStorageContextTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Creates a SHARED-strategy context with the given isolation key.

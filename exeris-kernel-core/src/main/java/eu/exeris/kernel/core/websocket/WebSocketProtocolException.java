@@ -31,9 +31,12 @@ public final class WebSocketProtocolException extends ExerisKernelException {
 
     private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4015;
 
+    /** The close code this violation maps to; also exposed by {@link #closeCode()}. */
     private final WebSocketCloseCode closeCode;
 
     /**
+     * Creates a protocol violation with no underlying cause.
+     *
      * @param closeCode the code to close the connection with; must not be null
      * @param message   a static description of the rule that was broken
      */
@@ -42,6 +45,8 @@ public final class WebSocketProtocolException extends ExerisKernelException {
     }
 
     /**
+     * Creates a protocol violation wrapping the failure that revealed it.
+     *
      * @param closeCode the code to close the connection with; must not be null
      * @param message   a static description of the rule that was broken
      * @param cause     the underlying failure. Only causes that carry no payload content may be
@@ -55,6 +60,8 @@ public final class WebSocketProtocolException extends ExerisKernelException {
     }
 
     /**
+     * Reports the code the connection must be closed with on account of this violation.
+     *
      * @return the close code this violation maps to
      */
     public WebSocketCloseCode closeCode() {

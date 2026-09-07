@@ -29,7 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * TCK: Abstract base for Outbox at-least-once delivery guarantee verification.
  *
- * <h2>Contract (#25)</h2>
+ * <h2>Contract</h2>
  * <p>Extends the basic {@link AbstractEventStoreTck} with three failure-mode scenarios:
  * <ol>
  *   <li><b>Broker outage</b> — events accumulate in {@link EventStore} when the broker
@@ -57,19 +57,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * same durable store — simulates JVM restart without wiping data.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityOutboxGuaranteeTck extends AbstractOutboxGuaranteeTck {
- *     \@Override protected PersistenceEngine createEngine()  { return new CommunityPersistenceEngine(...); }
- *     \@Override protected PersistenceEngine rebuildEngine() { return new CommunityPersistenceEngine(...); }
- *     \@Override protected EventStore createEventStore(PersistenceConnection c) { return new CommunityEventStore(c); }
- *     \@Override protected void simulateBrokerDown() { publisher.pause(); }
- *     \@Override protected void simulateBrokerUp()   { publisher.resume(); }
- *     \@Override protected int  deliveredToBroker()  { return publisher.receivedCount(); }
+ *     @Override protected PersistenceEngine createEngine()  { return new CommunityPersistenceEngine(...); }
+ *     @Override protected PersistenceEngine rebuildEngine() { return new CommunityPersistenceEngine(...); }
+ *     @Override protected EventStore createEventStore(PersistenceConnection c) { return new CommunityEventStore(c); }
+ *     @Override protected void simulateBrokerDown() { publisher.pause(); }
+ *     @Override protected void simulateBrokerUp()   { publisher.resume(); }
+ *     @Override protected int  deliveredToBroker()  { return publisher.receivedCount(); }
  * }
- * }</pre>
+ * }
  *
- * @see AbstractEventStoreTck
  * @since 0.5
+ * @see AbstractEventStoreTck
  */
 @DisplayName("Outbox Guarantee TCK")
 public abstract class AbstractOutboxGuaranteeTck {
@@ -79,6 +79,8 @@ public abstract class AbstractOutboxGuaranteeTck {
      * <p>Defaults to {@code 10,000}. Override to reduce the workload on constrained
      * CI environments or slow JDBC-based implementations while still exercising the
      * same failure-mode logic.
+     *
+     * @return the event count the broker-outage and delivery tests enqueue
      */
     protected int brokerEventCount() {
         return 10_000;
@@ -90,17 +92,24 @@ public abstract class AbstractOutboxGuaranteeTck {
 
     /**
      * Creates a fresh {@link PersistenceEngine} (first boot).
+     *
+     * @return a ready-to-use engine over an empty durable store
      */
     protected abstract PersistenceEngine createEngine();
 
     /**
      * Creates a second {@link PersistenceEngine} backed by the <em>same durable store</em>
      * as the first — simulates JVM restart without data loss.
+     *
+     * @return a fresh engine instance bound to the same durable store as {@link #createEngine()}
      */
     protected abstract PersistenceEngine rebuildEngine();
 
     /**
      * Creates an {@link EventStore} bound to the given connection.
+     *
+     * @param connection the connection the returned store must read and write through
+     * @return an event store whose operations participate in {@code connection}'s transactions
      */
     protected abstract EventStore createEventStore(PersistenceConnection connection);
 
@@ -118,6 +127,8 @@ public abstract class AbstractOutboxGuaranteeTck {
     /**
      * Returns the total count of events successfully delivered to the broker
      * (acknowledged) since the last engine start.
+     *
+     * @return the acknowledged-delivery count since the last engine start
      */
     protected abstract int deliveredToBroker();
 
@@ -126,6 +137,15 @@ public abstract class AbstractOutboxGuaranteeTck {
     // =========================================================================
 
     private PersistenceEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the first-boot engine via {@link #createEngine()}
+     * plus the broker and rebuild bindings declared above.
+     */
+    public AbstractOutboxGuaranteeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpEngine() {
@@ -170,6 +190,14 @@ public abstract class AbstractOutboxGuaranteeTck {
     @Nested
     @DisplayName("Pull-The-Plug Broker — events survive broker outage")
     class PullThePlugBrokerTest {
+
+        /**
+         * Groups the broker-outage accumulation and post-recovery delivery assertions.
+         */
+        PullThePlugBrokerTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 120, unit = TimeUnit.SECONDS)
@@ -237,6 +265,14 @@ public abstract class AbstractOutboxGuaranteeTck {
     @DisplayName("EventStore Durability — committed events survive engine rebuild")
     class EventStoreDurabilityTest {
 
+        /**
+         * Groups the engine-rebuild durability assertion for committed events.
+         */
+        EventStoreDurabilityTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)
         @DisplayName("Committed events are visible in a fresh engine instance (simulates JVM restart)")
@@ -293,6 +329,15 @@ public abstract class AbstractOutboxGuaranteeTck {
     @Nested
     @DisplayName("Outbox Replay Idempotency — markPublished() prevents duplicate delivery")
     class OutboxReplayIdempotencyTest {
+
+        /**
+         * Groups the {@code markPublished()} replay-idempotency assertions, including under
+         * concurrent calls.
+         */
+        OutboxReplayIdempotencyTest() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @Timeout(value = 60, unit = TimeUnit.SECONDS)

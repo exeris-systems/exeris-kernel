@@ -19,7 +19,7 @@ import java.util.UUID;
  * <h2>The Holy Grail (Enterprise)</h2>
  * <p>A pre-bootstrapped {@link GraphEngine} (with a simple Task/Step schema)
  * repeatedly opens a {@link GraphSession}, invokes
- * {@link GraphSession#findShortestPath(Object, Object) findShortestPath(src, tgt)}
+ * {@link GraphSession#findShortestPath(UUID, UUID) findShortestPath(src, tgt)}
  * using fresh random {@link java.util.UUID} identifiers for {@code src} and
  * {@code tgt}, and then closes the session. This
  * {@code openSession() → findShortestPath() → close()} sequence MUST produce
@@ -35,10 +35,22 @@ import java.util.UUID;
  */
 public abstract class ExecutionGraphZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 
-    /** Creates a bootstrapped {@link GraphEngine}. Schema registration happens in bootstrap. */
+    /**
+     * Creates a bootstrapped {@link GraphEngine}. Schema registration happens in bootstrap.
+     *
+     * @return a bootstrapped graph engine
+     */
     protected abstract GraphEngine createEngine();
 
     private GraphEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the bootstrapped {@link GraphEngine} via {@link #createEngine()}.
+     */
+    public ExecutionGraphZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override protected String subsystemName()      { return "Graph"; }
     @Override protected String hotPathDescription()  { return "GraphSession.openSession() → findShortestPath() → close()"; }

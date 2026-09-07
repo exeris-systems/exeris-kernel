@@ -52,7 +52,8 @@ public final class GraphSyncService {
     private final GraphEngine engine;
 
     /**
-     * Constructs the sync service bound to the given engine.
+     * Binds this sync service to a single {@link GraphEngine}; every operation below opens
+     * and closes its own {@link GraphSession} against it.
      *
      * @param engine the active graph engine (must not be {@code null})
      */
@@ -130,6 +131,19 @@ public final class GraphSyncService {
                 session -> session.deleteEdge(edge, sourceId, targetId));
     }
 
+    /**
+     * Runs {@code action} inside its own transaction on a freshly opened {@link GraphSession},
+     * emitting a {@link GraphSyncOperationEvent} for the attempt and, on failure, rolling back
+     * and emitting a {@link GraphSyncFailedEvent} before wrapping the cause in a
+     * {@link GraphSyncException}.
+     *
+     * @param operationType one of {@code NODE_UPSERT}, {@code NODE_DELETE}, {@code EDGE_UPSERT},
+     *                       {@code EDGE_DELETE} — recorded on the JFR event
+     * @param label          the node label or edge type being synchronised
+     * @param failureMessage message attached to {@link GraphSyncException} on failure
+     * @param action         the single write to run against the open session
+     * @throws GraphSyncException (EX-GRPH-5003) if {@code action} or the commit throws
+     */
     private void executeSync(String operationType, String label, String failureMessage, SessionAction action) {
         final GraphSyncOperationEvent event = GraphSyncOperationEvent.beginIfEnabled();
         if (event != null) {
@@ -160,6 +174,7 @@ public final class GraphSyncService {
         }
     }
 
+    /** One write against an open {@link GraphSession}, run inside {@link #executeSync}'s transaction. */
     @FunctionalInterface
     private interface SessionAction {
         void execute(GraphSession session);

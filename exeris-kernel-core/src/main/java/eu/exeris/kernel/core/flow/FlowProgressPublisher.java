@@ -12,6 +12,14 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Publishes a best-effort {@code FlowProgress} event on a flow instance's terminal transition, so
+ * a subscriber can observe completions and failures without polling.
+ *
+ * <p>Publication never alters flow execution semantics: a missing {@link EventEngine}, an
+ * exhausted ordinal-registration window, or any {@code RuntimeException} raised while publishing
+ * is swallowed rather than propagated to the caller.
+ */
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class FlowProgressPublisher {
 
@@ -23,6 +31,16 @@ final class FlowProgressPublisher {
     private final Object flowProgressRegistrationMonitor = new Object();
     private final AtomicInteger flowProgressOrdinal = new AtomicInteger(FLOW_PROGRESS_ORDINAL_UNRESOLVED);
 
+    /**
+     * Publishes a {@code FlowProgress} event for {@code instance}'s transition to {@code state}, or
+     * does nothing if no {@link EventEngine} is bound, {@code state} is not terminal, or
+     * publication fails for any reason.
+     *
+     * @param instance  the flow instance that transitioned
+     * @param stepIndex the step index the transition occurred at
+     * @param state     the state {@code instance} transitioned to; only a terminal state is
+     *                  published
+     */
     @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidCatchingGenericException"})
     public void publishProgress(RuntimeFlowInstance instance, int stepIndex, FlowState state) {
         EventEngine eventEngine = instance.eventEngine();
@@ -59,15 +77,18 @@ final class FlowProgressPublisher {
         }
     }
 
-    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     /**
-     * Package-private so the give-up branch can be driven directly. It needs only an
+     * Resolves the ordinal {@code FlowProgress} events publish under, registering the type on
+     * first use and caching the result for the life of this publisher.
+     *
+     * <p>Package-private so the give-up branch can be driven directly. It needs only an
      * {@link EventEngine}, whereas {@link #publishProgress} needs a live {@code RuntimeFlowInstance}
      * — and the branch worth testing is the one that decides, not the one that publishes.
      *
      * @param eventEngine the engine whose registry the ordinal is claimed in
      * @return the claimed ordinal, or {@code -1} once publication is permanently disabled
      */
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     /* default */ int resolveFlowProgressOrdinal(EventEngine eventEngine) {
         int cached = flowProgressOrdinal.get();
         if (cached != FLOW_PROGRESS_ORDINAL_UNRESOLVED) {

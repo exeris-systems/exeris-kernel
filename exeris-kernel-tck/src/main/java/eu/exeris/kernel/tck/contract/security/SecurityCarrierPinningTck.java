@@ -23,7 +23,27 @@ import org.junit.jupiter.api.DisplayName;
 @DisplayName("Security carrier pinning TCK")
 public abstract class SecurityCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {
 
+    /**
+     * Creates the contract; subclasses supply the provider binding via {@link #createProvider()}
+     * and the token binding via {@link #createValidTokenBuffer()}.
+     */
+    public SecurityCarrierPinningTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Creates the {@link SecurityProvider} under test.
+     *
+     * @return a configured provider instance
+     */
     protected abstract SecurityProvider createProvider();
+
+    /**
+     * Creates a {@link LoanedBuffer} containing a valid, parseable token for the hot-path loop.
+     *
+     * @return a loaned buffer holding a valid token
+     */
     protected abstract LoanedBuffer createValidTokenBuffer();
 
     private SecurityProvider provider;

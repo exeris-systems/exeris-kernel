@@ -107,6 +107,8 @@ public final class WebSocketFrameWriter {
      * @param code   the close code; must be sendable
      * @param reason a short reason, possibly empty
      * @return the offset just past the frame written
+     * @throws IllegalArgumentException if {@code code} is not
+     *         {@linkplain WebSocketCloseCode#sendable() sendable}
      */
     public static long writeClose(MemorySegment seg, long offset, WebSocketCloseCode code,
                                   String reason) {

@@ -52,14 +52,11 @@ import java.util.function.Function;
  * {@code Thread.ofVirtual().start()} is the sole deliberate exception to the STS mandate.
  *
  * <p><b>Track-dependent, and this class carries no {@code StructuredTaskScope} import on either.</b>
- * The sentence this paragraph replaced said concurrency inside {@code runStream()} MUST use
- * {@code StructuredTaskScope}. On the default line that mandates the one preview dependency 1.0 GA must
- * not ship — see ROADMAP §"Platform Baseline for 1.0 GA", which records the same staleness in
- * {@code KernelTierBanArchitectureTest.noExecutors}'s reason text (until v0.12 this named
- * {@code ExerisArchitectureTest.noExecutorsAnywhere}, a rule whose reach never matched its
- * name). Read it per track: the
- * {@code preview} artifact keeps {@code StructuredTaskScope}; the default line uses virtual threads
- * plus explicit {@code ScopedValue} rebind at the {@link StreamExecutionBackend} seam, both GA.
+ * Mandating {@code StructuredTaskScope} here would ship the one preview dependency 1.0 GA must not
+ * ship — see ROADMAP §"Platform Baseline for 1.0 GA" — and {@code KernelTierBanArchitectureTest.noExecutors}
+ * enforces that on the default line. Read it per track: the {@code preview} artifact keeps
+ * {@code StructuredTaskScope}; the default line uses virtual threads plus explicit {@code ScopedValue}
+ * rebind at the {@link StreamExecutionBackend} seam, both GA.
  * Either way structured lifetime is the requirement, not a specific class.
  *
  * <h2>ScopedValue Bindings (JEP 506)</h2>
@@ -82,10 +79,10 @@ import java.util.function.Function;
  * by multiple carrier threads (e.g., multiple io_uring rings or NIO reactor threads).
  * All shared state mutations go through the {@link AdmissionController}'s VarHandle CAS path.
  *
+ * @since 0.5
  * @see AdmissionController
  * @see StreamLoadShedder
  * @see TransportScopes
- * @since 0.5
  */
 // CyclomaticComplexity is a class-wide total, and the drain-ordering fix adds branches to a class
 // that already carries the admission, spawn and shutdown paths. Each branch here is a distinct
@@ -202,7 +199,7 @@ public final class PaqsScheduler implements AutoCloseable {
      * The method is O(1) for the caller — all heavy work (stream handling) is delegated
      * to the spawned Virtual Thread.
      *
-     * <h2>Decision Flow</h2>
+     * <h4>Decision Flow</h4>
      * <ol>
      *   <li>Extract the stream's priority via the {@code priorityExtractor}.</li>
      *   <li>Ask the {@link AdmissionController} — O(1).</li>
@@ -378,8 +375,7 @@ public final class PaqsScheduler implements AutoCloseable {
         //
         // Concurrency *within* runStream() must be structured, but the mechanism is track-dependent
         // (ADR-066): core.concurrent.StructuredScope on the preview-clean default line, and
-        // StructuredTaskScope only on the preview branch. This note used to mandate the latter
-        // outright, which is exactly what v0.11 removed from the distributed artifact.
+        // StructuredTaskScope only on the preview branch.
         executionBackend.start(threadName, () -> runStream(stream, priority, streamId, priorityName, work));
     }
 

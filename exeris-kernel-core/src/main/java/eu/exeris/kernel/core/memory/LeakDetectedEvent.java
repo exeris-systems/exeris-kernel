@@ -26,15 +26,17 @@ import jdk.jfr.StackTrace;
  * is stored as the {@code allocationStack} field, <em>not</em> the JFR stack-capture mechanism.
  * The JFR stack is enabled to capture the Cleaner callback context for correlation.
  *
- * <h2>rawArgs Binary Layout (Glass-Box Telemetry)</h2>
+ * <h2>Event Field Layout</h2>
+ * <p>This is a {@code jdk.jfr.Event} with typed fields, not an
+ * {@code ExerisKernelException} — it carries no {@code rawArgs} array.
  * <pre>
  *   bufferLabel       — String: opaque label assigned at creation (hex address or class name)
  *   allocationStack   — String: stack trace captured at allocation time (PARANOID mode only)
  *   capacityBytes     — long:   size of the leaked segment
  * </pre>
  *
- * @see LeakTracker
  * @since 0.5
+ * @see LeakTracker
  */
 @Name("eu.exeris.kernel.core.BufferLeak")
 @Label("LoanedBuffer Leak Detected")

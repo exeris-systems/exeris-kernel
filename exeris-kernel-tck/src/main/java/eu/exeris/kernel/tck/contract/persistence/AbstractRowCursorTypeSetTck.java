@@ -40,7 +40,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractRowCursorTypeSetTck {
 
-    /** Creates a bootstrapped engine against the measured server. */
+    /**
+     * Creates a bootstrapped engine against the measured server.
+     *
+     * @return an engine connected to the server version this type set was measured against
+     */
     protected abstract PersistenceEngine createEngine();
 
     /**
@@ -48,6 +52,8 @@ public abstract class AbstractRowCursorTypeSetTck {
      *
      * <p>Not a default anyone should be comfortable inheriting silently — each line here is the
      * reason one column of the measured set has a fixed answer at all.
+     *
+     * @param conn the connection to pin before any Tier A/B/C row is rendered on it
      */
     protected void pinSession(PersistenceConnection conn) {
         conn.executeUpdate("SET client_encoding TO 'UTF8'");
@@ -59,6 +65,15 @@ public abstract class AbstractRowCursorTypeSetTck {
     }
 
     private PersistenceEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()}, connected
+     * to the server version this type set was measured against.
+     */
+    public AbstractRowCursorTypeSetTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpEngine() {
@@ -178,6 +193,14 @@ public abstract class AbstractRowCursorTypeSetTck {
     @DisplayName("Tier A — rendering")
     class TierARendering {
 
+        /**
+         * Groups the exact-rendering assertion for every row in {@code TIER_A}.
+         */
+        TierARendering() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("getString renders every Tier A type exactly as the server does")
         void rendersEveryTierARow() {
@@ -200,6 +223,15 @@ public abstract class AbstractRowCursorTypeSetTck {
     @Nested
     @DisplayName("Tier B — gated rendering")
     class TierBRendering {
+
+        /**
+         * Groups the Tier B gated-rendering assertions, including the DST-crossing
+         * {@code timestamptz} case.
+         */
+        TierBRendering() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("getString renders every Tier B type, each under its stated gate")
@@ -243,6 +275,16 @@ public abstract class AbstractRowCursorTypeSetTck {
     @Nested
     @DisplayName("Tier C — refusal")
     class TierCRefusal {
+
+        /**
+         * Groups the Tier C refusal assertions — every unimplemented type, a native enum and a
+         * NULL in an unsupported column — plus the counter-example that a supported type still
+         * renders.
+         */
+        TierCRefusal() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("an unimplemented type fails rather than returning a value")
@@ -314,6 +356,14 @@ public abstract class AbstractRowCursorTypeSetTck {
     class Domains {
 
         /**
+         * Groups the domain-renders-as-its-base-type assertion.
+         */
+        Domains() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
          * Measured: PostgreSQL reports the <em>base</em> type in the row description, so a domain
          * over {@code int4} arrives as {@code int4}. Worth pinning precisely because the opposite
          * belief is easy to hold, and it is what would justify the OID-range heuristic that
@@ -338,6 +388,14 @@ public abstract class AbstractRowCursorTypeSetTck {
     @Nested
     @DisplayName("Mismatched typed accessor")
     class MismatchedTypedAccessor {
+
+        /**
+         * Groups the lossless-widening, lossy-overflow and typed-accessor-agreement assertions.
+         */
+        MismatchedTypedAccessor() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("widens where widening is lossless")

@@ -28,8 +28,8 @@ import java.util.UUID;
  *
  * <h2>JFR-First</h2>
  * <p>Every algorithm invocation emits an {@link AlgoOrchestratorEvent} carrying the
- * algorithm name, source/target hop count, and total cost. The event is written even
- * when no path is found (cost = {@code +∞}).
+ * algorithm name, the resulting hop count, and total cost — never the source or target
+ * node identifiers. The event is written even when no path is found (cost = {@code +∞}).
  *
  * <h2>Error Strategy (Hot-Path Contract)</h2>
  * <p>When {@link PathResult#found()} is {@code false} and the caller requests strict
@@ -40,8 +40,8 @@ import java.util.UUID;
  *
  * <h2>Thread Safety</h2>
  * <p>Stateless beyond the injected {@link PathFinder}. Safe to share across all
- * Virtual Threads if the underlying {@link PathFinder} is thread-safe (Community:
- * yes; Enterprise: yes via carrier-affine slab pools).
+ * Virtual Threads as long as the injected {@link PathFinder} is thread-safe — see
+ * {@link PathFinder}'s implementation note for what each tier guarantees.
  *
  * @since 0.5
  */
@@ -56,7 +56,8 @@ public final class AlgoOrchestrator {
     private final PathFinder pathFinder;
 
     /**
-     * Constructs the orchestrator with the given path finder.
+     * Binds this orchestrator to a single {@link PathFinder}; every lookup method below
+     * delegates to it for the lifetime of this instance.
      *
      * @param pathFinder pluggable path-finding algorithm (must not be {@code null})
      */
@@ -169,6 +170,7 @@ public final class AlgoOrchestrator {
      * @param maxPaths maximum number of paths to return (≥ 1)
      * @param weightFn weight function
      * @return unmodifiable list of path results, ordered by cost ascending
+     * @throws IllegalArgumentException if {@code maxPaths} is less than 1
      */
     public List<PathResult> findKShortestPaths(UUID source, UUID target,
                                                int maxPaths, EdgeWeightFunction weightFn) {
@@ -198,12 +200,16 @@ public final class AlgoOrchestrator {
     }
 
     /**
-     * Quick reachability check — no path data returned, O(1) short-circuit possible
-     * in driver implementations.
+     * Checks whether at least one path exists between two nodes, without computing
+     * or returning path data.
      *
      * @param source source node ID
      * @param target target node ID
      * @return {@code true} if at least one path exists
+     * @apiNote Prefer this to {@link #findShortestPath(UUID, UUID)} when only existence matters.
+     *          It is a distinct {@link PathFinder} operation, so an implementation is free to
+     *          answer it without tracking cost or reconstructing a route; the SPI does not
+     *          require that shortcut, so whether a given provider takes it is implementation-defined.
      */
     public boolean pathExists(UUID source, UUID target) {
         Objects.requireNonNull(source, NULL_SOURCE);

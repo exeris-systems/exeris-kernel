@@ -13,6 +13,18 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Emitted once, at the end of {@link CoreFlowEngine#close()}, carrying the engine's final
+ * operational counters as a stable, point-in-time snapshot.
+ *
+ * <p>The snapshot is taken after the runtime's bounded shutdown join, so {@code parkedFlows}
+ * reads {@code 0} — the in-memory parked index has already been cleared by the time this event
+ * fires. {@code nonDurableParkedFlows} is sampled just before that clear, which is the last
+ * moment the count can still be read, and is the one figure an operator needs before restarting:
+ * a non-zero value means some parked sagas will not survive the restart that is about to happen.
+ * A worker still finalising a snapshot after being interrupted during the join does not change
+ * either counter.
+ */
 @Name("eu.exeris.kernel.flow.Shutdown")
 @Label("Flow Engine Shutdown")
 @Category({"Exeris Kernel", "Flow"})
@@ -58,6 +70,17 @@ final class FlowEngineShutdownEvent extends Event {
     @Description("Wall-clock time elapsed inside FlowEngine.close()")
     /* default */ long shutdownDurationNs;
 
+    /**
+     * Emits the {@code Shutdown} event carrying the engine's final counters, or does nothing if
+     * the event type is disabled.
+     *
+     * @param config                the engine configuration to read {@code engineName} and the
+     *                              persistence/compensation flags from
+     * @param stats                 the engine's final operational counters
+     * @param nonDurableParkedFlows count of parked instances whose PARK checkpoint the store
+     *                              refused
+     * @param shutdownDurationNs    wall-clock time elapsed inside {@code FlowEngine.close()}
+     */
     /* default */ static void emit(FlowEngineConfig config, FlowEngineStats stats,
                                    long nonDurableParkedFlows, long shutdownDurationNs) {
         FlowEngineShutdownEvent event = new FlowEngineShutdownEvent();
