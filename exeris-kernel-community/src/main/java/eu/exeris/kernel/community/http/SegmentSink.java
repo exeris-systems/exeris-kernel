@@ -23,13 +23,16 @@ import java.util.Objects;
  * {@code java.io.OutputStream} surface here is the serializer bridge only — no heap
  * buffering happens; each write lands in the off-heap segment.
  *
- * <h2>Ownership (unforgiving — off-heap)</h2>
- * <p>This sink owns exactly one live buffer at a time ({@link #buffer()}). On growth it
- * allocates the replacement, copies the bytes written so far, then closes the old buffer —
- * so at most one buffer is ever live. It deliberately does <strong>not</strong> release the
- * current buffer on {@link #close()} (a serializer may auto-close its output target): the
- * caller owns the terminal decision — {@link #setSizeToWritten()} then take {@link #buffer()}
- * on success (ownership transfers to the caller), or {@link #discard()} on any failure.
+ * <p><b>Allocation:</b> allocates no heap memory on the write path; on off-heap buffer overflow it
+ * allocates one larger replacement buffer, copies the bytes written so far into it, and releases
+ * the previous buffer — so at most one buffer is ever live.
+ * <p><b>Thread confinement:</b> owner thread — unsynchronized, single-writer; confined to
+ * whatever thread the serializer that owns this sink writes from.
+ * <p><b>Ownership:</b> this sink owns exactly one live buffer at a time ({@link #buffer()}). It
+ * deliberately does <strong>not</strong> release the current buffer on {@link #close()} (a
+ * serializer may auto-close its output target): the caller owns the terminal decision —
+ * {@link #setSizeToWritten()} then take {@link #buffer()} on success (ownership transfers to the
+ * caller), or {@link #discard()} on any failure.
  */
 final class SegmentSink extends OutputStream {
 

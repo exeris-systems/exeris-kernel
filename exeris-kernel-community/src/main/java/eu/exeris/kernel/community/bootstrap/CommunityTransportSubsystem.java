@@ -20,6 +20,22 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.UnaryOperator;
 
+/**
+ * Bootstraps the Community transport engine: selects the highest-priority available
+ * {@link TransportProvider}, builds its {@link TransportConfig}, and — unless
+ * {@code transport.mode}/{@code network.transportMode} is unset or {@code DISABLED} — creates and
+ * starts a {@link TransportEngine}.
+ *
+ * <p>Depends on {@code memory} and {@code crypto}, and runs in the SERVICES phase: the Community
+ * driver requires {@code KernelProviders.MEMORY_ALLOCATOR} to be bound when the engine is created,
+ * and separately reads {@code KernelProviders.CRYPTO_PROVIDER} — optionally, since not every
+ * transport configuration wants TLS at all.
+ *
+ * <p>A server-or-dual engine started with no stream handler configured during bootstrap installs a
+ * default that closes every inbound {@code TransportStream} immediately, and logs a warning that
+ * streams will be dropped until the application installs its own handler — a running-but-useless
+ * transport rather than a boot failure.
+ */
 final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
 
     private static final System.Logger LOG = System.getLogger(CommunityTransportSubsystem.class.getName());

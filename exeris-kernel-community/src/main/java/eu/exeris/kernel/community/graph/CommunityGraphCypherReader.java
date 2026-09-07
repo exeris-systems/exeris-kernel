@@ -43,6 +43,15 @@ final class CommunityGraphCypherReader {
         this.executor = executor;
     }
 
+    /**
+     * Runs a multi-hop MATCH from {@code traversal}'s start node out to its max depth and
+     * collects the visited node IDs.
+     *
+     * @param traversal traversal configuration
+     * @return node IDs visited, in result order
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the underlying Cypher query fails
+     */
     // Neo4j driver raises RuntimeException; map to GraphQueryException
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     /* default */ List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
@@ -61,6 +70,16 @@ final class CommunityGraphCypherReader {
         }
     }
 
+    /**
+     * Runs {@link #traverseBreadthFirst} and encodes the resulting node IDs as a UTF-8 JSON
+     * array (via {@link CommunityGraphBufferOps#toUuidJsonArray}) into a network buffer from
+     * {@code KernelProviders.MEMORY_ALLOCATOR}.
+     *
+     * @param traversal traversal configuration
+     * @return a buffer holding the encoded JSON; caller-owned, caller must close it
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the underlying Cypher query fails
+     */
     /* default */ LoanedBuffer streamBfsJson(GraphTraversal traversal) {
         List<UUID> bfs = traverseBreadthFirst(traversal);
         byte[] jsonBytes = CommunityGraphBufferOps.toUuidJsonArray(bfs);
@@ -70,6 +89,13 @@ final class CommunityGraphCypherReader {
         return buffer;
     }
 
+    /**
+     * Finds the node labeled {@code ROOT}.
+     *
+     * @return the root node's ID
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if no node is labeled {@code ROOT}, or the underlying Cypher query fails
+     */
     // Neo4j driver raises RuntimeException; map to GraphQueryException
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     /* default */ UUID getRootNode() {
@@ -88,6 +114,17 @@ final class CommunityGraphCypherReader {
         }
     }
 
+    /**
+     * Loads every edge of {@code edge}'s relationship type into {@code builder}, adding both
+     * directions when {@code edge} is bidirectional or its direction is
+     * {@link GraphEdgeDescriptor.Direction#BOTH}.
+     *
+     * @param edge    relationship type to load adjacency for
+     * @param builder accumulator to add edges to
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the underlying Cypher query fails, or {@code edge}'s source node, relation
+     *         type, or target node identifier does not match {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     // Neo4j driver raises RuntimeException; map to GraphQueryException
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     /* default */ void loadAdjacency(GraphEdgeDescriptor edge, CommunityPathFinder.Builder builder) {
@@ -124,6 +161,14 @@ final class CommunityGraphCypherReader {
         }
     }
 
+    /**
+     * Converts a Cypher {@code Value} holding node/edge properties to its string form.
+     *
+     * @param value the driver value, or {@code null}
+     * @return {@code "{}"} when {@code value} is {@code null} or Cypher {@code NULL};
+     *         {@code value.asString()} when that conversion succeeds; otherwise
+     *         {@code value.toString()}
+     */
     // Neo4j driver raises RuntimeException; fall back to toString on serialization failure
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     /* default */ static String toPropertyString(Value value) {
@@ -137,6 +182,17 @@ final class CommunityGraphCypherReader {
         }
     }
 
+    /**
+     * Parses a Cypher {@code Value} as a {@link UUID}.
+     *
+     * @param value     the driver value returned for an ID column
+     * @param queryType query-type label attached to a thrown {@code GraphQueryException}
+     * @return the parsed UUID
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if {@code value} is {@code null}/Cypher {@code NULL}, or its string form
+     *         (via {@code asString()}, falling back to {@code asObject()} on type mismatch)
+     *         is not a valid UUID
+     */
     // Neo4j driver raises RuntimeException; fall back to asObject on type mismatch
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     /* default */ static UUID asUuid(Value value, String queryType) {

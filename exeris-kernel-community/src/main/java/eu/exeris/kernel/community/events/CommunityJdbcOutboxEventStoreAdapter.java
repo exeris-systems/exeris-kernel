@@ -24,7 +24,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Community adapter exposing JDBC EventStore through the Core outbox orchestration port.
+ * Community binding of {@link OutboxEventStore} over {@link CommunityJdbcEventStore}, giving
+ * the Core outbox orchestrator a PostgreSQL-backed pending/delivered/DLQ surface.
+ *
+ * <p>Each of the three operations opens its own {@link PersistenceConnection} and runs inside
+ * one transaction, rolling back on any {@code RuntimeException} and rethrowing.
+ *
+ * <p>A row whose event type the {@link CommunityEventRegistry} does not (yet) have an ordinal
+ * for is assigned one on the fly, drawn from a counter local to this adapter instance and
+ * starting at {@code 1_000_000}, and that assignment is registered into the same shared
+ * {@link CommunityEventRegistry} this adapter was constructed with — see
+ * {@code resolveOrdinal}/{@code registerDynamicType}.
  */
 @SuppressWarnings("PMD.AvoidCatchingGenericException")
 final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
@@ -48,6 +58,20 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
         this.eventRegistry = Objects.requireNonNull(eventRegistry, "eventRegistry");
     }
 
+    /**
+     * Reads up to {@code maxItems} undelivered rows and commits immediately, releasing the
+     * {@code FOR UPDATE SKIP LOCKED} row locks the underlying query takes.
+     *
+     * <p>Committing here — rather than holding the transaction open across the broker
+     * dispatch — is correct for the Community single-orchestrator model, since rows already
+     * marked via {@link #markDelivered} or {@link #moveToDlq} are excluded by their
+     * {@code published_at IS NULL} filter. A multi-orchestrator deployment would need an
+     * inflight/claimed column to prevent a second poller re-reading the same rows between this
+     * commit and the corresponding {@link #markDelivered} call.
+     *
+     * @param maxItems maximum number of events to return (must be &gt; 0)
+     * @return ordered list of pending entries; empty list if the outbox is empty
+     */
     @SuppressWarnings("PMD.CloseResource")
     @Override
     public List<OutboxBrokerPort.OutboxEntry> pollPending(int maxItems) {
@@ -78,6 +102,12 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
         }
     }
 
+    /**
+     * Marks each descriptor's row published, in one transaction; a no-op if {@code delivered}
+     * is empty (no connection is opened).
+     *
+     * @param delivered descriptors of events that have been confirmed delivered
+     */
     @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
     @Override
     public void markDelivered(List<EventDescriptor> delivered) {
@@ -101,6 +131,15 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
         }
     }
 
+    /**
+     * Inserts a DLQ record and deletes the corresponding outbox row in one transaction, so a
+     * failed event never reappears in {@link #pollPending}.
+     *
+     * @param descriptor the failed event descriptor
+     * @param payload    original payload; copied into the DLQ row, caller retains ownership
+     * @param reason     human-readable failure reason; recorded as {@code "unknown"} if
+     *                   {@code null} or blank
+     */
     @Override
     public void moveToDlq(EventDescriptor descriptor, EventPayload payload, String reason) {
         String eventType = eventRegistry.nameOfOrdinal(descriptor.eventTypeOrdinal());

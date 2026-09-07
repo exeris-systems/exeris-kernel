@@ -12,6 +12,11 @@ public final class EmbeddedHttpEngineFixtures {
     private EmbeddedHttpEngineFixtures() {
     }
 
+    /**
+     * Creates a fixture that boots its HTTP engine through {@code KernelBootstrap}.
+     *
+     * @return a new, unstarted fixture
+     */
     public static EmbeddedHttpEngineFixture kernelBootstrapFixture() {
         return new KernelBootstrapHttpEngineFixture();
     }

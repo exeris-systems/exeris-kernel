@@ -53,6 +53,16 @@ public final class OptimisticLockConflictEvent extends Event {
             + "the version it had loaded prior to the failed save")
     /* default */ long loadedSchemaVersion;
 
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public OptimisticLockConflictEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     /* default */ static void emit(String engineName, String phase, long loadedSchemaVersion) {
         OptimisticLockConflictEvent event = new OptimisticLockConflictEvent();
         if (!event.isEnabled()) {

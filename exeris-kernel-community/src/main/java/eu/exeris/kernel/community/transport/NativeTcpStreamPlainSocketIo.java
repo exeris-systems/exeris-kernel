@@ -17,9 +17,7 @@ import java.nio.channels.SocketChannel;
 /**
  * Package-private plain-socket I/O dispatch for {@link NativeTcpStream}.
  *
- * <p>Extracted from {@link NativeTcpStream} in v0.8 Sprint 3 (QA-016) as the
- * second seam of the stream's God-class decomposition. Owns the
- * {@code core-socket-seam} ↔ {@code nio-fallback} backend selection and the
+ * <p>Holds the {@code core-socket-seam} ↔ {@code nio-fallback} backend selection and the
  * Panama {@code recv}/{@code send} syscall invocations.
  *
  * <p>Selection rule (see {@link Backend#resolve}): the core-socket seam is

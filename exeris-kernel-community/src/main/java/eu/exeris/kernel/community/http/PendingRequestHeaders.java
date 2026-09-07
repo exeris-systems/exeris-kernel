@@ -17,9 +17,7 @@ import java.util.Set;
  * Package-private HPACK-decode accumulator for one HTTP/2 request used by
  * {@link Http2SessionContext#decodePendingRequest()}.
  *
- * <p>Extracted from {@link CommunityHttp2SessionProcessor} in v0.8 Sprint 3
- * (QA-018a) as one of four seams of the processor's God-class decomposition.
- * Enforces RFC 7540 §8.1.2.1 pseudo-header ordering (pseudo-headers MUST
+ * <p>Enforces RFC 7540 §8.1.2.1 pseudo-header ordering (pseudo-headers MUST
  * precede regular headers), §8.1.2.2 connection-specific header rejection,
  * §8.1.2.3 the prohibition on duplicate request pseudo-headers, and the
  * {@code :method} / {@code :path} pseudo-header requirements.
@@ -40,6 +38,14 @@ final class PendingRequestHeaders {
     private final Set<Pseudo> seenPseudoHeaders = EnumSet.noneOf(Pseudo.class);
     private final List<HttpHeader> requestHeaders = new ArrayList<>();
 
+    /**
+     * Accumulates one decoded header field, applying it as a pseudo-header (a name starting with
+     * {@code :}) or a regular header depending on its name. A no-op once this accumulator has
+     * already been marked invalid.
+     *
+     * @param name  the decoded header name, exactly as HPACK produced it
+     * @param value the decoded header value
+     */
     /* default */ void accept(String name, String value) {
         if (!valid) {
             return;
@@ -56,6 +62,7 @@ final class PendingRequestHeaders {
         requestHeaders.add(new HttpHeader(name, value));
     }
 
+    /** Marks this accumulator invalid regardless of what it has accepted so far. */
     /* default */ void invalidate() {
         valid = false;
     }

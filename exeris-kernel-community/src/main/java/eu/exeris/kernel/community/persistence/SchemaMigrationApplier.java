@@ -101,10 +101,10 @@ final class SchemaMigrationApplier {
     /**
      * Rolls back and restores auto-commit without ever becoming the reported failure.
      *
-     * <p>The previous shape rolled back inside a {@code finally}, so a rollback that itself threw -
-     * a dropped connection is the ordinary way - **replaced** the migration error that caused it.
-     * The operator then saw the cleanup failure and lost the one fact that mattered. Both cleanup
-     * failures attach to the original as suppressed instead.
+     * <p>A rollback or auto-commit restore that itself throws — a dropped connection is the
+     * ordinary way — is attached to {@code primary} as a suppressed exception rather than
+     * propagated in its place, so the migration failure that triggered cleanup is always what
+     * the caller ultimately sees.
      */
     private static void cleanUpAfter(Connection connection, Exception primary) {
         try {

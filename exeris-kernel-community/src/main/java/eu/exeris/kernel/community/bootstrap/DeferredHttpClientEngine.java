@@ -12,6 +12,12 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * An {@link HttpClientEngine} that exists at {@code initialize()} and is built at {@code start()} —
+ * the client-side counterpart of {@link DeferredHttpServerEngine}, for the same reason: a real client
+ * engine resolves {@code KernelProviders.MEMORY_ALLOCATOR} at construction, and that binding is not
+ * yet visible while {@link CommunityHttpSubsystem} is still initialising.
+ */
 @SuppressWarnings("PMD.CloseResource")
 final class DeferredHttpClientEngine implements HttpClientEngine {
 

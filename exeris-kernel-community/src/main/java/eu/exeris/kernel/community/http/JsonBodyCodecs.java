@@ -79,6 +79,7 @@ final class JsonBodyCodecs {
      * @param body       off-heap body buffer; never null
      * @param targetType desired payload runtime class; never null
      * @return decoded payload, or {@code null} when the body is empty
+     * @throws IllegalStateException if {@code bytes} do not decode into {@code targetType}
      */
     /* default */ static Object readValue(ObjectMapper mapper, LoanedBuffer body, Class<?> targetType) {
         byte[] bytes = copyOffHeap(body, targetType);
@@ -98,10 +99,10 @@ final class JsonBodyCodecs {
      * surfaces as {@link RequestBodyDecodeException} rather than {@link IllegalStateException}.
      *
      * <p>A server handler is required by ADR-036 §2 to map codec failures to a status, and the
-     * two failures it must separate are "the caller sent bad bytes" ({@code 400}) and "no decoder
-     * is registered" ({@code 5xx}). Both used to arrive as {@code IllegalStateException}, so the
-     * mapping was not expressible and every malformed request became a 500 — the server taking
-     * the blame for a client's typo. The distinction is the type; the message is not load-bearing.
+     * two failures it must separate are distinguishable only by type: "the caller sent bad bytes"
+     * ({@code 400}) throws {@link RequestBodyDecodeException}; "no decoder is registered" for the
+     * target type — a deployment fault ({@code 5xx}) — throws {@link IllegalStateException}
+     * elsewhere in the dispatch path. The exception message is not load-bearing; only the type is.
      *
      * <p>The Wall is unaffected: the thrown type is SPI-owned, so no {@code tools.jackson.*} type
      * crosses the boundary.
@@ -110,6 +111,8 @@ final class JsonBodyCodecs {
      * @param body       off-heap body buffer; never null
      * @param targetType desired payload runtime class; never null
      * @return decoded payload, or {@code null} when the body is empty
+     * @throws RequestBodyDecodeException ({@code EX-HTTP-4013}) if {@code bytes} do not decode
+     *     into {@code targetType}
      */
     /* default */ static Object readRequestValue(ObjectMapper mapper, LoanedBuffer body, Class<?> targetType) {
         byte[] bytes = copyOffHeap(body, targetType);

@@ -29,10 +29,10 @@ import java.net.ServerSocket;
  *
  * <p>The divergence is the point. ADR-084 §1 exists so the platform can obtain an endpoint "without
  * booting the kernel", from two public calls — and a tool embedding a duplex endpoint is exactly the
- * case where {@code MEMORY_ALLOCATOR} is not already bound, so the first of those two calls used to
- * answer {@code IllegalStateException}. The fallback mirrors
- * {@code CommunityHttpClientEngine.resolveAllocator}, which had already solved the identical problem
- * for the embedded client.
+ * case where {@code MEMORY_ALLOCATOR} may not be bound. {@link #resolveAllocator()} creates a
+ * private allocator for that case instead of requiring the caller to bind one first, mirroring
+ * {@code CommunityHttpClientEngine.resolveAllocator}, which solves the identical problem for the
+ * embedded client.
  *
  * <p>{@code CommunityHttpTransportFactory.resolveAllocator} carries the same gap and is left alone
  * here: whether an HTTP <em>server</em> engine is meant to be constructible outside a boot is a

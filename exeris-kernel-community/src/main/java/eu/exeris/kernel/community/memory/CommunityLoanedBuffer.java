@@ -28,6 +28,21 @@ import java.lang.foreign.MemorySegment;
  * <p>The backing {@link MemorySegment} is never copied. Slices use
  * {@code MemorySegment.asSlice()} on the same native region.
  *
+ * <p><b>Allocation:</b> {@link #allocateOwnedPooled} wraps a segment the caller already
+ * allocated from a {@link CommunityArenaShardPool}, allocating no native memory itself;
+ * {@link #allocateOwned(long, long, Arena)} allocates the segment directly from the
+ * supplied {@link Arena}.
+ * <p><b>Thread confinement:</b> none of its own — reference-count transitions are
+ * CAS-based in {@link AbstractLoanedBuffer}, so a buffer may be retained, released or
+ * sliced from any thread.
+ * <p><b>Ownership:</b> on the 1-to-0 reference-count transition ({@link #onRelease()}), a
+ * pool-sourced buffer is handed back to its {@link CommunityArenaShardPool} shard (or,
+ * above the pool's largest size class, only accounted for — its backing memory is
+ * reclaimed when the pool itself closes) and its {@link CommunityReleaseAccounting} is
+ * decremented; a buffer created via {@link #allocateOwned(long, long, Arena)} performs no
+ * release action at all — the caller-supplied {@link Arena}'s lifecycle is never managed
+ * by this class.
+ *
  * @since 0.5
  * @see CommunityMemoryAllocator
  * @see CommunityArenaShardPool
@@ -74,7 +89,9 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
 
     /**
      * Creates a buffer sourced from the provided pool.
-     * On release, the buffer (segment) is returned to the pool's free queue.
+     * On release, the segment is handed back to {@code pool} via {@link
+     * CommunityArenaShardPool#returnSegment}, which adds it to the origin shard's free
+     * queue when its capacity fits a size class, or only accounts for it otherwise.
      *
      * @param segment              the allocated memory segment
      * @param originalCapacityBytes the original requested capacity (for pool lookup and release accounting)
@@ -93,9 +110,9 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
     }
 
     /**
-     * Creates a buffer that <em>logically owns</em> the supplied arena.
-      * Community currently tracks release logically and no explicit arena close
-      * is performed in {@link #onRelease()}.
+     * Creates a buffer wrapping a segment allocated directly from {@code ownedArena}.
+     * The returned buffer takes no ownership of {@code ownedArena}: its {@link #onRelease()}
+     * performs no release action, and the arena's lifecycle remains the caller's responsibility.
      *
      * @param capacityBytes capacity in bytes
      * @param alignment     byte alignment
@@ -107,16 +124,34 @@ final class CommunityLoanedBuffer extends AbstractLoanedBuffer {
         return new CommunityLoanedBuffer(seg);
     }
 
+    /**
+     * Returns this buffer's backing {@link MemorySegment} — the same segment supplied at
+     * construction, whether it was sourced from a {@link CommunityArenaShardPool} shard or
+     * allocated directly from a caller-supplied {@link Arena}.
+     *
+     * @return the backing segment
+     */
     @Override
     protected MemorySegment backingSegment() {
         return segment;
     }
 
+    /**
+     * Releases this buffer's backing storage on the 1-to-0 reference-count transition.
+     *
+     * <p>Decrements the shared {@link CommunityReleaseAccounting} by this buffer's original
+     * capacity when one was supplied at construction, then — if this buffer was sourced from
+     * a {@link CommunityArenaShardPool} — hands the segment back to that pool's free queue for
+     * the shard it originally came from. A buffer constructed via
+     * {@link #allocateOwned(long, long, Arena)} has neither reference and does nothing here;
+     * the caller-supplied {@link Arena} is left open.
+     */
     @Override
     protected void onRelease() {
-        // Single dispatch guaranteed by refcount CAS — see AbstractLoanedBuffer.onRelease(). Release
-        // accounting is folded in here (formerly a per-buffer close-action) using this buffer's own
-        // capacity — the same value the matching trackAllocation added, so allocatedBytes stays balanced.
+        // Single dispatch is guaranteed by the refcount CAS in AbstractLoanedBuffer.close(); no
+        // idempotency guard is needed here. Release accounting uses this buffer's own capacity —
+        // the same value the matching trackAllocation() call added — so allocatedBytes stays
+        // balanced.
         if (releaseAccounting != null) {
             releaseAccounting.release(originalCapacityBytes);
         }

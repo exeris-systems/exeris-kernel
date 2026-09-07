@@ -12,6 +12,10 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * JFR event marking a Community HTTP server lifecycle transition (e.g. bind, start, stop) on a
+ * given port.
+ */
 @Name("eu.exeris.kernel.http.CommunityHttpLifecycle")
 @Label("Community HTTP Lifecycle")
 @Description("Community HTTP server lifecycle event")
@@ -19,12 +23,21 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 final class CommunityHttpLifecycleEvent extends Event {
 
+    /** The lifecycle transition this event marks, as a short caller-supplied token. */
     @Label("Action")
     /* default */ String action;
 
+    /** The TCP port the server engine this event describes is bound to. */
     @Label("Port")
     /* default */ int port;
 
+    /**
+     * Emits a lifecycle event for {@code action} on {@code port}, or does nothing when Flight
+     * Recorder is not initialized or this event type is disabled.
+     *
+     * @param action the lifecycle transition being recorded
+     * @param port   the port the server engine is bound to
+     */
     /* default */ static void emit(String action, int port) {
         if (!FlightRecorder.isInitialized()) {
             return;

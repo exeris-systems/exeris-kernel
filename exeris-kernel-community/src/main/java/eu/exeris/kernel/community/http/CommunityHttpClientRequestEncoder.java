@@ -16,9 +16,9 @@ import java.lang.foreign.ValueLayout;
  * Package-private static encoder for outbound HTTP/1.x requests issued by
  * {@link CommunityHttpClientEngine}.
  *
- * <p>Extracted from {@link CommunityHttpClientEngine} in v0.8 Sprint 3 (QA-015)
- * to close the engine's {@code PMD.GodClass} suppression block. Owns the
- * request-line + headers + body byte-layout into a {@link MemorySegment}.
+ * <p>Owns the request-line + headers + body byte-layout into a {@link MemorySegment}, kept
+ * separate from {@link CommunityHttpClientEngine} so that class's single responsibility is the
+ * {@code HttpClientEngine} lifecycle, not wire encoding.
  *
  * <p>Layout (RFC 9112):
  * <pre>
@@ -145,9 +145,11 @@ final class CommunityHttpClientRequestEncoder {
         };
     }
 
+    /** Which of the three default-supplied headers the caller's own request already carried. */
     /* default */ record HeaderPresence(boolean hasHost, boolean hasContentLength, boolean hasConnection) {
     }
 
+    /** The write cursor after the caller's headers, plus which default headers still need adding. */
     /* default */ record HeaderWriteResult(long position, HeaderPresence presence) {
     }
 }

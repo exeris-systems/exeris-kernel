@@ -15,6 +15,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * Community: attempts to parse one complete HTTP/1.1 request-line + header block off the aggregate
+ * buffer {@link CommunityHttpRequestProcessor}'s read loop fills, returning {@code null} when the
+ * buffer does not yet hold a complete request line, headers, or body, when the request line is
+ * malformed, or when it names an unrecognised method; the caller's read loop retries identically on
+ * every {@code null} cause, including the malformed-line case that reading more bytes can never
+ * resolve.
+ */
 /* default */ final class CommunityHttp1RequestReader {
 
     private CommunityHttp1RequestReader() {

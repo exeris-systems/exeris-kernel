@@ -23,6 +23,13 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
+/**
+ * SQL/PGQ backend adapter (Community's {@link CommunityGraphBackend} for the non-Cypher
+ * dialect). Acquires a {@link PersistenceConnection} per operation from
+ * {@code connectionSupplier} rather than holding one of its own, and does not override
+ * {@link CommunityGraphBackend}'s transaction lifecycle defaults — each statement commits on
+ * execution.
+ */
 // Backend adapter intentionally mirrors the GraphSession surface for the SQL dialect.
 // TooManyMethods + CyclomaticComplexity: SQL/PGQ backend adapter implementing the full
 // CommunityGraphBackend surface — one method per graph operation type; complexity is structural
@@ -44,6 +51,16 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
                 "connectionSupplier must not be null");
     }
 
+    /**
+     * Runs a single-hop MATCH ({@code traversal.maxDepth() == 1}) or a recursive-CTE
+     * multi-hop query otherwise, and collects the visited node IDs.
+     *
+     * @param traversal traversal configuration
+     * @return node IDs visited, in result order
+     * @throws IllegalArgumentException if {@code traversal}'s edge descriptor table name
+     *         does not match {@code [A-Za-z][A-Za-z0-9_]*} (validated by
+     *         {@link CommunityGraphDialect}, which this method delegates the query text to)
+     */
     @Override
     public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
         String sql = traversal.maxDepth() == 1
@@ -62,6 +79,20 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
         return results;
     }
 
+    /**
+     * Runs a recursive-CTE traversal that aggregates the visited node IDs into JSON inside
+     * the query itself ({@code json_agg}), then copies the returned JSON text into a network
+     * buffer from {@code KernelProviders.MEMORY_ALLOCATOR}. Unlike the Cypher backend's
+     * {@link CommunityGraphCypherReader#streamBfsJson}, which builds the JSON in Java from a
+     * list of IDs, this pushes the aggregation down to PostgreSQL.
+     *
+     * @param traversal traversal configuration
+     * @return a buffer holding the query's JSON text (or {@code "[]"} if the query returned
+     *         no row or a {@code null} result); caller-owned, caller must close it
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if {@code traversal}'s edge descriptor table name does not match
+     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
         String sql = buildJsonPushDownQuery(traversal);
@@ -87,18 +118,55 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
         }
     }
 
+    /**
+     * Inserts a new edge row. The edge table's primary key is
+     * {@code (source_id, target_id)}, so a second call for the same pair fails on a
+     * primary-key violation raised by the underlying persistence connection — unlike the
+     * Cypher backend's {@code createEdge}, which allows parallel relationships of the same
+     * type. Use {@link #upsertEdge} to update an existing edge instead.
+     *
+     * @param edge       edge descriptor naming the backing table
+     * @param sourceId   source node ID
+     * @param targetId   target node ID
+     * @param weight     edge weight
+     * @param properties JSON properties string; {@code null} is stored as {@code "{}"}
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if {@code edge}'s table name does not match {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public void createEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId,
                     double weight, String properties) {
         executeEdgeDml(buildInsertEdgeSql(edge), sourceId, targetId, weight, properties);
     }
 
+    /**
+     * Inserts a new edge row, or updates {@code weight} and {@code properties} on the
+     * existing row when {@code (sourceId, targetId)} already has an edge in this table.
+     *
+     * @param edge       edge descriptor naming the backing table
+     * @param sourceId   source node ID
+     * @param targetId   target node ID
+     * @param weight     edge weight
+     * @param properties JSON properties string; {@code null} is stored as {@code "{}"}
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if {@code edge}'s table name does not match {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public void upsertEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId,
                     double weight, String properties) {
         executeEdgeDml(buildUpsertEdgeSql(edge), sourceId, targetId, weight, properties);
     }
 
+    /**
+     * Deletes the row for {@code (sourceId, targetId)} from {@code edge}'s table. A no-op if
+     * no such row exists.
+     *
+     * @param edge     edge descriptor naming the backing table
+     * @param sourceId source node ID
+     * @param targetId target node ID
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if {@code edge}'s table name does not match {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public void deleteEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId) {
         String sql = "DELETE FROM %s WHERE source_id = $1 AND target_id = $2"
@@ -111,6 +179,20 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
         }
     }
 
+    /**
+     * Inserts a new row in the shared {@code graph_nodes} table, or updates
+     * {@code properties} when {@code nodeId} already has a row. {@code label} is bound as a
+     * query parameter, so — unlike the Cypher backend, where a label is spliced into query
+     * text and must pass {@link CypherIdentifiers#requireIdentifier} — it is not validated
+     * against any identifier pattern here.
+     *
+     * @param label      node label
+     * @param nodeId     node ID
+     * @param properties encoded properties, decoded via
+     *                   {@link CommunityGraphBufferOps#decodeProperties}; read but not
+     *                   closed — the caller retains ownership. {@code null} is stored as
+     *                   {@code "{}"}
+     */
     @Override
     public void upsertNode(String label, UUID nodeId, LoanedBuffer properties) {
         String sql = """
@@ -127,6 +209,17 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
         }
     }
 
+    /**
+     * Deletes the row identified by {@code nodeId} and {@code label} from
+     * {@code graph_nodes}. A no-op if no such row exists.
+     *
+     * <p>Unlike the Cypher backend's {@code deleteNode} ({@code DETACH DELETE}), this does
+     * not remove edge rows referencing {@code nodeId} — the edge tables are separate from
+     * {@code graph_nodes} and are not cleaned up here.
+     *
+     * @param label  node label
+     * @param nodeId node ID
+     */
     @Override
     public void deleteNode(String label, UUID nodeId) {
         String sql = "DELETE FROM graph_nodes WHERE id = $1 AND label = $2";
@@ -138,6 +231,13 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
         }
     }
 
+    /**
+     * Finds the row in {@code graph_nodes} labeled {@code 'ROOT'}.
+     *
+     * @return the root node's ID
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if no row is labeled {@code 'ROOT'}
+     */
     @Override
     public UUID getRootNode() {
         String sql = "SELECT id FROM graph_nodes WHERE label = 'ROOT' LIMIT 1";
@@ -151,6 +251,17 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
         }
     }
 
+    /**
+     * Loads every row of {@code edge}'s backing table into {@code builder}, adding both
+     * directions when {@code edge} is bidirectional or its direction is
+     * {@link GraphEdgeDescriptor.Direction#BOTH}.
+     *
+     * @param edge    edge descriptor naming the backing table
+     * @param builder accumulator to add edges to
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if the query fails, or {@code edge}'s table name does not match
+     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     public void loadAdjacency(GraphEdgeDescriptor edge, CommunityPathFinder.Builder builder) {

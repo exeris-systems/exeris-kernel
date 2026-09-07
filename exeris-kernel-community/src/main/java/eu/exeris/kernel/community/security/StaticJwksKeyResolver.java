@@ -26,6 +26,12 @@ import java.util.Objects;
         this.keysByKid = Map.copyOf(Objects.requireNonNull(keysByKid, "keysByKid must not be null"));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Looks up {@code kid} in the fixed map supplied at construction; an unmapped
+     *           {@code kid} returns {@code null} rather than throwing.
+     */
     @Override
     public RSAPublicKey resolve(String kid) {
         return keysByKid.get(kid);

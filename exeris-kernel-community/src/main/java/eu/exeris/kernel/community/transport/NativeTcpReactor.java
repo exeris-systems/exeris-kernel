@@ -22,14 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * registration / write-interest / cancel requests off a single MPSC queue,
  * and dispatching READ / WRITE events back to the hosting carrier.
  *
- * <p>Extracted from {@link NativeTcpCarrier} in v0.8 Sprint 1 (QA-013b) as
- * the second step in closing the carrier's God-class suppression block.
- * Previously a non-static inner class on the carrier, now a top-level
- * package-private class with a {@link NativeTcpCarrier} reference for
- * callbacks (ingress read, egress flush, key teardown, async failure,
- * stream resolution).
+ * <p>A top-level, package-private class holding a {@link NativeTcpCarrier} reference for
+ * callbacks (ingress read, egress flush, key teardown, async failure, stream resolution) — the
+ * reactor drives the selector and defers every read/write/lifecycle decision back to the carrier
+ * that owns them.
  *
- * <p>Threading model preserved verbatim:
+ * <p>Threading model:
  * <ul>
  *   <li>Single consumer of {@link #pendingRequests} — the reactor thread
  *       in {@link #runLoop()}.</li>
@@ -38,6 +36,19 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>Selector wake-up coalescing via {@link #wakeupPending} — at most
  *       one outstanding {@code wakeup()} per drain cycle.</li>
  * </ul>
+ *
+ * <p><b>Allocation:</b> allocates one {@link ReactorRequest} record per registration /
+ * write-interest / cancel call; per select-loop iteration the only allocation is the
+ * {@link Iterator} returned by {@link Selector#selectedKeys()}{@code .iterator()} — no
+ * {@code ReactorRequest}, buffer, or other application object is created there.
+ * <p><b>Thread confinement:</b> owner thread — {@link #pendingRequests} is drained, the
+ * {@link Selector} is polled, and {@link #idleReaper} is advanced only on this reactor's own
+ * platform thread; every other method here — the registration / write-interest / cancel enqueues,
+ * {@link #wakeup()}, {@link #join(long)}, {@link #closeSelector()} — is safe to call from any
+ * thread.
+ * <p><b>Ownership:</b> owns the {@link Selector} it was constructed with and closes it from
+ * {@link #closeSelector()}; it never owns the streams or channels registered on it — those are
+ * released through {@link NativeTcpCarrier#closeKeyStream} and the stream's own {@code close()}.
  */
 @SuppressWarnings({
     "PMD.AvoidCatchingGenericException", // selector loop must catch RuntimeException from key dispatch.

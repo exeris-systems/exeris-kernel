@@ -12,14 +12,15 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when {@link JdbcFlowSnapshotStore#save} rolls back on a generic
- * (non-OCC) persistence failure. JFR-091 (v0.8 Sprint 5) — closes the observability
- * gap on the save path: optimistic-lock conflicts already emit
- * {@link OptimisticLockConflictEvent}; this event fires for everything else (driver
- * timeout, deadlock, network partition, schema mismatch, etc.).
+ * JFR event emitted when {@link JdbcFlowSnapshotStore#save}'s inner transactional
+ * try-block catches a non-OCC {@code PersistenceProviderException} and rolls back
+ * (driver timeout, deadlock, network partition, schema mismatch, and similar). A
+ * {@code PersistenceProviderException} thrown while opening the connection or beginning
+ * the transaction propagates without emitting this event, and an optimistic-lock conflict
+ * emits {@link OptimisticLockConflictEvent} instead.
  *
  * <p>Captures the engine name, the conflicting SQLSTATE (when extractable from the
- * exception chain), and the wrapped exception class + message. Secret-safe — JDBC
+ * exception chain), and the wrapped exception class and message. Secret-safe — JDBC
  * credentials are never included.
  */
 @Name("eu.exeris.kernel.flow.FlowSnapshotSaveFailed")
@@ -52,6 +53,16 @@ public final class FlowSnapshotSaveFailedEvent extends Event {
     @Label("Exception Message")
     @Description("Exception message — secret-safe; JDBC credentials are never included")
     /* default */ String exceptionMessage;
+
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public FlowSnapshotSaveFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /* default */ static void emit(String engineName,
                                    String sqlState,

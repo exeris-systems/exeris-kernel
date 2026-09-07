@@ -22,6 +22,14 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Community's HikariCP integration surface: pool construction, connection acquisition with
+ * acquire/hold telemetry, admission and engine-stats snapshots, and discard-on-eviction.
+ *
+ * <p>An instance wraps exactly one {@link HikariDataSource} — the shared pool, one tenant pool,
+ * or one dedicated pool — so every acquisition-time decision this class makes (telemetry
+ * sampling, failure translation) is scoped to the pool it actually ran against.
+ */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 final class CommunityHikariSupport {
 
@@ -254,6 +262,7 @@ final class CommunityHikariSupport {
         return pool.getHikariPoolMXBean();
     }
 
+    /** A point-in-time read of one pool's occupancy, for the admission-control decision. */
     /* default */ record AdmissionSnapshot(
             int activeConnections,
             int idleConnections,

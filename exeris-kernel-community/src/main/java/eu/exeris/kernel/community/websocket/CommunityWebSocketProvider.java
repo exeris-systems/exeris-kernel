@@ -31,6 +31,16 @@ public final class CommunityWebSocketProvider implements WebSocketProvider {
     /** Open-tier priority; enterprise providers outrank it (ADR-021). */
     private static final int COMMUNITY_PRIORITY = 0;
 
+    /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link WebSocketProvider}; not meant to be
+     * constructed directly.
+     */
+    public CommunityWebSocketProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public WebSocketServerEngine createServerEngine(WebSocketConfig config) {
         return new CommunityWebSocketServerEngine(config);

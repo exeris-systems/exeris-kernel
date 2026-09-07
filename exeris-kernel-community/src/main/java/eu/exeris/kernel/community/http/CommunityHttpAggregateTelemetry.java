@@ -8,11 +8,10 @@ import eu.exeris.kernel.core.http.jfr.HttpAggregateBufferForcedReleaseEvent;
 import eu.exeris.kernel.core.http.jfr.HttpAggregateBufferHeldEvent;
 
 /**
- * Community-internal HTTP/1.1 aggregate-buffer telemetry helper. Extracted from
- * {@link CommunityHttpRequestProcessor} in QA-011 (v0.8 Sprint 1) so the request
- * processor carries one less responsibility: the *"how long has this aggregate buffer
- * been held, what fraction of requests on it were actually pipelined, and should we
- * force-release it back to the allocator?"* decision tree lives here.
+ * Community-internal decision tree for one question: *"how long has this connection's
+ * aggregate read buffer been held, what fraction of its requests were actually pipelined, and
+ * should the buffer be force-released back to the allocator?"* Kept separate from
+ * {@link CommunityHttpRequestProcessor} so that class carries one less responsibility.
  *
  * <h2>Why these heuristics</h2>
  * <p>HTTP/1.1 keep-alive connections may host multiple requests in sequence. The
@@ -21,7 +20,7 @@ import eu.exeris.kernel.core.http.jfr.HttpAggregateBufferHeldEvent;
  * in the same buffer without an extra allocation. The cost: a long-lived keep-alive
  * connection with low pipelined traffic holds the buffer indefinitely.
  *
- * <p>Phase 1C (v0.6 telemetry) added two JFR signals:
+ * <p>Two JFR signals make that cost observable:
  * <ul>
  *   <li>{@link HttpAggregateBufferHeldEvent} — emitted once a buffer has been held for
  *       more than {@value #BUFFER_AGE_WARNING_THRESHOLD_MS} ms, carries the buffered

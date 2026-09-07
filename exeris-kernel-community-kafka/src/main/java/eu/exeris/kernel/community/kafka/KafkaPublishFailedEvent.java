@@ -13,9 +13,8 @@ import jdk.jfr.StackTrace;
 
 /**
  * Emitted when {@code KafkaPublishBus.publish} (or {@code publishAndAwait}) wraps a Kafka
- * driver exception as {@code EventBusException}. JFR-091 (v0.8 Sprint 5) — fills the
- * observability gap on the publisher side; the symmetric consumer-side event is
- * {@link KafkaConsumerLoopFailedEvent}.
+ * driver exception as {@code EventBusException} — the publish-side post-mortem trail; the
+ * symmetric consumer-side event is {@link KafkaConsumerLoopFailedEvent}.
  *
  * <p>Captures: engine name, topic (so operators can localise the failure to a specific event
  * type's topic-mapping), event ordinal (for type-level diagnostics without revealing payload

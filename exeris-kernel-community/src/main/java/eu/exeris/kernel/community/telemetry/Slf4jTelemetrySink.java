@@ -41,13 +41,11 @@ import java.util.function.Supplier;
  * only at the outermost emit boundary (try/finally) and is an intrinsic edge concern
  * of SLF4J structured logging — not kernel context propagation.</p>
  *
- * <h2>Decomposition (v0.8 Sprint 1 QA-012)</h2>
+ * <h2>Decomposition</h2>
  * <p>JSON line construction is delegated to {@link Slf4jTelemetryJsonWriter}; log-level
  * routing is delegated to {@link Slf4jTelemetryLogLevelResolver}. This sink owns the
  * emit lifecycle (closed-flag guard, MDC scope, log adapter routing) and the
- * test-facing adapter/scope interfaces. The split closes {@code PMD.GodClass} +
- * {@code PMD.TooManyMethods} + {@code PMD.CyclomaticComplexity} suppressions
- * previously held on this class.
+ * test-facing adapter/scope interfaces.
  *
  * @since 0.5
  */
@@ -65,6 +63,11 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
     private final Supplier<KernelProfile> profileResolver;
     private volatile boolean closed;
 
+    /**
+     * Creates a sink that logs through SLF4J and resolves the active
+     * {@link KernelProfile} from {@link ExceptionDisclosure#activeProfile()}
+     * on every {@link #emit(KernelEvent)} call.
+     */
     public Slf4jTelemetrySink() {
         this(new Slf4jLogAdapter(LoggerFactory.getLogger(Slf4jTelemetrySink.class)),
                 new Slf4jMdcAdapter(),
@@ -83,6 +86,16 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         this.profileResolver = profileResolver;
     }
 
+    /**
+     * Resolves the effective log level, builds the structured JSON line, and logs it
+     * through the configured SLF4J adapter, or does nothing if this sink is closed.
+     *
+     * <p>{@code event} is only null-checked when the sink is open: once closed, this
+     * method returns before dereferencing {@code event} at all.
+     *
+     * @param event the kernel event to record; never {@code null} while the sink is open
+     * @throws NullPointerException if {@code event} is {@code null} and this sink is open
+     */
     @Override
     public void emit(KernelEvent event) {
         if (closed) {
@@ -129,6 +142,8 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
     }
 
     /**
+     * No-op — this sink does not emit counter signals.
+     *
      * @apiNote This sink is lifecycle-event-oriented. Metric increment signals are intentionally
      *          not emitted. Use {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink} as the
      *          primary path when metric signals are required.
@@ -139,6 +154,8 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
     }
 
     /**
+     * No-op — this sink does not emit gauge signals.
+     *
      * @apiNote This sink is lifecycle-event-oriented. Metric gauge signals are intentionally
      *          not emitted. Use {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink} as the
      *          primary path when metric signals are required.
@@ -149,6 +166,8 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
     }
 
     /**
+     * No-op — this sink does not emit latency signals.
+     *
      * @apiNote This sink is lifecycle-event-oriented. Metric latency signals are intentionally
      *          not emitted. Use {@link eu.exeris.kernel.core.telemetry.JfrTelemetrySink} as the
      *          primary path when metric signals are required.
@@ -158,11 +177,18 @@ public final class Slf4jTelemetrySink implements TelemetrySink {
         // Fallback sink is lifecycle-oriented. Metrics are captured by JFR primary path.
     }
 
+    /**
+     * Returns {@code "ExerisCommunity/Slf4jTelemetrySink"}.
+     */
     @Override
     public String sinkName() {
         return SINK_NAME;
     }
 
+    /**
+     * Marks this sink closed; subsequent {@link #emit(KernelEvent)} calls do nothing.
+     * The underlying SLF4J {@link Logger} is not owned by this sink and is unaffected.
+     */
     @Override
     public void close() {
         closed = true;

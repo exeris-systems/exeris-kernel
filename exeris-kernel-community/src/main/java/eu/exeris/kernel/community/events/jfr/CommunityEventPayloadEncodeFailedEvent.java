@@ -25,6 +25,10 @@ import jdk.jfr.StackTrace;
  * <p>Follows the events-package telemetry pattern
  * ({@link CommunityEventQueueOverflowEvent}): {@code @StackTrace(false)}, guarded by
  * {@link Event#isEnabled()} so a disabled recording costs ~zero.
+ *
+ * @implNote {@link #emit} commits in two phases — {@link Event#begin()}, then only local field
+ *           assignment, then {@link Event#commit()} — so the timed interval never straddles a
+ *           blocking operation on the emitting thread.
  */
 @Name("eu.exeris.kernel.events.CommunityEventPayloadEncodeFailed")
 @Label("Community Event Payload Encode Failed")
@@ -52,6 +56,30 @@ public final class CommunityEventPayloadEncodeFailedEvent extends Event {
             + "(e.g. a tools.jackson.* type); no message is recorded (secret-safe)")
     /* default */ String failureClass;
 
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public CommunityEventPayloadEncodeFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Commits this event, recording only the failing payload's runtime class, the requested
+     * content-type, the event-type name, and the failure's class name.
+     *
+     * <p>A no-op when the event is disabled — the fields are never touched and no JFR call
+     * beyond the initial {@link Event#isEnabled()} check happens.
+     *
+     * @param payloadType runtime class name of the payload that failed to encode
+     * @param contentType requested content-type; recorded as empty when {@code null}
+     * @param eventType   event-type name from the codec context; recorded as empty when
+     *                    {@code null}
+     * @param failure     the binding exception that caused the failure; only its class name is
+     *                    recorded, never {@link Throwable#getMessage()}
+     */
     public static void emit(String payloadType,
                             String contentType,
                             String eventType,

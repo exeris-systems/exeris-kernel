@@ -14,6 +14,25 @@ import org.neo4j.driver.SessionConfig;
 
 import java.util.Objects;
 
+/**
+ * Wraps the Neo4j Bolt driver connection used by the Cypher graph backend: resolves
+ * connection settings from {@link GraphConfig} properties or environment variables at
+ * construction, and opens one driver {@link Session} per {@link #openSession()} call.
+ *
+ * <p>Settings are looked up under {@code neo4j.uri}/{@code EXERIS_GRAPH_NEO4J_URI},
+ * {@code neo4j.user}/{@code EXERIS_GRAPH_NEO4J_USER},
+ * {@code neo4j.password}/{@code EXERIS_GRAPH_NEO4J_PASSWORD}, and the optional
+ * {@code neo4j.database}/{@code EXERIS_GRAPH_NEO4J_DATABASE}; a {@link GraphConfig} property
+ * takes precedence over its environment counterpart.
+ *
+ * <p><b>Allocation:</b> constructs one Neo4j {@code Driver} at construction time;
+ * {@link #openSession()} asks that driver for one new {@code Session} per call.
+ * <p><b>Thread confinement:</b> none enforced by this wrapper — {@link #openSession()} and
+ * {@link #close()} call directly into the underlying driver without additional
+ * synchronization.
+ * <p><b>Ownership:</b> the constructing {@link CommunityGraphEngine} owns this client and
+ * releases it via {@link #close()}, which closes the underlying driver.
+ */
 final class CommunityNeo4jClient implements AutoCloseable {
 
     private static final String QUERY_TYPE_CONFIGURATION = "CYPHER_CONFIGURATION";
@@ -33,10 +52,19 @@ final class CommunityNeo4jClient implements AutoCloseable {
         this.sessionConfig = buildSessionConfig(database);
     }
 
+    /**
+     * Opens a new driver session bound to the configured database (or the driver's default
+     * database when {@code neo4j.database} was not set).
+     *
+     * @return a new Neo4j driver session; the caller closes it
+     */
     /* default */ Session openSession() {
         return driver.session(sessionConfig);
     }
 
+    /**
+     * Closes the underlying Neo4j driver, releasing its connection pool.
+     */
     @Override
     public void close() {
         driver.close();
@@ -49,6 +77,15 @@ final class CommunityNeo4jClient implements AutoCloseable {
         return SessionConfig.builder().withDatabase(database).build();
     }
 
+    /**
+     * Checks whether {@code config} carries a Neo4j URI, either as the {@code neo4j.uri}
+     * property or the {@code EXERIS_GRAPH_NEO4J_URI} environment variable.
+     *
+     * @param config graph subsystem configuration
+     * @return {@code true} if a URI is present; {@code false} otherwise. Does not validate
+     *         the other mandatory settings ({@code neo4j.user}, {@code neo4j.password}) —
+     *         those are only checked when the constructor runs
+     */
     /* default */ static boolean isConfigured(GraphConfig config) {
         return optionalProperty(config, "neo4j.uri", "EXERIS_GRAPH_NEO4J_URI") != null;
     }

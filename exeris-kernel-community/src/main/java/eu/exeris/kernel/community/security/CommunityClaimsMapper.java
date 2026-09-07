@@ -22,13 +22,11 @@ import java.util.regex.Pattern;
  * <p>{@code sub} parses to a UUIDv7 that becomes both {@code principalId} and {@code tenantId};
  * roles and scopes come from the token.
  *
- * <h2>The token grants what it says, and nothing else (since 0.11)</h2>
- * <p>Until 0.11 every authenticated principal received a single hardcoded {@code security:read} scope
- * and no roles, whatever the token claimed — the deferral ADR-040 §"Implementation" left open, since
- * that ADR already specifies this mapper as "sub → principalId, roles/scopes claims →
- * PrincipalContext". Two consequences made the deferral worth closing rather than carrying: no route
- * could distinguish one caller's permissions from another's, and {@code security:write} was a scope
- * <em>nothing could ever grant</em>, so any policy requiring it denied everyone.
+ * <h2>The token grants what it says, and nothing else</h2>
+ * <p>{@code roles} and scopes come only from the claims the token itself carries (see
+ * "Claim shapes" below) — ADR-040 specifies this mapper's mapping as "sub → principalId,
+ * roles/scopes claims → PrincipalContext". No route can distinguish more than the token
+ * declares, and no scope is grantable except by a token that claims it.
  *
  * <p>There is deliberately <b>no fallback</b>. A token carrying no scope claim yields an empty scope
  * set, and a route requiring any scope denies it. Granting a default would reinstate exactly the
@@ -41,8 +39,7 @@ import java.util.regex.Pattern;
  *   <li>{@code scp} — the array form several identity providers emit instead. Read as well, and
  *       unioned, because a token carrying one of the two is not a token carrying nothing.</li>
  *   <li>{@code roles} — multi-valued. Feeds {@code PrincipalContext.roles()}, which
- *       {@code SecurityInterceptor} resolves into the {@code roleMask} used by {@code @RequiresRole}.
- *       Before this change roles were always empty, so that mask was always {@code 0L}.</li>
+ *       {@code SecurityInterceptor} resolves into the {@code roleMask} used by {@code @RequiresRole}.</li>
  * </ul>
  *
  * @since 0.10
@@ -55,6 +52,16 @@ final class CommunityClaimsMapper implements ClaimsMapper {
     private static final String ROLES_CLAIM = "roles";
     private static final Pattern SCOPE_SEPARATOR = Pattern.compile("\\s+");
 
+    /**
+     * Maps {@code sub} to both {@code principalId} and {@code tenantId} — see the type comment
+     * for the UUIDv7 shape this requires — and reads roles and scopes as documented above.
+     *
+     * @param claims the verified claims to map
+     * @return a principal bound to the subject's own tenant, carrying the claimed roles and
+     *         scopes
+     * @throws SecurityAuthenticationException ({@code EX-SEC-2002}) if {@code sub} is missing,
+     *         blank, or not a valid UUID
+     */
     @Override
     public PrincipalContext map(VerifiedClaims claims) {
         String subject = claims.subject();

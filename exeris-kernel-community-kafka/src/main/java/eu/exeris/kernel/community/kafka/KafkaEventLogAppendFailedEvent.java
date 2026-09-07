@@ -55,6 +55,24 @@ public final class KafkaEventLogAppendFailedEvent extends Event {
     @Description("Class name of the failing exception; no message is recorded (secret-safe)")
     /* default */ String failureClass;
 
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public KafkaEventLogAppendFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Emits this event with the given fields when JFR recording is enabled; a no-op otherwise.
+     *
+     * @param engineName human-readable engine name from {@code EventEngineConfig.engineName()}
+     * @param streamType the target stream's {@code StreamId.streamType()}
+     * @param reason     one of {@link #REASON_KAFKA} or {@link #REASON_INTERRUPTED}
+     * @param failure    the triggering exception, or {@code null} to record an empty failure class
+     */
     public static void emit(String engineName, String streamType, String reason, Throwable failure) {
         KafkaEventLogAppendFailedEvent event = new KafkaEventLogAppendFailedEvent();
         if (!event.isEnabled()) {

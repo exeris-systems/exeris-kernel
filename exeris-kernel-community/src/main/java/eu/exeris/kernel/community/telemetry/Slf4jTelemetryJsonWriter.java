@@ -11,10 +11,9 @@ import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 /**
  * Package-private top-level JSON line builder for {@link Slf4jTelemetrySink}.
  *
- * <p>Extracted from {@link Slf4jTelemetrySink} in v0.8 Sprint 1 (QA-012) as the
- * top entry of the JSON serialization split. Composes the canonical six-field
- * event line ({@code timestamp/level/code/component/message/rawArgs}) and
- * delegates string escaping to {@link Slf4jTelemetryJsonEscaper} and rawArgs
+ * <p>The top entry of the JSON serialization split: composes the canonical
+ * six-field event line ({@code timestamp/level/code/component/message/rawArgs})
+ * and delegates string escaping to {@link Slf4jTelemetryJsonEscaper} and rawArgs
  * walking to {@link Slf4jTelemetryRawArgsWriter}.
  *
  * <p>Disclosure-aware: when an {@link ExerisKernelException} is present the

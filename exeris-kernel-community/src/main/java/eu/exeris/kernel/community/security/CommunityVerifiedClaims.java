@@ -33,22 +33,45 @@ final class CommunityVerifiedClaims implements VerifiedClaims {
         this.claims = Objects.requireNonNull(claims, "claims must not be null");
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Returns the underlying {@code JWTClaimsSet}'s {@code sub} claim verbatim.
+     */
     @Override
     public String subject() {
         return claims.getSubject();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Returns the underlying {@code JWTClaimsSet}'s {@code iss} claim verbatim.
+     */
     @Override
     public String issuer() {
         return claims.getIssuer();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Returns the underlying {@code JWTClaimsSet}'s {@code aud} claim as an immutable
+     *           set, or an empty set when the claim is absent.
+     */
     @Override
     public Set<String> audience() {
         List<String> aud = claims.getAudience();
         return aud == null ? Set.of() : Set.copyOf(aud);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Converts the underlying {@code JWTClaimsSet}'s {@code exp} claim from its
+     *           legacy {@code Date} representation to an {@link Instant} via epoch-millis;
+     *           empty when the claim is absent.
+     */
     @Override
     public Optional<Instant> expiresAt() {
         // getExpirationTime() yields a legacy date type (Nimbus API). Convert via epoch-millis so
@@ -58,6 +81,13 @@ final class CommunityVerifiedClaims implements VerifiedClaims {
                 .map(exp -> Instant.ofEpochMilli(exp.getTime()));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Reads {@code name} as a single string via the underlying {@code JWTClaimsSet};
+     *           a claim present but not parseable as a single string yields
+     *           {@link Optional#empty()}, per the interface contract.
+     */
     @Override
     public Optional<String> claim(String name) {
         try {
@@ -68,6 +98,12 @@ final class CommunityVerifiedClaims implements VerifiedClaims {
         }
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Reads {@code name} as a string list via the underlying {@code JWTClaimsSet};
+     *           empty when the claim is absent or not representable as a string list.
+     */
     @Override
     public Set<String> stringSetClaim(String name) {
         try {

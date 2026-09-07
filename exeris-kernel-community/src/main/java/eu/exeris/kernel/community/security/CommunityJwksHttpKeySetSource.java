@@ -50,6 +50,10 @@ final class CommunityJwksHttpKeySetSource implements KeySetSource {
      * {@link eu.exeris.kernel.community.http.CommunityTextResponseBodyDecoder}, not a JSON
      * object-mapping decoder (a JWKS advertises {@code application/json}, which a JSON decoder
      * cannot coerce into a {@code String}).
+     *
+     * @param client the HTTP client used to fetch the JWKS document; targets the IDP host
+     * @param jwksPath the path the JWKS document is served from on {@code client}
+     * @return a source that fetches and parses the JWKS document on each {@link #load()} call
      */
     /* default */ static CommunityJwksHttpKeySetSource overWebClient(KernelWebClient client, String jwksPath) {
         Objects.requireNonNull(client, "client must not be null");
@@ -57,6 +61,15 @@ final class CommunityJwksHttpKeySetSource implements KeySetSource {
         return new CommunityJwksHttpKeySetSource(() -> client.get(jwksPath, String.class));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Fetches the JWKS document via this source's injected fetcher, parses it as a
+     *           JOSE {@code JWKSet}, and keeps only the RSA entries — Community's only
+     *           supported signing algorithm — indexed by {@code kid}; non-RSA entries are
+     *           skipped rather than failing the load. Never returns an empty map: an empty or
+     *           all-non-RSA document raises {@link KeySetRefreshException}.
+     */
     @Override
     public Map<String, RSAPublicKey> load() throws KeySetRefreshException {
         JWKSet jwkSet = parse(fetchJson());

@@ -36,19 +36,16 @@ final class CommunityCronSchedule {
      * Bound on the search, in <em>calendar time</em> rather than in steps. Past it the expression is
      * unsatisfiable (30 February, say), and looping forever would turn a typo into a hung dispatcher.
      *
-     * <p>It was a step count — minutes in four years, 2 108 160 — which bounds only the worst case
-     * where every step advances one minute. The search advances coarsest-field-first, so an
-     * unsatisfiable expression steps by days and months and runs the full count while walking
-     * thousands of years past the horizon its own message named: {@code "0 0 30 2 *"} spent two
-     * million {@code ZonedDateTime} operations before refusing. That happens inside
-     * {@code CommunityJobScheduler.submit}, which holds the scheduler's single lock, so one bad
-     * expression stalls every other submit, cancel and dispatch behind it. A horizon costs one
-     * comparison per step and refuses the same expression in roughly forty.
+     * <p>Expressed in years rather than steps because the search advances coarsest-field-first: an
+     * unsatisfiable expression steps by days and months, so a step-count bound is spent walking
+     * years of calendar time it was meant to cap directly, instead of holding the calendar horizon
+     * itself. This runs inside {@code CommunityJobScheduler.submit}, which holds the scheduler's
+     * single lock, so a cheap refusal matters — one bad expression otherwise stalls every other
+     * submit, cancel and dispatch behind it. A year-based horizon costs one comparison per step.
      *
-     * <p>Eight years, not the four the old message claimed: the longest gap between consecutive
-     * 29 Februaries is eight, across a century that is not a leap year (2096 to 2104). A four-year
-     * horizon would refuse a legitimate leap-day schedule in that window — which the step count,
-     * being far looser than its own message, happened to accept.
+     * <p>Eight years: the longest gap between consecutive 29 Februaries is eight, across a century
+     * that is not a leap year (2096 to 2104). A shorter horizon would refuse a legitimate leap-day
+     * schedule that falls inside such a gap.
      */
     private static final int HORIZON_YEARS = 8;
 
