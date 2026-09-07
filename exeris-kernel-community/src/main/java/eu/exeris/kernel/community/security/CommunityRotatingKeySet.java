@@ -37,7 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * critical section is guarded by an intrinsic lock so concurrent virtual threads coalesce
  * on a single refresh rather than racing partial rotations.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 /* default */ final class CommunityRotatingKeySet implements JwksKeyResolver {
 

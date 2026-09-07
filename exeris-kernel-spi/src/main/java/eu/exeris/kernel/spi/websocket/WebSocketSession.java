@@ -32,7 +32,7 @@ import java.util.UUID;
  *                     handshake, empty for an unscoped connection. Captured rather than owned here:
  *                     it stops being ambient and becomes the connection's, but its source is the
  *                     established context
- * @since 0.12.0
+ * @since 0.12
  */
 // `id` follows StreamEvent, which carries the same suppression for the same reason: it is the
 // name the field has everywhere it is read, and lengthening it to satisfy a rule would make the
@@ -44,6 +44,13 @@ public record WebSocketSession(
         Optional<String> isolationKey
 ) {
 
+    /**
+     * Validates that no component is {@code null}; absence is expressed with
+     * {@link Optional#empty()}, never with a {@code null} field.
+     *
+     * @throws NullPointerException if {@code id}, {@code subprotocol} or {@code isolationKey} is
+     *                              {@code null}
+     */
     public WebSocketSession {
         Objects.requireNonNull(id, "id must not be null");
         Objects.requireNonNull(subprotocol, "subprotocol must not be null");

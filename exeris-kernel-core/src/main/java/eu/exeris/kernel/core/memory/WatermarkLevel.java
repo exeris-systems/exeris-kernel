@@ -34,7 +34,7 @@ package eu.exeris.kernel.core.memory;
  *
  * @see WatermarkManager
  * @see ResourceArbiter
- * @since 0.5.0
+ * @since 0.5
  */
 public enum WatermarkLevel {
 

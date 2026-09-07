@@ -16,7 +16,7 @@ import java.util.UUID;
  * upserts/deletes; reads live in {@link CommunityGraphCypherReader}. Lifecycle and
  * session state are owned by the caller via {@link CypherExecutor}.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class CommunityGraphCypherWriter {
 

@@ -46,7 +46,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * or {@code GlobalMemoryArbiter}. Strictly the portable Berkeley socket surface.
  *
  * @see SyscallHandles
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CoreSyscallLoader {
 

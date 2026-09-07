@@ -28,7 +28,7 @@ import java.time.temporal.ChronoUnit;
  * This surprises people, so it is stated rather than left to be discovered — {@code 0 0 1 * 1} fires
  * on the first of the month <em>and</em> every Monday, not on Mondays that fall on the first.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityCronSchedule {
 

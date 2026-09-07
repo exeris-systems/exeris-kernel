@@ -13,7 +13,7 @@ package eu.exeris.kernel.core.flow;
  *
  * @param name    the definition name; never {@code null}
  * @param version the declared definition version
- * @since 0.11.0
+ * @since 0.11
  */
 /* default */ record PlanKey(String name, int version) {
 }

@@ -51,7 +51,7 @@ import java.util.regex.Matcher;
  * carrying the provider identity and JDBC URL so operators can trace the failure to a
  * specific bootstrap.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 // The class total used to need a CyclomaticComplexity suppression, dominated by the SQL splitter
 // (`splitSqlStatements` + `stripLineComments` + `addStatement`) — a single-quote-aware per-character

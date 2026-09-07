@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * <p>Single-phase commit ({@code @StackTrace(false)}): construct, set, commit with no blocking
  * operation in between — safe to emit from the stream's virtual thread.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @Name("eu.exeris.kernel.http.StreamClosed")
 @Label("HTTP Stream Closed")

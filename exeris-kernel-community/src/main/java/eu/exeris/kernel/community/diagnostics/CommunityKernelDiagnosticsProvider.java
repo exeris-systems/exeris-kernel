@@ -15,7 +15,7 @@ import eu.exeris.kernel.spi.diagnostics.KernelDiagnosticsProvider;
  * {@link java.util.ServiceLoader}; the Enterprise overlay ({@code priority() == 100}) supersedes it on
  * a shared classpath (ADR-008).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class CommunityKernelDiagnosticsProvider implements KernelDiagnosticsProvider {
 

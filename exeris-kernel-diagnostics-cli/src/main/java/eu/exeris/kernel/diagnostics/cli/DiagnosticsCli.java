@@ -56,7 +56,7 @@ import java.util.ServiceLoader;
  * {@code cpuQuotaMicros} on a non-container host) appears as {@code "cpuQuotaMicros":null}.
  * Consumers must treat {@code null} and an absent key alike.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class DiagnosticsCli {
 

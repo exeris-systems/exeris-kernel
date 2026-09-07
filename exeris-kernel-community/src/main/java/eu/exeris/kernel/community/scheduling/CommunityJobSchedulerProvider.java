@@ -11,7 +11,7 @@ import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
 /**
  * Community {@link JobSchedulerProvider} (ADR-057): in-process dispatch on virtual threads.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class CommunityJobSchedulerProvider implements JobSchedulerProvider {
 

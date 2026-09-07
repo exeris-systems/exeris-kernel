@@ -10,7 +10,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
-/** Minimal heap-based FlowContext factory for TCK test fixtures. @since 0.5.0 */
+/** Minimal heap-based FlowContext factory for TCK test fixtures. @since 0.5 */
 final class TestFlowContexts {
     private TestFlowContexts() {}
     static FlowContext create(String instanceId, String definitionName) {

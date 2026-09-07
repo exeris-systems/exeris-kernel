@@ -24,7 +24,7 @@ import java.util.List;
  * {@link #markDelivered}, the events remain in the outbox and will be re-polled
  * on the next startup cycle — guaranteeing at-least-once delivery.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface OutboxEventStore {
 

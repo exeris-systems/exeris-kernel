@@ -70,7 +70,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * }
  * }</pre>
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public abstract class AbstractHttpStreamExchangeTck {
 
@@ -574,7 +574,7 @@ public abstract class AbstractHttpStreamExchangeTck {
      * <p>{@link #close()} tears the scenario down (stops the endpoint, closes the client, frees the
      * allocator) and is invoked via try-with-resources from every test.
      *
-     * @since 0.10.0
+     * @since 0.10
      */
     protected interface StreamScenario extends AutoCloseable {
 

@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
  * own contract states: it defers until queued egress drains, and a peer that has gone quiet is
  * exactly the peer that may never drain it.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 final class NativeTcpIdleReaper {
 

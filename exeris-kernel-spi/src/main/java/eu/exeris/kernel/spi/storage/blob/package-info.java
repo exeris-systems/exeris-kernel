@@ -30,6 +30,6 @@
  * {@link eu.exeris.kernel.spi.memory.LoanedBuffer} can drive an entire transfer and there is no
  * per-chunk ownership rule to get wrong.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 package eu.exeris.kernel.spi.storage.blob;

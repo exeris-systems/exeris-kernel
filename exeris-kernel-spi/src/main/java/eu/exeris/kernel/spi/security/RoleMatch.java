@@ -17,7 +17,7 @@ package eu.exeris.kernel.spi.security;
  *
  * <p>No allocation, no reflection, no string interning at decision time.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public enum RoleMatch {
 

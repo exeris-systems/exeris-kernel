@@ -39,7 +39,7 @@ import java.util.Objects;
  * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping} and
  * {@link CommunityClaimsMapper}).
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
 final class CommunityOidcTokenValidator implements TokenValidator {

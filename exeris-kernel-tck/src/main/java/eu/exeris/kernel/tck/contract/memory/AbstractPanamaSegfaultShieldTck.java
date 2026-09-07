@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       release.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractPanamaSegfaultShieldTck {
 

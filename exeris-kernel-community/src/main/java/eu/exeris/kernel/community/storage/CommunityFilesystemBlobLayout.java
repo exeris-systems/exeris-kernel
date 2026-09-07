@@ -45,7 +45,7 @@ import java.util.UUID;
  * so a container named {@code sidecars} lands at {@code objects/sidecars} and collides with nothing.
  * Nothing the caller controls is ever a direct child of the tenant directory.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityFilesystemBlobLayout {
 

@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * TCK: Abstract base for {@link IdempotencyGuard} contract verification.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractIdempotencyGuardTck {
 

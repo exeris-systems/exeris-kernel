@@ -16,7 +16,14 @@ import java.lang.foreign.MemorySegment;
  * <p>Intentionally <b>package-private</b>: no external module should reference it directly.
  * Always obtain via {@link EventPayload#empty()}.
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> zero-alloc on hot path — a single immutable instance over a zero-length
+ * segment, shared by every no-data event
+ * <p><b>Thread confinement:</b> any thread — it is immutable and its retain/close do nothing, so
+ * there is no state for concurrent holders to race on
+ * <p><b>Ownership:</b> owned by nobody and released by nobody; it is exempt from the
+ * {@link EventPayload} reference-count contract by design
+ *
+ * @since 0.5
  */
 final class EmptyEventPayload implements EventPayload {
 

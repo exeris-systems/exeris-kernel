@@ -11,11 +11,6 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 /**
  * SPI: A single TLS session (handshake + record-layer I/O).
  *
- * <h2>Zero-Copy Contract</h2>
- * <p>Plaintext and ciphertext MUST reside in {@link LoanedBuffer} instances backed by
- * off-heap {@code MemorySegment}. No data is copied to the Java heap during I/O.
- * The engine operates purely via {@code MemorySegment.asSlice()} views.
- *
  * <h2>Lifecycle</h2>
  * <pre>
  *  engine.notifyBound()         → transport/BIO binding completed
@@ -25,27 +20,38 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
  *  engine.close()             → send close_notify, release native TLS session handle
  * </pre>
  *
- * <h2>Buffer Semantics — I/O Ownership Contract</h2>
- * <p>The role of the {@code outbound} and {@code ciphertext} buffer parameters depends
- * on the I/O ownership mode configured by the provider implementation:
- * <ul>
- *   <li><b>Socket-owner mode:</b> The engine reads and writes directly to the underlying
- *       transport channel. Outbound and ciphertext output parameters are not populated by
- *       the engine on return; the caller does not need to transmit them separately. The
- *       {@code ciphertext} input parameter to {@link #unwrap} is also not consumed.</li>
- *   <li><b>Buffer-owner mode:</b> The engine has no direct I/O channel. After each call
- *       the transport layer must drain outbound encrypted bytes from the engine's internal
- *       write buffer into the output parameter ({@link #wrap}, {@link #beginHandshake},
- *       {@link #initiateShutdown}), and must pre-fill the engine's internal read buffer
- *       from the input parameter before calling {@link #unwrap}. The engine itself has
- *       zero knowledge of this drain/fill step.</li>
- * </ul>
+ * <p><b>Allocation:</b> zero-alloc on hot path — {@link #wrap} and {@link #unwrap} exchange
+ * bytes between the supplied {@link LoanedBuffer} instances without allocating per record;
+ * the handshake and the failure paths may allocate.
+ * <p><b>Thread confinement:</b> owner thread — an engine is not thread-safe and is confined to
+ * the carrier or virtual thread that drives its I/O.
+ * <p><b>Ownership:</b> the caller owns every {@link LoanedBuffer} it passes in and releases it;
+ * the engine borrows those buffers for the duration of the call and never retains them. The
+ * engine owns its native TLS session handle and frees it in {@link #close()}.
  *
- * <h2>Thread Safety</h2>
- * <p>Instances are NOT thread-safe by design. Each carrier/virtual thread owns its own engine.
- * Shared state lives only in the provider's global TLS context, which is read-only after bootstrap.
- *
- * @since 0.5.0
+ * @implSpec Plaintext and ciphertext must reside in {@link LoanedBuffer} instances backed by
+ *           off-heap {@code MemorySegment}: an implementation must not copy record payloads onto
+ *           the Java heap, and works purely through segment views of the buffers it is handed.
+ *           Failures on the decrypt path must be reported as
+ *           {@link eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException}
+ *           ({@code EX-NET-2003}) and failures on the handshake and encrypt paths as
+ *           {@link TlsHandshakeException} ({@code EX-NET-2001}), so that a Glass-Box decoder
+ *           can tell the two directions apart without parsing a message string.
+ * @apiNote  The role of the {@code outbound} and {@code ciphertext} parameters depends on the
+ *           I/O ownership mode the provider implementation configures:
+ *           <ul>
+ *             <li><b>Socket-owner mode:</b> the engine reads and writes the underlying transport
+ *                 channel itself. Output parameters are not populated on return and the caller
+ *                 transmits nothing separately; the {@code ciphertext} input of {@link #unwrap}
+ *                 is likewise not consumed.</li>
+ *             <li><b>Buffer-owner mode:</b> the engine has no direct I/O channel. After each call
+ *                 the transport layer drains outbound encrypted bytes from the engine's internal
+ *                 write buffer into the output parameter ({@link #wrap}, {@link #beginHandshake},
+ *                 {@link #initiateShutdown}), and pre-fills the engine's internal read buffer
+ *                 from the input parameter before calling {@link #unwrap}. The engine itself has
+ *                 zero knowledge of that drain/fill step.</li>
+ *           </ul>
+ * @since 0.5
  * @see KernelCryptoProvider
  * @see TlsStatus
  */
@@ -55,11 +61,12 @@ public interface TlsEngine extends AutoCloseable {
      * Signals that transport-specific BIO/channel binding has completed and the
      * TLS session may begin the handshake state transitions.
      *
-     * <p>Default no-op for engines that do not require an explicit bind signal.
-     * Engines with explicit pre-handshake binding (for example fd-owner or memory-BIO
-     * pipelines) should override this method and enforce their state machine contract.
-     *
-     * @throws TlsHandshakeException if called in an invalid lifecycle phase
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if called in an invalid lifecycle
+     *         phase — a second time, or on a session that is already closed
+     * @implSpec The default implementation is a no-op, which is correct for an engine that needs
+     *           no explicit bind signal. An engine with explicit pre-handshake binding (an
+     *           fd-owner or memory-BIO pipeline) overrides this method and enforces its
+     *           state-machine contract there.
      */
     default void notifyBound() {
         // no-op by default
@@ -78,7 +85,9 @@ public interface TlsEngine extends AutoCloseable {
      *
      * @param outbound buffer for outbound handshake bytes; always empty in socket-owner mode
      * @return status after this call ({@code NEED_UNWRAP}, {@code NEED_WRAP}, {@code FINISHED})
-     * @throws TlsHandshakeException if handshake cannot be initiated
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the handshake cannot be initiated —
+     *         the session was never bound, is already closed, or has entered
+     *         {@link TlsPhase#ERROR}
      */
     TlsStatus beginHandshake(LoanedBuffer outbound);
 
@@ -93,6 +102,8 @@ public interface TlsEngine extends AutoCloseable {
      * @param ciphertext inbound encrypted bytes; not consumed in socket-owner mode
      * @param plaintext  output buffer for decrypted application data
      * @return operation status ({@code OK}, {@code NEED_HANDSHAKE}, {@code CLOSED})
+     * @throws eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException
+     *         ({@code EX-NET-2003}) if the session is closed or the handshake has not completed
      */
     TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext);
 
@@ -108,18 +119,25 @@ public interface TlsEngine extends AutoCloseable {
      * @param plaintext  application data to encrypt
      * @param ciphertext output buffer for encrypted bytes; always empty in socket-owner mode
      * @return operation status ({@code OK}, {@code NEED_HANDSHAKE}, {@code CLOSED})
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the session is closed or the
+     *         handshake has not completed
      */
     TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext);
 
     /**
-     * Returns {@code true} if the handshake has completed and the session is
-     * ready for application-data exchange.
+     * Indicates whether the handshake has completed and the session may carry application data.
+     *
+     * @return {@code true} once the handshake has completed, {@code false} while it is still
+     *         pending
      */
     boolean isHandshakeComplete();
 
     /**
-     * Returns the negotiated ALPN protocol string (e.g., {@code "h3"}, {@code "h2"}),
-     * or {@code null} if no ALPN was negotiated.
+     * Reports the application protocol this session and its peer agreed on through ALPN.
+     *
+     * @return the negotiated ALPN protocol name (for example {@code "h3"} or {@code "h2"}), or
+     *         {@code null} when the peer offered no ALPN extension, none was configured, or the
+     *         handshake has not completed
      */
     String negotiatedProtocol();
 
@@ -133,13 +151,18 @@ public interface TlsEngine extends AutoCloseable {
      * the alert bytes.
      *
      * @param outbound buffer for the {@code close_notify} alert bytes; always empty in socket-owner mode
-     * @throws TlsException if the shutdown alert cannot be generated
+     * @throws TlsException ({@code EX-NET-2001}) if the shutdown alert cannot be generated
      */
     void initiateShutdown(LoanedBuffer outbound);
 
     /**
      * Releases the native TLS session handle and all associated off-heap resources.
-     * Idempotent — multiple calls are safe.
+     *
+     * @implSpec Idempotent — a second and any further call returns without throwing and without
+     *           releasing anything twice.
+     * @apiNote  For a graceful close, drive {@link #initiateShutdown} to completion first and
+     *           close afterwards; closing an active session tears the TLS state down without
+     *           waiting for the peer.
      */
     @Override
     void close();

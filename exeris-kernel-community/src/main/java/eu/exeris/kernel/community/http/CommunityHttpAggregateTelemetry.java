@@ -37,7 +37,7 @@ import eu.exeris.kernel.core.http.jfr.HttpAggregateBufferHeldEvent;
  * {@link ProcessingState} and emits events. No internal state is retained between
  * invocations; per-connection state lives in {@code ProcessingState}.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 final class CommunityHttpAggregateTelemetry {
 

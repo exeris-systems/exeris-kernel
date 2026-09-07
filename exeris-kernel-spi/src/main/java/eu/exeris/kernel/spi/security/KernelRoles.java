@@ -22,9 +22,9 @@ package eu.exeris.kernel.spi.security;
  * application roles. ADR-014 §10 (Consequences) covers shard expansion if a
  * deployment ever exceeds 64 roles.
  *
+ * @since 0.7
  * @see RequiresRole
  * @see <a href="../../../../../../docs/adr/ADR-014-requiresrole-compile-time-rbac-generation.md">ADR-014</a>
- * @since 0.7.0
  */
 public final class KernelRoles {
 
@@ -54,16 +54,16 @@ public final class KernelRoles {
     // Canonical role-name constants — these strings appear in @RequiresRole
     // -----------------------------------------------------------------------
 
-    /** @see #BIT_SYSTEM */
+    /** Canonical name of the internal kernel role, resolved to {@link #BIT_SYSTEM}. */
     public static final String ROLE_SYSTEM = "ROLE_SYSTEM";
 
-    /** @see #BIT_ADMIN */
+    /** Canonical name of the full-authority operator role, resolved to {@link #BIT_ADMIN}. */
     public static final String ROLE_ADMIN = "ROLE_ADMIN";
 
-    /** @see #BIT_OPERATOR */
+    /** Canonical name of the read-mostly operator role, resolved to {@link #BIT_OPERATOR}. */
     public static final String ROLE_OPERATOR = "ROLE_OPERATOR";
 
-    /** @see #BIT_USER */
+    /** Canonical name of the default authenticated-user role, resolved to {@link #BIT_USER}. */
     public static final String ROLE_USER = "ROLE_USER";
 
     private KernelRoles() {
@@ -74,12 +74,11 @@ public final class KernelRoles {
      * Returns the canonical bit position for a system role, or {@code -1} if the
      * given name is not one of the system roles defined here.
      *
-     * <p>This method is intended for the APT processor's compile-time bit
-     * resolution. Runtime decision paths MUST use the precomputed bitmask in the
-     * generated {@code RoleCheckRegistry}, not this lookup.
-     *
      * @param roleName non-null role name
      * @return bit position {@code [0, SYSTEM_ROLE_BIT_LIMIT)} or {@code -1}
+     * @apiNote This lookup exists for the APT processor's compile-time bit resolution. Runtime
+     *          decision paths MUST use the precomputed bitmask in the generated
+     *          {@code RoleCheckRegistry} instead of calling this per request.
      */
     public static int systemRoleBit(String roleName) {
         return switch (roleName) {

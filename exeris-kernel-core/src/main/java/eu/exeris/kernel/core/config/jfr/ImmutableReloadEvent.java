@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * an attacker with write access to the config mount) attempted to mutate a sealed trust
  * anchor at runtime. The refusal carries the file and key name only; never the value.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class ImmutableReloadEvent {
 

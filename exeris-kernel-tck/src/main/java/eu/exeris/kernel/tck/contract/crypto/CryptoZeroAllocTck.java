@@ -36,7 +36,7 @@ import java.util.List;
  * {@code true}. The TCK will then enforce 0 {@code eu.exeris.*} allocations per
  * {@code wrap()}/{@code unwrap()} call (0 B/op).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class CryptoZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 

@@ -26,7 +26,7 @@ import jdk.jfr.StackTrace;
  * cross-references with {@code WatermarkManager} JFR events to correlate allocation
  * pressure with TLS session ramp-up.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.crypto.ContextAlloc")
 @Label("Crypto Context Alloc")

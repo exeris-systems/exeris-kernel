@@ -46,7 +46,7 @@ import java.util.concurrent.locks.LockSupport;
  *
  * @see AbstractSubsystemCarrierPinningTck
  * @see TransportZeroAllocTck
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Transport carrier pinning TCK")
 public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {

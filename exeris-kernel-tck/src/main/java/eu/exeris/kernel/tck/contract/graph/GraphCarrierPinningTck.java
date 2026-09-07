@@ -21,7 +21,7 @@ import java.util.UUID;
  * <p>{@code openSession() → findShortestPath(src, tgt) → close()} — graph traversal
  * must never pin a carrier thread.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
  * @see ExecutionGraphZeroAllocTck
  */

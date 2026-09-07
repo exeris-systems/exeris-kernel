@@ -61,7 +61,7 @@ import java.util.function.Supplier;
  * <p>No Spring, no CDI, no Guice. The orchestrator is wired via the builder
  * pattern; providers are loaded via {@link ServiceLoader}.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see SubsystemOrchestrator
  * @see KernelProviders#CURRENT_CONFIG
  */

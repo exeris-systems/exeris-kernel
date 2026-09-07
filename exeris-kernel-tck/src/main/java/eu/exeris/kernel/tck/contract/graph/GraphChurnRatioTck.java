@@ -93,7 +93,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that gap — or establishing which regime is the honest figure to publish — is tracked in the
  * ROADMAP. Raising this number to hide a real regression would defeat the only thing the test does.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Graph Churn-to-Data Ratio TCK (graph.md SLO)")
 public abstract class GraphChurnRatioTck {

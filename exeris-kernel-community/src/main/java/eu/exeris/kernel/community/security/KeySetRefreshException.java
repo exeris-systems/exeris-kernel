@@ -11,7 +11,7 @@ package eu.exeris.kernel.community.security;
  * (rotation), never on the hot verification path. The reason string is a short, opaque
  * label and must never carry key material or token bytes (secret-safe).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 /* default */ class KeySetRefreshException extends Exception {
 

@@ -55,7 +55,7 @@ import java.util.concurrent.locks.LockSupport;
  * The single internal consumer is the only thread that calls {@code emit} on
  * wrapped sinks, simplifying their thread-safety story.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @SuppressWarnings({
     "PMD.CloseResource",                  // wrapped sinks are owned externally; close() closes them once

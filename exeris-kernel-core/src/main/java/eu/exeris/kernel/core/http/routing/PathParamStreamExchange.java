@@ -22,7 +22,7 @@ import java.util.Objects;
  * <p>Only wrapped when a template actually captured something — an exact stream route gets the engine
  * itself, so the common path pays nothing.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class PathParamStreamExchange implements HttpStreamExchange {
 

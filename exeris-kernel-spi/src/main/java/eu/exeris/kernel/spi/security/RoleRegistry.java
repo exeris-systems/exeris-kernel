@@ -15,17 +15,18 @@ package eu.exeris.kernel.spi.security;
  * static accessors into an injectable contract that {@code RoleCheckEnforcer},
  * test harnesses, and operator-supplied registry sources can all share.
  *
- * <h2>Hot-path discipline</h2>
- * <p>Implementations MUST satisfy:
- * <ul>
- *   <li>{@link #requiredAny(int)} / {@link #requiredAll(int)} — O(1), allocation-free.</li>
- *   <li>{@link #matchIsAll(int)} — O(1), allocation-free.</li>
- *   <li>{@link #methodCount()} — O(1).</li>
- *   <li>{@link #roleNameToBit(String)} — O(1) average; called at authentication
- *       time, never on the per-request hot path.</li>
- * </ul>
+ * <p><b>Allocation:</b> zero-alloc on hot path — the per-request lookups return primitives read
+ * from a build-time table and allocate nothing
  *
- * @since 0.7.0
+ * @implSpec Implementations MUST satisfy:
+ *           <ul>
+ *             <li>{@link #requiredAny(int)} / {@link #requiredAll(int)} — O(1), allocation-free.</li>
+ *             <li>{@link #matchIsAll(int)} — O(1), allocation-free.</li>
+ *             <li>{@link #methodCount()} — O(1).</li>
+ *             <li>{@link #roleNameToBit(String)} — O(1) average; called at authentication
+ *                 time, never on the per-request hot path.</li>
+ *           </ul>
+ * @since 0.7
  */
 public interface RoleRegistry {
 
@@ -50,12 +51,20 @@ public interface RoleRegistry {
     long requiredAll(int methodId);
 
     /**
+     * Reports which of the two mask tests the given method selected: {@code RoleMatch.ALL} takes
+     * the equality-shaped test against {@link #requiredAll(int)}, {@code RoleMatch.ANY} the
+     * intersection test against {@link #requiredAny(int)}.
+     *
      * @param methodId compile-time method id from the generated registry
      * @return {@code true} when the method declared {@code RoleMatch.ALL}
      */
     boolean matchIsAll(int methodId);
 
     /**
+     * Reports how many entry points this registry carries. A registry reporting {@code 0} holds no
+     * required mask for any method id, so a caller can skip role-mask population entirely; it is
+     * never an allow-all.
+     *
      * @return number of {@code @RequiresRole}-annotated entry points compiled
      *         into the registry
      */

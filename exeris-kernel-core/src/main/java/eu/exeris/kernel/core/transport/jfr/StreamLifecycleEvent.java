@@ -22,7 +22,7 @@ import jdk.jfr.StackTrace;
  * {@link StreamLifecycleEvent} represents the total Virtual Thread occupancy time for
  * the stream — a key metric for Virtual Thread density tuning.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.transport.StreamLifecycle")
 @Label("Stream Lifecycle Complete")

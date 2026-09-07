@@ -46,7 +46,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
  * binding pass the suite while sitting on real time, which is exactly the coverage this contract
  * exists to prevent.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public abstract class AbstractJobSchedulerTck {
 

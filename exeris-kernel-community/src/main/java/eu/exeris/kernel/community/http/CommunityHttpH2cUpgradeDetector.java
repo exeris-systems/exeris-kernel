@@ -45,7 +45,7 @@ import java.util.Objects;
  * decision logic that was previously spread across six instance methods plus a
  * private static.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 final class CommunityHttpH2cUpgradeDetector {
 

@@ -13,7 +13,7 @@ import java.util.Objects;
  * there is no pool to size, and a knob that did nothing would be worse than an absent one.
  *
  * @param schedulerName name used in JFR events and diagnostics
- * @since 0.11.0
+ * @since 0.11
  */
 public record JobSchedulerConfig(String schedulerName) {
 

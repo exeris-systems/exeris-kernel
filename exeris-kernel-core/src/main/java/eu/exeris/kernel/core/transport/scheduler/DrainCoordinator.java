@@ -50,7 +50,7 @@ import java.lang.invoke.VarHandle;
  * shared count takes plain {@code getAndAdd} on the per-request path and compare-and-set only in
  * {@link #sealIfIdle()}, which runs once per drain.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class DrainCoordinator {
 

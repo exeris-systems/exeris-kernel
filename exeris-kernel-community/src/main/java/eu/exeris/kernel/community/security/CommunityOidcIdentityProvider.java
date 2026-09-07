@@ -33,7 +33,7 @@ import java.util.Objects;
  * {@code CommunityJwksValidator}; the rotating-key-set path composes the v0.9
  * {@link CommunityRotatingKeySet} seam through the {@link JwksKeyResolver} constructor.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class CommunityOidcIdentityProvider implements IdentityProvider {
 
@@ -87,7 +87,7 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
      *
      * @param claimsMapper the mapping to use; must not be {@code null}
      * @return a provider identical to this one but mapping claims with {@code claimsMapper}
-     * @since 0.11.0
+     * @since 0.11
      */
     public CommunityOidcIdentityProvider withClaimsMapper(ClaimsMapper claimsMapper) {
         return new CommunityOidcIdentityProvider(
@@ -104,7 +104,7 @@ public final class CommunityOidcIdentityProvider implements IdentityProvider {
      * provider — and the default stays fail-closed for anyone who does not call this.
      *
      * @return a provider identical to this one but honouring declared shared scopes
-     * @since 0.11.0
+     * @since 0.11
      */
     public CommunityOidcIdentityProvider enforcingSharedScope() {
         return new CommunityOidcIdentityProvider(tokenValidator, expectedIssuer, true, claimsMapper);

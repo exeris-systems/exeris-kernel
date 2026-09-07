@@ -29,7 +29,7 @@ import java.util.Objects;
  * {@link IllegalStateException} so no {@code tools.jackson.*} type crosses the SPI
  * boundary (The Wall — ADR-006).
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class CommunityJsonEventPayloadCodec implements EventPayloadCodec {
 

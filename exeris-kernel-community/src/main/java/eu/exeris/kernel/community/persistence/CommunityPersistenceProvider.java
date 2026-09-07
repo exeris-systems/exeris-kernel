@@ -33,7 +33,7 @@ import java.util.Optional;
  *   <li>{@code KernelProviders.TELEMETRY_PROVIDER} — for health-check and pool metric events</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityPersistenceProvider implements PersistenceProvider {
 

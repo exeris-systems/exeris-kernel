@@ -27,7 +27,7 @@ package eu.exeris.kernel.community.testkit;
  *
  * <p>Testkit plumbing, not fixture API. Public only so the fixture subpackages can reach it.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class FixtureBootLock {
 

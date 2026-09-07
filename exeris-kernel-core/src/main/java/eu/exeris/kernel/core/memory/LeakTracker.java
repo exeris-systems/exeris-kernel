@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *
  * @see AbstractLoanedBuffer
  * @see LeakDetectedEvent
- * @since 0.5.0
+ * @since 0.5
  */
 public final class LeakTracker {
 

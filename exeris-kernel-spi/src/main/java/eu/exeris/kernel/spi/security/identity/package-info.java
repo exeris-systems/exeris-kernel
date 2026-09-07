@@ -26,6 +26,6 @@
  * <p>No JWT / JWKS / OIDC / PASETO / RSA / HTTP vocabulary appears in this package. Those concerns
  * live entirely in the Community / Enterprise drivers. This package is a pure contract.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 package eu.exeris.kernel.spi.security.identity;

@@ -47,7 +47,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * {@link #runInKernelScope(Runnable)}, because a {@code ScopedValue} binding cannot outlive the frame
  * that opened it and therefore cannot be handed to another thread.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public interface EmbeddedKernelFixture extends AutoCloseable {
 

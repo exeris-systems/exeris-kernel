@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * binding's allocation-free enforcer delegate). The abstract drives the
  * contract; the binding owns the Core loader and the generated fixture.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public abstract class AbstractGeneratedRoleRegistryLoaderTck {
 

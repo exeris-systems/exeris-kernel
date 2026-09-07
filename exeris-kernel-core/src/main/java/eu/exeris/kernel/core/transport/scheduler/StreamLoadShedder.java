@@ -37,7 +37,7 @@ import java.util.Objects;
  *
  * @see AdmissionController
  * @see PaqsScheduler
- * @since 0.5.0
+ * @since 0.5
  */
 public final class StreamLoadShedder {
 

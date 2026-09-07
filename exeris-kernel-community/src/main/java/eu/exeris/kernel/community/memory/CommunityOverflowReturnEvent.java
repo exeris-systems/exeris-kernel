@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * provides visibility into these overflow returns without changing pooling
  * behavior.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.memory.CommunityOverflowReturn")
 @Label("Community Overflow Return")

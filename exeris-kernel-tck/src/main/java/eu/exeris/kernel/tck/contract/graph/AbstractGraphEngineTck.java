@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@code close()} is idempotent</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractGraphEngineTck {
 

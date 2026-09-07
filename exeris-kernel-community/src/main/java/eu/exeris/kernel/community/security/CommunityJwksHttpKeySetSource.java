@@ -31,7 +31,7 @@ import java.util.function.Supplier;
  * {@link KeySetRefreshException} — never an empty or partial map. RSA is the only Community-tier
  * signing algorithm, so non-RSA JWK entries are skipped rather than failing the whole load.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class CommunityJwksHttpKeySetSource implements KeySetSource {
 

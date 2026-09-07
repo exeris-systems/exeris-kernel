@@ -23,7 +23,7 @@ import jdk.jfr.StackTrace;
  * details. This enables flight-recorder-based diagnostics without runtime
  * overhead (JFR events are zero-cost when not recorded).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.CloseActionFailure")
 @Label("LoanedBuffer Close Action Failure")

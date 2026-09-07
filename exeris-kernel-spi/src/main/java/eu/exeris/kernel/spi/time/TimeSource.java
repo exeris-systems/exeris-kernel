@@ -27,11 +27,20 @@ import java.time.ZoneOffset;
  * <h2>Relationship to the scheduler's clock</h2>
  * <p>{@code CommunitySchedulerClock} is this interface <em>plus</em> waiting primitives, and it
  * predates it — the method names here are taken from it rather than invented, so the scheduler
- * keeps its `awaitUntil`/`awaitSignal` without owning a second definition of what time is.
+ * keeps its {@code awaitUntil}/{@code awaitSignal} without owning a second definition of what time
+ * is.
  *
- * <p>Implementations must be thread-safe: one source serves the whole runtime.
+ * <p><b>Allocation:</b> allocates — {@link #wallTime()} returns a new {@link Instant} on every call
+ * and {@link #asClock()} allocates a wrapping {@link Clock}; {@link #nanoTime()} returns a
+ * primitive and allocates nothing.
+ * <p><b>Thread confinement:</b> any thread — one source serves the whole runtime, so calls arrive
+ * concurrently from every subsystem that reads a deadline.
+ * <p><b>Ownership:</b> none — a {@code TimeSource} holds no handle or buffer to release;
+ * {@link #SYSTEM} is a stateless singleton, and any other implementation is expected to be the
+ * same shape.
  *
- * @since 0.12.0
+ * @implSpec Implementations must be thread-safe: one source serves the whole runtime.
+ * @since 0.12
  */
 public interface TimeSource {
 
@@ -60,10 +69,11 @@ public interface TimeSource {
      * Monotonic nanoseconds, for deadlines.
      *
      * <p>Comparable only against itself and only within one process — the same contract
-     * {@link System#nanoTime()} carries, and for the same reason. A value from this method must
-     * never be persisted or compared across a restart; {@link #wallTime()} is what survives one.
+     * {@link System#nanoTime()} carries, and for the same reason.
      *
      * @return monotonically non-decreasing nanoseconds from an arbitrary origin
+     * @apiNote A value from this method must never be persisted or compared across a restart;
+     *          {@link #wallTime()} is what survives one.
      */
     long nanoTime();
 
@@ -80,19 +90,19 @@ public interface TimeSource {
     /**
      * This source as a {@link Clock}, for consumers shaped around the JDK's abstraction.
      *
-     * <p><b>Live, not a snapshot.</b> The returned clock delegates every {@code instant()} call, so
-     * a virtual source the caller later advances is visible through it. {@code Clock.fixed(wallTime(),
-     * …)} is the tempting one-liner and it is wrong: it freezes at the moment the adapter was built,
-     * which for a virtual clock means the consumer never sees it move — a seam that compiles,
-     * type-checks, and silently does not work.
-     *
-     * <p>UTC by default, which is what {@code Clock.systemUTC()} gives and what the kernel's own
-     * consumers want: these are instants compared against token and rotation deadlines, where a
-     * local zone would add an offset nobody asked for. {@link Clock#withZone(ZoneId)} is honoured
-     * rather than ignored — this is a public {@code Clock}, and a caller that asks for a zone and
-     * silently keeps UTC would get wrong answers from anything zone-shaped built on it.
-     *
      * @return a clock reading this source, at UTC; never {@code null}
+     * @apiNote <b>Live, not a snapshot.</b> The returned clock delegates every {@code instant()}
+     *          call, so a virtual source the caller later advances is visible through it.
+     *          {@code Clock.fixed(wallTime(), …)} is the tempting one-liner and it is wrong: it
+     *          freezes at the moment the adapter was built, which for a virtual clock means the
+     *          consumer never sees it move — a seam that compiles, type-checks, and silently does
+     *          not work.
+     * @implNote UTC by default, matching {@code Clock.systemUTC()} and what the kernel's own
+     *           consumers want: these are instants compared against token and rotation deadlines,
+     *           where a local zone would add an offset nobody asked for. {@link Clock#withZone(ZoneId)}
+     *           is honoured rather than ignored — this is a public {@code Clock}, and a caller that
+     *           asks for a zone and silently keeps UTC would get wrong answers from anything
+     *           zone-shaped built on it.
      */
     default Clock asClock() {
         return zonedClock(this, ZoneOffset.UTC);

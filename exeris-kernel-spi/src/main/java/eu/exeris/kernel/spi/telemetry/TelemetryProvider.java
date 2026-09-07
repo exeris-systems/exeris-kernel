@@ -11,42 +11,61 @@ import java.util.List;
 /**
  * SPI: Factory that creates and wires {@link TelemetrySink} instances.
  *
- * <h2>Open-Core Tier Differentiation</h2>
- * <ul>
- *   <li><b>Community</b>: Returns the active standard sink set for the community distribution,
- *       typically combining human-readable output and event-oriented telemetry.</li>
- *   <li><b>Enterprise</b>: May return a different sink set optimized for enterprise-only
- *       telemetry capabilities and higher-performance collection paths.</li>
- * </ul>
- *
  * <h2>Discovery</h2>
- * <p>Loaded via {@link java.util.ServiceLoader}. Enterprise returns {@link #priority()} = 100;
- * Community returns 0. Higher value wins.
+ * <p>Providers are discovered through {@link java.util.ServiceLoader}. The candidate with the
+ * highest {@link #priority()} is selected, and only that provider's sinks are built.
  *
+ * <p><b>Allocation:</b> allocates — {@link #createSinks(TelemetryConfig)} builds the sink list and
+ * whatever each sink owns (file handles, recording buffers, mapped regions) once, at bootstrap.
+ * Nothing on this interface sits on an emission path.
+ * <p><b>Thread confinement:</b> owner thread — {@code createSinks} is called once, on the thread
+ * that runs kernel bootstrap; the list it returns is what hot-path code then iterates.
+ * <p><b>Ownership:</b> the caller of {@code createSinks} owns every sink in the returned list and
+ * closes each one at shutdown.
+ *
+ * @implSpec An implementation must return a non-null, non-empty, immutable list from
+ *           {@link #createSinks(TelemetryConfig)}, every element of which has a non-blank
+ *           {@link TelemetrySink#sinkName()}; a non-null, non-blank {@link #providerName()}; and a
+ *           {@link #priority()} of {@code 0} for the Community tier or {@code 100} for the
+ *           Enterprise tier.
+ * @implNote The Community provider returns a Flight Recorder sink when
+ *           {@link TelemetryConfig#jfrSinkEnabled()} is set and an SLF4J fallback sink otherwise,
+ *           adding console and file sinks as the configuration asks for them. An Enterprise
+ *           provider may return a different set aimed at binary off-heap collection.
+ * @since 0.5
  * @see TelemetrySink
- * @since 0.5.0
  */
 public interface TelemetryProvider {
 
     /**
-     * Creates all active sinks for this provider.
+     * Creates every sink this provider contributes under the given configuration.
      *
      * <p>Called once during kernel bootstrap. Implementations may open file handles,
      * allocate off-heap JFR buffers, or register mmap regions here.
      *
-     * @param config telemetry configuration
-     * @return immutable list of active sinks; never empty
-     * @throws TelemetryBootstrapException if a required sink cannot be initialized
+     * @param config the configuration selecting which sinks are active and their resource budgets
+     * @return the active sinks, as an immutable list holding at least one element; the caller owns
+     *         them and closes each one
+     * @throws TelemetryBootstrapException {@code EX-BOOT-3001} — a sink named by {@code config}
+     *         could not be initialised
      */
     List<TelemetrySink> createSinks(TelemetryConfig config);
 
     /**
-     * Display name used in bootstrap JFR events (e.g., {@code "ExerisEnterprise/BinaryGlassBox"}).
+     * Returns the name under which this provider appears in bootstrap diagnostics and JFR events,
+     * such as {@code "ExerisEnterprise/BinaryGlassBox"}.
+     *
+     * @return a non-null, non-blank display name, stable for the life of the provider
      */
     String providerName();
 
     /**
-     * Higher value wins; Community = 0, Enterprise = 100.
+     * Returns this provider's rank in {@link java.util.ServiceLoader} selection, where the highest
+     * rank on the classpath wins and the losing providers build no sinks.
+     *
+     * @return {@code 0} for a Community-tier provider, {@code 100} for an Enterprise-tier one
+     * @implSpec The default implementation returns {@code 0}, the Community rank; an
+     *           Enterprise-tier provider overrides it.
      */
     default int priority() {
         return 0;

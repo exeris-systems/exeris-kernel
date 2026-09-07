@@ -85,7 +85,7 @@ import java.util.function.Function;
  * @see AdmissionController
  * @see StreamLoadShedder
  * @see TransportScopes
- * @since 0.5.0
+ * @since 0.5
  */
 // CyclomaticComplexity is a class-wide total, and the drain-ordering fix adds branches to a class
 // that already carries the admission, spawn and shutdown paths. Each branch here is a distinct

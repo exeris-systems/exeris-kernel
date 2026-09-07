@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Uses temporary JDBC connections backed by HikariCP's default heap-based pool.
  * No {@code GlobalMemoryArbiter} claims — Community tier only.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // Cohesion baseline post-QA-010 (v0.8 Sprint 1): migration bootstrap and pool warm-up
 // were extracted to dedicated helpers (CommunityPersistenceMigrationRunner,

@@ -33,7 +33,7 @@ import java.util.Map;
  * @param secretKey      SigV4 secret access key
  * @param region         SigV4 credential-scope region
  * @param maxObjectBytes ceiling on a single object, in bytes
- * @since 0.11.0
+ * @since 0.11
  */
 /* default */ record CommunityS3Settings(String host, int port, String bucket, String accessKey,
                                          String secretKey, String region, long maxObjectBytes) {

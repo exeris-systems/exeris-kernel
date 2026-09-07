@@ -49,7 +49,7 @@ import java.lang.invoke.VarHandle;
  * @see PaqsScheduler
  * @see ResourceArbiter
  * @see StreamPriority
- * @since 0.5.0
+ * @since 0.5
  */
 public final class AdmissionController {
 
@@ -88,7 +88,7 @@ public final class AdmissionController {
      *                         {@link TransportConfig#UNBOUNDED_ACTIVE_STREAMS} for no ceiling.
      *                         Refused here as well as at config construction: a controller built
      *                         directly by a driver is the same operator error one layer down.
-     * @since 0.12.0
+     * @since 0.12
      */
     public AdmissionController(ResourceArbiter arbiter, int maxActiveStreams) {
         if (arbiter == null) {
@@ -179,7 +179,7 @@ public final class AdmissionController {
      * what the operator configured and not what the loop was rewritten to.
      *
      * @return the configured maximum, or {@link TransportConfig#UNBOUNDED_ACTIVE_STREAMS}
-     * @since 0.12.0
+     * @since 0.12
      */
     public int maxActiveStreams() {
         return maxActiveStreams;

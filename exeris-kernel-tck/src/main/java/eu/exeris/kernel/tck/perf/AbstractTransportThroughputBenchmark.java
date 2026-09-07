@@ -64,7 +64,7 @@ import org.openjdk.jmh.infra.Blackhole;
  * }</pre>
  *
  * @see AbstractExerisBenchmark
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractTransportThroughputBenchmark extends AbstractExerisBenchmark {
 

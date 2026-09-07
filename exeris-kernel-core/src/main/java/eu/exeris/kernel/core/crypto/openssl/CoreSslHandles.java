@@ -26,7 +26,7 @@ import java.lang.invoke.MethodHandle;
  * <h2>Zero-Copy Contract</h2>
  * <p>All buffer addresses passed as raw {@code long} — no heap wrapper allocation per call.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CoreSslHandles {
 
@@ -69,7 +69,7 @@ public final class CoreSslHandles {
     /**
      * Handles for {@code SSL_CTX_*} — context bootstrap and teardown only.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public record CtxHandles(
             MethodHandle sslServerMethod,
@@ -119,7 +119,7 @@ public final class CoreSslHandles {
          *
          * @param methodPtr the {@code TLS_*_method()} pointer
          * @return the {@code SSL_CTX*} pointer, or 0 on failure
-         * @since 0.9.0
+         * @since 0.9
          */
         public long invokeCtxNew(long methodPtr) {
             try {
@@ -217,7 +217,7 @@ public final class CoreSslHandles {
      * Handles for SSL session setup — {@code SSL_new}, {@code SSL_free},
      * {@code SSL_accept}, {@code SSL_connect}, {@code SSL_do_handshake}.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public record HandshakeHandles(
             MethodHandle sslNew,
@@ -305,7 +305,7 @@ public final class CoreSslHandles {
      * {@code SSL_get0_alpn_selected}, {@code SSL_get_current_cipher},
      * {@code SSL_CIPHER_get_name}.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public record IoHandles(
             MethodHandle sslRead,

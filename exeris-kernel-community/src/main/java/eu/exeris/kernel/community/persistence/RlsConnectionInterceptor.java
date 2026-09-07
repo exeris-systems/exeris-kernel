@@ -94,7 +94,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <p>Uses {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} (ScopedValue, JEP 506) —
  * zero {@code ThreadLocal}, zero VT pinning risk.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see ConnectionInterceptor
  * @see StorageContext
  * @see eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT

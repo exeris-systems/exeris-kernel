@@ -25,34 +25,34 @@ import java.util.List;
  *   <li>{@link #close()} releases all engine resources at shutdown</li>
  * </ol>
  *
- * <h2>Memory Contract</h2>
- * <ul>
- *   <li><b>Community:</b> Engine holds references to connection pools.
- *       Sessions allocate {@code LoanedBuffer} via {@code MemoryAllocator} (Arena per request).</li>
- *   <li><b>Enterprise:</b> Engine claims a memory partition from
- *       {@code GlobalMemoryArbiter} at startup. Sessions check out slabs from
- *       preallocated pools — zero dynamic allocation after {@code createEngine()}.</li>
- * </ul>
+ * <p><b>Allocation:</b> {@link #openSession()} allocates nothing on either tier; this
+ *     interface does not establish when or how the {@link GraphSession} it returns
+ *     allocates the buffer that a later traversal call writes into.
+ * <p><b>Thread confinement:</b> any thread for {@link #registerNodes(List)},
+ *     {@link #registerEdges(List)}, {@link #registeredNodes()} and {@link #registeredEdges()}
+ *     (the only surface exercised concurrently by the TCK); {@link #openSession()}
+ *     thread-safety under concurrent Virtual Threads is untested and undocumented.
+ * <p><b>Ownership:</b> the kernel bootstrapper owns the engine and releases it via
+ *     {@link #close()} at shutdown; each {@link GraphSession} is owned by the thread that
+ *     opened it via {@link #openSession()}.
  *
- * <h2>Thread Safety</h2>
- * <p>The engine itself is <strong>thread-safe</strong> and shared across all Virtual Threads.
- * Individual {@link GraphSession} instances are <strong>NOT thread-safe</strong> — one
- * session per Virtual Thread, always used within a try-with-resources block.
- *
- * @since 0.5.0
+ * @implNote Community holds references to connection pools directly; Enterprise instead
+ *           holds the memory partition claimed from {@code GlobalMemoryArbiter}. The
+ *           Community binding allocates the traversal buffer lazily, inside
+ *           {@code streamBfsJson()} via {@code MemoryAllocator.allocateNetwork}, rather
+ *           than at session-open time.
+ * @since 0.5
  * @see GraphProvider
  * @see GraphSession
  */
 public interface GraphEngine extends AutoCloseable {
 
     /**
-     * Creates a new session for executing graph operations.
-     *
-     * <p>Each session represents a single unit-of-work and MUST be closed
-     * via try-with-resources.
+     * Opens a new session for a single unit-of-work.
      *
      * @return new graph session
-     * @throws IllegalStateException if engine is not running
+     * @throws IllegalStateException if the engine is not running
+     * @apiNote Callers MUST close the returned session via try-with-resources.
      */
     GraphSession openSession();
 
@@ -66,10 +66,8 @@ public interface GraphEngine extends AutoCloseable {
     /**
      * Registers node metadata discovered during bootstrap or annotation scanning.
      *
-     * <p>This method is called during the metadata-discovery phase, before
-     * any sessions are opened.
-     *
      * @param nodes node descriptors to register
+     * @apiNote Call during the metadata-discovery phase, before any session is opened.
      */
     void registerNodes(List<GraphNodeDescriptor> nodes);
 
@@ -109,14 +107,14 @@ public interface GraphEngine extends AutoCloseable {
     boolean isRunning();
 
     /**
-     * Shuts down the engine and releases all resources.
+     * Shuts down the engine and releases every resource it holds.
      *
-     * <h2>Memory contract</h2>
-     * <ul>
-     *   <li><b>Community:</b> Closes JDBC/Bolt connection pools, releases Arenas.</li>
-     *   <li><b>Enterprise:</b> Returns memory partition to {@code GlobalMemoryArbiter},
-     *       destroys slab pools.</li>
-     * </ul>
+     * @implSpec An implementation releases every resource it opened for itself; one that
+     *           delegates its database access to a shared connection pool (for example,
+     *           {@code PersistenceEngine}) holds no pool of its own to close here.
+     * @implNote The Community binding closes its own graph-protocol client when one was
+     *           opened for the active dialect, and leaves the shared
+     *           {@code PersistenceEngine} pool for that pool's owner to close.
      */
     @Override
     void close();

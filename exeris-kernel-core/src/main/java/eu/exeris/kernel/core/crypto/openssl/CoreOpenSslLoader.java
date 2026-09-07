@@ -41,7 +41,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * <p>Shared OpenSSL constants are exposed as {@code public static final int} fields
  * so callers do not duplicate magic numbers.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 public final class CoreOpenSslLoader {
@@ -268,7 +268,7 @@ public final class CoreOpenSslLoader {
      * @param major OpenSSL major version ({@code OPENSSL_version_major()})
      * @param minor OpenSSL minor version ({@code OPENSSL_version_minor()})
      * @param text  full human-readable version string ({@code OpenSSL_version(OPENSSL_VERSION)})
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ record OpenSslVersion(int major, int minor, String text) {
     }
@@ -310,7 +310,7 @@ public final class CoreOpenSslLoader {
      * @param minor      reported OpenSSL minor version (included in the diagnostic message only)
      * @param versionNum packed {@code OPENSSL_version_num()} value
      * @throws CryptoBootstrapException if the version is outside the supported band
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static void assertSupported(int major, int minor, long versionNum) {
         if (!isSupportedVersion(major, versionNum)) {
@@ -330,7 +330,7 @@ public final class CoreOpenSslLoader {
      * @param major      reported OpenSSL major version
      * @param versionNum packed {@code OPENSSL_version_num()} value
      * @return {@code true} iff {@code 3 <= major <= 4} and {@code versionNum >= 0x30000000}
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static boolean isSupportedVersion(int major, long versionNum) {
         return major >= OPENSSL_MIN_KNOWN_MAJOR
@@ -367,7 +367,7 @@ public final class CoreOpenSslLoader {
      * @param sslMajor    {@code OPENSSL_version_major()} resolved via the {@code libssl} handle
      * @param cryptoMajor {@code OPENSSL_version_major()} resolved via the {@code libcrypto} handle
      * @throws CryptoBootstrapException if the two majors disagree (mixed-ABI cross-load)
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static void assertSameMajor(int sslMajor, int cryptoMajor) {
         if (!majorsAgree(sslMajor, cryptoMajor)) {
@@ -382,7 +382,7 @@ public final class CoreOpenSslLoader {
      * @param sslMajor    ssl-side {@code OPENSSL_version_major()}
      * @param cryptoMajor crypto-side {@code OPENSSL_version_major()}
      * @return {@code true} iff the two majors are equal
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static boolean majorsAgree(int sslMajor, int cryptoMajor) {
         return sslMajor == cryptoMajor;
@@ -464,7 +464,7 @@ public final class CoreOpenSslLoader {
      *
      * @param lookup the live symbol lookup
      * @param path   the candidate string that resolved (filesystem path or SONAME)
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ record ResolvedLibrary(SymbolLookup lookup, String path) {
     }

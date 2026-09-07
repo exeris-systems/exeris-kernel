@@ -16,7 +16,7 @@ package eu.exeris.kernel.spi.http;
  * <p>Enum constants are JVM singletons — no identity operations ({@code ==} comparisons
  * are valid because enums guarantee identity equality by specification).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum HttpMethod {
 

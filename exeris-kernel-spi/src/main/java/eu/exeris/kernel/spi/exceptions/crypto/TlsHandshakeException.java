@@ -8,7 +8,12 @@ import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
- * Thrown when a TLS handshake cannot be initiated or completed.
+ * Thrown when a TLS handshake cannot be initiated or completed, and on the encrypt path when
+ * {@code wrap} is called on a closed or not-yet-active session.
+ *
+ * <p>Carries {@link KernelErrorCodes#EX_NET_2001}, the encrypt/handshake-side code, which a
+ * Glass-Box decoder reads to separate this direction from the decrypt-side
+ * {@link TlsDecryptException} ({@code EX-NET-2003}).
  *
  * <h2>Hierarchy &amp; java:S110</h2>
  * <p>Extends {@link ExerisKernelException} <em>directly</em> (skipping the
@@ -23,7 +28,11 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * index 1 → String detail           (static message fragment, never formatted)
  * </pre>
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> allocates (one {@code rawArgs} array per instance) — except through the
+ * no-argument {@linkplain #TlsHandshakeException() sentinel constructor}, which reuses a static
+ * array and writes no stack trace, and is the form the hot path uses.
+ *
+ * @since 0.5
  */
 public final class TlsHandshakeException extends ExerisKernelException {
 
@@ -36,10 +45,27 @@ public final class TlsHandshakeException extends ExerisKernelException {
      */
     private static final Object[] SENTINEL_ARGS = {-1, null};
 
+    /**
+     * Reports a handshake failure the provider has a numeric code for, keeping that code out of
+     * the message and in the binary payload.
+     *
+     * @param nativeErrorCode provider-specific error code, stored at {@code rawArgs[0]};
+     *                        interpretation belongs to the implementation tier
+     * @param detail          static message fragment, never formatted at runtime; stored at
+     *                        {@code rawArgs[1]}
+     */
     public TlsHandshakeException(int nativeErrorCode, String detail) {
         super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, nativeErrorCode, detail);
     }
 
+    /**
+     * Reports a handshake failure that wraps an underlying throwable, typically an FFM downcall
+     * that threw out of {@code invokeExact}.
+     *
+     * @param detail static message fragment, never formatted at runtime; stored at
+     *               {@code rawArgs[1]} while {@code rawArgs[0]} holds the {@code -1} sentinel
+     * @param cause  the throwable that caused the failure
+     */
     public TlsHandshakeException(String detail, Throwable cause) {
         super(KernelErrorCodes.EX_NET_2001, MESSAGE, cause, -1, detail);
     }
@@ -64,10 +90,10 @@ public final class TlsHandshakeException extends ExerisKernelException {
      * (see {@code ExerisKernelException} Sentinel constructor contract).
      *
      * <p><strong>Usage:</strong> pre-allocate once as a static final field and rethrow:
-     * <pre>{@code
+     * {@snippet lang="java" :
      * private static final TlsHandshakeException SENTINEL =
      *         new TlsHandshakeException();
-     * }</pre>
+     * }
      */
     public TlsHandshakeException() {
         super(KernelErrorCodes.EX_NET_2001, MESSAGE, null, false, false, SENTINEL_ARGS);

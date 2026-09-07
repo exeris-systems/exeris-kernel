@@ -17,7 +17,7 @@ package eu.exeris.kernel.spi.transport;
  * <p>The ordinal of each constant is stable and guaranteed for binary serialization
  * and fast array-based routing. Do NOT reorder these constants.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum StreamPriority {
 

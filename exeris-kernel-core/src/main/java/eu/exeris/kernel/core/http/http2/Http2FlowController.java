@@ -22,7 +22,7 @@ package eu.exeris.kernel.core.http.http2;
  * MUST use QUIC-native flow control; reaching for this class from an H3 code path
  * is a contract violation.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-5.2">RFC 7540 §5.2</a>
  */
 public final class Http2FlowController {

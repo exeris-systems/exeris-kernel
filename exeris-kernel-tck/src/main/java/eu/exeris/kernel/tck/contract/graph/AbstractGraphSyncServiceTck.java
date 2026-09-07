@@ -39,7 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * Tests operate directly on {@link GraphSession} to verify session-level write, rollback,
  * and error-propagation contracts.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("TCK: GraphSession contract — dual-write, rollback, session-level operations")
 public abstract class AbstractGraphSyncServiceTck {

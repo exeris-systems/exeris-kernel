@@ -31,7 +31,7 @@ import jdk.jfr.StackTrace;
  * <p>Single-phase {@code commit()}; zero overhead when JFR is not recording. Not on the
  * read/write hot path — the sweep that emits it runs at most once per sweep interval.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @Name("eu.exeris.kernel.transport.CommunityConnectionIdleTimeout")
 @Label("Community Connection Idle Timeout")

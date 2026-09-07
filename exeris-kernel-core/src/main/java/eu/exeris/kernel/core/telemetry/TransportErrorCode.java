@@ -20,7 +20,7 @@ package eu.exeris.kernel.core.telemetry;
  * to obtain a stable integer for protocol frames. These codes are frozen — new entries
  * MUST be appended; existing entries MUST NOT be renumbered.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum TransportErrorCode {
 

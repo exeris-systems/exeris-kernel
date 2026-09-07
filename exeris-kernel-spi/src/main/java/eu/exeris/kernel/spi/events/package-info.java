@@ -32,7 +32,13 @@
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_ENGINE} during bootstrap
  * and inherited by all virtual threads via {@link java.lang.ScopedValue} semantics.
  *
- * @since 0.5.0
+ * <h2>Where ordering lives</h2>
+ * <p>{@link eu.exeris.kernel.spi.events.EventBus} is unordered by design; per-stream total
+ * ordering and append-with-expected-version optimistic concurrency belong to the durable-log
+ * surface, {@link eu.exeris.kernel.spi.events.EventStreamAppender} and
+ * {@link eu.exeris.kernel.spi.events.EventStreamReader}. Persistence owns neither.
+ *
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.events;
 

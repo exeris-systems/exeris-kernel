@@ -27,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <h2>Lifecycle</h2>
  * <p>Call {@link #close()} to unsubscribe all registered projections from the bus.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.CloseResource")
 public final class ProjectionEngine implements AutoCloseable {

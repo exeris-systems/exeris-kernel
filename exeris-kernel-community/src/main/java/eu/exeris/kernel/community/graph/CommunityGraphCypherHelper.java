@@ -25,7 +25,7 @@ import java.util.function.Function;
  * share this orchestrator as their {@link CypherExecutor}, so transactional cohesion is
  * preserved across reads and writes against a single session.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 // CommunityGraphBackend is wide; orchestrator implements every method via delegation
 // to Reader/Writer or via direct transaction-lifecycle handling, so the per-method

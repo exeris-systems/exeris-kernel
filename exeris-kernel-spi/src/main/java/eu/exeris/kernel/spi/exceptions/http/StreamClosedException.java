@@ -42,7 +42,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   index 1 → long eventsEmitted
  * </pre>
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class StreamClosedException extends ExerisKernelException {
 

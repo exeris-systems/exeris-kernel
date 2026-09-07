@@ -13,30 +13,40 @@ package eu.exeris.kernel.spi.diagnostics;
  * stop reinventing a fragile join over {@code SubsystemOrchestrator} / provider internals, which live in
  * {@code exeris-kernel-core} and would break The Wall (ADR-006) and drift on every refactor.
  *
- * <h2>State, not events (ADR-033 Obligation 10)</h2>
- * <p>This SPI answers "what is composed right now?" with a <em>snapshot</em>. It deliberately exposes
- * <b>no</b> event / tail / subscribe / watch surface: live event streaming stays on the JFR side
- * (Community) and the Glass-Box binary stream over {@code exeris-telemetry-spec} (Enterprise). See
- * ADR-039 for the open-core observability boundary.
+ * <p>It answers "what is composed right now?" with a <em>snapshot</em>, and carries <b>no</b> event /
+ * tail / subscribe / watch surface: live event streaming stays on the JFR side (Community) and on the
+ * Glass-Box binary stream over {@code exeris-telemetry-spec} (Enterprise). See ADR-039 for the open-core
+ * observability boundary.
  *
- * <h2>Cold-path discipline (ADR-033 Obligation 2)</h2>
- * <p>These methods MUST NOT be invoked from a request hot path. Allocation is permitted on each call
- * (record instantiation, defensive {@code List.copyOf(...)}, {@code Instant.now()}); the expected call
- * frequency is "per minute, not per request."
+ * <p>Each method captures its own {@link java.time.Instant} {@code capturedAt}, so a
+ * {@link #listProviders()} + {@link #getBootstrapDag()} pair may straddle a state transition; the SPI
+ * introduces no kernel-side locking to close that window (ADR-033 Obligation 7).
  *
- * <h2>Snapshot atomicity is best-effort (ADR-033 Obligation 7)</h2>
- * <p>Each method captures its own {@link java.time.Instant} {@code capturedAt}. A
- * {@link #listProviders()} + {@link #getBootstrapDag()} pair MAY straddle a state transition; the SPI
- * introduces no kernel-side locking to "fix" this. Consumers needing a consistent multi-snapshot view
- * reconstruct it from JFR event history.
+ * <p>An instance is obtained from a {@link KernelDiagnosticsProvider} loaded via
+ * {@link java.util.ServiceLoader}.
  *
- * <h2>Discovery &amp; open-core overlay</h2>
- * <p>Obtained from a {@link KernelDiagnosticsProvider} loaded via
- * {@link java.util.ServiceLoader}. Community ships a {@code priority() == 0} provider; the Enterprise
- * overlay ({@code priority() == 100}) returns the <em>same</em> record types with additional
- * Enterprise-only fields populated where useful — never a fork of the shapes (ADR-033 Obligation 6).
+ * <p><b>Allocation:</b> allocates (one snapshot record per call, plus the defensive
+ * {@code List.copyOf(...)} it holds and the {@code Instant.now()} it stamps) — permitted because the
+ * whole surface is cold path (ADR-033 Obligation 2).
+ * <p><b>Ownership:</b> the returned snapshots are immutable, defensively copied and owned by the
+ * caller; nothing is released, closed or handed back to the kernel, and holding one does not pin any
+ * kernel resource.
  *
- * @since 0.9.0
+ * @implSpec Every method returns a non-null snapshot stamped with {@link #SCHEMA_VERSION} and its own
+ *           {@code capturedAt}. State that cannot be read in the calling context degrades to an empty
+ *           list or {@link java.util.Optional#empty()} rather than throwing. An implementation must not
+ *           add kernel-side locking to make a multi-call view atomic (Obligation 7), must not grow an
+ *           event, tail, subscribe or watch surface (Obligation 10), and must return the record types of
+ *           this package unchanged — an overlay populates additional fields, it never forks the shapes
+ *           (Obligation 6).
+ * @apiNote  Cold path only: do not call these methods from a request hot path. Allocation is permitted
+ *           on every call and the expected frequency is "per minute, not per request" (ADR-033
+ *           Obligation 2). A consumer that needs a consistent multi-snapshot view reconstructs it from
+ *           JFR event history rather than from a burst of calls here.
+ * @implNote Community ships a {@code priority() == 0} provider; the Enterprise overlay
+ *           ({@code priority() == 100}) returns the <em>same</em> record types with additional
+ *           Enterprise-only fields populated where useful.
+ * @since 0.9
  */
 public interface KernelDiagnostics {
 
@@ -50,14 +60,17 @@ public interface KernelDiagnostics {
     String SCHEMA_VERSION = "1.0";
 
     /**
-     * Snapshot of the kernel providers discovered/active in this runtime.
+     * Names which provider implementation is serving each kernel SPI in this runtime: one
+     * {@link ProviderDescriptor} per discovered provider, carrying the SPI domain it serves and the
+     * priority it was discovered at.
      *
      * @return non-null immutable snapshot; {@code providers} may be empty before bootstrap completes
      */
     ProvidersSnapshot listProviders();
 
     /**
-     * Snapshot of the bootstrap dependency DAG (nodes + their declared dependencies).
+     * Exposes the resolved bootstrap topology: one {@link DagNode} per subsystem, carrying its phase,
+     * its declared {@code dependsOn} edges and whether it is currently running.
      *
      * @return non-null immutable snapshot; {@code nodes} may be empty before bootstrap completes
      */
@@ -82,16 +95,19 @@ public interface KernelDiagnostics {
      * THP / CDS / AOT state.
      *
      * <p>Strictly observational (no tuning recommendations — those are the Enterprise advisor's surface
-     * per ADR-008). Same cold-path and best-effort-atomicity discipline as the other three methods.
-     *
-     * <p>This method was added after the initial four-method surface; per ADR-033 Obligation 5 adding a
-     * method to the Java interface is a binary-breaking change for {@link KernelDiagnosticsProvider}
-     * implementations, so it ships as a {@code default} returning {@link RuntimeErgonomicsSnapshot#unknown()}
-     * (every environment-sensitive field {@link java.util.Optional#empty()}). A provider that does not
-     * override it stays binary-compatible; the Community and Enterprise providers override it with real
-     * {@code java.lang.management} + procfs/cgroupfs reads.
+     * per ADR-008). The cold-path and best-effort-atomicity discipline of the rest of this surface
+     * applies unchanged.
      *
      * @return non-null ergonomics snapshot; absent data is reported as {@link java.util.Optional#empty()}
+     * @implSpec The default implementation reads nothing from the environment and returns
+     *           {@link RuntimeErgonomicsSnapshot#unknown()} — a valid, non-null snapshot with every
+     *           environment-sensitive field {@link java.util.Optional#empty()} — so a
+     *           {@link KernelDiagnosticsProvider} written against the surface without this method stays
+     *           binary-compatible (ADR-033 Obligation 5). An implementation that overrides it reports a
+     *           value it cannot determine as {@link java.util.Optional#empty()}, never as a sentinel or
+     *           {@code null}.
+     * @implNote The Community and Enterprise providers override it with real
+     *           {@code java.lang.management} plus procfs / cgroupfs reads.
      */
     default RuntimeErgonomicsSnapshot getJvmErgonomics() {
         return RuntimeErgonomicsSnapshot.unknown();

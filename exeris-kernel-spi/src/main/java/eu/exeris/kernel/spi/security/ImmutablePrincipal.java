@@ -35,22 +35,24 @@ import java.util.UUID;
  *       OAuth2/OIDC)</li>
  * </ul>
  *
- * <h2>Valhalla Readiness</h2>
- * <p>Standard {@code record} — all fields are value-safe types.
- * Ready for {@code value record} migration (JEP 401).
- * No identity operations ({@code ==}, {@code synchronized},
- * {@code System.identityHashCode()}) are permitted.
- *
- * <h2>Thread Safety</h2>
- * <p>Deeply immutable. {@code roles} and {@code scopes} are
- * defensively copied via {@link Set#copyOf(java.util.Collection)}.
+ * <p><b>Allocation:</b> allocates (one record plus an immutable copy of {@code roles} and
+ * {@code scopes} at construction, via {@link Set#copyOf(java.util.Collection)}); the accessors then
+ * hand back the stored references without allocating further
+ * <p><b>Thread confinement:</b> any thread — deeply immutable, so one instance is safe to publish
+ * to every virtual thread that inherits the {@code PRINCIPAL_CONTEXT} binding
+ * <p><b>Ownership:</b> nothing to release — the record outlives no resource, and the caller's
+ * {@code roles} / {@code scopes} collections stay the caller's because they are copied, not adopted
  *
  * @param principalId UUIDv7 principal identifier (never {@code null})
  * @param tenantId    UUIDv7 tenant (empty for tenant-less / system)
  * @param roles       immutable role set (never {@code null})
  * @param scopes      immutable OAuth2 scope set (never {@code null})
  *
- * @since 0.5.0
+ * @apiNote No identity operation ({@code ==}, {@code synchronized},
+ *          {@code System.identityHashCode()}) is permitted on an instance: all components are
+ *          value-safe and the record is ready for {@code value record} migration (JEP 401), which
+ *          would make identity meaningless.
+ * @since 0.5
  * @see PrincipalContext
  */
 public record ImmutablePrincipal(
@@ -62,7 +64,10 @@ public record ImmutablePrincipal(
 
 
     /**
-     * Compact constructor — fail-fast validation and defensive copy.
+     * Compact constructor — rejects a null component and copies {@code roles} and {@code scopes}
+     * so a later mutation of the caller's collections cannot reach this principal.
+     *
+     * @throws NullPointerException if any component is {@code null}
      */
     public ImmutablePrincipal {
         Objects.requireNonNull(principalId, "principalId must not be null");
@@ -161,8 +166,9 @@ public record ImmutablePrincipal(
     }
 
     /**
-     * Masks a UUID for safe log output — delegates to the canonical
-     * {@link SpiDiagnostics#maskUuid(UUID)} shared across all SPI identity carriers.
+     * Masks a UUID for safe log output, so {@link #toString()} never publishes a full identifier —
+     * delegates to the canonical {@link SpiDiagnostics#maskUuid(UUID)} shared across all SPI
+     * identity carriers.
      *
      * <p>Example: {@code 01945a3b-f2c1-7...} → {@code 01945a3b~***}
      */

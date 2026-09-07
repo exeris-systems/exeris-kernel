@@ -27,7 +27,7 @@ import java.util.Objects;
  * <p>The {@code payload} is closed in all branches, including {@code Ignore} and
  * exception paths, via the try-with-resources block.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class FlowChoreographyBridge implements EventHandler {
 

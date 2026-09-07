@@ -33,9 +33,9 @@ package eu.exeris.kernel.spi.transport;
  * discovery, etc.). Blocking the carrier thread can starve many virtual threads and
  * degrade overall kernel throughput.
  *
+ * @since 0.5
  * @see TransportEngine#setConnectionHandler(ConnectionHandler)
  * @see TransportConnection
- * @since 0.5.0
  */
 @FunctionalInterface
 public interface ConnectionHandler {

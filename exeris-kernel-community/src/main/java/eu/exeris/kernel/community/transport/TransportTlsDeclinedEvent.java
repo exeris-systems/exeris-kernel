@@ -23,7 +23,7 @@ import jdk.jfr.StackTrace;
  * <p>The knob is legitimate; terminating TLS at a sidecar is an ordinary deployment. What is not
  * acceptable is that it should be undetectable, so the decision leaves a trail.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @Name("eu.exeris.kernel.transport.TransportTlsDeclined")
 @Label("Transport TLS Declined")

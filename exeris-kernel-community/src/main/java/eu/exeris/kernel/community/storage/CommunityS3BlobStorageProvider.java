@@ -26,7 +26,7 @@ import java.time.Clock;
  * bootstrap the SPI, two providers at one priority will need a configured choice rather than a
  * discovery order — that is a gap this slice records rather than closes.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class CommunityS3BlobStorageProvider implements BlobStorageProvider {
 

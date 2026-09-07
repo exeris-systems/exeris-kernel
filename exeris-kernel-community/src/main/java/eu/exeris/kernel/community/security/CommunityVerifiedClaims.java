@@ -23,7 +23,7 @@ import java.util.Set;
  * string is treated as absent; a driver that must deny on a malformed claim (e.g. a wrong-typed
  * isolation-strategy claim) does so during validation, not here.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class CommunityVerifiedClaims implements VerifiedClaims {
 

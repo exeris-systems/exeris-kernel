@@ -29,6 +29,6 @@
  * {@code EVENT_STREAM_APPENDER} precedent), inherited by every virtual thread in the
  * kernel scope.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 package eu.exeris.kernel.spi.events.codec;

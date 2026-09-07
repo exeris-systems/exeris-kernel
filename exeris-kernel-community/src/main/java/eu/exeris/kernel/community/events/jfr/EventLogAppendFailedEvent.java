@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  * exception's class name — never the payload bytes or the failure message (which could echo payload
  * content). {@code @StackTrace(false)}, guarded by {@link Event#isEnabled()}.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @Name("eu.exeris.kernel.events.EventLogAppendFailed")
 @Label("Event-Log Append Failed")

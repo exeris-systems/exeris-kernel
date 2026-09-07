@@ -72,7 +72,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * may fall below the JFR capture depth, producing false negatives. Filtering
  * by <em>allocated type</em> is invariant to inlining depth.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class JfrAllocationMonitor {
 

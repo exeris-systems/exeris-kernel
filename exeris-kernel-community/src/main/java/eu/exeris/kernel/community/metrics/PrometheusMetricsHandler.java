@@ -44,7 +44,7 @@ import java.util.Objects;
  * about scrape overhead should size the {@link MemoryAllocator}'s network slab
  * pool above their typical exposition size.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @SuppressWarnings({
     "PMD.CloseResource",                  // body ownership transfers to the engine on respond()

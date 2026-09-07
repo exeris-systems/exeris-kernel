@@ -22,7 +22,7 @@ import jdk.jfr.StackTrace;
  * exception's class name — never the payload bytes, the failure message, or {@code bootstrap.servers}
  * / credentials. {@code @StackTrace(false)}, guarded by {@link Event#isEnabled()}.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @Name("eu.exeris.kernel.events.kafka.EventLogAppendFailed")
 @Label("Kafka Event-Log Append Failed")

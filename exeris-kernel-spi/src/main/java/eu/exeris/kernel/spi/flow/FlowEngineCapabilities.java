@@ -7,18 +7,9 @@ package eu.exeris.kernel.spi.flow;
 /**
  * Immutable descriptor of the capabilities of a specific {@link FlowEngine} implementation.
  *
- * <h2>Usage</h2>
- * <p>Used by {@code KernelBootstrap} to populate JFR bootstrap events and emit operator
- * warnings (e.g., when deterministic execution is unavailable in Community tier).
- * TCK tests gate zero-alloc assertions against this descriptor.
- *
  * <h2>Valhalla Readiness</h2>
  * <p>All fields are {@code boolean} primitives or {@link String} — ideal for future
  * {@code value record} scalarisation. No identity operations used.
- *
- * <h2>O(1) Access</h2>
- * <p>Implementations MUST return a pre-built constant from
- * {@link FlowEngine#capabilities()} — never construct a new instance on every call.
  *
  * @param deterministicExecution {@code true} if the engine guarantees deterministic step
  *                               ordering (Enterprise only)
@@ -37,7 +28,14 @@ package eu.exeris.kernel.spi.flow;
  * @param providerId             stable identifier of the provider that created this engine
  *                               (e.g. {@code "community"}, {@code "enterprise"})
  *
- * @since 0.5.0
+ * @implSpec {@link FlowEngine#capabilities()} must hand back a pre-built constant, never an
+ *           instance constructed per call — the descriptor is read on diagnostic and bootstrap
+ *           paths that must not allocate.
+ * @apiNote The bootstrapper reads this to populate JFR bootstrap events and to warn an operator
+ *          about a guarantee the selected binding does not offer — deterministic execution, say.
+ *          The TCK gates its zero-allocation assertions on it for the same reason: the descriptor,
+ *          not the tier name, says what may be asserted.
+ * @since 0.5
  */
 public record FlowEngineCapabilities(
         boolean deterministicExecution,
@@ -53,38 +51,40 @@ public record FlowEngineCapabilities(
     // CHECKSTYLE.OFF: DeclarationOrder — static constants in records must follow components list
 
     /**
-     * Pre-built Community capabilities template.
+     * The capability set of a heap-based binding: persistence, compensation and choreography
+     * supported; no deterministic ordering, no off-heap descriptors, no lock-free scheduler, no
+     * zero-GC guarantee after start.
      *
-     * <p><b>Usage:</b> driver implementations SHOULD NOT return this constant directly
-     * from {@link FlowEngine#capabilities()} because its {@link #providerId()}
-     * is {@code "community"}, which may produce incorrect JFR/diagnostic metadata for
-     * custom providers. Instead, build a provider-branded cached constant once at
-     * class-load time:
-     * <pre>{@code
-     * private static final FlowEngineCapabilities CAPS =
-     *         FlowEngineCapabilities.COMMUNITY.withProvider("my-flow-community");
+     * @apiNote A driver should not return this constant from {@link FlowEngine#capabilities()} as
+     *          it stands — its {@link #providerId()} is {@code "community"}, which would mislabel
+     *          the driver in JFR and diagnostic output. Brand it once at class-load time and cache
+     *          the result:
+     *          {@snippet lang="java" :
+     *          private static final FlowEngineCapabilities CAPS =
+     *                  FlowEngineCapabilities.COMMUNITY.withProvider("my-flow-community");
      *
-     * public FlowEngineCapabilities capabilities() { return CAPS; }
-     * }</pre>
+     *          public FlowEngineCapabilities capabilities() { return CAPS; }
+     *          }
      */
     public static final FlowEngineCapabilities COMMUNITY = new FlowEngineCapabilities(
             false, false, false, false, true, true, true, "community"
     );
 
     /**
-     * Pre-built Enterprise capabilities template.
+     * The capability set of an off-heap binding: every flag set — deterministic ordering, off-heap
+     * descriptors, a lock-free scheduler, zero-GC after start, persistence, compensation and
+     * choreography.
      *
-     * <p><b>Usage:</b> driver implementations SHOULD NOT return this constant directly
-     * from {@link FlowEngine#capabilities()} because its {@link #providerId()}
-     * is {@code "enterprise"}, which may produce incorrect JFR/diagnostic metadata for
-     * custom providers. Instead, build a provider-branded cached constant once at
-     * class-load time:
-     * <pre>{@code
-     * private static final FlowEngineCapabilities CAPS =
-     *         FlowEngineCapabilities.ENTERPRISE.withProvider("my-flow-enterprise");
+     * @apiNote A driver should not return this constant from {@link FlowEngine#capabilities()} as
+     *          it stands — its {@link #providerId()} is {@code "enterprise"}, which would mislabel
+     *          the driver in JFR and diagnostic output. Brand it once at class-load time and cache
+     *          the result:
+     *          {@snippet lang="java" :
+     *          private static final FlowEngineCapabilities CAPS =
+     *                  FlowEngineCapabilities.ENTERPRISE.withProvider("my-flow-enterprise");
      *
-     * public FlowEngineCapabilities capabilities() { return CAPS; }
-     * }</pre>
+     *          public FlowEngineCapabilities capabilities() { return CAPS; }
+     *          }
      */
     public static final FlowEngineCapabilities ENTERPRISE = new FlowEngineCapabilities(
             true, true, true, true, true, true, true, "enterprise"
@@ -93,7 +93,10 @@ public record FlowEngineCapabilities(
     // CHECKSTYLE.ON: DeclarationOrder
 
     /**
-     * Compact constructor — validates invariants eagerly (fail-fast bootstrap).
+     * Validates the descriptor at construction, so a provider that cannot name itself fails during
+     * bootstrap rather than producing unattributable JFR records later.
+     *
+     * @throws IllegalArgumentException if {@code providerId} is {@code null} or blank
      */
     public FlowEngineCapabilities {
         if (providerId == null || providerId.isBlank()) {
@@ -102,21 +105,21 @@ public record FlowEngineCapabilities(
     }
 
     /**
-     * Returns a new descriptor identical to this one but with the given {@code providerId}.
+     * Rebrands a template ({@link #COMMUNITY} or {@link #ENTERPRISE}) with the caller's own
+     * provider identifier, so JFR and diagnostic output name the driver that is actually running
+     * rather than the template it started from.
      *
-     * <p>Intended for driver modules that want to reuse a standard template
-     * ({@link #COMMUNITY} or {@link #ENTERPRISE}) while stamping their own
-     * provider identifier for accurate JFR and diagnostic output. Call once at
-     * class-load time and cache the result — allocation happens only during bootstrap.
-     *
-     * <pre>{@code
+     * <p>{@snippet lang="java" :
      * private static final FlowEngineCapabilities CAPS =
      *         FlowEngineCapabilities.COMMUNITY.withProvider("community-flow");
-     * }</pre>
+     * }
      *
      * @param newProviderId stable provider identifier; must not be blank
-     * @return new descriptor with all flags from this instance, new providerId
-     * @throws IllegalArgumentException if {@code newProviderId} is blank
+     * @return a descriptor carrying every flag of this one under the new {@code providerId}; this
+     *         instance is unchanged
+     * @throws IllegalArgumentException if {@code newProviderId} is {@code null} or blank
+     * @apiNote Call it once at class-load time and cache the result — it allocates, which is why
+     *          {@link FlowEngine#capabilities()} must not call it per invocation.
      */
     public FlowEngineCapabilities withProvider(String newProviderId) {
         return new FlowEngineCapabilities(

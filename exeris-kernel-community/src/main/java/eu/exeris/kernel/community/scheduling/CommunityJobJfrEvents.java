@@ -26,7 +26,7 @@ import jdk.jfr.Timespan;
  * <p>Job names are developer-chosen identifiers. Nothing a job body touched, and no principal or
  * tenant identifier, is recorded.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityJobJfrEvents {
 

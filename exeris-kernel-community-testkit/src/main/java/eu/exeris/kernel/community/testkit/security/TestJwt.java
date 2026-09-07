@@ -47,7 +47,7 @@ import java.util.Objects;
  * LoanedBuffer buffer = builder.toBuffer();
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.TestClassWithoutTestCases", "PMD.UnitTestShouldUseTestAnnotation"})
 public final class TestJwt {

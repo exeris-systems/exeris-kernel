@@ -18,7 +18,7 @@ import java.util.function.Function;
  * operations against a single backend session — extraction is structural only, not a
  * boundary widening.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 interface CypherExecutor {
 

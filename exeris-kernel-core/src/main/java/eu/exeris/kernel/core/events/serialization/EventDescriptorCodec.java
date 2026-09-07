@@ -46,7 +46,7 @@ import java.nio.ByteOrder;
  * no {@code sun.misc.Unsafe} (banned). The VarHandles are static finals,
  * initialised once at class-load time (zero overhead on the hot path).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class EventDescriptorCodec {
 

@@ -25,7 +25,7 @@ import java.nio.charset.StandardCharsets;
  * <p>Any failure (null cipher pointer, null name pointer, FFM exception) returns an
  * empty string — cipher resolution MUST NEVER abort a completed handshake.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CipherNameReader {
 

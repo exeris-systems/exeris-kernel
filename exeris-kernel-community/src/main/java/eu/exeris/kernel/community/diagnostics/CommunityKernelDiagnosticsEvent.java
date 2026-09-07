@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * (construct → set → {@code commit()}); never a {@code begin()}→blocking→{@code commit()} straddle, which
  * would risk a carrier-bound {@code EventWriter} crash on a virtual thread.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @Name("eu.exeris.kernel.diagnostics.KernelDiagnostics")
 @Label("Kernel Diagnostics Call")

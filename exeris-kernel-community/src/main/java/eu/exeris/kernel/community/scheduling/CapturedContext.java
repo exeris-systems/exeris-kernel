@@ -16,7 +16,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * @param principal the submitting principal, or {@code null} if none was bound
  * @param storage   the submitting storage context, or {@code null} if none was bound
- * @since 0.11.0
+ * @since 0.11
  */
 record CapturedContext(PrincipalContext principal, StorageContext storage) {
 

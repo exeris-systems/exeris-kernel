@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  * so that JFR recordings contain a timestamped record of every sync failure without requiring
  * exception stack trace capture (overhead: ~0 ns when JFR is disabled).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.graph.SyncFailed")
 @Label("Graph Sync Failed (EX-GRPH-5003)")

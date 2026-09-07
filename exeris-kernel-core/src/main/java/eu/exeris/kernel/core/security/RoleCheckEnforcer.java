@@ -32,7 +32,7 @@ import eu.exeris.kernel.spi.security.RoleRegistry;
  * registry instance is constructor-injected by the operator's bootstrap;
  * tests inject a {@link RoleRegistry} stub.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class RoleCheckEnforcer {
 

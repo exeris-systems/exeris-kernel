@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * <p>Zero overhead when JFR is not recording ({@link #isEnabled()} guard).
  * No allocation on the hot path — phase names are enum constants, not strings.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.tls.PhaseTransition")
 @Label("TLS Phase Transition")

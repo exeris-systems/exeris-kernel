@@ -54,7 +54,7 @@ import java.io.IOException;
  * }</pre>
  *
  * @see JfrAllocationMonitor
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractSubsystemZeroAllocTck {
 

@@ -13,7 +13,7 @@ import eu.exeris.kernel.spi.storage.blob.BlobStore;
  *
  * <p>{@link BlobStorageConfig#location()} is read as the store root directory, created if absent.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class CommunityFilesystemBlobStorageProvider implements BlobStorageProvider {
 

@@ -38,7 +38,7 @@ import java.util.function.IntFunction;
  * {@link OutboxBrokerPort#publish(List)} at the cost of pipelining throughput. A future
  * iteration may switch to async send + barrier flush once the orchestrator can absorb gaps.
  *
- * @since 0.7.0
+ * @since 0.7
  * @see OutboxBrokerPort
  * @see KafkaEventEngine
  */

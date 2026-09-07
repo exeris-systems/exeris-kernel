@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * record of which provider (Community/Enterprise) was activated and at what priority.
  * SRE tooling uses this to confirm Enterprise was chosen over Community in production.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.BootstrapSelected")
 @Label("Persistence Bootstrap — Provider Selected")

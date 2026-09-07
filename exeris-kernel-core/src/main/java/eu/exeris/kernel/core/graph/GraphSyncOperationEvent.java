@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  * via {@link Event#begin()} / {@link Event#commit()}. SRE tooling uses this event
  * to measure p99 sync latency and spot topology drift between L1 and L2.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.graph.SyncOperation")
 @Label("Graph Sync Operation")

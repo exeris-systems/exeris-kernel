@@ -63,7 +63,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <p>No JWT library, no token parsing, no database call in this class.
  * Pure SPI-to-SPI translation.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.core.security.SecurityInterceptor
  * @see StorageContext
  * @see ImmutableStorageContext

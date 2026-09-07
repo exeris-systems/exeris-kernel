@@ -54,7 +54,7 @@ import java.util.function.Consumer;
  * <p>{@link Registration} is a {@code record} — no identity operations,
  * scalarization-eligible via C2 JIT Escape Analysis.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see DynamicConfigFileWatcher
  */
 // UnusedPrivateField: 'sealed' is managed exclusively by VarHandle.setRelease/getAcquire —

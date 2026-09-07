@@ -40,7 +40,7 @@ import java.lang.ref.Reference;
  * <p>This class intentionally implements the full {@link LoanedBuffer} contract here.
  * Splitting it would force subclasses to re-implement reference-counting boilerplate.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD TooManyMethods
 

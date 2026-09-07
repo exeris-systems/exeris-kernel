@@ -20,7 +20,7 @@ package eu.exeris.kernel.spi.events;
  *
  * @param committedSequence the 1-based per-stream sequence assigned to the appended event
  *        (the stream's new head); always {@code >= 1}
- * @since 0.10.0
+ * @since 0.10
  * @see EventStreamAppender
  */
 public record AppendResult(long committedSequence) {
@@ -29,7 +29,11 @@ public record AppendResult(long committedSequence) {
     public static final long FIRST_SEQUENCE = 1L;
 
     /**
-     * Compact constructor — validates the sequence is a valid 1-based head.
+     * Compact constructor — rejects a sequence that could not have come from a committed append,
+     * so a binding cannot report {@code 0} or a negative head as success.
+     *
+     * @throws IllegalArgumentException if {@code committedSequence} is below
+     *         {@link #FIRST_SEQUENCE}
      */
     public AppendResult {
         if (committedSequence < FIRST_SEQUENCE) {

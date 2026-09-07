@@ -57,7 +57,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * }
  * }</pre>
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @DisplayName("EventBus backpressure TCK — EVENT-205b EX-EVENT-6002 contract")
 public abstract class AbstractEventBackpressureTck {

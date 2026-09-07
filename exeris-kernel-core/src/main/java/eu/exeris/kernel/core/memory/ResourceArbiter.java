@@ -63,7 +63,7 @@ import java.lang.invoke.VarHandle;
  * @see WatermarkLevel
  * @see ScalingContext
  * @see ResourceArbiterDecisionEvent
- * @since 0.5.0
+ * @since 0.5
  */
 public final class ResourceArbiter {
 

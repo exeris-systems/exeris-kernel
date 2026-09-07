@@ -48,7 +48,7 @@ import java.util.concurrent.locks.LockSupport;
  * close), the owner virtual thread and {@code StructuredScope} wiring,
  * the poll-flush tick loop, and the fluent builder.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class OutboxOrchestrator implements AutoCloseable {
 

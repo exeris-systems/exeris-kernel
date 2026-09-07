@@ -37,7 +37,7 @@ import java.util.function.Consumer;
  * On a failed push (full or interrupted), the queue closes its own retain so the
  * caller's reference count is unchanged.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CommunityEventQueue implements EventQueue {
 

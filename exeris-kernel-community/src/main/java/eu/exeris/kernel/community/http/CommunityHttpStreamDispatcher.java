@@ -28,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@link HttpStreamEngine}; this class is the NIO-side wiring that hands it the
  * {@link NativeTcpStream}-backed {@link TransportStream} and the per-stream allocator.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class CommunityHttpStreamDispatcher {
 

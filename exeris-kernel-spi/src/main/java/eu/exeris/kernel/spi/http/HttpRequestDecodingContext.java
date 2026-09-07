@@ -26,26 +26,25 @@ import java.util.Objects;
  * implementation-blind (The Wall, ADR-006).
  *
  * <h2>The allocator is optional, and a decoder must not assume one</h2>
- * <p>{@code allocator} is {@code null} when the caller has none to offer. It was mandatory
- * until 0.12, which coupled every request-decode site to a bound
- * {@link eu.exeris.kernel.spi.context.KernelProviders#MEMORY_ALLOCATOR} — including sites whose
- * decoder never touches it. That coupling had a cost: an unbound slot surfaced inside a handler as
- * an exception from building the <em>context</em>, which reads as a malformed body rather than as
- * missing wiring.
+ * <p>{@code allocator} is {@code null} when the caller has none to offer, and a decoder that
+ * dereferences it unconditionally is broken rather than unlucky. Requiring one would couple every
+ * request-decode site to a bound
+ * {@link eu.exeris.kernel.spi.context.KernelProviders#MEMORY_ALLOCATOR}, including sites whose
+ * decoder never touches it — and an unbound slot would then surface inside a handler as a failure
+ * to build the <em>context</em>, which reads as a malformed body rather than as missing wiring.
  *
- * <p>The measurement behind the change: no decoder in the kernel reads it. The allocator earns its
- * place on the <em>encoding</em> contexts, where an encoder must produce an off-heap body; a decoder
- * is handed a {@link eu.exeris.kernel.spi.memory.LoanedBuffer} that is already allocated. A decoder
- * that genuinely needs auxiliary off-heap memory should take an allocator at construction, the way
- * it takes its object mapper — a per-request context is the wrong place to carry a per-decoder
- * dependency.
+ * <p>The allocator earns its place on the <em>encoding</em> contexts, where an encoder must produce
+ * an off-heap body; a decoder is handed a {@link eu.exeris.kernel.spi.memory.LoanedBuffer} that is
+ * already allocated. A decoder that genuinely needs auxiliary off-heap memory takes an allocator at
+ * construction, the way it takes its object mapper — a per-request context is the wrong place to
+ * carry a per-decoder dependency.
  *
  * @param method    request method (e.g., {@code POST}, {@code PUT}); non-null
  * @param path      request path (e.g., {@code /widgets}); non-null
  * @param headers   immutable request headers; non-null, may be empty
  * @param allocator allocator for any auxiliary off-heap buffers a decoder may need; may be
  *                  {@code null} — see above
- * @since 0.8.0
+ * @since 0.8
  */
 public record HttpRequestDecodingContext(
         HttpMethod method,
@@ -54,6 +53,13 @@ public record HttpRequestDecodingContext(
         MemoryAllocator allocator
 ) {
 
+    /**
+     * Rejects the three components a decoder is entitled to read unconditionally; {@code allocator}
+     * stays nullable, which is the whole point of the field.
+     *
+     * @throws NullPointerException if {@code method}, {@code path} or {@code headers} is
+     *                              {@code null}
+     */
     public HttpRequestDecodingContext {
         Objects.requireNonNull(method, "method must not be null");
         Objects.requireNonNull(path, "path must not be null");
@@ -66,7 +72,7 @@ public record HttpRequestDecodingContext(
      * @param method  request method; non-null
      * @param path    request path; non-null
      * @param headers immutable request headers; non-null, may be empty
-     * @since 0.12.0
+     * @since 0.12
      */
     public HttpRequestDecodingContext(HttpMethod method, String path, List<HttpHeader> headers) {
         this(method, path, headers, null);

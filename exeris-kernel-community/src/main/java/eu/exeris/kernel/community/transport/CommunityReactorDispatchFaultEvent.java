@@ -27,7 +27,7 @@ import jdk.jfr.StackTrace;
  * <p>Single-phase {@code commit()} on the reactor's platform thread; zero overhead when JFR is not
  * recording ({@link #isEnabled()} check). Not on the read/write ingress hot path.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @Name("eu.exeris.kernel.transport.CommunityReactorDispatchFault")
 @Label("Community Reactor Dispatch Fault")

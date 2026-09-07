@@ -26,7 +26,7 @@ import eu.exeris.kernel.spi.graph.GraphProvider;
  * <p>Registered via
  * {@code META-INF/services/eu.exeris.kernel.spi.graph.GraphProvider}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityGraphProvider implements GraphProvider {
 

@@ -17,7 +17,7 @@ import java.util.Optional;
  * rejection is an HTTP response; the status comes from the set already in use rather than a parallel
  * one minted for this surface (ADR-084 §6).
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class WebSocketHandshake {
 
@@ -74,13 +74,18 @@ public final class WebSocketHandshake {
     }
 
     /**
-     * @return whether the connection is established
+     * Returns whether this decision accepts the connection.
+     *
+     * @return {@code true} for either {@link #accept()} or {@link #accept(String)};
+     *         {@code false} for {@link #refuse(HttpStatus)}
      */
     public boolean accepted() {
         return accepted;
     }
 
     /**
+     * Returns the subprotocol this decision negotiated, if any.
+     *
      * @return the negotiated subprotocol, empty when none was agreed or the handshake was refused
      */
     public Optional<String> subprotocol() {
@@ -88,6 +93,8 @@ public final class WebSocketHandshake {
     }
 
     /**
+     * Returns the status a refusal answers the client with.
+     *
      * @return the status to answer a refusal with, empty when the handshake was accepted
      */
     public Optional<HttpStatus> refusalStatus() {

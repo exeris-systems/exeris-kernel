@@ -27,26 +27,29 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 1 – {@code String} reason (static failure description)</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class EventProviderException extends ExerisKernelException {
 
     private static final String MSG_PROVIDER_FAILURE = "Event provider engine creation failure";
 
     /**
-     * General-purpose constructor.
+     * Constructs a provider failure with no Glass-Box arguments.
      *
      * @param message static message template
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6004} and leaves {@code rawArgs} empty.
+     *          Prefer {@link #creationFailure(String, String, Throwable)} where it applies.
      */
     public EventProviderException(String message) {
         super(KernelErrorCodes.EX_EVENT_6004, message, (Throwable) null);
     }
 
     /**
-     * General-purpose constructor with cause.
+     * Constructs a provider failure that carries an upstream cause but no Glass-Box arguments.
      *
      * @param message static message template
      * @param cause   upstream throwable; may be {@code null}
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6004} and leaves {@code rawArgs} empty.
      */
     public EventProviderException(String message, Throwable cause) {
         super(KernelErrorCodes.EX_EVENT_6004, message, cause);
@@ -66,7 +69,10 @@ public class EventProviderException extends ExerisKernelException {
      * @param providerName logical name of the provider (e.g. {@code "StandardEvents"})
      * @param reason       static failure description
      * @param cause        upstream throwable; may be {@code null}
-     * @return a fully initialised {@link EventProviderException}
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6004} and the two-element
+     *         {@code rawArgs} layout above
+     * @apiNote {@code reason} is a static description, not an interpolated message — it is a
+     *          Glass-Box argument and reaches a decoder verbatim, so keep secrets out of it.
      */
     public static EventProviderException creationFailure(String providerName, String reason, Throwable cause) {
         return new EventProviderException(KernelErrorCodes.EX_EVENT_6004, MSG_PROVIDER_FAILURE, cause,

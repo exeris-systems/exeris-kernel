@@ -15,7 +15,7 @@ package eu.exeris.kernel.spi.http;
  * state to {@link #HTTP_3}. ALPN identifiers are transport-layer data and are not
  * modeled by this enum.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum HttpVersion {
 

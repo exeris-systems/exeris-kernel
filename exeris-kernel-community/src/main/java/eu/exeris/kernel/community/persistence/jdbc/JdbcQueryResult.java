@@ -27,7 +27,7 @@ import java.util.UUID;
  * Transport and auth are handled entirely by the JDBC driver (pgjdbc).
  * Community does NOT implement its own wire protocol.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class JdbcQueryResult implements QueryResult {
 

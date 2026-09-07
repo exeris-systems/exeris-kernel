@@ -50,7 +50,7 @@ import java.lang.foreign.ValueLayout;
  * field makes the client ignore it — WHATWG HTML §9.2). The {@code data} payload is split on CR, LF, or
  * CRLF into one {@code data:} line each, faithfully reproducing multi-line payloads on the client.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 // The class-level cyclomatic sum reflects a UTF-8 encoder split into small, single-purpose methods
 // (1/2/3/4-byte code-point branches + the field structure); it is inherent to correct encoding, not

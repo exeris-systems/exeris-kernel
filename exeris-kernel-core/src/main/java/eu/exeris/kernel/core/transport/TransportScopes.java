@@ -24,7 +24,7 @@ import eu.exeris.kernel.spi.transport.StreamPriority;
  * <h2>Valhalla Readiness</h2>
  * <p>This is a utility class of constants — no instances, no identity operations.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class TransportScopes {
 
@@ -62,7 +62,7 @@ public final class TransportScopes {
      * a protocol that does not read it simply never marks, which drains immediately rather than
      * hanging.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final ScopedValue<eu.exeris.kernel.core.transport.scheduler.DrainCoordinator>
             DRAIN_COORDINATOR = ScopedValue.newInstance();
@@ -74,7 +74,7 @@ public final class TransportScopes {
      * this handle, so an idle connection stops holding graceful shutdown open. A protocol that never
      * reports stays busy for the stream's lifetime, which is the safe default.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final ScopedValue<
             eu.exeris.kernel.core.transport.scheduler.DrainCoordinator.StreamWork> STREAM_WORK =

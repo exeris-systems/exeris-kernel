@@ -10,7 +10,7 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 /**
  * Minimal heap-based {@link FlowContext} for TCK test fixtures.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 record SimpleFlowContext(
         long instanceIdMost,

@@ -17,6 +17,6 @@
  * Glass-Box side; this SPI carries <em>state</em> only. The separation is enforced structurally by an
  * ArchUnit rule in {@code exeris-kernel-tck}.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 package eu.exeris.kernel.spi.diagnostics;

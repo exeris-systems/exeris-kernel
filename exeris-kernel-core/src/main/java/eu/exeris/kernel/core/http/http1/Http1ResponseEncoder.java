@@ -16,7 +16,7 @@ import java.util.Objects;
  * <p>Writes HTTP/1.1 status-line and header fields directly into a
  * {@link MemorySegment} — no intermediate String concatenation on the hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class Http1ResponseEncoder {
 

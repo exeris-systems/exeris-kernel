@@ -36,7 +36,28 @@ package eu.exeris.kernel.spi.websocket;
  * that cannot happen means the handler had something to say and could not, which is a failure it
  * has to see.
  *
- * @since 0.12.0
+ * <p><b>Allocation:</b> allocates — {@link #receive()} reassembles a message, continuation frames
+ * included, into a new {@code String} before returning it; a full egress window parks the sending
+ * thread rather than growing an on-heap queue, so a slow peer costs no memory that grows with the
+ * backlog.
+ * <p><b>Thread confinement:</b> {@link #receive()} is owner-thread — driven by the single virtual
+ * thread the handler runs on, one per connection; {@link #send(String)} is safe from any thread,
+ * with concurrent callers serialised rather than rejected.
+ * <p><b>Ownership:</b> the handler owns the exchange for the length of
+ * {@link WebSocketHandler#handle}; returning from that call closes the connection normally, and an
+ * explicit {@link #close()} or {@link #close(WebSocketCloseCode, String)} ends it early. Nothing
+ * here holds a resource beyond the connection itself.
+ *
+ * @implSpec Implementations must serialise concurrent {@link #send(String)} calls from different
+ *           threads rather than interleaving their frames — RFC 6455 forbids interleaving the
+ *           frames of two messages on one connection — and must never buffer egress on an
+ *           unbounded heap queue under backpressure (No Waste Compute): {@link #send(String)}
+ *           parks the calling virtual thread until the connection's egress window has credit
+ *           instead.
+ * @apiNote  A handler that wants concurrent work per message dispatches it to further virtual
+ *           threads; the connection's ordering stays the handler's to decide, which is what lets
+ *           it answer requests out of order.
+ * @since 0.12
  */
 public interface WebSocketExchange {
 
@@ -64,7 +85,8 @@ public interface WebSocketExchange {
      * Sends a text message, parking the calling virtual thread until the egress window has credit.
      *
      * @param message the text to send; must not be null
-     * @throws WebSocketClosedException when the connection is already closed or the peer has gone
+     * @throws eu.exeris.kernel.spi.exceptions.http.WebSocketClosedException
+     *         ({@code EX-HTTP-4014}) when the connection is already closed or the peer has gone
      */
     void send(String message);
 

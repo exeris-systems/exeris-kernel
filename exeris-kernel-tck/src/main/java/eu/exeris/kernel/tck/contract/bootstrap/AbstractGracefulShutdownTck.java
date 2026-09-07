@@ -64,7 +64,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * }
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractBootstrapOrchestratorTck
  * @see AbstractSubsystemProviderTck
  */

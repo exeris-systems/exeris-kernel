@@ -32,7 +32,7 @@ import java.util.Map;
  * itself: it is the one piece of schema whose creation has to stay idempotent, because there is
  * nothing to record it in.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 final class SchemaHistoryLedger {
 

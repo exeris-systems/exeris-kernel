@@ -21,7 +21,7 @@ import java.time.format.DateTimeFormatter;
  * the Enterprise {@code BinaryGlassBoxSink}. This sink MUST NOT be used in benchmarks
  * or hot-path testing.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class ConsoleSink implements TelemetrySink {
 

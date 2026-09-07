@@ -29,7 +29,7 @@ import java.util.function.UnaryOperator;
  *   <li>{@link #stop()} — closes the allocator, releasing all per-buffer arenas.</li>
  * </ol>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CommunityMemorySubsystem implements Subsystem {
 

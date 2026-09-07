@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * }
  * }</pre>
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @DisplayName("EventRegistry TCK — EVENT-205 ordinal conflict contract")
 public abstract class AbstractEventRegistryTck {

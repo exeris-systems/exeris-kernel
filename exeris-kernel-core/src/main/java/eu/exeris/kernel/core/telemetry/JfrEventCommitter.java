@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.LongAdder;
  * increments {@link #droppedCount()} and emits a {@link JfrCommitDropEvent} so operators can detect
  * runaway emission rates.
  *
- * @since 0.7.1
+ * @since 0.7
  * @see AsyncTelemetrySink
  */
 public final class JfrEventCommitter implements AutoCloseable {

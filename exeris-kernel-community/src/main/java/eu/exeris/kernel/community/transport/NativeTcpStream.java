@@ -48,7 +48,7 @@ import java.util.concurrent.locks.LockSupport;
  * callbacks, TLS handshake state machine, inbound state, and close
  * orchestration.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // QA-016 extracted 3 seams (PlainSocketIo, ConsumerGate, PendingWrite); residual TLS handshake state +
 // inbound/outbound machinery remains cohesive. QA-016b can extract inbound state if WMC threshold

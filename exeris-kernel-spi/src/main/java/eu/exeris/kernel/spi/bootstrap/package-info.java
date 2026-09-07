@@ -28,9 +28,9 @@
  *    on specific stacks such as io_uring, Netty, OpenSSL, JDBC, HikariCP, Spring, CDI,
  *    or any other concrete driver or framework.
  *
+ * @since 0.5
  * @see eu.exeris.kernel.spi.bootstrap.Subsystem
  * @see eu.exeris.kernel.spi.bootstrap.SubsystemProvider
- * @since 0.5.0
  */
 package eu.exeris.kernel.spi.bootstrap;
 

@@ -31,7 +31,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * redesign. ADR-082 added the abstraction and this is that substitution — the wait primitives stay
  * here, because a {@code ReentrantLock} has no business in the SPI.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 interface CommunitySchedulerClock extends TimeSource {
 

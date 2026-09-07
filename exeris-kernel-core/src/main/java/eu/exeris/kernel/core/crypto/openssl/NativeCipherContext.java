@@ -44,7 +44,7 @@ import java.lang.invoke.VarHandle;
  * kernel stability, but are always recorded via
  * {@link NativeCipherContextFreeFailureEvent} for flight-recorder diagnostics.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class NativeCipherContext implements AutoCloseable {
 

@@ -47,7 +47,7 @@ import jdk.jfr.StackTrace;
  * {@link StackTrace @StackTrace(false)} eliminates stack-walk overhead on the
  * connection-acquire hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.ConnectionAcquire")
 @Label("Persistence Connection Acquire")

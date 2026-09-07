@@ -32,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that performs a real request/response round-trip using SPI engines rather than fixture-only
  * lifecycle checks.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractHttpProviderLoopbackTck {
 

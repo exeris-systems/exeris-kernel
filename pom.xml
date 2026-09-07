@@ -576,6 +576,22 @@
                             <doclint>none</doclint>
                             <failOnError>false</failOnError>
                             <quiet>true</quiet>
+                            <!--
+                                The three OpenJDK contract tags of javadoc-conventions.md rule 6,
+                                registered here because an UNregistered custom tag is not an error
+                                under `doclint none` — it is a warning, and `quiet` swallows it,
+                                and the tag's entire body is then dropped from the generated page.
+                                Measured on `TlsSessionState`: 14,230 bytes without this block,
+                                14,764 with, and the sentence naming what an implementation must
+                                honour appears zero times in the first. The javadoc jar Central
+                                accepts would have been missing every contract this SPI states in
+                                a tag, with nothing in the build log loud enough to say so.
+                            -->
+                            <tags>
+                                <tag><name>apiNote</name><placement>a</placement><head>API Note:</head></tag>
+                                <tag><name>implSpec</name><placement>a</placement><head>Implementation Requirements:</head></tag>
+                                <tag><name>implNote</name><placement>a</placement><head>Implementation Note:</head></tag>
+                            </tags>
                         </configuration>
                     </plugin>
 

@@ -12,7 +12,7 @@ package eu.exeris.kernel.community.persistence;
  * identifier. Deliberately stricter than PostgreSQL itself: no quoting, no uppercase, no dollar signs and
  * no Unicode, because the kernel never needs them and every character allowed is one an attacker can try.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class PostgresIdentifier {
 

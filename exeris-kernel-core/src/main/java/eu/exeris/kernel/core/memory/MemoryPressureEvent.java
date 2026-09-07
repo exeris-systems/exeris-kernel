@@ -32,7 +32,7 @@ import jdk.jfr.StackTrace;
  *
  * @see WatermarkManager
  * @see WatermarkLevel
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.MemoryPressure")
 @Label("Memory Pressure Transition")

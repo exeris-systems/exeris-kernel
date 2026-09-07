@@ -22,7 +22,7 @@ import java.lang.foreign.ValueLayout;
  * <p>{@link #encode} writes Huffman-coded bits into the output segment with
  * RFC 7541 §5.2 EOS-padded alignment.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
         "PMD.CyclomaticComplexity",
@@ -197,7 +197,7 @@ public final class Huffman {
      * hierarchy. Not a checked exception — per Performance Contract, hot-path failures
      * use unchecked exceptions with pre-defined error codes.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class HuffmanDecodingException extends ExerisKernelException {
 

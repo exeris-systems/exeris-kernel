@@ -23,7 +23,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * failed. The difference is what separates a misconfigured deployment from a rejected caller, and it
  * is the whole reason this enum exists.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public enum SecurityDenialReason {
 

@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * <p>Emitted when adaptive buffer release logic determines that pipelined request
  * fraction is low, forcing buffer release to reduce memory footprint.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.http.AggregateBufferForcedRelease")
 @Label("HTTP Aggregate Buffer Forced Release")

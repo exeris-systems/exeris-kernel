@@ -30,7 +30,7 @@ import java.util.Optional;
  * <p>The resolver caches reflective accessors for performance and provides detailed error messages 
  *      when access is not possible, guiding users to use alternative binding methods if necessary.
  *
- * @since 0.6.0
+ * @since 0.6
  */
 final class SocketChannelFdReflectionResolver {
 

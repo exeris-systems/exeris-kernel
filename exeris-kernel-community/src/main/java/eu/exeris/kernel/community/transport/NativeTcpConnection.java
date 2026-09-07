@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Community TCP connection model: one connection maps to one bidirectional stream.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class NativeTcpConnection implements TransportConnection {
 

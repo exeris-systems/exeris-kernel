@@ -36,7 +36,7 @@ package eu.exeris.kernel.core.transport.scheduler;
  * implementation. The seam is Core-internal (not SPI) — it carries no driver or native detail
  * across The Wall.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @FunctionalInterface
 public interface StreamExecutionBackend {

@@ -38,7 +38,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * a provider slot, which is the usual shape of a host runtime's transaction manager — must run through
  * {@link #runInKernelScope(Runnable)} instead, or it will fail to resolve them.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface EmbeddedPersistenceEngineFixture extends AutoCloseable {
 

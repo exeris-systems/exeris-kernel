@@ -13,7 +13,7 @@ package eu.exeris.kernel.core.flow;
  *
  * @param definitionName the definition these versions belong to
  * @param fromVersion    the version being migrated away from
- * @since 0.11.0
+ * @since 0.11
  */
 /* default */ record MigrationKey(String definitionName, int fromVersion) {
 }

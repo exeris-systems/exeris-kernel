@@ -19,7 +19,10 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5003}
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> allocates (one {@code rawArgs} array per instance); no constructor
+ * formats a string, and the message text is a shared constant.
+ *
+ * @since 0.5
  */
 public final class GraphSyncException extends ExerisKernelException {
 

@@ -42,7 +42,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * After close, {@link #state()} still returns the last known state.
  *
  * @param <S> immutable projection state type
- * @since 0.5.0
+ * @since 0.5
  */
 public final class Projection<S> implements AutoCloseable {
 

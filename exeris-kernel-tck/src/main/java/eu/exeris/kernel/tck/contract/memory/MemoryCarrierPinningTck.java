@@ -21,7 +21,7 @@ import java.lang.foreign.ValueLayout;
  *
  * @see AbstractSubsystemCarrierPinningTck
  * @see AbstractZeroGcJfrMonitorTck
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Memory carrier pinning TCK")
 public abstract class MemoryCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {

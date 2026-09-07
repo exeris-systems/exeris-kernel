@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
  * <p>MVP scope validates a raw payload round-trip and strict malformed/bounds
  * behaviour expected from {@link EntityEncoder} and {@link EntityDecoder}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractEntityCodecTck {
 

@@ -42,7 +42,7 @@ import java.util.Objects;
  * (via {@code KernelHealthMonitor}) and is the canonical caller; tests inject any
  * stub probe and assert the response shape.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class HealthEndpointHandler implements HttpHandler {
 

@@ -23,9 +23,9 @@ package eu.exeris.kernel.spi.transport;
  * Higher-level protocol decoding (HTTP/3 frames, QPACK) is the handler's concern,
  * not the SPI's.
  *
+ * @since 0.5
  * @see TransportEngine#setStreamHandler(StreamHandler)
  * @see TransportStream
- * @since 0.5.0
  */
 @FunctionalInterface
 public interface StreamHandler {

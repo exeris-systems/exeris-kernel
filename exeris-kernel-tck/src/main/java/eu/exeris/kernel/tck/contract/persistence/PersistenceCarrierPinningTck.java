@@ -19,7 +19,7 @@ import org.junit.jupiter.api.DisplayName;
  *
  * @see AbstractSubsystemCarrierPinningTck
  * @see PersistenceZeroAllocTck
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Persistence carrier pinning TCK")
 public abstract class PersistenceCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {

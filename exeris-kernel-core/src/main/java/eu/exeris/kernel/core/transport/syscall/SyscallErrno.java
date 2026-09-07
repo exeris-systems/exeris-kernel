@@ -17,7 +17,7 @@ import static java.lang.foreign.ValueLayout.JAVA_INT;
 /**
  * Core helper for minimal POSIX errno inspection on retryable Berkeley socket paths.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class SyscallErrno {
 

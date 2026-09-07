@@ -16,7 +16,7 @@ import java.util.Map;
  * produce a trustworthy snapshot MUST signal failure via {@link KeySetRefreshException}
  * rather than returning an empty or partial map (fail-closed, ADR-012).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @FunctionalInterface
 /* default */ interface KeySetSource {

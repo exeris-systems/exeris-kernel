@@ -38,7 +38,7 @@ import java.util.concurrent.locks.LockSupport;
  *       any {@code eu.exeris.*} allocation on the measured scheduler hot path fails the build.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractSubsystemZeroAllocTck
  */
 @DisplayName("Flow step-transition JFR zero-allocation TCK")

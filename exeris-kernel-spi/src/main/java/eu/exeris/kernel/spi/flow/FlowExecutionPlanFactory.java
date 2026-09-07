@@ -15,30 +15,31 @@ import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
  * <h2>Two Responsibilities</h2>
  * <ol>
  *   <li><b>Build</b> — {@link #newDefinition(String)} returns a {@link FlowDefinitionBuilder}
- *       for constructing a {@link FlowDefinition} step-by-step (fluent API, analogous to
- *       the legacy {@code SagaBuilder}).</li>
+ *       for constructing a {@link FlowDefinition} step by step.</li>
  *   <li><b>Compile</b> — {@link #compile(FlowDefinition)} converts a completed definition
  *       into a ready-to-schedule {@link FlowExecutionPlan}.</li>
  * </ol>
  *
- * <h2>Why a Single Interface</h2>
- * <p>Build and compile are two phases of the same lifecycle: a definition is first
- * constructed (build), then compiled into a plan (compile). Keeping them together
- * avoids the DRY violation that would result from having separate {@code FlowBuilder}
- * and {@code FlowExecutionPlanFactory} interfaces with identical {@code compile()}
- * signatures. Obtain this factory via {@link FlowEngine#plans()}.
+ * <p>Build and compile are two phases of one lifecycle, which is why they share an interface
+ * rather than being split into two that would each need the same {@code compile()} signature.
+ * Obtain this factory via {@link FlowEngine#plans()}.
  *
- * <h2>Tier Contract</h2>
- * <ul>
- *   <li><b>Community</b>: {@link #newDefinition(String)} returns a heap-based builder.
- *       {@link #compile(FlowDefinition)} returns a heap-backed plan (no off-heap memory).</li>
- *   <li><b>Enterprise</b>: {@link #newDefinition(String)} returns a builder that validates
- *       step count against slab capacity at build time.
- *       {@link #compile(FlowDefinition)} writes descriptors directly into pre-allocated
- *       slab pools — zero heap allocation after {@link FlowEngine#start()}.</li>
- * </ul>
+ * <p><b>Allocation:</b> allocates (a builder per {@link #newDefinition}, a plan per
+ * {@link #compile}) — both are definition-registration calls, not step-execution ones, so the
+ * cost is paid before the flows that use the plan run.
+ * <p><b>Thread confinement:</b> any thread — both methods are safe to call from any virtual
+ * thread once {@link FlowEngine#start()} has returned.
+ * <p><b>Ownership:</b> the engine owns the compiled plan and the catalog slot it occupies, and
+ * retains it for the engine's lifetime; {@link FlowEngineConfig#maxExecutionPlans()} bounds that
+ * catalog, counting each retained definition version separately, and retiring a version is an
+ * operator action the kernel does not reclaim on its own.
  *
- * @since 0.5.0
+ * @implSpec Neither method may hold a long-lived lock that would stall a carrier thread.
+ * @implNote The Community binding returns a heap-based builder and a heap-backed plan. The
+ *           Enterprise binding returns a builder that validates step count against slab capacity at
+ *           build time, and compiles by writing descriptors straight into pre-allocated slab pools,
+ *           so nothing lands on the heap after {@link FlowEngine#start()}.
+ * @since 0.5
  * @see FlowDefinitionBuilder
  * @see FlowDefinition
  * @see FlowExecutionPlan
@@ -54,19 +55,28 @@ public interface FlowExecutionPlanFactory {
      * Safe to call from any virtual thread after {@link FlowEngine#start()}.
      *
      * @param definitionName the unique name for the new flow definition; must not be blank
-     * @return a new, empty {@link FlowDefinitionBuilder}; never {@code null}
+     * @return a new, empty {@link FlowDefinitionBuilder} bound to {@code definitionName}; never
+     *         {@code null}. It is confined to the calling thread and produces one definition
+     * @apiNote Assemble every version of a definition through this builder, declaring the version
+     *          with {@link FlowDefinitionBuilder#version(int)} — the factory records a definition's
+     *          transitions when {@link FlowDefinitionBuilder#build()} runs, so a definition record
+     *          built by hand under a name this builder never saw compiles without its edges.
      */
     FlowDefinitionBuilder newDefinition(String definitionName);
 
     /**
      * Compiles the given {@link FlowDefinition} into a ready-to-execute {@link FlowExecutionPlan}.
      *
-     * <p>Safe to call from any virtual thread after {@link FlowEngine#start()}.
-     * Implementations MUST NOT hold long-lived locks that would stall carrier threads.
+     * <p>Safe to call from any virtual thread after {@link FlowEngine#start()}. The plan is
+     * catalogued under {@code (name, version)}, so compiling a new version leaves the versions
+     * already there in place for the sagas parked under them.
      *
      * @param definition the flow definition to compile; must not be {@code null}
-     * @return compiled execution plan; never {@code null}
-     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if compilation fails
+     * @return the compiled execution plan, ready to hand to
+     *         {@link FlowScheduler#schedule(FlowExecutionPlan, eu.exeris.kernel.spi.flow.model.FlowContext)};
+     *         never {@code null}
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException {@code EX-FLOW-7002} with
+     *         {@code phase="COMPILE"} and {@code reasonCode="COMPILE_FAILED"} if compilation fails
      *         (e.g., slab pool exhausted in Enterprise, or invalid step graph topology)
      */
     FlowExecutionPlan compile(FlowDefinition definition);
@@ -81,37 +91,34 @@ public interface FlowExecutionPlanFactory {
      * catalogue offers no name-to-versions index, and adding a scan to the resume success path would
      * cost more than the feature is worth.
      *
-     * <p>Registering is optional and additive. An application that registers none keeps the v0.11
-     * behaviour: a saga parked under a version this engine no longer hosts is refused rather than
-     * moved, and the refusal leaves the row recoverable.
-     *
-     * <p><b>Default: refuse.</b> {@code eu.exeris.kernel.spi.flow} is declared stable since 0.5.0, and
-     * an abstract method added to a stable interface compiles away every existing implementor. The
-     * default keeps them compiling; it does not fabricate migration support, because a factory that
-     * cannot chain versions must say so rather than accept a transform it will never apply — a
-     * registration silently swallowed is worse than one refused, since the saga it was meant to carry
-     * would then be refused later with a reason pointing at the wrong remedy. Implementations that
-     * support ADR-064 override this.
-     *
-     * <p>Binary compatibility would not have required the default: adding a method to an interface
-     * links fine until it is invoked. Source compatibility does, and an implementor discovering the
-     * difference at the next compile is not a meaningfully better outcome.
-     *
-     * <p>{@code FlowSnapshotStore.listParked()} was added under the same rule in 0.7.0 and took the
-     * <em>opposite</em> disposition — its default returns an empty list. The divergence is the point,
-     * not an inconsistency: an empty parked list is a truthful degenerate answer for a store that does
-     * not track them, whereas there is no truthful degenerate answer to "register this transform".
-     * Accepting one and never applying it would report success for work that will not happen. So the
-     * rule generalises and the body does not: read the two together as "a stable interface needs a
-     * default", never as "defaults no-op".
+     * <p>Registering is optional and additive. An application that registers none keeps the
+     * unmigrated behaviour: a saga parked under a version this engine no longer hosts is refused
+     * rather than moved, and the refusal leaves the row recoverable.
      *
      * @param definitionName the definition these versions belong to; must not be {@code null} or blank
      * @param fromVersion    the version being migrated away from; must be {@code >= 1}
      * @param migration      the transform; must not be {@code null}
-     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException if a migration is already
-     *         registered for that definition and version
+     * @throws eu.exeris.kernel.spi.exceptions.flow.FlowEngineException {@code EX-FLOW-7002} if a
+     *         migration is already registered for that definition and version — a second transform
+     *         is refused rather than silently replacing the first
      * @throws UnsupportedOperationException if this factory does not support in-flight migration
-     * @since 0.11.0
+     * @implSpec The default refuses. {@code eu.exeris.kernel.spi.flow} is a stable package, and an
+     *           abstract method added to a stable interface compiles away every existing
+     *           implementor; the default keeps them compiling without fabricating migration
+     *           support. A factory that cannot chain versions has to say so rather than accept a
+     *           transform it will never apply — a registration silently swallowed reports success
+     *           for work that will not happen, and the saga it was meant to carry is then refused
+     *           later with a reason pointing at the wrong remedy. An implementation supporting
+     *           ADR-064 overrides this.
+     * @implNote Binary compatibility would not have required the default: a method added to an
+     *           interface links fine until it is invoked. Source compatibility does.
+     *           {@code FlowSnapshotStore.listParked()} carries a default under the same rule and
+     *           takes the <em>opposite</em> disposition — it returns an empty list — because an
+     *           empty parked list is a truthful degenerate answer for a store that tracks none,
+     *           whereas there is no truthful degenerate answer to "register this transform". Read
+     *           the two together as "a stable interface needs a default", never as "defaults
+     *           no-op".
+     * @since 0.11
      */
     default void registerMigration(String definitionName, int fromVersion, FlowDefinitionMigration migration) {
         throw new UnsupportedOperationException(

@@ -28,7 +28,7 @@ import java.util.UUID;
  * <p>Adjacency is provided at construction time via {@link Builder} and is immutable
  * after construction; safe for concurrent access without synchronisation.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // CouplingBetweenObjects: Dijkstra + Yen's require HashMap/ArrayList/PriorityQueue/HashSet/Deque —
 // inherent algorithm data structures, not dependency coupling.

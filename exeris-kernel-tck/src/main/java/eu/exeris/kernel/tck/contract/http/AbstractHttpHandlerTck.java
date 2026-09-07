@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>A {@link RuntimeException} thrown by the handler propagates unwrapped</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractHttpHandlerTck {
 

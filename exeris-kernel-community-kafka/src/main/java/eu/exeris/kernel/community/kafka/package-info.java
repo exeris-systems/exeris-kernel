@@ -34,7 +34,7 @@
  *
  * <p>The durable event-log bindings {@link KafkaEventStreamAppender} and
  * {@link KafkaEventStreamReader} (ADR-049 append-with-expected-version + per-stream ordering,
- * {@code @since 0.10.0}) are implemented; see {@code docs/subsystems/events.md}.
+ * {@code @since 0.10}) are implemented; see {@code docs/subsystems/events.md}.
  *
  * <h2>Deferred</h2>
  * <ul>
@@ -45,6 +45,6 @@
  *   <li>Consumer-rebalance behavior under in-flight choreography (TCK extension).</li>
  * </ul>
  *
- * @since 0.7.0
+ * @since 0.7
  */
 package eu.exeris.kernel.community.kafka;

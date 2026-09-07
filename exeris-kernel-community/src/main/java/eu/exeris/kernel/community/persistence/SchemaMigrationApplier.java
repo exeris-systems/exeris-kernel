@@ -22,7 +22,7 @@ import java.util.regex.Matcher;
  * {@code TooManyMethods} ceiling — a limit this repository has twice met by inlining a helper to fit,
  * which trades a real structure for a passing gate.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 final class SchemaMigrationApplier {
 

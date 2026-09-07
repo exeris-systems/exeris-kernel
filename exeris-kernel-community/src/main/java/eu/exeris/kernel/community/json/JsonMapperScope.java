@@ -31,7 +31,7 @@ package eu.exeris.kernel.community.json;
  * an application simply builds its own codec with its own mapper. The provider-exposed default
  * client codecs are covered by {@link #HTTP_REQUEST_ENCODE} + {@link #HTTP_RESPONSE_DECODE}.
  *
- * @since 0.10.1
+ * @since 0.10
  */
 public enum JsonMapperScope {
 

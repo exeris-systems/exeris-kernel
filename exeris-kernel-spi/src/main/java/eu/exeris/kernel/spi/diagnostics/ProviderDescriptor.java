@@ -14,7 +14,7 @@ import java.util.Optional;
  * @param spiType      the SPI domain this provider serves (e.g. {@code "telemetry"}, {@code "memory"})
  * @param priority     the provider's discovery priority (Community = 0, Enterprise = 100)
  * @param displayName  optional human-friendly name, when distinct from {@code providerName}
- * @since 0.9.0
+ * @since 0.9
  */
 public record ProviderDescriptor(
         String providerName,
@@ -22,6 +22,13 @@ public record ProviderDescriptor(
         int priority,
         Optional<String> displayName) {
 
+    /**
+     * Rejects a {@code null} component: an absent {@code displayName} is carried as
+     * {@link Optional#empty()}, never as {@code null}.
+     *
+     * @throws NullPointerException if {@code providerName}, {@code spiType} or {@code displayName}
+     *                              is {@code null}
+     */
     public ProviderDescriptor {
         Objects.requireNonNull(providerName, "providerName");
         Objects.requireNonNull(spiType, "spiType");

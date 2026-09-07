@@ -31,7 +31,7 @@ import java.util.ServiceLoader;
  * accident, which matches the fail-closed doctrine the surrounding identity code already applies to
  * an unclaimed token.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityClaimsMapperResolver {
 

@@ -44,7 +44,7 @@ import java.util.Set;
  * <h2>Thread safety</h2>
  * <p>Thread-safe. Immutable state, pure lookup.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class CanonicalHeaderNames {
 

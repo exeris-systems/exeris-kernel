@@ -59,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @see AbstractMemoryAllocatorTck
  * @see LeakDetectionMode#PARANOID
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractMemoryLeakDetectionTck {
 

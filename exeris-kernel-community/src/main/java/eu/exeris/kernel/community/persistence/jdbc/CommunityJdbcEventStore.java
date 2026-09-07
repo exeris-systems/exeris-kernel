@@ -23,7 +23,7 @@ import java.util.UUID;
  * {@link PersistenceConnection}. Connection ownership and pooling are managed by
  * the caller (typically {@code CommunityPersistenceEngine} / request scope).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityJdbcEventStore implements EventStore {
 

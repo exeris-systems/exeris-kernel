@@ -44,7 +44,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>{@code close()} is idempotent</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractPersistenceEngineTck {
 

@@ -47,7 +47,7 @@ import java.util.Objects;
  *         {@code ResourceArbiter} integration is complete.
  * @see ResourceArbiter
  * @see <a href="../../../../docs/subsystems/memory.md">Memory Subsystem: ScalingContext</a>
- * @since 0.5.0
+ * @since 0.5
  */
 public record ScalingContext(
         String tierName,

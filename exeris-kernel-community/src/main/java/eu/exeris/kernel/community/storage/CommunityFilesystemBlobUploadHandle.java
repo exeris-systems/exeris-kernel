@@ -24,7 +24,7 @@ import java.nio.file.StandardOpenOption;
  * <p>Nothing is visible at the target path until {@link #commit()} succeeds, so an aborted or crashed
  * upload cannot be mistaken for a complete object.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityFilesystemBlobUploadHandle implements BlobUploadHandle {
 

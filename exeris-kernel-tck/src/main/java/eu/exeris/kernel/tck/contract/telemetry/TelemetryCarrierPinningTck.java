@@ -18,7 +18,7 @@ import org.junit.jupiter.api.DisplayName;
  *
  * @see AbstractSubsystemCarrierPinningTck
  * @see TelemetryZeroAllocTck
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Telemetry carrier pinning TCK")
 public abstract class TelemetryCarrierPinningTck extends AbstractSubsystemCarrierPinningTck {

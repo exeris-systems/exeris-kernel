@@ -31,7 +31,7 @@ import java.util.Set;
  * JDBC pass-through it has always been, and the subsystem doc says so rather than implying a
  * promise the driver cannot keep.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 final class PgTypeSet {
 

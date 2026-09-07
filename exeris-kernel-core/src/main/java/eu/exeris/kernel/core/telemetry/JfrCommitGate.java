@@ -20,7 +20,7 @@ import jdk.jfr.Event;
  * direct, synchronous {@code commit()} — correct for unit tests and any path that runs outside a
  * booted kernel (and on a platform thread there, so inline commit is safe).
  *
- * @since 0.7.1
+ * @since 0.7
  */
 public final class JfrCommitGate {
 

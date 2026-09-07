@@ -70,7 +70,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  * }
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractCryptoEngineTck {
 
@@ -114,7 +114,7 @@ public abstract class AbstractCryptoEngineTck {
      * are skipped via {@link org.junit.jupiter.api.Assumptions#assumeTrue}.
      *
      * @return {@code true} if wrap/unwrap can be exercised without a real socket
-     * @since 0.5.0
+     * @since 0.5
      */
     protected boolean isIoReady() {
         return true;

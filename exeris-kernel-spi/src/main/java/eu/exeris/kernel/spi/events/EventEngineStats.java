@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.events;
  * @param avgDispatchNanos  exponentially-weighted average dispatch latency in nanoseconds
  * @param loopRunning       {@code true} if the event loop is currently running
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventEngine#stats()
  */
 public record EventEngineStats(
@@ -51,9 +51,12 @@ public record EventEngineStats(
     // CHECKSTYLE.ON: DeclarationOrder
 
     /**
-     * Returns the percentage of queue capacity currently used.
+     * Expresses queue pressure as a fraction of capacity — the number an operator alerts on when
+     * back-pressure starts to bite.
      *
-     * @return value in range [0.0, 1.0]
+     * @return {@code queueDepth / queueCapacity}, in the range [0.0, 1.0]; {@code 0.0} when
+     *         {@code queueCapacity} is zero, so an unconfigured queue reads as idle rather than
+     *         dividing by zero
      */
     public double queueUtilization() {
         if (queueCapacity <= EMPTY_CAPACITY) {
@@ -63,9 +66,11 @@ public record EventEngineStats(
     }
 
     /**
-     * Returns the error rate as a fraction of total processed events.
+     * Expresses handler failures as a fraction of everything the engine has dispatched since
+     * start — a lifetime ratio, not a windowed rate.
      *
-     * @return value in range [0.0, 1.0]
+     * @return {@code failedTotal / processedTotal}, in the range [0.0, 1.0]; {@code 0.0} when
+     *         nothing has been processed yet
      */
     public double errorRate() {
         if (processedTotal <= EMPTY_PROCESSED) {

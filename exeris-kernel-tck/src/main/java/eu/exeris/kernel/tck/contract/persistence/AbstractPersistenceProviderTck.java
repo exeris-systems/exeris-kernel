@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>Provider is discoverable via {@link ServiceLoader}</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractPersistenceProviderTck {
 

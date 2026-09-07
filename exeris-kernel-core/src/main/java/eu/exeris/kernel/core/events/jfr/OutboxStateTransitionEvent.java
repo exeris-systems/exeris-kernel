@@ -12,7 +12,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted when the Outbox Orchestrator transitions between states.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Label("Outbox State Transition")
 @Category({"Exeris", "Events", "Outbox"})

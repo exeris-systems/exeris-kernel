@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  * allows for L0 memory, telemetry, and crypto subsystems to initialise without
  * exceeding the Kubernetes readiness probe timeout.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)

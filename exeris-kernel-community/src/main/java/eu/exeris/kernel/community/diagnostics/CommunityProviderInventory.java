@@ -29,7 +29,7 @@ import java.util.function.ToIntFunction;
  * {@link ServiceLoader} discovery (highest {@code priority()} per SPI). Discovery-based, so it works with
  * no kernel scope and no infrastructure — never reaches into {@code exeris-kernel-core} (The Wall).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 final class CommunityProviderInventory {
 

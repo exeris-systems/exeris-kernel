@@ -40,7 +40,7 @@ import java.util.concurrent.TimeUnit;
  * Valhalla-ready data carriers (records, immutable finals) to allow JIT escape
  * analysis to scalarize them during the measurement phase.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.Throughput)

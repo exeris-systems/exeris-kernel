@@ -37,7 +37,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * a length outside {@code [1, 255]} means no ALPN was negotiated; the method returns
  * an empty string in that case.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class AlpnReader {
     /**

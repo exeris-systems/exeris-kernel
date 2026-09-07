@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 /**
  * TCK: Abstract base for choreography-driven flow orchestration contract verification.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractFlowChoreographyTck {
 

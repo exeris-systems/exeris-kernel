@@ -35,7 +35,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * <p>Imports only {@code exeris-kernel-spi}. Completely ignorant of JDBC, HikariCP,
  * pgjdbc, or the PG wire protocol. Operates on plain {@code String} SQLState codes.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
 public final class PersistenceErrorTranslator {

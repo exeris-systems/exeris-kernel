@@ -28,7 +28,7 @@ import java.util.function.UnaryOperator;
  * can influence. A dependency declared for narrative tidiness constrains the boot graph on a fiction
  * and buys nothing.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunitySchedulingSubsystem extends AbstractCommunitySubsystem {
 

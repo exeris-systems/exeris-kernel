@@ -34,7 +34,7 @@ import jdk.jfr.StackTrace;
  * </pre>
  *
  * @see LeakTracker
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.BufferLeak")
 @Label("LoanedBuffer Leak Detected")

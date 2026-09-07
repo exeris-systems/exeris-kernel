@@ -21,7 +21,7 @@ import java.lang.foreign.ValueLayout;
  * queue write on a stream → close buffer. Enterprise tier must achieve zero
  * {@code eu.exeris.*} heap allocations. Community tier is bounded.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class TransportZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 

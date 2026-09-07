@@ -25,7 +25,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * @param initialWindowSize    SETTINGS_INITIAL_WINDOW_SIZE (default: 65535)
  * @param maxFrameSize         SETTINGS_MAX_FRAME_SIZE (default: 16384)
  * @param maxHeaderListSize    SETTINGS_MAX_HEADER_LIST_SIZE (default: {@code -1} — no limit)
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.5">RFC 7540 §6.5</a>
  */
 public record Http2Settings(
@@ -139,7 +139,7 @@ public record Http2Settings(
     /**
      * Unchecked validation exception for HTTP/2 SETTINGS parameter violations.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class Http2SettingsException extends ExerisKernelException {
 

@@ -15,7 +15,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted by {@link GraphMetadataEngine} after each discovery pass.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.graph.MetadataDiscovery")
 @Label("Graph Metadata Discovery")

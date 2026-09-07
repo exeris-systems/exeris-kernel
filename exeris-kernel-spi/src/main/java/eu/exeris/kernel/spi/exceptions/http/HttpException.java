@@ -38,7 +38,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   index 2 → int    port (-1 if not applicable)
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class HttpException extends ExerisKernelException {
 

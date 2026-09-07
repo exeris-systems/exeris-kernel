@@ -26,7 +26,7 @@ import java.util.List;
  * <p>Registered via {@code META-INF/services/eu.exeris.kernel.spi.telemetry.TelemetryProvider}.
  * Returns {@link #priority()} = 0; Enterprise wins with 100.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.CloseResource") // sinks created/closed atomically; lifecycle delegated to caller
 public final class CommunityTelemetryProvider implements TelemetryProvider {

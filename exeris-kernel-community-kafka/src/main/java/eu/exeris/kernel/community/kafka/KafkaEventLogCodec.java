@@ -36,7 +36,7 @@ import java.nio.ByteOrder;
  * stream → same key → same partition → offset order == append order == {@code committedSequence}
  * order. Big-endian, unaligned VarHandles (heap-backed segments carry a 1-byte alignment).
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class KafkaEventLogCodec {
 

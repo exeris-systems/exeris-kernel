@@ -35,7 +35,7 @@ import jdk.jfr.StackTrace;
  *
  * <p>Single-phase {@code commit()}, zero overhead when JFR is not recording.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @Name("eu.exeris.kernel.transport.CommunityConnectionRefused")
 @Label("Community Connection Refused")

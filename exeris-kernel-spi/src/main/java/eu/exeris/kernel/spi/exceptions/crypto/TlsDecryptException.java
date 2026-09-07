@@ -28,7 +28,11 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * {@code Object → Throwable → Exception → RuntimeException →
  * ExerisKernelException → TlsDecryptException}.
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> allocates (one {@code rawArgs} array per instance) — except through the
+ * no-argument {@linkplain #TlsDecryptException() sentinel constructor}, which reuses a static
+ * array and writes no stack trace, and is the form the hot path uses.
+ *
+ * @since 0.5
  */
 public final class TlsDecryptException extends ExerisKernelException {
 
@@ -78,9 +82,9 @@ public final class TlsDecryptException extends ExerisKernelException {
      * <strong>no heap allocation occurs</strong>.
      *
      * <p><strong>Usage:</strong> pre-allocate once as a static final field and rethrow:
-     * <pre>{@code
+     * {@snippet lang="java" :
      * private static final TlsDecryptException SENTINEL = new TlsDecryptException();
-     * }</pre>
+     * }
      */
     public TlsDecryptException() {
         super(KernelErrorCodes.EX_NET_2003, MESSAGE, null, false, false, SENTINEL_ARGS);

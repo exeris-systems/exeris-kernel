@@ -26,9 +26,8 @@ import eu.exeris.kernel.spi.context.KernelProviders;
  *
  * <h2>Allocation policy</h2>
  * <p>Disclosure is invoked at the rendering boundary (sink emission, HTTP response
- * shaping) — not on the throw hot-path. A single {@code String.concat} is permitted
- * for the opaque envelope to keep correlation possible. Hot-path code MUST keep using
- * {@link ExerisKernelException#rawArgs()} directly for binary serialisation.
+ * shaping) — not on the throw hot-path, where a single {@code String.concat} is an
+ * acceptable cost for building the opaque envelope.
  *
  * <h2>Profile resolution</h2>
  * <p>{@link #activeProfile()} reads {@link KernelProviders#CURRENT_CONFIG} and falls
@@ -36,9 +35,12 @@ import eu.exeris.kernel.spi.context.KernelProviders;
  * bootstrap before the config provider is wired). PROD is the safe default — no
  * operator-visible artifact should leak detail before the profile is known.
  *
+ * @apiNote Hot-path code must keep reading {@link ExerisKernelException#rawArgs()} directly for
+ *          binary serialisation; the helpers here are for the rendering boundary only, not a
+ *          replacement for it.
+ * @since 0.7
  * @see ExerisKernelException
  * @see KernelProfile
- * @since 0.7.0
  */
 public final class ExceptionDisclosure {
 

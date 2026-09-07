@@ -29,7 +29,7 @@ import java.util.ServiceLoader;
  * defaults. The customizing {@link JsonMapper#builder() builder} path is taken only when at least
  * one customizer opts in.
  *
- * @since 0.10.1
+ * @since 0.10
  */
 public final class CommunityJsonMappers {
 

@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * something is refused would pass against an engine that refuses every resume, which is exactly the
  * failure mode a fail-closed guard invites.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @DisplayName("TCK: Flow definition versioning — coexistence and version-bound resume")
 public abstract class AbstractFlowDefinitionVersioningTck {

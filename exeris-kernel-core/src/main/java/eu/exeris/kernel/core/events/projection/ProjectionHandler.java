@@ -22,7 +22,7 @@ import eu.exeris.kernel.spi.events.EventPayload;
  * as a stable deduplication key.
  *
  * @param <S> the projection state type (must be immutable or thread-confined)
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface ProjectionHandler<S> {

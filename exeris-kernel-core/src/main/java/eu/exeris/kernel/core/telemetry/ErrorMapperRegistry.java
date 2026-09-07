@@ -26,7 +26,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * int wireCode = code.wireCode(); // send as H3 / QUIC error frame
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // CyclomaticComplexity: mapCode() dispatches across all known EX-[DOMAIN] prefixes.
 // A switch on 10 domain prefixes is the minimal O(1) structure — any factoring would

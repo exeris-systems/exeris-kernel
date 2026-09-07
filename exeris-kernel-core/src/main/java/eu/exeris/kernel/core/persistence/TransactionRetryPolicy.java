@@ -17,7 +17,7 @@ package eu.exeris.kernel.core.persistence;
  * @param maxAttempts       maximum total attempts (1 = no retry)
  * @param baseDelayMs       initial back-off delay in milliseconds
  * @param backoffMultiplier exponential multiplier applied after each retry
- * @since 0.5.0
+ * @since 0.5
  */
 public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double backoffMultiplier) {
 

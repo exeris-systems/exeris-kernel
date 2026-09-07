@@ -45,7 +45,7 @@ import java.util.regex.Pattern;
  *       Before this change roles were always empty, so that mask was always {@code 0L}.</li>
  * </ul>
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class CommunityClaimsMapper implements ClaimsMapper {
 

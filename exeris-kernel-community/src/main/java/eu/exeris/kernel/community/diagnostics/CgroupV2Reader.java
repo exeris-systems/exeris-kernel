@@ -17,7 +17,7 @@ import java.util.Optional;
  * contract) — never an exception out of this class. Cold-path tooling code, so these file reads are
  * outside the runtime hot-path I/O bans.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 final class CgroupV2Reader {
 

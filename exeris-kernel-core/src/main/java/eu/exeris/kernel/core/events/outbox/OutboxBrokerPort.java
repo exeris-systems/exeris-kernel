@@ -25,7 +25,7 @@ import java.util.List;
  * (e.g. Community JDBC stub, Enterprise Kafka native) wire themselves to the
  * orchestrator via the {@link OutboxOrchestrator.Builder}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public interface OutboxBrokerPort {
 

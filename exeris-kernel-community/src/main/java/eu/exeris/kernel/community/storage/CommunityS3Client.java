@@ -42,7 +42,7 @@ import java.util.Optional;
  * through the pool that serves application traffic would let one upload sit in front of every other
  * request. Head-of-line isolation, not addressability, is why this engine is private.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityS3Client implements AutoCloseable {
 

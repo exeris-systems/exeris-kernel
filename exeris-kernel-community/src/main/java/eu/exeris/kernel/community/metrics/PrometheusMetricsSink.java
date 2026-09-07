@@ -56,7 +56,7 @@ import java.util.concurrent.atomic.LongAdder;
  * different metrics within a single export, which is the standard Prometheus
  * exposition contract.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @SuppressWarnings({
     "PMD.TooManyMethods",                  // sink contract + 3 metric appenders + sanitize + ctors

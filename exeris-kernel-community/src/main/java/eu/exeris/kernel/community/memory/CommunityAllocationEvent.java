@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  * {@code MemoryProviderConfig#jfrEnabled()} is {@code true}; emission can be sampled
  * by Community runtime policy.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.memory.CommunityAllocation")
 @Label("Community Buffer Allocation")

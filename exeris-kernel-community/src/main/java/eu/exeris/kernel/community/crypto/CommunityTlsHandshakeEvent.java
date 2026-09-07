@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * <p>Emitted on every {@link CommunityTlsEngine#beginHandshake} call.
  * Zero overhead when JFR is not recording ({@link #isEnabled()} check).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.crypto.CommunityTlsHandshake")
 @Label("Community TLS Handshake")

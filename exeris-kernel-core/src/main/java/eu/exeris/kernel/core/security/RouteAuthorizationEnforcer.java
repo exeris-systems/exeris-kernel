@@ -28,7 +28,7 @@ import eu.exeris.kernel.spi.security.PrincipalContext;
  * <p>No allocation on any path: the scope walk uses {@link RouteRequirement#scopeCount()} /
  * {@link RouteRequirement#scopeAt(int)} rather than an iterator, and the outcome is an enum constant.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class RouteAuthorizationEnforcer {
 

@@ -20,7 +20,7 @@ import java.util.Objects;
  * The testkit declares neither. It references no driver class, only a URL string, and a test library
  * has no business putting a database on the classpath of everything that depends on it.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class EmbeddedPersistenceEngineFixtures {
 

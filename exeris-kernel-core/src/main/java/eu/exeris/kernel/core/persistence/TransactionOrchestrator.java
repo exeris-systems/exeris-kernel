@@ -57,7 +57,7 @@ import java.util.function.Function;
  * <p>Imports only {@code exeris-kernel-spi}. Zero knowledge of HikariCP, pgjdbc,
  * io_uring, or any Community/Enterprise class.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
         "PMD.CyclomaticComplexity",

@@ -11,7 +11,7 @@ import java.nio.channels.SocketChannel;
 /**
  * Resolves SocketChannel file descriptors for community TLS FD-owner binding.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class SocketChannelFdAccess {
 

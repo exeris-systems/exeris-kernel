@@ -48,7 +48,7 @@ import java.util.concurrent.locks.LockSupport;
  *
  * @see WatermarkManager
  * @see MemoryAllocator#performMaintenance()
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class MemoryMaintenanceTask implements AutoCloseable {

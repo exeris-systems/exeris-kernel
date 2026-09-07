@@ -34,7 +34,7 @@ import jdk.jfr.StackTrace;
  * <pre>fairnessRatio = accepted / (accepted + rejected)</pre>
  * Target: ≥0.90 for equitable service delivery.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.AdmissionDecision")
 @Label("Persistence Admission Decision")

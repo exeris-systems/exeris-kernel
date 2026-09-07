@@ -37,7 +37,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * Index 2 stays the reason code on every phase, which is what makes
  * {@link #isNotParked(Throwable)} safe to apply to any {@code EX-FLOW-7002}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // TooManyMethods: the count is the contract. One named factory per rawArgs layout is what keeps
 // string literals out of throw sites (a repo-wide hard constraint) and keeps each layout documented
@@ -133,10 +133,29 @@ public final class FlowEngineException extends ExerisKernelException {
     private static final String REASON_STALE_VERSION = "STALE_VERSION";
     private static final String REASON_NOT_PARKED   = "NOT_PARKED";
 
+    /**
+     * Creates an {@code EX-FLOW-7002} lifecycle failure that carries a message and no glass-box
+     * context — {@code rawArgs} is empty, so no consumer can read a phase or a reason off it.
+     *
+     * @param message stable failure description; never a formatted string, per the Glass-Box
+     *                zero-allocation contract
+     * @apiNote Reach for one of the named factories on this class instead wherever a phase applies.
+     *          Each fills the {@code rawArgs} layout that phase defines, which is what keeps phase
+     *          and reason literals out of throw sites and readable by tooling.
+     */
     public FlowEngineException(String message) {
         super(KernelErrorCodes.EX_FLOW_7002, message, (Throwable) null);
     }
 
+    /**
+     * Creates an {@code EX-FLOW-7002} lifecycle failure that wraps an underlying cause and carries
+     * no glass-box context — {@code rawArgs} is empty.
+     *
+     * @param message stable failure description; never a formatted string, per the Glass-Box
+     *                zero-allocation contract
+     * @param cause   the throwable that surfaced the failure; may be {@code null}
+     * @apiNote Reach for one of the named factories on this class instead wherever a phase applies.
+     */
     public FlowEngineException(String message, Throwable cause) {
         super(KernelErrorCodes.EX_FLOW_7002, message, cause);
     }
@@ -145,11 +164,33 @@ public final class FlowEngineException extends ExerisKernelException {
         super(errorCode, message, cause, rawArgs);
     }
 
+    /**
+     * Creates the refusal for an engine that could not complete {@code FlowEngine.start()} — the
+     * runtime is not usable and nothing has been scheduled on it.
+     *
+     * <p>rawArgs layout: {@code [engineName, "START", "STARTUP_FAILED", -1]}. Index 3 is
+     * {@code -1} because this phase carries no numeric context.
+     *
+     * @param engineName the engine that failed to start
+     * @param cause      the throwable that stopped startup; may be {@code null}
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="START"}
+     */
     public static FlowEngineException startupFailure(String engineName, Throwable cause) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, cause,
                 engineName, "START", REASON_STARTUP, -1);
     }
 
+    /**
+     * Creates the refusal for a {@code FlowDefinition} that could not be compiled into an
+     * executable plan — an invalid step graph, or descriptor storage that cannot hold it.
+     *
+     * <p>rawArgs layout: {@code [engineName, "COMPILE", "COMPILE_FAILED", -1]}. Index 3 is
+     * {@code -1} because this phase carries no numeric context.
+     *
+     * @param engineName the engine whose factory refused the definition
+     * @param cause      the throwable that stopped compilation; may be {@code null}
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="COMPILE"}
+     */
     public static FlowEngineException compileFailure(String engineName, Throwable cause) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, cause,
                 engineName, "COMPILE", REASON_COMPILE, -1);
@@ -163,6 +204,8 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName the engine name
      * @param queueDepth current depth of the scheduler queue at the time of overflow
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEDULE"} and
+     *         {@code reasonCode="QUEUE_FULL"}
      */
     public static FlowEngineException schedulerFull(String engineName, int queueDepth) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_ENGINE_FAILURE, null,
@@ -178,12 +221,14 @@ public final class FlowEngineException extends ExerisKernelException {
      * from every other {@code EX-FLOW-7002} without matching on message text. That distinction is
      * load-bearing for {@code lookupParked(...).ifPresent(wake)}, which is inherently check-then-act:
      * a concurrent waker between the two calls makes this refusal the expected outcome rather than a
-     * fault, and there was previously no way to say so structurally.
+     * fault.
      *
      * @param engineName     the engine name
      * @param instanceIdMost high 64 bits of the flow instance id
      * @param instanceIdLeast low 64 bits of the flow instance id
-     * @since 0.12.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="WAKE"} and
+     *         {@code reasonCode="NOT_PARKED"}, classifiable through {@link #isNotParked(Throwable)}
+     * @since 0.12
      */
     public static FlowEngineException notParked(String engineName,
                                                 long instanceIdMost,
@@ -199,7 +244,7 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param throwable the throwable to classify; {@code null} yields {@code false}
      * @return {@code true} if this is an {@code EX-FLOW-7002} refusal with reason {@code NOT_PARKED}
-     * @since 0.12.0
+     * @since 0.12
      */
     public static boolean isNotParked(Throwable throwable) {
         if (!(throwable instanceof FlowEngineException flowEngineException)) {
@@ -222,7 +267,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName            the engine name
      * @param incomingSchemaVersion the schemaVersion the caller attempted to write
-     * @since 0.7.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="OPTIMISTIC_LOCK_CONFLICT"} and
+     *         {@code reasonCode="STALE_VERSION"}, with no cause attached
+     * @since 0.7
      */
     public static FlowEngineException optimisticLockConflict(String engineName, long incomingSchemaVersion) {
         return optimisticLockConflict(engineName, incomingSchemaVersion, null);
@@ -238,7 +285,9 @@ public final class FlowEngineException extends ExerisKernelException {
      * @param engineName            the engine name
      * @param incomingSchemaVersion the schemaVersion the caller attempted to write
      * @param cause                 underlying driver exception that surfaced the conflict; may be {@code null}
-     * @since 0.7.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="OPTIMISTIC_LOCK_CONFLICT"},
+     *         {@code reasonCode="STALE_VERSION"} and {@code cause} preserved in the chain
+     * @since 0.7
      */
     public static FlowEngineException optimisticLockConflict(
             String engineName, long incomingSchemaVersion, Throwable cause) {
@@ -251,8 +300,8 @@ public final class FlowEngineException extends ExerisKernelException {
      * Creates an exception for a parked saga whose persisted resume step no longer exists in the
      * (redeployed) flow definition — the definition was changed (a step removed, or the plan shrank)
      * while the saga was parked. Raised <strong>fail-closed</strong> at resume instead of replaying the
-     * stale step index into a different step (a data-corruption-class outcome). Manual intervention /
-     * a definition-versioned migration (the v0.11 epic) is required.
+     * stale step index into a different step (a data-corruption-class outcome). Manual intervention,
+     * or a definition-versioned migration (ADR-064), is required.
      *
      * <p>This is the bounds/arity guard — the persisted index no longer addresses a step at all.
      * The same-arity reorder, where the index still addresses <em>something</em>, is
@@ -262,7 +311,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName   the engine name
      * @param persistedStep the persisted resume step index the current definition no longer has
-     * @since 0.10.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="STEP_OUT_OF_RANGE"}
+     * @since 0.10
      */
     public static FlowEngineException schemaMismatch(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -280,8 +331,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName    the engine name
      * @param persistedStep the persisted resume step index whose identity no longer matches
-     * @return the exception
-     * @since 0.11.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="STEP_IDENTITY_MISMATCH"}
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchStepIdentity(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -298,8 +350,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName    the engine name
      * @param persistedStep the persisted resume step index that cannot be validated
-     * @return the exception
-     * @since 0.11.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="STEP_IDENTITY_ABSENT"}
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchStepIdentityAbsent(String engineName, int persistedStep) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -319,8 +372,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName     the engine name
      * @param offendingEntry the stack entry that does not index the plan
-     * @return the exception
-     * @since 0.11.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="COMPENSATION_STACK_OUT_OF_RANGE"}
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchCompensationStack(String engineName, int offendingEntry) {
         return new FlowEngineException(KernelErrorCodes.EX_FLOW_7002, MSG_SCHEMA_MISMATCH, null,
@@ -341,8 +395,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName     the engine name
      * @param offendingEntry the plan position whose identity no longer matches
-     * @return the exception
-     * @since 0.11.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="COMPENSATION_STACK_IDENTITY_MISMATCH"}
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchCompensationStackIdentity(String engineName,
                                                                              int offendingEntry) {
@@ -360,8 +415,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName   the engine name
      * @param stackPointer the number of live entries that carry no identity
-     * @return the exception
-     * @since 0.11.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="COMPENSATION_STACK_IDENTITY_ABSENT"}
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchCompensationStackIdentityAbsent(String engineName,
                                                                                     int stackPointer) {
@@ -378,8 +434,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName    the engine that refused the resume
      * @param persistedStep the step index the snapshot carried
-     * @return the exception to throw
-     * @since 0.11.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="DEFINITION_VERSION_ABSENT"}
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchDefinitionVersionAbsent(String engineName,
                                                                            int persistedStep) {
@@ -399,8 +456,9 @@ public final class FlowEngineException extends ExerisKernelException {
      *
      * @param engineName        the engine that refused the resume
      * @param persistedVersion  the definition version the snapshot carried
-     * @return the exception to throw
-     * @since 0.11.0
+     * @return an {@code EX-FLOW-7002} exception with {@code phase="SCHEMA_MISMATCH"} and
+     *         {@code reasonCode="DEFINITION_VERSION_UNRESOLVED"}
+     * @since 0.11
      */
     public static FlowEngineException schemaMismatchDefinitionVersionUnresolved(String engineName,
                                                                                int persistedVersion) {

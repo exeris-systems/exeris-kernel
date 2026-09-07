@@ -51,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * standing up a Kafka broker — typically via Testcontainers — and threading the resulting
  * {@code bootstrap.servers} through {@link #createEngine()}.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @DisplayName("Kafka EventEngine TCK — publish / consume roundtrip contract")
 public abstract class AbstractKafkaEventEngineTck {

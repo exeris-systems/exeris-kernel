@@ -42,7 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>No {@code ThreadLocal} — concurrent VT execution is isolation-safe</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("TCK: TransactionalExecutor contract")
 public abstract class AbstractTransactionalExecutorTck {

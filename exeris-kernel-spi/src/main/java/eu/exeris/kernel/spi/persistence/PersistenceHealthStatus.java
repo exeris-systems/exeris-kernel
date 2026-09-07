@@ -7,28 +7,34 @@ package eu.exeris.kernel.spi.persistence;
 /**
  * SPI: Immutable health status record returned by {@link PersistenceEngine#healthCheckDetailed()}.
  *
- * <h2>Replaces {@code boolean healthCheck()}</h2>
- * <p>The original {@code boolean} return value was insufficient for operator tooling —
- * it provided no latency information and no reason for failure. This record adds:
+ * <h2>What operator tooling gets</h2>
  * <ul>
- *   <li>Structured failure reason (propagated to JFR health events)</li>
+ *   <li>A liveness verdict</li>
+ *   <li>A structured failure reason (propagated to JFR health events)</li>
  *   <li>Round-trip latency in nanoseconds (for SLO monitoring)</li>
- *   <li>Zero-allocation factory methods — both constants and inline creation</li>
  * </ul>
  *
  * <h2>Valhalla Readiness</h2>
  * <p>This is a standard Java {@code record}. No identity operations are used
- * ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
- * C2 JIT escape analysis will scalarise instances on the hot path.
- * Will be migrated to {@code value record} once JEP 401 is mainline.
+ * ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}),
+ * so C2 escape analysis can scalarise instances, and the type is ready to migrate to a
+ * {@code value record} once JEP 401 is mainline.
  *
- * <h2>Pre-allocated Constants</h2>
- * <p>Use {@link #UNKNOWN} and {@link #DEGRADED_LATENCY} as sentinel values.
- * For healthy checks, always allocate with {@link #ok(long)} — one record per
- * health-check invocation (cold path, not hot path).
- *
+ * @param healthy      {@code true} when the probe completed a round trip against the database;
+ *                     {@code false} when it failed or has not run yet
+ * @param message      the reason behind {@code healthy}, safe to surface on a health endpoint —
+ *                     never a driver message, since those carry credentials, JDBC URLs and
+ *                     filesystem paths. Normalised to {@code "OK"} or {@code "Unknown failure"}
+ *                     when the caller passes {@code null}; never {@code null} on a constructed
+ *                     instance
+ * @param latencyNanos measured round-trip latency of the health-check query in nanoseconds, or
+ *                     {@code -1} when no round trip completed
+ * @apiNote Use {@link #UNKNOWN} and {@link #DEGRADED_LATENCY} as sentinels rather than
+ *          constructing an equivalent; a successful probe allocates one record through
+ *          {@link #ok(long)}, which is a cold path — a health endpoint or a monitoring task,
+ *          not per request.
+ * @since 0.5
  * @see PersistenceEngine
- * @since 0.5.0
  */
 public record PersistenceHealthStatus(
         boolean healthy,
@@ -60,6 +66,13 @@ public record PersistenceHealthStatus(
     // Compact constructor (validation) — must precede static factory methods
     // =========================================================================
 
+    /**
+     * Normalises a {@code null} {@code message} so that a constructed status always carries a
+     * reason: {@code "OK"} when {@code healthy}, {@code "Unknown failure"} otherwise.
+     *
+     * <p>No other component is validated — a negative {@code latencyNanos} is the documented
+     * "no round trip completed" encoding rather than an error.
+     */
     public PersistenceHealthStatus {
         if (message == null) {
             message = healthy ? "OK" : UNKNOWN_FAILURE;
@@ -92,10 +105,14 @@ public record PersistenceHealthStatus(
     }
 
     /**
-     * Creates a failed status with a reason extracted from an exception.
+     * Creates a failed status whose reason is the exception's <em>class name</em>.
      *
-     * @param cause the exception that caused the failure
-     * @return an unhealthy {@link PersistenceHealthStatus}
+     * <p>The exception message is deliberately not read: a driver message routinely carries
+     * credentials, JDBC URLs and filesystem paths, and this value reaches health endpoints.
+     *
+     * @param cause the exception that caused the failure; {@code null} yields
+     *              {@code "Unknown failure"}
+     * @return an unhealthy {@link PersistenceHealthStatus} with {@code latencyNanos == -1}
      */
     public static PersistenceHealthStatus failed(Throwable cause) {
         final String reason;
@@ -114,14 +131,21 @@ public record PersistenceHealthStatus(
     }
 
     /**
-     * Returns {@code true} if the latency exceeds the standard 100 ms SLO threshold.
+     * Reports whether the measured latency breaches the 100 ms SLO threshold.
      *
-     * @return {@code true} if degraded
+     * @return {@code true} when {@code latencyNanos} exceeds 100 ms; {@code false} for a faster
+     *         probe and for the {@code -1} encoding of "no round trip completed"
      */
     public boolean isDegradedLatency() {
         return latencyNanos > 100_000_000L; // 100 ms in nanoseconds
     }
 
+    /**
+     * Renders the status with {@code latencyNanos} ahead of {@code message}, rather than in
+     * record-component order.
+     *
+     * @return the three components as {@code healthy}, {@code latencyNanos}, {@code message}
+     */
     @Override
     public String toString() {
         return "PersistenceHealthStatus[healthy=" + healthy

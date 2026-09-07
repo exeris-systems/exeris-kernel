@@ -35,7 +35,7 @@ import jdk.jfr.StackTrace;
  * <p>Exception <b>class</b> only, no message — the same secret-safe shape as
  * {@link CommunityReactorDispatchFaultEvent}, since a message can carry request-derived text.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @Name("eu.exeris.kernel.transport.CommunityAcceptFault")
 @Label("Community Accept Fault")

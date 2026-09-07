@@ -14,7 +14,7 @@ import java.lang.foreign.MemorySegment;
  * {@link Http2FrameEncoder} (header → wire) with connection-level
  * validation (frame size limits, stream ID rules).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class Http2FrameCodec {
 

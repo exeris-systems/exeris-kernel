@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
  * {@link CommunityAllocationEvent} and is emitted when a buffer's reference count
  * drops to zero and the buffer is released.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see CommunityAllocationEvent
  */
 @Name("eu.exeris.kernel.memory.CommunityRelease")

@@ -50,7 +50,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * }
  * }</pre>
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class AbstractEventPayloadCodecTck {

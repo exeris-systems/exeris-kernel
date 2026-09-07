@@ -39,7 +39,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>Safe for concurrent invocation from any number of Virtual Threads.
  * {@link #close()} is idempotent.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.CyclomaticComplexity") // writeLoop/close() sequential complexity; no clean decomposition
 public final class FileSink implements TelemetrySink {

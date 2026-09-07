@@ -18,7 +18,7 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
  * Enterprise tier reuses pre-allocated JWT parsing buffers from the slab pool.
  * Community tier allocates per-call (bounded).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class SecurityZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 

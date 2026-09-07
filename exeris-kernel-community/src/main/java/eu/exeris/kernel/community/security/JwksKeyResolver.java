@@ -18,7 +18,7 @@ import java.security.interfaces.RSAPublicKey;
  *       for a terminal rotation / staleness deny (fail-closed, ADR-012).</li>
  * </ul>
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @FunctionalInterface
 /* default */ interface JwksKeyResolver {

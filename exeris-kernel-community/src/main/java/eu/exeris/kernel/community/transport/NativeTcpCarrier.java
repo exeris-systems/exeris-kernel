@@ -43,7 +43,7 @@ import java.util.function.LongSupplier;
 /**
  * Community native TCP carrier with FD-owner reactor and VT-per-stream dispatch via PAQS.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
     "PMD.TooManyMethods",

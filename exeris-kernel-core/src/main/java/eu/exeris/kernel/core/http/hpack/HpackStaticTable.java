@@ -16,7 +16,7 @@ package eu.exeris.kernel.core.http.hpack;
  * <p>Indices 1–61 map to static table entries. Index 0 is invalid per RFC 7541 §6.1.
  * Indices &gt; 61 refer to the dynamic table (handled by {@link HpackDynamicTable}).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7541#appendix-A">RFC 7541 Appendix A</a>
  */
 public final class HpackStaticTable {

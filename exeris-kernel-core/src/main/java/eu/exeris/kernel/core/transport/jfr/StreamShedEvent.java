@@ -26,7 +26,7 @@ import jdk.jfr.StackTrace;
  * Emitting this as a JFR event instead of a log gives sub-microsecond overhead and direct
  * correlation to the {@code ResourceArbiterDecisionEvent} on the timeline.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.transport.StreamShed")
 @Label("Stream Shed")

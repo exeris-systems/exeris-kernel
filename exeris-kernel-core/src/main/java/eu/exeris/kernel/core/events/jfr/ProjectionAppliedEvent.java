@@ -12,7 +12,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted when a Projection handler processes an event.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Label("Projection Applied")
 @Category({"Exeris", "Events", "Projection"})

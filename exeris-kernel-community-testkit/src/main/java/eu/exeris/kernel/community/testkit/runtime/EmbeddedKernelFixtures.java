@@ -22,7 +22,7 @@ import java.util.Set;
  * The testkit declares neither. It references no driver class and no Community type, only subsystem
  * names and a URL string.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class EmbeddedKernelFixtures {
 

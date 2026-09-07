@@ -59,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
  * }
  * }</pre>
  *
- * @since 0.7.0
+ * @since 0.7
  * @see EventStreamReader
  * @see EventStream
  * @see StreamId

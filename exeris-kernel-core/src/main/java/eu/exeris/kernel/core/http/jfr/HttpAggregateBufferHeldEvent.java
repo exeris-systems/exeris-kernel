@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * Age should be &lt;10ms for non-pipelined requests, &lt;100ms for pipelined.
  * Emitted when age exceeds thresholds to detect buffer retention issues.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.http.AggregateBufferHeld")
 @Label("HTTP Aggregate Buffer Held")

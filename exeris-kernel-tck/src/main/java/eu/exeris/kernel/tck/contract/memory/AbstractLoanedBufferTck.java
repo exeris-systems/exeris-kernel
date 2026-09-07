@@ -51,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * @see AbstractMemoryAllocatorTck
  * @see LoanedBuffer
- * @since 0.5.0
+ * @since 0.5
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

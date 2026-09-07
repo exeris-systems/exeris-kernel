@@ -26,7 +26,7 @@ import java.util.Optional;
  * memory policy; the caller still controls native lifetime via the arena passed to
  * {@link CoreOpenSslLoader#load(java.lang.foreign.Arena)}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.TooManyMethods")
 public final class CoreOpenSslRuntime {

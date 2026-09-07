@@ -26,7 +26,7 @@
  * package may import JDBC, Bolt, io_uring, HikariCP, or any Community/Enterprise
  * implementation class. "The Brain" orchestrates; it never executes I/O.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.core.graph;
 

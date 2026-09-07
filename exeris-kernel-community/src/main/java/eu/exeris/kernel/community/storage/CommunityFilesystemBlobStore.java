@@ -32,7 +32,7 @@ import java.util.Optional;
  * <p>Uploads land in a temporary file and are moved into place on commit, so an interrupted transfer
  * leaves nothing visible (ADR-056 §3).
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class CommunityFilesystemBlobStore implements BlobStore {
 

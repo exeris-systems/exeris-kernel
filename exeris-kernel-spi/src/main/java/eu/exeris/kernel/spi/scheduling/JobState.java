@@ -10,7 +10,7 @@ package eu.exeris.kernel.spi.scheduling;
  * <p>A repeating job stays {@link #SCHEDULED} between runs and shows {@link #RUNNING} only while a
  * dispatch is in flight; it reaches a terminal state only through cancellation or scheduler shutdown.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public enum JobState {
 

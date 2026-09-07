@@ -28,7 +28,7 @@ package eu.exeris.kernel.spi.crypto;
  * <p>Enum constants are singletons — safe as {@code value record} fields.
  * Ordinal-based dispatch in the underlying TLS state machine is O(1).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see TlsSessionState
  */
 public enum TlsPhase {
@@ -87,27 +87,51 @@ public enum TlsPhase {
         this.description = description;
     }
 
-    /** Human-readable description of this phase, suitable for JFR events and logs. */
+    /**
+     * Describes this phase in prose fit for a JFR event field or an operator-facing log line.
+     *
+     * @return a fixed, human-readable description of this phase; never {@code null} and never
+     *         formatted at call time
+     */
     public String description() {
         return description;
     }
 
-    /** Returns {@code true} if no further transitions are possible from this phase. */
+    /**
+     * Distinguishes the two phases a session can never leave from the ones it can.
+     *
+     * @return {@code true} for {@link #CLOSED} and {@link #ERROR}, from which no transition is
+     *         legal and on which every further operation fails
+     */
     public boolean isTerminal() {
         return this == CLOSED || this == ERROR;
     }
 
-    /** Returns {@code true} if TLS handshake is currently in progress. */
+    /**
+     * Reports that the session is still negotiating and cannot yet carry application data.
+     *
+     * @return {@code true} only for {@link #HANDSHAKE_IN_PROGRESS}
+     */
     public boolean isHandshaking() {
         return this == HANDSHAKE_IN_PROGRESS;
     }
 
-    /** Returns {@code true} if application data may be transferred. */
+    /**
+     * Reports that encrypted application data may flow in both directions right now.
+     *
+     * @return {@code true} only for {@link #ACTIVE} — {@link #HANDSHAKE_COMPLETE} still awaits
+     *         the transition that opens the session for data
+     */
     public boolean canTransferData() {
         return this == ACTIVE;
     }
 
-    /** Returns {@code true} if a graceful shutdown is in progress or complete. */
+    /**
+     * Reports that a graceful close-notify exchange has begun, whether or not the peer has
+     * answered yet.
+     *
+     * @return {@code true} for {@link #SHUTDOWN_INITIATED} and {@link #SHUTDOWN_COMPLETE}
+     */
     public boolean isShuttingDown() {
         return this == SHUTDOWN_INITIATED || this == SHUTDOWN_COMPLETE;
     }

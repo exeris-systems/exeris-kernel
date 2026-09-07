@@ -15,7 +15,7 @@ import eu.exeris.kernel.spi.transport.TransportConfig;
  * on the other. Validation is deliberately not repeated here: an out-of-range value is refused by
  * {@code TransportConfig} and again by the admission controller, where the value is named.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class CommunityAdmissionCeilingResolver {
 

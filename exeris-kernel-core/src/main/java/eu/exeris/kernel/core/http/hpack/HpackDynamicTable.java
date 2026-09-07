@@ -21,7 +21,7 @@ package eu.exeris.kernel.core.http.hpack;
  * <p>Not thread-safe. Each HTTP/2 connection owns its own encoder/decoder context
  * with independent dynamic tables (RFC 7541 §2.2).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7541#section-4">RFC 7541 §4</a>
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})

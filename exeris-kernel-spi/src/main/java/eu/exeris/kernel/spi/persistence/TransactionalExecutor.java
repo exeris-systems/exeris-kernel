@@ -20,13 +20,13 @@ import java.util.function.Function;
  * is its single canonical implementation.
  *
  * <h2>Responsibility</h2>
- * <p>Replaces legacy {@code @Transactional} AOP, {@code JdbcTransactionManager},
- * and {@code SessionTransactionManager} with a zero-ThreadLocal, pure-functional
- * API built on Virtual Threads and {@link ScopedValue}.
+ * <p>A zero-{@code ThreadLocal}, pure-functional transaction API built on Virtual Threads and
+ * {@link ScopedValue}: the executor owns the connection and the transaction boundary, and the
+ * caller supplies only the work to run inside them.
  *
  * <h2>Usage</h2>
- * <pre>{@code
- * TransactionalExecutor tx = ... // injected via KernelProviders or constructor
+ * {@snippet lang="java" :
+ * TransactionalExecutor tx = ...; // injected via KernelProviders or constructor
  *
  * // Managed write — explicit bounds, auto commit/rollback, retry on 40001
  * tx.executeManaged(conn -> {
@@ -40,7 +40,7 @@ import java.util.function.Function;
  *         return result.row().getLong(0);
  *     }
  * });
- * }</pre>
+ * }
  *
  * <h2>Retry Semantics</h2>
  * <p>PostgreSQL {@code 40001} (serialization failure) and {@code 40P01} (deadlock)
@@ -51,13 +51,15 @@ import java.util.function.Function;
  * {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT}.
  * No {@code ThreadLocal} — compliant with JEP 506.
  *
- * <h2>The Wall (Open-Core)</h2>
- * <p>This interface imports ONLY {@code exeris-kernel-spi} types.
- * Zero knowledge of HikariCP, pgjdbc, io_uring, or any Community/Enterprise class.
+ * <p><b>Ownership:</b> the executor opens and closes the {@link PersistenceConnection} it passes
+ * to a {@link TransactionalWork} or {@link ReadSession}; that connection is borrowed for the
+ * duration of the callback and MUST NOT be closed or retained by it.
  *
+ * @implSpec An implementation imports ONLY {@code exeris-kernel-spi} types, with no knowledge of
+ *           HikariCP, pgjdbc, io_uring or any Community/Enterprise class.
+ * @since 0.5
  * @see PersistenceEngine
  * @see PersistenceConnection
- * @since 0.5.0
  */
 public interface TransactionalExecutor {
 
@@ -94,15 +96,14 @@ public interface TransactionalExecutor {
     /**
      * Executes a managed write with explicit isolation level and read-only flag.
      *
-     * <p>Implementations may optimize the {@code readOnly=true} +
-     * {@link TransactionIsolation#READ_COMMITTED} combination by running the work
-     * without an explicit {@code BEGIN}/{@code COMMIT} cycle (auto-commit semantics),
-     * while still enforcing the no-open-transaction invariant before the call returns.
-     *
      * @param isolation transaction isolation level; must not be {@code null}
      * @param readOnly  {@code true} for read-only transactions
      * @param work      data operations to execute; must not be {@code null}
      * @throws PersistenceProviderException on failure or exhausted retries
+     * @implSpec An implementation MAY optimise the {@code readOnly=true} +
+     *           {@link TransactionIsolation#READ_COMMITTED} combination by running the work
+     *           without an explicit {@code BEGIN}/{@code COMMIT} cycle (auto-commit semantics),
+     *           but MUST still leave no transaction open when the call returns.
      */
     void executeManaged(TransactionIsolation isolation, boolean readOnly, TransactionalWork work);
 
@@ -137,19 +138,15 @@ public interface TransactionalExecutor {
     /**
      * Executes a read session with an explicit isolation level.
      *
-     * <p>Default fallback implementation delegates to a single {@link #query(Function)}
-     * call and exposes a session wrapper that executes all nested queries on the
-     * same opened connection.
-     *
-     * <p><strong>Contract note:</strong> this default fallback does not itself establish
-     * transactional boundaries or issue isolation-setting commands. Implementations that
-     * require strict enforcement of the requested {@code isolation} must override this
-     * method with provider-specific transactional semantics.
-     *
      * @param isolation transaction isolation level; must not be {@code null}
      * @param work      read-session callback; must not be {@code null}
      * @param <T>       callback result type
      * @return callback result
+     * @implSpec The default implementation delegates to a single {@link #query(Function)} call and
+     *           exposes a session wrapper running every nested query on that one connection. It
+     *           establishes no transactional boundary and issues no isolation-setting command, so
+     *           an implementation that must actually honour {@code isolation} has to override this
+     *           method with provider-specific transactional semantics.
      */
     default <T> T inReadSession(TransactionIsolation isolation, Function<ReadSession, T> work) {
         Objects.requireNonNull(isolation, "isolation must not be null");
@@ -169,8 +166,9 @@ public interface TransactionalExecutor {
     /**
      * A unit of transactional work executed within a managed connection scope.
      *
-     * <p>Implementations MUST NOT close the supplied {@link PersistenceConnection} —
-     * lifecycle is managed by the {@link TransactionalExecutor}.
+     * @implSpec An implementation MUST NOT close the supplied {@link PersistenceConnection}, nor
+     *           retain it beyond {@link #run(PersistenceConnection)} — its lifecycle belongs to
+     *           the {@link TransactionalExecutor}.
      */
     @FunctionalInterface
     interface TransactionalWork {
@@ -184,14 +182,16 @@ public interface TransactionalExecutor {
     }
 
     /**
-     * Read-session view bound to one connection scope.
+     * Read-session view over one connection scope, through which several queries can be issued
+     * without each one acquiring a connection of its own.
      */
     @FunctionalInterface
     interface ReadSession {
         /**
          * Executes a query operation using the active read-session connection.
          *
-         * @param query query callback; must not be {@code null}
+         * @param query query callback; must not be {@code null}. The connection it receives is
+         *              borrowed for the call and MUST NOT be closed by it
          * @param <T>   callback result type
          * @return callback result
          */

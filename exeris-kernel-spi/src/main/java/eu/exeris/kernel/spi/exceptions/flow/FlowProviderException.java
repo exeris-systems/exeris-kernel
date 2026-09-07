@@ -23,16 +23,34 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 1 – {@code String} reason (static failure description)</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class FlowProviderException extends ExerisKernelException {
 
     private static final String MSG_CREATION_FAILURE = "Flow provider engine creation failure";
 
+    /**
+     * Creates an {@code EX-FLOW-7001} provider failure that carries a message and no glass-box
+     * context — {@code rawArgs} is empty, so no consumer can read the provider name or reason off it.
+     *
+     * @param message stable failure description; never a formatted string, per the Glass-Box
+     *                zero-allocation contract
+     * @apiNote Use {@link #creationFailure} wherever the provider is known, so that the provider
+     *          name and reason reach diagnostics as typed {@code rawArgs} rather than prose.
+     */
     public FlowProviderException(String message) {
         super(KernelErrorCodes.EX_FLOW_7001, message, (Throwable) null);
     }
 
+    /**
+     * Creates an {@code EX-FLOW-7001} provider failure that wraps an underlying cause and carries
+     * no glass-box context — {@code rawArgs} is empty.
+     *
+     * @param message stable failure description; never a formatted string, per the Glass-Box
+     *                zero-allocation contract
+     * @param cause   the throwable that stopped engine creation; may be {@code null}
+     * @apiNote Use {@link #creationFailure} wherever the provider is known.
+     */
     public FlowProviderException(String message, Throwable cause) {
         super(KernelErrorCodes.EX_FLOW_7001, message, cause);
     }
@@ -49,7 +67,8 @@ public final class FlowProviderException extends ExerisKernelException {
      * @param providerName logical name of the provider (e.g. {@code "ExerisEnterprise/SlabFlow"})
      * @param reason       static failure description
      * @param cause        upstream throwable; may be {@code null}
-     * @return a fully initialised {@link FlowProviderException}
+     * @return an {@code EX-FLOW-7001} exception carrying {@code providerName} and {@code reason} as
+     *         typed rawArgs
      */
     public static FlowProviderException creationFailure(String providerName, String reason, Throwable cause) {
         return new FlowProviderException(KernelErrorCodes.EX_FLOW_7001, MSG_CREATION_FAILURE, cause,

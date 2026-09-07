@@ -33,7 +33,7 @@ import java.util.Map;
  * construction (issuer / audience / JWKS endpoint) land with the config wiring step; today the
  * registry is built from the directly-constructed Community OIDC provider.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunitySecurityProvider implements SecurityProvider {
 

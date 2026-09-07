@@ -81,7 +81,7 @@ import java.util.concurrent.locks.LockSupport;
  * {@link KafkaPublishBus} goes producer&nbsp;→&nbsp;consumer directly) are all deferred
  * to a follow-up.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @SuppressWarnings({
         // KafkaEventEngine bundles publish + consume + producer + consumer wiring intentionally;

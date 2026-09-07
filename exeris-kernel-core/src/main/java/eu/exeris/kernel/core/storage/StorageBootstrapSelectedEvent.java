@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * that shows equal priorities is what tells a reader the id — not the ranking — is what chose.
  * Single-phase commit on the bootstrap thread.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @Name("eu.exeris.kernel.storage.StorageBootstrapSelected")
 @Label("Storage Bootstrap Selected")

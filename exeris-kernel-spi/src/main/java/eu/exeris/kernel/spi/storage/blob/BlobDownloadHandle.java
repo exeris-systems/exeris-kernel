@@ -12,14 +12,13 @@ import java.lang.foreign.MemorySegment;
 /**
  * SPI: An open read over one object, or over a byte range of one (ADR-056 §3).
  *
- * <h2>Ownership</h2>
  * <p>The caller supplies the destination and owns it throughout — this handle allocates nothing on the
  * caller's behalf and hands nothing back to be closed. It is the mirror of {@link BlobUploadHandle},
  * and it is deliberately the same shape as
  * {@link eu.exeris.kernel.spi.transport.TransportStream#read(MemorySegment, int)}: a store that produced
  * buffers would decide the caller's chunk size and pool for it.
  *
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (BlobDownloadHandle download = store.openDownload(ref);
  *      LoanedBuffer chunk = allocator.allocateInfrastructure(64 * 1024)) {
  *     int n;
@@ -27,11 +26,16 @@ import java.lang.foreign.MemorySegment;
  *         sink.accept(chunk.segment(), n);
  *     }
  * }
- * }</pre>
+ * }
  *
- * <p>Handles are not thread-safe: one download is driven by one thread.
+ * <p><b>Allocation:</b> zero-alloc on the SPI surface — this handle allocates nothing on the caller's
+ * behalf; {@link #read} writes into the caller's own segment.
+ * <p><b>Thread confinement:</b> owner thread — one download is driven by one thread; handles are not
+ * thread-safe.
+ * <p><b>Ownership:</b> the caller supplies and owns the destination segment throughout; this handle
+ * hands nothing back that needs closing.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface BlobDownloadHandle extends AutoCloseable {
 
@@ -57,7 +61,7 @@ public interface BlobDownloadHandle extends AutoCloseable {
      *                 is a no-op returning {@code 0}, and takes precedence over closed state
      * @return the number of bytes read, {@code 0} if {@code maxBytes <= 0}, or {@code -1} at end of the
      *         object or range
-     * @throws BlobStorageException     on I/O failure
+     * @throws BlobStorageException     on I/O failure ({@code EX-BLOB-8003})
      * @throws IllegalStateException    if this handle is closed and {@code maxBytes > 0}
      * @throws IllegalArgumentException if {@code maxBytes} exceeds the segment size
      */

@@ -57,7 +57,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   close()  — interrupts the VT, closes the WatchService (called in shutdown())
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see KernelConfigRegistry
  */
 // CognitiveComplexity: this class is a thin NIO.2 watcher/event pump. The branching
@@ -114,7 +114,7 @@ public final class DynamicConfigFileWatcher implements AutoCloseable {
      * the provided file path, no caching. Called on the watcher VT for each
      * registered key that matches the changed file.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     @FunctionalInterface
     public interface RawValueExtractor {

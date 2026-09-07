@@ -47,7 +47,7 @@ import java.util.concurrent.TimeUnit;
  * The pre-built {@code hotTraversal} field is intentionally reused across iterations —
  * its immutability is guaranteed by the record contract.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @State(Scope.Benchmark)
 @BenchmarkMode({Mode.Throughput, Mode.SampleTime})

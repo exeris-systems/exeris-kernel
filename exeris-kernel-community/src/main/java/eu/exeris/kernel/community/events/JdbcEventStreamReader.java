@@ -39,7 +39,7 @@ import java.util.function.ToIntFunction;
  * name→ordinal resolution is injected as a {@link ToIntFunction} (wired to the engine's
  * {@code EventRegistry::ordinalOf}) so the reader stays decoupled from the concrete registry.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class JdbcEventStreamReader implements EventStreamReader {
 

@@ -13,7 +13,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceConnection;
  * <p>Used by {@link PersistenceSessionBox} to acquire a backing connection without
  * depending on {@link CommunityPersistenceEngine} by name.
  *
- * @since 0.6.0
+ * @since 0.6
  */
 @FunctionalInterface
 /* default */ interface PhysicalConnectionSource {

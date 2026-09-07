@@ -12,14 +12,11 @@ import java.util.Objects;
 /**
  * SPI: Registry contract for typed request body encoder resolution.
  *
- * <h2>Priority ordering</h2>
- * <p>When multiple candidates report {@code supports(...) == true}, the resolver
- * MUST return the candidate with the highest {@link HttpRequestBodyEncoder#priority()}
- * value. Ties resolve by registration order (first-registered wins). The resolver
- * returns {@code null} when no candidate supports the input — the façade maps this
- * to a {@code WebClientException} at the call site.
- *
- * @since 0.8.0
+ * @implSpec When several candidates report {@code supports(...) == true}, return the one with the
+ *           highest {@link HttpRequestBodyEncoder#priority()}, and let registration order break a
+ *           tie (first registered wins). Return {@code null} when no candidate supports the payload
+ *           type — the façade turns that into a {@code WebClientException} at the call site.
+ * @since 0.8
  */
 @FunctionalInterface
 public interface HttpRequestBodyEncoderRegistry {

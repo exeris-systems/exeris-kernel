@@ -35,7 +35,7 @@ package eu.exeris.kernel.spi.http;
  * 10. That one is a candidate for splitting on its own merits — a single validator carrying a
  * seventh of the class is not the same claim as "validation is legitimately many decisions".
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @SuppressWarnings("PMD.CyclomaticComplexity") // see the class javadoc: measured, not waved through
 final class HttpConfigValidation {

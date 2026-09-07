@@ -23,7 +23,7 @@ import jdk.jfr.StackTrace;
  * ({@code CommunityEventPayloadEncodeFailedEvent}): {@code @StackTrace(false)}, guarded by
  * {@link Event#isEnabled()} so a disabled recording costs ~zero.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @Name("eu.exeris.kernel.events.EventLogAppendConflict")
 @Label("Event-Log Append Conflict")

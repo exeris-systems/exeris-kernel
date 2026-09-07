@@ -39,7 +39,7 @@ import java.util.UUID;
  * @param delegate the wrapped principal (never {@code null})
  * @param roleMask the precomputed role bitmask aligned with the generated registry
  *
- * @since 0.8.0
+ * @since 0.8
  * @see PrincipalContext#roleMask()
  * @see SecurityInterceptor
  */

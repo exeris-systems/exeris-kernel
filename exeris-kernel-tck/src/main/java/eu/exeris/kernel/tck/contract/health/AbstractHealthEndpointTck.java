@@ -51,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The abstract drives state transitions through a stub {@link HealthProbe}; bindings
  * supply only the handler factory.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public abstract class AbstractHealthEndpointTck {
 

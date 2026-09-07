@@ -46,7 +46,7 @@ import java.util.List;
  * event, or a {@code toString()}. This class deliberately has no {@code toString()} override, so the
  * record-like temptation to print it never arises.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityS3Signer {
 

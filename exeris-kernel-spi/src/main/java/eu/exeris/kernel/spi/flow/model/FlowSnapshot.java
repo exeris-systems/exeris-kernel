@@ -10,32 +10,25 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Immutable snapshot of a flow instance's persisted state.
+ * Everything {@link FlowSnapshotStore} needs to reconstruct one flow instance — its identity, where
+ * it stopped, and what a rollback would still owe.
  *
- * <h2>Persistence Contract</h2>
- * <p>Used by {@link FlowSnapshotStore} to persist and restore flow instances across
- * PARK/WAKE cycles and kernel restarts. Fields map 1:1 to the off-heap context
- * slab layout in the Enterprise tier (see {@code FLOW_CONTEXT_STRIDE}).
+ * <p>A snapshot is written on the PARK transition and on eviction, and read back to resume an
+ * instance after a restart or on another engine sharing the store. Its components map 1:1 to the
+ * off-heap context slab layout in the Enterprise tier (see {@code FLOW_CONTEXT_STRIDE}).
  *
- * <h2>Optimistic Concurrency (since 0.7.0)</h2>
- * <p>{@code schemaVersion} carries a monotonic version counter that durable, distributed
- * {@link FlowSnapshotStore} implementations use as an optimistic-locking discriminator
- * on UPSERT. New snapshots SHOULD start at {@link #SCHEMA_VERSION_INITIAL}; durable stores
- * MUST advance the on-disk value on every accepted write and MUST reject a write whose
- * incoming {@code schemaVersion} does not match the on-disk row, raising
- * {@code EX-FLOW-7002 / phase=OPTIMISTIC_LOCK_CONFLICT}. In-memory stores (which never
- * race across processes) MAY ignore the field entirely.
+ * <p>Equality, hash code and string form are structural over the array components, so two snapshots
+ * describing the same parked saga compare equal.
  *
- * <h2>Array Equality</h2>
- * <p>This record contains {@code int[]}, {@code String[]} and {@code byte[]} array fields.
- * The default record {@code equals()}/{@code hashCode()}/{@code toString()} use
- * reference equality for arrays, which is incorrect for structural comparison.
- * All three methods are overridden here to use {@link Arrays#equals} /
- * {@link Arrays#hashCode} / {@link Arrays#toString} for deep array semantics.
- *
- * <h2>Valhalla Readiness</h2>
- * <p>Mostly primitive fields. {@code Instant} and array fields are on the cold
- * persistence path only — not used in the hot dispatch loop. No identity operations.
+ * <p><b>Allocation:</b> allocates — the constructor copies {@code compensationStack},
+ * {@code compensationStepNames} and {@code opaqueState} in, and each of those accessors copies out
+ * again on every call. All of it is on the cold persistence path (PARK, eviction, resume); nothing
+ * here is reached from step dispatch.
+ * <p><b>Thread confinement:</b> any thread — a constructed snapshot is deeply immutable and safe to
+ * publish to any thread without further synchronisation.
+ * <p><b>Ownership:</b> the caller owns both the arrays it passes in and the arrays it reads back;
+ * each crossing is a copy, so mutating either side cannot reach the snapshot. Nothing here holds a
+ * resource that needs releasing.
  *
  * @param instanceIdMost    most-significant bits of the 128-bit flow instance UUID
  * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
@@ -65,7 +58,19 @@ import java.util.Optional;
  * @param schemaVersion     monotonic version for optimistic concurrency control on durable
  *                          stores; {@code >= 1L}; new snapshots use {@link #SCHEMA_VERSION_INITIAL}
  *
- * @since 0.5.0
+ * @implSpec {@code schemaVersion} is the optimistic-locking discriminator on UPSERT. A durable,
+ *           distributed {@link FlowSnapshotStore} MUST advance the on-disk value by one on every
+ *           accepted write, and MUST reject a write whose incoming {@code schemaVersion} does not
+ *           match the on-disk row, raising {@code EX-FLOW-7002} with
+ *           {@code phase="OPTIMISTIC_LOCK_CONFLICT"}. An in-memory store, which cannot race across
+ *           processes, MAY ignore the component entirely. New snapshots SHOULD start at
+ *           {@link #SCHEMA_VERSION_INITIAL}.
+ * @implNote {@code equals}, {@code hashCode} and {@code toString} are overridden because a record's
+ *           generated versions compare array components by reference, which would make two snapshots
+ *           of the same saga unequal. Components are otherwise primitives; the {@link Instant} and
+ *           array components are read on the cold persistence path only, and the record performs no
+ *           identity operations.
+ * @since 0.5
  */
 public record FlowSnapshot(
         long      instanceIdMost,
@@ -94,7 +99,7 @@ public record FlowSnapshot(
      * Initial value of {@link #schemaVersion} for newly created snapshots. Durable stores
      * MUST advance from this value on every accepted write.
      *
-     * @since 0.7.0
+     * @since 0.7
      */
     public static final long SCHEMA_VERSION_INITIAL = 1L;
 
@@ -106,28 +111,34 @@ public record FlowSnapshot(
      * reason ADR-062 rejects a snapshot carrying no step identity — a default here would be a
      * permanent route back to resuming against whatever happens to be registered.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final int VERSION_ABSENT = 0;
 
     /**
-     * Compact constructor — validates all invariants eagerly (fail-fast) and defensively
-     * copies both mutable array components to guarantee true immutability.
+     * Validates every invariant eagerly and defensively copies the three mutable array components,
+     * so a snapshot is deeply immutable the moment it exists.
      *
-     * <h2>Null Policy</h2>
-     * <p>{@code compensationStack} and {@code opaqueState} must not be {@code null}.
-     * Pass empty arrays ({@code new int[0]}, {@code new byte[0]}) when the data is absent.
-     *
-     * <h2>Bounds Validation</h2>
-     * <ul>
-     *   <li>{@code definitionName} must not be blank.</li>
-     *   <li>{@code currentStep} must be {@code >= 0} (zero-based step index).</li>
-     *   <li>{@code stackPointer} must be in {@code [0, compensationStack.length]}.</li>
-     *   <li>{@code opaqueState.length} must not exceed {@link #MAX_OPAQUE_STATE_BYTES}.</li>
-     * </ul>
-     *
-     * <p>This is the <em>cold</em> construction path (snapshot creation on PARK / eviction),
-     * so the allocation cost is acceptable.
+     * @throws NullPointerException     if {@code definitionName}, {@code currentStepName},
+     *                                  {@code state}, {@code lastUpdate}, {@code timeout},
+     *                                  {@code compensationStack}, {@code compensationStepNames} or
+     *                                  {@code opaqueState} is {@code null}
+     * @throws IllegalArgumentException if {@code definitionName} is blank; if
+     *                                  {@code definitionVersion} is below {@link #VERSION_ABSENT};
+     *                                  if {@code currentStep} is negative; if
+     *                                  {@code currentStepName} is present but blank; if
+     *                                  {@code stackPointer} falls outside
+     *                                  {@code [0, compensationStack.length]}; if
+     *                                  {@code compensationStepNames} is non-empty yet does not cover
+     *                                  the live stack, or carries a {@code null} or blank name below
+     *                                  {@code stackPointer}; if {@code opaqueState.length} exceeds
+     *                                  {@link #MAX_OPAQUE_STATE_BYTES}; or if {@code schemaVersion}
+     *                                  is below {@link #SCHEMA_VERSION_INITIAL}
+     * @apiNote Absence is expressed with empty arrays ({@code new int[0]}, {@code new String[0]},
+     *          {@code new byte[0]}) and {@link Optional#empty()}, never with {@code null}. A blank
+     *          step name is rejected rather than treated as absent, because it would compare unequal
+     *          to every real step and read as corruption. This is the cold construction path — PARK
+     *          and eviction — so the copies are affordable.
      */
     public FlowSnapshot {
         Objects.requireNonNull(definitionName,    "definitionName must not be null");
@@ -193,27 +204,35 @@ public record FlowSnapshot(
     }
 
     /**
-     * The canonical constructor as it stood in 0.10.0 — restored, not left broken.
+     * Builds a snapshot from the component list as it stands without {@code definitionVersion},
+     * {@code currentStepName} and {@code compensationStepNames}, keeping that call shape available to
+     * source compiled against it.
      *
-     * <p>{@code eu.exeris.kernel.spi.flow} is declared <b>stable since 0.5.0</b> in
-     * {@code docs/stability-matrix.md}. v0.11 adds three components to this record ({@code
-     * currentStepName} for ADR-062, {@code definitionVersion} for ADR-064, {@code
-     * compensationStepNames} for ADR-064 A5), which moves the canonical constructor from eleven
-     * parameters to fourteen and would otherwise leave code compiled against 0.10.0 unable to
-     * construct a snapshot at all. This overload restores that exact descriptor.
+     * <p>All three omitted components take their <b>fail-closed</b> sentinels — {@link #VERSION_ABSENT},
+     * {@link Optional#empty()} and an empty identity array — so a snapshot built this way is refused on
+     * resume rather than replayed by position against whichever definition happens to be registered.
+     * This overload therefore cannot become the quiet route back that ADR-062 and ADR-064 each closed;
+     * it buys a caller compilation, not a bypass.
      *
-     * <p>All three new components default to their <b>fail-closed</b> sentinels — {@link
-     * Optional#empty()}, {@link #VERSION_ABSENT} and an empty identity array — so a snapshot built this
-     * way is refused on resume rather than replayed by position against whichever definition happens to
-     * be registered. The compatibility shim therefore cannot become the quiet route back that ADR-062
-     * and ADR-064 each closed; it buys a caller compilation, not a bypass.
+     * <p><b>What it does not restore.</b> A record's component list is part of its shape, and no
+     * overload hides that: record deconstruction patterns and reflection over
+     * {@code RecordComponent[]} observe the full fourteen components regardless of which constructor
+     * built the instance.
      *
-     * <p><b>What this does not restore.</b> Adding a component to a record changes its component list,
-     * and no overload can hide that: record deconstruction patterns and reflection over
-     * {@code RecordComponent[]} still observe a different shape. That residue is irreducible for a
-     * record and is recorded in the release notes rather than papered over here.
-     *
-     * @since 0.11.0
+     * @param instanceIdMost    most-significant bits of the 128-bit flow instance UUID
+     * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
+     * @param definitionName    name of the {@link FlowDefinition} this instance was compiled from
+     * @param currentStep       zero-based index of the step to resume execution at
+     * @param state             lifecycle state the instance occupied when the snapshot was taken
+     * @param lastUpdate        timestamp of the last state mutation
+     * @param timeout           absolute expiry time of this flow instance
+     * @param compensationStack plan positions whose compensations must execute in reverse order
+     * @param stackPointer      number of live entries in {@code compensationStack}
+     * @param opaqueState       raw payload for implementation-specific state
+     * @param schemaVersion     monotonic version for optimistic concurrency control
+     * @throws NullPointerException     as the canonical constructor
+     * @throws IllegalArgumentException as the canonical constructor
+     * @since 0.11
      */
     @SuppressWarnings("PMD.ExcessiveParameterList") // compatibility bridge — preserves the 0.10.0 shape
     public FlowSnapshot(
@@ -235,13 +254,31 @@ public record FlowSnapshot(
     }
 
     /**
-     * Convenience constructor that omits {@link #schemaVersion}, defaulting it to
-     * {@link #SCHEMA_VERSION_INITIAL}. Preserves the pre-0.7 call shape so existing
-     * callers (e.g., the runtime engine's {@code toSnapshot} path and in-memory stores)
-     * compile unchanged. Durable stores that participate in optimistic concurrency
-     * MUST use the canonical constructor and pass the current on-disk version.
+     * Builds a snapshot with no schema version of its own, defaulting it to
+     * {@link #SCHEMA_VERSION_INITIAL} — the shape an in-memory store needs, since it never races
+     * across processes and has nothing to lock optimistically against.
      *
-     * @since 0.7.0
+     * <p>Step identity, definition version and compensation-stack identities are absent here too, and
+     * take the same fail-closed sentinels the eleven-argument overload gives them: a snapshot built
+     * this way is refused on resume rather than replayed by position.
+     *
+     * @param instanceIdMost    most-significant bits of the 128-bit flow instance UUID
+     * @param instanceIdLeast   least-significant bits of the 128-bit flow instance UUID
+     * @param definitionName    name of the {@link FlowDefinition} this instance was compiled from
+     * @param currentStep       zero-based index of the step to resume execution at
+     * @param state             lifecycle state the instance occupied when the snapshot was taken
+     * @param lastUpdate        timestamp of the last state mutation
+     * @param timeout           absolute expiry time of this flow instance
+     * @param compensationStack plan positions whose compensations must execute in reverse order
+     * @param stackPointer      number of live entries in {@code compensationStack}
+     * @param opaqueState       raw payload for implementation-specific state
+     * @throws NullPointerException     as the canonical constructor
+     * @throws IllegalArgumentException as the canonical constructor
+     * @implSpec A durable store participating in optimistic concurrency MUST NOT build its snapshots
+     *           here: it MUST use the canonical constructor and pass the current on-disk version.
+     *           Every snapshot built here carries {@link #SCHEMA_VERSION_INITIAL}, so once the row it
+     *           addresses has advanced past that, every write is refused as stale.
+     * @since 0.7
      */
     @SuppressWarnings("PMD.ExcessiveParameterList") // backward-compat bridge — preserves v0.6 call shape
     public FlowSnapshot(
@@ -267,60 +304,75 @@ public record FlowSnapshot(
     }
 
     /**
-     * Returns a <em>defensive copy</em> of the compensation stack array.
+     * Plan positions whose compensations a rollback would still run, in reverse order, as a copy the
+     * caller owns.
      *
-     * <p>Callers must not modify the returned array. A copy is returned to preserve
-     * the immutability guarantee documented in the compact constructor.
-     * This accessor is on the cold persistence path; the allocation cost is acceptable.
+     * <p>Only the first {@link #stackPointer()} entries are live; anything above it is a dead
+     * high-water mark left by an earlier, deeper unwind, and treating it as state refuses sound
+     * sagas.
+     *
+     * @return a fresh copy of the compensation stack; never {@code null}, and mutating it cannot
+     *         reach this snapshot
+     * @apiNote Cold path — this allocates a copy on every call, so read it once and keep the result
+     *          rather than indexing through the accessor.
      */
     public int[] compensationStack() {
         return Arrays.copyOf(compensationStack, compensationStack.length);
     }
 
     /**
-     * Returns a <em>defensive copy</em> of the compensation-stack step identities.
+     * Identity of the step each live {@link #compensationStack()} entry addressed when it was pushed,
+     * as a copy the caller owns.
      *
-     * <p>Callers must not modify the returned array. A zero-length result with a non-zero
-     * {@link #stackPointer()} means the identities are <b>absent</b>, not that the stack is empty —
-     * the two are distinguishable precisely because a stack with nothing live has nothing to validate.
+     * <p>A zero-length result with a non-zero {@link #stackPointer()} means the identities are
+     * <b>absent</b>, not that the stack is empty — the two are distinguishable precisely because a
+     * stack with nothing live has nothing to validate. Resume refuses the first case rather than
+     * trusting the positions beneath it.
      *
-     * @since 0.11.0
+     * @return a fresh copy of the stack identities, or a zero-length array when the snapshot records
+     *         none; mutating it cannot reach this snapshot
+     * @apiNote Cold path — this allocates a copy on every call.
+     * @since 0.11
      */
     public String[] compensationStepNames() {
         return Arrays.copyOf(compensationStepNames, compensationStepNames.length);
     }
 
     /**
-     * Returns a <em>defensive copy</em> of the opaque state byte array.
+     * The application's own payload, carried across PARK and restart untouched, as a copy the caller
+     * owns.
      *
-     * <p>Callers must not modify the returned array. A copy is returned to preserve
-     * the immutability guarantee documented in the compact constructor.
-     * This accessor is on the cold persistence path; the allocation cost is acceptable.
+     * <p>Kernel-opaque: nothing here interprets these bytes, and no guard validates them on resume.
+     * Bounded by {@link #MAX_OPAQUE_STATE_BYTES}.
+     *
+     * @return a fresh copy of the opaque payload; never {@code null}, possibly zero-length, and
+     *         mutating it cannot reach this snapshot
+     * @apiNote Cold path — this allocates a copy on every call.
      */
     public byte[] opaqueState() {
         return Arrays.copyOf(opaqueState, opaqueState.length);
     }
 
     /**
-     * Returns a combined hex string for JFR events and diagnostic logging.
+     * Renders the 128-bit instance UUID as its two hex halves joined by {@code -}, for JFR payloads
+     * and diagnostic text.
      *
-     * <p><b>Cold-path only</b> — this method allocates a {@code String}.
-     * Do not call from the hot dispatch loop; use {@link #instanceIdMost()} and
-     * {@link #instanceIdLeast()} directly for zero-allocation identity checks.
+     * @return the instance identity as {@code <mostHex>-<leastHex>}
+     * @apiNote Cold path — this allocates a {@code String}. Compare {@link #instanceIdMost()} and
+     *          {@link #instanceIdLeast()} directly for a zero-allocation identity check.
      */
     public String instanceId() {
         return Long.toHexString(instanceIdMost) + "-" + Long.toHexString(instanceIdLeast);
     }
 
     /**
-     * Deep equality check — uses {@link Arrays#equals} for {@code compensationStack}
-     * and {@code opaqueState} to avoid reference-equality false negatives.
+     * Structural equality: two snapshots describing the same parked saga compare equal, including
+     * their array components, which a record's generated {@code equals} would compare by reference.
      *
-     * <p><b>Allocation-free:</b> uses a simple type-pattern bind ({@code instanceof
-     * FlowSnapshot other}) and accesses {@code other.compensationStack} /
-     * {@code other.opaqueState} as fields directly, bypassing the defensive-copy
-     * accessors. A record deconstruction pattern ({@code instanceof FlowSnapshot(...)})
-     * would invoke those accessors and allocate two unnecessary array copies per call.
+     * @implNote Allocation-free. A type-pattern bind ({@code instanceof FlowSnapshot other}) reads
+     *           the array components as fields, bypassing the defensive-copy accessors; a record
+     *           deconstruction pattern would call those accessors and allocate three array copies per
+     *           comparison.
      */
     @Override
     public boolean equals(Object obj) {
@@ -347,8 +399,8 @@ public record FlowSnapshot(
     }
 
     /**
-     * Deep hash code — uses {@link Arrays#hashCode} for {@code compensationStack}
-     * and {@code opaqueState}.
+     * Hash code consistent with the structural {@link #equals(Object)} — array components hash over
+     * their contents via {@link Arrays#hashCode}, not their identity.
      */
     @Override
     public int hashCode() {
@@ -362,8 +414,12 @@ public record FlowSnapshot(
     }
 
     /**
-     * Human-readable representation — uses {@link Arrays#toString} for array fields
-     * to produce meaningful diagnostic output instead of identity hash codes.
+     * Diagnostic rendering: array components print their contents via {@link Arrays#toString} rather
+     * than an identity hash code, except {@code opaqueState}, which prints its size only.
+     *
+     * <p>{@code opaqueState} is the one component that is application data rather than definition
+     * metadata, and this text reaches logs, debuggers and exception messages. The two compensation
+     * arrays stay rendered because step positions and step names are both definition metadata.
      */
     @Override
     public String toString() {

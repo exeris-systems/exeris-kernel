@@ -33,7 +33,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * <p>The engine itself is thread-safe (immutable config + concurrent node/edge lists).
  * Individual sessions are NOT thread-safe — each virtual thread must open its own.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityGraphEngine implements GraphEngine {
 

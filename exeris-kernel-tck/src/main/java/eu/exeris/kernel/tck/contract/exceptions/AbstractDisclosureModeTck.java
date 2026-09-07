@@ -38,7 +38,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * rendered artifact respects the disclosure decision — this abstract verifies
  * only the SPI helper itself.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @DisplayName("ExceptionDisclosure — profile-aware redaction contract")
 public abstract class AbstractDisclosureModeTck {

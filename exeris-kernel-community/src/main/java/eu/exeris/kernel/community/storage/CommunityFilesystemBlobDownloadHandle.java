@@ -18,7 +18,7 @@ import java.nio.file.StandardOpenOption;
 /**
  * Filesystem {@link BlobDownloadHandle}: reads into the caller's segment, optionally limited to a range.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityFilesystemBlobDownloadHandle implements BlobDownloadHandle {
 

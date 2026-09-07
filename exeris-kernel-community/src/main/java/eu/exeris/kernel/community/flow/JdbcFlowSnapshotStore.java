@@ -79,7 +79,7 @@ import java.util.Optional;
  * performance envelope dramatically. See {@code docs/subsystems/flow.md}
  * Persistence section.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 // QA-017 extracted JdbcFlowSnapshotCodec (binding + BYTEA compensation-stack pack/unpack +
 // row decoder). Residual store retains the FlowSnapshotStore SPI surface, the two-step

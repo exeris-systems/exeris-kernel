@@ -30,7 +30,7 @@ import java.util.Objects;
  * NOT close, retain, or extend the lifetime of the {@link LoanedBuffer} — ownership stays with the
  * façade.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class CommunityTextResponseBodyDecoder implements HttpResponseBodyDecoder {
 

@@ -12,7 +12,7 @@ package eu.exeris.kernel.spi.crypto;
  * {@code SSL_ERROR_WANT_READ}, or any native constants. Implementations map native
  * error codes to these values internally.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see TlsEngine
  */
 public enum TlsStatus {

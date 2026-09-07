@@ -19,14 +19,14 @@ package eu.exeris.kernel.spi.graph;
  *   <li><b>Enterprise binding</b> (secret sauce, priority 100): native wire
  *       protocol via io_uring + FFM, backed by {@code GlobalMemoryArbiter} →
  *       {@code PartitionedSlabPool}. Zero dynamic allocation after startup.
- *       This binding lives in {@code exeris-kernel-enterprise} and must
- *       <em>never</em> be referenced from this SPI.</li>
+ *       This binding lives in {@code exeris-kernel-enterprise} and MUST NOT
+ *       be referenced from this SPI.</li>
  * </ul>
  *
  * <h2>Discovery</h2>
  * <p>Loaded via {@link java.util.ServiceLoader}. The kernel bootstrapper selects the
  * highest-{@link #priority()} provider:
- * <pre>{@code
+ * {@snippet lang="java" :
  * GraphProvider provider = ServiceLoader.load(GraphProvider.class)
  *     .stream()
  *     .map(ServiceLoader.Provider::get)
@@ -35,23 +35,20 @@ package eu.exeris.kernel.spi.graph;
  *
  * GraphEngine engine = provider.createEngine(config);
  * ScopedValue.where(KernelProviders.GRAPH_ENGINE, engine).run(kernel::startSubsystems);
- * }</pre>
+ * }
  *
  * <h2>SPI Compliance</h2>
  * <p>The <strong>API surface</strong> of this interface is implementation-blind:
  * no backend-specific types (JDBC, Neo4j Bolt, io_uring, Redis, DataSource, etc.)
  * appear in method signatures, return types, or thrown exceptions. The Open-Core
  * section above names those technologies only to document the bindings that are
- * expected to implement this interface — they must never leak into the SPI itself.
+ * expected to implement this interface — they MUST NOT leak into the SPI itself.
  *
- * <h2>SPI Dependency Injection</h2>
- * <p>Implementations obtain their {@link eu.exeris.kernel.spi.memory.MemoryAllocator},
- * {@link eu.exeris.kernel.spi.persistence.PersistenceEngine}, and
- * {@link eu.exeris.kernel.spi.security.SecurityProvider} from
- * {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots — they do NOT
- * receive them as constructor parameters. This ensures clean SPI isolation.
- *
- * @since 0.5.0
+ * @implSpec Implementations MUST obtain their {@link eu.exeris.kernel.spi.memory.MemoryAllocator}
+ *           and {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} from
+ *           {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots, never as
+ *           constructor parameters, to keep SPI isolation clean.
+ * @since 0.5
  * @see GraphEngine
  * @see GraphConfig
  */
@@ -60,51 +57,41 @@ public interface GraphProvider {
     /**
      * Creates and initialises a {@link GraphEngine} from the given configuration.
      *
-     * <p>This is a potentially blocking call (connection pool setup, PGQ version check,
-     * memory partition claim). It MUST NOT be called on a virtual thread that is
-     * expected to be non-blocking.
-     *
-     * <p>Implementations read upstream providers from {@code KernelProviders} scoped slots:
-     * <ul>
-     *   <li>{@code KernelProviders.MEMORY_ALLOCATOR} — for buffer allocation</li>
-     *   <li>{@code KernelProviders.PERSISTENCE_ENGINE} — for database access (Community)</li>
-     *   <li>{@code KernelProviders.STORAGE_CONTEXT} — for tenant isolation</li>
-     * </ul>
-     *
      * @param config graph subsystem configuration
      * @return a fully initialised, ready-to-serve graph engine
-     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphBootstrapException if the engine
-     *         cannot be created (missing backend, connection failure, etc.)
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphBootstrapException {@code (EX-GRPH-5001)}
+     *         if the engine cannot be created (missing backend, connection failure, etc.)
+     * @implSpec Implementations read their upstream providers from {@code KernelProviders}
+     *           scoped slots — {@code MEMORY_ALLOCATOR} for buffer allocation,
+     *           {@code PERSISTENCE_ENGINE} for database access on Community, and
+     *           {@code STORAGE_CONTEXT} for tenant isolation.
+     * @apiNote This is a potentially blocking call (connection pool setup, PGQ version check,
+     *          memory partition claim). Callers MUST NOT invoke it on a virtual thread that is
+     *          expected to stay non-blocking.
      */
     GraphEngine createEngine(GraphConfig config);
 
     /**
-     * Unique identifier for this graph provider (e.g., {@code "postgres-community"},
-     * {@code "neo4j-community"}, {@code "postgres-enterprise"}).
-     *
-     * <p>Used in configuration routing and diagnostic JFR events.
+     * Returns the stable identifier this provider is routed by in configuration and
+     * diagnostic JFR events (e.g. {@code "postgres-community"}, {@code "neo4j-community"},
+     * {@code "postgres-enterprise"}).
      *
      * @return stable provider identifier
      */
     String providerId();
 
     /**
-     * Display name used in bootstrap JFR events and diagnostics
-     * (e.g., {@code "ExerisCommunity/JdbcGraph"}, {@code "ExerisEnterprise/NativeGraph"}).
+     * Returns the human-readable name this provider reports in bootstrap JFR events and
+     * diagnostics (e.g. {@code "ExerisCommunity/JdbcGraph"}, {@code "ExerisEnterprise/NativeGraph"}).
      *
      * @return human-readable provider name; never {@code null}
      */
     String providerName();
 
     /**
-     * Selection priority when multiple providers are on the classpath.
-     * Higher value wins.
-     *
-     * <p>Convention:
-     * <ul>
-     *   <li>Community: {@code 0}</li>
-     *   <li>Enterprise: {@code 100}</li>
-     * </ul>
+     * Returns this provider's selection priority; when more than one provider is on the
+     * classpath, the bootstrapper picks the highest value. Convention: Community is
+     * {@code 0}, Enterprise is {@code 100}.
      *
      * @return priority (higher wins)
      */

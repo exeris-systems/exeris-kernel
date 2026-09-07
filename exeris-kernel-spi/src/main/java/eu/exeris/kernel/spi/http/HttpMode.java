@@ -13,7 +13,7 @@ package eu.exeris.kernel.spi.http;
  * valid to run an HTTP server engine over a QUIC transport (Enterprise), or an
  * HTTP client engine over a plain TCP transport (Community).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum HttpMode {
 

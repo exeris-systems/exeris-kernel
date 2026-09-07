@@ -27,7 +27,7 @@ import java.util.function.Supplier;
  * so production wires {@code () -> arbiter.decide(Context.TRANSPORT_IO)} while keeping no test-only
  * construction seam in the production {@code ResourceArbiter}.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class StreamAdmissionController {
 

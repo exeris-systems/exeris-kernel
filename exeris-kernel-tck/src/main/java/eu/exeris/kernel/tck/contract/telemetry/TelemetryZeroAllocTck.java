@@ -16,7 +16,7 @@ import eu.exeris.kernel.tck.contract.AbstractSubsystemZeroAllocTck;
  * binary sinks must achieve zero {@code eu.exeris.*} heap allocations.
  * Community sinks (ConsoleSink, FileSink) are bounded.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class TelemetryZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 

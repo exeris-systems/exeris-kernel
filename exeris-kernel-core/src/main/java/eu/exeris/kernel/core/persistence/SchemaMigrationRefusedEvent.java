@@ -30,7 +30,7 @@ import jdk.jfr.StackTrace;
  * operation could straddle the event and leave a carrier-bound {@code EventWriter} flushing a stale
  * buffer. Nothing here parks.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @Name("eu.exeris.kernel.persistence.SchemaMigrationRefused")
 @Label("Persistence — Schema Migration Refused")

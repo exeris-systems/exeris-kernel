@@ -21,13 +21,6 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *       {@code 5xx}; still an {@link IllegalStateException}.</li>
  * </ul>
  *
- * <p>Before this type both arrived as {@code IllegalStateException}, because the decoder contract
- * asked drivers to wrap binding exceptions in a {@code java.*} {@code RuntimeException} and
- * {@code IllegalStateException} was the natural choice. The mapping a handler was told to perform
- * was therefore not expressible, and every malformed request reached the caller as a 500 — the
- * server taking the blame for a client's typo. Found by an Entity-First consumer whose generated
- * handlers implement exactly the ADR-036 §2 split.
- *
  * <h2>The Wall</h2>
  * <p>This is an SPI-owned type, so wrapping in it satisfies the driver-opacity rule as fully as
  * {@code IllegalStateException} did: no binding-specific exception (Jackson, Protobuf, …) crosses
@@ -58,7 +51,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   index 1 → long   bodySize
  * </pre>
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class RequestBodyDecodeException extends ExerisKernelException {
 

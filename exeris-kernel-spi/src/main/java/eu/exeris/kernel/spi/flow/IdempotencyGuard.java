@@ -8,9 +8,9 @@ package eu.exeris.kernel.spi.flow;
  * SPI: Step-level idempotency guard for flow execution.
  *
  * <h2>Intent</h2>
- * <p>Prevents duplicate step execution when a flow instance is rescheduled
- * (e.g., after a wake from choreography or a crash-recovery replay).
- * Implementations MUST be thread-safe and support concurrent claims.
+ * <p>Keeps a step from running twice when a flow instance is rescheduled onto it — after a
+ * choreography wake, or a crash-recovery replay that resumes from a checkpoint written before the
+ * step's effects were durable.
  *
  * <h2>Discovery &amp; Wiring</h2>
  * <p>The bootstrapper may bind an {@code IdempotencyGuard} to
@@ -22,7 +22,16 @@ package eu.exeris.kernel.spi.flow;
  * <p>This interface is <strong>implementation-blind</strong>: no reference to any
  * storage driver, lock type, or concrete data structure appears here.
  *
- * @since 0.5.0
+ * <p><b>Thread confinement:</b> any thread — a guard is shared across every flow the engine runs
+ * and must be safe for concurrent claims from any of them.
+ * <p><b>Ownership:</b> the guard owns the claims it records; a claim is held from the winning
+ * {@link #tryClaimStep} until {@link #releaseInstance} for that instance, which the engine calls
+ * when the instance reaches a terminal state. Callers release nothing else.
+ *
+ * @implSpec Implementations must be thread-safe and support concurrent claims — two threads racing
+ *           on the same {@code (instanceIdMost, instanceIdLeast, stepIndex)} tuple must produce
+ *           exactly one winner.
+ * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#IDEMPOTENCY_GUARD
  */
 public interface IdempotencyGuard {
@@ -30,24 +39,25 @@ public interface IdempotencyGuard {
     /**
      * Attempts to claim exclusive execution rights for the identified step.
      *
-     * <p>Uses compare-and-set semantics: the first caller for a given
+     * <p>Compare-and-set semantics: the first caller for a given
      * {@code (instanceIdMost, instanceIdLeast, stepIndex)} tuple wins and receives
-     * {@code true}. All subsequent callers receive {@code false} until
-     * {@link #releaseInstance} is called.
+     * {@code true}. Every later caller receives {@code false} until
+     * {@link #releaseInstance} is called for that instance.
      *
      * @param instanceIdMost  most-significant bits of the flow instance UUID
      * @param instanceIdLeast least-significant bits of the flow instance UUID
      * @param stepIndex       zero-based step index within the execution plan
-     * @return {@code true} if the claim was acquired; {@code false} if already claimed
+     * @return {@code true} if this caller now holds the claim and must run the step;
+     *         {@code false} if the tuple was already claimed and the step must be skipped
      */
     boolean tryClaimStep(long instanceIdMost, long instanceIdLeast, int stepIndex);
 
     /**
-     * Releases all step claims for the identified instance.
+     * Drops every claim recorded for the instance, so the guard stops carrying state for a flow
+     * that has finished.
      *
-     * <p>Called when the instance reaches a terminal state (COMPLETED or FAILED).
-     * After this call, {@link #tryClaimStep} will return {@code true} again for
-     * all step indices of this instance.
+     * <p>The engine calls this when the instance reaches a terminal state. Afterwards
+     * {@link #tryClaimStep} returns {@code true} again for every step index of this instance.
      *
      * @param instanceIdMost  most-significant bits of the flow instance UUID
      * @param instanceIdLeast least-significant bits of the flow instance UUID

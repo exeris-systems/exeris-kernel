@@ -65,7 +65,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * }
  * }</pre>
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public abstract class AbstractHttpClientRequestEnricherTck {
 

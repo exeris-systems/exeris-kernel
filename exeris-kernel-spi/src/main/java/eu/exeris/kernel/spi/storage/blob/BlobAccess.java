@@ -10,7 +10,7 @@ package eu.exeris.kernel.spi.storage.blob;
  * <p>Deliberately two values. A URL that grants both directions is not a narrower capability than the
  * credential that minted it, which is the only reason to hand one out.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public enum BlobAccess {
 

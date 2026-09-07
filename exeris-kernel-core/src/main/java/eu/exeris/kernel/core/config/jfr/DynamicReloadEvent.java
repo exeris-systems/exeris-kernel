@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * Minimal overhead when JFR recording is disabled — the {@code isEnabled()} guard
  * in the emit helper short-circuits before any field assignment.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class DynamicReloadEvent {
 

@@ -34,7 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * connection orchestration, the response read loop, and dependency
  * resolution (allocator + transport).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // CyclomaticComplexity: 32 against a class ceiling of 30, and more than half of it is ONE
 // method — Peer.parse measures 17 against a method ceiling of 10, parsing the authority

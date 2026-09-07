@@ -54,7 +54,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       receives {@link FlowEngineException} with {@code phase=OPTIMISTIC_LOCK_CONFLICT}.</li>
  * </ul>
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @DisplayName("L2 TCK: Distributed FlowSnapshotStore — save/load/delete/listParked + OCC")
 public abstract class AbstractDistributedFlowSnapshotStoreTck {

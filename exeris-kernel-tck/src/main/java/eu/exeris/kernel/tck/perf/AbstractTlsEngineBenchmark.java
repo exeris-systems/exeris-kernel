@@ -51,7 +51,7 @@ import java.util.concurrent.TimeUnit;
  * temporary {@code byte[]} arrays on the Java heap. This is the
  * <em>SecurityZeroAllocTck</em> verification at benchmark scale.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @State(Scope.Thread)
 @BenchmarkMode({Mode.Throughput, Mode.SampleTime})
