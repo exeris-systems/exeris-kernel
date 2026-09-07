@@ -266,7 +266,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
          */
         public Builder() {
             // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
-        super();
+            super();
         }
 
         /**

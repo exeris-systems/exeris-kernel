@@ -489,7 +489,7 @@ public final class KernelBootstrap {
          */
         public Builder() {
             // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
-        super();
+            super();
         }
 
         /**
