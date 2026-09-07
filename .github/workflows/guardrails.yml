@@ -71,10 +71,14 @@ jobs:
     # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
     secrets:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-  # ADR-085 §F.21. Expected RED on the day it lands: 62 doclint errors and 100 warnings on
-  # exeris-kernel-spi, measured before switching it on. That is the reason to switch it on — the
-  # gate is the worklist, and a worklist nobody can see is a worklist nobody clears. It is a
-  # reported check and deliberately not a required one until the count reaches zero.
+  # ADR-085 §F.21. This was written to land RED — 62 doclint errors and 100 warnings on
+  # exeris-kernel-spi, 13 and 100 on the TCK, measured 2026-09-05 — on the argument that a gate is
+  # a worklist and a worklist nobody can see is one nobody clears. The list was cleared before the
+  # gate landed, by the javadoc sweep in #456, #464 and #465: both gated modules now report zero
+  # doclint errors, zero warnings under failOnWarnings, and zero Checkstyle violations against the
+  # bundle ruleset. So it arrives green, and its job is the second one — keeping the list empty
+  # rather than showing it. It stays a reported check; making it required is a branch-protection
+  # change, not a workflow one.
   #
   # `-Pjavadoc-gate` selects a profile that exists only for this job. The `release` profile keeps
   # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
@@ -87,9 +91,12 @@ jobs:
       # jar module here reaches Maven Central, so "published" alone does not narrow anything; what
       # narrows it is rule 11, and what is left after it is the SPI and the TCK.
       #
-      # Measured before adding the TCK: 13 doclint errors, warnings capped at javadoc's default
-      # -Xmaxwarns of 100. The others, for the record and for whoever revisits rule 11:
-      # core 31/100+, community 6/91, community-testkit 0/24, community-kafka 0/11,
-      # diagnostics-cli and build-config clean.
+      # The set is still SPI + TCK, but the reason rule 11 exempted the rest has expired. Those
+      # counts were core 31/100+, community 6/91, community-testkit 0/24, community-kafka 0/11,
+      # diagnostics-cli and build-config clean; after #464 and #465 every one of them is 0/0.
+      # Adding them here is a decision rather than an oversight: it costs each pom a javadoc-gate
+      # profile block, and it holds those modules to a whole-module bar where rule 11 asks only
+      # for diff-aware checking. Gating a module whose backfill is already done mandates no
+      # backfill, so it does not conflict with rule 11 — it is simply stricter than rule 11 needs.
       modules: exeris-kernel-spi,exeris-kernel-tck
       extra-maven-args: "-Pjavadoc-gate"

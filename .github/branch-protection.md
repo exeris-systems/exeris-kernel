@@ -53,27 +53,40 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   Requiring it by name pins the ruleset to a version string and a matrix edit silently drops the
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with
   `needs:`.
-- **`javadoc-gate`** — red by design on arrival, and the doclint half is the smaller half.
+- **`javadoc-gate`** — written to arrive red, arriving green, and the second of those is the more
+  useful state.
   Gated modules are `exeris-kernel-spi` and `exeris-kernel-tck` — the two published surfaces that
   are neither Core, Community nor tooling, which is the set `javadoc-conventions.md` rule 11 sends
   to diff-aware checking instead. Every jar module here reaches Maven Central, so "published"
-  alone narrows nothing; rule 11 is what narrows it. Measured 2026-09-05: SPI **62 doclint
-  errors, 100 warnings**, TCK **13 and 100** (javadoc caps warnings at 100, so both are floors); on top of that
-  **all 383 `@since` tags** use `major.minor.patch` where `javadoc-conventions.md` rule 4 mandates
-  `major.minor`, and **60 `<pre>{@code}` blocks** stand where rule 8 mandates `{@snippet}`. The
-  tag vocabulary of rule 6 is effectively unwritten — one `@apiNote` across 276 files, no
-  `@implSpec`, no `@implNote` — and the three contract lines of rule 3 (Allocation, Thread
-  confinement, Ownership, in that order) appear nowhere: `Thread confinement` occurs in zero files.
-  Rules 6 and 3 are `[L2]`, so no gate will ever produce those numbers; they are here because the
-  gate's silence about them is not evidence of compliance.
-  It becomes requirable when the gated counts are zero — 62 doclint plus 644 Checkstyle as of 2026-09-05, the latter being what the ruleset reports now that it parses and audits rather than stopping after two files. Runs under the `javadoc-gate` profile in
-  `exeris-kernel-spi/pom.xml` — in that pom and not the root one, because the gate invokes
-  `-pl exeris-kernel-spi -am` and `-am` drags every dependency into the reactor: from the root
-  the profile gated `exeris-kernel-build-config` too and the first run failed there without ever
-  reaching the SPI. The `release` profile keeps `doclint none` so publishing never waits on prose.
-  The Checkstyle half adds **644 violations** on the same module — 383 `@since`, 60 `<pre>`
-  examples, 60 missing comments, 46 missing `@return`, 40 block tags out of order, 21 empty
-  descriptions. It reported `0 violations` until 2026-09-05, from three separate faults: the
+  alone narrows nothing; rule 11 is what narrows it.
+
+  **What it measured, and what it measures now.** On 2026-09-05: SPI **62 doclint errors, 100
+  warnings**, TCK **13 and 100** (javadoc caps warnings at 100, so both were floors), plus **644
+  Checkstyle violations** on the SPI — 383 `@since` in `major.minor.patch` against rule 4, 60
+  `<pre>{@code}` blocks against rule 8, 60 missing comments, 46 missing `@return`, 40 block tags
+  out of order, 21 empty descriptions. Rule 6's tag vocabulary was effectively unwritten: one
+  `@apiNote` across 276 files, no `@implSpec`, no `@implNote`.
+
+  Every one of those is now zero. The javadoc sweep in #456, #464 and #465 cleared the list before
+  this gate reached `main`, and the same sources today report **0 doclint errors, 0 warnings under
+  `failOnWarnings`, and 0 Checkstyle violations** on both gated modules against the bundle ruleset;
+  the SPI carries 217 `@apiNote`, 235 `@implSpec` and 144 `@implNote`. The numbers above are kept
+  as the record of what the gate was standing up against, not as its current cost.
+
+  That changes what the check is for. It was argued for as a worklist — a gate nobody can fail
+  teaches nothing — and it lands with the worklist already empty, so its job is the other one:
+  holding the zero. It becomes requirable now rather than eventually, and that is a
+  branch-protection change rather than a workflow one.
+
+  The three contract lines of rule 3 (Allocation, Thread confinement, Ownership, in that order)
+  and rule 6's vocabulary are `[L2]`: no gate produces those numbers, and the gate's silence about
+  them is still not evidence of compliance.
+
+  **Where the profile lives.** In `exeris-kernel-spi/pom.xml` and `exeris-kernel-tck/pom.xml`, one
+  copy each, not in the root pom — the gate invokes `-pl <modules> -am`, and `-am` drags every
+  dependency into the reactor, so from the root the profile gated `exeris-kernel-build-config` too
+  and the first run failed there without ever reaching the SPI. The `release` profile keeps
+  `doclint none` so publishing never waits on prose. It reported `0 violations` until 2026-09-05, from three separate faults: the
   bundle's rule-8 message contained braces and Checkstyle renders messages through `MessageFormat`,
   so the audit threw `can't parse argument number: @snippet` and stopped after two files; its
   `SuppressionFilter` named `${config_loc}`, which is unset when the config lives outside the

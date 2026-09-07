@@ -40,6 +40,17 @@
         <exeris.module.name>eu.exeris.kernel.tck</exeris.module.name>
 
         <!--
+            The TCK's own ruleset, as a property rather than a plugin-level <configLocation>.
+            The parent pom carries the same fix and the reason with it: an explicit
+            <configLocation> in a pom silently beats the plugin's own user property, so
+            `-Dcheckstyle.config.location=...` does not reach the module and does not fail
+            either. This module still had the literal, so the shared javadoc gate audited
+            checkstyle-tck.xml here and reported clean against a ruleset it never read.
+            Declared here so the default is unchanged and an override lands.
+        -->
+        <checkstyle.config.location>checkstyle-tck.xml</checkstyle.config.location>
+
+        <!--
             This module's main sources are contract tests, so they are linted by rules written for
             contract tests. The delta from the kernel ruleset is a named list in
             pmd-ruleset-tck.xml, not a skip: 1782 PMD violations across 56 rules appeared the moment
@@ -159,13 +170,6 @@
                     <rulesets>
                         <ruleset>pmd-ruleset-tck.xml</ruleset>
                     </rulesets>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <configuration>
-                    <configLocation>checkstyle-tck.xml</configLocation>
                 </configuration>
             </plugin>
             <plugin>
