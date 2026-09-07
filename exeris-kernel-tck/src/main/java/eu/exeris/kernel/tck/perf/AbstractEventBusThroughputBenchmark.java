@@ -22,22 +22,25 @@ import org.openjdk.jmh.infra.Blackhole;
  * <p>The pure overhead of {@link EventBus#publish} with a pre-allocated
  * {@link EventDescriptor} and the empty no-data {@link EventPayload} sentinel.
  * The descriptor is built once at setup time so that allocation of the record
- * itself does not pollute the measurement window — only the routing and
- * enqueueing logic is exercised in the hot path.
+ * itself does not pollute the measurement window — only resolving the
+ * subscribers and handing each one the payload is exercised in the hot path.
  *
  * <h2>Why this matters</h2>
- * <p>Community implementations route through a {@code ConcurrentHashMap} and fork
- * virtual threads via {@code StructuredTaskScope} per publish. Enterprise
- * implementations write a 56-byte descriptor to a lock-free off-heap ring buffer
- * in O(1). This benchmark forces both tiers to reveal the true cost of their
- * dispatch path, so the gap between the two strategies can be read from the
- * throughput report rather than assumed.
+ * <p>An event bus can dispatch in more than one shape, and the shape is what this
+ * number is about. The binding that ships in this repository resolves subscribers
+ * through a map and starts one virtual thread per subscriber directly from the
+ * calling thread; a binding built on a pre-allocated ring buffer would instead
+ * write a descriptor and return. Both satisfy {@link EventBus#publish}, and the
+ * throughput report is where the difference between them becomes visible rather
+ * than assumed. This template states no cost relation between them — it measures
+ * whichever one is bound.
  *
  * <h2>Handler lifecycle</h2>
- * <p>The registered dummy handler correctly calls {@link EventPayload#close()} so
- * that the Enterprise slab ref-count reaches zero and the backing memory is
- * returned to the pool. Omitting the close would saturate the slab allocator
- * and produce misleading results (OOM or allocation-failure JFR events).
+ * <p>The registered dummy handler calls {@link EventPayload#close()}, which the
+ * payload contract requires of every holder. It matters more here than in a
+ * correctness test: a binding that serves payloads from a pool has no collector
+ * behind it, so a benchmark that skips the close measures an allocator sliding
+ * into exhaustion rather than the dispatch path.
  *
  * <h2>Implementing this benchmark</h2>
  * {@snippet lang="java" :
@@ -66,8 +69,9 @@ public abstract class AbstractEventBusThroughputBenchmark extends AbstractExeris
     protected EventEngine engine;
 
     /**
-     * Pre-allocated hot-path descriptor — all 7 fields are primitives, Valhalla-ready.
-     * C2 may scalarize this on the Community heap path via escape analysis.
+     * Pre-allocated hot-path descriptor. Every component is a primitive, so the record carries
+     * no reference the measurement would have to chase; whether the JIT then keeps it off the
+     * heap is not something this template asserts or measures.
      */
     protected EventDescriptor hotDescriptor;
 
@@ -98,12 +102,13 @@ public abstract class AbstractEventBusThroughputBenchmark extends AbstractExeris
     public void setupEngine() {
         this.engine = createTargetEngine();
 
-        // Register the event type before start() — mandatory for Enterprise
-        // (off-heap routing table is built once at startup; late registration throws).
+        // Register before start(): a binding is free to build its routing table once at startup
+        // and reject a late registration, so registering first is what every binding accepts.
         engine.registry().register(EventTypeSpec.of(BENCHMARK_EVENT_TYPE, BENCHMARK_EVENT_ORDINAL));
 
         // Dummy handler: force the bus to execute its full routing + dispatch logic.
-        // Correctly close the payload so Enterprise slab ref-counts are balanced.
+        // Close the payload, as its contract requires of every holder — see the class comment
+        // for why a benchmark in particular cannot skip it.
         engine.bus().subscribe(BENCHMARK_EVENT_TYPE, (descriptor, payload) -> {
             // Hot-path consumption — RAII lifecycle maintained via close().
             payload.close();
@@ -123,8 +128,8 @@ public abstract class AbstractEventBusThroughputBenchmark extends AbstractExeris
     }
 
     /**
-     * Trial-level teardown: gracefully shuts down the engine and releases all
-     * off-heap resources (slab pools, carrier loops, routing tables).
+     * Shuts the engine down between trials, so whatever the binding acquired at setup —
+     * threads, buffers, its routing table — is released before the next one measures.
      */
     @TearDown(Level.Trial)
     public void tearDownEngine() {
@@ -134,12 +139,12 @@ public abstract class AbstractEventBusThroughputBenchmark extends AbstractExeris
     }
 
     /**
-     * Hot-path benchmark — measures the pure overhead of event bus routing and enqueueing.
+     * Measures one {@link EventBus#publish} and nothing around it.
      *
-     * <p>The {@link EventPayload#empty()} sentinel is used deliberately: its retain/close
-     * are no-ops, ensuring that payload lifecycle management does not bias the result.
-     * Only the routing lookup (ordinal → subscriber list) and the enqueue operation
-     * are measured.
+     * <p>The {@link EventPayload#empty()} sentinel is used deliberately: its retain and close
+     * are no-ops, so payload lifecycle does not bias the result. What remains inside the
+     * window is the subscriber lookup by ordinal and whatever the binding does to hand each
+     * subscriber the event — which is the thing being compared.
      *
      * @param bh JMH blackhole — prevents the JIT from eliminating the descriptor reference
      */
