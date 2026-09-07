@@ -19,7 +19,7 @@ import java.util.Objects;
  * <p>Core orchestration: it ranks providers through the shared {@link BootstrapProviderSelector} and
  * never names a driver. Mirrors {@code GraphBootstrap} so a reader who knows one knows this one.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class SchedulingBootstrap {
 

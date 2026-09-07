@@ -10,7 +10,7 @@ package eu.exeris.kernel.spi.flow.model;
  * <p>Returned by {@link FlowStepAction#execute(FlowContext)} to signal the scheduler
  * what to do next with this flow instance.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowStepAction
  */
 public enum FlowOutcome {
@@ -22,9 +22,9 @@ public enum FlowOutcome {
     CONTINUE,
 
     /**
-     * Step succeeded and explicitly requests to immediately and successfully
-     * terminate the entire Flow (Short-circuit). The scheduler transitions
-     * state directly to FlowState.COMPLETED without executing further steps.
+     * Step succeeded and ends the whole flow here — a short circuit.
+     * The scheduler transitions the instance straight to {@link FlowState#COMPLETED}
+     * without executing any remaining step.
      */
     COMPLETE,
 

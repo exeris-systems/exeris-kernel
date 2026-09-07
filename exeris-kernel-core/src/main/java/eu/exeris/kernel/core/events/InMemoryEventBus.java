@@ -64,7 +64,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * </ul>
  * <p>Zero {@code ThreadLocal} either way.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // CouplingBetweenObjects: EventBus coordinates registry, handlers and JFR — inherent to the bus role
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CloseResource"})

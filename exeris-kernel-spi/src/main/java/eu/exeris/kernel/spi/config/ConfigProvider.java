@@ -16,7 +16,9 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * Kernel-Grade Config SPI — L0 Foundation.
+ * The single source of configuration for one kernel instance: exactly one implementation is
+ * chosen at L0 bootstrap, before any other subsystem exists, and answers every settings read
+ * and every key lookup for the life of the process.
  *
  * <h2>The Wall</h2>
  * <p>This interface is the single SPI entry point for configuration. It is loaded via
@@ -25,7 +27,7 @@ import java.util.function.Supplier;
  * This SPI does not hard-code any implementation; implementations are discovered via {@code ServiceLoader}.
  *
  * <h2>Design Philosophy</h2>
- * <p>Configuration is no longer a {@code Map<String, Object>} or a mutable POJO.
+ * <p>Configuration is not a {@code Map<String, Object>} or a mutable POJO.
  * Each section is an immutable, identity-free data carrier: today a {@code record},
  * tomorrow a {@code value record} (JEP 401 / Valhalla). The JVM can flatten value
  * records into arrays and stack frames, eliminating pointer-chasing on hot-paths.
@@ -37,13 +39,13 @@ import java.util.function.Supplier;
  * by the JVM as effectively final — eligible for constant-folding and inlining.
  *
  * <p>Migration path when JEP 526 stabilizes:
- * <pre>{@code
+ * {@snippet lang="java" :
  * // Today (JDK 26, no preview required):
  * Supplier<KernelSettings> kernelSettings();
  *
  * // JDK 27+ with LazyConstant:
  * LazyConstant<KernelSettings> kernelSettings();
- * }</pre>
+ * }
  *
  * <h2>ScopedValue Propagation (JEP 506)</h2>
  * <p>The resolved {@code ConfigProvider} is bound to
@@ -52,13 +54,38 @@ import java.util.function.Supplier;
  * virtual thread spawned within the kernel scope — no constructor injection needed.
  *
  * <h2>ServiceLoader Registration</h2>
- * <pre>
+ * {@snippet :
  * # META-INF/services/eu.exeris.kernel.spi.config.ConfigProvider
- * eu.exeris.kernel.community.config.SimpleFileConfigProvider   # priority=0
+ * eu.exeris.kernel.community.config.CommunityConfigProvider    # priority=0
  * eu.exeris.kernel.enterprise.config.EnterpriseConfigProvider  # priority=100
- * </pre>
+ * }
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> allocates (one {@link Optional} per raw lookup, plus a boxed
+ * {@code Integer} / {@code Long} / {@code Boolean} for the numeric and boolean accessors);
+ * {@link #kernelSettings()} resolves once and every later call hands back the same instance.
+ * <p><b>Thread confinement:</b> virtual-thread-safe — a single instance is bound to
+ * {@link eu.exeris.kernel.spi.context.KernelProviders#CURRENT_CONFIG} for the whole kernel
+ * scope and is read concurrently by every virtual thread inside it.
+ * <p><b>Ownership:</b> the {@code KernelBootstrap} owns the instance — it discovers it, binds
+ * it, and tears the binding down when the kernel scope ends; {@link KernelSettings} and its
+ * sections are immutable carriers that a caller may hold indefinitely, with no release step.
+ *
+ * @implSpec Implementations are discovered through {@code ServiceLoader} and must therefore
+ *           declare a public no-argument constructor. {@link #priority()} must return a
+ *           non-negative value; when two implementations report the same priority, which of
+ *           them wins is unspecified — it follows classpath order.
+ * @apiNote The raw accessors ({@link #getString(String)}, {@link #getInt(String)},
+ *          {@link #getLong(String)}, {@link #getBoolean(String)} and
+ *          {@link #get(String, Class)}) report an unbound key as {@link Optional#empty()};
+ *          a caller that requires the key raises
+ *          {@link ConfigProviderException#missingProperty(String, String)}
+ *          ({@code EX-CFG-1001}) on the empty result itself, which is what turns a missing
+ *          required key into a deterministic boot failure instead of a
+ *          {@code NullPointerException} deep inside a subsystem initializer. Whether a value
+ *          that is present but malformed is reported as empty or raised as
+ *          {@link ConfigProviderException#typeMismatch(String, String, String)}
+ *          ({@code EX-CFG-1002}) is left to the implementation.
+ * @since 0.5
  */
 public interface ConfigProvider {
 
@@ -69,16 +96,21 @@ public interface ConfigProvider {
     /**
      * Returns the fully resolved kernel settings, computed lazily and exactly once.
      *
-     * <p>Implementations MUST guarantee:
-     * <ul>
-     *   <li>Thread-safe single initialization via {@code AtomicReference} CAS or
-     *       equivalent (mirrors the {@code LazyConstant} semantic from JEP 526).</li>
-     *   <li>The returned object is effectively immutable after first access.</li>
-     *   <li>Repeated calls always return the same instance — eligible for JIT
-     *       constant-folding after warm-up.</li>
-     * </ul>
-     *
-     * @return lazy supplier of kernel settings; never {@code null}
+     * @return a supplier that resolves every configuration source on its first invocation and
+     *         hands back that same instance on every later one; neither the supplier nor the
+     *         {@link KernelSettings} it supplies is ever {@code null}
+     * @implSpec Implementations must guarantee:
+     *           <ul>
+     *             <li>Thread-safe single initialization via {@code AtomicReference} CAS or
+     *                 equivalent (mirrors the {@code LazyConstant} semantic from JEP 526).</li>
+     *             <li>The returned object is effectively immutable after first access.</li>
+     *             <li>Repeated calls always return the same instance — eligible for JIT
+     *                 constant-folding after warm-up.</li>
+     *           </ul>
+     * @apiNote The first invocation is the only one that can be slow, and the
+     *          {@code KernelBootstrap} makes it during L0 boot so that the resolution cost is
+     *          captured by the {@code ConfigSettingsResolved} JFR event rather than by the
+     *          first request path that happens to touch configuration.
      */
     Supplier<KernelSettings> kernelSettings();
 
@@ -86,37 +118,112 @@ public interface ConfigProvider {
     // Raw key-value access
     // =========================================================================
 
-    /** Returns the string value for {@code key}, or empty if absent. */
+    /**
+     * Returns the raw value bound to {@code key} by the highest-precedence source that binds it.
+     *
+     * @param key dot-path key in SPI form (for example {@code "network.port"}); the
+     *            implementation maps it onto the syntax of its own sources
+     * @return the bound value, or {@link Optional#empty()} when no source binds the key
+     */
     Optional<String> getString(String key);
 
-    /** Returns the integer value for {@code key}, or empty if absent. */
+    /**
+     * Coerces the value bound to {@code key} to an {@code int}.
+     *
+     * @param key dot-path key in SPI form (for example {@code "network.port"})
+     * @return the coerced value, or {@link Optional#empty()} when no source binds the key
+     */
     Optional<Integer> getInt(String key);
 
-    /** Returns the long value for {@code key}, or empty if absent. */
+    /**
+     * Coerces the value bound to {@code key} to a {@code long}.
+     *
+     * @param key dot-path key in SPI form (for example {@code "globalMemoryMb"})
+     * @return the coerced value, or {@link Optional#empty()} when no source binds the key
+     */
     Optional<Long> getLong(String key);
 
-    /** Returns the boolean value for {@code key}, or empty if absent. */
+    /**
+     * Coerces the value bound to {@code key} to a {@code boolean}.
+     *
+     * @param key dot-path key in SPI form (for example {@code "telemetry.jfrEnabled"})
+     * @return the coerced value, or {@link Optional#empty()} when no source binds the key
+     */
     Optional<Boolean> getBoolean(String key);
 
-    /** Returns the value for {@code key} deserialized to {@code type}, or empty if absent. */
+    /**
+     * Converts the value bound to {@code key} into the requested target type.
+     *
+     * @param <T>  the target type
+     * @param key  dot-path key in SPI form (for example {@code "persistence.jdbcUrl"})
+     * @param type the type the bound value is to be converted to
+     * @return the converted value, or {@link Optional#empty()} when no source binds the key or
+     *         the implementation offers no conversion to {@code type}
+     * @apiNote L0 carries no reflective document parser, so the set of supported target types is
+     *          small and provider-specific; prefer the four raw accessors above, and read
+     *          compound values from {@link KernelSettings} rather than from this method.
+     * @implNote The Community provider converts to {@code String}, {@code Integer},
+     *           {@code Long} and {@code Boolean}, and reports every other target type as empty.
+     */
     <T> Optional<T> get(String key, Class<T> type);
 
     // =========================================================================
     // Convenience defaults
     // =========================================================================
 
+    /**
+     * Returns the raw value bound to {@code key}, substituting {@code defaultValue} when the key
+     * is unbound.
+     *
+     * @param key          dot-path key in SPI form (for example {@code "telemetry.nodeId"})
+     * @param defaultValue value to substitute when the key is unbound; may be {@code null}
+     * @return the bound value, or {@code defaultValue} when no source binds the key
+     * @implSpec The default implementation delegates to {@link #getString(String)} and applies
+     *           {@link Optional#orElse(Object)}; an override changes nothing about which value
+     *           wins, only how it is obtained.
+     */
     default String getStringOrDefault(String key, String defaultValue) {
         return getString(key).orElse(defaultValue);
     }
 
+    /**
+     * Returns the value bound to {@code key} as an {@code int}, substituting {@code defaultValue}
+     * when the key is unbound.
+     *
+     * @param key          dot-path key in SPI form (for example {@code "network.port"})
+     * @param defaultValue value to substitute when the key is unbound
+     * @return the coerced value, or {@code defaultValue} when no source binds the key
+     * @implSpec The default implementation delegates to {@link #getInt(String)} and applies
+     *           {@link Optional#orElse(Object)}.
+     */
     default int getIntOrDefault(String key, int defaultValue) {
         return getInt(key).orElse(defaultValue);
     }
 
+    /**
+     * Returns the value bound to {@code key} as a {@code long}, substituting
+     * {@code defaultValue} when the key is unbound.
+     *
+     * @param key          dot-path key in SPI form (for example {@code "globalMemoryMb"})
+     * @param defaultValue value to substitute when the key is unbound
+     * @return the coerced value, or {@code defaultValue} when no source binds the key
+     * @implSpec The default implementation delegates to {@link #getLong(String)} and applies
+     *           {@link Optional#orElse(Object)}.
+     */
     default long getLongOrDefault(String key, long defaultValue) {
         return getLong(key).orElse(defaultValue);
     }
 
+    /**
+     * Returns the value bound to {@code key} as a {@code boolean}, substituting
+     * {@code defaultValue} when the key is unbound.
+     *
+     * @param key          dot-path key in SPI form (for example {@code "telemetry.jfrEnabled"})
+     * @param defaultValue value to substitute when the key is unbound
+     * @return the coerced value, or {@code defaultValue} when no source binds the key
+     * @implSpec The default implementation delegates to {@link #getBoolean(String)} and applies
+     *           {@link Optional#orElse(Object)}.
+     */
     default boolean getBooleanOrDefault(String key, boolean defaultValue) {
         return getBoolean(key).orElse(defaultValue);
     }
@@ -127,16 +234,25 @@ public interface ConfigProvider {
     /**
      * Registers a callback invoked when the value at {@code key} changes.
      *
-     * <p>Community implementations treat this as a no-op (no hot-reload support).
-     * Enterprise implementations deliver updates via a Virtual Thread watcher backed
-     * by {@code NIO WatchService} — never a platform thread or
-     * {@code ScheduledExecutorService}.
-     *
      * @param file     observed filename (relative to config directory); {@code null} = any
      * @param key      dot-path key (e.g., {@code "network.port"})
      * @param callback receives an {@code Object} whose runtime type is {@code String}
      *                 containing the new raw value read from the config file; invoked on a
      *                 virtual thread; must not be {@code null}
+     * @throws NullPointerException if {@code callback} is {@code null} — rejected at
+     *                              registration time even by a tier that runs no watcher, so
+     *                              that the mistake surfaces where it is made
+     * @implSpec Registration must not throw for any other combination of arguments, whether or
+     *           not the implementation supports hot-reload. An implementation that does support
+     *           it delivers the update on a virtual thread — never on a carrier or platform
+     *           thread, and never through a {@code ScheduledExecutorService} — and never
+     *           delivers a value for a key sealed by {@link #guardImmutable(String, String)}.
+     *           An implementation that does not support it registers nothing and never invokes
+     *           {@code callback}.
+     * @implNote Community providers run no watcher, so registration is a no-op. Enterprise
+     *           providers deliver updates from a virtual-thread watcher backed by the
+     *           {@code NIO WatchService}.
+     * @see Dynamic
      */
     void watch(String file, String key, Consumer<Object> callback);
 
@@ -148,13 +264,17 @@ public interface ConfigProvider {
      * <b>refused</b> (the field is never updated) and surfaced as a secret-safe structured
      * event under {@link KernelErrorCodes#EX_CFG_1004}.
      *
-     * <p>The default implementation is a no-op: Community-tier providers do not run a
-     * hot-reload watcher, so an {@code @Immutable} key is already effectively sealed.
-     * The kernel's registry-backed provider overrides this to record the guard so the
-     * Core {@code WatchService} driver can enforce the refusal.
-     *
      * @param file observed filename (relative to config directory); {@code null} = any
      * @param key  dot-path key to seal (e.g., {@code "security.jwks.uri"})
+     * @implSpec The default implementation does nothing, which is the correct behaviour for a
+     *           provider that runs no hot-reload watcher: with no reload path, the key is
+     *           already sealed. An implementation that does run one must record the guard and
+     *           keep the boot-time value authoritative for the lifetime of the process,
+     *           refusing every later on-disk change to the guarded pair and auditing it under
+     *           {@link KernelErrorCodes#EX_CFG_1004} with the file and key name only — never
+     *           the value.
+     * @implNote The kernel's registry-backed provider overrides this to record the guard so the
+     *           Core {@code WatchService} driver can enforce the refusal.
      * @see Immutable
      */
     default void guardImmutable(String file, String key) {
@@ -179,7 +299,14 @@ public interface ConfigProvider {
     /**
      * Human-readable provider name for logging and JFR telemetry.
      *
-     * @return non-null name string
+     * @return a non-null identifier for this implementation; it is what the
+     *         {@code ConfigSettingsResolved} JFR event records as the elected provider and what
+     *         {@link ConfigProviderException#missingProperty(String, String)} carries in
+     *         {@code rawArgs}, so it is the only clue an operator has as to which provider
+     *         answered a lookup
+     * @implSpec The default implementation returns the simple class name. An override should
+     *           stay stable across releases — a name that changes breaks the telemetry a
+     *           reader correlates on.
      */
     default String providerName() {
         return getClass().getSimpleName();
@@ -194,18 +321,8 @@ public interface ConfigProvider {
     // =========================================================================
 
     /**
-     * Top-level, immutable kernel settings.
-     *
-     * <h3>Memory layout</h3>
-     * <p>Today: 3 references + 1 long ≈ 40 bytes on heap per instance.
-     * With {@code value record} (JEP 401): inlined into parent, zero heap allocation.
-     *
-     * <h3>Strong Typing</h3>
-     * <p>{@code profile} is now a {@link KernelProfile} enum — JVM singletons, zero heap
-     * allocation on comparison, and JIT-constant-folded identity checks replace the former
-     * {@code String.equalsIgnoreCase} hot-path calls. This is idiomatic Project Valhalla
-     * preparation: enum references are effectively integer-width constants that the C2
-     * compiler scalarizes cleanly.
+     * One resolved snapshot of every configuration section, handed out by
+     * {@link ConfigProvider#kernelSettings()} and immutable for the life of the kernel.
      *
      * @param profile        active kernel profile ({@link KernelProfile#DEV} /
      *                       {@link KernelProfile#TEST} / {@link KernelProfile#PROD})
@@ -213,6 +330,12 @@ public interface ConfigProvider {
      * @param network        network / transport settings
      * @param persistence    persistence / database settings
      * @param telemetry      telemetry and observability settings
+     * @implNote Four references and one {@code long} per instance, ≈ 40 bytes on the heap; as a
+     *           {@code value record} (JEP 401) the same state inlines into its holder and costs
+     *           no heap allocation at all. Because {@code profile} is a {@link KernelProfile}
+     *           enum rather than a string, a profile test is a JIT-constant-folded identity
+     *           check against a JVM singleton: enum references are effectively integer-width
+     *           constants that the C2 compiler scalarizes cleanly.
      */
     @ValueCandidate
     record KernelSettings(
@@ -222,7 +345,13 @@ public interface ConfigProvider {
             PersistenceSettings persistence,
             TelemetrySettings telemetry
     ) {
-        /** Creates minimal settings using defaults for all optional sections. */
+        /**
+         * Creates the compiled fallback settings a provider starts from before any source is
+         * consulted: the {@link KernelProfile#PROD} profile — the safest of the three — a
+         * 512 MB off-heap budget, and the defaults of every section.
+         *
+         * @return a fully populated settings snapshot that binds no external source
+         */
         public static KernelSettings defaults() {
             return new KernelSettings(
                     KernelProfile.PROD,
@@ -233,17 +362,34 @@ public interface ConfigProvider {
             );
         }
 
-        /** @return {@code true} when running in the {@link KernelProfile#DEV} profile. */
+        /**
+         * Reports whether this snapshot carries the development profile, under which optional
+         * subsystems may degrade, in-memory backends are permitted and full exception detail
+         * is disclosed.
+         *
+         * @return {@code true} when running in the {@link KernelProfile#DEV} profile
+         */
         public boolean isDev() {
             return profile.isDev();
         }
 
-        /** @return {@code true} when running in the {@link KernelProfile#PROD} profile. */
+        /**
+         * Reports whether this snapshot carries the production profile, under which no
+         * subsystem may degrade, in-memory backends are refused and exception detail is
+         * withheld from callers.
+         *
+         * @return {@code true} when running in the {@link KernelProfile#PROD} profile
+         */
         public boolean isProd() {
             return profile.isProd();
         }
 
-        /** @return {@code true} when running in the {@link KernelProfile#TEST} profile. */
+        /**
+         * Reports whether this snapshot carries the test profile, under which degradation and
+         * in-memory backends are permitted but exception detail is withheld from callers.
+         *
+         * @return {@code true} when running in the {@link KernelProfile#TEST} profile
+         */
         public boolean isTest() {
             return profile.isTest();
         }
@@ -269,6 +415,14 @@ public interface ConfigProvider {
             int reactorCount,
             boolean quicEnabled
     ) {
+        /**
+         * Creates the compiled fallback section: port 8443, 64 KiB per-connection buffers, a
+         * native transport preferred, reactor count auto-detected from the CPU topology and
+         * QUIC enabled.
+         *
+         * @return the compiled network defaults, which a provider substitutes field by field
+         *         for whatever its own sources bind
+         */
         public static NetworkSettings defaults() {
             return new NetworkSettings(8443, 65_536, true, 0, true);
         }
@@ -295,6 +449,14 @@ public interface ConfigProvider {
             int maxPoolSize,
             boolean runMigrations
     ) {
+        /**
+         * Creates the compiled fallback section: a local PostgreSQL instance, an empty
+         * password and no schema migration on startup.
+         *
+         * @return the compiled persistence defaults — a development preset, not a production
+         *         configuration; the empty password is the absence of a credential, never a
+         *         credential worth carrying
+         */
         public static PersistenceSettings defaults() {
             return new PersistenceSettings(
                     "jdbc:postgresql://localhost:5432/exeris",
@@ -392,6 +554,15 @@ public interface ConfigProvider {
             String nodeId,
             String region
     ) {
+        /**
+         * Creates the compiled fallback section: JFR recording and the Prometheus endpoint on,
+         * the dormant tracing knob off, and placeholder {@code "local"} / {@code "default"}
+         * identifiers.
+         *
+         * @return the compiled telemetry defaults; a deployment that runs more than one kernel
+         *         instance sets {@code telemetry.nodeId} itself, since the placeholder cannot
+         *         tell two instances apart
+         */
         public static TelemetrySettings defaults() {
             return new TelemetrySettings(true, true, false, "local", "default");
         }
@@ -426,17 +597,21 @@ public interface ConfigProvider {
      * Thrown when the {@code ConfigProvider} cannot satisfy a required key or
      * encounters a fatal loading error during L0 bootstrap.
      *
-     * <h2>Telemetry Contract</h2>
-     * <p>Extends {@link ExerisKernelException} — inherits the structured {@code errorCode}
-     * and {@code rawArgs} binary telemetry infrastructure. Use the typed factory methods
-     * to ensure correct {@link KernelErrorCodes} codes and a stable {@code rawArgs} layout.
-     *
-     * <h2>Error Codes</h2>
+     * <p>Extends {@link ExerisKernelException}, so it carries the structured {@code errorCode}
+     * and the {@code rawArgs} binary telemetry payload. It reports one of three codes:
      * <ul>
      *   <li>{@link KernelErrorCodes#EX_CFG_1001} — required property missing</li>
      *   <li>{@link KernelErrorCodes#EX_CFG_1002} — type mismatch</li>
      *   <li>{@link KernelErrorCodes#EX_CFG_1003} — hot-reload file read error</li>
      * </ul>
+     *
+     * @apiNote Build one through a typed factory
+     *          ({@link #missingProperty(String, String)},
+     *          {@link #typeMismatch(String, String, String)},
+     *          {@link #hotReloadFailure(String, String, Throwable)}) rather than through the
+     *          general constructor: the factory is what pairs the right
+     *          {@link KernelErrorCodes} code with the {@code rawArgs} layout a Glass-Box
+     *          decoder reads positionally.
      */
     class ConfigProviderException extends ExerisKernelException {
 
@@ -446,16 +621,17 @@ public interface ConfigProvider {
         /**
          * General-purpose constructor for config failures not covered by the typed factory methods.
          *
-         * <p>For new code, prefer the factory methods ({@link #missingProperty},
-         * {@link #typeMismatch}, {@link #hotReloadFailure}) to guarantee a stable
-         * {@code rawArgs} layout for Glass-Box telemetry.
-         *
          * @param errorCode a non-null {@code EX-CFG-*} code from {@link KernelErrorCodes}
          * @param message   human-readable message; may include runtime details for console/log
          *                  output during L0 boot failure — for stable machine-readable telemetry,
          *                  rely on {@code errorCode} and {@code rawArgs} instead
          * @param cause     upstream throwable; may be {@code null}
          * @param rawArgs   raw domain arguments for binary telemetry
+         * @apiNote Prefer a typed factory ({@link #missingProperty(String, String)},
+         *          {@link #typeMismatch(String, String, String)},
+         *          {@link #hotReloadFailure(String, String, Throwable)}). This constructor fixes
+         *          neither the code nor the {@code rawArgs} layout, so what it produces is not
+         *          something a Glass-Box decoder can read positionally.
          */
         public ConfigProviderException(String errorCode, String message, Throwable cause, Object... rawArgs) {
             super(errorCode, message, cause, rawArgs);

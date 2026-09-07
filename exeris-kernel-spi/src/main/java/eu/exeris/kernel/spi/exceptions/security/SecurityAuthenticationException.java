@@ -20,12 +20,13 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 1 – {@code String} failureReason (e.g. "expired", "malformed", "revoked")</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class SecurityAuthenticationException extends ExerisKernelException {
 
     /**
-     * Creates a new authentication exception.
+     * Records a token validation failure with no chained cause — the token type and reason
+     * already explain it fully.
      *
      * @param tokenType     the type of token that failed validation
      * @param failureReason a short reason code (no user data — safe for telemetry)
@@ -36,7 +37,7 @@ public final class SecurityAuthenticationException extends ExerisKernelException
     }
 
     /**
-     * Creates a new authentication exception with a root cause.
+     * Records a token validation failure, keeping the root cause for forensics.
      *
      * @param tokenType     the type of token that failed validation
      * @param failureReason a short reason code

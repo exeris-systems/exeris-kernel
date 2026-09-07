@@ -10,6 +10,6 @@
  * coordination seam, which is a separate decision, and naming them here would invite a driver to
  * invent a parallel mechanism.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 package eu.exeris.kernel.spi.scheduling;

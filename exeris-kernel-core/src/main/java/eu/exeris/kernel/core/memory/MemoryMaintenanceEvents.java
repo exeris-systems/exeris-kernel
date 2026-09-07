@@ -18,7 +18,7 @@ import jdk.jfr.StackTrace;
  * <p>Extracted to a separate file to keep {@link MemoryMaintenanceTask} under the
  * PMD {@code TooManyMethods} threshold.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.MissingStaticMethodInNonInstantiatableClass")
 final class MemoryMaintenanceEvents {

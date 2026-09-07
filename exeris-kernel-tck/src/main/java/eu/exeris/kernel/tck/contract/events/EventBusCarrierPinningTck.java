@@ -21,7 +21,7 @@ import java.util.UUID;
  * <p>{@code bus.publish(pre-built descriptor, EventPayload.empty())} — the event routing
  * and dispatch path must never pin a carrier thread.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractSubsystemCarrierPinningTck
  * @see EventBusZeroAllocTck
  */

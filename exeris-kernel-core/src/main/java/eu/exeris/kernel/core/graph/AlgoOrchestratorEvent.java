@@ -20,7 +20,7 @@ import jdk.jfr.StackTrace;
  * to {@link Event#commit()} captures the full algorithm wall-clock time including
  * any path-finder delegation overhead.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.graph.AlgoOrchestrator")
 @Label("Graph Algorithm Invocation")

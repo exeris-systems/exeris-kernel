@@ -28,7 +28,7 @@ import java.util.HexFormat;
  * prefix is one opaque segment whatever the isolation key contains — the same two properties the
  * filesystem layout relies on.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityS3ObjectKey {
 

@@ -18,7 +18,7 @@ import java.lang.invoke.MethodType;
  * <p>Registers an OpenSSL {@code SSL_CTX_set_alpn_select_cb} upcall stub
  * at class load time. Prefers h2 over http/1.1 per RFC 7301 §3.1.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CommunityAlpnSelector {
 

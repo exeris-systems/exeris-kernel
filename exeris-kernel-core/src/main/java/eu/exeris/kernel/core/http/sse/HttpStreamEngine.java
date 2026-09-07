@@ -57,7 +57,7 @@ import java.util.concurrent.locks.LockSupport;
  * {@link StreamClosedException#authExpired(long, long)} ({@code EX-HTTP-4012}) and the stream is reset.
  * The deadline is captured at open — never a per-emit JWKS re-fetch.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 // The engine is the cohesive lifecycle owner for one stream (open head + emit/park/credit + close +
 // fail-closed/abortive teardown); its method count and branch total reflect that single

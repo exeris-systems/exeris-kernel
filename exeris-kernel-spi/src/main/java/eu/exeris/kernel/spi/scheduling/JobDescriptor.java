@@ -16,7 +16,7 @@ import java.util.Objects;
  * @param jobName human-readable name, used in JFR events and diagnostics
  * @param trigger when the job fires
  * @param body    the work; may block, and runs on a virtual thread
- * @since 0.11.0
+ * @since 0.11
  */
 public record JobDescriptor(String jobName, JobTrigger trigger, Runnable body) {
 

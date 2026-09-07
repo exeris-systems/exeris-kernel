@@ -33,7 +33,7 @@ import jdk.jfr.StackTrace;
  *
  * @see ResourceArbiter
  * @see ResourceArbiter.Action
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.ResourceArbiterDecision")
 @Label("Resource Arbiter Decision")

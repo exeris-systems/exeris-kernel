@@ -28,7 +28,7 @@ import jdk.jfr.StackTrace;
  * <h2>Cardinality</h2>
  * <p>One event pair per TLS session — never emitted on the cipher hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.tls.Handshake")
 @Label("TLS Handshake")

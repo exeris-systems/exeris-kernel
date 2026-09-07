@@ -28,7 +28,7 @@ import java.lang.foreign.MemorySegment;
  * <p>The backing {@link MemorySegment} is never copied. Slices use
  * {@code MemorySegment.asSlice()} on the same native region.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see CommunityMemoryAllocator
  * @see CommunityArenaShardPool
  */

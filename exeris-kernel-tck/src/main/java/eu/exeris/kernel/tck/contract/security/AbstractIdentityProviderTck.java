@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * trust-free, every validation failure is a terminal {@code EX-SEC-2002} deny (never {@code null},
  * never fail-open), and a verified token yields a fully populated {@link AuthenticationResult}.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public abstract class AbstractIdentityProviderTck {
 

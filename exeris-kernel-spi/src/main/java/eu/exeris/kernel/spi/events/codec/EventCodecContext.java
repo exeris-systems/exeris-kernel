@@ -27,7 +27,7 @@ import java.util.Objects;
  *
  * @param contentType   the requested content-type; never null (use {@link #JSON})
  * @param eventTypeName the event-type name for diagnostics; never null (may be empty)
- * @since 0.10.0
+ * @since 0.10
  */
 public record EventCodecContext(String contentType, String eventTypeName) {
 
@@ -35,10 +35,12 @@ public record EventCodecContext(String contentType, String eventTypeName) {
     public static final String JSON = "application/json";
 
     /**
-     * Canonical constructor — null-checks both components.
+     * Canonical constructor — requires both components, so a codec never has to distinguish
+     * "absent" from "empty" when it reads them.
      *
      * @param contentType   the requested content-type; never null
      * @param eventTypeName the event-type name; never null (may be empty)
+     * @throws NullPointerException if {@code contentType} or {@code eventTypeName} is {@code null}
      */
     public EventCodecContext {
         Objects.requireNonNull(contentType, "contentType must not be null");
@@ -46,11 +48,13 @@ public record EventCodecContext(String contentType, String eventTypeName) {
     }
 
     /**
-     * Creates a context for the {@link #JSON} default content-type.
+     * Creates a context for the {@link #JSON} default content-type — the shape a producer uses
+     * when it has no reason to ask for a specific wire format.
      *
      * @param eventTypeName the event-type name; never null (may be empty)
-     * @return a JSON-content-type context
-     * @since 0.10.0
+     * @return a context whose {@code contentType} is {@link #JSON}
+     * @throws NullPointerException if {@code eventTypeName} is {@code null}
+     * @since 0.10
      */
     public static EventCodecContext json(String eventTypeName) {
         return new EventCodecContext(JSON, eventTypeName);

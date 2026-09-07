@@ -29,7 +29,7 @@ import java.util.Objects;
  *
  * <p>Not thread-safe, and not meant to be: one instance reads one response on the calling thread.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 final class CommunityHttpClientResponseReader implements AutoCloseable {
 

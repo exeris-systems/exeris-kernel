@@ -29,7 +29,7 @@ import java.util.Optional;
  * through {@link #WEBSOCKET_SERVER_HANDLER} before boot, and reads the running engine back out of
  * {@link #WEBSOCKET_SERVER_ENGINE}.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class WebSocketKernelProviders {
 

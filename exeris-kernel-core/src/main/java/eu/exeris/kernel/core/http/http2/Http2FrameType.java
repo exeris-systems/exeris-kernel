@@ -7,7 +7,7 @@ package eu.exeris.kernel.core.http.http2;
 /**
  * RFC 7540 §4 — HTTP/2 Frame Types.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-4">RFC 7540 §4</a>
  */
 public enum Http2FrameType {

@@ -38,7 +38,7 @@ import java.util.List;
  * <p>Imports only {@code exeris-kernel-spi}. Zero knowledge of HikariCP, pgjdbc,
  * io_uring, or any Community/Enterprise implementation.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class InterceptorRegistry {
 

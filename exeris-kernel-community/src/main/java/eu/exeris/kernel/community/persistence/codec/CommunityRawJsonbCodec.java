@@ -17,7 +17,7 @@ import java.lang.foreign.MemorySegment;
  * <p>This codec may still cross the JDBC heap boundary, but it keeps
  * the SPI contract explicit by encoding/decoding through {@link LoanedBuffer}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityRawJsonbCodec implements EntityEncoder<MemorySegment>, EntityDecoder<MemorySegment> {
 

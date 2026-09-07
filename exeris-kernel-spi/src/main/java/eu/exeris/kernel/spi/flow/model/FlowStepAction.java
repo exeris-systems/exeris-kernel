@@ -5,24 +5,29 @@
 package eu.exeris.kernel.spi.flow.model;
 
 /**
- * Functional interface for a single executable step within a flow.
+ * One unit of application work inside a flow — the body of a saga step, and of the compensation
+ * that undoes it.
  *
- * <h2>Execution Contract</h2>
- * <p>Receives a {@link FlowContext} view of the current flow instance state and
- * returns a {@link FlowOutcome} signalling what the scheduler should do next.
+ * <p>An action reads the {@link FlowContext} view of the instance it is running for and returns a
+ * {@link FlowOutcome} that tells the scheduler what to do next: continue, short-circuit to
+ * completion, park until an external event arrives, or fail into compensation.
  *
- * <h2>Context Access</h2>
- * <p>Additional cross-cutting data (memory allocator, telemetry sinks, persistence engine)
- * is obtained via {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots —
- * NOT via method parameters. This keeps the SPI signature minimal and prevents
- * "parameter pollution" anti-patterns.
+ * <p><b>Allocation:</b> zero-alloc on hot path — {@link #execute(FlowContext)} runs on the dispatch
+ * path, and an Enterprise-tier implementation is required to allocate nothing on the heap while it
+ * runs.
+ * <p><b>Ownership:</b> an action owns every buffer it acquires for the duration of the call and
+ * releases it before returning; a buffer that outlives {@code execute} is a leak the engine cannot
+ * see.
  *
- * <h2>Zero-Allocation Contract (Enterprise)</h2>
- * <p>Implementations running in the Enterprise tier MUST NOT allocate on the heap
- * during {@link #execute(FlowContext)}. All transient buffers must be acquired from
- * {@link eu.exeris.kernel.spi.memory.MemoryAllocator} via {@code try-with-resources}.
- *
- * @since 0.5.0
+ * @implSpec An implementation running in the Enterprise tier MUST NOT allocate on the heap during
+ *           {@link #execute(FlowContext)}. Transient buffers MUST be acquired from
+ *           {@link eu.exeris.kernel.spi.memory.MemoryAllocator} and released with
+ *           {@code try-with-resources}.
+ * @apiNote Cross-cutting collaborators — the memory allocator, telemetry sinks, the persistence
+ *          engine — are read from {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots
+ *          rather than passed in. That is what keeps this signature to one parameter instead of
+ *          growing one per collaborator.
+ * @since 0.5
  * @see FlowContext
  * @see FlowOutcome
  */
@@ -30,10 +35,14 @@ package eu.exeris.kernel.spi.flow.model;
 public interface FlowStepAction {
 
     /**
-     * Executes this step for the given flow context.
+     * Performs this step's work for one flow instance and decides, by its return value, where that
+     * instance goes next.
      *
-     * @param context the current flow instance context; never {@code null}
+     * @param context the instance this invocation is running for; never {@code null}
      * @return the outcome signalling the next scheduler action; never {@code null}
+     * @apiNote Returning {@link FlowOutcome#FAIL} and throwing both route the instance into
+     *          compensation; returning is the controlled form and keeps the failure reason in the
+     *          engine's hands.
      */
     FlowOutcome execute(FlowContext context);
 }

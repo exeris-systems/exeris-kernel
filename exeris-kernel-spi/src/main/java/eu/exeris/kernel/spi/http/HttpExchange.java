@@ -28,7 +28,15 @@ import java.util.Map;
  * io_uring SQEs). Implementations may be backed by HTTP/1.1, HTTP/2, or HTTP/3
  * transports transparently.
  *
- * @since 0.5.0
+ * <p><b>Thread confinement:</b> owner thread — one exchange belongs to the single virtual thread
+ * the engine dispatched it on, and neither the exchange nor the buffers reachable through it may be
+ * touched from another thread
+ * <p><b>Ownership:</b> the engine owns both bodies — the request buffer for the duration of the
+ * handler call, and the response buffer from {@link #respond(HttpResponse)} onwards, which it
+ * releases after the write; a handler that needs the request body beyond the call must
+ * {@code retain()} its own reference and close it
+ *
+ * @since 0.5
  */
 public interface HttpExchange {
 
@@ -59,7 +67,11 @@ public interface HttpExchange {
      *
      * @return an immutable map of captured path parameters; never {@code null}, empty
      *         when the route declared no placeholders
-     * @since 0.10.0
+     * @implSpec The default implementation returns an empty map, which is the correct answer for
+     *           an exchange never dispatched through a template. An implementation that overrides
+     *           it must return an immutable map: the captured values are routing state, so a
+     *           handler able to write to it could change what a later request resolves to.
+     * @since 0.10
      */
     default Map<String, String> pathParams() {
         return Map.of();
@@ -68,29 +80,30 @@ public interface HttpExchange {
     /**
      * Writes the given response to the wire and finalises this exchange.
      *
-     * <p><strong>Ownership transfer:</strong> if {@link HttpResponse#body()} is
-     * non-null, the engine takes ownership of the {@link eu.exeris.kernel.spi.memory.LoanedBuffer}
-     * and releases it after the write completes. The caller MUST NOT close or retain the
-     * buffer after this call.
-     *
-     * <p>This method MUST be called exactly once per exchange. Calling it a second time
-     * throws {@link IllegalStateException}.
-     *
      * @param response response to write; must not be {@code null}
      * @throws IllegalStateException if {@code respond} has already been called on this exchange
+     * @implSpec An implementation takes ownership of a non-null {@link HttpResponse#body()} and
+     *           releases that {@link eu.exeris.kernel.spi.memory.LoanedBuffer} exactly once, after
+     *           the write completes — on the failure path as well, or the segment never returns to
+     *           the pool. The respond-once invariant is unconditional: a second call throws rather
+     *           than writing a second response.
+     * @apiNote Call this exactly once per exchange, and do not close or retain the body buffer
+     *          afterwards — it is the engine's from here on.
      */
     void respond(HttpResponse response);
 
     /**
-     * Writes a typed response payload using the exchange's response-encoding pipeline.
-     *
-     * <p>This is an additive path for auto-binding payload responses. Implementations that
-     * do not support typed response encoding may keep legacy behavior and throw
-     * {@link UnsupportedOperationException}.
+     * Encodes the payload through the exchange's response-encoding pipeline and writes the result,
+     * so a handler can answer with a domain object instead of assembling the body itself.
      *
      * @param response typed response payload descriptor; must not be {@code null}
      * @throws IllegalStateException if {@code respond} has already been called on this exchange
      * @throws UnsupportedOperationException if typed response encoding is not supported
+     * @implSpec The default implementation throws {@link UnsupportedOperationException}: typed
+     *           response encoding is an opt-in path, and an exchange with no encoder registry
+     *           refuses it rather than silently writing a bodyless response. An implementation
+     *           that overrides it consumes the respond-once budget exactly as
+     *           {@link #respond(HttpResponse)} does.
      */
     default void respond(HttpTypedResponse response) {
         throw new UnsupportedOperationException("Typed response encoding is not supported by this exchange");
@@ -103,6 +116,8 @@ public interface HttpExchange {
      * @param payload payload object to encode; may be {@code null}
      * @throws IllegalStateException if {@code respond} has already been called on this exchange
      * @throws UnsupportedOperationException if typed response encoding is not supported
+     * @implSpec The default implementation delegates to {@link #respond(HttpTypedResponse)} with an
+     *           empty header list.
      */
     default void respond(HttpStatus status, Object payload) {
         respond(HttpTypedResponse.of(status, payload));
@@ -113,6 +128,9 @@ public interface HttpExchange {
      *
      * @param status response status; must not be {@code null}
      * @throws IllegalStateException if {@code respond} has already been called on this exchange
+     * @implSpec The default implementation delegates to {@link #respond(HttpResponse)} with a
+     *           bodyless response carrying no headers and the inbound request's protocol version,
+     *           so a status-only answer cannot disagree with the version it is written on.
      */
     default void respond(HttpStatus status) {
         respond(HttpResponse.noBody(status, request().version()));

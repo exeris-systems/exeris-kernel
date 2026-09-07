@@ -44,7 +44,7 @@ import java.lang.invoke.VarHandle;
  *
  * @see WatermarkLevel
  * @see ResourceArbiter
- * @since 0.5.0
+ * @since 0.5
  */
 public final class WatermarkManager {
 

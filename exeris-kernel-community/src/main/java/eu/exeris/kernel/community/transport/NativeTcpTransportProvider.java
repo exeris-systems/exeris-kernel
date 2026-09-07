@@ -19,7 +19,7 @@ import eu.exeris.kernel.spi.transport.TransportProvider;
  * <p>Implementation is intentionally protocol-blind at the SPI level and uses only
  * provider slots from {@link KernelProviders}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.AvoidCatchingGenericException")
 public final class NativeTcpTransportProvider implements TransportProvider {

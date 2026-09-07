@@ -28,7 +28,7 @@ import jdk.jfr.StackTrace;
  * <p>Exception <b>class</b> only, never the message — matching {@code CommunityAcceptFault} and
  * {@code CommunityReactorDispatchFault}, because a message can carry text derived from a peer.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 @Name("eu.exeris.kernel.transport.CommunityAcceptRetry")
 @Label("Community Accept Retry")

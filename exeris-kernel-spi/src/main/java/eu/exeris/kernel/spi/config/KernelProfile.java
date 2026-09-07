@@ -5,16 +5,8 @@
 package eu.exeris.kernel.spi.config;
 
 /**
- * Active kernel deployment profile.
- *
- * <p>The profile is resolved once at L0 bootstrap by the active {@link ConfigProvider}
- * and propagated immutably via {@link ConfigProvider.KernelSettings#profile()}.
- * {@link ConfigProvider} implementations are the <em>single source of truth</em> —
- * {@link #loadFromEnvironment()} is a resolution helper for those implementations,
- * not an independent authority. Application code must always read the profile via
- * {@link ConfigProvider.KernelSettings#profile()} (or {@code KernelProfile.fromName}
- * inside a {@code ConfigProvider} implementation), never by calling
- * {@link #loadFromEnvironment()} directly.
+ * The three deployment postures a kernel can boot under, each a fixed answer to the same
+ * three questions.
  *
  * <p>The profile controls:
  * <ul>
@@ -23,6 +15,12 @@ package eu.exeris.kernel.spi.config;
  *   <li>Whether full exception details are surfaced to callers.</li>
  * </ul>
  *
+ * <p>The profile is resolved once at L0 bootstrap by the active {@link ConfigProvider}
+ * and propagated immutably via {@link ConfigProvider.KernelSettings#profile()}.
+ * {@link ConfigProvider} implementations are the <em>single source of truth</em> —
+ * {@link #loadFromEnvironment()} is a resolution helper for those implementations,
+ * not an independent authority.
+ *
  * <h2>Resolution Order (inside ConfigProvider implementations)</h2>
  * <ol>
  *   <li>{@code EXERIS_KERNEL_PROFILE} environment variable.</li>
@@ -30,7 +28,12 @@ package eu.exeris.kernel.spi.config;
  *   <li>Default: {@link #PROD} (safest fallback).</li>
  * </ol>
  *
- * @since 0.5.0
+ * @apiNote Read the profile through {@link ConfigProvider.KernelSettings#profile()}, or
+ *          through {@link #fromName(String)} inside a {@code ConfigProvider} implementation;
+ *          never by calling {@link #loadFromEnvironment()} directly from application or
+ *          subsystem code, which would answer the question from the environment rather than
+ *          from the provider that already decided it.
+ * @since 0.5
  */
 public enum KernelProfile {
 
@@ -64,29 +67,64 @@ public enum KernelProfile {
     // Query methods
     // -------------------------------------------------------------------------
 
-    /** @return whether optional subsystems may fail without aborting bootstrap. */
+    /**
+     * Reports whether the kernel still reaches a running state when an optional subsystem
+     * fails to initialise, instead of aborting the boot on the first failure.
+     *
+     * @return whether optional subsystems may fail without aborting bootstrap
+     */
     public boolean allowsDegradation() {
         return allowsDegradation;
     }
 
-    /** @return whether in-memory database backends are acceptable. */
+    /**
+     * Reports whether a persistence driver may satisfy the kernel with an in-memory backend
+     * rather than a real database.
+     *
+     * @return whether in-memory database backends are acceptable
+     */
     public boolean allowsInMemoryDb() {
         return allowsInMemoryDb;
     }
 
-    /** @return whether full exception detail is surfaced to callers. */
+    /**
+     * Reports whether an exception may reach a caller carrying full internal detail, rather
+     * than being reduced to an error code and a message that discloses nothing about the
+     * internals.
+     *
+     * @return whether full exception detail is surfaced to callers
+     */
     public boolean enablesFullErrorDisclosure() {
         return enableFullErrorDisclosure;
     }
 
+    /**
+     * Reports whether this is the development profile — the one that permits degradation,
+     * in-memory backends and full error disclosure all three.
+     *
+     * @return {@code true} for {@link #DEV}
+     */
     public boolean isDev() {
         return this == DEV;
     }
 
+    /**
+     * Reports whether this is the test profile, which permits degradation and in-memory
+     * backends but still withholds full error disclosure.
+     *
+     * @return {@code true} for {@link #TEST}
+     */
     public boolean isTest() {
         return this == TEST;
     }
 
+    /**
+     * Reports whether this is the production profile — the one nothing has to configure,
+     * since it is what an unset or blank profile resolves to, and the one that permits
+     * neither degradation nor an in-memory backend nor error disclosure.
+     *
+     * @return {@code true} for {@link #PROD}
+     */
     public boolean isProd() {
         return this == PROD;
     }
@@ -96,11 +134,15 @@ public enum KernelProfile {
     // -------------------------------------------------------------------------
 
     /**
-     * Resolves the profile from a string name (case-insensitive).
+     * Resolves the profile from a string name, case-insensitively and ignoring surrounding
+     * whitespace.
      *
-     * @param name profile name; {@code null} → {@link #PROD}
+     * @param name profile name ({@code "dev"}, {@code "test"}, {@code "prod"});
+     *             {@code null} or blank → {@link #PROD}
      * @return matching profile
-     * @throws IllegalArgumentException if the name is non-null and unrecognized
+     * @throws IllegalArgumentException if the name is non-blank and names no profile — an
+     *                                  unrecognised profile is refused rather than quietly
+     *                                  treated as {@link #PROD}
      */
     public static KernelProfile fromName(String name) {
         if (name == null || name.isBlank()) {
@@ -116,14 +158,8 @@ public enum KernelProfile {
     }
 
     /**
-     * Default resolution helper for {@link ConfigProvider} implementations.
-     *
-     * <p><b>Usage restriction:</b> this method is intended to be called exclusively by
-     * {@code ConfigProvider} implementations during L0 bootstrap to resolve the active
-     * profile when no explicit profile is configured. Application and subsystem code
-     * must read the profile via {@link ConfigProvider.KernelSettings#profile()} from
-     * the {@code KernelProviders.CURRENT_CONFIG} scoped slot — not by calling this
-     * method directly.
+     * Resolves the profile from the process environment, for a {@link ConfigProvider}
+     * implementation that has no explicitly configured profile to hand.
      *
      * <p>Resolution order:
      * <ol>
@@ -133,6 +169,15 @@ public enum KernelProfile {
      * </ol>
      *
      * @return active kernel profile; never {@code null}
+     * @throws IllegalArgumentException if either source holds a non-blank value that names no
+     *                                  profile — an unreadable profile fails the boot rather
+     *                                  than silently resolving to {@link #PROD}
+     * @apiNote Call this from a {@code ConfigProvider} implementation during L0 bootstrap and
+     *          nowhere else. Application and subsystem code reads the profile through
+     *          {@link ConfigProvider.KernelSettings#profile()} on the provider bound to
+     *          {@code KernelProviders.CURRENT_CONFIG}; reading the environment again would
+     *          answer a second, unsynchronised question, and a provider that resolved the
+     *          profile from a source of its own would be contradicted by it.
      */
     public static KernelProfile loadFromEnvironment() {
         String env = System.getenv("EXERIS_KERNEL_PROFILE");
@@ -148,6 +193,13 @@ public enum KernelProfile {
         return PROD;
     }
 
+    /**
+     * Returns the canonical lower-case spelling of this profile — {@code dev}, {@code test} or
+     * {@code prod} — which is both what {@link #fromName(String)} accepts and what the
+     * bootstrap telemetry carries, rather than the enum constant name.
+     *
+     * @return the canonical profile name; never {@code null}
+     */
     @Override
     public String toString() {
         return name;

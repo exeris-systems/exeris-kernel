@@ -18,6 +18,8 @@ import java.util.Optional;
  *
  * <h2>Isolation Strategies</h2>
  * <table>
+ *   <caption>Each isolation strategy, the mechanism the Persistence layer applies for it, and the
+ *   deployment shape it targets</caption>
  *   <tr><th>Strategy</th><th>Mechanism</th><th>Use Case</th></tr>
  *   <tr><td>{@link IsolationStrategy#SHARED}</td>
  *       <td>{@code SET LOCAL exeris.tenant_id = ?} (RLS)</td>
@@ -30,14 +32,20 @@ import java.util.Optional;
  *       <td>Enterprise, maximum physical isolation</td></tr>
  * </table>
  *
- * <h2>Valhalla Readiness</h2>
- * <p>Implementations SHOULD be flat records. The canonical implementation
- * ({@code ImmutableStorageContext}) is ready for {@code value record} migration.
+ * <p><b>Allocation:</b> zero-alloc on hot path — every accessor hands back an already-resolved
+ * value, and the {@link #sharedScopeKey()} and {@link #attributes()} defaults return shared empty
+ * constants rather than fresh ones
+ * <p><b>Thread confinement:</b> any thread — a context is deeply immutable and is read from every
+ * thread that inherits the {@code STORAGE_CONTEXT} binding, forked subtasks included
+ * <p><b>Ownership:</b> the Security edge builds it and binds it for the request scope; the
+ * Persistence layer only reads it, and there is nothing to release
  *
- * <h2>Zero-Copy Contract</h2>
- * <p>All accessors are O(1). No lazy DB lookups, no mutable state.
- *
- * @since 0.5.0
+ * @implSpec All accessors MUST be O(1) — no lazy DB lookups, no I/O, no mutable state — and an
+ *           implementation SHOULD be a flat record so it stays deeply immutable across the
+ *           {@code ScopedValue} hand-off.
+ * @implNote The canonical implementation, {@link ImmutableStorageContext}, is ready for
+ *           {@code value record} migration (JEP 401).
+ * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT
  * @see PrincipalContext
  */
@@ -71,53 +79,56 @@ public interface StorageContext {
     Optional<String> isolationKey();
 
     /**
-     * The physical isolation strategy for this context.
+     * The physical isolation strategy the Persistence layer applies when it configures a
+     * connection for this request.
      *
-     * @return isolation strategy, never {@code null}
+     * @return the isolation strategy; never {@code null}
      */
     IsolationStrategy strategy();
 
     /**
      * Schema name for {@link IsolationStrategy#SEPARATED_SCHEMA} mode.
      *
-     * @return schema name or empty if not applicable
+     * @return the schema the connection switches to via {@code SET search_path}, or empty under
+     *         any other strategy
      */
     Optional<String> schemaName();
 
     /**
      * DataSource routing key for {@link IsolationStrategy#DEDICATED} mode.
      *
-     * @return datasource key or empty if not applicable
+     * @return the key selecting the tenant's dedicated datasource, or empty under any other
+     *         strategy
      */
     Optional<String> dataSourceKey();
 
     /**
      * The shared-scope partition this request participates in, if any.
      *
-     * <h2>An orthogonal dimension, not a fourth strategy</h2>
-     * <p>{@link #strategy()} answers <i>where rows physically live</i>; this answers <i>who may read a
-     * given row</i>. The two are independent: a shared dataset is valid under
-     * {@link IsolationStrategy#SHARED}, {@link IsolationStrategy#SEPARATED_SCHEMA}, and
-     * {@link IsolationStrategy#DEDICATED} alike (ADR-012 §4b).
+     * <p><b>An orthogonal dimension, not a fourth strategy.</b> {@link #strategy()} answers
+     * <i>where rows physically live</i>; this answers <i>who may read a given row</i>. The two are
+     * independent: a shared dataset is valid under {@link IsolationStrategy#SHARED},
+     * {@link IsolationStrategy#SEPARATED_SCHEMA}, and {@link IsolationStrategy#DEDICATED} alike
+     * (ADR-012 §4b).
      *
-     * <h2>Presence is the mode</h2>
-     * <p>There is deliberately no separate visibility-mode accessor to reconcile this against:
+     * <p><b>Presence is the mode.</b> There is deliberately no separate visibility-mode accessor to
+     * reconcile this against:
      * <ul>
-     *   <li><b>empty</b> — tenant-private. Rows are visible only to {@link #isolationKey()}. This is the
-     *       default and matches the behaviour of every deployment that predates this accessor.</li>
+     *   <li><b>empty</b> — tenant-private. Rows are visible only to {@link #isolationKey()}. This is
+     *       the default.</li>
      *   <li><b>present</b> — reads widen to the shared partition; writes stay pinned to
      *       {@link #isolationKey()} as the owner, so a tenant can never create or mutate another owner's
      *       row (ADR-012 §4b.4).</li>
      * </ul>
      *
-     * <p>A context carrying a shared scope always carries an {@link #isolationKey()} too — the write
-     * predicate has nothing to pin to otherwise. Implementations MUST reject that combination.
-     *
      * <p>Like every other accessor here this is an <em>outcome</em>, not a mechanism: no RLS predicate,
      * policy object, or driver type crosses this interface.
      *
      * @return the shared-scope partition key, or empty for the tenant-private default
-     * @since 0.11.0
+     * @implSpec A context carrying a shared scope MUST also carry an {@link #isolationKey()}: the
+     *           owner-scoped write predicate has nothing to pin to otherwise. An implementation
+     *           MUST reject a shared scope presented without one.
+     * @since 0.11
      */
     default Optional<String> sharedScopeKey() {
         return Optional.empty();
@@ -134,10 +145,9 @@ public interface StorageContext {
      * it is impossible to accidentally smuggle identity or security objects
      * (e.g., {@code PrincipalContext}) across the persistence boundary.
      *
-     * <p>MUST return an unmodifiable map. MUST NOT return {@code null} —
-     * use {@link Map#of()} for an empty context.
-     *
      * @return immutable {@code String→String} attribute map; never {@code null}
+     * @implSpec An implementation MUST return an unmodifiable map and MUST NOT return
+     *           {@code null} — use {@link Map#of()} for an empty context.
      */
     default Map<String, String> attributes() {
         return Map.of();

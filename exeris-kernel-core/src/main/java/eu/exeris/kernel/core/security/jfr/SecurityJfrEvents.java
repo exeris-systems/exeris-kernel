@@ -111,7 +111,7 @@ public final class SecurityJfrEvents {
      * already drifted apart in the javadoc that described them.
      *
      * @param reason why no security context could be established
-     * @since 0.12.0
+     * @since 0.12
      */
     public static void emitContextMissing(SecurityDenialReason reason) {
         emitContextMissing(reason.errorCode(), reason.name());

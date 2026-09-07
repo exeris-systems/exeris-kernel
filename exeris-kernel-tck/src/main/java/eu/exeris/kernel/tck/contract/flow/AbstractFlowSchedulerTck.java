@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * it schedules tasks inside a {@code StructuredTaskScope}, then cancels the scope
  * and asserts that <em>no orphaned Virtual Threads survive</em> after {@code close()}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractFlowSchedulerTck {
 

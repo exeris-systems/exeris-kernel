@@ -32,7 +32,7 @@ import java.nio.charset.StandardCharsets;
  * {@link MemoryAllocator} injected via the constructor — respecting the
  * tier-specific pooling contract (Community heap-pool or Enterprise slab).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7541#section-3">RFC 7541 §3</a>
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
@@ -387,7 +387,7 @@ public final class HpackDecoder {
     /**
      * Unchecked exception for HPACK decoding errors (RFC 7541 §3 violations).
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class HpackDecodingException extends ExerisKernelException {
 

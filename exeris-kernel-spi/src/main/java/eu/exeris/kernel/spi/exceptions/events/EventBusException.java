@@ -26,26 +26,31 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 2 – {@code long}   queueCapacity</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class EventBusException extends ExerisKernelException {
 
     private static final String MSG_PUBLISH_OVERFLOW = "Event bus queue overflow";
 
     /**
-     * General-purpose constructor — use typed factory methods when possible.
+     * Constructs a bus failure with no Glass-Box arguments — for a condition the typed factories
+     * do not cover.
      *
      * @param message static message template
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6002} and leaves {@code rawArgs} empty, so a
+     *          decoder gets the code but no structured detail. Prefer
+     *          {@link #publishOverflow(String, long, long)} where it applies.
      */
     public EventBusException(String message) {
         super(KernelErrorCodes.EX_EVENT_6002, message, (Throwable) null);
     }
 
     /**
-     * General-purpose constructor with cause.
+     * Constructs a bus failure that carries an upstream cause but no Glass-Box arguments.
      *
      * @param message static message template
      * @param cause   upstream throwable; may be {@code null}
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6002} and leaves {@code rawArgs} empty.
      */
     public EventBusException(String message, Throwable cause) {
         super(KernelErrorCodes.EX_EVENT_6002, message, cause);
@@ -65,7 +70,11 @@ public class EventBusException extends ExerisKernelException {
      * @param eventType     the event type name that could not be published
      * @param queueDepth    current queue depth when the overflow occurred
      * @param queueCapacity maximum queue capacity
-     * @return a fully initialised {@link EventBusException}
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6002} and the three-element
+     *         {@code rawArgs} layout above
+     * @apiNote The publisher must not retry inline on this: the exception is meant to reach the
+     *          caller's structured-scope boundary so the joiner policy decides whether to fail
+     *          fast or shed the event.
      */
     public static EventBusException publishOverflow(String eventType, long queueDepth, long queueCapacity) {
         return new EventBusException(KernelErrorCodes.EX_EVENT_6002, MSG_PUBLISH_OVERFLOW, null,

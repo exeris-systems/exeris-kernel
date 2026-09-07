@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>This class imports ONLY from {@code exeris-kernel-spi}. It must never import
  * {@code eu.exeris.kernel.community.*} or {@code eu.exeris.kernel.enterprise.*}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractMemoryAllocatorTck {
 

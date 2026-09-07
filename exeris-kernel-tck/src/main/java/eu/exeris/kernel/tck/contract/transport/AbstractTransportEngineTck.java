@@ -40,7 +40,7 @@ import java.util.concurrent.TimeUnit;
  *   <li>{@code stats()} returns valid diagnostics snapshot</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractTransportEngineTck {
 

@@ -14,11 +14,11 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * whose {@link QueryResult#row()} provides a {@link RowCursor} reading directly from
  * off-heap {@code LoanedBuffer} — zero heap allocation in the iteration loop.
  *
- * <h2>Prepared Statement Path (ADR-010 L0 Fix)</h2>
- * <p>For parameterised queries, use {@link #prepare(String)} to obtain a
+ * <h2>Prepared Statement Path (ADR-010)</h2>
+ * <p>Parameterised queries go through {@link #prepare(String)}, which yields a
  * {@link PersistenceStatement} with typed binders ({@code bindInt}, {@code bindLong},
- * etc.) that eliminate autoboxing and {@code Object[]} allocation entirely.
- * The legacy {@code executeQuery(sql, Object...)} overloads have been removed.
+ * etc.) and so avoids autoboxing and {@code Object[]} allocation entirely. This SPI
+ * offers no {@code executeQuery(sql, Object...)} form.
  *
  * <h2>Transaction Control</h2>
  * <p>Connections default to auto-commit OFF. Use {@link #beginTransaction()},
@@ -38,13 +38,20 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  *      → conn.close() → returns to pool
  * </pre>
  *
- * <h2>Thread Safety</h2>
- * <p>NOT thread-safe. Each virtual thread MUST own its own connection.
+ * <p><b>Allocation:</b> allocates one {@link PersistenceStatement} per {@link #prepare(String)}.
+ * A {@link QueryResult} may be allocated per query or once per connection and reset on each one —
+ * this interface does not require either. Per-row allocation belongs to the result.
+ * <p><b>Thread confinement:</b> owner thread — a connection is not thread-safe, and each virtual
+ * thread MUST own its own.
+ * <p><b>Ownership:</b> the caller closes the connection, which rolls back any open transaction
+ * and returns the underlying resource to the pool; statements and results opened from it are
+ * closed by the caller in their own right, and an object obtained through
+ * {@link #unwrap(Class)} is never the caller's to close.
  *
+ * @since 0.5
  * @see PersistenceEngine
  * @see PersistenceStatement
  * @see QueryResult
- * @since 0.5.0
  */
 @SuppressWarnings("PMD.TooManyMethods") // SPI contract surface — method count is intrinsic
 public interface PersistenceConnection extends AutoCloseable {
@@ -56,18 +63,18 @@ public interface PersistenceConnection extends AutoCloseable {
     /**
      * Prepares a statement for execution with typed parameter binding.
      *
-     * <p>This is the <b>preferred</b> query execution path — it eliminates the
-     * autoboxing and {@code Object[]} allocation overhead of the legacy
-     * {@code executeQuery(sql, params...)} pattern.
-     *
-     * <p><b>Community:</b> Creates a JDBC {@code PreparedStatement} wrapper.
-     * <p><b>Enterprise:</b> Issues a Parse message (or retrieves from statement cache)
-     * and prepares an off-heap Bind frame backed by {@code LoanedBuffer}.
-     *
      * @param sql query string (parameters marked with {@code $1, $2, ...} for PostgreSQL)
      * @return a statement ready for binding; caller MUST close via try-with-resources
-     * @throws PersistenceProviderException on parse failure
-     * @since 0.5.0
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} if the
+     *         server rejects the statement at parse time
+     * @apiNote This is the query path to reach for: binding through
+     *          {@link PersistenceStatement} keeps parameters off the heap, where an
+     *          {@code Object...} form would box every primitive.
+     * @implNote Community creates a JDBC {@code PreparedStatement} wrapper; Enterprise issues a
+     *           Parse message (or takes the entry from its statement cache) and prepares an
+     *           off-heap Bind frame backed by a {@code LoanedBuffer}.
+     * @since 0.5
      */
     PersistenceStatement prepare(String sql);
 
@@ -76,31 +83,30 @@ public interface PersistenceConnection extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Executes a SQL query and returns a zero-copy result set.
-     *
-     * <p><b>Enterprise hot path:</b> The returned {@link QueryResult} iterates
-     * directly over off-heap buffers. No heap objects are created per row.
-     *
-     * <p><b>Community path:</b> The returned {@link QueryResult} wraps a JDBC
-     * {@code ResultSet} and may allocate per-row.
-     *
-     * <p>For parameterised queries, use {@link #prepare(String)} instead to avoid
-     * autoboxing and {@code Object[]} allocation.
+     * Executes a parameterless SQL query and returns a result set positioned before the first row.
      *
      * @param sql SQL query string (no parameters)
      * @return query result; caller MUST close via try-with-resources
-     * @throws PersistenceProviderException on query failure
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} on a SQL,
+     *         protocol or I/O failure
+     * @apiNote Use {@link #prepare(String)} for anything parameterised; interpolating values into
+     *          {@code sql} is both an injection risk and a cache miss on every call.
+     * @implNote The Enterprise result iterates directly over off-heap buffers and creates no heap
+     *           object per row; the Community result wraps a JDBC {@code ResultSet} and may
+     *           allocate per row.
      */
     QueryResult executeQuery(String sql);
 
     /**
-     * Executes a DML statement (INSERT, UPDATE, DELETE) without parameters.
-     *
-     * <p>For parameterised DML, use {@link #prepare(String)} instead.
+     * Executes a parameterless DML statement (INSERT, UPDATE, DELETE).
      *
      * @param sql DML statement (no parameters)
      * @return number of rows affected
-     * @throws PersistenceProviderException on execution failure
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} on a SQL,
+     *         protocol or I/O failure
+     * @apiNote Use {@link #prepare(String)} for parameterised DML.
      */
     long executeUpdate(String sql);
 
@@ -112,44 +118,51 @@ public interface PersistenceConnection extends AutoCloseable {
      * Begins an explicit transaction ({@code BEGIN}) with default isolation
      * ({@link TransactionIsolation#READ_COMMITTED}) and read-write mode.
      *
-     * @throws PersistenceProviderException if already in a transaction
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} if already
+     *         in a transaction
      */
     void beginTransaction();
 
     /**
      * Begins a transaction with specific isolation level and mutability rules.
      *
-     * <p><b>Community:</b> Maps to JDBC {@code Connection.setTransactionIsolation()}
-     * and {@code Connection.setReadOnly()}.
-     * <p><b>Enterprise:</b> Emits a single
-     * {@code BEGIN TRANSACTION ISOLATION LEVEL ... READ ONLY} wire protocol message.
-     *
      * @param isolation isolation level (e.g., {@link TransactionIsolation#SERIALIZABLE})
      * @param readOnly  if {@code true}, enables backend optimizations for read-only
      *                  workloads (PostgreSQL skips write conflict detection)
-     * @throws PersistenceProviderException if already in a transaction
-     * @since 0.5.0
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} if already
+     *         in a transaction
+     * @implNote Community maps this onto JDBC {@code Connection.setTransactionIsolation()} and
+     *           {@code Connection.setReadOnly()}; Enterprise emits a single
+     *           {@code BEGIN TRANSACTION ISOLATION LEVEL ... READ ONLY} wire-protocol message.
+     * @since 0.5
      */
     void beginTransaction(TransactionIsolation isolation, boolean readOnly);
 
     /**
      * Commits the current transaction ({@code COMMIT}).
      *
-     * @throws PersistenceProviderException on commit failure
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} on commit
+     *         failure
      */
     void commit();
 
     /**
      * Rolls back the current transaction ({@code ROLLBACK}).
      *
-     * @throws PersistenceProviderException on rollback failure
+     * @throws PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} on rollback
+     *         failure
      */
     void rollback();
 
     /**
-     * Returns {@code true} if a transaction is currently active.
+     * Reports whether an explicit transaction is open on this connection.
      *
-     * @return transaction state
+     * @return {@code true} between {@code beginTransaction} and the {@link #commit()} or
+     *         {@link #rollback()} that ends it; {@code false} under auto-commit semantics
      */
     boolean inTransaction();
 
@@ -158,18 +171,17 @@ public interface PersistenceConnection extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Opens a bulk-insert session for the given table.
-     *
-     * <p>Enterprise tier: uses PostgreSQL {@code COPY ... FROM STDIN BINARY} for
-     * O(1) per-row overhead — off-heap, zero-copy framing.
-     * Community tier: default implementation returns {@link java.util.Optional#empty()}
-     * — callers should fall back to batched {@link #prepare(String)} inserts.
-     *
-     * <p>The returned {@link BulkInserter} MUST be closed via try-with-resources.
+     * Opens a bulk-insert session for the given table, where the provider supports one.
      *
      * @param table the target table name (unquoted, schema-prefixed if necessary)
      * @return an {@link java.util.Optional} containing the bulk inserter, or empty if
-     * this tier does not support the COPY protocol
+     *         this provider offers no COPY-style path; the caller closes a present inserter via
+     *         try-with-resources
+     * @apiNote An empty result is an ordinary answer, not a failure — a caller that needs to work
+     *          on both tiers falls back to batched {@link #prepare(String)} inserts.
+     * @implNote Enterprise uses PostgreSQL {@code COPY ... FROM STDIN BINARY} for O(1) per-row
+     *           overhead with off-heap, zero-copy framing; the default implementation, which
+     *           Community takes, returns {@link java.util.Optional#empty()}.
      */
     default java.util.Optional<BulkInserter> openBulkInserter(String table) {
         return java.util.Optional.empty(); // Community default: no COPY support
@@ -189,23 +201,22 @@ public interface PersistenceConnection extends AutoCloseable {
      * off-heap buffers, or any tier-specific class. Each provider decides what,
      * if anything, it exposes.
      *
-     * <p><b>Community:</b> The JDBC-backed connection unwraps to
-     * {@code java.sql.Connection} (consumed by the JDBC compatibility bridge —
-     * see ADR-017). Request-scoped forwarding wrappers delegate the unwrap to
-     * their backing connection so the seam survives per-request session wrapping.
-     * <p><b>Enterprise:</b> May unwrap to a wire-protocol session handle, or
-     * return {@link java.util.Optional#empty()} when no compatible facility exists.
-     *
      * <p>The default implementation returns this connection when it is itself an
      * instance of {@code type}, and {@link java.util.Optional#empty()} otherwise.
-     * Unwrapping never transfers ownership: the returned object's lifecycle stays
-     * bound to this connection — callers MUST NOT close it directly.
      *
      * @param type the requested facility type; never {@code null}
      * @param <T>  the facility type
      * @return an {@link java.util.Optional} holding the unwrapped instance, or
      *         empty if this provider exposes no such facility
-     * @since 0.8.1
+     * @implSpec Unwrapping never transfers ownership: the returned object's lifecycle stays bound
+     *           to this connection, and callers MUST NOT close it directly. A forwarding wrapper
+     *           MUST delegate the unwrap to the connection it wraps, so that the seam survives
+     *           per-request session wrapping.
+     * @implNote The Community JDBC-backed connection unwraps to {@code java.sql.Connection},
+     *           consumed by the JDBC compatibility bridge (ADR-017); an Enterprise connection may
+     *           unwrap to a wire-protocol session handle, or to
+     *           {@link java.util.Optional#empty()} when no compatible facility exists.
+     * @since 0.8
      */
     default <T> java.util.Optional<T> unwrap(Class<T> type) {
         return type.isInstance(this)
@@ -218,17 +229,17 @@ public interface PersistenceConnection extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Returns {@code true} if this connection is still open and usable.
+     * Reports whether this connection may still be used for queries.
      *
-     * @return connection liveness
+     * @return {@code true} while the connection can still serve queries; {@code false} once it
+     *         has been closed or otherwise invalidated
      */
     boolean isOpen();
 
     /**
-     * Closes the connection and returns it to the pool.
+     * Closes the connection and returns it to the pool, rolling back any transaction still open.
      *
-     * <p>If a transaction is active, it is rolled back before closing.
-     * Idempotent — multiple calls are safe.
+     * <p>Idempotent — multiple calls are safe.
      */
     @Override
     void close();

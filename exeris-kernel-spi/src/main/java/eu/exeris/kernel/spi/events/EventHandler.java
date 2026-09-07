@@ -10,29 +10,29 @@ package eu.exeris.kernel.spi.events;
  * <h2>Payload Lifecycle Contract</h2>
  * <p>The {@link EventPayload} passed to {@link #handle} is alive for the duration
  * of the call. The {@link EventBus} has already adjusted the refCount to account
- * for the number of subscribers before invoking handlers:
- * <ul>
- *   <li>Each handler <b>MUST</b> call {@code payload.close()} — or use
- *       try-with-resources — to decrement the refCount when done.</li>
- *   <li>If the handler needs to retain the payload beyond the invocation scope
- *       (e.g., pass it to another {@link java.util.concurrent.StructuredTaskScope} fork),
- *       it MUST call {@code payload.retain()} <b>before</b> forking, and the fork
- *       is responsible for the matching {@code close()}.</li>
- *   <li>For Community (heap-backed): retain/close are lightweight no-ops — GC handles it.</li>
- *   <li>For Enterprise (off-heap slab): failing to close causes a slab pool exhaustion leak.</li>
- * </ul>
+ * for the number of subscribers before invoking handlers, so a handler never has to
+ * reason about how many siblings it has — it settles its own single reference.
  *
- * <h2>Thread Safety</h2>
- * <p>Implementations MUST be thread-safe — handlers may be invoked concurrently
- * from multiple virtual threads (Community broadcast via {@code StructuredTaskScope}).
+ * <p><b>Thread confinement:</b> any thread — the bus may invoke {@link #handle}
+ * concurrently on several virtual threads, so an implementation carries its own
+ * synchronisation for any state it shares between invocations
+ * <p><b>Ownership:</b> the handler owns exactly the one reference it is handed and owes one
+ * {@link EventPayload#close()} for it; a reference passed onward must be
+ * {@link EventPayload#retain()}ed first, and the receiver then owes that close
  *
- * <h2>Off-Heap Safety</h2>
- * <p>For Enterprise events where {@code payload.length() > 0}, the backing
- * {@link java.lang.foreign.MemorySegment} is valid <b>only</b> during the
- * {@link #handle} invocation (or while refCount > 0 after retain).
- * Accessing it after the final {@code close()} results in undefined behaviour.
- *
- * @since 0.5.0
+ * @implSpec An implementation is thread-safe: the same handler instance may be executing
+ *           {@link #handle} on several virtual threads at once. It closes every payload it is
+ *           given — directly, or by retaining before handing the payload to a fork that closes
+ *           it. It does not read {@link EventPayload#segment()} after the close that took the
+ *           reference count to zero.
+ * @apiNote Wrap the body in {@code try (payload) { … }} and the close takes care of itself. On an
+ *          off-heap binding a missed close is a slab-pool leak; on a heap binding it is invisible
+ *          until the same handler is deployed against one that pools.
+ * @implNote On the heap-backed Community binding retain and close are lightweight and the GC
+ *           reclaims the bytes regardless; on an off-heap Enterprise binding the segment is valid
+ *           only while the reference count is above zero, and reading it afterwards is undefined
+ *           behaviour because the slab may already back another event.
+ * @since 0.5
  * @see EventBus#subscribe(String, EventHandler)
  * @see EventPayload
  */
@@ -40,21 +40,21 @@ package eu.exeris.kernel.spi.events;
 public interface EventHandler {
 
     /**
-     * Handles a single event.
-     *
-     * <p><b>Recommended pattern (try-with-resources):</b>
-     * <pre>{@code
-     * void handle(EventDescriptor descriptor, EventPayload payload) {
-     *     try (payload) {
-     *         MemorySegment bytes = payload.segment();
-     *         // ... process ...
-     *     }
-     * }
-     * }</pre>
+     * Consumes one delivered event, taking ownership of the single payload reference the bus
+     * hands over with it.
      *
      * @param descriptor routing metadata — Valhalla-ready, always valid, never null
      * @param payload    RAII-managed payload bytes — valid for this call's duration; never null
      *                   (use {@link EventPayload#empty()} for no-data events)
+     * @apiNote The recommended shape closes the payload by construction:
+     *          {@snippet lang="java" :
+     *          void handle(EventDescriptor descriptor, EventPayload payload) {
+     *              try (payload) {
+     *                  MemorySegment bytes = payload.segment();
+     *                  // ... process ...
+     *              }
+     *          }
+     *          }
      */
     void handle(EventDescriptor descriptor, EventPayload payload);
 }

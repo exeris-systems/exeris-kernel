@@ -23,9 +23,10 @@ import java.util.Optional;
  * (ADR-056 §5): there is no namespace to resolve into, and the weakest possible placement must not be
  * reached by silence.
  *
- * <p>Implementations are thread-safe; the handles they return are not.
- *
- * @since 0.11.0
+ * @implSpec Implementations must be thread-safe. The handles returned from {@link #beginUpload},
+ *           {@link #openDownload(BlobRef)} and {@link #openDownload(BlobRef, BlobRange)} need not
+ *           be — each documents its own thread confinement.
+ * @since 0.11
  */
 public interface BlobStore extends AutoCloseable {
 
@@ -41,7 +42,10 @@ public interface BlobStore extends AutoCloseable {
      * @param contentType   media type to record, or {@code null} for
      *                      {@link BlobMetadata#DEFAULT_CONTENT_TYPE}
      * @return an open upload handle; never {@code null}
-     * @throws BlobStorageException     if the ambient context carries no isolation key, or on I/O failure
+     * @throws BlobStorageException     if the ambient context carries no isolation key
+     *                                  ({@code EX-BLOB-8002}), {@code contentLength} exceeds the
+     *                                  driver's configured ceiling ({@code EX-BLOB-8005}), or on I/O
+     *                                  failure ({@code EX-BLOB-8003})
      * @throws NullPointerException     if {@code ref} is {@code null}
      * @throws IllegalArgumentException if {@code contentLength} is negative
      */
@@ -52,8 +56,9 @@ public interface BlobStore extends AutoCloseable {
      *
      * @param ref tenant-relative reference to read
      * @return an open download handle; never {@code null}
-     * @throws BlobStorageException if the object does not exist, the ambient context carries no
-     *                              isolation key, or on I/O failure
+     * @throws BlobStorageException if the object does not exist ({@code EX-BLOB-8001}), the ambient
+     *                              context carries no isolation key ({@code EX-BLOB-8002}), or on
+     *                              I/O failure ({@code EX-BLOB-8003})
      * @throws NullPointerException if {@code ref} is {@code null}
      */
     BlobDownloadHandle openDownload(BlobRef ref);
@@ -69,8 +74,9 @@ public interface BlobStore extends AutoCloseable {
      * @param ref   tenant-relative reference to read
      * @param range the byte range to read
      * @return an open download handle limited to {@code range}; never {@code null}
-     * @throws BlobStorageException if the object does not exist, the ambient context carries no
-     *                              isolation key, or on I/O failure
+     * @throws BlobStorageException if the object does not exist ({@code EX-BLOB-8001}), the ambient
+     *                              context carries no isolation key ({@code EX-BLOB-8002}), or on
+     *                              I/O failure ({@code EX-BLOB-8003})
      * @throws NullPointerException if either argument is {@code null}
      */
     BlobDownloadHandle openDownload(BlobRef ref, BlobRange range);
@@ -80,7 +86,8 @@ public interface BlobStore extends AutoCloseable {
      *
      * @param ref tenant-relative reference to describe
      * @return the metadata, or empty if no such object exists for this tenant
-     * @throws BlobStorageException if the ambient context carries no isolation key, or on I/O failure
+     * @throws BlobStorageException if the ambient context carries no isolation key
+     *                              ({@code EX-BLOB-8002}), or on I/O failure ({@code EX-BLOB-8003})
      * @throws NullPointerException if {@code ref} is {@code null}
      */
     Optional<BlobMetadata> stat(BlobRef ref);
@@ -91,7 +98,8 @@ public interface BlobStore extends AutoCloseable {
      * @param ref tenant-relative reference to delete
      * @return {@code true} if an object was deleted, {@code false} if none existed — deleting a
      *         non-existent object is not an error, so retrying a delete is safe
-     * @throws BlobStorageException if the ambient context carries no isolation key, or on I/O failure
+     * @throws BlobStorageException if the ambient context carries no isolation key
+     *                              ({@code EX-BLOB-8002}), or on I/O failure ({@code EX-BLOB-8003})
      * @throws NullPointerException if {@code ref} is {@code null}
      */
     boolean delete(BlobRef ref);
@@ -99,35 +107,29 @@ public interface BlobStore extends AutoCloseable {
     /**
      * Produces a URL granting one operation on one object, if this store can sign one.
      *
-     * <h2>What the SPI promises</h2>
-     * <p>A returned URL grants exactly {@code access}, on exactly {@code ref}, and is valid no longer
-     * than {@code ttl} (further capped by {@link BlobStorageConfig#maxSignedUrlTtl()}).
-     *
-     * <h2>What it does not promise</h2>
-     * <p>The scheme, the structure, whether credentials are embedded, whether it can be revoked before
-     * expiry — and whether one can be produced at all. A store backed by a filesystem has no meaningful
-     * signed URL, so this returns {@link Optional#empty()}.
-     *
-     * <p><b>A store's answer must be uniform</b> (ADR-056 §7): it either signs for every input or
-     * declines for every input. One that sometimes returns a URL cannot be programmed against, because
-     * a caller could not tell an unsupported operation from a missing object.
-     *
-     * <h2>Expiry granularity</h2>
-     * <p>{@code ttl} must be <b>at least one second</b>, and stores reject anything shorter whether or
-     * not they sign. The signing schemes in use express expiry in whole seconds, so a sub-second
-     * request has only two possible outcomes and both break a promise: truncating to zero produces an
-     * already-expired URL, and rounding up grants longer than asked. Validation is uniform across
-     * stores so that moving between drivers cannot turn a rejected call into a silently over-granted
-     * one.
+     * <p>A store backed by a filesystem has no meaningful signed URL, so this returns
+     * {@link Optional#empty()}.
      *
      * @param ref    tenant-relative reference the URL should address
      * @param access the single operation to grant
-     * @param ttl    requested validity; capped by the configured ceiling. Must be at least one
-     *               second — see the granularity note above
+     * @param ttl    requested validity; capped by the configured ceiling; must be at least one second
      * @return the signed URL, or empty if this store does not sign
      * @throws BlobStorageException     if the ambient context carries no isolation key
+     *                                  ({@code EX-BLOB-8002})
      * @throws NullPointerException     if any argument is {@code null}
      * @throws IllegalArgumentException if {@code ttl} is shorter than one second
+     * @implSpec A returned URL must grant exactly {@code access}, on exactly {@code ref}, and be
+     *           valid no longer than {@code ttl} (further capped by
+     *           {@link BlobStorageConfig#maxSignedUrlTtl()}). A store's answer must be uniform
+     *           (ADR-056 §7) — it must either sign for every input or decline for every input, never
+     *           some of each, so a caller can never mistake an unsupported operation for a missing
+     *           object. A store must reject a {@code ttl} shorter than one second whether or not it
+     *           signs: the signing schemes in use express expiry in whole seconds, so a sub-second
+     *           request has only two possible outcomes and both break a promise — truncating to zero
+     *           produces an already-expired URL, and rounding up grants longer than asked.
+     * @apiNote  What a returned URL does not promise: its scheme, its structure, whether credentials
+     *           are embedded in it, or whether it can be revoked before expiry — and not every store
+     *           can produce one at all.
      */
     Optional<URI> signedUrl(BlobRef ref, BlobAccess access, Duration ttl);
 

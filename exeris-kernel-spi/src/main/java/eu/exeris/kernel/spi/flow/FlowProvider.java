@@ -33,28 +33,34 @@ import eu.exeris.kernel.spi.exceptions.flow.FlowProviderException;
  *   <li>On shutdown: call {@link FlowEngine#close()}.</li>
  * </ol>
  *
- * <h2>SPI Dependency Injection</h2>
- * <p>Implementations obtain their {@link eu.exeris.kernel.spi.memory.MemoryAllocator},
- * {@link eu.exeris.kernel.spi.persistence.PersistenceEngine}, and
- * {@link eu.exeris.kernel.spi.telemetry.TelemetrySink} instances from
- * {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots — they do NOT
- * receive them as constructor parameters. This ensures clean SPI isolation.
+ * <p><b>Allocation:</b> allocates (one {@link FlowEngine} per {@link #createEngine} call) —
+ * and nothing more: native memory and thread starts belong to {@link FlowEngine#start()}.
+ * <p><b>Thread confinement:</b> bootstrap thread — {@link #createEngine} is called once, by the
+ * bootstrapper, before {@link FlowEngine#start()}.
+ * <p><b>Ownership:</b> the bootstrapper owns the returned engine and closes it via
+ * {@link FlowEngine#close()} on shutdown; the provider retains nothing after it returns.
  *
+ * @implSpec Implementations obtain their {@link eu.exeris.kernel.spi.memory.MemoryAllocator},
+ *           {@link eu.exeris.kernel.spi.persistence.PersistenceEngine} and
+ *           {@link eu.exeris.kernel.spi.telemetry.TelemetrySink} from
+ *           {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots, never as
+ *           constructor parameters — that is what keeps the SPI isolated from what wired it.
+ * @since 0.5
  * @see FlowEngine
  * @see FlowEngineConfig
  * @see eu.exeris.kernel.spi.context.KernelProviders#FLOW_ENGINE
- * @since 0.5.0
  */
 public interface FlowProvider {
 
     /**
      * Returns the stable, programmatic identifier for this provider.
      *
-     * <p>Used for configuration routing and diagnostic JFR events. Must be a stable
-     * string constant that does not change between releases.
+     * <p>Used for configuration routing and diagnostic JFR events.
      * Examples: {@code "community"}, {@code "enterprise"}.
      *
      * @return provider identifier; never {@code null}
+     * @implSpec A stable string constant that does not change between releases — operators route
+     *           configuration on it and correlate JFR records by it.
      */
     String providerId();
 
@@ -86,17 +92,19 @@ public interface FlowProvider {
     /**
      * Creates the {@link FlowEngine} instance for the given configuration.
      *
-     * <p>This method is called <b>once</b> during kernel bootstrap, before {@link FlowEngine#start()}.
-     * Implementations MUST NOT perform I/O, allocate native memory, or start threads here —
-     * defer all heavy initialisation to {@link FlowEngine#start()}.
-     *
-     * <p>The engine obtains the required {@link eu.exeris.kernel.spi.memory.MemoryAllocator}
-     * directly from the {@link eu.exeris.kernel.spi.context.KernelProviders#MEMORY_ALLOCATOR}
-     * scoped value slot to prevent parameter pollution.
+     * <p>Called <b>once</b> during kernel bootstrap, before {@link FlowEngine#start()}.
      *
      * @param config the flow engine configuration (non-null)
-     * @return a newly created (but not yet started) {@link FlowEngine} instance
-     * @throws FlowProviderException if the engine cannot be created from the given configuration
+     * @return an engine constructed but not started — its components are not yet initialised and
+     *         nothing may be scheduled on it until {@link FlowEngine#start()} returns
+     * @throws FlowProviderException {@code EX-FLOW-7001} if the engine cannot be created from the
+     *         given configuration, carrying {@code providerName} and a static {@code reason}
+     * @implSpec No I/O, no native memory, no threads here — every heavy initialisation is deferred
+     *           to {@link FlowEngine#start()}, so that a bootstrap that selects a provider and then
+     *           fails elsewhere has nothing to unwind. The engine reads the
+     *           {@link eu.exeris.kernel.spi.memory.MemoryAllocator} it needs from the
+     *           {@link eu.exeris.kernel.spi.context.KernelProviders#MEMORY_ALLOCATOR} scoped slot
+     *           rather than taking it as a parameter.
      */
     FlowEngine createEngine(FlowEngineConfig config);
 }

@@ -7,7 +7,7 @@ package eu.exeris.kernel.spi.telemetry;
 /**
  * SPI: Event severity level for {@link KernelEvent}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum EventLevel {
     /**

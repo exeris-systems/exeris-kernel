@@ -31,7 +31,7 @@ import java.util.UUID;
  * but allocations MUST remain bounded and proportional to the query workload —
  * no runaway churn or per-iteration allocation growth is allowed.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class ExecutionGraphZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 

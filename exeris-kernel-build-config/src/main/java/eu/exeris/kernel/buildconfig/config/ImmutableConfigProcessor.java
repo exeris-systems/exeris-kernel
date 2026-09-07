@@ -41,7 +41,7 @@ import java.util.Set;
  * compile-time dependency on {@code exeris-kernel-spi} (mirrors
  * {@code RequiresRoleProcessor}), keeping build-config out of the SPI reactor cycle.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @SupportedAnnotationTypes({
         ImmutableConfigProcessor.IMMUTABLE_FQN,

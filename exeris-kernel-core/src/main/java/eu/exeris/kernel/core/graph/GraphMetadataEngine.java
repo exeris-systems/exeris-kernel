@@ -36,7 +36,7 @@ import java.util.Objects;
  * <p>This class imports only {@code exeris-kernel-spi}. It produces pure SPI value
  * records with no knowledge of JDBC, Bolt, or any backend.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class GraphMetadataEngine {
 

@@ -32,7 +32,7 @@ import jdk.jfr.Timespan;
  * The {@link FlightRecorder#isInitialized()} guard keeps it zero-overhead when disabled, and
  * it fires once per connection (not per request), off the request hot path.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @Name("eu.exeris.kernel.core.transport.ConnectionEstablished")
 @Label("Connection Established")

@@ -55,7 +55,7 @@ import java.lang.invoke.MethodHandle;
  * @param socketLastError {@code int WSAGetLastError(void)} — Windows only; {@code null} on POSIX
  * @param wsaCleanup      {@code int WSACleanup(void)} — Windows only; {@code null} on POSIX.
  *                        Must be invoked to pair with {@code WSAStartup} before the owning arena is closed.
- * @since 0.5.0
+ * @since 0.5
  */
 public record SyscallHandles(
         MethodHandle socket,

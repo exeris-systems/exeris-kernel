@@ -37,16 +37,16 @@ import java.util.Set;
  * always treated as FAIL_FAST. Cannot be suppressed by {@code FailurePolicy.DEGRADE}.
  *
  * <h2>Example</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * // Kahn's topological sort in SubsystemOrchestrator:
  * if (result.size() != subsystems.size()) {
  *     Set<String> cycleMembers = new LinkedHashSet<>(byName.keySet());
  *     result.forEach(s -> cycleMembers.remove(s.name()));
  *     throw SubsystemCircularDependencyException.forCycle(cycleMembers);
  * }
- * }</pre>
+ * }
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.exceptions.SubsystemException
  */
 public final class SubsystemCircularDependencyException extends RuntimeException {
@@ -80,6 +80,7 @@ public final class SubsystemCircularDependencyException extends RuntimeException
 
     // -------------------------------------------------------------------------
 
+    /** Subsystem names forming the detected cycle, insertion-ordered; empty for {@link #SENTINEL}. */
     private final Set<String> cycleMembers;
 
     /**

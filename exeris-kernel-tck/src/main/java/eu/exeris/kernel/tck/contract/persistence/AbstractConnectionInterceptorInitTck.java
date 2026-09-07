@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>Engine remains healthy after interceptor failure; next open succeeds</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractConnectionInterceptorInitTck {
 

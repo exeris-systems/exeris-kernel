@@ -7,7 +7,7 @@ package eu.exeris.kernel.core.http.http2;
 /**
  * RFC 7540 §7 — HTTP/2 Error Codes.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-7">RFC 7540 §7</a>
  */
 public enum Http2ErrorCode {

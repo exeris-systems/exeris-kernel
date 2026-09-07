@@ -20,7 +20,7 @@ import java.util.Objects;
  *                          least one second, matching the floor {@code BlobStore.signedUrl} enforces.
  *                          A store that cannot sign ignores it
  * @param properties        opaque key-value options for driver-specific settings; never {@code null}
- * @since 0.11.0
+ * @since 0.11
  */
 public record BlobStorageConfig(String location, Duration maxSignedUrlTtl,
                                 Map<String, String> properties) {

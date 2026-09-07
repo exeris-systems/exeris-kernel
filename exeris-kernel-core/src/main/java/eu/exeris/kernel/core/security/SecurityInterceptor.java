@@ -68,7 +68,7 @@ import java.util.Objects;
  * <h2>The Wall</h2>
  * <p>Imports only {@code exeris-kernel-spi}. No JWT, no BouncyCastle, no Spring Security.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see SecurityProvider
  * @see StorageContextBridge
  * @see CitadelGuard

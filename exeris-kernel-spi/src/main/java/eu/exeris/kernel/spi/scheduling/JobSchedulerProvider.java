@@ -9,12 +9,13 @@ package eu.exeris.kernel.spi.scheduling;
  * {@link java.util.ServiceLoader} (ADR-057 §1).
  *
  * <h2>Open-Core (The Wall)</h2>
- * <p>The contract is implementation-blind. The Community binding dispatches in-process on virtual
- * threads against an injected time source; a distributed or durable-backend binding would select a
- * leader through the coordination seam rather than inventing a parallel mechanism. Neither appears in
- * any signature here.
+ * <p>The contract is implementation-blind: neither dispatch strategy nor coordination mechanism
+ * appears in any signature here.
  *
- * @since 0.11.0
+ * @implNote The Community binding dispatches in-process on virtual threads against an injected time
+ *           source; a distributed or durable-backend binding would select a leader through the
+ *           coordination seam rather than inventing a parallel mechanism.
+ * @since 0.11
  */
 public interface JobSchedulerProvider {
 
@@ -42,9 +43,9 @@ public interface JobSchedulerProvider {
 
     /**
      * Selection priority when several providers are on the classpath; higher wins.
-     * Community is {@code 0}, Enterprise {@code 100}.
      *
      * @return priority
+     * @implNote Community uses {@code 0}, Enterprise {@code 100}.
      */
     default int priority() {
         return 0;

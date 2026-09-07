@@ -19,7 +19,7 @@ import java.util.regex.Pattern;
  * and Cypher queries (Cypher mode). DDL uses plain PostgreSQL syntax.
  * Enterprise may use raw PG wire protocol to send the same SQL without JDBC overhead.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 // CyclomaticComplexity/TooManyMethods: two-dialect (SQL/PGQ + Cypher) factory; complexity is structural.

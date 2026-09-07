@@ -30,7 +30,7 @@ package eu.exeris.kernel.spi.bootstrap;
  *   <li>{@link #RUNTIME}    → L3–L4 (Events, Flow / Sagas).</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum BootstrapPhase {
 

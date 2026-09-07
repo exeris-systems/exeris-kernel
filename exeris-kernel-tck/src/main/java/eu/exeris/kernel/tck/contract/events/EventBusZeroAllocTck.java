@@ -29,7 +29,7 @@ import java.util.UUID;
  * a {@code StructuredTaskScope}. Bounded allocation (handler wrapper allocation
  * is acceptable; {@code new EventDescriptor} per-call is NOT).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class EventBusZeroAllocTck extends AbstractSubsystemZeroAllocTck {
 

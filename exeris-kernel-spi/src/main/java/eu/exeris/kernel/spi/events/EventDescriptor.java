@@ -22,7 +22,6 @@ package eu.exeris.kernel.spi.events;
  * <ul>
  *   <li>No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}).</li>
  *   <li>JIT C2 scalarizes this on the standard heap path via escape analysis.</li>
- *   <li>Native implementations map this to a dense off-heap struct fitting in a single cache line.</li>
  *   <li>When JEP 401 is mainline, adding the {@code value} modifier requires zero
  *       field changes — object headers disappear for free.</li>
  * </ul>
@@ -49,7 +48,11 @@ package eu.exeris.kernel.spi.events;
  * @param flags            lifecycle bitmask (PERSISTENT | ASYNC | ORDERED | BROADCAST)
  * @param occurredAtEpochMs wall-clock timestamp in epoch milliseconds (replaces {@code Instant} object)
  *
- * @since 0.5.0
+ * @apiNote Routing decisions read {@link #eventTypeOrdinal()} and {@link #flags()} only; the
+ *          {@code UUID} accessors allocate and belong on diagnostic paths.
+ * @implNote A native binding may map this layout onto a dense off-heap struct that fits in a
+ *           single cache line; the field order above is the layout such a binding mirrors.
+ * @since 0.5
  * @see EventPayload
  * @see EventBus
  * @see EventRegistry
@@ -81,22 +84,44 @@ public record EventDescriptor(
     // Derived properties — hot-path, zero allocation
     // =========================================================================
 
-    /** @return {@code true} if this event must be durably persisted. */
+    /**
+     * Tests the {@link #FLAG_PERSISTENT} bit — whether the transactional outbox must durably
+     * record this event before it is considered delivered.
+     *
+     * @return {@code true} when {@link #FLAG_PERSISTENT} is set in {@link #flags()}
+     */
     public boolean isPersistent() {
         return (flags & FLAG_PERSISTENT) != 0;
     }
 
-    /** @return {@code true} if dispatch is fire-and-forget. */
+    /**
+     * Tests the {@link #FLAG_ASYNC} bit — whether dispatch is fire-and-forget, with no
+     * completion acknowledgement owed to the publisher.
+     *
+     * @return {@code true} when {@link #FLAG_ASYNC} is set in {@link #flags()}
+     */
     public boolean isAsync() {
         return (flags & FLAG_ASYNC) != 0;
     }
 
-    /** @return {@code true} if strict FIFO ordering is required. */
+    /**
+     * Tests the {@link #FLAG_ORDERED} bit — whether events of this type require strict FIFO
+     * ordering across subscribers. The flag is an advisory routing hint: the ordering guarantee
+     * itself is owned by the durable-log surface ({@link EventStreamAppender}), not by the
+     * transient {@link EventBus}.
+     *
+     * @return {@code true} when {@link #FLAG_ORDERED} is set in {@link #flags()}
+     */
     public boolean isOrdered() {
         return (flags & FLAG_ORDERED) != 0;
     }
 
-    /** @return {@code true} if this event must be broadcast to all subscribers. */
+    /**
+     * Tests the {@link #FLAG_BROADCAST} bit — whether the event fans out to every matching
+     * subscriber rather than to a single one.
+     *
+     * @return {@code true} when {@link #FLAG_BROADCAST} is set in {@link #flags()}
+     */
     public boolean isBroadcast() {
         return (flags & FLAG_BROADCAST) != 0;
     }
@@ -106,16 +131,27 @@ public record EventDescriptor(
     // =========================================================================
 
     /**
-     * Reconstructs the event {@link java.util.UUID}.
-     * <p><b>Allocates</b> — do NOT call in the hot path. Use {@code eventIdHigh}/{@code eventIdLow} directly.
+     * Materialises the event identity as a {@link java.util.UUID} from the
+     * {@code eventIdHigh}/{@code eventIdLow} pair, for interoperability with APIs that speak
+     * {@code UUID} rather than primitive halves.
+     *
+     * @return a newly allocated {@link java.util.UUID} whose most/least significant bits are
+     *         {@link #eventIdHigh()} and {@link #eventIdLow()}
+     * @apiNote Allocates one {@code UUID} per call — keep it off the routing path and compare
+     *          the primitive halves directly there.
      */
     public java.util.UUID toEventUuid() {
         return new java.util.UUID(eventIdHigh, eventIdLow);
     }
 
     /**
-     * Reconstructs the stream {@link java.util.UUID}.
-     * <p><b>Allocates</b> — do NOT call in the hot path.
+     * Materialises the aggregate-stream identity as a {@link java.util.UUID} from the
+     * {@code streamIdHigh}/{@code streamIdLow} pair.
+     *
+     * @return a newly allocated {@link java.util.UUID} whose most/least significant bits are
+     *         {@link #streamIdHigh()} and {@link #streamIdLow()}
+     * @apiNote Allocates one {@code UUID} per call — keep it off the routing path and compare
+     *          the primitive halves directly there.
      */
     public java.util.UUID toStreamUuid() {
         return new java.util.UUID(streamIdHigh, streamIdLow);
@@ -136,7 +172,8 @@ public record EventDescriptor(
      * @param eventTypeOrdinal ordinal from {@link EventRegistry}
      * @param flags            lifecycle flags bitmask
      * @param occurredAtEpochMs epoch-ms timestamp
-     * @return new descriptor
+     * @return an immutable descriptor carrying exactly the given primitives; no payload is
+     *         attached and none is implied
      */
     @SuppressWarnings("PMD.ShortMethodName") // 'of' is a standard Java factory idiom (cf. List.of, Map.of)
     public static EventDescriptor of(

@@ -20,7 +20,7 @@ import java.util.NoSuchElementException;
  * frames are heap {@code byte[]} (GC-managed), so {@link #close()} holds no live cursor and is a
  * safe, idempotent no-op.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class KafkaEventStream implements EventStream {
 

@@ -48,7 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p><b>Snapshot non-atomicity</b> (ADR-033 Obligation 7) is acknowledged, not tested: each call stamps its
  * own {@code capturedAt} and a multi-call view may straddle a transition by design.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public abstract class AbstractKernelDiagnosticsTck {
 

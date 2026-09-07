@@ -15,6 +15,6 @@
  * TCK going green. A contract test proves a shape is honoured, not that it survives, and for a
  * long-lived duplex protocol that is exactly where the two diverge.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 package eu.exeris.kernel.spi.websocket;

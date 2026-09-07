@@ -45,7 +45,7 @@ import java.util.Objects;
  * (which is owned by the caller). The transpiler instance is safe to share across
  * all virtual threads (it is effectively stateless after construction).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class MatchDslTranspiler {
 

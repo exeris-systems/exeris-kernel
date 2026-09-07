@@ -81,7 +81,7 @@ import java.util.Locale;
  * their binding library types onto the TCK surface; the subclass picks a payload
  * that the encoder under test can serialise.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class AbstractHttpRequestBodyEncoderTck {

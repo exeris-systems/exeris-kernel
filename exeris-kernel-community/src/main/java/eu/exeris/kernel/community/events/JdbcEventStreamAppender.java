@@ -56,7 +56,7 @@ import java.util.Objects;
  * <p>The appender takes ownership of the supplied {@link EventPayload}: it copies the bytes and
  * closes the payload exactly once (success or failure).
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class JdbcEventStreamAppender implements EventStreamAppender {
 

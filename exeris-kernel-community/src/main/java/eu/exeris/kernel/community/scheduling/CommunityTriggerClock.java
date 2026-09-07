@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * queue and a lifecycle. It is also where the two clocks meet: cron names calendar instants, while
  * the dispatcher waits on monotonic nanos, and the conversion belongs in one place.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityTriggerClock {
 

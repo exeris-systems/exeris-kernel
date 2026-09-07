@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.exceptions;
  * [ID]     – 4-digit monotonic identifier within the domain
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("unused") // Codes are API contracts — referenced by future exception subclasses and external scrapers
 public final class KernelErrorCodes {
@@ -302,20 +302,27 @@ public final class KernelErrorCodes {
     /**
      * Huffman decoding/encoding violation in HPACK string literal processing.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. The shapes in use are a
+     * single offending value (a code length, an input length, or a padding symbol), an offending
+     * value paired with the limit it breached (a write position and a capacity, a padding width and
+     * its maximum), a triple for an encode overflow (bit position, length, capacity in bits), and an
+     * empty array where the violation names no value.
      */
     public static final String EX_HTTP_4001 = "EX-HTTP-4001";
 
     /**
      * HPACK decoding violation (RFC 7541 §3 / §4 / §6).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. Every value-carrying
+     * violation here reports the same shape, an offending value followed by the limit it breached:
+     * a table index and the dynamic table's size, a string-literal length and its maximum, a
+     * requested table size and the protocol maximum, a header-list size and its limit. Violations
+     * that name no value — an integer overflow, an index-zero field, an unknown representation —
+     * contribute an empty array.
      */
     public static final String EX_HTTP_4002 = "EX-HTTP-4002";
 
@@ -334,20 +341,26 @@ public final class KernelErrorCodes {
     /**
      * HTTP/1.1 parse violation (malformed framing or DoS guard breach).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. The shapes in use are a
+     * single offending value (a malformed field's size, or the rejected header name as a
+     * {@code String}), an offending value with the limit it breached (a field size and the maximum
+     * header size, a header count and the maximum), and a triple for an out-of-bounds range
+     * (start, end, and the size that bounds them).
      */
     public static final String EX_HTTP_4004 = "EX-HTTP-4004";
 
     /**
      * HTTP/2 CONTINUATION sequencing violation (RFC 7540 §6.10).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. The shapes in use are a
+     * single stream identifier or fragment length, a pair (two stream identifiers, or a required
+     * size and the limit it breached), and a triple for a frame-type mismatch (the type seen, the
+     * type required, and the stream it arrived on) or an out-of-bounds fragment (offset, length,
+     * and the source's size).
      */
     public static final String EX_HTTP_4005 = "EX-HTTP-4005";
 
@@ -356,10 +369,12 @@ public final class KernelErrorCodes {
      * Raised when frame type, stream ID, payload size, or frame structure violates
      * protocol constraints during encoding or codec construction.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired; the detail message is never among them — it is
+     * the exception's own message. Every value-carrying violation here reports exactly one entry,
+     * the rejected value itself: a frame type, a flags byte, a stream identifier, a payload length,
+     * a window increment, a last-stream identifier, or a parameter count. A violation that rejects
+     * a fixed structural rule rather than a value contributes an empty array.
      */
     public static final String EX_HTTP_4006 = "EX-HTTP-4006";
 
@@ -622,7 +637,7 @@ public final class KernelErrorCodes {
      *   <li>index 2 – {@code String} accessor (the SPI method that refused, e.g. {@code "getString"})</li>
      * </ul>
      *
-     * @since 0.12.0
+     * @since 0.12
      */
     public static final String EX_PERS_5008 = "EX-PERS-5008";
 

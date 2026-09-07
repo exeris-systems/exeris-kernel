@@ -29,7 +29,7 @@ import java.util.Objects;
  * <p>Jackson-specific exceptions are wrapped in {@link IllegalStateException} to keep driver-specific
  * types out of any SPI / Core surface (The Wall — ADR-006).
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class CommunityJsonRequestBodyEncoder implements HttpRequestBodyEncoder {
 

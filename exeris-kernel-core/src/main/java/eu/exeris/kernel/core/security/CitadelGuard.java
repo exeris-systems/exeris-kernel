@@ -40,7 +40,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Imports only {@code exeris-kernel-spi}. No JWT, no Spring Security,
  * no concrete implementation detail crosses this boundary.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see InsufficientPrivilegesException
  * @see eu.exeris.kernel.spi.security.PrincipalContext#hasRole(String)
  */

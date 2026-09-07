@@ -32,7 +32,7 @@ import java.util.List;
  * absence of one. Closing an uncommitted handle releases the buffer and the store never hears about it,
  * which is the strongest form of "no partial object is left visible" (ADR-056 §3).
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityS3UploadHandle implements BlobUploadHandle {
 

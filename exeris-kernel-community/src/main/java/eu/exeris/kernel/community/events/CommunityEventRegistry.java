@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentMap;
  * <p>O(1) {@link #resolve} and {@link #ordinalOf} for the hot dispatch path.
  * Registration is an administrative operation, allowed at any time.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CommunityEventRegistry implements EventRegistry {
 

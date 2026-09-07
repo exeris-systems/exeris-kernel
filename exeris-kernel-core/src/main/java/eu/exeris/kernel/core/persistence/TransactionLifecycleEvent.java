@@ -27,7 +27,7 @@ import jdk.jfr.StackTrace;
  * the event type is disabled.  No shared mutable state — safe under concurrent
  * Virtual Thread execution.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.TransactionLifecycle")
 @Label("Transaction Lifecycle")

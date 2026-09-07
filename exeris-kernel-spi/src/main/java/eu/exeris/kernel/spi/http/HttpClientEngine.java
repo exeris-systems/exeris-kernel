@@ -20,23 +20,27 @@ package eu.exeris.kernel.spi.http;
  *   engine.close()                           → engine (CLOSED, resources released)
  * </pre>
  *
- * <h2>Threading Model</h2>
- * <p>{@link #send(HttpRequest)} blocks the calling virtual thread until the full
- * response headers are received (body is buffered by the engine).
- * Each {@code send} call may use a pooled connection internally — connection pooling
- * semantics are the implementation's private concern.
+ * <p><b>Allocation:</b> allocates (one {@link HttpResponse} per {@link #send(HttpRequest)}, and an
+ * off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer} for the response body when the response
+ * carries one)
+ * <p><b>Ownership:</b> the caller of {@code send} owns the returned {@link HttpResponse#body()} and
+ * releases it with {@code close()}; the engine owns its connections and releases them on
+ * {@link #close()}
  *
- * @since 0.5.0
+ * @apiNote {@link #send(HttpRequest)} blocks the calling virtual thread until the full response is
+ *          received, so a caller sizes concurrency in virtual threads rather than in engines. Each
+ *          {@code send} may use a pooled connection internally; pooling is not part of this
+ *          contract and no call site may depend on a request occupying a connection of its own.
+ * @since 0.5
  */
 public interface HttpClientEngine extends AutoCloseable {
 
     /**
      * Starts the client engine — initialises connection pool, TLS context, etc.
      *
-     * <p>This is a potentially blocking call. MUST NOT be called on a virtual thread
-     * expected to be non-blocking.
-     *
      * @throws IllegalStateException if the engine has already been started or closed
+     * @apiNote This is a potentially blocking call; it must not be issued from a virtual thread
+     *          that is expected never to park.
      */
     void start();
 
@@ -46,13 +50,13 @@ public interface HttpClientEngine extends AutoCloseable {
      * <p>This call blocks the calling virtual thread until the full response is
      * received (status + headers + body assembled into a {@link eu.exeris.kernel.spi.memory.LoanedBuffer}).
      *
-     * <p><strong>Body lifecycle:</strong> if {@link HttpResponse#body()} is non-null,
-     * the caller MUST close the {@link eu.exeris.kernel.spi.memory.LoanedBuffer} when
-     * it is no longer needed to return the off-heap segment to the pool.
-     *
      * @param request outbound request; must not be {@code null}
      * @return the server's response; never {@code null}
      * @throws IllegalStateException if the engine has not been started or has been closed
+     * @apiNote <strong>Body lifecycle:</strong> when {@link HttpResponse#body()} is non-null the
+     *          caller owns that buffer and must {@code close()} it once the payload has been read;
+     *          the off-heap segment returns to the pool only then, so a missed close is a leak that
+     *          no engine-side teardown recovers.
      */
     HttpResponse send(HttpRequest request);
 
@@ -66,12 +70,11 @@ public interface HttpClientEngine extends AutoCloseable {
      * {@link HttpClientRequestEnricher#enrich(HttpRequest)} has already run, so an enricher binding
      * an outbound credential's audience to the peer (ADR-040) would only ever observe {@code null}.
      *
-     * <p>{@code default} returning {@code null} so the addition is source- and binary-compatible for
-     * out-of-tree implementors: an engine that does not override it simply declares no default, which
-     * is the pre-0.12 behaviour of every engine that had one imposed on it by {@code bindHost}.
-     *
      * @return the configured default peer as {@code host:port}, or {@code null} if there is none
-     * @since 0.12.0
+     * @implSpec The default implementation returns {@code null} — an engine that does not override
+     *           it declares no default peer, so every unaddressed request is refused rather than
+     *           dialled somewhere the application did not name.
+     * @since 0.12
      */
     default String defaultAuthority() {
         return null;

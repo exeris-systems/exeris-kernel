@@ -32,7 +32,7 @@ import java.util.Locale;
  *
  * @see JfrAllocationMonitor
  * @see AbstractSubsystemZeroAllocTck
- * @since 0.5.0
+ * @since 0.5
  */
 public final class JfrPinningMonitor {
 

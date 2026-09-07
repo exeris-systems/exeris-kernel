@@ -17,7 +17,7 @@ import java.util.Optional;
  * dependency direction one-way (implementations depend on SPI, never inverse).
  *
  * <h2>Binding (bootstrap side)</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * HttpProvider provider  = java.util.ServiceLoader.load(HttpProvider.class)
  *         .stream()
  *         .map(java.util.ServiceLoader.Provider::get)
@@ -34,14 +34,22 @@ import java.util.Optional;
  *         server.start();
  *         keepAlive();
  *     });
- * }</pre>
+ * }
  *
  * <h2>Reading (subsystem / handler side)</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
- * }</pre>
+ * }
  *
- * @since 0.5.0
+ * <p><b>Thread confinement:</b> any thread inside the binding scope — a {@code ScopedValue} binding
+ * is visible to the binding thread and to every thread forked inside that scope, and a thread
+ * outside it reads the slot as unbound rather than as empty
+ *
+ * @apiNote Read a slot through its accessor rather than through {@code get()} where one exists: the
+ *          optional slots are unbound in perfectly healthy deployments, and
+ *          {@link java.util.NoSuchElementException} out of a handler is an unhelpful way to learn
+ *          that the application never configured a client engine.
+ * @since 0.5
  */
 public final class HttpKernelProviders {
 
@@ -60,10 +68,10 @@ public final class HttpKernelProviders {
      * <p>Bound during HTTP bootstrap and inherited by every virtual thread in the
      * kernel scope — zero constructor injection needed in handler code.
      *
-     * <h2>Usage</h2>
-     * <pre>{@code
-     * boolean running = HttpKernelProviders.HTTP_SERVER_ENGINE.get().isRunning();
-     * }</pre>
+     * @apiNote Read it directly where the engine is a precondition of the code reading it:
+     *          {@snippet lang="java" :
+     *          boolean running = HttpKernelProviders.HTTP_SERVER_ENGINE.get().isRunning();
+     *          }
      */
     public static final ScopedValue<HttpServerEngine> HTTP_SERVER_ENGINE = ScopedValue.newInstance();
 
@@ -95,7 +103,7 @@ public final class HttpKernelProviders {
      * callers) do not require this slot to be bound. Use
      * {@link #httpRequestBodyEncoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpRequestBodyEncoderRegistry> HTTP_REQUEST_BODY_ENCODER_REGISTRY =
             ScopedValue.newInstance();
@@ -110,7 +118,7 @@ public final class HttpKernelProviders {
      * callers) do not require this slot to be bound. Use
      * {@link #httpResponseBodyDecoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpResponseBodyDecoderRegistry> HTTP_RESPONSE_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
@@ -125,7 +133,7 @@ public final class HttpKernelProviders {
      * that never decode a body (read-only resources) do not require it to be bound.
      * Use {@link #httpRequestBodyDecoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpRequestBodyDecoderRegistry> HTTP_REQUEST_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
@@ -134,12 +142,11 @@ public final class HttpKernelProviders {
      * Optional per-route authorization policy ({@link HttpRoutePolicy}), supplied by the application.
      *
      * <p>Bound during HTTP bootstrap when the application declares one (ADR-061). The transport
-     * admission path reads this slot to decide whether a request may reach its handler. When unbound,
-     * no per-route requirement is applied — the kernel behaves as it did before 0.11, which is why an
-     * application that declares nothing sees no change. Use {@link #httpRoutePolicy()} to read
-     * defensively.
+     * admission path reads this slot to decide whether a request may reach its handler. When
+     * unbound, no per-route requirement is applied and every route reaches its handler as though no
+     * policy existed. Use {@link #httpRoutePolicy()} to read defensively.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final ScopedValue<HttpRoutePolicy> HTTP_ROUTE_POLICY = ScopedValue.newInstance();
 
@@ -148,7 +155,7 @@ public final class HttpKernelProviders {
     }
 
     /**
-     * Returns the active {@link HttpProvider}.
+     * Returns the active {@link HttpProvider}, for bootstrap code that has one by construction.
      *
      * @return the bound provider
      * @throws java.util.NoSuchElementException if the slot is not bound (HTTP not bootstrapped)
@@ -194,7 +201,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpRequestBodyEncoderRegistry> httpRequestBodyEncoderRegistry() {
         return HTTP_REQUEST_BODY_ENCODER_REGISTRY.isBound()
@@ -207,7 +214,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpResponseBodyDecoderRegistry> httpResponseBodyDecoderRegistry() {
         return HTTP_RESPONSE_BODY_DECODER_REGISTRY.isBound()
@@ -220,7 +227,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpRequestBodyDecoderRegistry> httpRequestBodyDecoderRegistry() {
         return HTTP_REQUEST_BODY_DECODER_REGISTRY.isBound()
@@ -232,7 +239,7 @@ public final class HttpKernelProviders {
      * Returns the optional per-route authorization policy, if the application bound one.
      *
      * @return an {@link Optional} containing the policy when bound, or empty otherwise
-     * @since 0.11.0
+     * @since 0.11
      */
     public static Optional<HttpRoutePolicy> httpRoutePolicy() {
         return HTTP_ROUTE_POLICY.isBound()

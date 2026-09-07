@@ -24,12 +24,12 @@
  * </ul>
  *
  * <p>
- * Any previous references to separate reactor modules such as
- * {@code exeris-kernel-spi-http} or {@code exeris-kernel-http} are obsolete
- * and do not reflect the current repository layout.
+ * There is no separate {@code exeris-kernel-spi-http} or {@code exeris-kernel-http} reactor module:
+ * the HTTP contracts are embedded in {@code exeris-kernel-spi} to keep the module graph flat and
+ * avoid a dependency hop on the hot path (ADR-009).
  * </p>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.http;
 

@@ -15,17 +15,13 @@ package eu.exeris.kernel.spi.persistence;
  *   <li>{@link #SERIALIZABLE} → Full SSI (Serializable Snapshot Isolation); highest safety, potential retries</li>
  * </ul>
  *
- * <h2>Tier Behaviour</h2>
- * <ul>
- *   <li><b>Community:</b> Maps to JDBC {@code Connection.TRANSACTION_*} constants.</li>
- *   <li><b>Enterprise:</b> Emitted directly as SQL in the PG wire protocol
- *       {@code BEGIN TRANSACTION ISOLATION LEVEL ...} — zero JDBC overhead.</li>
- * </ul>
- *
  * <h2>Valhalla Readiness</h2>
  * <p>Enum — identity-safe by definition. No migration needed for JEP 401.
  *
- * @since 0.5.0
+ * @implNote Community maps each constant onto a JDBC {@code Connection.TRANSACTION_*} constant;
+ *           Enterprise emits it directly as SQL in the PG wire protocol
+ *           {@code BEGIN TRANSACTION ISOLATION LEVEL ...}, with no JDBC layer in between.
+ * @since 0.5
  * @see PersistenceConnection
  */
 public enum TransactionIsolation {
@@ -45,14 +41,19 @@ public enum TransactionIsolation {
     /**
      * Repeatable Read — snapshot at transaction start.
      * <p>Write conflicts cause {@code 40001} serialization failures.
-     * Callers MUST handle retry logic.
+     *
+     * @apiNote A transaction at this level can fail for reasons that have nothing to do with its
+     *          own correctness, so the caller MUST be able to retry it — or run it through
+     *          {@link TransactionalExecutor}, which retries {@code 40001} for them.
      */
     REPEATABLE_READ,
 
     /**
      * Serializable — full SSI (Serializable Snapshot Isolation).
-     * <p>Highest safety guarantee. Write skew anomalies are detected.
-     * Higher chance of serialization failures — retry logic is mandatory.
+     * <p>Highest safety guarantee: write-skew anomalies are detected, at the cost of a higher
+     * rate of serialization failures.
+     *
+     * @apiNote Retry handling is not optional at this level.
      */
     SERIALIZABLE
 }

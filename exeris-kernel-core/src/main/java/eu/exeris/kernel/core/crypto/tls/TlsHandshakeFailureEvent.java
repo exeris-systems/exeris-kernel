@@ -26,7 +26,7 @@ import jdk.jfr.StackTrace;
  * (e.g., {@code "EX-NET-2002"}) to align with the binary Glass-Box telemetry contract
  * defined in {@code docs/subsystems/crypto.md}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.tls.HandshakeFailure")
 @Label("TLS Handshake Failure")

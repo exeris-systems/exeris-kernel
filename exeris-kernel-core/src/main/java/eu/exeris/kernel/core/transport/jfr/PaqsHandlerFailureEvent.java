@@ -15,7 +15,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted when a PAQS stream handler fails inside the VT boundary.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.transport.PaqsHandlerFailure")
 @Label("PAQS Handler Failure")

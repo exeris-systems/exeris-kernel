@@ -12,7 +12,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted when the Outbox Orchestrator flushes a batch to the broker port.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Label("Outbox Batch Flushed")
 @Category({"Exeris", "Events", "Outbox"})

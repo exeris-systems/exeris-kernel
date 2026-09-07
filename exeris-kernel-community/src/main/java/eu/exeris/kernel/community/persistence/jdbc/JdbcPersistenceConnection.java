@@ -38,7 +38,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>No reference to off-heap buffers, io_uring, or any Enterprise class.
  * This is the free-tier implementation — correct, not fast.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class JdbcPersistenceConnection implements PersistenceConnection {
@@ -225,7 +225,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
      * <p>Ownership is not transferred: the returned {@link Connection} stays
      * owned by this instance; callers MUST NOT close it directly.
      *
-     * @since 0.8.1
+     * @since 0.8
      */
     @Override
     public <T> Optional<T> unwrap(Class<T> type) {

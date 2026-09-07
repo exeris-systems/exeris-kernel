@@ -44,7 +44,7 @@ import java.lang.invoke.MethodType;
  * <h2>The Wall</h2>
  * <p>Imports only {@code exeris-kernel-spi} and the JDK. No driver, no Spring.
  *
- * @since 0.8.0
+ * @since 0.8
  * @see RoleRegistry
  * @see RoleCheckEnforcer
  */

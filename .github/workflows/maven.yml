@@ -180,6 +180,31 @@ jobs:
         # Config-only, so it needs no build artifact — same reasoning as the two gates above.
         run: tools/checkstyle-parity-check/checkstyle-parity-check.sh
 
+      - name: SPI Contract-Blindness Gate
+        # exeris-kernel-spi states obligations. This fails when a contract position states instead
+        # what one shipped driver happens to do today.
+        #
+        # It is a gate rather than a review note because the drift is invisible at review time and
+        # arrives disguised as a correction. When a Javadoc claim is refuted, the cheap repair is to
+        # rewrite the claim to match the code that falsified it — for an implementation that is the
+        # right repair, and for an implementation-blind SPI (ADR-006) it inverts the contract: the
+        # interface stops saying what an implementer owes and starts reporting what one binding
+        # does, defect included. That reads as newly accurate, passes every other gate, and ships to
+        # Maven Central as the contract.
+        #
+        # It already happened, which is why the script exists: the 0.12 Javadoc sweep's adversarial
+        # pass refuted a set of claims, and the correction pass wrote nine sentences of that shape
+        # into Ownership lines and @implSpec before review caught them.
+        #
+        # The pattern is anchored on a tier or driver as the SUBJECT of a present-tense report, not
+        # on tense words alone — a first draft matched bare tense and raised 15 hits on this module,
+        # every one legitimate. Tier-conditional obligations stay allowed: the open-core tiers are
+        # part of this SPI's contract. The facts are not deleted either, they move to @implNote,
+        # which javadoc-conventions.md rule 6 names as their home.
+        #
+        # Sources-only, so it needs no build artifact — same reasoning as the three gates above.
+        run: tools/spi-contract-blindness-check/spi-contract-blindness-check.sh
+
       - name: Supply-Chain Gate
         # v0.12 Stream B. Two checks, deliberately at different ends of the build.
         #

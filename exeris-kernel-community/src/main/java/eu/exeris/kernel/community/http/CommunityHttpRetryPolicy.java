@@ -39,7 +39,7 @@ import java.util.function.DoubleSupplier;
  * <p>Stateless and thread-safe. Cross-call circuit-breaking is intentionally out of scope (the
  * per-attempt contract carries no cross-call state) — see ADR-045.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 // PMD.CyclomaticComplexity: a retry policy is a decision machine — idempotency gate, retryable-status
 // set, backoff ceiling, and Retry-After parsing each add a small branch. No single method exceeds the

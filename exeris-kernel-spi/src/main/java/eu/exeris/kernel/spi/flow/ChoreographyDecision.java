@@ -14,7 +14,7 @@ import eu.exeris.kernel.spi.flow.model.FlowExecutionPlan;
  * {@link FlowExecutionPlan} (an SPI type). No broker types, no collections, no
  * {@link String} identity operations.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see FlowChoreographyMapper
  */
 public sealed interface ChoreographyDecision
@@ -23,12 +23,12 @@ public sealed interface ChoreographyDecision
                 ChoreographyDecision.Start {
 
     /**
-     * No action — the arriving event is irrelevant to any flow instance.
+     * The engine does nothing with this event — it is irrelevant to any flow instance.
      */
     record Ignore() implements ChoreographyDecision {}
 
     /**
-     * Wake the identified parked flow instance.
+     * The engine resumes the parked instance under this key, from the step it parked on.
      *
      * @param instanceIdMost  most-significant bits of the flow instance UUID
      * @param instanceIdLeast least-significant bits of the flow instance UUID
@@ -36,7 +36,7 @@ public sealed interface ChoreographyDecision
     record Wake(long instanceIdMost, long instanceIdLeast) implements ChoreographyDecision {}
 
     /**
-     * Start a new flow instance from the supplied plan.
+     * The engine schedules a new instance of the supplied plan under this key.
      *
      * @param plan            the compiled execution plan to run; must not be {@code null}
      * @param instanceIdMost  most-significant bits of the new instance UUID

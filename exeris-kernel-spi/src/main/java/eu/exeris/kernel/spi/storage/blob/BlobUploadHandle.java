@@ -12,18 +12,16 @@ import java.lang.foreign.MemorySegment;
 /**
  * SPI: An in-progress upload of exactly one object (ADR-056 §3).
  *
- * <h2>Ownership</h2>
  * <p>The caller owns every buffer it writes, for the whole upload. {@link #write} copies out of the
  * supplied segment before returning and MUST NOT retain a reference to it, so one pooled
  * {@link LoanedBuffer} can drive an entire transfer — the alternative, transferring ownership per chunk,
  * would force a fresh allocation per chunk and put an ownership question on the hot path.
  *
- * <h2>Visibility</h2>
  * <p>Written bytes become visible as a stored object only on {@link #commit()}. Closing without
  * committing aborts: no partially written object is left visible, so an interrupted upload can never be
  * mistaken for a complete one.
  *
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (BlobUploadHandle upload = store.beginUpload(ref, size, "image/png");
  *      LoanedBuffer chunk = allocator.allocateInfrastructure(64 * 1024)) {
  *     while (source.hasNext()) {
@@ -32,11 +30,17 @@ import java.lang.foreign.MemorySegment;
  *     }
  *     BlobMetadata stored = upload.commit();
  * } // close() after commit() is a no-op; close() without commit() aborts
- * }</pre>
+ * }
  *
- * <p>Handles are not thread-safe: one upload is driven by one thread.
+ * <p><b>Allocation:</b> not specified at the SPI level — {@link #write} guarantees no retained
+ * reference to the caller's segment, not the absence of internal copying; a driver's own buffering
+ * is its concern.
+ * <p><b>Thread confinement:</b> owner thread — one upload is driven by one thread; handles are not
+ * thread-safe.
+ * <p><b>Ownership:</b> the caller owns every buffer it writes, for the whole upload; this handle
+ * never retains a reference to one past the call that supplied it.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface BlobUploadHandle extends AutoCloseable {
 
@@ -49,8 +53,9 @@ public interface BlobUploadHandle extends AutoCloseable {
      * @param source off-heap segment holding the bytes (typically {@link LoanedBuffer#segment()})
      * @param length number of bytes to write; must be {@code >= 0} and {@code <=} the segment size.
      *               A value of {@code 0} is a no-op, so a drained read loop needs no special case
-     * @throws BlobStorageException     on I/O failure, or if the total written would exceed the content
-     *                                  length declared at {@link BlobStore#beginUpload}
+     * @throws BlobStorageException     on I/O failure ({@code EX-BLOB-8003}), or if the total written
+     *                                  would exceed the content length declared at
+     *                                  {@link BlobStore#beginUpload} ({@code EX-BLOB-8004})
      * @throws IllegalStateException    if this upload was already committed or closed
      * @throws IllegalArgumentException if {@code length} is negative or exceeds the segment size
      */
@@ -60,8 +65,9 @@ public interface BlobUploadHandle extends AutoCloseable {
      * Completes the upload and makes the object visible.
      *
      * @return metadata for the stored object; never {@code null}
-     * @throws BlobStorageException  on I/O failure, or if the bytes written do not match the content
-     *                               length declared at {@link BlobStore#beginUpload}
+     * @throws BlobStorageException  on I/O failure ({@code EX-BLOB-8003}), or if the bytes written do
+     *                               not match the content length declared at
+     *                               {@link BlobStore#beginUpload} ({@code EX-BLOB-8004})
      * @throws IllegalStateException if this upload was already committed or closed
      */
     BlobMetadata commit();

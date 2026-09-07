@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * to reduce per-allocation contention. Pool manages shard-local shared arenas
  * with lock-free reuse queues.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CommunityMemoryAllocator implements MemoryAllocator {
 

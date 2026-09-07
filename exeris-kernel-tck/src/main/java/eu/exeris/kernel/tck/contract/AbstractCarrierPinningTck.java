@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * @see JfrPinningMonitor
  * @see AbstractFlowEngineTck
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Carrier Pinning TCK")
 public abstract class AbstractCarrierPinningTck {

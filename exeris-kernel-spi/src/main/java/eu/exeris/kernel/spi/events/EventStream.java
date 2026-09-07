@@ -15,34 +15,41 @@ package eu.exeris.kernel.spi.events;
  *
  * <h2>RAII Per-Payload Lifecycle</h2>
  * <p>Each {@link EventPayload} returned by the iterator has reference count {@code 1}
- * on hand-off. Callers MUST call {@link EventPayload#close()} on every payload they
- * consume — typically via {@code try-with-resources} on the payload itself. The bus's
- * broadcast retain protocol does not apply here: replay delivers single-consumer payloads.
+ * on hand-off. The bus's broadcast retain protocol does not apply here: replay delivers
+ * single-consumer payloads, so there is exactly one holder and exactly one close.
  *
- * <h2>Cursor Lifecycle</h2>
- * <p>The stream owns an underlying cursor (DB result set, broker consumer, etc.).
- * Callers MUST call {@link #close()} when done — typically via {@code try-with-resources}
- * on the {@code EventStream} itself — to release the cursor; failing to do so leaks
- * driver resources. {@code close()} is idempotent.
+ * <p><b>Allocation:</b> allocates (one payload per iteration step, bounded to that event's own
+ * bytes; the payloads are never accumulated into a {@code List<EventPayload>} ahead of the
+ * consumer)
+ * <p><b>Ownership:</b> the caller closes every payload the iterator yields, and closes the stream
+ * itself to release the cursor; the two are separate obligations and neither implies the other
  *
- * <h2>Allocation Discipline</h2>
- * <p>Implementations SHOULD reuse a single {@link EventPayload} carrier per
- * {@code Iterator.next()} call — or hand the caller a payload whose backing slab is
- * lazily filled — so the per-event allocation budget on a hot replay path is bounded
- * by the descriptor footprint, not by the payload size.
- *
- * @since 0.7.0
+ * @implSpec {@link #close()} releases the underlying cursor and is idempotent. Payloads are
+ *           handed over at reference count {@code 1}. An implementation allocates at most one
+ *           payload per {@code Iterator.next()} call, bounded to that event's own bytes; payloads
+ *           are not accumulated ahead of the consumer.
+ * @apiNote Put {@code try-with-resources} on the {@code EventStream} and on each payload:
+ *          skipping the stream's own close leaks a driver cursor, and skipping a payload's close
+ *          leaks its slab on a pooled binding.
+ * @implNote Neither Community binding streams off-heap slabs. The JDBC binding iterates lazily
+ *           over a live cursor; the Kafka binding reads to the end of the topic and materialises
+ *           the matching frames on heap before iterating.
+ * @since 0.7
  * @see EventStreamReader
  * @see EventPayload
  */
 public interface EventStream extends Iterable<EventPayload>, AutoCloseable {
 
     /**
-     * Releases the underlying cursor (DB result set, broker consumer, etc.).
-     * Idempotent. Overridden to remove the {@code throws Exception} clause from
-     * {@link AutoCloseable} — implementations MUST NOT raise checked exceptions
-     * here; lift any internal failure to a runtime kernel exception (e.g.
-     * {@link eu.exeris.kernel.spi.exceptions.events.EventEngineException}).
+     * Releases the underlying cursor (DB result set, broker consumer, etc.), ending the replay
+     * whether or not the iterator was exhausted.
+     *
+     * @implSpec Idempotent, and declared without the {@code throws Exception} clause
+     *           {@link AutoCloseable} would otherwise impose: an implementation raises no checked
+     *           exception here, lifting an internal failure to a runtime kernel exception such as
+     *           {@link eu.exeris.kernel.spi.exceptions.events.EventEngineException} instead.
+     * @apiNote Closing the stream does not close the payloads already handed out — those remain
+     *          the consumer's to release.
      */
     @Override
     void close();

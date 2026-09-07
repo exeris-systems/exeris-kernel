@@ -24,7 +24,7 @@ package eu.exeris.kernel.spi.scheduling;
  * driver is trusted to enforce. What a valid expression <em>means</em> — the next fire time — stays
  * driver work.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CronSyntax {
 

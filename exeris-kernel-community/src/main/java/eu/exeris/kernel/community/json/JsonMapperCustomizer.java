@@ -42,7 +42,7 @@ import tools.jackson.databind.json.JsonMapper;
  *   <li>Applied once per scope at provider construction (bootstrap), never on the request path.</li>
  * </ul>
  *
- * @since 0.10.1
+ * @since 0.10
  */
 @FunctionalInterface
 public interface JsonMapperCustomizer {

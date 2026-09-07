@@ -39,7 +39,7 @@ import java.util.Optional;
  * records (ADR-033 Obligations 2 &amp; 7). When read outside a bound kernel scope the subsystem slot is
  * unbound and those snapshots are returned empty rather than throwing.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 final class CommunityKernelDiagnostics implements KernelDiagnostics {
 

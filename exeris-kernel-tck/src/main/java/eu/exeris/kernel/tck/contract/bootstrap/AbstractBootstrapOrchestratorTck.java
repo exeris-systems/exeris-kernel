@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * }
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public abstract class AbstractBootstrapOrchestratorTck {
 

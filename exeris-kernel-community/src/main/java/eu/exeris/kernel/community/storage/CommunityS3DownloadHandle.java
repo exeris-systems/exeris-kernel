@@ -21,7 +21,7 @@ import java.lang.foreign.MemorySegment;
  * <p>Owns the response buffer and releases it on {@link #close()}. That buffer came from the HTTP
  * engine's allocator, so failing to close it leaks a pooled segment rather than heap.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityS3DownloadHandle implements BlobDownloadHandle {
 

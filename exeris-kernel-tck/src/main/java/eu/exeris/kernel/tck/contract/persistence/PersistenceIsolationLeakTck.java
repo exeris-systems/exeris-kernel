@@ -46,7 +46,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The JDBC driver MUST NOT pin the carrier thread during the isolation query.
  * This is verified via {@code @Timeout} — if the VT pins and blocks, the test times out.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @DisplayName("Persistence Isolation Leak TCK")
 public abstract class PersistenceIsolationLeakTck {

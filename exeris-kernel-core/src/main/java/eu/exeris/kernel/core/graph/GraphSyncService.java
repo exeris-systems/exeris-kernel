@@ -40,7 +40,7 @@ import java.util.UUID;
  * Each call opens its own {@link GraphSession} and closes it deterministically
  * via try-with-resources.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // PMD.AvoidCatchingGenericException — suppressed at class level: this class is the L2 sync
 // boundary. Driver implementations may throw any RuntimeException (JDBC, Bolt, native).

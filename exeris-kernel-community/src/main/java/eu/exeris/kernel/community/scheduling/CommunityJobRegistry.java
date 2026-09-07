@@ -19,7 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * threads. Keeping every guarded mutation in one class is what makes the locking auditable: there is
  * a single place to check that nothing touches the queue or a job's state outside the lock.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 // TooManyMethods: settle/settleUnrunnable are two more terminal paths on a class that already owns
 // every one of them. Concentrating them here is what makes "a settled job releases its payload"

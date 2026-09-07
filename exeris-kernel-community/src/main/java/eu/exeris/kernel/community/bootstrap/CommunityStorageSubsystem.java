@@ -39,7 +39,7 @@ import java.util.function.UnaryOperator;
  * dependency cannot be conditional on a config value read after the boot graph is built. Not
  * {@code http}: the S3 driver builds its own client rather than taking the HTTP subsystem's.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 final class CommunityStorageSubsystem extends AbstractCommunitySubsystem {
 

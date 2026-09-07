@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentMap;
  * {@code ConcurrentHashMap<Integer, Boolean>} of step indices. This makes
  * {@link #releaseInstance} O(1) (remove the whole inner map) rather than O(total_claimed_steps).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CoreIdempotencyGuard implements IdempotencyGuard {
 

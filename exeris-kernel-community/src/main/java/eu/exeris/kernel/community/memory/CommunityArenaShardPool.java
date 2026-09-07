@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicReferenceArray;
  * shard arenas are closed in deterministic order, invalidating outstanding buffers.
  * Subsequent allocations throw IllegalStateException.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.CloseResource", "PMD.CyclomaticComplexity"})
 final class CommunityArenaShardPool {

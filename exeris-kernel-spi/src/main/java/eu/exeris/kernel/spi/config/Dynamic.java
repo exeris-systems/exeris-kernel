@@ -13,26 +13,8 @@ import java.lang.annotation.Target;
  * Marks a {@code static volatile} field for zero-downtime hot-reload via an
  * implementation-specific virtual-thread configuration watcher.
  *
- * <h2>Contract</h2>
- * <ul>
- *   <li>Target: {@code static volatile} fields only.</li>
- *   <li>Type: Must be an immutable {@code record} or a primitive wrapper.</li>
- *   <li>Update mechanism: atomic pointer swap via {@code VarHandle.setVolatile()}
- *       — no locks, no {@code synchronized}, no heap churn.</li>
- *   <li>Visibility guarantee: all threads see either old or new value (never partial
- *       state) — standard Java volatile happens-before guarantee.</li>
- * </ul>
- *
- * <h2>Community vs Enterprise</h2>
- * <p><b>Community</b>: {@code @Dynamic} fields are registered but never reloaded —
- * {@link ConfigProvider#watch(String, String, java.util.function.Consumer)} is a no-op.
- * <p><b>Enterprise</b>: Fields are registered at startup via an explicit call on the
- * Enterprise {@code ConfigProvider} implementation (no reflection classpath scan — banned).
- * A Virtual Thread watcher (NIO.2 + Virtual Thread) then performs the swap atomically
- * on file change.
- *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * // 1. Declare config record (must be immutable)
  * public record PaymentConfig(boolean stripeEnabled, boolean paypalEnabled) {
  *     public static final PaymentConfig DEFAULT = new PaymentConfig(true, false);
@@ -49,16 +31,28 @@ import java.lang.annotation.Target;
  *
  * // 4. Read at runtime — always current, zero lock contention
  * boolean stripe = FeatureFlags.CURRENT.stripeEnabled();
- * }</pre>
+ * }
  *
- * <h2>Performance</h2>
- * <ul>
- *   <li>Read cost: 1 volatile load (~5 CPU cycles on x86_64).</li>
- *   <li>Write cost: 1 volatile store (~10 CPU cycles) — only on file change.</li>
- *   <li>After JVM warm-up, JIT may constant-fold if the field is effectively final.</li>
- * </ul>
- *
- * @since 0.5.0
+ * @implSpec A watcher that honours this annotation replaces the field by one atomic pointer
+ *           store ({@code VarHandle.setVolatile()} or an equivalent release store) — no lock,
+ *           no {@code synchronized} block, no heap churn on the reading side. Every reader
+ *           therefore observes either the old value or the new one and never a partially
+ *           published object, which is the standard Java {@code volatile} happens-before
+ *           guarantee and nothing stronger.
+ * @apiNote Place this only on a {@code static volatile} field whose type is an immutable
+ *          {@code record} or a primitive wrapper. The reload swaps a single reference, so a
+ *          mutable carrier would expose a half-updated object that no {@code volatile} store
+ *          can protect. Read the field at the point of use rather than hoisting it into a
+ *          local across a long operation — a hoisted read is the one that keeps using the
+ *          superseded value after a reload.
+ *          <p>A read costs one volatile load (~5 CPU cycles on x86_64); a write costs one
+ *          volatile store (~10 cycles) and is paid only when the file changes.
+ * @implNote Community providers register {@code @Dynamic} fields but never reload them —
+ *           {@link ConfigProvider#watch(String, String, java.util.function.Consumer)} is a
+ *           no-op there. Enterprise providers register the field through an explicit call at
+ *           startup (no reflective classpath scan — banned), and a virtual-thread NIO.2
+ *           watcher performs the swap on file change.
+ * @since 0.5
  * @see ConfigProvider#watch(String, String, java.util.function.Consumer)
  */
 @Retention(RetentionPolicy.RUNTIME)

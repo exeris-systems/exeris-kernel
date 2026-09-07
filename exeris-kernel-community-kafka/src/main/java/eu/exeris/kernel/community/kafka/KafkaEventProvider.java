@@ -30,7 +30,7 @@ import java.util.Objects;
  * the slot is bound. Single-binding tests (no {@code ConfigProvider} on the carrier) may use
  * {@link #create(EventEngineConfig, KafkaEventConfig)} which short-circuits the lookup.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KafkaEventProvider implements EventProvider {
 

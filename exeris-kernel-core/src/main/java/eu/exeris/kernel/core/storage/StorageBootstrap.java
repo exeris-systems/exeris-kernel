@@ -29,7 +29,7 @@ import java.util.stream.Collectors;
  * same key. What is refused here is asking for storage without saying which, which is the only
  * situation where a silent pick would be wrong.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class StorageBootstrap {
 

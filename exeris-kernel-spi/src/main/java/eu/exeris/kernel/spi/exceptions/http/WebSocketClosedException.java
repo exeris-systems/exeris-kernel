@@ -28,7 +28,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <p>Message content never appears — not in the message, not in {@code rawArgs}. The text a handler
  * was trying to send is exactly the payload most likely to be sensitive.
  *
- * @since 0.12.0
+ * @since 0.12
  */
 public final class WebSocketClosedException extends ExerisKernelException {
 
@@ -37,6 +37,8 @@ public final class WebSocketClosedException extends ExerisKernelException {
     private static final String MSG_PEER_GONE = "WebSocket send on a closed connection";
 
     /**
+     * General-purpose constructor — used when no specific factory method matches the scenario.
+     *
      * @param errorCode structured error code
      * @param message   static message; never formatted from connection content
      * @param rawArgs   connection-scoped counters for Glass-Box telemetry

@@ -18,63 +18,57 @@ import java.util.Set;
  *
  * <h2>Ordinal Assignment</h2>
  * <p>Ordinals are <b>caller-defined</b>: they are supplied by the caller via
- * {@link EventTypeSpec} at registration time. Implementations do <b>not</b> assign ordinals
- * sequentially — they <b>validate</b> that the supplied ordinal is unique within the registry
- * and throw {@link EventRegistryException} on conflict.
+ * {@link EventTypeSpec} at registration time. The registry is the arbiter of uniqueness, not the
+ * source of the numbers.
  *
- * <h2>Implementations</h2>
- * <ul>
- *   <li><b>Standard</b>: Thread-safe in-memory map on the heap.
- *       Validates ordinal uniqueness on each {@link #register} call.</li>
- *   <li><b>High-performance native</b>: Off-heap map with fixed capacity.
- *       All types must be registered before {@link EventEngine#start()} —
- *       the routing table is built once during startup and immutable thereafter.</li>
- * </ul>
- *
- * <h2>Registration Order</h2>
- * <p>Enterprise implementations require all types to be registered before
- * {@link EventEngine#start()} — the routing table is built once during startup.
- * Community implementations allow registration at any time.
- *
- * @since 0.5.0
+ * @implSpec An implementation does <b>not</b> assign ordinals sequentially — it validates that
+ *           the supplied ordinal is unique within the registry and raises
+ *           {@link EventRegistryException} on conflict.
+ * @apiNote Register every type before subscribing to it or publishing it — the in-memory bus
+ *          rejects a subscription to an unregistered type, and ordinal routing has nothing to
+ *          route on without an entry.
+ * @implNote The Community binding is a thread-safe heap map that validates uniqueness on each
+ *           {@link #register} call and accepts registrations at any time. A native binding is a
+ *           fixed-capacity off-heap map whose routing table is built once during
+ *           {@link EventEngine#start()} and immutable afterwards, so every type must be
+ *           registered before that call.
+ * @since 0.5
  * @see EventTypeSpec
  */
 public interface EventRegistry {
 
     /**
-     * Registers an event type specification.
-     *
-     * <p>This operation is idempotent — registering the same type name twice with
-     * identical settings has no effect. Re-registering with different settings
-     * throws {@link EventRegistryException}.
-     *
-     * <p>Native implementations require all types to be registered before
-     * {@link EventEngine#start()}.
+     * Admits an event type into the routing table, claiming its ordinal for the life of the
+     * registry.
      *
      * @param spec the event type specification (non-null)
-     * @throws EventRegistryException if the type is already registered with different settings
+     * @throws EventRegistryException {@code EX-EVENT-6003} if the type name is already registered
+     *         with different settings, or its ordinal is already claimed; {@code rawArgs} carry
+     *         {@code [String eventType, int ordinal]}
+     * @implSpec Idempotent for an identical re-registration — the same type name with the same
+     *           settings has no effect and does not raise. Only a genuine disagreement conflicts.
+     * @apiNote A native binding requires every type to be registered before
+     *          {@link EventEngine#start()}.
      */
     void register(EventTypeSpec spec);
 
     /**
-     * Resolves the {@link EventTypeSpec} for the given type name.
-     *
-     * <p>Returns {@code null} if the type has not been registered.
-     * This method is O(1) — hash lookup.
+     * Looks up the full registration record for a type name — the shape the publish path needs
+     * when it must know more than the ordinal (durability, ordering, topic override).
      *
      * @param eventType the event type name (non-null)
-     * @return the registered spec, or {@code null} if not found
+     * @return the registered spec, or {@code null} if the type was never registered
+     * @implSpec O(1) — a hash lookup, not a scan.
      */
     EventTypeSpec resolve(String eventType);
 
     /**
-     * Returns the ordinal assigned to the given event type name.
-     *
-     * <p>Returns {@code -1} if the type is not registered.
-     * Use this for hot-path routing to avoid creating {@link EventTypeSpec} objects.
+     * Resolves a type name to the integer the dispatch path routes on, without materialising the
+     * registration record.
      *
      * @param eventType the event type name (non-null)
-     * @return the assigned ordinal, or {@code -1} if not registered
+     * @return the ordinal claimed at registration, or {@code -1} if the type is not registered
+     * @apiNote This is the hot-path lookup: it avoids handling an {@link EventTypeSpec} at all.
      */
     default int ordinalOf(String eventType) {
         EventTypeSpec spec = resolve(eventType);
@@ -82,28 +76,30 @@ public interface EventRegistry {
     }
 
     /**
-     * Returns an immutable snapshot of all registered event type names.
+     * Enumerates the type names currently registered, as a snapshot that does not track later
+     * registrations.
      *
-     * <p>This method may allocate a new {@link Set} — do not call it in hot paths.
-     *
-     * @return immutable set of registered type names
+     * @return an immutable set of the registered type names; empty when nothing is registered
+     * @apiNote May allocate a fresh {@link Set} per call — for diagnostics, startup checks and
+     *          subscription refresh, not for a dispatch path.
      */
     Set<String> registeredTypes();
 
     /**
-     * Returns {@code true} if the given type is registered.
+     * Answers whether a type name has a registration, without materialising it.
      *
      * @param eventType the event type name (non-null)
-     * @return {@code true} if registered
+     * @return {@code true} when {@link #resolve} would return a spec for this name
      */
     default boolean isRegistered(String eventType) {
         return resolve(eventType) != null;
     }
 
     /**
-     * Returns the total number of registered event types.
+     * Counts the registrations held, the cardinality of {@link #registeredTypes()} without
+     * building it.
      *
-     * @return count ≥ 0
+     * @return the number of registered event types; never negative
      */
     int size();
 }

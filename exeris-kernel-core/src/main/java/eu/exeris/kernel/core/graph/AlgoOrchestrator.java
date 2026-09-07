@@ -43,7 +43,7 @@ import java.util.UUID;
  * Virtual Threads if the underlying {@link PathFinder} is thread-safe (Community:
  * yes; Enterprise: yes via carrier-affine slab pools).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class AlgoOrchestrator {
 

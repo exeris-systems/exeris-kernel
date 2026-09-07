@@ -24,31 +24,8 @@ import java.lang.annotation.Target;
  *   <li>native library paths (OpenSSL / FFM load locations).</li>
  * </ul>
  *
- * <h2>Contract</h2>
- * <ul>
- *   <li><b>Target:</b> {@code static final} fields only. The compile-time processor in
- *       {@code exeris-kernel-build-config} rejects any other placement.</li>
- *   <li><b>Mutual exclusion:</b> a field annotated {@code @Immutable} must NOT also carry
- *       {@link Dynamic} — the two intents are contradictory and the build-time processor
- *       fails the compilation when both are present on the same element.</li>
- *   <li><b>Runtime enforcement:</b> when a configuration provider's {@code WatchService}
- *       driver observes an on-disk change to an {@code @Immutable} key, it <b>refuses</b>
- *       the reload (the field is never updated) and surfaces a secret-safe structured
- *       event under
- *       {@link eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_CFG_1004}. The previous,
- *       sealed value remains authoritative.</li>
- * </ul>
- *
- * <h2>Community vs Enterprise</h2>
- * <p><b>Community</b>: {@link ConfigProvider#guardImmutable(String, String)} is a no-op —
- * Community does not run a hot-reload watcher, so an {@code @Immutable} key is already
- * effectively sealed (no reload path exists).
- * <p><b>Enterprise</b>: keys are registered explicitly at startup (no reflective classpath
- * scan — banned). The Virtual Thread watcher then refuses any reload attempt on a guarded
- * key and emits the {@code EX-CFG-1004} refusal event.
- *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * public final class SecurityTrustAnchors {
  *     @Immutable(file = "security.properties", key = "security.jwks.uri",
  *                reason = "rotating the JWKS endpoint at runtime would bypass issuer validation")
@@ -57,9 +34,28 @@ import java.lang.annotation.Target;
  *
  * // Register the guard at bootstrap (mirrors @Dynamic's watch() registration):
  * provider.guardImmutable("security.properties", "security.jwks.uri");
- * }</pre>
+ * }
  *
- * @since 0.9.0
+ * @implSpec A provider that runs a hot-reload watcher must, on observing an on-disk change to
+ *           a guarded key, <b>refuse</b> the reload — the field is never updated and the
+ *           boot-time value stays authoritative for the lifetime of the process — and surface
+ *           the refusal as a secret-safe structured event under
+ *           {@link eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_CFG_1004} carrying the
+ *           file and key name only, never the value. A provider that runs no watcher has
+ *           nothing to enforce: with no reload path, the key is already sealed.
+ * @apiNote Place this only on a {@code static final} field, and never together with
+ *          {@link Dynamic} on the same element — the two intents contradict each other. The
+ *          annotation processor in {@code exeris-kernel-build-config} fails the compilation in
+ *          both cases, so a misplaced seal is a build error rather than a runtime surprise.
+ *          Register the guard explicitly at bootstrap through
+ *          {@link ConfigProvider#guardImmutable(String, String)}; the annotation documents the
+ *          intent, the registration is what a watcher can act on.
+ * @implNote In Community, {@link ConfigProvider#guardImmutable(String, String)} is a no-op,
+ *           since Community runs no hot-reload watcher. In Enterprise, keys are registered
+ *           explicitly at startup (no reflective classpath scan — banned) and the
+ *           virtual-thread watcher refuses every reload attempt on a guarded key, emitting the
+ *           {@code EX-CFG-1004} refusal event.
+ * @since 0.9
  * @see Dynamic
  * @see ConfigProvider#guardImmutable(String, String)
  * @see eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_CFG_1004

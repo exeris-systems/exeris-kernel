@@ -24,22 +24,20 @@ import eu.exeris.kernel.spi.events.EventPayload;
  * stays byte-for-byte unchanged. Higher {@link #priority()} wins; ties resolve by
  * registration order (see {@link EventPayloadCodecRegistry#of(java.util.List)}).
  *
- * <h2>Ownership (RAII)</h2>
- * <p>{@link #encode} returns an {@link EventPayload} the caller owns
- * (refCount == 1); the caller transfers it to {@code EventBus.publish}, which then
- * manages broadcast lifetime per the existing {@link EventPayload} contract.
- * {@link #decode} MUST NOT close, retain, or otherwise extend the lifetime of the
- * supplied payload — the caller owns that buffer's lifecycle.
+ * <p><b>Allocation:</b> allocates ({@link #encode} produces the wire bytes and the
+ * {@link EventPayload} that carries them, once per call; {@link #decode} produces the decoded
+ * object)
+ * <p><b>Ownership:</b> the payload {@link #encode} returns is the caller's, at reference count
+ * {@code 1}, and the caller passes it on to {@code EventBus.publish}; the payload handed to
+ * {@link #decode} stays the caller's throughout
  *
- * <h2>The Wall</h2>
- * <p>Implementations MUST wrap binding-specific exceptions (e.g. a Jackson
- * {@code JacksonException}) into a JDK-standard {@code java.*}
- * {@link RuntimeException} before returning; no driver-package type — not even a
- * driver-defined {@code RuntimeException} subclass — may cross this SPI boundary
- * (testable-as-written; the TCK asserts the thrown type's package
- * {@code startsWith("java.")}).
- *
- * @since 0.10.0
+ * @implSpec {@link #decode} does not close, retain, or otherwise extend the lifetime of the
+ *           payload it is given. Binding-specific exceptions (a Jackson
+ *           {@code JacksonException}, say) are wrapped into a JDK-standard {@code java.*}
+ *           {@link RuntimeException} before they leave: no driver-package type — not even a
+ *           driver-defined {@code RuntimeException} subclass — crosses this SPI boundary. The
+ *           TCK asserts the thrown type's package {@code startsWith("java.")}.
+ * @since 0.10
  * @see EventPayloadCodecRegistry
  * @see EventCodecContext
  * @see EventPayload
@@ -47,48 +45,54 @@ import eu.exeris.kernel.spi.events.EventPayload;
 public interface EventPayloadCodec {
 
     /**
-     * Returns {@code true} when this codec can handle the given payload type and
-     * content type. Implementations MUST tolerate a {@code null}/empty
-     * {@code contentType} (the producer may rely on a default) without throwing.
+     * Declares whether this codec claims the given (payload type, content type) pair — the
+     * predicate {@link EventPayloadCodecRegistry} resolves on.
      *
      * @param payloadType the runtime payload class; never null
      * @param contentType the requested content-type, or {@code null}/empty
-     * @return {@code true} when this codec can encode/decode the pair
+     * @return {@code true} when this codec can encode and decode the pair
+     * @implSpec Tolerates a {@code null} or empty {@code contentType} — the producer may be
+     *           relying on a default — by answering the question rather than throwing.
      */
     boolean supports(Class<?> payloadType, String contentType);
 
     /**
-     * Encodes a typed/structured payload into a bytes-backed {@link EventPayload}.
-     *
-     * <p>The returned payload is owned by the caller (refCount == 1) and is the
-     * value handed to {@code EventBus.publish}. Binding exceptions MUST be wrapped
-     * into a {@code java.*} {@link RuntimeException} (The Wall).
+     * Serializes a typed payload into the wire bytes the bus carries, wrapped in a payload the
+     * caller owns.
      *
      * @param payload the payload object to serialize; never null
      * @param ctx     the codec context (requested content-type + event-type name); never null
-     * @return a caller-owned, bytes-backed {@link EventPayload}; never null
+     * @return a bytes-backed {@link EventPayload} at reference count {@code 1}, never null
+     * @implSpec Binding exceptions are wrapped into a {@code java.*} {@link RuntimeException}
+     *           before they leave (The Wall).
+     * @apiNote The returned payload is the value handed to {@code EventBus.publish}, which then
+     *          takes ownership of it — so a caller that encodes and does not publish still owes
+     *          the {@link EventPayload#close()}.
      */
     EventPayload encode(Object payload, EventCodecContext ctx);
 
     /**
-     * Decodes an {@link EventPayload} back into an instance of {@code targetType}.
+     * Reads wire bytes back into an instance of {@code targetType}, leaving the payload's
+     * lifecycle entirely to the caller.
      *
-     * <p>Generics-free by design — returns {@code Object}; the single cast lives at
-     * the consumer call-site. MUST NOT close or retain the supplied payload.
-     * Returns {@code null} for an empty payload (length 0); binding exceptions MUST
-     * be wrapped into a {@code java.*} {@link RuntimeException} (The Wall).
+     * <p>Generics-free by design — it returns {@code Object}, so the single cast lives at the
+     * consumer call-site.
      *
      * @param payload    the wire payload to deserialize; never null
      * @param targetType the desired runtime class; never null
      * @param ctx        the codec context; never null
-     * @return the decoded value, or {@code null} for an empty payload
+     * @return the decoded value, or {@code null} when the payload is empty (length 0)
+     * @implSpec Does not close or retain the supplied payload. Binding exceptions are wrapped
+     *           into a {@code java.*} {@link RuntimeException} before they leave (The Wall).
      */
     Object decode(EventPayload payload, Class<?> targetType, EventCodecContext ctx);
 
     /**
-     * Resolution priority; higher wins. Default {@code 0}.
+     * Ranks this codec against the others registered for the same pair; the registry picks the
+     * highest.
      *
-     * @return non-negative priority
+     * @return this codec's rank — non-negative, defaulting to {@code 0}; ties between equal ranks
+     *         are broken by registration order
      */
     default int priority() {
         return 0;

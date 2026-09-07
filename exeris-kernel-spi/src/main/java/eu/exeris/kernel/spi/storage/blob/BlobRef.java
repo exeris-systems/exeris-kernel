@@ -23,7 +23,7 @@ import java.util.Objects;
  *
  * @param container the logical container; non-blank
  * @param key       the object key within the container; non-blank, and free of traversal syntax
- * @since 0.11.0
+ * @since 0.11
  */
 public record BlobRef(String container, String key) {
 

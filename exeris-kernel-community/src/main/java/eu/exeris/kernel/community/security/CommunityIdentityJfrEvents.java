@@ -26,7 +26,7 @@ import jdk.jfr.Timespan;
  * <p>Carries only the provider id, the (public) issuer identifier, a coarse duration, and an opaque
  * deny reason code — never the raw token, key material, or sensitive claim values.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class CommunityIdentityJfrEvents {
 

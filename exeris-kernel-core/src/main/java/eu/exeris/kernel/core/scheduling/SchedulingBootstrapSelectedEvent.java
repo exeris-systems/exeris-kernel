@@ -19,7 +19,7 @@ import jdk.jfr.StackTrace;
  * anyone asks when a scheduler behaves unexpectedly, so it is recorded at selection rather than
  * reconstructed from behaviour. Single-phase commit on the bootstrap thread.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @Name("eu.exeris.kernel.scheduling.SchedulingBootstrapSelected")
 @Label("Scheduling Bootstrap Selected")

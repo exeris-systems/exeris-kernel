@@ -14,29 +14,39 @@ import java.util.UUID;
  * <h2>Flyweight Contract (The Architect's Covenant)</h2>
  * <p>A single {@code RowCursor} instance is shared across all rows in a
  * {@link QueryResult}. Each call to {@link QueryResult#next()} repositions
- * the cursor over the next row's data. Callers MUST NOT retain references
- * to this object across {@code next()} calls.
+ * the cursor over the next row's data.
  *
- * <h2>Enterprise Hot Path</h2>
- * <p>In the Enterprise tier, all primitive accessors ({@link #getInt},
- * {@link #getLong}, {@link #getDouble}) read directly from off-heap
- * {@link MemorySegment} using {@code ValueLayout} — no heap allocation,
- * no boxing, no intermediate objects.
+ * <h2>The three answers every accessor gives</h2>
+ * <p>Every accessor states what it does with an out-of-range column index and with a SQL NULL,
+ * and both answers are uniform across the thirteen (ADR-080). An index outside
+ * {@code [0, columnCount())} throws {@link IndexOutOfBoundsException}. On SQL NULL the answer
+ * follows the <em>return type</em>, not the column: a reference-typed accessor returns
+ * {@code null}, a primitive accessor throws {@link NullPointerException} because it has no null
+ * to return, {@link #getLength} returns {@code -1}, and {@link #getSegment} throws — a read-only
+ * view of nothing is not a segment.
  *
- * <p>{@link #getSegment(int)} returns a zero-copy {@code MemorySegment.asSlice()}
- * into the transport receive buffer — the data is never copied to the heap.
+ * <p><b>Allocation:</b> zero-alloc on hot path for the primitive accessors, {@link #isNull} and
+ * {@link #getLength}; {@link #getSegment(int)} copies no bytes, handing back a view rather than
+ * data; allocates for {@link #getString(int)}, {@link #getBytes(int)}, {@link #getUuid(int)} and
+ * {@link #getInstant(int)} — one object per call, by design rather than by accident.
+ * <p><b>Thread confinement:</b> owner thread — the cursor is the flyweight of its
+ * {@link QueryResult}, which is not thread-safe, and its position is only meaningful to the
+ * thread driving the iteration.
+ * <p><b>Ownership:</b> the {@link QueryResult} owns this cursor; the caller never closes it and
+ * MUST NOT retain it across {@link QueryResult#next()}. A {@link MemorySegment} from
+ * {@link #getSegment(int)} is a view into the result's buffer and dies with the next row.
  *
- * <h2>Community Tier</h2>
- * <p>Community implementations delegate to JDBC {@code ResultSet} methods.
- * Boxing MAY occur for primitive types in this tier.
- *
- * <h2>Allocating Methods</h2>
- * <p>{@link #getString(int)}, {@link #getBytes(int)}, and {@link #getUuid(int)}
- * are explicitly marked as <em>allocating</em>. They MUST be used sparingly
- * on the Enterprise hot path. Prefer {@link #getSegment(int)} for zero-copy access.
- *
+ * @implSpec In the Enterprise tier the primitive accessors ({@link #getInt}, {@link #getLong},
+ *           {@link #getDouble}) read directly from an off-heap {@link MemorySegment} through
+ *           {@code ValueLayout} — no heap allocation, no boxing, no intermediate object — and
+ *           {@link #getSegment(int)} returns a {@code MemorySegment.asSlice()} into the transport
+ *           receive buffer, copying nothing to the heap.
+ * @apiNote On a hot path prefer {@link #getSegment(int)} and decode at the boundary to user code;
+ *          the allocating accessors are the deliberate opt-out from that.
+ * @implNote Community implementations delegate to JDBC {@code ResultSet} methods, where boxing
+ *           may occur for primitive types.
+ * @since 0.5
  * @see QueryResult
- * @since 0.5.0
  */
 public interface RowCursor {
 
@@ -45,9 +55,9 @@ public interface RowCursor {
      * one method need not have read this one (ADR-080 ruling 1):
      *
      *   Column index — an index outside [0, columnCount()) throws IndexOutOfBoundsException. All
-     *   thirteen accessors, uniformly. Before ADR-080 only getInt and getSegment said so; the other
-     *   eleven behaved this way without declaring it, which is a coincidence rather than a contract
-     *   and is what let two implementations read the same silence differently.
+     *   thirteen accessors, uniformly. An accessor that behaves this way without declaring it is a
+     *   coincidence rather than a contract, and is what lets two implementations read the same
+     *   silence differently.
      *
      *   SQL NULL — a reference-typed accessor returns null; a primitive accessor throws
      *   NullPointerException, because it has no null to return. getLength returns -1 and getSegment
@@ -168,15 +178,31 @@ public interface RowCursor {
     // =========================================================================
 
     /**
-     * Returns the column value as a Java {@link String}.
+     * Returns the column value rendered as a Java {@link String}, for any column type inside the
+     * accessor's domain (ADR-080 §2).
      *
      * <p><b>⚠ ALLOCATING:</b> Creates a new String from UTF-8 bytes.
      * On the Enterprise hot path, prefer {@link #getSegment(int)} and decode
      * only when crossing the API boundary to user code.
      *
+     * <p>A column whose type falls outside that domain is <em>refused</em> rather than rendered:
+     * decoding an unimplemented type's bytes as text yields a plausible wrong answer on a data
+     * path. The decision reads the column's declared type name and is a property of the column,
+     * not of the row — so a SQL NULL in an unsupported column refuses too, since {@code null}
+     * would claim "no value here" when the truth is "this column cannot be rendered".
+     *
      * @param column zero-based column index
-     * @return String value, or {@code null} if SQL NULL
+     * @return String value, or {@code null} if SQL NULL in a supported column
      * @throws IndexOutOfBoundsException if column is out of range
+     * @throws eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5008} if the
+     *         column's type is outside the accessor's domain
+     * @implNote The rendering guarantee contracts the server's own {@code <type>_out} output over
+     *           a set measured on PostgreSQL, so the Community driver applies both the guarantee
+     *           and the refusal on PostgreSQL connections, detected once per result set. On any
+     *           other engine this stays the JDBC pass-through, with no ADR-080 §2 promise
+     *           attached — H2 in PostgreSQL compatibility mode, for instance, renders {@code bool}
+     *           as {@code TRUE} where PostgreSQL renders {@code t}.
      */
     String getString(int column);
 
@@ -220,7 +246,7 @@ public interface RowCursor {
      * @param column zero-based column index
      * @return Instant value, or {@code null} if SQL NULL
      * @throws IndexOutOfBoundsException if column is out of range
-     * @since 0.8.0
+     * @since 0.8
      */
     Instant getInstant(int column);
 
@@ -231,14 +257,16 @@ public interface RowCursor {
     /**
      * Number of columns in the current row.
      *
-     * @return column count
+     * @return the column count — the exclusive upper bound every accessor's {@code column}
+     *         argument is checked against
      */
     int columnCount();
 
     /**
-     * Returns {@code true} if this cursor is positioned on a valid row.
+     * Reports whether this cursor currently sits on a row whose values can be read.
      *
-     * @return validity state
+     * @return {@code true} while positioned on a row; {@code false} before the first
+     *         {@link QueryResult#next()} and after it has reported exhaustion
      */
     boolean isValid();
 }

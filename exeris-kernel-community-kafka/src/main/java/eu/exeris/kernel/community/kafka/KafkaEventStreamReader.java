@@ -32,7 +32,7 @@ import java.util.function.ToIntFunction;
  * is deferred. Holds no live Kafka resource between calls — each replay opens and closes its own
  * scan consumer inside {@link KafkaEventLog}; {@link #close()} is a no-op.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class KafkaEventStreamReader implements EventStreamReader {
 

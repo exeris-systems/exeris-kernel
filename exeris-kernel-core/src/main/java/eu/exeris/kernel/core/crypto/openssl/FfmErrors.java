@@ -16,7 +16,7 @@ package eu.exeris.kernel.core.crypto.openssl;
  * <p>Callers must invoke {@link #rethrowIfError(Throwable)} as the first statement inside
  * every {@code catch (Throwable t)} block that wraps an {@code invokeExact} call.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class FfmErrors {
 

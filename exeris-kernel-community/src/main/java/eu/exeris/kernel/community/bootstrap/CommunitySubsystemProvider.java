@@ -18,7 +18,7 @@ import java.util.List;
  * <p>Returns {@code 0} — the Community open-core slot.
  * Enterprise overrides individual subsystems at priority {@code 100}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunitySubsystemProvider implements SubsystemProvider {
 

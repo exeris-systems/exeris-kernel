@@ -27,7 +27,7 @@ import java.util.UUID;
  * <h2>Parameter Indexing</h2>
  * <p>SPI uses zero-based indices. JDBC is one-based. All methods add {@code 1}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 final class JdbcPersistenceStatement implements PersistenceStatement {

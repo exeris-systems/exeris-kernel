@@ -40,7 +40,7 @@ import java.util.Objects;
  * <h2>Thread Safety</h2>
  * <p>Not thread-safe. Each HTTP/1.1 connection must own exactly one instance.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see Http1RequestParser
  * @see Http1ResponseEncoder
  * @see Http1ChunkedEncoder
@@ -55,7 +55,7 @@ public final class Http1Codec {
     /**
      * HTTP/1.1 → HTTP/2 upgrade state after header parsing.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public enum UpgradeState {
         /** No upgrade header present — standard HTTP/1.1 request. */

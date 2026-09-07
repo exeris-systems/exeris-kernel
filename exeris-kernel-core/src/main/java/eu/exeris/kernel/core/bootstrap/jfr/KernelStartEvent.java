@@ -31,7 +31,7 @@ import jdk.jfr.StackTrace;
  *   KernelBootReadyEvent        (all subsystems RUNNING)
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see BootstrapJfrEvents
  */
 @Name("eu.exeris.kernel.bootstrap.KernelStart")

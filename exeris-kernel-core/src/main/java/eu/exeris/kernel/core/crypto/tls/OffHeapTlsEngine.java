@@ -78,7 +78,7 @@ import java.lang.invoke.VarHandle;
  * multiple concurrent {@code close()} calls are safe; exactly one will invoke
  * {@link NativeCipherContext#release()}.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see TlsEngine
  * @see CoreSslHandles
  * @see NativeCipherContext

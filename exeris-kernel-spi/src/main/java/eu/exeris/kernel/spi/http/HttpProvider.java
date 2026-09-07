@@ -18,7 +18,7 @@ import java.util.Optional;
  * <h2>Discovery</h2>
  * <p>Loaded via {@link java.util.ServiceLoader}. The kernel bootstrapper in Core selects the
  * highest-{@link #priority()} provider:
- * <pre>{@code
+ * {@snippet lang="java" :
  * HttpProvider provider = java.util.ServiceLoader.load(HttpProvider.class)
  *         .stream()
  *         .map(java.util.ServiceLoader.Provider::get)
@@ -26,47 +26,48 @@ import java.util.Optional;
  *         .orElseThrow(() -> HttpException.providerBootstrapFailure("unknown", null));
  * HttpServerEngine server = provider.createServerEngine(HttpConfig.defaultServer());
  * ScopedValue.where(HttpKernelProviders.HTTP_SERVER_ENGINE, server).run(kernel::start);
- * }</pre>
+ * }
  *
  * <h2>SPI Compliance</h2>
  * <p>This interface is <strong>implementation-blind</strong>: zero references to
  * TCP sockets, QUIC streams, QPACK tables, io_uring rings, or OpenSSL handles.
  *
- * <h2>Dependency Injection</h2>
- * <p>Implementations obtain their {@link eu.exeris.kernel.spi.memory.MemoryAllocator}
- * and {@link eu.exeris.kernel.spi.crypto.KernelCryptoProvider} from
- * {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slots — consistent with
- * {@code TransportProvider}, {@code PersistenceProvider}, and {@code GraphProvider}.
- *
+ * @implSpec An implementation takes its {@link eu.exeris.kernel.spi.memory.MemoryAllocator} from
+ *           the {@link eu.exeris.kernel.spi.context.KernelProviders} scoped slot rather than
+ *           constructing one itself, so that one kernel scope has one allocator.
+ * @implNote TLS/crypto is the underlying {@code TransportProvider}'s concern, handled one layer
+ *           below; it is not a dependency {@code HttpProvider} sources directly.
+ * @since 0.5
  * @see HttpServerEngine
  * @see HttpClientEngine
  * @see HttpConfig
- * @since 0.5.0
  */
 public interface HttpProvider {
 
     /**
      * Creates and initialises an {@link HttpServerEngine} from the given configuration.
      *
-     * <p>This is a potentially blocking call (socket bind, TLS context creation).
-     * MUST NOT be called on a virtual thread expected to be non-blocking.
-     *
-     * <p>The returned engine is in the CREATED state — {@link HttpServerEngine#setHandler(HttpHandler)}
-     * and {@link HttpServerEngine#start()} must be called before it accepts connections.
-     *
      * @param config HTTP server configuration; must not be {@code null}
      * @return a fully initialised, not-yet-started server engine
+     * @implSpec The returned engine is in the CREATED state: it holds no bound port and accepts
+     *           nothing until {@link HttpServerEngine#setHandler(HttpHandler)} and
+     *           {@link HttpServerEngine#start()} have been called. Binding inside this factory
+     *           would take the port before the caller has a handler to serve it with.
+     * @apiNote Potentially blocking (socket setup, TLS context creation); do not call it from a
+     *          virtual thread that is expected never to park. The caller owns the returned engine
+     *          and releases it with {@link HttpServerEngine#close()}.
      */
     HttpServerEngine createServerEngine(HttpConfig config);
 
     /**
      * Creates and initialises an {@link HttpClientEngine} from the given configuration.
      *
-     * <p>The returned engine is in the CREATED state — {@link HttpClientEngine#start()} must
-     * be called before sending requests.
-     *
      * @param config HTTP client configuration; must not be {@code null}
      * @return a fully initialised, not-yet-started client engine
+     * @implSpec The returned engine is in the CREATED state: {@link HttpClientEngine#start()} must
+     *           be called before it will send anything.
+     * @apiNote The caller owns the returned engine and releases it with
+     *          {@link HttpClientEngine#close()}.
      */
     HttpClientEngine createClientEngine(HttpConfig config);
 
@@ -95,25 +96,23 @@ public interface HttpProvider {
      * Returns the priority of this provider. Higher value wins when multiple
      * providers are on the classpath.
      *
-     * <p>Convention:
-     * <ul>
-     *   <li>Community: {@code 0}</li>
-     *   <li>Enterprise: {@code 100}</li>
-     * </ul>
-     *
      * @return priority (higher wins)
+     * @implSpec The default implementation returns {@code 0}, the Community tier's value. The
+     *           open-core convention is {@code 0} for a Community provider and {@code 100} for an
+     *           Enterprise one, so that adding the Enterprise jar to a classpath selects it without
+     *           any configuration change.
      */
     default int priority() {
         return 0;
     }
 
     /**
-     * Returns typed-response encoder registry for this provider.
-     *
-     * <p>Default implementation returns an empty registry to preserve compatibility.
-     * Providers may override this to expose auto-binding response encoding.
+     * Returns the registry this provider offers for encoding typed response payloads.
      *
      * @return response body encoder registry; never null
+     * @implSpec The default implementation returns {@link HttpResponseBodyEncoderRegistry#empty()},
+     *           which resolves nothing — a provider that ships no encoders declines typed response
+     *           encoding rather than half-supporting it. Override to expose auto-binding.
      */
     default HttpResponseBodyEncoderRegistry responseBodyEncoderRegistry() {
         return HttpResponseBodyEncoderRegistry.empty();
@@ -123,13 +122,11 @@ public interface HttpProvider {
      * Returns the optional client-side typed request body encoder registry
      * exposed by this provider, if any.
      *
-     * <p>Default implementation returns {@link Optional#empty()} — providers that
-     * ship default body encoders (e.g., Community Jackson JSON) override this to
-     * expose them via the {@link HttpKernelProviders#HTTP_REQUEST_BODY_ENCODER_REGISTRY}
-     * bootstrap channel.
-     *
      * @return optional registry; empty when the provider does not contribute defaults
-     * @since 0.8.0
+     * @implSpec The default implementation returns {@link Optional#empty()}. A provider shipping
+     *           default body encoders overrides it, and bootstrap publishes what it returns through
+     *           {@link HttpKernelProviders#HTTP_REQUEST_BODY_ENCODER_REGISTRY}.
+     * @since 0.8
      */
     default Optional<HttpRequestBodyEncoderRegistry> requestBodyEncoderRegistry() {
         return Optional.empty();
@@ -139,13 +136,11 @@ public interface HttpProvider {
      * Returns the optional client-side typed response body decoder registry
      * exposed by this provider, if any.
      *
-     * <p>Default implementation returns {@link Optional#empty()} — providers that
-     * ship default body decoders (e.g., Community Jackson JSON) override this to
-     * expose them via the {@link HttpKernelProviders#HTTP_RESPONSE_BODY_DECODER_REGISTRY}
-     * bootstrap channel.
-     *
      * @return optional registry; empty when the provider does not contribute defaults
-     * @since 0.8.0
+     * @implSpec The default implementation returns {@link Optional#empty()}. A provider shipping
+     *           default body decoders overrides it, and bootstrap publishes what it returns through
+     *           {@link HttpKernelProviders#HTTP_RESPONSE_BODY_DECODER_REGISTRY}.
+     * @since 0.8
      */
     default Optional<HttpResponseBodyDecoderRegistry> responseBodyDecoderRegistry() {
         return Optional.empty();
@@ -155,14 +150,12 @@ public interface HttpProvider {
      * Returns the optional server-side typed request body decoder registry
      * exposed by this provider, if any.
      *
-     * <p>Default implementation returns {@link Optional#empty()} — providers that
-     * ship default body decoders (e.g., Community Jackson JSON) override this to
-     * expose them via the {@link HttpKernelProviders#HTTP_REQUEST_BODY_DECODER_REGISTRY}
-     * bootstrap channel, which generated request handlers read to decode typed
-     * request bodies (ADR-036).
-     *
      * @return optional registry; empty when the provider does not contribute defaults
-     * @since 0.8.0
+     * @implSpec The default implementation returns {@link Optional#empty()}. A provider shipping
+     *           default body decoders overrides it, and bootstrap publishes what it returns through
+     *           {@link HttpKernelProviders#HTTP_REQUEST_BODY_DECODER_REGISTRY}, which generated
+     *           request handlers read to decode typed request bodies (ADR-036).
+     * @since 0.8
      */
     default Optional<HttpRequestBodyDecoderRegistry> requestBodyDecoderRegistry() {
         return Optional.empty();

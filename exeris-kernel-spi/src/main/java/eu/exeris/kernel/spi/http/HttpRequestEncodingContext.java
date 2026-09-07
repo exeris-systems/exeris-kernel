@@ -23,7 +23,7 @@ import java.util.Objects;
  * @param method    HTTP method for the outbound request; non-null
  * @param path      request-target path component; non-null
  * @param allocator allocator for off-heap request buffers; non-null
- * @since 0.8.0
+ * @since 0.8
  */
 public record HttpRequestEncodingContext(
         HttpMethod method,
@@ -31,6 +31,13 @@ public record HttpRequestEncodingContext(
         MemoryAllocator allocator
 ) {
 
+    /**
+     * Rejects every component, the allocator included: an encoder's job is to produce off-heap
+     * bytes, so a context without one describes work that cannot be done.
+     *
+     * @throws NullPointerException if {@code method}, {@code path} or {@code allocator} is
+     *                              {@code null}
+     */
     public HttpRequestEncodingContext {
         Objects.requireNonNull(method, "method must not be null");
         Objects.requireNonNull(path, "path must not be null");

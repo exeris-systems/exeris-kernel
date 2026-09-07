@@ -24,14 +24,16 @@ import java.util.Objects;
  * @param statusCode      the received HTTP status, or {@code 0} for a transport failure
  * @param responseHeaders the response headers (empty on a transport failure); never {@code null}
  * @param failure         the transport-level failure, or {@code null} when a response arrived
- * @since 0.10.0
+ * @since 0.10
  */
 public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeaders, Throwable failure) {
 
     /**
-     * Canonical constructor — defensively copies the headers, rejects a null list, and enforces the
-     * two-state invariant: exactly one of a received status ({@code statusCode > 0}) or a transport
-     * {@code failure} is present. This closes the bypass the static factories already avoid.
+     * Copies the header list defensively and enforces the two-state invariant, so that no caller can
+     * construct an outcome that is neither a response nor a failure — or claims to be both.
+     *
+     * @throws NullPointerException     if {@code responseHeaders} is {@code null}
+     * @throws IllegalArgumentException if a status and a failure are both present, or neither is
      */
     public HttpAttemptOutcome {
         Objects.requireNonNull(responseHeaders, "responseHeaders must not be null");
@@ -48,6 +50,9 @@ public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeader
      * @param statusCode      the received status; MUST be {@code > 0}
      * @param responseHeaders the response headers; never {@code null}, may be empty
      * @return a response outcome
+     * @throws IllegalArgumentException if {@code statusCode} is not {@code > 0} — a response
+     *                                  outcome without a status would be indistinguishable from a
+     *                                  transport failure
      */
     public static HttpAttemptOutcome ofStatus(int statusCode, List<HttpHeader> responseHeaders) {
         if (statusCode <= 0) {
@@ -60,14 +65,15 @@ public record HttpAttemptOutcome(int statusCode, List<HttpHeader> responseHeader
      * Returns an outcome for an attempt that failed at the transport level with
      * no HTTP response.
      *
-     * <p>In practice the client façade ({@code KernelWebClient}) only produces
-     * {@link RuntimeException} transport failures — {@code HttpClientEngine.send}
-     * is an unchecked-throwing contract. The parameter is widened to {@link Throwable}
-     * so a policy may also carry a wrapped cause; it is not a signal that checked
-     * transport exceptions reach the seam.
+     * <p>The parameter is {@link Throwable} rather than {@link RuntimeException} so a policy may
+     * carry a wrapped cause; it is not a signal that checked transport exceptions reach this seam.
      *
      * @param failure the transport failure; never {@code null}
      * @return a transport-failure outcome
+     * @throws NullPointerException if {@code failure} is {@code null}
+     * @implNote The client façade ({@code KernelWebClient}) only produces
+     *           {@link RuntimeException} failures here, because {@code HttpClientEngine.send}
+     *           is an unchecked-throwing contract.
      */
     public static HttpAttemptOutcome ofFailure(Throwable failure) {
         Objects.requireNonNull(failure, "failure must not be null");

@@ -43,7 +43,7 @@ import java.util.concurrent.TimeUnit;
  * cost — the latency from the caller's perspective. Use the
  * {@link EventBus#publishAndAwait} variant for full end-to-end measurement.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @BenchmarkMode(Mode.SampleTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)

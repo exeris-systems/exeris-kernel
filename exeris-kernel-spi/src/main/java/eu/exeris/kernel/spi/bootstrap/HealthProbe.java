@@ -27,7 +27,7 @@ package eu.exeris.kernel.spi.bootstrap;
  * may run inside a sidecar process, an out-of-band metric exporter, or an HTTP
  * handler with equal ease.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public interface HealthProbe {
 

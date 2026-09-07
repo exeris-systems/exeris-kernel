@@ -45,9 +45,9 @@ package eu.exeris.kernel.spi.transport;
  *                          {@link #UNBOUNDED_ACTIVE_STREAMS} removes the ceiling — see that
  *                          constant for what remains protecting the engine when it is set;
  *                          ignored and not validated when mode is {@link TransportMode#DISABLED}
+ * @since 0.5
  * @see TransportProvider
  * @see TransportEngine
- * @since 0.5.0
  */
 public record TransportConfig(
         TransportMode mode,
@@ -131,7 +131,7 @@ public record TransportConfig(
      * @param keyPath           TLS private key path, or {@code null}
      * @param maxConnections    concurrent connection ceiling
      * @param idleTimeoutMillis idle timeout in milliseconds
-     * @since 0.12.0
+     * @since 0.12
      */
     public TransportConfig(TransportMode mode,
                            String bindAddress,

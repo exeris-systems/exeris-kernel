@@ -23,7 +23,7 @@ package eu.exeris.kernel.spi.transport;
  * <p>Loaded via {@link java.util.ServiceLoader}. The kernel bootstrapper iterates providers in
  * descending priority order and selects the first one for which {@link #isAvailable()} returns
  * {@code true}:
- * <pre>{@code
+ * {@snippet lang="java" :
  * TransportProvider provider = ServiceLoader.load(TransportProvider.class)
  *     .stream()
  *     .map(ServiceLoader.Provider::get)
@@ -35,7 +35,7 @@ package eu.exeris.kernel.spi.transport;
  *
  * TransportEngine engine = provider.createEngine(config);
  * ScopedValue.where(KernelProviders.TRANSPORT_ENGINE, engine).run(kernel::start);
- * }</pre>
+ * }
  *
  * <h2>SPI Compliance</h2>
  * <p>This interface is <strong>implementation-blind</strong>: zero references to specific
@@ -49,31 +49,28 @@ package eu.exeris.kernel.spi.transport;
  * receive them as method parameters. This ensures clean SPI isolation and is
  * consistent with {@code PersistenceProvider} and {@code GraphProvider}.
  *
+ * @since 0.5
  * @see TransportEngine
  * @see TransportConfig
- * @since 0.5.0
  */
 public interface TransportProvider {
 
     /**
      * Creates and initialises a {@link TransportEngine} from the given configuration.
      *
-     * <p>This is a potentially blocking call (socket bind, native transport setup, TLS
-     * context creation). It MUST NOT be called on a virtual thread that is expected
-     * to be non-blocking.
-     *
-     * <p>Implementations read upstream providers from {@code KernelProviders} scoped slots:
-     * <ul>
-     *   <li>{@code KernelProviders.MEMORY_ALLOCATOR} — for off-heap buffer allocation</li>
-     *   <li>{@code KernelProviders.CRYPTO_PROVIDER} — for TLS session creation;
-     *       the slot may be unbound if TLS is not required, implementations must
-     *       guard with {@code KernelProviders.CRYPTO_PROVIDER.isBound()}</li>
-     * </ul>
-     *
      * @param config transport-layer configuration (mode, port, reactor count)
      * @return a fully initialised, but <em>not yet started</em>, transport engine
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException
-     * if the engine cannot be created (missing native lib, bind failure, etc.)
+     *         if the engine cannot be created (missing native lib, bind failure, etc.)
+     * @implSpec Implementations obtain their upstream providers from {@code KernelProviders}
+     *           scoped slots rather than as method parameters: {@code KernelProviders.MEMORY_ALLOCATOR}
+     *           for off-heap buffer allocation, and {@code KernelProviders.CRYPTO_PROVIDER} for TLS
+     *           session creation. The crypto slot may be unbound if TLS is not required, and
+     *           implementations MUST guard with {@code KernelProviders.CRYPTO_PROVIDER.isBound()}
+     *           before use.
+     * @apiNote This is a potentially blocking call (socket bind, native transport setup, TLS
+     *          context creation). Callers MUST NOT invoke it from a virtual thread that is
+     *          expected to stay non-blocking.
      */
     TransportEngine createEngine(TransportConfig config);
 
@@ -123,7 +120,7 @@ public interface TransportProvider {
      * <p>{@code KernelBootstrap} (or the active transport subsystem) calls this before
      * selecting a provider. The selection loop iterates providers in descending priority
      * order and picks the first one for which {@code isAvailable()} returns {@code true}:
-     * <pre>{@code
+     * {@snippet lang="java" :
      * TransportProvider selected = ServiceLoader.load(TransportProvider.class)
      *     .stream()
      *     .map(ServiceLoader.Provider::get)
@@ -131,14 +128,13 @@ public interface TransportProvider {
      *     .filter(TransportProvider::isAvailable)
      *     .findFirst()
      *     .orElseThrow(() -> TransportException.bootstrapFailure("unknown", "No available TransportProvider", null));
-     * }</pre>
-     *
-     * <p>Platform-conditional providers (e.g., {@code io_uring} on Linux only, IOCP on
-     * Windows only) <strong>MUST</strong> override this method and gate on their platform
-     * check. The default returns {@code true} — always-available providers
-     * (e.g., NIO-based Community tier) do not need to override.
+     * }
      *
      * @return {@code true} if this provider can operate on the current platform
+     * @implSpec Platform-conditional providers (e.g., {@code io_uring} on Linux only, IOCP on
+     *           Windows only) MUST override this method and gate on their platform check. The
+     *           default returns {@code true} — always-available providers (e.g., NIO-based
+     *           Community tier) do not need to override.
      */
     default boolean isAvailable() {
         return true;

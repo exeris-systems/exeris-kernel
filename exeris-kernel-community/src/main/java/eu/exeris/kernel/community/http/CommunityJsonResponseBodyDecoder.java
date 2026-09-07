@@ -30,7 +30,7 @@ import java.util.Objects;
  * the {@link LoanedBuffer}; ownership stays with the façade, which closes the
  * buffer in a {@code finally} after the call returns.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class CommunityJsonResponseBodyDecoder implements HttpResponseBodyDecoder {
 

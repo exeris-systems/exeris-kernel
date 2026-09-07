@@ -241,7 +241,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `CommunityKernelDiagnosticsEvent` *(eu.exeris.kernel.diagnostics.KernelDiagnostics; community module, pkg-private, since v0.9 — ADR-033 §EP step 8)* | One INFO audit event per out-of-process `KernelDiagnostics` call (codes `EX-DIAG-1001..1005`, where `EX-DIAG-1005` is the `getJvmErgonomics()` runtime-ergonomics snapshot), so operators can audit who introspected the kernel. Cold path, `@StackTrace(false)`, single-phase commit. | `errorCode`, `method` |
 
 > **Four of the TLS rows above were marked "not yet implemented" until 0.12, and have been emitted
-> since 0.5.0.** `TlsHandshakeEvent` carries `@since 0.5.0`; all four are committed from
+> since 0.5.0.** `TlsHandshakeEvent` carries `@since 0.5`; all four are committed from
 > `TlsStateMachine` / `OffHeapTlsEngine`, with `CommunityTlsHandshakeEvent` on the Community path.
 > Their field lists were wrong too — `TlsHandshakeEvent` was documented with a `sessionId` that does
 > not exist and without `sslPtr`, `mode` and `negotiatedAlpn`, and `TlsPhaseTransitionEvent` with an

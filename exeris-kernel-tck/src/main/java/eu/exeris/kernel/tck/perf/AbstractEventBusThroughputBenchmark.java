@@ -50,7 +50,7 @@ import org.openjdk.jmh.infra.Blackhole;
  * }
  * }</pre>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see AbstractExerisBenchmark
  */
 public abstract class AbstractEventBusThroughputBenchmark extends AbstractExerisBenchmark {
