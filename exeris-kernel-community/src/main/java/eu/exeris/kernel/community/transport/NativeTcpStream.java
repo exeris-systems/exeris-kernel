@@ -36,17 +36,38 @@ import java.util.concurrent.locks.LockSupport;
 /**
  * Community TCP stream backed by a single socket file descriptor.
  *
- * <p>Ingress is slab-backed: carrier loop reads directly to {@link LoanedBuffer} and
- * enqueues slabs for the stream VT.
+ * <p>Ingress is slab-backed: the carrier's reactor thread reads directly into a
+ * {@link LoanedBuffer} and enqueues the slab for the stream's virtual thread to consume.
  *
- * <h2>Decomposition (v0.8 Sprint 3 QA-016)</h2>
+ * <h2>Collaborators</h2>
  * <p>Plain-socket I/O dispatch (core-socket seam vs NIO fallback) lives in
  * {@link NativeTcpStreamPlainSocketIo}; single-consumer-gate helpers live in
  * {@link NativeTcpStreamConsumerGate}; outbound pending-write records (plain
  * + lazy ciphertext + offsets) live in {@link NativeTcpStreamPendingWrite}.
- * This class retains the {@link TransportStream} interface, carrier-facing
- * callbacks, TLS handshake state machine, inbound state, and close
+ * This class itself holds the {@link TransportStream} contract, carrier-facing
+ * callbacks, the TLS handshake state machine, inbound state, and close
  * orchestration.
+ *
+ * <p><b>Allocation:</b> on the TLS fd-owner ingress path, allocates one {@link LoanedBuffer} per
+ * record in {@link #readTlsIngressFromFd()}; on the plain path, the carrier's {@code readIngress}
+ * allocates the inbound buffer and this class only retains a reference to it. Every write that
+ * cannot be sent directly ({@link #enqueueDeferredWrite}, or {@link #write} on the TLS branch)
+ * allocates one {@link LoanedBuffer} to hold a private copy of the caller's bytes before queueing
+ * it. A TLS stream additionally allocates one per-stream ciphertext placeholder at construction,
+ * reused for every unwrap/wrap rather than allocated per record, plus small transient buffers for
+ * the handshake and the shutdown record.
+ * <p><b>Thread confinement:</b> not confined to one thread over its lifetime, but single-consumer
+ * per direction at any instant — {@link NativeTcpStreamConsumerGate} lets exactly one thread at a
+ * time drain the inbound queue and exactly one (possibly different) thread at a time drain the
+ * outbound queue, so ingress and egress may run concurrently on different threads but never two
+ * readers or two writers at once.
+ * <p><b>Ownership:</b> every {@link LoanedBuffer} handed to this stream (via {@link #offerIngress}
+ * or a queued write) is closed by whichever consumer drains it — inbound buffers in
+ * {@link #closeCurrentInbound()} / {@link #drainInboundQueue()}, outbound ones in
+ * {@link NativeTcpStreamPendingWrite#close()} — and {@link #finishCloseIfDrained()} releases every
+ * buffer still queued at close time once it holds (or can idly acquire) the outbound consumer slot;
+ * if a different thread still holds that slot after {@link #close()}'s bounded wait, releasing the
+ * queued buffers is deferred to that thread's own subsequent call, not performed by this one.
  *
  * @since 0.5
  */
@@ -216,6 +237,21 @@ final class NativeTcpStream implements TransportStream {
         this.pendingWriteTryWriter = this::tryWrite;
     }
 
+    /**
+     * Reads up to {@code maxBytes} bytes into {@code target}, parking the calling virtual thread
+     * until a slab arrives on the inbound queue, the remote peer closes, or the stream closes.
+     *
+     * @param target   off-heap segment to read into
+     * @param maxBytes maximum number of bytes to read; a value {@code <= 0} is a no-op that
+     *                 returns {@code 0}
+     * @return the number of bytes read, {@code 0} if {@code maxBytes <= 0}, or {@code -1} on EOF
+     * @throws IllegalArgumentException if {@code target} is {@code null} or {@code maxBytes}
+     *                                   exceeds its capacity
+     * @throws IllegalStateException    if this stream has been closed and the remote side did not
+     *                                   close first
+     * @throws TransportException       if the TLS handshake does not complete within its timeout
+     *                                   ({@code EX-NET-4003})
+     */
     @Override
     public int read(MemorySegment target, int maxBytes) {
         if (target == null) {
@@ -309,6 +345,20 @@ final class NativeTcpStream implements TransportStream {
         return bytes;
     }
 
+    /**
+     * Writes {@code length} bytes from {@code source}: written straight to the socket with no
+     * intermediate copy when nothing is already queued and the stream is plaintext; otherwise
+     * copied into a buffered pending write, which a TLS stream always uses and which may still
+     * drain before this call returns.
+     *
+     * @param source off-heap segment containing the data to send; this stream never retains a
+     *               reference to it after the call returns
+     * @param length number of bytes to write, from offset {@code 0}; {@code 0} is a no-op
+     * @throws IllegalArgumentException if {@code source} is {@code null} or {@code length} is out
+     *                                   of range for it
+     * @throws IllegalStateException    if this stream has been closed
+     * @throws TransportException       if an unrecoverable send failure occurs ({@code EX-NET-4002})
+     */
     @Override
     public void write(MemorySegment source, int length) {
         ensureOpen();
@@ -438,6 +488,12 @@ final class NativeTcpStream implements TransportStream {
         return outboundQueueDepth.get() > 0;
     }
 
+    /**
+     * Closes this stream: unparks any thread waiting to read, write, or complete registration,
+     * waits briefly for whichever thread currently holds the outbound consumer slot to yield it,
+     * then best-effort flushes any remaining queued writes before finishing the teardown.
+     * Idempotent.
+     */
     @Override
     public void close() {
         if (!closeRequested.compareAndSet(false, true)) {
@@ -470,6 +526,15 @@ final class NativeTcpStream implements TransportStream {
         finishCloseIfDrained();
     }
 
+    /**
+     * Abortively terminates the stream: queued writes are abandoned rather than drained, and the
+     * socket is closed with {@code SO_LINGER} {@code 0} so the peer observes a TCP RST instead of
+     * a graceful FIN (best effort — if the socket option cannot be set, the terminal close falls
+     * back to an ordinary FIN).
+     *
+     * @param errorCode advisory only; the Community TCP driver has no protocol-level channel to
+     *                   carry it, unlike a transport whose own stream reset is a protocol frame
+     */
     @Override
     public void reset(long errorCode) {
         // Idempotent abortive termination (TransportStream#reset). Distinct from close():

@@ -20,9 +20,7 @@ import java.lang.foreign.MemorySegment;
  * {@link CommunityHttp2SessionProcessor}: SETTINGS, SETTINGS-ACK,
  * PING-ACK, RST_STREAM (REFUSED / CANCEL), and GOAWAY.
  *
- * <p>Extracted from {@link CommunityHttp2SessionProcessor} in v0.8 Sprint 3
- * (QA-018a) as one of four seams of the processor's God-class decomposition.
- * Each writer follows the same shape — borrow a small network slab, encode
+ * <p>Each writer follows the same shape — borrow a small network slab, encode
  * the frame via {@link Http2FrameEncoder}, write it to the transport.
  */
 final class CommunityHttp2ControlFrames {
@@ -60,12 +58,9 @@ final class CommunityHttp2ControlFrames {
     }
 
     /**
-     * Sends the server's initial SETTINGS, advertising the decoded-field-section bound it enforces.
-     *
-     * <p>Until 0.12 this wrote an EMPTY SETTINGS frame, so a peer was told nothing and the 64 KiB the
-     * decoder enforced was discoverable only by tripping it. SETTINGS_MAX_HEADER_LIST_SIZE
-     * (RFC 9113 §6.5.2) is the protocol's own way to say it, which is why closing the HTTP/1÷HTTP/2
-     * asymmetry needed no new mechanism — only for the configured value to reach the frame.
+     * Sends the server's initial SETTINGS, advertising the decoded-field-section bound it enforces
+     * via {@code SETTINGS_MAX_HEADER_LIST_SIZE} (RFC 9113 §6.5.2) — the protocol's own way to tell a
+     * peer the limit, so it need not discover it by tripping it.
      *
      * <p>The value advertised is {@code maxHeaderListSize} and deliberately NOT the header-block
      * bound, even though the two ship with the same default. RFC 9113 §6.5.2 defines this setting

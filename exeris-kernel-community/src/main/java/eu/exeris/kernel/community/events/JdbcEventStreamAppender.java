@@ -80,11 +80,38 @@ public final class JdbcEventStreamAppender implements EventStreamAppender {
     private final PersistenceEngine engine;
     private final String engineName;
 
+    /**
+     * Creates an appender bound to {@code engine}.
+     *
+     * @param engine     persistence engine used to open connections for every append (non-null)
+     * @param engineName human-readable engine name attached to the JFR events this appender
+     *                   emits on conflict/failure (non-null)
+     */
     public JdbcEventStreamAppender(PersistenceEngine engine, String engineName) {
         this.engine = Objects.requireNonNull(engine, "engine");
         this.engineName = Objects.requireNonNull(engineName, "engineName");
     }
 
+    /**
+     * Copies {@code payload}'s bytes and closes it (RAII), then inserts the row within the
+     * {@code SELECT head} + {@code INSERT} transaction described in the type-level
+     * <i>Per-Stream Ordering</i> section, retrying up to {@value #MAX_APPEND_ATTEMPTS} times on
+     * an {@link EventStreamAppender#ANY_VERSION} race and failing closed on an
+     * {@code expectedVersion} mismatch.
+     *
+     * @param streamId        target stream (non-null)
+     * @param expectedVersion the stream head the caller expects, or
+     *                        {@link EventStreamAppender#ANY_VERSION}
+     * @param descriptor      routing metadata (non-null)
+     * @param payload         event payload; this call takes ownership and closes it exactly
+     *                        once regardless of outcome (non-null)
+     * @return the committed per-stream sequence assigned to this event
+     * @throws EventStreamAppendConflictException EX-EVENT-6008 if {@code expectedVersion} does
+     *         not match the stream head, or a concurrent writer won the insert race while an
+     *         explicit version was expected
+     * @throws EventEngineException EX-EVENT-6001 for a non-conflict database failure, or when
+     *         the {@link #ANY_VERSION} retry budget is exhausted under contention
+     */
     @Override
     public AppendResult append(StreamId streamId, long expectedVersion,
                                EventDescriptor descriptor, EventPayload payload) {

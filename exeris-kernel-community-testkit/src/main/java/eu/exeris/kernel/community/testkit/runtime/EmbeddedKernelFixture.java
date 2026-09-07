@@ -33,13 +33,13 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * subsystems store into is the one you can assert against.
  *
  * <h2>Lifecycle</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (EmbeddedKernelFixture fixture = EmbeddedKernelFixtures.eventsAndFlowOnH2()) {
  *     fixture.start();
  *     FlowEngine flow = fixture.flowEngine();
  *     // … drive a saga, then assert on fixture.persistenceEngine()
  * }
- * }</pre>
+ * }
  *
  * <h2>Which thread</h2>
  * <p>An engine returned here is safe to use from the test thread. Code that resolves kernel

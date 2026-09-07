@@ -8,14 +8,13 @@ import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 
 /**
- * Resolves the allocation-event sampling stride.
+ * Resolves the allocation/release-event sampling stride.
  *
- * <p>Read through {@link ConfigProvider} first and only then from the system property. Until
- * v0.12 the property was the sole source, which made the stride reachable by {@code -D} and by
- * nothing else — invisible to a config file, to the environment, and to
- * {@code docs/subsystems/config.md}. The provider already consults
- * {@code -Dexeris.<key>} as one of its own sources, so the old invocation keeps working; what
- * changes is that it is no longer the only one.
+ * <p>Read through {@link ConfigProvider} first, falling back to the
+ * {@code exeris.community.memory.jfr.sampleEvery} system property whenever no
+ * {@link KernelProviders#CURRENT_CONFIG} is bound or the bound provider has no value for
+ * {@link #SAMPLE_EVERY_KEY}. The provider itself also consults {@code -Dexeris.<key>} as
+ * one of its own sources, so a {@code -D}-only invocation resolves through either path.
  */
 final class CommunityMemoryJfrSampling {
 
@@ -47,7 +46,8 @@ final class CommunityMemoryJfrSampling {
     /**
      * The allocator is constructed inside the boot scope, so {@code CURRENT_CONFIG} is bound here.
      * Defensive read regardless: a driver constructed outside a boot (tests, tooling) must still
-     * resolve, and falling through to the property is exactly the pre-0.12 behaviour.
+     * resolve, which it does because a {@code null} return here sends the caller,
+     * {@link #resolveSampleEvery()}, on to its own system-property read.
      *
      * @return the configured stride, or {@code null} when no provider or no key
      */

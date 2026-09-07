@@ -31,14 +31,19 @@ import java.util.concurrent.locks.ReentrantLock;
  * a POSIX {@code send()} downcall built without {@code Linker.Option.critical}, which <b>rejects a
  * heap segment</b> — and the rejection is swallowed by a {@code catch (Throwable)} that quietly
  * falls back to NIO. So a heap buffer here does not fail; it throws and is caught on <em>every
- * single frame</em>, taking the slow path off the seam this transport exists to provide. Measured,
- * not reasoned about: an earlier revision of this class used {@code MemorySegment.ofArray} and every
- * write logged {@code IllegalArgumentException: Heap segment not allowed} in that fallback.
+ * single frame</em>, taking the slow path off the seam this transport exists to provide.
  *
  * <p>One buffer for the life of the connection, grown when a frame does not fit, rather than one
  * allocation per frame: a duplex connection sends many small messages over a long life, and
  * per-frame allocation would put the allocator on the hot path to no purpose. Reuse is safe because
  * every write already holds the lock above.
+ *
+ * <p><b>Allocation:</b> one off-heap buffer for the life of the connection, grown (never shrunk) to
+ * fit a frame; a write against sufficient existing capacity allocates nothing.
+ * <p><b>Thread confinement:</b> none — any thread may call {@code writeText}, {@code writeFrame} or
+ * {@code sendCloseOnce}; the lock above orders them to one writer at a time.
+ * <p><b>Ownership:</b> this instance owns every buffer it ever holds and closes each exactly
+ * once — a replaced buffer inside {@code ensureCapacity}, the final one from {@link #close()}.
  */
 final class CommunityWebSocketEgress implements AutoCloseable {
 

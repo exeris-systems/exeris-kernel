@@ -95,6 +95,7 @@ final class RuntimeBootHarness {
         pump.pumpUntilStopped();
     }
 
+    /** Runs {@code body} on the boot thread and blocks until it completes, fails, or times out. */
     /* default */ void submit(Runnable body) {
         pump.submitAndWait(body, startTimeoutSeconds);
     }

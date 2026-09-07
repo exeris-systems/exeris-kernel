@@ -23,6 +23,13 @@ import java.lang.foreign.MemorySegment;
  * documents both directions as operating on a {@link LoanedBuffer}'s segment, and the ingress side
  * is the same buffer the egress side is — one per connection, grown when a frame does not fit,
  * rather than one allocation per read.
+ *
+ * <p><b>Allocation:</b> one off-heap buffer for the connection's life, grown (never shrunk) to fit
+ * the largest frame seen so far; a {@link #fill()} that does not need to grow allocates nothing.
+ * <p><b>Thread confinement:</b> the connection's reading thread — not synchronized, and not meant
+ * to be called from more than one thread at a time.
+ * <p><b>Ownership:</b> this instance owns {@code inbound} and closes it exactly once — a replaced
+ * buffer inside {@code grow}, the final one from {@link #close()}.
  */
 final class CommunityWebSocketFrameStream implements AutoCloseable {
 
@@ -51,7 +58,11 @@ final class CommunityWebSocketFrameStream implements AutoCloseable {
         this.inbound = allocator.allocateNetwork(INITIAL_BUFFER_BYTES);
     }
 
-    /** @return the next whole frame's header, or {@code null} when the buffer holds no whole frame */
+    /**
+     * The next whole frame's header, without consuming it.
+     *
+     * @return the header, or {@code null} when the buffer holds no whole frame
+     */
     /* default */ WebSocketFrameHeader peek() {
         return WebSocketFrameParser.parse(segment(), 0, length);
     }
@@ -70,12 +81,20 @@ final class CommunityWebSocketFrameStream implements AutoCloseable {
         length = remaining;
     }
 
-    /** @return whether the buffer already holds more than any acceptable frame could need */
+    /**
+     * Whether the buffered bytes already exceed what any acceptable frame could need.
+     *
+     * @return {@code true} when the buffer has overrun the frame ceiling
+     */
     /* default */ boolean overCeiling() {
         return length >= frameCeilingBytes;
     }
 
-    /** @return {@code false} at end of stream */
+    /**
+     * Reads one chunk from the stream into the buffer, growing the buffer first when needed.
+     *
+     * @return {@code false} at end of stream
+     */
     /* default */ boolean fill() {
         // Bounded by the ceiling, not just by the chunk: overCeiling() is checked before this runs,
         // so the request stays inside [length, ceiling] and grow() can clamp without the degenerate

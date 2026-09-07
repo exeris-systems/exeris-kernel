@@ -48,6 +48,11 @@ final class CommunityPathFinder implements PathFinder {
         this.adjacency = Collections.unmodifiableMap(copy);
     }
 
+    /**
+     * Creates a new, empty {@link Builder}.
+     *
+     * @return a new builder
+     */
     /* default */ static Builder builder() {
         return new Builder();
     }
@@ -56,14 +61,38 @@ final class CommunityPathFinder implements PathFinder {
     // Builder
     // =========================================================================
 
+    /**
+     * Accumulates adjacency for one {@link CommunityPathFinder}. Backend implementations of
+     * {@link CommunityGraphBackend#loadAdjacency} fill a builder with the edges of one
+     * relationship type before {@link #build()} produces the immutable path finder.
+     */
     /* default */ static final class Builder {
 
         private final Map<UUID, List<Neighbor>> adjacency = new HashMap<>();
 
+        /**
+         * Adds a directed edge with no properties.
+         *
+         * @param from         source node ID
+         * @param targetNodeId target node ID
+         * @param weight       edge weight
+         * @return this builder
+         */
         /* default */ Builder addEdge(UUID from, UUID targetNodeId, double weight) {
             return addEdge(from, targetNodeId, weight, null);
         }
 
+        /**
+         * Adds a directed edge from {@code from} to {@code targetNodeId}, and ensures
+         * {@code targetNodeId} has an (initially empty) adjacency entry of its own so it is
+         * reachable as a search origin even before any outgoing edge is added for it.
+         *
+         * @param from         source node ID
+         * @param targetNodeId target node ID
+         * @param weight       edge weight
+         * @param properties   JSON properties string; may be {@code null}
+         * @return this builder
+         */
         /* default */ Builder addEdge(UUID from, UUID targetNodeId, double weight, String properties) {
             adjacency.computeIfAbsent(from, k -> new ArrayList<>())
                      .add(new Neighbor(targetNodeId, weight, properties));
@@ -71,6 +100,13 @@ final class CommunityPathFinder implements PathFinder {
             return this;
         }
 
+        /**
+         * Builds a {@link CommunityPathFinder} from the edges added so far. The returned
+         * instance copies this builder's adjacency; further calls to {@link #addEdge} do not
+         * affect it.
+         *
+         * @return a new, immutable path finder
+         */
         /* default */ CommunityPathFinder build() {
             return new CommunityPathFinder(adjacency);
         }
@@ -80,6 +116,12 @@ final class CommunityPathFinder implements PathFinder {
     // PathFinder SPI
     // =========================================================================
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Runs one Dijkstra search from {@code source} over the full adjacency this instance
+     * was built with.
+     */
     @Override
     public PathResult findShortestPath(UUID source, UUID target, EdgeWeightFunction weightFn) {
         PathEntry entry = dijkstra(source, target, weightFn, Set.of(), Set.of());
@@ -89,6 +131,13 @@ final class CommunityPathFinder implements PathFinder {
         return toPathResult(source, target, entry);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Runs one independent {@link #findShortestPath} call per target — a separate
+     * Dijkstra search from {@code source} for each entry in {@code targets}, not a single
+     * shared traversal.
+     */
     @Override
     public Map<UUID, PathResult> findShortestPaths(UUID source, Set<UUID> targets,
                                                     EdgeWeightFunction weightFn) {
@@ -99,12 +148,26 @@ final class CommunityPathFinder implements PathFinder {
         return Collections.unmodifiableMap(result);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Runs Yen's algorithm on top of the {@link #findShortestPath} Dijkstra search.
+     * {@link PathResult#algorithm()} on each returned result still reports
+     * {@link #algorithmName()} ({@code "dijkstra"}) — it is not overridden to reflect that
+     * Yen's algorithm produced the k-path set.
+     */
     @Override
     public List<PathResult> findKShortestPaths(UUID source, UUID target, int maxPaths,
                                                 EdgeWeightFunction weightFn) {
         return yens(source, target, maxPaths, weightFn);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Answers with an unweighted breadth-first search over the adjacency, independent of
+     * {@link #findShortestPath}'s Dijkstra search and of any {@link EdgeWeightFunction}.
+     */
     @Override
     public boolean pathExists(UUID source, UUID target) {
         Deque<UUID> queue = new ArrayDeque<>();
@@ -125,6 +188,14 @@ final class CommunityPathFinder implements PathFinder {
         return false;
     }
 
+    /**
+     * Returns {@code "dijkstra"} unconditionally — the value every {@link PathResult}
+     * produced by this class carries, including the k-shortest-path results from
+     * {@link #findKShortestPaths}, which Yen's algorithm computes on top of Dijkstra rather
+     * than Dijkstra alone.
+     *
+     * @return {@code "dijkstra"}
+     */
     @Override
     public String algorithmName() {
         return "dijkstra";

@@ -38,9 +38,10 @@ import java.util.Objects;
  * {@value #STATUS_HEADER} response header for human diagnostics.
  *
  * <h2>No magic DI</h2>
- * <p>Constructor-injected. The kernel orchestrator owns the {@link HealthProbe}
- * (via {@code KernelHealthMonitor}) and is the canonical caller; tests inject any
- * stub probe and assert the response shape.
+ * <p>Constructor-injected — no field injection, no framework. Callers supply any
+ * {@link HealthProbe} implementation; tests exercise this handler against both a
+ * stub probe and {@code KernelHealthMonitor} (Core), asserting the response shape
+ * for each probe outcome.
  *
  * @since 0.7
  */
@@ -63,6 +64,7 @@ public final class HealthEndpointHandler implements HttpHandler {
      * Creates a handler with the default probe paths.
      *
      * @param probe non-null kernel health probe
+     * @throws NullPointerException if {@code probe} is {@code null}
      */
     public HealthEndpointHandler(HealthProbe probe) {
         this(probe, DEFAULT_READINESS_PATH, DEFAULT_LIVENESS_PATH);
@@ -74,6 +76,9 @@ public final class HealthEndpointHandler implements HttpHandler {
      * @param probe         non-null kernel health probe
      * @param readinessPath non-null, non-blank readiness probe path (must start with {@code '/'})
      * @param livenessPath  non-null, non-blank liveness probe path (must start with {@code '/'})
+     * @throws NullPointerException     if {@code probe}, {@code readinessPath} or {@code livenessPath} is {@code null}
+     * @throws IllegalArgumentException if either path is blank, does not start with {@code '/'},
+     *                                  or the two paths are equal
      */
     public HealthEndpointHandler(HealthProbe probe, String readinessPath, String livenessPath) {
         this.probe = Objects.requireNonNull(probe, "probe");
@@ -84,6 +89,12 @@ public final class HealthEndpointHandler implements HttpHandler {
         }
     }
 
+    /**
+     * Routes {@code exchange} per the class-level routing table and, on a match,
+     * responds with the readiness or liveness status from the wrapped probe.
+     *
+     * @param exchange the exchange to handle; never {@code null}
+     */
     @Override
     public void handle(HttpExchange exchange) {
         HttpRequest request = exchange.request();

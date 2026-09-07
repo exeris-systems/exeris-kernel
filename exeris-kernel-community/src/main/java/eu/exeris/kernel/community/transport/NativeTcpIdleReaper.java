@@ -31,6 +31,14 @@ import java.util.concurrent.TimeUnit;
  * own contract states: it defers until queued egress drains, and a peer that has gone quiet is
  * exactly the peer that may never drain it.
  *
+ * <p><b>Allocation:</b> allocates one {@code List<SelectionKey>}, sized to the expired count, per
+ * sweep that finds at least one expired connection; a sweep that finds none — every sweep on a
+ * healthy reactor — allocates nothing.
+ * <p><b>Thread confinement:</b> owner thread — {@link #nextSweepAtNanos} is written and read only
+ * by the one reactor thread that calls {@link #sweep}; no other method touches mutable state.
+ * <p><b>Ownership:</b> owns no buffer or native resource of its own; a connection this reaper
+ * identifies as expired is torn down by {@code NativeTcpCarrier.closeKeyStream}, not by this class.
+ *
  * @since 0.12
  */
 final class NativeTcpIdleReaper {

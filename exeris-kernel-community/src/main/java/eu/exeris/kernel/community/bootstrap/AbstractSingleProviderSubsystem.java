@@ -29,6 +29,8 @@ import java.util.function.UnaryOperator;
      * Returns the SPI contract to discover through {@link java.util.ServiceLoader}.
      *
      * @return the contract type
+     * @implSpec Return the interface type itself, not an implementation class — the value is passed
+     *           directly to {@link java.util.ServiceLoader#load(Class)}.
      */
     protected abstract Class<T> contract();
 
@@ -36,6 +38,8 @@ import java.util.function.UnaryOperator;
      * Returns the provider's priority accessor, used to pick a winner deterministically.
      *
      * @return the priority reader
+     * @implSpec Return a function that reads the discovered provider's own priority, not a fixed
+     *           constant; ties between two providers at the same priority are broken by class name.
      */
     protected abstract ToIntFunction<T> priority();
 
@@ -43,6 +47,8 @@ import java.util.function.UnaryOperator;
      * Returns the kernel slot the discovered provider is bound into.
      *
      * @return the target slot
+     * @implSpec Return the same {@link ScopedValue} constant on every call — it is used once, in
+     *           {@link #providerBindings()}, as the key the discovered provider is bound under.
      */
     protected abstract ScopedValue<T> slot();
 
@@ -55,16 +61,34 @@ import java.util.function.UnaryOperator;
         return provider;
     }
 
+    /**
+     * Discovers this subsystem's provider via {@link CommunityProviderDiscovery#highestPriority},
+     * using {@link #contract()} to select the SPI type and {@link #priority()} to break ties.
+     */
     @Override
     public final void initialize() {
         provider = CommunityProviderDiscovery.highestPriority(contract(), priority());
     }
 
+    /**
+     * Marks this subsystem running when discovery found a provider.
+     *
+     * @implSpec Overriders that need additional startup behavior must call {@code super.start()} (or
+     *           otherwise call {@link #markRunning}) so {@link #isRunning()} keeps reflecting
+     *           discovery — this default has no other effect.
+     */
     @Override
     public void start() {
         markRunning(provider != null);
     }
 
+    /**
+     * Marks this subsystem stopped.
+     *
+     * @implSpec Overriders that release additional resources must call {@code super.stop()} so
+     *           {@link #isRunning()} is cleared; see {@link CommunityCryptoSubsystem#stop()} for the
+     *           pattern of closing a native handle after the flag is updated.
+     */
     @Override
     public void stop() {
         markRunning(false);

@@ -12,6 +12,17 @@ import eu.exeris.kernel.spi.http.HttpVersion;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * Reads {@code http.*} configuration into an {@link HttpConfig}, and decides whether HTTP runs at
+ * all.
+ *
+ * <p>{@link #resolveMode} infers {@link HttpMode#SERVER} from the presence of an explicit
+ * {@code http.port} or {@code network.port} when {@code http.mode} itself is unset, and
+ * {@link HttpMode#DISABLED} otherwise — HTTP is the subsystem an application typically boots the
+ * kernel for, so a configured port is read as intent to serve. Every other alias map
+ * ({@link #HTTP_VERSION_ALIASES}) accepts both the enum spelling and the everyday one
+ * ({@code "HTTP/2"}, {@code "2"}, {@code "2.0"}) so operators are not made to learn the SPI's naming.
+ */
 final class CommunityHttpConfigResolver {
 
     private static final Map<String, HttpMode> HTTP_MODE_ALIASES = Map.of(

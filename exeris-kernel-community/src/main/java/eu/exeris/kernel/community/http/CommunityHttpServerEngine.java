@@ -14,6 +14,17 @@ import eu.exeris.kernel.spi.transport.TransportEngine;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Community: the native-TCP {@link HttpServerEngine} — binds the listening port through a
+ * {@link TransportEngine} and, on {@link #start()}, hands every accepted stream to a single shared
+ * {@link CommunityHttpRequestProcessor} for the HTTP/1.1 and HTTP/2 request loop.
+ *
+ * <p>Follows the SPI's CREATED → RUNNING → CLOSED progression, collapsing the SPI's separate
+ * STOPPING phase into the same {@code running == false} state as CREATED: {@link #setHandler}
+ * rejects a call after {@link #start()}, {@link #start()} requires a handler already set for
+ * {@link eu.exeris.kernel.spi.http.HttpMode#SERVER} or {@code DUAL} mode, and {@link #close()} stops
+ * the engine first if it is still running before releasing the underlying transport.
+ */
 final class CommunityHttpServerEngine implements HttpServerEngine {
 
     private static final String ENGINE_NAME = "community-http-server";

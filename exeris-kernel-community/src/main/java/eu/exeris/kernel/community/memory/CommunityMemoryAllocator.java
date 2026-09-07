@@ -22,6 +22,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * to reduce per-allocation contention. Pool manages shard-local shared arenas
  * with lock-free reuse queues.
  *
+ * <p><b>Allocation:</b> delegates every {@code allocate*} call to its
+ * {@link CommunityArenaShardPool} via {@link CommunityArenaBuffers#allocateOwned}; this
+ * class performs no native allocation of its own.
+ * <p><b>Thread confinement:</b> any thread — every counter is an {@link AtomicLong} or
+ * {@link AtomicBoolean}, and allocation itself is delegated to the shard pool's own
+ * thread-safe shard selection.
+ * <p><b>Ownership:</b> owns exactly one {@link CommunityArenaShardPool}, created in the
+ * constructor; {@link #close()} closes it exactly once, guarded by a CAS on
+ * {@code closed}. Individual buffers manage their own release through
+ * {@link CommunityReleaseAccounting} — this class does not track them.
+ *
  * @since 0.5
  */
 final class CommunityMemoryAllocator implements MemoryAllocator {
@@ -53,6 +64,17 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
                 new CommunityReleaseAccounting(releaseCount, allocatedBytes, jfrEnabled, jfrSampling);
     }
 
+    /**
+     * Routes to {@link #allocateInfrastructure(long)} for {@link AllocationHint#JUMBO} and
+     * to {@link #allocateNetwork(int)} for every other hint, using {@code hint.sizeBytes()}
+     * as the requested size in both cases.
+     *
+     * @param hint semantic size hint
+     * @return loaned buffer from the shard pool
+     * @throws MemoryExhaustedException ({@code EX-MEM-1001}) if the shard pool's arena
+     *                                   allocation fails with an {@link OutOfMemoryError}
+     * @throws IllegalStateException    if this allocator has been closed
+     */
     @Override
     public LoanedBuffer allocate(AllocationHint hint) {
         return hint == AllocationHint.JUMBO
@@ -60,6 +82,18 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
                 : allocateNetwork(hint.sizeBytes());
     }
 
+    /**
+     * Allocates a network buffer of {@code estimatedBytes} from the shard pool's
+     * size-class buckets, reusing a pooled segment when the requested size fits within a
+     * bucket's capacity.
+     *
+     * @param estimatedBytes estimated payload size in bytes; must be {@code > 0}
+     * @return loaned buffer backed by a pool-owned segment
+     * @throws IllegalArgumentException if {@code estimatedBytes <= 0}
+     * @throws MemoryExhaustedException ({@code EX-MEM-1001}) if the shard pool's arena
+     *                                   allocation fails with an {@link OutOfMemoryError}
+     * @throws IllegalStateException    if this allocator has been closed
+     */
     @Override
     public LoanedBuffer allocateNetwork(int estimatedBytes) {
         checkOpen();
@@ -69,12 +103,39 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         return allocateBuffer(estimatedBytes);
     }
 
+    /**
+     * Allocates a buffer sized for {@link AllocationHint#STREAMING_CHUNK} from the shard
+     * pool.
+     *
+     * <p>The Community tier does not implement carrier affinity: {@code carrierIndex} is
+     * accepted to satisfy the {@link MemoryAllocator} contract but otherwise ignored —
+     * every call is routed through the same shard-selection logic as
+     * {@link #allocateNetwork(int)}, keyed on the calling thread rather than the carrier.
+     *
+     * @param carrierIndex ignored by this implementation
+     * @return loaned buffer sized for a streaming chunk
+     * @throws MemoryExhaustedException ({@code EX-MEM-1001}) if the shard pool's arena
+     *                                   allocation fails with an {@link OutOfMemoryError}
+     * @throws IllegalStateException    if this allocator has been closed
+     */
     @Override
     public LoanedBuffer allocateCarrierSlab(int carrierIndex) {
         checkOpen();
         return allocateBuffer(AllocationHint.STREAMING_CHUNK.sizeBytes());
     }
 
+    /**
+     * Allocates an infrastructure block of {@code sizeBytes} from the same shard pool used
+     * by {@link #allocateNetwork(int)}; the Community tier does not distinguish
+     * infrastructure allocations from network allocations.
+     *
+     * @param sizeBytes requested block size in bytes; must be {@code > 0}
+     * @return loaned buffer wrapping the infrastructure segment
+     * @throws IllegalArgumentException if {@code sizeBytes <= 0}
+     * @throws MemoryExhaustedException ({@code EX-MEM-1001}) if the shard pool's arena
+     *                                   allocation fails with an {@link OutOfMemoryError}
+     * @throws IllegalStateException    if this allocator has been closed
+     */
     @Override
     public LoanedBuffer allocateInfrastructure(long sizeBytes) {
         checkOpen();
@@ -84,6 +145,19 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         return allocateBuffer(sizeBytes);
     }
 
+    /**
+     * Returns a point-in-time snapshot of this allocator's counters.
+     *
+     * <p>{@code totalBytes} is always {@code -1} (unknown/heap-only, per
+     * {@link MemoryStats}) and {@code freeBytes} is always {@code 0}: the Community tier
+     * requires an unbounded off-heap budget (see
+     * {@link CommunityAllocatorSupport#validateSupportedConfig}) and does not track a
+     * free-byte count.
+     * {@code carrierPoolCount} is always {@code 0} because
+     * {@link #allocateCarrierSlab(int)} does not maintain carrier-affine pools.
+     *
+     * @return current allocation metrics
+     */
     @Override
     public MemoryStats stats() {
         long allocated = allocatedBytes.get();
@@ -100,6 +174,13 @@ final class CommunityMemoryAllocator implements MemoryAllocator {
         );
     }
 
+    /**
+     * Closes the underlying {@link CommunityArenaShardPool}, closing every shard's native
+     * arena and invalidating buffers still outstanding from it.
+     *
+     * <p>Idempotent: a second call observes {@code closed} already set and returns without
+     * touching the pool again.
+     */
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {

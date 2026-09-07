@@ -33,6 +33,16 @@ public final class KernelScopePump {
     private final BlockingQueue<Runnable> tasks = new LinkedBlockingQueue<>();
 
     /**
+     * Built directly by each fixture that holds a kernel scope open — such as
+     * {@code KernelBootstrapPersistenceEngineFixture} and {@code RuntimeBootHarness} — one pump per
+     * boot, since {@link #pumpUntilStopped()} is single-consumer by construction.
+     */
+    public KernelScopePump() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Runs queued work on the calling thread until {@link #requestStop()} is seen.
      *
      * <p>Called from inside the kernel scope; returns when the fixture closes.

@@ -43,6 +43,12 @@ import java.util.Optional;
  */
 final class CommunityKernelDiagnostics implements KernelDiagnostics {
 
+    /**
+     * Delegates to {@link CommunityProviderInventory#snapshot()} and emits a JFR audit event
+     * with code {@code EX-DIAG-1001}.
+     *
+     * @return the provider inventory snapshot
+     */
     @Override
     public ProvidersSnapshot listProviders() {
         ProvidersSnapshot snapshot = CommunityProviderInventory.snapshot();
@@ -50,6 +56,13 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
         return snapshot;
     }
 
+    /**
+     * Builds one {@link DagNode} per subsystem currently bound to
+     * {@link KernelProviders#SUBSYSTEMS} — an empty snapshot when that scope is unbound — and
+     * emits a JFR audit event with code {@code EX-DIAG-1003}.
+     *
+     * @return the bootstrap DAG snapshot
+     */
     @Override
     public BootstrapDagSnapshot getBootstrapDag() {
         List<DagNode> nodes = new ArrayList<>();
@@ -60,6 +73,15 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
         return BootstrapDagSnapshot.capture(nodes);
     }
 
+    /**
+     * Looks up {@code name} among the subsystems currently bound to
+     * {@link KernelProviders#SUBSYSTEMS} — no match when that scope is unbound — and emits a
+     * JFR audit event with code {@code EX-DIAG-1004}.
+     *
+     * @param name subsystem name to look up
+     * @return a snapshot whose subsystem detail is empty when no subsystem named {@code name} is found
+     * @throws NullPointerException if {@code name} is {@code null}
+     */
     @Override
     public SubsystemSnapshot describeSubsystem(String name) {
         Objects.requireNonNull(name, "name");
@@ -71,6 +93,12 @@ final class CommunityKernelDiagnostics implements KernelDiagnostics {
         return SubsystemSnapshot.capture(name, detail);
     }
 
+    /**
+     * Delegates to {@link CommunityRuntimeErgonomics#capture()} and emits a JFR audit event
+     * with code {@code EX-DIAG-1005}.
+     *
+     * @return the JVM and container ergonomics snapshot
+     */
     @Override
     public RuntimeErgonomicsSnapshot getJvmErgonomics() {
         RuntimeErgonomicsSnapshot snapshot = CommunityRuntimeErgonomics.capture();

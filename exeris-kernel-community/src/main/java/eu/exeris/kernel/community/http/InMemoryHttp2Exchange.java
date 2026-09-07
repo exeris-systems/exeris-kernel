@@ -19,6 +19,17 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * Community: the HTTP/2 {@link HttpExchange} — captures the handler's response in memory instead of
+ * writing it to the wire, because {@link CommunityHttp2SessionProcessor} still has to frame it as
+ * HEADERS(+CONTINUATION)/DATA and encode it through the connection's shared HPACK encoder before any
+ * bytes reach the socket.
+ *
+ * <p>{@link #respond(HttpResponse)} may be called exactly once, enforced the same way as the HTTP/1.1
+ * exchange: an atomic claim that {@link #isResponded()} exposes, with a second call throwing
+ * {@link IllegalStateException}. {@link #capturedResponse()} returns the captured response, or
+ * {@code null} until {@code respond} has been called.
+ */
 /* default */ final class InMemoryHttp2Exchange implements HttpExchange {
     private final HttpRequest request;
     private final MemoryAllocator allocator;

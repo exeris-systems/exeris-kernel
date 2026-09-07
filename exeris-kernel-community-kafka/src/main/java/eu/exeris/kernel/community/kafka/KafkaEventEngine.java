@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 /**
- * Community Kafka {@link EventEngine} binding (since 0.7.0).
+ * Community Kafka {@link EventEngine} binding.
  *
  * <h2>Wire Model</h2>
  * <ul>
@@ -73,13 +73,13 @@ import java.util.concurrent.locks.LockSupport;
  * but before the offset commit can be replayed, the event is lost. A future revision will
  * flip to {@code enable.auto.commit=false} with manual commit-after-handler.
  *
- * <p>Replay (seek by timestamp / offset),
- * {@link eu.exeris.kernel.spi.events.EventStreamReader} / {@code EventStreamAppender}
- * implementations, DLQ rebalance handling, and the
- * {@link KafkaEventBrokerPort}-driven outbox-orchestrator delivery path
- * (the adapter ships in this PR but is not yet wired into a runtime path —
- * {@link KafkaPublishBus} goes producer&nbsp;→&nbsp;consumer directly) are all deferred
- * to a follow-up.
+ * <p>This engine's own {@link EventBus#publish} / {@link EventLoop} pair goes
+ * producer&nbsp;→&nbsp;consumer directly and does not use the durable event log; the
+ * separate {@link eu.exeris.kernel.spi.events.EventStreamReader} / {@code EventStreamAppender}
+ * bindings ({@link KafkaEventStreamReader}, {@link KafkaEventStreamAppender}) cover
+ * ordered, replayable append against that log. DLQ rebalance handling and the
+ * {@link KafkaEventBrokerPort}-driven outbox-orchestrator delivery path (the adapter
+ * exists but is not yet wired into a runtime path) remain deferred to a follow-up.
  *
  * @since 0.7
  */
@@ -103,6 +103,14 @@ public final class KafkaEventEngine implements EventEngine {
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicLong publishedTotal = new AtomicLong(0L);
 
+    /**
+     * Constructs the engine from SPI and Kafka-specific configuration: creates the underlying
+     * Kafka {@link Producer}, the local delegate bus, and the consumer poll loop. Consuming does
+     * not begin until {@link #start()} is called.
+     *
+     * @param spiConfig   engine-agnostic SPI configuration (engine name, queue capacity)
+     * @param kafkaConfig Kafka-specific binding configuration (bootstrap servers, topics, timeouts)
+     */
     public KafkaEventEngine(EventEngineConfig spiConfig, KafkaEventConfig kafkaConfig) {
         this.spiConfig = Objects.requireNonNull(spiConfig, "spiConfig");
         Objects.requireNonNull(kafkaConfig, "kafkaConfig");
@@ -420,10 +428,11 @@ public final class KafkaEventEngine implements EventEngine {
             }
         }
 
-        // Fast exit on unchanged registry version: the steady-state poll path (registry stable)
-        // hits this method ~4x/sec per engine and previously allocated a fresh HashSet plus a
-        // Set.copyOf() inside registry.registeredTypes() on every call. The version counter is
-        // bumped only when register() truly mutates state, so unchanged === no allocation.
+        // Fast exit on unchanged registry version: this method runs once per poll-loop iteration
+        // (the iteration cadence follows the configurable KafkaEventConfig.consumerPollTimeout),
+        // and rebuilding the subscription set means allocating a fresh HashSet plus a
+        // Set.copyOf() inside registry.registeredTypes(). The version counter is bumped only
+        // when register() truly mutates state, so an unchanged version skips that allocation.
         private void refreshSubscriptions(KafkaConsumer<byte[], byte[]> consumer) {
             int currentVersion = registry.registeredVersion();
             if (currentVersion == lastRegisteredVersion) {

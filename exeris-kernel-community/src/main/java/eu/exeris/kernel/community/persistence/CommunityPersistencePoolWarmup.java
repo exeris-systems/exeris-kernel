@@ -50,8 +50,8 @@ final class CommunityPersistencePoolWarmup {
      *
      * @param sharedPool the HikariCP pool to warm up
      * @param config     persistence config (warm-up flag, target count, max pool size)
-     * @throws PersistenceProviderException when an acquired connection fails validation
-     *         or pool acquisition itself raises an SQL error.
+     * @throws PersistenceProviderException ({@code EX-PERS-5001}) when an acquired connection
+     *         fails validation or pool acquisition itself raises an SQL error
      */
     /* default */ static void prewarm(HikariDataSource sharedPool, PersistenceConfig config) {
         int warmupConnections = config.poolWarmupConnections();

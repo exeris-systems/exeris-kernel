@@ -36,13 +36,19 @@ import java.util.Objects;
  * Community {@code HealthEndpointHandler} on the same HTTP engine to expose both
  * Kubernetes probes and Prometheus scrape data side by side.
  *
- * <h2>Allocation</h2>
- * <p>The exposition body is materialised as a {@link String}, copied into a
- * {@link LoanedBuffer} sized to the encoded byte length, then transferred to the
- * engine via {@link HttpExchange#respond(HttpResponse)}. The engine takes
- * ownership of the buffer. Allocations occur per request — operators concerned
- * about scrape overhead should size the {@link MemoryAllocator}'s network slab
- * pool above their typical exposition size.
+ * <p><b>Allocation:</b> allocates the sink's exposition {@link String}, an
+ * intermediate UTF-8-encoded {@code byte[]}, and one {@link LoanedBuffer} sized
+ * to that array's length, per request that reaches the {@code 200 OK} path; the
+ * buffer is drawn from the {@link MemoryAllocator}'s network slab pool, so
+ * operators concerned about scrape overhead should size that pool above their
+ * typical exposition size.
+ * <p><b>Thread confinement:</b> none — {@link #handle(HttpExchange)} runs on the
+ * per-request virtual thread the HTTP engine assigns to the exchange, and this
+ * handler keeps no mutable instance state between requests.
+ * <p><b>Ownership:</b> the buffer is owned by this handler until
+ * {@link HttpExchange#respond(HttpResponse)} accepts it (the engine then owns it,
+ * per {@link HttpExchange}'s ownership-transfer contract); if {@code respond}
+ * throws before accepting it, this handler closes the buffer itself.
  *
  * @since 0.7
  */
@@ -59,10 +65,25 @@ public final class PrometheusMetricsHandler implements HttpHandler {
     private final MemoryAllocator allocator;
     private final String metricsPath;
 
+    /**
+     * Creates a handler serving the default {@value #DEFAULT_METRICS_PATH} path.
+     *
+     * @param sink      source of the exposition snapshot
+     * @param allocator supplies the response {@link LoanedBuffer}
+     */
     public PrometheusMetricsHandler(PrometheusMetricsSink sink, MemoryAllocator allocator) {
         this(sink, allocator, DEFAULT_METRICS_PATH);
     }
 
+    /**
+     * Creates a handler serving a custom metrics path.
+     *
+     * @param sink        source of the exposition snapshot
+     * @param allocator   supplies the response {@link LoanedBuffer}
+     * @param metricsPath the path this handler answers {@code GET} on; must start with {@code '/'}
+     * @throws NullPointerException     if any argument is {@code null}
+     * @throws IllegalArgumentException if {@code metricsPath} is blank or does not start with {@code '/'}
+     */
     public PrometheusMetricsHandler(PrometheusMetricsSink sink, MemoryAllocator allocator, String metricsPath) {
         this.sink = Objects.requireNonNull(sink, "sink");
         this.allocator = Objects.requireNonNull(allocator, "allocator");
@@ -76,6 +97,12 @@ public final class PrometheusMetricsHandler implements HttpHandler {
         this.metricsPath = metricsPath;
     }
 
+    /**
+     * Routes {@code exchange} per the class-level routing table and, on a match,
+     * responds with the sink's current exposition snapshot.
+     *
+     * @param exchange the exchange to handle; never {@code null}
+     */
     @Override
     public void handle(HttpExchange exchange) {
         HttpRequest request = exchange.request();

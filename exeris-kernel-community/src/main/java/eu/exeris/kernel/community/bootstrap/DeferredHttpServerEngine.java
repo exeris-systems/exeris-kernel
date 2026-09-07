@@ -11,6 +11,22 @@ import eu.exeris.kernel.spi.http.HttpServerEngine;
 
 import java.util.concurrent.atomic.AtomicBoolean;
 
+/**
+ * An {@link HttpServerEngine} that exists at {@code initialize()} and is built at {@code start()}.
+ *
+ * <h2>Why the indirection is not optional</h2>
+ * <p>Bootstrap runs every subsystem's {@code initialize()} before it composes {@code
+ * providerBindings()}, so {@code KernelProviders.MEMORY_ALLOCATOR} is <em>not</em> bound while
+ * {@link CommunityHttpSubsystem} is initialising — declaring {@code dependsOn("memory")} orders the
+ * phases, it does not make the binding visible earlier. An HTTP server engine resolves its allocator
+ * at construction and throws {@code IllegalStateException} when none is bound, so building one during
+ * {@code initialize()} would fail before bootstrap ever binds {@code MEMORY_ALLOCATOR}.
+ *
+ * <p>But the engine reference must exist by then anyway, because {@code providerBindings()} publishes
+ * it into kernel scope. Holding the provider and config, and any handler set before {@code start()},
+ * and building the real delegate only once started is what satisfies both —
+ * {@link DeferredWebSocketServerEngine} gives the identical ordering problem the same answer.
+ */
 @SuppressWarnings("PMD.CloseResource")
 final class DeferredHttpServerEngine implements HttpServerEngine {
 

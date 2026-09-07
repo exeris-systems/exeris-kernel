@@ -56,6 +56,12 @@ public final class CommunityJsonRequestBodyDecoder implements HttpRequestBodyDec
         return targetType != null && JsonBodyCodecs.isJsonCompatible(contentType);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException ({@code EX-HTTP-4013})
+     *     if the body does not decode into {@code targetType}
+     */
     @Override
     public Object decode(LoanedBuffer body, Class<?> targetType, HttpRequestDecodingContext context) {
         Objects.requireNonNull(context, "context must not be null");

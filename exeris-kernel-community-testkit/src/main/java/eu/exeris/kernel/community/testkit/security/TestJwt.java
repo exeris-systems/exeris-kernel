@@ -30,14 +30,27 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * JWT test fixture for security contract tests.
+ * Signed-JWT fixture for security contract tests: builds RSA-2048 and, for algorithm-confusion
+ * tests, HMAC-signed tokens without a running identity provider.
  *
- * <p>Generates RSA-2048 signed JWTs for
- * {@link eu.exeris.kernel.tck.contract.security.AbstractSecurityProviderTck} binding tests and
- * integration tests. All generated tokens are signed with the {@link #TEST_KEY_PAIR} held by this class.
+ * <p>Every RS256 token is signed with the single {@link #TEST_KEY_PAIR} generated once for the
+ * lifetime of the JVM; {@link #keySet()} exposes the matching public key under {@link #TEST_KID}
+ * for a validator fixture to resolve, and {@link #UNKNOWN_KID} is a kid deliberately absent from
+ * that key set, for negative tests.
+ *
+ * <p>What it deliberately does not simulate: there is no JWKS endpoint and no key rotation, and
+ * {@link Builder#expired()} back-dates {@code exp} by a fixed offset rather than advancing a clock.
+ * {@link Builder#algNone()} and {@link Builder#hmacConfusion()} mint tokens for the {@code alg=none}
+ * downgrade and the RS256-to-HS256 confusion attack respectively, and {@link Builder#tamperedSignature()}
+ * corrupts a signed token's signature bytes — together with {@link Builder#claimRaw(String, Object)}
+ * for wrong-typed claims, the builder targets the malformed and adversarial inputs a validator
+ * binding test needs, not the shape of a real identity provider.
+ *
+ * <p>Used by Community's {@code SecurityProvider} TCK binding test and by other security
+ * integration tests in this repository.
  *
  * <p>Usage:
- * <pre>{@code
+ * {@snippet lang="java" :
  * TestJwt.Builder builder = TestJwt.builder()
  *     .kid(TestJwt.TEST_KID)
  *     .issuer("https://auth.example.com")
@@ -45,7 +58,7 @@ import java.util.Objects;
  *     .subject("00000000-0000-7000-8000-000000000001")
  *     .expiresInSeconds(300);
  * LoanedBuffer buffer = builder.toBuffer();
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -58,10 +71,13 @@ public final class TestJwt {
     /** An unknown kid that is NOT in the test key set. */
     public static final String UNKNOWN_KID = "unknown-key-99";
 
+    /** Default {@code iss} claim for a token built without calling {@link Builder#issuer(String)}. */
     public static final String EXPECTED_ISSUER = "https://auth.example.com";
 
+    /** Default {@code aud} claim for a token built without calling {@link Builder#audience(String)}. */
     public static final String EXPECTED_AUDIENCE = "exeris-kernel";
 
+    /** Default {@code sub} claim for a token built without calling {@link Builder#subject(String)}. */
     public static final String TEST_SUBJECT = "00000000-0000-7000-8000-000000000001";
 
     /** The test RSA key pair generated once for the lifetime of the JVM. */
@@ -81,27 +97,56 @@ public final class TestJwt {
         // Utility class.
     }
 
-    /** Returns the RSA public key from the test key pair. */
+    /**
+     * The RSA public key half of {@link #TEST_KEY_PAIR}, the key {@link #keySet()} exposes under
+     * {@link #TEST_KID}.
+     *
+     * @return the test RSA public key
+     */
     public static RSAPublicKey testPublicKey() {
         return (RSAPublicKey) TEST_KEY_PAIR.getPublic();
     }
 
+    /**
+     * A single-entry key set mapping {@link #TEST_KID} to {@link #testPublicKey()}.
+     *
+     * @return an immutable map with exactly one key ID and its RSA public key
+     */
     public static Map<String, RSAPublicKey> keySet() {
         return Map.of(TEST_KID, testPublicKey());
     }
 
+    /**
+     * Wraps the UTF-8 bytes of a compact JWT in a heap-backed {@link LoanedBuffer}.
+     *
+     * <p>The returned buffer copies rather than shares its bytes on {@code slice}/{@code view}, and
+     * releases nothing on {@code close()} — it does not exercise the zero-copy or
+     * reference-counting guarantees a real allocator's buffer makes.
+     *
+     * @param compactJwt the compact JWT serialization to wrap; must not be {@code null}
+     * @return a loaned buffer over the token's UTF-8 bytes
+     */
     public static LoanedBuffer bufferOf(String compactJwt) {
         return new HeapLoanedBuffer(Objects.requireNonNull(compactJwt, "compactJwt must not be null")
                 .getBytes(StandardCharsets.UTF_8));
     }
 
-    /** Creates a new builder with sensible defaults. */
+    /**
+     * Creates a new builder pre-populated with {@link #TEST_KID}, {@link #EXPECTED_ISSUER},
+     * {@link #EXPECTED_AUDIENCE}, {@link #TEST_SUBJECT} and a 300-second expiry.
+     *
+     * @return a new, independently configurable builder
+     */
     public static Builder builder() {
         return new Builder();
     }
 
     /**
-     * Builder for test JWTs.
+     * Mutable builder for test JWTs.
+     *
+     * <p>Each setter mutates this builder and returns it, and {@link #serialize()} may be called
+     * more than once — nothing marks a builder consumed. Not thread-safe: a single instance is not
+     * meant to be shared across threads.
      */
     // Fluent test-fixture builder: many small mutator methods (highest individual complexity 7)
     // sum to a high class-total cyclomatic score — inherent to the builder shape, not a
@@ -127,45 +172,91 @@ public final class TestJwt {
         private Builder() {
         }
 
+        /**
+         * Sets the {@code kid} header value, cancelling a prior {@link #noKid()}.
+         *
+         * @param kid the key ID to put in the JWS header
+         * @return this builder
+         */
         public Builder kid(String kid) {
             this.kid = kid;
             this.omitKid = false;
             return this;
         }
 
+        /**
+         * Omits the {@code kid} header entirely, producing a token with no key hint.
+         *
+         * @return this builder
+         */
         public Builder noKid() {
             this.omitKid = true;
             return this;
         }
 
+        /**
+         * Sets the {@code iss} claim, overriding {@link #EXPECTED_ISSUER}.
+         *
+         * @param issuer the issuer to put in the JWT
+         * @return this builder
+         */
         public Builder issuer(String issuer) {
             this.issuer = issuer;
             return this;
         }
 
+        /**
+         * Sets the {@code aud} claim, overriding {@link #EXPECTED_AUDIENCE}.
+         *
+         * @param audience the audience to put in the JWT
+         * @return this builder
+         */
         public Builder audience(String audience) {
             this.audience = audience;
             return this;
         }
 
+        /**
+         * Sets the {@code sub} claim, overriding {@link #TEST_SUBJECT}.
+         *
+         * @param subject the subject to put in the JWT
+         * @return this builder
+         */
         public Builder subject(String subject) {
             this.subject = subject;
             return this;
         }
 
+        /**
+         * Sets how many seconds after signing the token expires, cancelling a prior
+         * {@link #expired()}.
+         *
+         * @param seconds seconds from the moment {@link #serialize()} runs until {@code exp}
+         * @return this builder
+         */
         public Builder expiresInSeconds(long seconds) {
             this.expiresInSeconds = seconds;
             this.expired = false;
             return this;
         }
 
-        /** Produces a token whose {@code exp} is already in the past. */
+        /**
+         * Produces a token whose {@code exp} is 60 seconds before its {@code iat}, overriding
+         * {@link #expiresInSeconds(long)} so the token is already expired.
+         *
+         * @return this builder
+         */
         public Builder expired() {
             this.expired = true;
             return this;
         }
 
-        /** Produces a token whose signature bytes are corrupted after signing. */
+        /**
+         * Produces a token whose signature bytes are corrupted after signing, by flipping the low
+         * bit of the last signature byte. A conforming verifier MUST reject it.
+         *
+         * @return this builder
+         */
         public Builder tamperedSignature() {
             this.tamperSignature = true;
             return this;
@@ -181,6 +272,8 @@ public final class TestJwt {
          * <p>Serialized as a {@link com.nimbusds.jwt.PlainJWT} with a fixed {@code {"alg":"none"}}
          * header, so {@link #kid(String)} / {@link #noKid()} are <b>ignored</b> in this mode — the
          * unsecured header carries no {@code kid}.
+         *
+         * @return this builder
          */
         public Builder algNone() {
             this.algNone = true;
@@ -197,6 +290,8 @@ public final class TestJwt {
          * attacker re-signs the token with HMAC keyed on those same (public) bytes, hoping
          * the verifier validates it as a symmetric MAC. The {@code kid} is retained so the
          * token reaches the algorithm gate. A conforming validator that pins RS256 MUST reject.
+         *
+         * @return this builder
          */
         public Builder hmacConfusion() {
             this.hmacConfusion = true;
@@ -319,8 +414,18 @@ public final class TestJwt {
     }
 
     /**
-     * {@link LoanedBuffer} backed by a heap byte array.
-    * Suitable for test use only — no native resources, no reference counting.
+     * {@link LoanedBuffer} backed by a heap byte array, for test use only.
+     *
+     * <p>Does not honour the zero-copy contract {@link LoanedBuffer} specifies: {@link #slice} and
+     * {@link #view} copy the requested bytes into a new array rather than sharing the backing
+     * segment.
+     *
+     * <p><b>Allocation:</b> one heap byte array per instance; {@code slice}/{@code view} each
+     * allocate a further copy.
+     * <p><b>Thread confinement:</b> none — a plain heap object with no native resource, safe to
+     * hand to any thread.
+     * <p><b>Ownership:</b> none to release; {@link #retain()} and {@link #close()} are no-ops,
+     * {@link #refCount()} is always {@code 1}, and {@link #isAlive()} always reports {@code true}.
      */
     /* default */
     static final class HeapLoanedBuffer implements LoanedBuffer {

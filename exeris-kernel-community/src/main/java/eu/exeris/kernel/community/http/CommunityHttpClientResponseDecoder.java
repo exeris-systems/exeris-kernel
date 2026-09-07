@@ -19,11 +19,10 @@ import java.util.List;
  * Package-private static decoder for inbound HTTP/1.x responses received by
  * {@link CommunityHttpClientEngine}.
  *
- * <p>Extracted from {@link CommunityHttpClientEngine} in v0.8 Sprint 3 (QA-015)
- * as the second seam of the engine's God-class decomposition (request encoding
- * lives in {@link CommunityHttpClientRequestEncoder}). Owns status-line parsing,
- * header parsing, body length resolution, and the incremental completeness
- * helpers that the engine's read loop consults to know when to stop reading.
+ * <p>Owns status-line parsing, header parsing, body length resolution, and the incremental
+ * completeness helpers that {@link CommunityHttpClientResponseReader}'s read loop consults to know
+ * when to stop reading. Request encoding is the separate, symmetric responsibility of
+ * {@link CommunityHttpClientRequestEncoder}.
  */
 @SuppressWarnings("PMD.CyclomaticComplexity") // parseStatusLine + parseHeaders + completeness checks have flat CC.
 final class CommunityHttpClientResponseDecoder {
@@ -81,6 +80,11 @@ final class CommunityHttpClientResponseDecoder {
         return headerTerminator + 4 + contentLength;
     }
 
+    /**
+     * Whether enough bytes have been read to decode the full response — {@code false} while
+     * {@code expectedTotalBytes} is not yet known ({@code <= 0}, i.e. header terminator or
+     * {@code Content-Length} still unresolved).
+     */
     /* default */ static boolean isResponseComplete(long totalBytes, long expectedTotalBytes) {
         return expectedTotalBytes > 0 && totalBytes >= expectedTotalBytes;
     }
@@ -178,6 +182,7 @@ final class CommunityHttpClientResponseDecoder {
         return -1;
     }
 
+    /** A parsed HTTP/1.x status line: the resolved protocol version and status. */
     /* default */ record StatusLine(HttpVersion version, HttpStatus status) {
     }
 }

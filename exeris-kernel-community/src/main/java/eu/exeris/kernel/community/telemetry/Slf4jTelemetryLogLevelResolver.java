@@ -9,9 +9,7 @@ import eu.exeris.kernel.spi.telemetry.EventLevel;
 /**
  * Package-private log-level routing helper for {@link Slf4jTelemetrySink}.
  *
- * <p>Extracted from {@link Slf4jTelemetrySink} in v0.8 Sprint 1 (QA-012) to close
- * {@code PMD.GodClass} + {@code PMD.CyclomaticComplexity} suppressions. JSON line
- * construction is handled separately by {@link Slf4jTelemetryJsonWriter}.
+ * <p>JSON line construction is handled separately by {@link Slf4jTelemetryJsonWriter}.
  *
  * <p>Resolution combines two signals — the event's declared {@link EventLevel} and
  * the EX-prefix of its code — and takes the higher of the two so a low-priority

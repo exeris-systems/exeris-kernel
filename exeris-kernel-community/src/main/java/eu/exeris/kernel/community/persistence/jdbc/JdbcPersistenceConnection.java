@@ -58,10 +58,25 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     private int baselineIsolation;
     private boolean baselineCaptured;
 
+    /**
+     * Wraps {@code conn} with no release callback — {@link #close()} closes the JDBC
+     * connection directly and runs nothing else.
+     *
+     * @param conn the backing JDBC connection; not {@code null}
+     */
     public JdbcPersistenceConnection(Connection conn) {
         this(conn, () -> { });
     }
 
+    /**
+     * Wraps {@code conn}, running {@code onClose} after the underlying connection has been
+     * rolled back (if needed) and closed — the hook a pool uses to record release telemetry
+     * or return the physical connection.
+     *
+     * @param conn    the backing JDBC connection; not {@code null}
+     * @param onClose invoked from {@link #close()}, after the JDBC connection is closed;
+     *                not {@code null}
+     */
     public JdbcPersistenceConnection(Connection conn, Runnable onClose) {
         this.conn          = Objects.requireNonNull(conn, "conn must not be null");
         this.onClose       = Objects.requireNonNull(onClose, "onClose must not be null");

@@ -32,6 +32,16 @@ public final class CommunityS3BlobStorageProvider implements BlobStorageProvider
 
     private static final String PROVIDER_ID = "blob-s3-community";
 
+    /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link BlobStorageProvider}, alongside
+     * {@link CommunityFilesystemBlobStorageProvider}; not meant to be constructed directly.
+     */
+    public CommunityS3BlobStorageProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     @Override
     public String providerId() {
         return PROVIDER_ID;

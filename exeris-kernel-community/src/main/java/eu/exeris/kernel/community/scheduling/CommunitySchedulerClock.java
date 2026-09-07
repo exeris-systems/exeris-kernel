@@ -35,7 +35,12 @@ import java.util.concurrent.locks.ReentrantLock;
  */
 interface CommunitySchedulerClock extends TimeSource {
 
-    /** @return the lock guarding scheduler state and the wait condition */
+    /**
+     * The lock that guards scheduler state and the wait condition {@link #awaitUntil},
+     * {@link #awaitSignal} and {@link #signal} use.
+     *
+     * @return the lock
+     */
     ReentrantLock lock();
 
     /**

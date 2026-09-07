@@ -26,13 +26,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Community HTTP/1.x client engine — drives outbound requests over a single
  * {@link TransportConnection} per call, blocking the calling virtual thread.
  *
- * <h2>Decomposition (v0.8 Sprint 3 QA-015)</h2>
+ * <h2>Decomposition</h2>
  * <p>Request byte layout lives in {@link CommunityHttpClientRequestEncoder};
  * response parsing + completeness helpers live in
- * {@link CommunityHttpClientResponseDecoder}. This class retains the
+ * {@link CommunityHttpClientResponseDecoder}; the response read loop lives in
+ * {@link CommunityHttpClientResponseReader}. This class retains the
  * {@code TransportEngine} lifecycle (start/close/isRunning), the per-request
- * connection orchestration, the response read loop, and dependency
- * resolution (allocator + transport).
+ * connection orchestration, and dependency resolution (allocator + transport).
+ *
+ * <p><b>Ownership:</b> owns the {@code TransportEngine} for this engine's life, starting it in
+ * {@link #start()} and closing it in {@link #close()}; owns the {@link MemoryAllocator} only when
+ * none was already bound to {@link KernelProviders#MEMORY_ALLOCATOR} at construction, in which
+ * case {@link #close()} closes it too.
  *
  * @since 0.5
  */
@@ -236,11 +241,9 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
 
     /**
      * The largest a response read may become — the CEILING, not the size it starts at.
-     *
-     * <p>Until 0.12 the two were the same number and this value was allocated up front for every
-     * response. {@link CommunityHttpClientResponseReader} now starts small and grows to what the
-     * response declares; this bounds that growth, and reaching it still ends the read and leaves
-     * the decoder to refuse the overrun.
+     * {@link CommunityHttpClientResponseReader} starts small and grows to what the response
+     * declares; this bounds that growth, and reaching it still ends the read and leaves the
+     * decoder to refuse the overrun.
      *
      * <p>Package-private so the ceiling it derives can be asserted without opening a socket, the
      * same reason {@code CommunityHttpTransportFactory.buildTransportConfig} is: the value an

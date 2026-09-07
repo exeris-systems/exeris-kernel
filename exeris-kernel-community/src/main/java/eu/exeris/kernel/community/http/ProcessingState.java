@@ -9,6 +9,27 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
 
+/**
+ * Community: per-connection HTTP/1.1 read-side state carried across keep-alive iterations — the
+ * aggregate read buffer, the pipelining and request counters, and how long the current aggregate has
+ * been held open.
+ *
+ * <p>One instance is opened in a try-with-resources around the whole keep-alive loop by
+ * {@link CommunityHttpRequestProcessor#process}; {@link #close()} releases whichever aggregate
+ * buffer is still held when the connection ends, whether idle, mid-request, or torn down by an
+ * error.
+ *
+ * <p><b>Allocation:</b> allocates one aggregate {@link LoanedBuffer} lazily, on {@link #ensureAggregate}'s
+ * first call, and replaces it with a larger one, doubling toward the caller-supplied bound, only
+ * when {@link #ensureAggregateCapacity} finds the current one too small for a pending request; it is
+ * never reallocated per request while the existing capacity suffices.
+ * <p><b>Thread confinement:</b> owner thread — confined to the virtual thread executing
+ * {@link CommunityHttpRequestProcessor#process} for one connection; it is a local resource of that
+ * call and never escapes into shared state or another connection's loop.
+ * <p><b>Ownership:</b> owns the aggregate buffer between {@link #ensureAggregate} and whichever of
+ * {@link #forceReleaseAggregate}, {@link #releaseAggregateIfIdle} or {@link #close()} releases it; a
+ * caller must not close the buffer returned by {@link #aggregate()} directly.
+ */
 @SuppressWarnings("PMD.TooManyMethods")
 /* default */ final class ProcessingState implements AutoCloseable {
     private LoanedBuffer aggregate;

@@ -7,6 +7,11 @@ package eu.exeris.kernel.community.persistence;
 import java.sql.SQLException;
 import java.util.Map;
 
+/**
+ * Static helpers shared by {@link CommunityHikariSupport}: unwrapping the nested
+ * {@link SQLException} from a driver/pool failure, checking whether it carries a usable SQL
+ * state, and a case-insensitive key lookup over a connection-property map.
+ */
 /* default */ final class CommunityHikariUtils {
 
     private CommunityHikariUtils() {

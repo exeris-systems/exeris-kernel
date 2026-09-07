@@ -49,6 +49,14 @@ import java.util.function.Supplier;
 // and the wrong PR: it is security-adjacent code, and moving it inside a slice about connection
 // lifetime puts the blame surface in the wrong place if it goes wrong. Owner: whoever next opens
 // this class for its own reasons.
+/**
+ * Community: the single admission and dispatch path for both a respond-once request
+ * ({@link #dispatch}) and an SSE stream open ({@link #dispatchStream}) — the bound
+ * {@link HttpRoutePolicy} and {@link SecurityInterceptor} are established here, so the two entry
+ * points share one authorization decision and cannot drift apart. The request-scoped persistence
+ * session, by contrast, is bound only for {@link #dispatch}; {@link #dispatchStream} deliberately
+ * does not bind one.
+ */
 @SuppressWarnings({
     "PMD.CyclomaticComplexity", "PMD.AvoidCatchingGenericException", "PMD.TooManyMethods"})
 final class CommunityHttpRequestDispatcher {
@@ -113,10 +121,8 @@ final class CommunityHttpRequestDispatcher {
      *
      * <p>Separate entry point from {@link #dispatch} because a stream writes its own response head and
      * must not get this dispatcher's respond-once tail — but the authorization itself is the same code,
-     * deliberately. Streaming routes previously reached the handler without passing any of it: the
-     * stream branch returns before {@code dispatch} is ever called, so a bound {@link HttpRoutePolicy}
-     * and the {@link SecurityInterceptor} were both simply skipped, and an SSE handler ran with no
-     * {@code PRINCIPAL_CONTEXT} bound.
+     * deliberately: a bound {@link HttpRoutePolicy} and the {@link SecurityInterceptor} apply to a
+     * stream open exactly as they do to a request.
      *
      * <p>The binding holds for the stream's whole life, not just its open: the stream dispatcher runs
      * the handler's emit loop on the calling thread, so it executes inside
@@ -152,21 +158,16 @@ final class CommunityHttpRequestDispatcher {
 
 
     /**
-     * Resolves the route requirement and runs {@code admitted} if the request passes it.
-     *
-     * @return {@code false} if the request was denied and a response has already been written
-     */
-    /**
      * Asks the bound policy what this route requires.
      *
      * <p>A route the application never described is decided by the policy, not by this driver. With
-     * no policy bound the requirement is permit-all — an opt-in seam, so an application that
-     * declares nothing carries no edge authorization at all.
+     * no policy bound the requirement is permit-all — an opt-in seam per ADR-061 obligation 7 (as
+     * refined by amendment A1), so an application that declares nothing carries no edge authorization
+     * at all.
      *
-     * <p>That is NOT "unchanged behaviour": up to 0.10 this driver enforced a {@code /secure} prefix
-     * with {@code security:read} / {@code security:write} compiled in, and ADR-061 obligation 4
-     * deleted the convention deliberately. An application that relied on the prefix and declares no
-     * policy serves those routes to anonymous callers. The release notes carry the migration step.
+     * @param request the parsed request whose route is being resolved
+     * @return the requirement the bound {@link HttpRoutePolicy} declares for this route, or an
+     *         unconditional permit-all requirement when no policy is bound
      */
     private RouteRequirement resolveRequirement(HttpRequest request) {
         return routePolicy == null
@@ -174,6 +175,11 @@ final class CommunityHttpRequestDispatcher {
                 : routePolicy.requirementFor(request.method(), request.path());
     }
 
+    /**
+     * Resolves the route requirement and runs {@code admitted} if the request passes it.
+     *
+     * @return {@code false} if the request was denied and a response has already been written
+     */
     private boolean authorize(HttpRequest request, RouteRequirement requirement,
                               Supplier<HttpExchange> exchange, Runnable admitted) {
         if (requirement != null && requirement.kind() == RouteRequirement.Kind.PERMIT_ALL) {
@@ -200,10 +206,10 @@ final class CommunityHttpRequestDispatcher {
     /**
      * Establishes a security context, reporting why when it cannot.
      *
-     * <p>Each denial emits at the site that knows the reason. The interceptor emits its own
-     * ({@code TOKEN_INVALID}, {@code PROVIDER_ERROR}); the two this method owns were dark until 0.12
-     * even though the JFR event's description named them, so an operator filtering on
-     * {@code NO_PROVIDER} saw nothing and could read a misconfigured deployment as a client problem.
+     * <p>Each denial emits at the site that knows the reason: the interceptor emits its own
+     * ({@code TOKEN_INVALID}, {@code PROVIDER_ERROR}), and this method emits the two it owns
+     * ({@code NO_PROVIDER} when no {@link SecurityInterceptor} is bound, {@code TOKEN_MISSING} when
+     * the request carries no usable bearer token) — so an operator filtering on either reason sees it.
      *
      * <p>The response is identical for every reason — one {@code 401}, no body. Telling an
      * unauthenticated caller which of the three applies would hand them a probe oracle.

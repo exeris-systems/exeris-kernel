@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Community socket-backend selector and bootstrap-validation lifecycle owner.
  *
- * <p>Extracted from {@link NativeTcpCarrier} in v0.8 Sprint 1 (QA-013a). Owns:
+ * <p>One instance per {@link NativeTcpCarrier}. Owns:
  *
  * <ul>
  *   <li>The {@link SocketBackendMode} selection from JVM property / env vars.</li>
@@ -34,6 +34,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>Native socket helpers (FFM downcalls, sockaddr serialization, server/
  * client probes) live in {@link NativeTcpSocketProbe}; this class only owns
  * state and routes validation calls through to the probe helpers.
+ *
+ * <p><b>Allocation:</b> attempts one shared {@link Arena} at construction, unless NIO is pinned
+ * explicitly or the runtime is Windows; the arena is closed immediately if native syscall handles
+ * cannot be resolved, or held for this instance's lifetime otherwise. No allocation thereafter.
+ * <p><b>Thread confinement:</b> none — the resolved {@link SocketBackendSelection} is immutable
+ * after construction and the validation latches are {@link AtomicBoolean}-gated, so every method
+ * here may be called from any thread.
+ * <p><b>Ownership:</b> owns the {@link Arena} (and the native syscall handles it backs) and is the
+ * only thing that closes it, deterministically, from {@link #close()}; the owning
+ * {@link NativeTcpCarrier} is responsible for calling it exactly once.
  */
 final class NativeTcpSocketBackend {
 

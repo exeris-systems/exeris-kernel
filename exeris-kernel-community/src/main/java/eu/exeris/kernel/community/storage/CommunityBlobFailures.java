@@ -20,15 +20,14 @@ import jdk.jfr.StackTrace;
  * <p>Each factory emits the JFR event and returns the exception, so a call site reads
  * {@code throw failures.transferFailed(...)}. This deviates from the sibling
  * {@code CommunityIdentityJfrEvents} shape, which emits beside the throw: the blob drivers have some
- * twenty failure sites across seven classes, and pairing emit-and-throw by hand at each one makes
+ * twenty failure sites across eight classes, and pairing emit-and-throw by hand at each one makes
  * "recorded but not thrown" and "thrown but not recorded" both reachable by omission. Returning the
  * exception removes the pairing entirely.
  *
  * <h2>Why this is an instance</h2>
- * <p>It began as a static holder with the filesystem provider's name baked in. A second driver made
- * that name a per-driver fact, and the two honest options were to pass it at every one of the twenty
- * call sites or to bind it once. Bound once, a driver cannot attribute a failure to its sibling by
- * getting an argument wrong, and the shared event names stay shared — an operator filters
+ * <p>The provider name is bound once, at construction, rather than passed at each of the roughly
+ * twenty call sites across both drivers. Bound once, a driver cannot attribute a failure to its
+ * sibling by getting an argument wrong, and the shared event names stay shared — an operator filters
  * {@code eu.exeris.kernel.storage.*} and reads {@code providerName} to tell the drivers apart.
  *
  * <h2>Single-phase commit</h2>

@@ -26,7 +26,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
- * Community {@link KernelCryptoProvider} for TCP TLS over OpenSSL 3.x.
+ * Community {@link KernelCryptoProvider} that creates {@link TlsEngine} instances backed by
+ * OpenSSL 3.x through the Panama foreign-function API.
+ *
+ * <p>{@link #createTlsEngine} supports {@code Protocol.TCP_TLS} only and throws
+ * {@link CryptoBootstrapException} for {@code Protocol.QUIC}. Registers at {@link #priority()}
+ * {@code 0}; per {@link KernelCryptoProvider}'s discovery contract, a higher-priority provider on
+ * the classpath is selected instead.
  *
  * @since 0.5
  */
@@ -41,7 +47,12 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	private final CoreOpenSslRuntime runtime;
 	private final java.lang.invoke.MethodHandle sslSetFd;
 
-	/** ServiceLoader zero-arg constructor. */
+	/**
+	 * Loads the Community OpenSSL runtime and resolves the {@code SSL_set_fd} symbol.
+	 *
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) if the OpenSSL runtime cannot be
+	 *         loaded, or if it does not export {@code SSL_set_fd}
+	 */
 	public CommunityKernelCryptoProvider() {
 		runtime = CoreOpenSslLoader.load(Arena.global());
 		FunctionDescriptor setFdDescriptor =
@@ -59,6 +70,23 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		}
 	}
 
+	/**
+	 * Creates a {@link TlsEngine} bound to a freshly created OpenSSL {@code SSL_CTX}.
+	 *
+	 * <p>A {@code null} config is treated as {@link CryptoProviderConfig#tcpClient()}. The engine
+	 * is configured for server mode when both {@link CryptoProviderConfig#certChainPath()} and
+	 * {@link CryptoProviderConfig#privateKeyPath()} are set, for client mode when neither is set;
+	 * setting exactly one of the two is rejected. When {@link KernelProviders#MEMORY_ALLOCATOR} is
+	 * not bound, this method creates a {@link CommunityMemoryProvider} allocator that the returned
+	 * engine owns and closes; when it is bound, the returned engine uses it without taking
+	 * ownership.
+	 *
+	 * @param config cryptographic configuration, or {@code null} for {@link CryptoProviderConfig#tcpClient()}
+	 * @return a TLS engine ready for {@link TlsEngine#beginHandshake}
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) for {@code Protocol.QUIC}, for a
+	 *         config with exactly one of {@code certChainPath}/{@code privateKeyPath} set, or if
+	 *         the native SSL context cannot be created or configured
+	 */
 	@Override
 	@SuppressWarnings({
 		"PMD.CloseResource",      // allocator/delegate ownership is transferred into CommunityTlsEngine
@@ -117,21 +145,34 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		}
 	}
 
+	/**
+	 * Returns {@code false}; the Community tier does not support QUIC.
+	 */
 	@Override
 	public boolean supportsQuic() {
 		return false;
 	}
 
+	/**
+	 * Returns this provider's display name, {@code "ExerisCommunity/OpenSSL3-TCP"}.
+	 */
 	@Override
 	public String providerName() {
 		return PROVIDER_NAME;
 	}
 
+	/**
+	 * Returns {@code 0}, this provider's fixed selection priority.
+	 */
 	@Override
 	public int priority() {
 		return 0;
 	}
 
+	/**
+	 * No-op; this provider holds no per-instance resources beyond the runtime handles shared via
+	 * {@code Arena.global()}.
+	 */
 	@Override
 	public void close() {
 		// Provider keeps only shared runtime handles bound to Arena.global().

@@ -12,9 +12,9 @@ import eu.exeris.kernel.spi.config.Dynamic;
  *
  * <p>Carries the parameters consumed by {@link CommunityPersistenceAdmissionController}
  * when deciding whether {@link CommunityPersistenceEngine#canServiceRequest()} admits or
- * sheds a request. Prior to ADR-035 these were hard-coded {@code static final} constants;
- * they are now operator-tunable (startup in Community, hot-reload in Enterprise) and the
- * small-pool reject behavior is recalibrated — see {@link #queueDepthAllowanceRatio}.
+ * sheds a request. Operator-tunable — resolved once at Community bootstrap, hot-reloaded
+ * atomically in Enterprise — with the small-pool reject behavior governed by
+ * {@link #queueDepthAllowanceRatio}.
  *
  * <h2>Why this exists (ADR-035)</h2>
  * <p>Under a CPU-constrained profile ({@code -XX:ActiveProcessorCount=1}) the adaptive pool
