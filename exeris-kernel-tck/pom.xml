@@ -40,6 +40,17 @@
         <exeris.module.name>eu.exeris.kernel.tck</exeris.module.name>
 
         <!--
+            The TCK's own ruleset, as a property rather than a plugin-level <configLocation>.
+            The parent pom carries the same fix and the reason with it: an explicit
+            <configLocation> in a pom silently beats the plugin's own user property, so
+            `-Dcheckstyle.config.location=...` does not reach the module and does not fail
+            either. This module still had the literal, so the shared javadoc gate audited
+            checkstyle-tck.xml here and reported clean against a ruleset it never read.
+            Declared here so the default is unchanged and an override lands.
+        -->
+        <checkstyle.config.location>checkstyle-tck.xml</checkstyle.config.location>
+
+        <!--
             This module's main sources are contract tests, so they are linted by rules written for
             contract tests. The delta from the kernel ruleset is a named list in
             pmd-ruleset-tck.xml, not a skip: 1782 PMD violations across 56 rules appeared the moment
@@ -163,13 +174,6 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-checkstyle-plugin</artifactId>
-                <configuration>
-                    <configLocation>checkstyle-tck.xml</configLocation>
-                </configuration>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
@@ -199,4 +203,68 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            The Javadoc gate - ADR-085 SS-F.21, run by .github/workflows/guardrails.yml, never by a
+            normal build.
+
+            It lives in THIS pom and not the root one, and that is not cosmetic. The gate invokes
+            `mvn -pl <modules> -am javadoc:javadoc`, and `-am` pulls every dependency into the
+            reactor. From the root pom the profile applied to them too, so the first CI run failed on
+            `exeris-kernel-build-config` - a module nobody meant to gate - and never reached its
+            target at all. javadoc-conventions.md gates named modules; so does this. The TCK is
+            gated because it is a published contract surface that is neither Core, Community nor
+            tooling, which is the set rule 11 sends to diff-aware checking instead.
+
+            It is a profile and not a change to the `release` block in the root pom, deliberately.
+            That block keeps `doclint none` and `failOnError false` because the ability to publish
+            must not depend on the state of the prose: the comment there calls tightening it
+            "quality work with its own slice", and this is that slice, held separately so a red gate
+            never stops a release from being cut.
+
+            Measured before switching on, on this module: 13 doclint errors and warnings capped at
+            javadoc's default -Xmaxwarns of 100, so the warning figure is a floor. That list was
+            cleared by the sweep in #464 before this gate reached main, so it lands green; it is a
+            reported check rather than a required one, and what it now does is hold the zero rather
+            than display the backlog.
+
+            The three custom tags are registered because rule 6 of javadoc-conventions.md is written
+            in them and an unregistered tag is itself a doclint error - which is how the need was
+            found, from the single @apiNote the SPI carried across 276 sources when this profile was
+            written. The sweep in #464 then wrote the vocabulary here: 20 @apiNote and 35 @implSpec
+            across 131 sources. @implNote is zero and that is the correct number, not a gap - rule 6
+            defines it as facts about *this* implementation, and an abstract contract test has none;
+            what it has is what a binding must satisfy (@implSpec) and how to satisfy it (@apiNote).
+            Registering them makes writing the tags possible; writing them is L2 work no gate
+            measures.
+
+            The preview flag from the bundle's port target is deliberately absent: this line dropped
+            preview from the whole build (see the MAVEN_OPTS comment in maven.yml), and javadoc
+            accepts that flag only when `-source` equals the running JDK.
+        -->
+        <profile>
+            <id>javadoc-gate</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <configuration>
+                            <doclint>all</doclint>
+                            <failOnWarnings>true</failOnWarnings>
+                            <failOnError>true</failOnError>
+                            <quiet>false</quiet>
+                            <tags>
+                                <tag><name>apiNote</name><placement>a</placement><head>API Note:</head></tag>
+                                <tag><name>implSpec</name><placement>a</placement><head>Implementation Requirements:</head></tag>
+                                <tag><name>implNote</name><placement>a</placement><head>Implementation Note:</head></tag>
+                            </tags>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
