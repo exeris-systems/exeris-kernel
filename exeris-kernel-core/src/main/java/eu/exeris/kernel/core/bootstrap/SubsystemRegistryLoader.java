@@ -26,8 +26,9 @@ import java.util.Set;
  * Package-private discovery and selector-closure resolution used by
  * {@link SubsystemOrchestrator}.
  *
- * <p>Extracted from {@link SubsystemOrchestrator} in v0.8 Sprint 3 (QA-018b)
- * to close the orchestrator's God-class suppression block. Owns:
+ * <p>Kept separate from {@link SubsystemOrchestrator} so registry discovery and
+ * selector-closure resolution can be reasoned about — and tested — independently
+ * of subsystem lifecycle. Owns:
  * <ul>
  *   <li>{@link #loadRegistry} — {@link ServiceLoader} discovery of all
  *       {@link SubsystemProvider}s, priority-sorted (descending), merged into

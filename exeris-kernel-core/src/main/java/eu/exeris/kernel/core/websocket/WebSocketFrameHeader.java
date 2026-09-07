@@ -30,7 +30,10 @@ public record WebSocketFrameHeader(
 ) {
 
     /**
-     * @return the offset just past this frame, i.e. where the next frame begins
+     * Locates where the next frame begins in the same segment, immediately after this frame's
+     * payload.
+     *
+     * @return the offset just past this frame
      */
     public long frameEnd() {
         return payloadOffset + payloadLength;

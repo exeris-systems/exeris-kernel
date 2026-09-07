@@ -41,19 +41,39 @@ public final class StreamLifecycleEvent extends Event {
      */
     public static final String OUTCOME_ERROR = "ERROR";
 
+    /** SPI stream identifier, matching the {@code streamId} on the paired {@link StreamAcceptedEvent}. */
     @Label("Stream ID")
     public long streamId;
 
+    /** {@link eu.exeris.kernel.spi.transport.StreamPriority} enum constant name the stream was admitted with. */
     @Label("Priority")
     public String priority;
 
+    /** {@link #OUTCOME_COMPLETE} if the handler returned normally, {@link #OUTCOME_ERROR} if it threw. */
     @Label("Outcome")
     @Description("COMPLETE or ERROR")
     public String outcome;
 
+    /**
+     * Nanoseconds from the start of the stream handler's virtual-thread execution to this
+     * event's emission — measured with {@code System.nanoTime()} inside
+     * {@code PaqsScheduler.runStream()}; excludes any virtual-thread scheduling delay between
+     * admission (see {@link StreamAcceptedEvent}) and the virtual thread actually starting.
+     */
     @Label("Duration (ns)")
     @Description("Wall-clock nanos the stream's Virtual Thread was active")
     public long durationNs;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StreamLifecycleEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Factory: emits a stream lifecycle completion event.

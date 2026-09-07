@@ -45,7 +45,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHttpRoutePolicyTckTest extends AbstractHttpRoutePolicyTck {
  *     @Override
  *     protected Decision decide(RouteRequirement requirement, PrincipalContext principal) {
@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *         };
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.11
  */
@@ -76,6 +76,15 @@ public abstract class AbstractHttpRoutePolicyTck {
     private static final String READ = "orders:read";
     private static final String WRITE = "orders:write";
     private static final String UNRELATED = "billing:read";
+
+    /**
+     * Creates the contract; subclasses supply the decision under test via
+     * {@link #decide(RouteRequirement, PrincipalContext)}.
+     */
+    public AbstractHttpRoutePolicyTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Decides one request against one requirement, using the binding under test.

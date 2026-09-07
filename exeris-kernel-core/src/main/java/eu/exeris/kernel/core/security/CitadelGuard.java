@@ -25,7 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * no {@code UUID.randomUUID()}, no {@code Instant.now()}.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * CitadelGuard guard = new CitadelGuard();
  *
  * // During bootstrap warm-up — pre-allocate sentinels for known roles:
@@ -34,7 +34,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * // On every request hot path — O(1), zero-alloc for known roles:
  * guard.requireRole("ROLE_ADMIN");
- * }</pre>
+ * }
  *
  * <h2>The Wall</h2>
  * <p>Imports only {@code exeris-kernel-spi}. No JWT, no Spring Security,
@@ -69,6 +69,17 @@ public final class CitadelGuard {
 
     @SuppressWarnings("unused")
     private volatile boolean sealedFlag;
+
+    /**
+     * Creates a guard with an empty sentinel pool and the seal open.
+     *
+     * <p>The pool fills lazily, one pre-built exception per denial reason, so that a rejection on the
+     * hot path throws a cached instance rather than constructing one.
+     */
+    public CitadelGuard() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Pre-allocates a Sentinel {@link InsufficientPrivilegesException} for the given role.
@@ -116,20 +127,21 @@ public final class CitadelGuard {
      * Enforces that the current {@link PrincipalContext} (read from
      * {@link KernelProviders#PRINCIPAL_CONTEXT}) holds the specified role.
      *
-     * <h2>Fail-Fast RBAC</h2>
+     * <h4>Fail-Fast RBAC</h4>
      * <p>If the principal lacks the role, an {@link InsufficientPrivilegesException}
      * is thrown. For pre-allocated roles (via {@link #preAllocate(String)}), the
      * Sentinel instance is thrown — zero heap allocation.
      *
-     * <h2>JFR Telemetry</h2>
+     * <h4>JFR Telemetry</h4>
      * <p>A {@code InsufficientPrivileges} JFR event is emitted on rejection.
      * The event carries the value-based {@code UUID.hashCode()} of the principalId —
      * never the raw UUID.
      *
      * @param requiredRole the role the principal must hold
-     * @throws InsufficientPrivilegesException if the principal lacks {@code requiredRole}
+     * @throws InsufficientPrivilegesException ({@code EX-SEC-2003}) if the principal
+     *         lacks {@code requiredRole}
      * @throws eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException
-     *         if no {@link PrincipalContext} is bound in the current scope
+     *         ({@code EX-SEC-2001}) if no {@link PrincipalContext} is bound in the current scope
      */
     public void requireRole(String requiredRole) {
         PrincipalContext principal = KernelProviders.principal();
@@ -154,7 +166,7 @@ public final class CitadelGuard {
      * @param role the role to check
      * @return {@code true} if the principal holds the role; {@code false} otherwise
      * @throws eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException
-     *         if no {@link PrincipalContext} is bound in the current scope
+     *         ({@code EX-SEC-2001}) if no {@link PrincipalContext} is bound in the current scope
      */
     public boolean hasRole(String role) {
         return KernelProviders.principal().hasRole(role);

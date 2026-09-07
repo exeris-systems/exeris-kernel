@@ -27,11 +27,10 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * JMH Benchmark: FlowEngine Virtual Thread Park/Wake cycle.
+ * JMH Benchmark: FlowEngine virtual-thread park/wake cycle.
  *
- * <h2>Front 4 — Arena wydajności (Enterprise SLO: 0 B/op in off-heap mode)</h2>
  * <p>Measures the heap allocation overhead of the FlowEngine's scheduler park→wake
- * cycle. In Enterprise tier (off-heap Saga wait-state), this MUST be
+ * cycle. In Enterprise tier (off-heap Saga wait-state), this is required to be
  * {@code 0 B/op} — all state transitions operate on pre-allocated off-heap slabs.
  *
  * <h2>SLO</h2>
@@ -42,8 +41,10 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  *
  * <h2>JMH Allocation Profiler</h2>
- * <p>Run with {@code -prof gc} to measure {@code norm.alloc} (bytes per operation).
- * Enterprise MUST report {@code 0.0 B/op} in steady state.
+ * <p>Run with {@code -prof gc} to measure {@code norm.alloc} (bytes per operation). This
+ * benchmark does not assert the allocation figure itself — conformance means reading
+ * {@code norm.alloc} from that profiler output. Enterprise is required to report
+ * {@code 0.0 B/op} in steady state.
  *
  * @since 0.5
  */
@@ -53,13 +54,20 @@ import java.util.concurrent.TimeUnit;
 @Measurement(iterations = 5, time = 5, timeUnit = TimeUnit.SECONDS)
 public abstract class AbstractFlowParkWakeBenchmark extends AbstractExerisBenchmark {
 
-    /** Creates a fully configured, not-yet-started {@link FlowEngine}. */
+    /**
+     * Creates a fully configured, not-yet-started {@link FlowEngine}.
+     *
+     * @return non-null, pre-configured engine ready for {@link FlowEngine#start()}
+     */
     protected abstract FlowEngine createEngine();
 
     /**
      * Returns {@code true} if this implementation is Enterprise-tier.
-     * When {@code true}, the benchmark asserts 0 B/op allocation.
+     * When {@code true}, the SLO for this benchmark requires 0 B/op allocation,
+     * checked via the JMH {@code -prof gc} allocation profiler.
      * Default: {@code false}.
+     *
+     * @return {@code true} for an Enterprise-tier implementation, {@code false} otherwise
      */
     protected boolean isEnterpriseTier() {
         return false;
@@ -70,6 +78,19 @@ public abstract class AbstractFlowParkWakeBenchmark extends AbstractExerisBenchm
     private FlowExecutionPlan plan;
     private FlowContext       preWiredContext;
 
+    /**
+     * Creates the contract; subclasses supply the engine under test via {@link #createEngine()}.
+     */
+    public AbstractFlowParkWakeBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Trial-level setup: creates and starts the engine, compiles a two-step no-op flow
+     * definition, and schedules a reusable {@link FlowContext} that every measurement
+     * iteration parks and wakes.
+     */
     @Setup(Level.Trial)
     public void setUpTrial() {
         engine = createEngine();
@@ -89,6 +110,9 @@ public abstract class AbstractFlowParkWakeBenchmark extends AbstractExerisBenchm
         scheduler.schedule(plan, preWiredContext);
     }
 
+    /**
+     * Trial-level teardown: closes the engine and releases any resources it holds.
+     */
     @TearDown(Level.Trial)
     public void tearDownTrial() {
         if (engine != null) {
@@ -99,12 +123,14 @@ public abstract class AbstractFlowParkWakeBenchmark extends AbstractExerisBenchm
     /**
      * Hot path: park the pre-wired context, then wake it.
      *
-     * <p><b>Enterprise SLO:</b> The park/wake cycle operates on raw {@code long}
-     * addresses in the off-heap ring buffer and parked-set slab.
-     * No object is created. Allocation: 0 B/op.
+     * <p><b>Enterprise SLO:</b> the park/wake cycle is required to operate on raw
+     * {@code long} addresses in the off-heap ring buffer and parked-set slab, creating
+     * no object — {@code 0 B/op}, checked via the JMH {@code -prof gc} allocation profiler.
      *
      * <p><b>Community:</b> park/wake involves a {@code ConcurrentHashMap} put/remove.
      * Some allocation is expected (Map.Entry, etc.).
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the context reference
      */
     @Benchmark
     public void parkAndWakeCycle(Blackhole bh) {
@@ -118,6 +144,8 @@ public abstract class AbstractFlowParkWakeBenchmark extends AbstractExerisBenchm
      *
      * <p>The context is reused across iterations — Enterprise implementations
      * must support this via their Flyweight design.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the context reference
      */
     @Benchmark
     @BenchmarkMode(Mode.Throughput)

@@ -36,6 +36,7 @@ public final class Http1ChunkedEncoder {
      * @param offset byte offset
      * @param size   chunk data size
      * @return byte position after the chunk header (caller writes data, then CRLF)
+     * @throws IllegalArgumentException if {@code size} is negative
      */
     public static long writeChunkHeader(MemorySegment seg, long offset, int size) {
         if (size < 0) {
@@ -98,6 +99,7 @@ public final class Http1ChunkedEncoder {
      * @param offset byte offset
      * @param data   chunk data segment
      * @return new byte position after the complete chunk
+     * @throws IllegalArgumentException if {@code data}'s size exceeds {@code Integer.MAX_VALUE}
      */
     public static long writeChunk(MemorySegment seg, long offset, MemorySegment data) {
         long dataSize = data.byteSize();

@@ -31,11 +31,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@code send(null)} throws {@link NullPointerException}</li>
  *   <li>{@code close()} is idempotent — multiple calls do not throw</li>
  *   <li>{@code start()} after {@code close()} throws {@link IllegalStateException}</li>
+ *   <li>{@code send} of a request naming no peer authority is refused with
+ *       {@link IllegalStateException} when the engine carries no configured default authority</li>
+ *   <li>{@code send} of a request whose authority carries no explicit port is refused with
+ *       {@link IllegalStateException}</li>
  * </ul>
  *
  * @since 0.5
  */
 public abstract class AbstractHttpClientEngineTck {
+
+    /**
+     * Creates the contract; subclasses supply the engine under test via {@link #createEngine(HttpConfig)}.
+     */
+    public AbstractHttpClientEngineTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Creates an {@link HttpClientEngine} under test.

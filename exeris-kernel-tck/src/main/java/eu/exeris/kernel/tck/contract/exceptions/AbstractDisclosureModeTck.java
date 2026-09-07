@@ -27,11 +27,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityDisclosureModeTckTest extends AbstractDisclosureModeTck {
  *     // No overrides required — the contract is profile-driven and binding-agnostic.
  * }
- * }</pre>
+ * }
  *
  * <p>Bindings that wrap {@code ExceptionDisclosure} in a sink (e.g.,
  * {@code Slf4jTelemetrySink}) should add their own concrete tests asserting the
@@ -45,6 +45,16 @@ public abstract class AbstractDisclosureModeTck {
 
     private static final long REQUESTED_BYTES = 1024L;
     private static final long AVAILABLE_BYTES = 0L;
+
+    /**
+     * Creates the contract; subclasses may override {@link #fixture()} to substitute a
+     * different SPI exception, though the profile-driven disclosure contract itself needs
+     * no binding.
+     */
+    public AbstractDisclosureModeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Returns a fixture exception with non-empty {@code rawArgs}. Concrete bindings may

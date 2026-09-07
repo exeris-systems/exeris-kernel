@@ -47,13 +47,33 @@ public abstract class AbstractFlowSchedulerTck {
     /** Generous: this waits on a real flow resuming, not on a poll interval. */
     private static final long WAKE_TIMEOUT_SECONDS = 30L;
 
+    /**
+     * Creates a fully configured, but not yet started, {@link FlowEngine}.
+     *
+     * @return a new engine instance, not yet started
+     */
     protected abstract FlowEngine createEngine();
 
-    /** Override to reduce scope for ring-buffer-bounded Enterprise implementations. */
+    /**
+     * Override to reduce scope for ring-buffer-bounded Enterprise implementations.
+     *
+     * @return the number of concurrent schedules the avalanche stress test submits
+     */
     protected int avalancheScheduleCount() { return 10_000; }
 
     private FlowEngine        engine;
     private FlowExecutionPlan sharedPlan;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()}.
+     *
+     * <p>The {@code engine} and {@code sharedPlan} fields start unset — {@link #setUp()} starts
+     * the engine and compiles the shared plan before each test.
+     */
+    public AbstractFlowSchedulerTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {
@@ -78,6 +98,15 @@ public abstract class AbstractFlowSchedulerTck {
     @Nested
     @DisplayName("Basic schedule / park / wake contract")
     class BasicScheduling {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the basic schedule/park/wake contract.
+         */
+        BasicScheduling() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("schedule() with valid plan and context does not throw")
@@ -286,6 +315,16 @@ public abstract class AbstractFlowSchedulerTck {
     @Nested
     @DisplayName("Virtual Thread avalanche — concurrency stress")
     class VirtualThreadAvalanche {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise concurrent scheduling under virtual-thread
+         * avalanche stress.
+         */
+        VirtualThreadAvalanche() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("N concurrent VT schedules complete without deadlock")

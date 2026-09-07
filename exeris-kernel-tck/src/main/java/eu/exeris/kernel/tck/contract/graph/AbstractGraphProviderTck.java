@@ -22,9 +22,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractGraphProviderTck {
 
+    /**
+     * Creates the {@link GraphProvider} implementation under test.
+     *
+     * @return the provider implementation under test
+     */
     protected abstract GraphProvider createProvider();
 
     private GraphProvider provider;
+
+    /**
+     * Creates the contract; subclasses supply the {@link GraphProvider} implementation under test via
+     * {@link #createProvider()}.
+     */
+    public AbstractGraphProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpProvider() {
@@ -34,6 +48,14 @@ public abstract class AbstractGraphProviderTck {
     @Nested
     @DisplayName("Provider identity")
     class Identity {
+
+        /**
+         * Groups the assertions for provider identity.
+         */
+        Identity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("providerId() is non-blank")
@@ -58,6 +80,14 @@ public abstract class AbstractGraphProviderTck {
     @DisplayName("ServiceLoader integration")
     class ServiceLoaderContract {
 
+        /**
+         * Groups the assertions for {@code ServiceLoader} integration.
+         */
+        ServiceLoaderContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("GraphProvider is discoverable via ServiceLoader")
         void discoverable() {
@@ -65,6 +95,14 @@ public abstract class AbstractGraphProviderTck {
             assertThat(count).isGreaterThanOrEqualTo(1);
         }
 
+        /**
+         * Recomputes the highest-priority provider from {@link ServiceLoader} with the same
+         * max-by-priority reduction the kernel bootstrapper uses, then asserts it is at least
+         * {@link #provider}'s priority. Because the compared value is itself the maximum over
+         * the set {@link #provider} is drawn from, this holds whenever {@link #provider} is
+         * among the discovered providers; it does not independently verify that a
+         * lower-priority binding is passed over when several are on the classpath.
+         */
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {

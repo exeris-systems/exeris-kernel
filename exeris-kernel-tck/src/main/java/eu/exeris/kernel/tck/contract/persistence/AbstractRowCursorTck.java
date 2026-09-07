@@ -43,28 +43,39 @@ public abstract class AbstractRowCursorTck {
 
     /**
      * Creates a bootstrapped {@link PersistenceEngine} with a test table.
+     *
+     * @return a ready-to-use engine whose connections can run {@link #testQuery()} and
+     *         {@link #nullRowQuery()}
      */
     protected abstract PersistenceEngine createEngine();
 
     /**
      * Returns the SQL query that produces at least one row with known column values.
-     * The query must return columns: (int, bigint, text) in that order.
-     * Example: {@code "SELECT 42, 9999999999, 'hello'"}.
+     *
+     * @return a single-row query
+     * @implSpec The result must have exactly the columns {@code (int, bigint, text)}, in that
+     *           order, e.g. {@code "SELECT 42, 9999999999, 'hello'"}.
      */
     protected abstract String testQuery();
 
     /**
-     * Expected int value in column 0 of the test query result.
+     * Expected int value in column 0 of {@link #testQuery()}'s result.
+     *
+     * @return the value column 0 of {@link #testQuery()} must yield
      */
     protected abstract int expectedInt();
 
     /**
-     * Expected long value in column 1 of the test query result.
+     * Expected long value in column 1 of {@link #testQuery()}'s result.
+     *
+     * @return the value column 1 of {@link #testQuery()} must yield
      */
     protected abstract long expectedLong();
 
     /**
-     * Expected String value in column 2 of the test query result.
+     * Expected String value in column 2 of {@link #testQuery()}'s result.
+     *
+     * @return the value column 2 of {@link #testQuery()} must yield
      */
     protected abstract String expectedString();
 
@@ -74,12 +85,23 @@ public abstract class AbstractRowCursorTck {
      *
      * <p>The default is portable SQL. A binding whose engine types a bare {@code CAST(NULL AS ...)}
      * differently overrides it — but the shape must hold: three columns, all NULL, in that order.
+     *
+     * @return a single all-NULL row query
      */
     protected String nullRowQuery() {
         return "SELECT CAST(NULL AS INTEGER), CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR)";
     }
 
     private PersistenceEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * fixture queries and expected values declared above.
+     */
+    public AbstractRowCursorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpEngine() {
@@ -98,6 +120,14 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("Flyweight contract")
     class FlyweightContract {
+
+        /**
+         * Groups the same-instance-across-rows flyweight assertion.
+         */
+        FlyweightContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("row() returns the same RowCursor instance across next() calls")
@@ -126,6 +156,15 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("Primitive access contract")
     class PrimitiveAccess {
+
+        /**
+         * Groups the {@code getInt}/{@code getLong}/{@code getString}/{@code columnCount}
+         * value assertions.
+         */
+        PrimitiveAccess() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("getInt() returns correct value")
@@ -176,6 +215,14 @@ public abstract class AbstractRowCursorTck {
     @DisplayName("Resource release contract")
     class ResourceRelease {
 
+        /**
+         * Groups the {@code QueryResult.close()} no-leak assertion.
+         */
+        ResourceRelease() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("QueryResult.close() releases resources — no leak")
         void closeReleasesResources() {
@@ -196,6 +243,15 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("SQL NULL contract")
     class SqlNullContract {
+
+        /**
+         * Groups the SQL-NULL {@code isNull()}/sentinel/throwing assertions and their
+         * non-NULL counterparts.
+         */
+        SqlNullContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("isNull() is true for every column of an all-NULL row")
@@ -287,6 +343,14 @@ public abstract class AbstractRowCursorTck {
     @Nested
     @DisplayName("Column-index contract")
     class ColumnIndexContract {
+
+        /**
+         * Groups the out-of-range column-index rejection assertions across every accessor.
+         */
+        ColumnIndexContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("every accessor rejects a negative index")

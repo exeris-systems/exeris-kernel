@@ -33,25 +33,104 @@ import static org.junit.jupiter.api.Assertions.fail;
  */
 public abstract class AbstractCitadelGuardTck<G> {
 
+    /**
+     * Creates the contract; subclasses supply the guard binding via {@link #createGuard()}.
+     *
+     * <p>The {@code guard} field starts unset — {@link #setUpGuard()} populates it from
+     * {@link #createGuard()} before each test.
+     */
+    public AbstractCitadelGuardTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Creates a fresh guard instance to exercise in one test.
+     *
+     * @return a new, unsealed guard
+     * @implSpec Every invocation returns a distinct instance; a shared or previously sealed
+     *           guard would leak state between the independent test cases that each call
+     *           {@link #createGuard()} once per {@code @BeforeEach}.
+     */
     protected abstract G createGuard();
 
+    /**
+     * Registers {@code requiredRole} as a pre-allocated rejection sentinel for {@code guard}.
+     *
+     * @param guard        the guard under test
+     * @param requiredRole the role to pre-allocate a sentinel for
+     * @implSpec Registering the same role more than once is a no-op: the sentinel pool size
+     *           does not grow past one entry per distinct role. A rejection produced by
+     *           {@link #requireRole} for a role pre-allocated here must reuse that role's
+     *           sentinel exception instance rather than allocating a new one.
+     */
     protected abstract void preAllocate(G guard, String requiredRole);
 
+    /**
+     * Seals {@code guard}, freezing its set of pre-allocated sentinel roles.
+     *
+     * @param guard the guard under test
+     * @implSpec Once sealed, {@link #preAllocate} must throw {@code IllegalStateException}
+     *           rather than accepting further registrations.
+     */
     protected abstract void seal(G guard);
 
+    /**
+     * Returns whether {@code guard} has been sealed.
+     *
+     * @param guard the guard under test
+     * @return {@code true} once {@link #seal} has been called on this guard
+     */
     protected abstract boolean isSealed(G guard);
 
+    /**
+     * Enforces that the {@link PrincipalContext} bound via
+     * {@link KernelProviders#PRINCIPAL_CONTEXT} carries {@code requiredRole}.
+     *
+     * @param guard        the guard under test
+     * @param requiredRole the role to enforce
+     * @throws PrincipalContextMissingException if no principal context is bound for the
+     *                                           current scope
+     * @throws InsufficientPrivilegesException  if the bound principal does not carry
+     *                                           {@code requiredRole}
+     */
     protected abstract void requireRole(G guard, String requiredRole);
 
+    /**
+     * Returns whether the {@link PrincipalContext} bound via
+     * {@link KernelProviders#PRINCIPAL_CONTEXT} carries {@code role}.
+     *
+     * @param guard the guard under test
+     * @param role  the role to check
+     * @return {@code true} when the bound principal carries {@code role}
+     */
     protected abstract boolean hasRole(G guard, String role);
 
+    /**
+     * Returns the number of distinct roles pre-allocated via {@link #preAllocate}.
+     *
+     * @param guard the guard under test
+     * @return the sentinel pool size
+     */
     protected abstract int preAllocatedCount(G guard);
 
+    /**
+     * Returns a principal scoped to a freshly generated tenant, granted {@code ROLE_ADMIN}
+     * and {@code ROLE_USER}.
+     *
+     * @return a two-role principal for a new tenant
+     */
     protected PrincipalContext createAdminPrincipal() {
         return ImmutablePrincipal.ofTenant(
                 UUID.randomUUID(), UUID.randomUUID(), Set.of("ROLE_ADMIN", "ROLE_USER"));
     }
 
+    /**
+     * Returns a principal scoped to a freshly generated tenant, granted only
+     * {@code ROLE_USER}.
+     *
+     * @return a single-role principal for a new tenant
+     */
     protected PrincipalContext createUserPrincipal() {
         return ImmutablePrincipal.ofTenant(
                 UUID.randomUUID(), UUID.randomUUID(), Set.of("ROLE_USER"));

@@ -63,7 +63,9 @@ public record Http2Settings(
      * @param identifier settings parameter identifier (0x01–0x06)
      * @param value      parameter value as an unsigned 32-bit quantity (0 to 2^32-1)
      * @return updated settings (original is unchanged)
-     * @throws Http2SettingsException if the value is out of range for the given identifier
+     * @throws Http2SettingsException if the value falls outside the numeric range allowed for
+     *         the given identifier, or — for {@code SETTINGS_ENABLE_PUSH} — is neither 0 nor 1
+     *         ({@code EX-HTTP-4003})
      */
     @SuppressWarnings("PMD.CyclomaticComplexity")
     public Http2Settings withSetting(int identifier, long value) {
@@ -108,7 +110,8 @@ public record Http2Settings(
      * @param identifier settings parameter identifier (0x01–0x06)
      * @param value      parameter value as a signed 32-bit integer (treated as unsigned on wire)
      * @return updated settings (original is unchanged)
-     * @throws Http2SettingsException if the unsigned-widened value is out of range
+     * @throws Http2SettingsException if the unsigned-widened value is invalid for the given
+     *         identifier, per {@link #withSetting(int, long)} ({@code EX-HTTP-4003})
      */
     public Http2Settings withSetting(int identifier, int value) {
         return withSetting(identifier, Integer.toUnsignedLong(value));

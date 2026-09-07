@@ -43,6 +43,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 public abstract class AbstractWebSocketProviderTck {
 
     /**
+     * Creates the contract; subclasses supply the provider under test via {@link #createProvider()}.
+     */
+    public AbstractWebSocketProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Supplies the provider under test.
      *
      * @return a provider instance; a fresh one per case

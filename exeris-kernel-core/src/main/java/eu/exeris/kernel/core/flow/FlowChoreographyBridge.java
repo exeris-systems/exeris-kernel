@@ -34,11 +34,29 @@ final class FlowChoreographyBridge implements EventHandler {
     private final FlowChoreographyMapper mapper;
     private final FlowScheduler scheduler;
 
+    /**
+     * Wires this bridge to the mapper that decides what an incoming event means for a saga and the
+     * scheduler that carries out that decision.
+     *
+     * @param mapper    translates an event descriptor into a {@link ChoreographyDecision}; must not
+     *                  be {@code null}
+     * @param scheduler receives the resulting {@code wake} or {@code schedule} call; must not be
+     *                  {@code null}
+     * @throws NullPointerException if {@code mapper} or {@code scheduler} is {@code null}
+     */
     /* default */ FlowChoreographyBridge(FlowChoreographyMapper mapper, FlowScheduler scheduler) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.scheduler = Objects.requireNonNull(scheduler, "scheduler");
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Holds no mutable state of its own, so the interface's requirement that concurrent
+     *           invocations be safe is satisfied without extra synchronization here — {@code mapper}
+     *           and {@code scheduler} carry whatever thread-safety their own contracts already
+     *           require.
+     */
     @Override
     public void handle(EventDescriptor descriptor, EventPayload payload) {
         try (payload) {

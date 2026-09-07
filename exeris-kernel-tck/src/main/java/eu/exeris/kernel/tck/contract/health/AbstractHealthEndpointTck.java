@@ -39,14 +39,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHealthEndpointTckTest extends AbstractHealthEndpointTck {
  *     @Override
  *     protected HttpHandler newHandler(HealthProbe probe) {
  *         return new HealthEndpointHandler(probe);
  *     }
  * }
- * }</pre>
+ * }
  *
  * <p>The abstract drives state transitions through a stub {@link HealthProbe}; bindings
  * supply only the handler factory.
@@ -63,6 +63,14 @@ public abstract class AbstractHealthEndpointTck {
 
     /** Header name carrying the textual status (mirrored from the probe snapshot). */
     protected static final String STATUS_HEADER = "X-Exeris-Health";
+
+    /**
+     * Creates the contract; subclasses supply the handler binding via {@link #newHandler(HealthProbe)}.
+     */
+    public AbstractHealthEndpointTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Produces a fresh handler bound to the given probe. Bindings construct their

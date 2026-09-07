@@ -58,9 +58,7 @@ import java.util.concurrent.atomic.AtomicLong;
  *       (ADR-066).</li>
  *   <li>{@link #publish} — a handler observes <b>no</b> bindings. A plain
  *       {@code Thread.ofVirtual().start(...)} does not inherit {@code ScopedValue} bindings; only
- *       a fork inside a structured scope does. This has always been the behaviour of this path;
- *       the previous claim here that both paths inherit was measured false and corrected in
- *       v0.11.</li>
+ *       a fork inside a structured scope does.</li>
  * </ul>
  * <p>Zero {@code ThreadLocal} either way.
  *

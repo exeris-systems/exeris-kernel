@@ -36,9 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>This TCK enforces that the pressure signal exposed via {@link MemoryStats} is:
  * <ol>
- *   <li><b>Monotonically growing</b> as buffers are allocated and held.</li>
- *   <li><b>Monotonically shrinking</b> as buffers are closed.</li>
- *   <li><b>Exactly zero</b> after all buffers are released.</li>
+ *   <li><b>Monotonically non-decreasing</b> as buffers are allocated and held — checked
+ *       after each individual allocation, not only at the end of the run.</li>
+ *   <li><b>Exactly zero</b> once every held buffer has been released — the release path
+ *       is exercised as one batch; no intermediate, buffer-by-buffer shrinkage is
+ *       asserted.</li>
  *   <li><b>Bounded by {@code totalBytes}</b> — utilization never exceeds 1.0.</li>
  *   <li><b>Consistent</b> — {@code allocatedBytes + freeBytes == totalBytes}
  *       when the allocator has a fixed budget ({@code totalBytes > 0}).</li>
@@ -50,18 +52,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <em>signal</em> that those classes consume, not the consumers themselves.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityPressureSignalTest extends AbstractMemoryPressureSignalTck {
- *     \@Override
+ *     @Override
  *     protected MemoryProvider createProvider() {
  *         return new CommunityMemoryProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see MemoryStats
  * @see MemoryAllocator#stats()
- * @since 0.5
  */
 public abstract class AbstractMemoryPressureSignalTck {
 
@@ -82,6 +84,8 @@ public abstract class AbstractMemoryPressureSignalTck {
      * their TRANSPORT_TCP partition capacity.
      *
      * <p>Default: {@code 64}.
+     *
+     * @return number of buffers to allocate in the monotonic growth test
      */
     protected int monotonicGrowthBufferCount() {
         return 64;
@@ -94,6 +98,8 @@ public abstract class AbstractMemoryPressureSignalTck {
      * <p>When {@code true}, the consistency invariant
      * {@code allocatedBytes + freeBytes == totalBytes} is verified.
      * Default: {@code false} (Community heap allocator has no fixed budget).
+     *
+     * @return {@code true} if the allocator under test exposes a fixed off-heap budget
      */
     protected boolean hasFixedBudget() {
         return false;
@@ -104,6 +110,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     // =========================================================================
 
     private MemoryAllocator allocator;
+
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryProvider} under test via {@link #createProvider()}.
+     */
+    public AbstractMemoryPressureSignalTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpAllocator() {
@@ -125,6 +139,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @Nested
     @DisplayName("L1: Baseline stats contract")
     class BaselineStats {
+
+        /**
+         * Groups the assertions for the baseline stats contract.
+         */
+        BaselineStats() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("stats() returns non-null snapshot")
@@ -168,6 +190,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @Nested
     @DisplayName("L2: Pressure signal monotonicity")
     class PressureSignalMonotonicity {
+
+        /**
+         * Groups the assertions for pressure-signal monotonicity.
+         */
+        PressureSignalMonotonicity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("allocatedBytes() grows as buffers are held open")
@@ -241,6 +271,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @DisplayName("L3: Budget consistency (fixed-budget tier)")
     class BudgetConsistency {
 
+        /**
+         * Groups the assertions for budget consistency on the fixed-budget tier.
+         */
+        BudgetConsistency() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("allocatedBytes + freeBytes == totalBytes when budget is fixed")
         void budgetConsistencyInvariant() {
@@ -311,6 +349,14 @@ public abstract class AbstractMemoryPressureSignalTck {
     @Nested
     @DisplayName("L4: Stats snapshot immutability")
     class StatsSnapshotImmutability {
+
+        /**
+         * Groups the assertions for stats-snapshot immutability.
+         */
+        StatsSnapshotImmutability() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("Two calls to stats() return independent snapshots")

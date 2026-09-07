@@ -57,14 +57,14 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityEventLoopTckTest extends AbstractEventLoopTck {
- *     \@Override
+ *     @Override
  *     protected EventEngine createEngine() {
  *         return new CommunityEventProvider().createEngine(EventEngineConfig.communityDefaults());
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -87,6 +87,15 @@ public abstract class AbstractEventLoopTck {
     private static final int ORD_LOOP_C = 402;
 
     private EventEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the {@link EventEngine} under test via
+     * {@link #createEngine()}.
+     */
+    public AbstractEventLoopTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Creates a fully configured, not-yet-started {@link EventEngine} under test.

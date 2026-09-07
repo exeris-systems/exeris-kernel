@@ -41,19 +41,45 @@ import jdk.jfr.Timespan;
 @StackTrace(false)
 public final class ConnectionEstablishedEvent extends Event {
 
+        /**
+         * SPI stream identifier ({@link eu.exeris.kernel.spi.transport.TransportStream#streamId()})
+         * of the connection that was established.
+         */
     @Label("Stream ID")
     public long streamId;
 
+    /** {@code true} if this connection negotiated TLS; {@code false} for a plaintext connection. */
     @Label("TLS Enabled")
     public boolean tlsEnabled;
 
+    /**
+     * Nanoseconds from key registration to the connection becoming established: near zero for
+     * a plaintext connection (established the moment the reactor arms the key), the TLS
+     * handshake duration for a TLS connection.
+     */
     @Label("Establish Latency")
     @Timespan(Timespan.NANOSECONDS)
     public long establishLatencyNanos;
 
+    /**
+     * Nanoseconds the established callback (connection-handler notification plus PAQS schedule)
+     * spent running synchronously on the reactor thread. A large value is the signal that the
+     * {@code ConnectionHandler} is blocking in violation of its non-blocking contract.
+     */
     @Label("Handler Duration")
     @Timespan(Timespan.NANOSECONDS)
     public long handlerDurationNanos;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ConnectionEstablishedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Emits a connection-established event.

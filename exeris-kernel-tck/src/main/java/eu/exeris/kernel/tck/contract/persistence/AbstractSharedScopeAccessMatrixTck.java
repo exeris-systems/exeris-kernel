@@ -40,8 +40,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 public abstract class AbstractSharedScopeAccessMatrixTck {
 
+    /** The first tenant participating in the shared partition under test. */
     protected static final String OWNER_A = "tenant-a";
+
+    /** The second tenant participating in the same shared partition under test. */
     protected static final String OWNER_B = "tenant-b";
+
+    /** The shared-scope tag both {@link #CTX_A_SHARED} and {@link #CTX_B_SHARED} publish. */
     protected static final String SHARED_SCOPE = "world-alpha";
 
     /** {@code OWNER_A} participating in the shared partition. */
@@ -54,6 +59,14 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
 
     /** {@code OWNER_A} declaring no shared scope — the tenant-private default. */
     protected static final StorageContext CTX_A_PRIVATE = ImmutableStorageContext.shared(OWNER_A);
+
+    /**
+     * Creates the contract; subclasses supply the store via {@link #seed} and {@link #readVisible}.
+     */
+    public AbstractSharedScopeAccessMatrixTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     // =========================================================================
     // Template methods — binding supplies the store
@@ -72,7 +85,12 @@ public abstract class AbstractSharedScopeAccessMatrixTck {
      */
     protected abstract void seed(StorageContext ctx, String owner, String sharedScope, String value);
 
-    /** Values of every row visible to {@code ctx}, in any order. */
+    /**
+     * Values of every row visible to {@code ctx}, in any order.
+     *
+     * @param ctx the acting storage context whose visibility is under test
+     * @return the payload values seeded by {@link #seed} that {@code ctx} can currently read
+     */
     protected abstract List<String> readVisible(StorageContext ctx);
 
     /** Seeds the fixture rows. Bindings call this once the store exists. */

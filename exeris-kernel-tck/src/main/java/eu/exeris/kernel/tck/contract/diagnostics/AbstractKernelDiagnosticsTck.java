@@ -68,6 +68,19 @@ public abstract class AbstractKernelDiagnosticsTck {
     private static final List<Subsystem> SUBSYSTEMS = List.of(MEMORY, TRANSPORT);
 
     /**
+     * Creates the contract; subclasses supply the {@link KernelDiagnostics} implementation under
+     * test via {@link #diagnostics()}.
+     */
+    public AbstractKernelDiagnosticsTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Supplies the {@link KernelDiagnostics} implementation under test; called directly by each
+     * test method rather than cached, since several tests call it both inside and outside a bound
+     * {@link java.lang.ScopedValue} scope to compare the two.
+     *
      * @return the {@link KernelDiagnostics} under test (stateless; reads ScopedValue slots per call)
      */
     protected abstract KernelDiagnostics diagnostics();
@@ -80,6 +93,14 @@ public abstract class AbstractKernelDiagnosticsTck {
     @Nested
     @DisplayName("Schema invariants (every snapshot)")
     class SchemaInvariants {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        SchemaInvariants() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("schemaVersion == 1.0 and capturedAt non-null on all four methods")
@@ -102,6 +123,14 @@ public abstract class AbstractKernelDiagnosticsTck {
     @Nested
     @DisplayName("Bound subsystem inventory drives the snapshots")
     class BoundScope {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        BoundScope() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("getBootstrapDag exposes nodes with phase, dependencies and running flag")
@@ -142,6 +171,14 @@ public abstract class AbstractKernelDiagnosticsTck {
     @DisplayName("Provider discovery")
     class Providers {
 
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        Providers() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("listProviders returns well-formed descriptors via discovery")
         void wellFormed() {
@@ -160,6 +197,14 @@ public abstract class AbstractKernelDiagnosticsTck {
     @DisplayName("Degraded behaviour outside a kernel scope")
     class Unbound {
 
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        Unbound() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("subsystem-derived snapshots are empty when the inventory slot is unbound")
         void emptyWhenUnbound() {
@@ -176,6 +221,14 @@ public abstract class AbstractKernelDiagnosticsTck {
     @DisplayName("Snapshot lists are immutable")
     class Immutability {
 
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        Immutability() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("returned collections reject mutation")
         void immutableLists() {
@@ -190,6 +243,14 @@ public abstract class AbstractKernelDiagnosticsTck {
     @Nested
     @DisplayName("JVM runtime ergonomics snapshot")
     class JvmErgonomics {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        JvmErgonomics() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("getJvmErgonomics returns a well-formed snapshot; absent data is Optional.empty(), never null")
@@ -244,6 +305,14 @@ public abstract class AbstractKernelDiagnosticsTck {
     @Nested
     @DisplayName("Pinned JSON wire-schema fixture (append-only contract)")
     class SchemaFixture {
+
+        /**
+         * Creates the nested test group; JUnit instantiates one instance per test method.
+         */
+        SchemaFixture() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("live record components match the pinned schema fixture, schemaVersion first")

@@ -52,10 +52,27 @@ public final class PersistenceTenantPoolReclaimedEvent extends Event {
     public int remainingPoolCount;
 
     /**
-     * Emit a tenant pool reclamation event.
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public PersistenceTenantPoolReclaimedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Commits a tenant-pool-reclaimed event, or does nothing if the event type is disabled.
      *
      * <p>Guards on {@link EventType#isEnabled()} to avoid
      * allocation when JFR is off.
+     *
+     * @param providerId         stable provider identifier, e.g. {@code "postgres-community"}
+     * @param tenantKey          tenant key of the pool that was reclaimed
+     * @param reason             reclamation reason, e.g. {@code "idle_timeout"} or {@code "manual"}
+     * @param idleDurationMs     how long the pool sat idle before reclamation, in milliseconds
+     * @param remainingPoolCount total per-tenant pools remaining after this reclamation pass
      */
     public static void emit(String providerId, String tenantKey, String reason,
                            long idleDurationMs, int remainingPoolCount) {

@@ -62,6 +62,21 @@ final class FlowSchemaMismatchEvent extends Event {
     @Description("Step count of the active (resolved) definition the resume was attempted against")
     /* default */ int planStepCount;
 
+    /**
+     * Emits the {@code SchemaMismatch} event recording a fail-closed resume refusal, or does
+     * nothing if the event type is disabled.
+     *
+     * @param engineName        the emitting engine's name
+     * @param definitionName    flow definition name of the saga whose resume was rejected
+     * @param instanceIdMost    most-significant 64 bits of the flow instance UUID
+     * @param instanceIdLeast   least-significant 64 bits of the flow instance UUID
+     * @param persistedStep     persisted resume step index the active definition no longer has
+     * @param planStepCount     step count of the active definition the resume was attempted
+     *                          against
+     * @param reason            the refusal reason
+     * @param persistedStepName name of the step at the persisted index, if known
+     * @param planStepName      name of the step the active plan resolves at that index, if known
+     */
     /* default */ static void emit(
             String engineName,
             String definitionName,

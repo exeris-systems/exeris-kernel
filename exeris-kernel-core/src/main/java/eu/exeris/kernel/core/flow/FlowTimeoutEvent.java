@@ -11,10 +11,19 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * JFR event emitted when a flow instance is found past its absolute timeout deadline.
+ *
+ * <p>Emitted by {@link CoreFlowRuntime}'s per-step timeout check, immediately before the engine
+ * drives the instance through compensation to {@code FAILED_ROLLEDBACK}.
+ *
+ * <p>Secret-safe: carries only the engine/definition names, the instance UUID and step/overrun
+ * counters — no payload, no opaque saga state.
+ */
 @Name("eu.exeris.kernel.flow.Timeout")
 @Label("Flow Saga Timeout")
 @Category({"Exeris Kernel", "Flow"})
-@Description("Emitted when a flow instance is detected past its absolute timeout deadline;" + 
+@Description("Emitted when a flow instance is detected past its absolute timeout deadline;" +
     " the engine drives compensation.")
 @StackTrace(false)
 final class FlowTimeoutEvent extends Event {

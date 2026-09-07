@@ -30,14 +30,14 @@ import java.util.List;
  * </ul>
  *
  * <h2>How to implement</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CoreBootstrapZeroAllocTckTest extends BootstrapZeroAllocTck {
- *     \@Override
+ *     @Override
  *     protected List<Subsystem> runSort(List<Subsystem> input) {
  *         return BootstrapOrchestrator.sort(input);
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  * @see AbstractSubsystemZeroAllocTck
@@ -73,6 +73,14 @@ public abstract class BootstrapZeroAllocTck extends AbstractSubsystemZeroAllocTc
 
     /** Pre-built linear chain of {@value #GRAPH_SIZE} subsystems. */
     private List<Subsystem> fixture;
+
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #runSort(List)}.
+     */
+    public BootstrapZeroAllocTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     // =========================================================================
     // AbstractSubsystemZeroAllocTck overrides

@@ -20,24 +20,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * TCK: Ring-buffer sink overflow and flush latency contract.
+ * Verifies that a {@link TelemetrySink} does not throw under concurrent high-throughput emission,
+ * and that {@code close()} returns within a fixed bound after a burst.
  *
- * <h2>What is verified (telemetry.md)</h2>
+ * <h2>Target contract (telemetry.md)</h2>
  * <blockquote>
  * "BinaryGlassBoxSink (Enterprise): ring-buffer does not overflow under 100k events/s;
  * flush latency &lt; 1 ms P99."
  * </blockquote>
  *
- * <p>This TCK verifies the high-throughput emission contract for sinks backed by
- * an off-heap ring buffer (Enterprise). Community sinks use the JFR path — they
- * should still not throw under the 100k events/s load.
+ * <p>This class exercises that load shape against any {@link TelemetrySink} — Enterprise's
+ * off-heap ring buffer, and Community's JFR path, which is expected to tolerate the same call
+ * volume without throwing.
  *
- * <h2>Tests</h2>
+ * <h2>What each test actually establishes</h2>
  * <ol>
- *   <li><b>No overflow at 100k events/s</b> — emits 100k pre-built events in a tight loop
- *       inside a {@code StructuredTaskScope} (virtual threads). No exception, no lost events.</li>
- *   <li><b>Flush latency &lt; 1ms P99</b> — after emitting a burst, close() must return
- *       within 100ms (includes final flush).</li>
+ *   <li><b>No exception under concurrent load</b> — {@link #emissionCount()} pre-built events are
+ *       emitted from {@link #concurrentEmitters()} virtual threads fanned out through
+ *       {@link eu.exeris.kernel.tck.support.TckScope}. The test asserts that {@code emit()} never
+ *       throws and that every call the test made returned normally; it does not read the sink's own
+ *       state afterward, so it does not establish that the ring buffer retained every event rather
+ *       than dropping some under saturation — the target's own drop policy is not verified here.</li>
+ *   <li><b>close() returns within a fixed bound after a burst</b> — a single {@code close()} call,
+ *       taken after emitting a burst of up to 10 000 events, must return within 100&nbsp;ms. This is
+ *       one sample against a bound chosen for CI stability, not a P99 measurement, so it does not
+ *       verify the &lt;1&nbsp;ms P99 figure quoted above.</li>
  * </ol>
  *
  * @since 0.5
@@ -53,6 +60,9 @@ public abstract class AbstractTelemetryRingBufferTck {
      * Creates the {@link TelemetrySink} under test.
      * Community: JFR sink.
      * Enterprise: off-heap ring-buffer binary sink.
+     *
+     * @return a newly created, open sink; created before each test and closed by the fixture's
+     *         teardown
      */
     protected abstract TelemetrySink createSink();
 
@@ -60,6 +70,8 @@ public abstract class AbstractTelemetryRingBufferTck {
      * Number of events for the throughput test.
      * Default: 100_000.
      * Enterprise implementations may use a larger value (1_000_000).
+     *
+     * @return the total number of events the throughput test emits across all emitters
      */
     protected int emissionCount() {
         return 100_000;
@@ -68,6 +80,8 @@ public abstract class AbstractTelemetryRingBufferTck {
     /**
      * Number of concurrent VTs emitting events in the stress test.
      * Default: 16 (simulate typical thread pool width).
+     *
+     * @return the number of virtual threads that share {@link #emissionCount()} between them
      */
     protected int concurrentEmitters() {
         return 16;
@@ -79,6 +93,14 @@ public abstract class AbstractTelemetryRingBufferTck {
 
     private TelemetrySink sink;
     private KernelEvent hotEvent;
+
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createSink()}.
+     */
+    public AbstractTelemetryRingBufferTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {

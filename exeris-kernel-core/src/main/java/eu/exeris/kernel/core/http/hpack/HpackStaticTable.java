@@ -8,9 +8,11 @@ package eu.exeris.kernel.core.http.hpack;
  * RFC 7541 Appendix A — HPACK Static Table (61 entries, 1-indexed).
  *
  * <h2>Contract</h2>
- * <p>All data is stored as interned {@code String} constants on the Java heap.
- * This is bootstrap-time infrastructure — the table is small (61 entries),
- * read-only, and shared across all encoding/decoding contexts per RFC 7541 §2.3.1.
+ * <p>All data is stored as interned {@code String} constants on the Java heap, populated
+ * once at class-load time. The table is small (61 entries), read-only after that, and shared
+ * across all encoding/decoding contexts per RFC 7541 §2.3.1 — {@link #getName}, {@link #getValue}
+ * and {@link #find} are called on the header encode/decode hot path and each is a direct array
+ * access with no allocation or synchronization.
  *
  * <h2>Index Address Space</h2>
  * <p>Indices 1–61 map to static table entries. Index 0 is invalid per RFC 7541 §6.1.

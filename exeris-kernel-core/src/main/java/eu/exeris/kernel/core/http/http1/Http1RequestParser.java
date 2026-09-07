@@ -67,6 +67,13 @@ public final class Http1RequestParser {
      */
     @FunctionalInterface
     public interface HeaderVisitor {
+
+        /**
+         * Receives one header field parsed from the request, in wire order.
+         *
+         * @param name  field name exactly as the wire carried it, case preserved
+         * @param value field value with leading and trailing optional whitespace trimmed
+         */
         void onHeader(String name, String value);
     }
 
@@ -116,8 +123,9 @@ public final class Http1RequestParser {
      * @param length  available bytes
      * @param visitor callback for each parsed header
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
-     * @throws Http1ParseException if the header count or a single header size limit
-     *                              is exceeded
+     * @throws Http1ParseException {@code EX-HTTP-4004} if a header field is malformed, a field
+     *                              name is not a valid RFC 9110 token, or the header count or a
+     *                              single field's size exceeds the default limit
      */
     public static long parseHeaders(MemorySegment seg, long offset, long length,
                                     HeaderVisitor visitor) {
@@ -135,7 +143,10 @@ public final class Http1RequestParser {
      * @param maxHeaderSize maximum byte size of a single header field (name + value)
      * @param visitor       callback for each parsed header
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
-     * @throws Http1ParseException if {@code maxHeaders} or {@code maxHeaderSize} is exceeded
+     * @throws Http1ParseException {@code EX-HTTP-4004} if a header field is malformed, a field
+     *                              name is not a valid RFC 9110 token, the header count exceeds
+     *                              {@code maxHeaders}, or a field's size exceeds
+     *                              {@code maxHeaderSize}
      */
     public static long parseHeaders(MemorySegment seg, long offset, long length,
                                     int maxHeaders, int maxHeaderSize,
@@ -190,10 +201,27 @@ public final class Http1RequestParser {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4004;
 
+        /**
+         * Constructs the exception with {@code EX-HTTP-4004} and no chained cause.
+         *
+         * @param messageTemplate static message template describing the violation
+         * @param rawArgs         domain-specific detail (e.g. the offending size and the
+         *                        configured limit) carried as-is for telemetry, never used to
+         *                        build {@code messageTemplate}
+         */
         public Http1ParseException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
         }
 
+        /**
+         * Constructs the exception with {@code EX-HTTP-4004}, chaining {@code cause}.
+         *
+         * @param messageTemplate static message template describing the violation
+         * @param cause           the exception that caused the parse failure (e.g. a
+         *                        {@code Content-Length} value that is not a valid number)
+         * @param rawArgs         domain-specific detail carried as-is for telemetry, never used
+         *                        to build {@code messageTemplate}
+         */
         public Http1ParseException(String messageTemplate, Throwable cause, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, cause, rawArgs);
         }
@@ -251,8 +279,8 @@ public final class Http1RequestParser {
 
     /**
      * A known spelling resolves to a shared constant with no allocation, and is a valid token by
-     * construction — so both the materialisation and the validation are skipped. A miss is exactly
-     * the path every field took before (RFC-2026-09-01).
+     * construction — so both the materialisation and the validation are skipped. A miss falls back
+     * to materialising the raw bytes and validating them as a field-name token.
      */
     private static String resolveFieldName(MemorySegment seg, long start, long end) {
         String known = CanonicalHeaderNames.resolve(seg, start, end);

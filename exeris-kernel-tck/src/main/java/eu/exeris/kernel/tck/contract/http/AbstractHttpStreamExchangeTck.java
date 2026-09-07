@@ -60,7 +60,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <h2>How to bind</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
  *     @Override
  *     protected StreamScenario openStream(HttpStreamHandler handler) {
@@ -68,7 +68,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *     }
  *     // override the capability hooks the Community tier actually wires (backpressure, auth, shed)
  * }
- * }</pre>
+ * }
  *
  * @since 0.10
  */
@@ -101,6 +101,15 @@ public abstract class AbstractHttpStreamExchangeTck {
      * well within {@link #SLOW_PROBE_TIMEOUT_SECONDS} on a loaded box.
      */
     protected static final int BACKPRESSURE_FLOOD = 8_000;
+
+    /**
+     * Creates the contract; subclasses supply the stream under test via
+     * {@link #openStream(HttpStreamHandler)}.
+     */
+    public AbstractHttpStreamExchangeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     // -------------------------------------------------------------------------
     // Mandatory binding hook — the real loopback round-trip

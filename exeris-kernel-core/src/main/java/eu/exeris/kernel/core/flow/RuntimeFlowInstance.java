@@ -19,6 +19,28 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Core: the in-memory state of one running or parked saga — identity, definition binding,
+ * lifecycle {@link FlowState}, the compensation stack, and the optimistic-lock
+ * {@link #schemaVersion() schema version} that round-trips with the durable snapshot store.
+ *
+ * <p>Built once per saga by {@link #fromContext} (a fresh instance) or {@link #fromSnapshot}
+ * (recovered from a persisted {@link FlowSnapshot}), then mutated in place by
+ * {@link CoreFlowRuntime} for the life of the saga. A saga is not confined to one thread — each
+ * schedule or wake launches it on a freshly created virtual thread — but
+ * {@link #beginScheduleForSchedule()} and {@link #beginScheduleAfterWake()} admit at most one
+ * runner at a time, synchronized on {@link #monitor()}, so exactly one thread ever mutates the
+ * instance at once.
+ *
+ * <p>Also implements {@link RuntimeFlowContextStateView}, the seam {@link RuntimeFlowContext}
+ * reads through to serve the {@link FlowContext} handed to step and compensation actions.
+ *
+ * @implNote {@link #captureEventEngine()} and the {@code timeSource} field both exist because a
+ *           saga runs on a bare virtual thread, which inherits no {@code ScopedValue} binding:
+ *           anything this class needs from {@link KernelProviders} must be captured while a
+ *           binding is available — at schedule or wake time — and held as a field rather than
+ *           read again later on the run.
+ */
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPMD
 
@@ -74,7 +96,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      * stays under the SonarQube S107 arity limit (≤ 7).
      *
      * <p>The {@code int[] compensationStack} component is shared by reference with the
-     * surrounding instance — this preserves the historical ownership semantics (the array
+     * surrounding instance — this is the ownership the rest of the class relies on (the array
      * is mutated in place by {@code pushCompensation()} / {@code compensationStepAt()})
      * and keeps the bootstrap allocation-free. Because the record holds a mutable array
      * it is <em>not</em> a Valhalla value-type candidate; the carrier is intentionally
@@ -86,6 +108,18 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      * acceptable here because {@code Seed} is a private one-shot carrier — never compared,
      * hashed, or logged. Suppressing rather than overriding keeps the carrier lean and
      * avoids accidental array copies on a path that runs once per flow instance.
+     *
+     * @param key                 the saga's identity
+     * @param definitionName      the compiled definition's name
+     * @param definitionVersion   the compiled definition's version
+     * @param lifecycleGeneration the runtime generation this instance is created under
+     * @param plan                the execution plan this instance is bound to
+     * @param state               the lifecycle state to start from
+     * @param currentStep         the step index to start from
+     * @param timeoutNanos        the absolute timeout deadline, in the {@code System.nanoTime()} epoch
+     * @param compensationStack   the compensation stack, shared by reference with the surrounding instance
+     * @param stackPointer        the number of live entries at the bottom of {@code compensationStack}
+     * @param schemaVersion       the optimistic-lock version to seed {@link #schemaVersion()} with
      */
     @SuppressWarnings("java:S6218")
     private record Seed(FlowKey key,
@@ -405,6 +439,8 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     /**
      * Returns the optimistic-lock version expected by the durable snapshot store
      * for the next save (ADR-013 §5).
+     *
+     * @return the schema version this instance expects the durable row to currently hold
      */
     public long schemaVersion() {
         return schemaVersion.get();

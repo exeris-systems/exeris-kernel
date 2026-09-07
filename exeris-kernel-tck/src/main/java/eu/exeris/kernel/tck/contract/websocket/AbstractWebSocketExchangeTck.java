@@ -48,7 +48,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <h2>The handshake is pinned in both directions</h2>
  * <p>A test that only proves acceptance passes against an engine that accepts everything, which is
  * the failure ADR-084 §6 exists to prevent. Refusal is asserted first-class: an unlisted origin must
- * be refused <em>with no handshake callback written at all</em>.
+ * be refused <em>with no handshake callback written at all</em>. RFC 6455 §10.2 leaves origin
+ * checking to the server; the allowlist is this contract's implementation of that discretion, and it
+ * is exercised as a hard pre-filter a handshake callback cannot widen.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public abstract class AbstractWebSocketExchangeTck {
@@ -61,6 +63,15 @@ public abstract class AbstractWebSocketExchangeTck {
 
     /** An origin no test ever configures, used to assert the refusal path. */
     protected static final String UNLISTED_ORIGIN = "https://evil.example";
+
+    /**
+     * Creates the contract; subclasses supply the scenario under test via
+     * {@link #connect(WebSocketConfig, WebSocketHandler, WebSocketHandshakeHandler, String)}.
+     */
+    public AbstractWebSocketExchangeTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     // -------------------------------------------------------------------------
     // Mandatory binding hook
@@ -110,28 +121,68 @@ public abstract class AbstractWebSocketExchangeTck {
     /** The live connection a test drives, from the client's side. */
     public interface WebSocketScenario extends AutoCloseable {
 
-        /** @return the status the client saw, empty when the handshake succeeded */
+        /**
+         * Reports how the client saw the handshake resolve.
+         *
+         * @return the status the client saw, empty when the handshake succeeded
+         */
         Optional<HttpStatus> handshakeStatus();
 
-        /** @return the subprotocol the server selected, empty when none was negotiated */
+        /**
+         * Reports the subprotocol the server selected during the handshake.
+         *
+         * @return the subprotocol the server selected, empty when none was negotiated
+         */
         Optional<String> negotiatedSubprotocol();
 
-        /** Sends one text message from the client. */
+        /**
+         * Sends one text message from the client.
+         *
+         * @param message the message content
+         */
         void sendFromClient(String message);
 
-        /** Sends one logical message split across {@code fragments} continuation frames. */
+        /**
+         * Sends one logical message split across {@code fragments} continuation frames
+         * (RFC 6455 §5.4), so the binding's frame assembler must reassemble it before the
+         * handler sees it.
+         *
+         * @param message   the logical message content, sent as one message on the wire
+         * @param fragments the number of continuation frames to split it across
+         */
         void sendFragmentedFromClient(String message, int fragments);
 
-        /** Sends a binary frame, which the contract refuses. */
+        /**
+         * Sends a binary frame (RFC 6455 §5.6 opcode {@code 0x2}), which the contract refuses:
+         * the SPI is text-only.
+         *
+         * @param payload the binary frame payload
+         */
         void sendBinaryFromClient(byte[] payload);
 
-        /** @return the next message the client received, or {@code null} on timeout/close */
+        /**
+         * Waits for the next message the client receives.
+         *
+         * @param timeout how long to wait
+         * @param unit    the unit {@code timeout} is expressed in
+         * @return the next message the client received, or {@code null} on timeout/close
+         */
         String receiveOnClient(long timeout, TimeUnit unit);
 
-        /** Closes from the client with the given code. */
+        /**
+         * Closes from the client with the given RFC 6455 §7.4 close code.
+         *
+         * @param code the close code to send
+         */
         void closeClient(WebSocketCloseCode code);
 
-        /** @return the close code the client observed, or empty while the connection is open */
+        /**
+         * Waits for the close code the server sent back.
+         *
+         * @param timeout how long to wait
+         * @param unit    the unit {@code timeout} is expressed in
+         * @return the close code the client observed, or empty while the connection is open
+         */
         Optional<Integer> observedCloseCode(long timeout, TimeUnit unit);
 
         @Override
@@ -234,6 +285,11 @@ public abstract class AbstractWebSocketExchangeTck {
             Captured captured = new Captured();
             try (WebSocketScenario scenario = connect(config(), echo(captured), null, ALLOWED_ORIGIN)) {
                 scenario.sendBinaryFromClient(new byte[]{1, 2, 3});
+                // Establishes that the connection closes and the handler never sees the frame — it
+                // does NOT establish which close code was used. WebSocketCloseCode.PROTOCOL_ERROR
+                // (RFC 6455 §7.4.1, code 1002) is what the SPI documents for a binary frame on this
+                // text-only contract, but any other code, or a connection that drops without one,
+                // satisfies this assertion just as well.
                 assertThat(scenario.observedCloseCode(WIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
                         .isPresent();
                 assertThat(captured.received).isEmpty();
@@ -254,7 +310,10 @@ public abstract class AbstractWebSocketExchangeTck {
                 assertThat(scenario.receiveOnClient(WIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
                         .isEqualTo("one");
                 scenario.closeClient(WebSocketCloseCode.NORMAL_CLOSURE);
-                // The handler returning is what proves receive() ended rather than blocking forever.
+                // This establishes only that a normal close never surfaces to the handler as a send
+                // failure. It does not observe whether receive() actually returned null and the
+                // handler's loop exited: a handler left blocked in receive() forever after the close
+                // would leave sendFailure at its initial null value just the same.
                 assertThat(captured.sendFailure.get())
                         .as("a normal close must not surface as a send failure")
                         .isNull();

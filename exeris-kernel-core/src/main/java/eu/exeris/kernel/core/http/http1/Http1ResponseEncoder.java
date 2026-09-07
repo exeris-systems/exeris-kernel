@@ -32,13 +32,18 @@ public final class Http1ResponseEncoder {
     }
 
     /**
-     * Writes the status-line into the segment.
+     * Writes an HTTP/1.1 status-line — {@code HTTP/1.1 <statusCode> <reasonPhrase>\r\n} —
+     * into the segment at {@code offset}.
      *
      * @param seg        destination segment
      * @param offset     byte offset
      * @param statusCode HTTP status code (e.g. 200)
      * @param reasonPhrase reason phrase (e.g. "OK")
      * @return new byte position after the status-line CRLF
+     * @throws NullPointerException     if {@code reasonPhrase} is {@code null}
+     * @throws IllegalArgumentException if {@code statusCode} is not a 3-digit value in
+     *                                  {@code [100, 599]}, or {@code reasonPhrase} carries a
+     *                                  non-ASCII or ASCII control character
      */
     @SuppressWarnings("PMD.AssignmentInOperand")
     public static long writeStatusLine(MemorySegment seg, long offset,
@@ -54,13 +59,17 @@ public final class Http1ResponseEncoder {
     }
 
     /**
-     * Writes a single header field.
+     * Writes one HTTP/1.1 header field — {@code name: value\r\n} — into the segment at
+     * {@code offset}.
      *
      * @param seg    destination segment
      * @param offset byte offset
      * @param name   header name
      * @param value  header value
      * @return new byte position after the header CRLF
+     * @throws NullPointerException     if {@code name} or {@code value} is {@code null}
+     * @throws IllegalArgumentException if {@code name} or {@code value} carries a non-ASCII or
+     *                                  ASCII control character
      */
     public static long writeHeader(MemorySegment seg, long offset, String name, String value) {
         Objects.requireNonNull(name, "HTTP header name must not be null");

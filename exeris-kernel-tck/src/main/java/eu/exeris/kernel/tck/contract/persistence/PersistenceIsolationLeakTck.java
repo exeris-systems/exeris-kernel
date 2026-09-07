@@ -57,6 +57,9 @@ public abstract class PersistenceIsolationLeakTck {
 
     /**
      * Creates a fully bootstrapped {@link PersistenceEngine} with an in-memory test schema.
+     *
+     * @return an engine whose connections can each be opened under a distinct
+     *         {@link StorageContext}
      */
     protected abstract PersistenceEngine createEngine();
 
@@ -64,6 +67,8 @@ public abstract class PersistenceIsolationLeakTck {
      * Returns the isolation key string for "Tenant A".
      * Must be distinct from {@link #isolationKeyB()}.
      * Default: {@code "tenant-alpha"}.
+     *
+     * @return Tenant A's isolation key
      */
     protected String isolationKeyA() {
         return "tenant-alpha";
@@ -73,6 +78,8 @@ public abstract class PersistenceIsolationLeakTck {
      * Returns the isolation key string for "Tenant B".
      * Must be distinct from {@link #isolationKeyA()}.
      * Default: {@code "tenant-beta"}.
+     *
+     * @return Tenant B's isolation key
      */
     protected String isolationKeyB() {
         return "tenant-beta";
@@ -85,12 +92,20 @@ public abstract class PersistenceIsolationLeakTck {
      *
      * <p>Example for RLS: {@code "INSERT INTO sentinel(value) VALUES (?)"} where
      * the RLS policy filters by the session-local {@code exeris.tenant_id}.
+     *
+     * @param conn  the connection, already opened under the acting isolation key's
+     *              {@link StorageContext}
+     * @param value the sentinel value to persist, unique per call
      */
     protected abstract void writeSentinelRow(PersistenceConnection conn, String value);
 
     /**
      * Query sentinel rows visible under the current connection.
      * Returns all visible sentinel values.
+     *
+     * @param conn the connection, already opened under the acting isolation key's
+     *             {@link StorageContext}
+     * @return the sentinel values visible to {@code conn}, in any order
      */
     protected abstract List<String> readSentinelRows(PersistenceConnection conn);
 
@@ -99,6 +114,15 @@ public abstract class PersistenceIsolationLeakTck {
     // =========================================================================
 
     private PersistenceEngine engine;
+
+    /**
+     * Creates the contract; subclasses supply the engine via {@link #createEngine()} and the
+     * sentinel write/read bindings via {@link #writeSentinelRow} and {@link #readSentinelRows}.
+     */
+    public PersistenceIsolationLeakTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {

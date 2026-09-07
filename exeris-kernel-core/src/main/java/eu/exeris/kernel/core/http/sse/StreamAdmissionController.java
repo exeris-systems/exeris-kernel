@@ -43,6 +43,7 @@ public final class StreamAdmissionController {
      * @param shedDecision the PAQS shed decision consulted on every NEW stream-open (typically
      *                     {@code () -> arbiter.decide(Context.TRANSPORT_IO)}); must not be {@code null}
      * @param engineName   the transport engine name, recorded on the shed event; must not be {@code null}
+     * @throws NullPointerException if {@code shedDecision} or {@code engineName} is {@code null}
      */
     public StreamAdmissionController(Supplier<ResourceArbiter.Action> shedDecision, String engineName) {
         this.shedDecision = Objects.requireNonNull(shedDecision, "shedDecision must not be null");

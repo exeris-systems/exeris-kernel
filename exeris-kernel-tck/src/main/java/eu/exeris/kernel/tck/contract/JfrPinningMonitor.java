@@ -30,13 +30,15 @@ import java.util.Locale;
  * <p>Threshold default: {@value #DEFAULT_THRESHOLD_MS} ms — tighter than the
  * performance contract kill threshold (50 ms), acting as an early-warning fence.
  *
+ * @since 0.5
  * @see JfrAllocationMonitor
  * @see AbstractSubsystemZeroAllocTck
- * @since 0.5
  */
 public final class JfrPinningMonitor {
 
     private static final String VT_PINNED_EVENT = "jdk.VirtualThreadPinned";
+
+    /** Default carrier-pinning threshold, in milliseconds; see the class-level contract note. */
     public static final long DEFAULT_THRESHOLD_MS = 20L;
     private static final DateTimeFormatter TS_FMT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
@@ -49,16 +51,26 @@ public final class JfrPinningMonitor {
     // =========================================================================
 
     /**
+     * Capture configuration for one {@link #measure} run.
+     *
      * @param label       human-readable label used in the JFR file name
      * @param thresholdMs minimum duration (ms) for a pinning event to be captured
      */
     public record Config(String label, long thresholdMs) {
+        /**
+         * A config using {@link #DEFAULT_THRESHOLD_MS} as the capture threshold.
+         *
+         * @param label human-readable label used in the JFR file name
+         * @return a config capturing events at or above {@link #DEFAULT_THRESHOLD_MS} ms
+         */
         public static Config defaults(String label) {
             return new Config(label, DEFAULT_THRESHOLD_MS);
         }
     }
 
     /**
+     * One captured {@code jdk.VirtualThreadPinned} event that met the capture threshold.
+     *
      * @param durationMs how long the carrier was pinned
      * @param threadName virtual thread that caused the pin
      * @param stackTrace top-10 frames formatted as {@code "Class.method() | ..."}
@@ -67,15 +79,27 @@ public final class JfrPinningMonitor {
     }
 
     /**
+     * Outcome of one {@link #measure} run.
+     *
      * @param pinnedEvents events exceeding the threshold
      * @param jfrPath      path to the raw JFR file for post-mortem analysis
      * @param thresholdMs  threshold used during capture
      */
     public record Result(List<PinnedEvent> pinnedEvents, Path jfrPath, long thresholdMs) {
+        /**
+         * Whether any event met the capture threshold.
+         *
+         * @return {@code true} if {@link #pinnedEvents} is non-empty
+         */
         public boolean hasPinning() {
             return !pinnedEvents.isEmpty();
         }
 
+        /**
+         * The number of events that met the capture threshold.
+         *
+         * @return {@link #pinnedEvents}{@code .size()}
+         */
         public int pinnedCount() {
             return pinnedEvents.size();
         }
@@ -86,6 +110,11 @@ public final class JfrPinningMonitor {
      */
     @FunctionalInterface
     public interface Workload {
+        /**
+         * Runs the workload once, under the active JFR recording.
+         *
+         * @throws Exception whatever the workload throws; it is not caught by {@link #measure}
+         */
         void execute() throws Exception;
     }
 
@@ -96,6 +125,11 @@ public final class JfrPinningMonitor {
     /**
      * Runs {@code workload} under JFR, captures {@code jdk.VirtualThreadPinned} events,
      * and returns a {@link Result}.
+     *
+     * @param config   capture configuration
+     * @param workload the code to run under the recording
+     * @return the pinning events captured at or above {@code config}'s threshold
+     * @throws Exception whatever {@code workload} throws, propagated unchanged
      */
     public static Result measure(Config config, Workload workload) throws Exception {
         Path jfrFile = buildJfrPath(config.label());
@@ -113,6 +147,9 @@ public final class JfrPinningMonitor {
 
     /**
      * Asserts zero pinning events. Fails with a formatted diagnostic if any detected.
+     *
+     * @param result the outcome of a {@link #measure} run
+     * @param label  human-readable label for the diagnostic on failure
      */
     public static void assertNoPinning(Result result, String label) {
         if (!result.hasPinning()) return;

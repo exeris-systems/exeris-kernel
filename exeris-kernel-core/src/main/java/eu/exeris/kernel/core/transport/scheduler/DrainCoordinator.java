@@ -69,8 +69,9 @@ public final class DrainCoordinator {
      * roughly a billion of headroom in both directions. Nothing realistic approaches it: post-seal
      * decrements are bounded by the streams that were in flight, and transient increments by the
      * acquires racing the seal — both bounded by the connection ceiling, which is orders of magnitude
-     * below the margin. The old exact sentinel had the opposite property: it sat one decrement away
-     * from wrapping to {@link Integer#MAX_VALUE}.
+     * below the margin. {@code MIN_VALUE} itself would leave no headroom on that side: one further
+     * decrement wraps it to {@link Integer#MAX_VALUE}, which reads as a healthy stream count rather
+     * than a sealed one.
      */
     private static final int SEALED = Integer.MIN_VALUE / 2;
 
@@ -97,6 +98,17 @@ public final class DrainCoordinator {
 
     @SuppressWarnings("unused") // VarHandle-accessed
     private volatile int busyAtSeal;
+
+    /**
+     * Creates a coordinator with no busy streams and draining not begun.
+     *
+     * <p>Until {@code seal} runs, every stream is admitted; the count recorded at the seal is what a
+     * graceful shutdown then waits for.
+     */
+    public DrainCoordinator() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Registers a starting stream as busy.
@@ -164,11 +176,14 @@ public final class DrainCoordinator {
     }
 
     /**
-     * Whether the coordinator has sealed, by either route.
+     * Returns whether the coordinator has sealed, by either route.
      *
      * <p>A seal is terminal: {@link #sealIfIdle()} compares against zero and a sealed count is
      * negative, so nothing re-opens it. Callers use this to avoid waiting for a drain that has
      * already finished.
+     *
+     * @return {@code true} if {@link #sealIfIdle()} or {@link #sealNow()} has already sealed
+     *     this coordinator
      */
     public boolean isSealed() {
         return (int) BUSY_STREAMS.getVolatile(this) < 0;
@@ -234,8 +249,9 @@ public final class DrainCoordinator {
      * <p>Unconditional, and safe only because {@link #SEALED} marks a <em>range</em>. {@link #sealNow()}
      * discards whatever was in flight, so a handler that finishes after the deadline still calls this;
      * the decrement drives the marker further negative, which still reads as sealed. An exact sentinel
-     * at {@link Integer#MIN_VALUE} sat one decrement from wrapping to {@link Integer#MAX_VALUE} —
-     * no longer sealed, so acquisition resumed and a stream could report itself busy during teardown.
+     * at {@link Integer#MIN_VALUE} would instead sit one decrement from wrapping to
+     * {@link Integer#MAX_VALUE} — no longer sealed, so acquisition would resume and a stream could
+     * report itself busy during teardown.
      *
      * <p>Once sealed the count is not a count, and the handle's flag and the owner's count are
      * deliberately allowed to disagree from that point on.
@@ -248,11 +264,12 @@ public final class DrainCoordinator {
      * One stream's contribution to the busy count.
      *
      * <h2>Why this is not thread-confined</h2>
-     * <p>An earlier version declared the flag confined to the stream's own thread and left it a plain
-     * field. The mechanism contradicted the declaration: the handle reaches protocol code only through
+     * <p>The handle reaches protocol code only through
      * {@link eu.exeris.kernel.core.transport.TransportScopes#STREAM_WORK}, a {@code ScopedValue} —
-     * chosen precisely so it survives down the stack and across a task boundary. A parameter or a field
-     * would have expressed confinement; this expresses the opposite.
+     * chosen precisely so it survives down the stack and across a task boundary. A {@code ScopedValue}
+     * fork inherits its bindings rather than confining them to the thread that created them, so a plain
+     * field or constructor parameter would be the wrong carrier: either would tie the flag to one
+     * thread, which is exactly the property this class must not have.
      *
      * <p>The reachable route does not depend on {@code StructuredTaskScope}, and saying so matters
      * because the two distribution tracks disagree about it: the {@code preview} artifact keeps STS

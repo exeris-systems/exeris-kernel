@@ -12,6 +12,24 @@ import eu.exeris.kernel.spi.flow.model.FlowTransitionDescriptor;
 import java.util.Arrays;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * Heap-backed {@link FlowRegistry}: holds the current step and transition descriptors behind a
+ * single {@link AtomicReference} to an immutable {@link RegistrySnapshot}, so a lookup never blocks
+ * a concurrent registration.
+ *
+ * <p>{@link #registerStep} and {@link #registerTransition} each copy the current snapshot's arrays
+ * into a freshly sized replacement and swap it in; {@link #lookupStep} and
+ * {@link #lookupTransitions} read the current snapshot without synchronizing. {@link #replace} is
+ * the bulk path {@link CoreFlowPlanFactory#compile} uses after compiling a plan: it swaps in an
+ * entirely new snapshot rather than growing the existing one.
+ *
+ * <p><b>Allocation:</b> every successful registration copies the current arrays into a freshly
+ * sized array via {@code Arrays.copyOf}; nothing is pre-sized or pooled.
+ * <p><b>Thread confinement:</b> any thread — registration and {@link #replace} serialize on
+ * {@code this} via {@code synchronized}; lookups are lock-free reads of the current snapshot.
+ * <p><b>Ownership:</b> each snapshot is immutable and replaced wholesale on every write; no caller
+ * holds a reference across a registration and nothing needs to be released.
+ */
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowRegistry implements FlowRegistry {
 
@@ -76,6 +94,16 @@ final class CoreFlowRegistry implements FlowRegistry {
         return transitions[fromStep];
     }
 
+    /**
+     * Replaces the entire current snapshot with {@code newSteps} and {@code newTransitions} in one
+     * atomic swap, rather than growing the existing arrays entry by entry.
+     *
+     * <p>Called by {@link CoreFlowPlanFactory#compile} after a successful compilation, so the
+     * registry always reflects the most recently compiled plan's step and transition descriptors.
+     *
+     * @param newSteps       the complete step-descriptor array to install; copied, not aliased
+     * @param newTransitions the complete transition adjacency table to install; copied, not aliased
+     */
     @SuppressWarnings("PMD.UseVarargs")
     public synchronized void replace(FlowStepDescriptor[] newSteps, FlowTransitionDescriptor[][] newTransitions) {
         snapshotRef.set(new RegistrySnapshot(

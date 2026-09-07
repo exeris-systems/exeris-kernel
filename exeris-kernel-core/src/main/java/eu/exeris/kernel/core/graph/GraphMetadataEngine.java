@@ -19,7 +19,7 @@ import java.util.Objects;
 /**
  * Core: Annotation-driven graph metadata discovery engine.
  *
- * <h2>Responsibility (graph.md §Metadata Engine)</h2>
+ * <h2>Responsibility (graph.md §Responsibilities)</h2>
  * <p>Scans domain classes annotated with {@link GraphNode} and {@link GraphEdge} and
  * produces the canonical {@link GraphNodeDescriptor} and {@link GraphEdgeDescriptor}
  * lists consumed by {@link eu.exeris.kernel.spi.graph.GraphEngine#registerNodes(List)}
@@ -47,16 +47,32 @@ public final class GraphMetadataEngine {
     @Target(ElementType.TYPE)
     @Retention(RetentionPolicy.RUNTIME)
     public @interface GraphNode {
-        /** The node label in the graph (e.g. "User"). Defaults to the simple class name. */
+        /**
+         * The node label in the graph (e.g. {@code "User"}).
+         *
+         * @return the node label, or {@code ""} to default to the simple class name
+         */
         String label() default "";
 
-        /** The backing relational table (e.g. "users"). Required. */
+        /**
+         * The backing relational table (e.g. {@code "users"}). Required.
+         *
+         * @return the backing table name
+         */
         String table();
 
-        /** The property name used as unique node identifier. Default: "id". */
+        /**
+         * The property name used as this node's unique identifier.
+         *
+         * @return the identifier property name; defaults to {@code "id"}
+         */
         String idProperty() default "id";
 
-        /** Whether relational changes should be synced to the graph. Default: true. */
+        /**
+         * Whether relational changes to this class should be synchronised to the graph.
+         *
+         * @return {@code true} if this node participates in L1→L2 dual-write synchronisation
+         */
         boolean syncToGraph() default true;
     }
 
@@ -67,19 +83,41 @@ public final class GraphMetadataEngine {
     @Target(ElementType.TYPE)
     @Retention(RetentionPolicy.RUNTIME)
     public @interface GraphEdge {
-        /** The edge type label (e.g. "FOLLOWS"). Required. */
+        /**
+         * The edge type label (e.g. {@code "FOLLOWS"}). Required.
+         *
+         * @return the edge type label
+         */
         String type();
 
-        /** The source node label (e.g. "User"). Required. */
+        /**
+         * The source node label (e.g. {@code "User"}). Required.
+         *
+         * @return the label of the edge's source node
+         */
         String sourceNode();
 
-        /** The target node label (e.g. "User"). Required. */
+        /**
+         * The target node label (e.g. {@code "User"}). Required.
+         *
+         * @return the label of the edge's target node
+         */
         String targetNode();
 
-        /** Default edge weight. Default: 1.0. */
+        /**
+         * The default weight assigned to this edge type.
+         *
+         * @return the default edge weight
+         */
         double weight() default 1.0;
 
-        /** Whether the edge is bidirectional. Default: false. */
+        /**
+         * Whether traversal of this edge type should be treated as bidirectional.
+         *
+         * @return {@code true} if the edge resolves to
+         *         {@link GraphEdgeDescriptor.Direction#BOTH}; {@code false} for a
+         *         unidirectional {@link GraphEdgeDescriptor.Direction#OUTGOING} edge
+         */
         boolean bidirectional() default false;
     }
 
@@ -90,7 +128,11 @@ public final class GraphMetadataEngine {
     @Target(ElementType.FIELD)
     @Retention(RetentionPolicy.RUNTIME)
     public @interface EdgeEndpoint {
-        /** Custom backing table name for this edge. If blank, derived from edge type. */
+        /**
+         * Overrides the backing table name derived from {@link GraphEdge#type()}.
+         *
+         * @return the custom table name, or {@code ""} to derive it from the edge type
+         */
         String table() default "";
     }
 
@@ -172,6 +214,9 @@ public final class GraphMetadataEngine {
      * <p>Priority: a single non-blank {@link EdgeEndpoint#table()} override on a field
      * → derived from {@link GraphEdge#type()} via lower-case + "_edges" suffix.
      *
+     * @param cls        the {@link GraphEdge}-annotated class being processed
+     * @param annotation the class's {@link GraphEdge} annotation
+     * @return the resolved backing table name
      * @throws IllegalStateException if more than one field declares a non-blank
      *                               {@link EdgeEndpoint#table()} override
      */
@@ -199,6 +244,10 @@ public final class GraphMetadataEngine {
 
     /**
      * Extracts non-static, non-synthetic field names from the class as graph node properties.
+     *
+     * @param cls the class to introspect
+     * @return list of qualifying field names, in the order reported by
+     *         {@link Class#getDeclaredFields()}
      */
     private static List<String> extractFieldNames(Class<?> cls) {
         Field[] fields = cls.getDeclaredFields();

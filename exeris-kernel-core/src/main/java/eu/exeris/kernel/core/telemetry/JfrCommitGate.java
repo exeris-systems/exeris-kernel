@@ -39,7 +39,11 @@ public final class JfrCommitGate {
     private JfrCommitGate() {
     }
 
-    /** Installs the active committer. Called once by the owning subsystem at start. */
+    /**
+     * Installs the active committer. Called once by the owning subsystem at start.
+     *
+     * @param committer the committer that subsequent {@link #offer(Event)} calls hand events to
+     */
     public static void install(JfrEventCommitter committer) {
         current = committer::offer;
     }

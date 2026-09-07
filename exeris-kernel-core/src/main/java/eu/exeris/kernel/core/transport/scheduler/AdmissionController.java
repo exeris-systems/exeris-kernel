@@ -46,10 +46,10 @@ import java.lang.invoke.VarHandle;
  * This count feeds the JFR {@link eu.exeris.kernel.core.transport.jfr.StreamShedEvent}
  * for observability.
  *
+ * @since 0.5
  * @see PaqsScheduler
  * @see ResourceArbiter
  * @see StreamPriority
- * @since 0.5
  */
 public final class AdmissionController {
 

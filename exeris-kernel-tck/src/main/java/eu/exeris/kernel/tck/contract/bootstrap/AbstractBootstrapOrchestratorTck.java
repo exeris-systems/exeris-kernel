@@ -43,18 +43,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * under test. The helper {@link #kahn(List)} implements the reference algorithm for
  * self-contained tests.
  *
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityBootstrapOrchestratorTest extends AbstractBootstrapOrchestratorTck {
- *     \@Override
+ *     @Override
  *     protected List<Subsystem> runSort(List<Subsystem> input) {
  *         return new CommunitySubsystemOrchestrator().sort(input);
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
 public abstract class AbstractBootstrapOrchestratorTck {
+
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #runSort(List)}.
+     */
+    public AbstractBootstrapOrchestratorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     // =========================================================================
     // Template method — subclass wires the real orchestrator
@@ -76,10 +84,19 @@ public abstract class AbstractBootstrapOrchestratorTck {
     // =========================================================================
 
     /**
-     * Reference implementation of Kahn's BFS for topological sort.
-     * Throws {@link SubsystemCircularDependencyException} on cycle detection.
-     * Used by default test cases; implementations may override {@link #runSort(List)} to
-     * delegate to the real orchestrator instead.
+     * Sorts {@code subsystems} into a dependency-respecting order using Kahn's BFS
+     * topological sort, breaking ties between subsystems of equal in-degree by name so the
+     * result is deterministic. Serves as the reference implementation the self-contained
+     * test cases in this class sort against; implementations may override
+     * {@link #runSort(List)} to delegate to the real orchestrator instead.
+     *
+     * @param subsystems the subsystems to order; every name in a {@link Subsystem#dependsOn()}
+     *                    list must be present in this list
+     * @return {@code subsystems} reordered so that every dependency precedes its dependants
+     * @throws IllegalArgumentException if a subsystem declares a dependency on a name absent
+     *                                   from {@code subsystems}
+     * @throws SubsystemCircularDependencyException if the dependency graph contains a cycle
+     *                                               ({@code EX-BOOT-0001})
      */
     public static List<Subsystem> kahn(List<Subsystem> subsystems) {
         Map<String, Subsystem> byName = new HashMap<>();
@@ -140,7 +157,16 @@ public abstract class AbstractBootstrapOrchestratorTck {
     // Test fixtures
     // =========================================================================
 
-    /** Creates a minimal test {@link Subsystem} stub for use in graph tests. */
+    /**
+     * Creates a minimal {@link Subsystem} stub, with a no-op lifecycle, for use in graph
+     * tests.
+     *
+     * @param name  the value {@link Subsystem#name()} returns
+     * @param phase the value {@link Subsystem#phase()} returns
+     * @param deps  the dependency names {@link Subsystem#dependsOn()} returns
+     * @return a {@link Subsystem} whose lifecycle methods are no-ops and whose
+     *         {@link Subsystem#isOptional()} is {@code false}
+     */
     protected static Subsystem stub(String name, BootstrapPhase phase, String... deps) {
         return new Subsystem() {
             @Override public String name()              { return name; }

@@ -47,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityJsonResponseBodyDecoderTckTest extends AbstractHttpResponseBodyDecoderTck {
  *     @Override
  *     protected HttpResponseBodyDecoder createDecoder() {
@@ -66,7 +66,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  *     @Override
  *     protected byte[] malformedEncodedBytes() {
- *         return "{ not-json".getBytes(StandardCharsets.UTF_8);
+ *         return "{not-json}".getBytes(StandardCharsets.UTF_8);
  *     }
  *
  *     @Override
@@ -74,7 +74,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *         return Map.class;
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.8
  */
@@ -84,7 +84,18 @@ public abstract class AbstractHttpResponseBodyDecoderTck {
     private MemoryAllocator allocator;
 
     /**
-     * @return the decoder under test; never null
+     * Creates the contract; subclasses supply the decoder under test via {@link #createDecoder()}.
+     */
+    public AbstractHttpResponseBodyDecoderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Creates the decoder under test. Implementations may return a fresh instance
+     * per call; the TCK does not assume reuse across tests.
+     *
+     * @return non-null decoder
      */
     protected abstract HttpResponseBodyDecoder createDecoder();
 
@@ -145,7 +156,7 @@ public abstract class AbstractHttpResponseBodyDecoderTck {
         return new HttpResponseDecodingContext(200, List.of(), allocator);
     }
 
-    /** The allocator-less shape: what a caller with nothing to offer builds (0.12). */
+    /** The allocator-less shape: what a caller with nothing to offer builds. */
     private static HttpResponseDecodingContext contextWithoutAllocator() {
         return new HttpResponseDecodingContext(200, List.of());
     }

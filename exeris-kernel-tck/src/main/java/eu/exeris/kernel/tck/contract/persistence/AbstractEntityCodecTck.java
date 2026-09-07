@@ -33,13 +33,38 @@ import static org.mockito.Mockito.when;
  */
 public abstract class AbstractEntityCodecTck {
 
+    /**
+     * Creates the contract; subclasses supply the provider via {@link #createProvider()}.
+     */
+    public AbstractEntityCodecTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Creates the {@link PersistenceProvider} under test.
+     *
+     * @return a provider under test
+     * @implSpec The provider must return a present {@link PersistenceProvider#rawEntityEncoder()}
+     *           and a present {@link PersistenceProvider#rawEntityDecoder()}.
+     */
     protected abstract PersistenceProvider createProvider();
 
+    /**
+     * Returns the raw entity encoder exposed by {@link #createProvider()}.
+     *
+     * @return the provider's raw {@link EntityEncoder}
+     */
     protected final EntityEncoder<MemorySegment> createEncoder() {
         return createProvider().rawEntityEncoder()
                 .orElseThrow(() -> new AssertionError("Provider must expose rawEntityEncoder()"));
     }
 
+    /**
+     * Returns the raw entity decoder exposed by {@link #createProvider()}.
+     *
+     * @return the provider's raw {@link EntityDecoder}
+     */
     protected final EntityDecoder<MemorySegment> createDecoder() {
         return createProvider().rawEntityDecoder()
                 .orElseThrow(() -> new AssertionError("Provider must expose rawEntityDecoder()"));
@@ -56,6 +81,14 @@ public abstract class AbstractEntityCodecTck {
     @Nested
     @DisplayName("Round-trip contract")
     class RoundTripContract {
+
+        /**
+         * Groups the encode-then-decode raw-payload round-trip assertion.
+         */
+        RoundTripContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("encode + decode preserves raw payload")
@@ -88,6 +121,14 @@ public abstract class AbstractEntityCodecTck {
     @Nested
     @DisplayName("Malformed and bounds contract")
     class MalformedAndBoundsContract {
+
+        /**
+         * Groups the malformed-input and out-of-bounds rejection assertions for encode and decode.
+         */
+        MalformedAndBoundsContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("encode throws PersistenceProviderException when target capacity is too small")

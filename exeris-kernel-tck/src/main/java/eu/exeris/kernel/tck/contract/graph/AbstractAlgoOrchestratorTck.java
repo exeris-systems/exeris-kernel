@@ -45,24 +45,41 @@ import static org.assertj.core.api.Assertions.assertThat;
 public abstract class AbstractAlgoOrchestratorTck {
 
     /**
-     * Creates a {@link PathFinder} implementation under test backed by a test graph
-     * containing at least one reachable path from {@link #reachableSource()} to
-     * {@link #reachableTarget()}.
+     * Creates the contract; subclasses supply the {@link PathFinder} implementation under test via
+     * {@link #createPathFinder()}.
+     */
+    public AbstractAlgoOrchestratorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Creates the {@link PathFinder} implementation under test.
+     *
+     * @return a path finder backed by the fixture's test graph
+     * @implSpec The backing graph MUST contain at least one reachable path from
+     *           {@link #reachableSource()} to {@link #reachableTarget()}.
      */
     protected abstract PathFinder createPathFinder();
 
     /**
      * Returns a source node UUID that has at least one reachable path in the test graph.
+     *
+     * @return a source node UUID with a reachable path to {@link #reachableTarget()}
      */
     protected abstract UUID reachableSource();
 
     /**
      * Returns a target node UUID reachable from {@link #reachableSource()}.
+     *
+     * @return a target node UUID reachable from {@link #reachableSource()}
      */
     protected abstract UUID reachableTarget();
 
     /**
      * Returns a source UUID that has no path to any target (isolated node).
+     *
+     * @return a node UUID with no path to {@link #reachableTarget()} in the test graph
      */
     protected abstract UUID isolatedNode();
 
@@ -73,6 +90,14 @@ public abstract class AbstractAlgoOrchestratorTck {
     @Nested
     @DisplayName("Reachable path contract")
     class ReachablePath {
+
+        /**
+         * Groups the assertions for the reachable-path contract.
+         */
+        ReachablePath() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("findShortestPath() returns found=true for a connected pair")
@@ -129,6 +154,14 @@ public abstract class AbstractAlgoOrchestratorTck {
     @DisplayName("Not-found contract")
     class NotFound {
 
+        /**
+         * Groups the assertions for the not-found contract.
+         */
+        NotFound() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("isolated node → PathResult.found()=false")
         void notFoundReturnsNotFoundResult() {
@@ -170,6 +203,14 @@ public abstract class AbstractAlgoOrchestratorTck {
     @Nested
     @DisplayName("K-shortest paths contract")
     class KShortestPaths {
+
+        /**
+         * Groups the assertions for the k-shortest-paths contract.
+         */
+        KShortestPaths() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("findKShortestPaths() returns at most maxPaths results")
@@ -233,6 +274,12 @@ public abstract class AbstractAlgoOrchestratorTck {
     // Concurrent access
     // =========================================================================
 
+    /**
+     * Asserts that no exception escapes any of the 100 concurrent {@code findShortestPath()}
+     * calls. Each call's returned {@link PathResult} is discarded rather than checked for
+     * correctness, so this does not independently verify that a race leaves no call with
+     * another call's result — only that concurrent access does not throw.
+     */
     @Test
     @DisplayName("100 VTs calling findShortestPath() concurrently — no crash, no data corruption")
     @Timeout(30)

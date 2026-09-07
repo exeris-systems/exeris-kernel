@@ -10,32 +10,101 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * TCK contract for readiness/liveness health monitor semantics.
+ * TCK: verifies readiness/liveness health-monitor semantics — readiness requires the kernel
+ * started and every required subsystem RUNNING; a required subsystem's failure or
+ * degradation drops readiness (degradation drops readiness without dropping liveness); an
+ * optional subsystem's failure or degradation never drops readiness; and a failed kernel
+ * drops liveness.
  */
 public abstract class AbstractHealthMonitorTck {
 
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createMonitor()}.
+     *
+     * @since 0.5
+     */
+    public AbstractHealthMonitorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Creates the health-monitor adapter under test.
+     *
+     * @return a fresh {@link HealthMonitorAdapter} with no subsystems registered
+     */
     protected abstract HealthMonitorAdapter createMonitor();
 
+    /**
+     * Adapts the health monitor under test to the state-transition shape this TCK drives;
+     * bindings implement it over their concrete monitor type.
+     */
     protected interface HealthMonitorAdapter {
+
+        /**
+         * Registers {@code subsystem} with the monitor, declaring whether it is required
+         * for readiness.
+         *
+         * @param subsystem the subsystem name to track
+         * @param required  {@code true} if this subsystem's failure or degradation must
+         *                  drop readiness; {@code false} if it must not
+         */
         void register(String subsystem, boolean required);
 
+        /** Marks the kernel's initialize phase complete. */
         void markKernelInitialized();
 
+        /** Marks the kernel's start phase complete; required for readiness to go up. */
         void markKernelStarted();
 
+        /** Marks the kernel failed; drops liveness. */
         void markKernelFailed();
 
+        /**
+         * Marks a registered subsystem RUNNING, clearing any prior failed or degraded state.
+         *
+         * @param subsystem the registered subsystem name
+         */
         void markSubsystemRunning(String subsystem);
 
+        /**
+         * Marks a registered subsystem FAILED; drops readiness if the subsystem was
+         * registered as required, and has no effect on readiness otherwise.
+         *
+         * @param subsystem the registered subsystem name
+         */
         void markSubsystemFailed(String subsystem);
 
+        /**
+         * Marks a registered subsystem DEGRADED; drops readiness (without dropping
+         * liveness) if the subsystem was registered as required, and has no effect on
+         * readiness otherwise.
+         *
+         * @param subsystem the registered subsystem name
+         */
         void markSubsystemDegraded(String subsystem);
 
+        /**
+         * Reports whether the kernel is ready to serve traffic.
+         *
+         * @return {@code true} if the kernel has started and every required subsystem is
+         *         RUNNING
+         */
         boolean readinessUp();
 
+        /**
+         * Reports whether the kernel is alive.
+         *
+         * @return {@code true} unless the kernel has been marked failed
+         */
         boolean livenessUp();
 
-        /** Diagnostic readiness status string (e.g. "READY", "STARTING", "DEGRADED", "FAILED"). */
+        /**
+         * Diagnostic readiness status string (e.g. {@code "READY"}, {@code "STARTING"},
+         * {@code "DEGRADED"}, {@code "FAILED"}).
+         *
+         * @return the current readiness status string
+         */
         String readinessStatus();
     }
 

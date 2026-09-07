@@ -24,16 +24,19 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * JMH Benchmark: EventBus Dispatch Latency at 100k msg/s.
+ * JMH Benchmark: EventBus dispatch latency and throughput.
  *
- * <h2>Front 4 — Arena wydajności (SLO: p99 &lt; 200 µs at 100k msg/s)</h2>
- * <p>Measures end-to-end publish-to-handle latency of {@link EventBus#publish}
- * under sustained 100 000 msg/s load with a single registered handler.
+ * <p>Measures end-to-end publish-to-handle latency of {@link EventBus#publish} with a single
+ * registered handler, single-threaded and unthrottled: the benchmark loop calls {@code publish}
+ * as fast as it can, it does not pace itself to any particular message rate.
  *
- * <h2>SLO</h2>
+ * <h2>SLO targets</h2>
+ * <p>These are the production-load targets this benchmark is calibrated to read against, not
+ * figures the benchmark drives or asserts — JMH does not fail the build on either being missed,
+ * so conformance means comparing the printed report to these numbers by hand.
  * <ul>
  *   <li>Average throughput: {@code ≥ 100 000 ops/s}</li>
- *   <li>p99 latency: {@code ≤ 200 µs}</li>
+ *   <li>p99 latency: {@code ≤ 200 µs}, read against a 100 000 msg/s production target</li>
  * </ul>
  *
  * <h2>Measurement methodology</h2>
@@ -61,10 +64,29 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
     protected EventDescriptor hotDescriptor;
 
     /**
+     * Creates the contract; subclasses supply the engine under test via
+     * {@link #createTargetEngine()}.
+     */
+    public AbstractEventBusDispatchLatencyBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Subclass provides a fully configured, not-yet-started {@link EventEngine}.
+     *
+     * @return non-null, pre-configured engine ready for {@link EventEngine#start()}
+     * @implSpec Implementations must return a new engine instance; {@link #setUpTrial()} starts
+     *           it and registers the benchmark event type before any {@code @Benchmark} method
+     *           runs.
      */
     protected abstract EventEngine createTargetEngine();
 
+    /**
+     * Trial-level setup: creates the engine, registers the benchmark event type, subscribes a
+     * handler that closes each payload, starts the engine, and pre-allocates the hot-path
+     * descriptor reused by every measurement iteration.
+     */
     @Setup(Level.Trial)
     public void setUpTrial() {
         engine = createTargetEngine();
@@ -84,6 +106,9 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
                 EVENT_ORDINAL, EventDescriptor.FLAG_ASYNC, System.currentTimeMillis());
     }
 
+    /**
+     * Trial-level teardown: closes the engine and releases any resources it holds.
+     */
     @TearDown(Level.Trial)
     public void tearDownTrial() {
         if (engine != null) {
@@ -92,13 +117,17 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
     }
 
     /**
-     * Hot path: single publish call with the pre-allocated descriptor.
+     * Hot path: single publish call with the pre-allocated descriptor, sampled by JMH's
+     * {@code SampleTime} mode to report latency percentiles.
      *
      * <p>Community: enqueues to a StructuredTaskScope-backed queue.
      * Enterprise: single CAS write to the off-heap lock-free ring buffer.
      *
-     * <h2>SLO</h2>
-     * <p>p99 latency of this method MUST be ≤ 200 µs at 100k ops/s throughput.
+     * <p><b>SLO target:</b> p99 latency target is {@code ≤ 200 µs} against a 100k ops/s
+     * production load; this is not enforced by the benchmark and must be checked against
+     * the printed percentile report.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the descriptor reference
      */
     @Benchmark
     public void publishEventLatency(Blackhole bh) {
@@ -109,7 +138,10 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
 
     /**
      * Throughput baseline: measures raw publish throughput.
-     * SLO: ≥ 100 000 ops/s.
+     *
+     * <p>Throughput target is {@code ≥ 100 000 ops/s}; not enforced by the benchmark.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the descriptor reference
      */
     @Benchmark
     @BenchmarkMode(Mode.Throughput)

@@ -12,6 +12,20 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Container for the Citadel security path's {@code jdk.jfr.Event} subclasses and their emission
+ * helpers.
+ *
+ * <p>{@link PrincipalBoundEvent} and {@link SecurityContextMissingEvent} fire from
+ * {@link eu.exeris.kernel.core.security.SecurityInterceptor}, one or the other on every
+ * intercepted request. {@link InsufficientPrivilegesEvent} fires from
+ * {@link eu.exeris.kernel.core.security.CitadelGuard} on an RBAC rejection.
+ * {@link StorageContextDerivedEvent} fires from
+ * {@link eu.exeris.kernel.core.security.StorageContextBridge} on the pre-authenticated path.
+ * {@link RoleRegistryLoadedEvent} fires once at bootstrap from
+ * {@link eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader}. This class holds no state
+ * of its own beyond grouping the events under one JFR category and is never instantiated.
+ */
 // UseExplicitTypes: 'var' is used only for JFR event locals; explicit types would
 // duplicate the inner class name on the same line with zero type-safety gain.
 @SuppressWarnings("PMD.UseExplicitTypes")
@@ -36,21 +50,44 @@ public final class SecurityJfrEvents {
     @StackTrace(false)
     public static final class PrincipalBoundEvent extends Event {
 
+        /** {@code SecurityProvider.providerId()} of the provider that authenticated the request. */
         @Label("Provider ID")
         @Description("Identifier of the SecurityProvider that performed authentication")
         public String providerId;
 
+        /**
+         * Name of the bound {@code StorageContext}'s isolation strategy: {@code SHARED},
+         * {@code SEPARATED_SCHEMA}, or {@code DEDICATED}.
+         */
         @Label("Isolation Strategy")
         @Description("StorageContext isolation strategy (SHARED / SEPARATED_SCHEMA / DEDICATED)")
         public String isolationStrategy;
 
+        /** {@code true} when the bound {@code StorageContext} carries a tenant isolation key. */
         @Label("Has Tenant")
         @Description("Whether the StorageContext carries a tenant isolation key")
         public boolean hasTenant;
 
+        /**
+         * Wall-clock time, in microseconds, from the start of the authentication attempt to this
+         * event's commit. On the bearer-token path this spans {@code authenticate()} plus
+         * role-mask enrichment; on the pre-authenticated path this is the
+         * {@code StorageContextBridge.derive()} cost alone.
+         */
         @Label("Duration (µs)")
         @Description("Wall-clock time for authenticate() in microseconds")
         public long durationMicros;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public PrincipalBoundEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -94,14 +131,27 @@ public final class SecurityJfrEvents {
     @StackTrace(false)
     public static final class SecurityContextMissingEvent extends Event {
 
+        /** The denial's {@link SecurityDenialReason#errorCode()}: {@code EX-SEC-2001} or {@code EX-SEC-2002}. */
         @Label("Error Code")
         @Description("Canonical EX-SEC-* error code")
         public String errorCode;
 
+        /** {@link SecurityDenialReason} constant name identifying which check produced the denial. */
         @Label("Drop Reason")
         @Description("One of SecurityDenialReason: NO_PROVIDER, TOKEN_MISSING, TOKEN_INVALID, "
                 + "PROVIDER_ERROR, PRE_AUTH_BRIDGE_ERROR")
         public String dropReason;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SecurityContextMissingEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -152,13 +202,26 @@ public final class SecurityJfrEvents {
     @StackTrace(false)
     public static final class InsufficientPrivilegesEvent extends Event {
 
+        /** Name of the role required for the operation that the principal did not hold. */
         @Label("Required Role")
         @Description("The role that the principal lacked")
         public String requiredRole;
 
+        /** Deterministic hash of the principal's UUID; identifies the principal without recording it. */
         @Label("Principal ID Hash")
         @Description("Value-based hash of the principalId UUID — deterministic, safe for telemetry")
         public int principalIdHash;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public InsufficientPrivilegesEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -195,13 +258,29 @@ public final class SecurityJfrEvents {
     @StackTrace(false)
     public static final class StorageContextDerivedEvent extends Event {
 
+        /**
+         * Name of the derived {@code StorageContext}'s isolation strategy: {@code SHARED},
+         * {@code SEPARATED_SCHEMA}, or {@code DEDICATED}.
+         */
         @Label("Isolation Strategy")
         @Description("The isolation strategy of the derived StorageContext")
         public String isolationStrategy;
 
+        /** {@code true} when the derived {@code StorageContext} carries a tenant isolation key. */
         @Label("Has Tenant")
         @Description("Whether the derived context carries a tenant isolation key")
         public boolean hasTenant;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StorageContextDerivedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**
@@ -241,13 +320,29 @@ public final class SecurityJfrEvents {
     @StackTrace(false)
     public static final class RoleRegistryLoadedEvent extends Event {
 
+        /** {@code true} when the generated {@code RoleCheckRegistry} class was resolved on the classpath. */
         @Label("Generated Class Found")
         @Description("Whether the generated RoleCheckRegistry class was resolved on the classpath")
         public boolean generatedClassFound;
 
+        /**
+         * Number of {@code @RequiresRole}-annotated entry points compiled into the registry;
+         * {@code 0} when {@link #generatedClassFound} is {@code false}.
+         */
         @Label("Method Count")
         @Description("Number of @RequiresRole-annotated entry points compiled into the registry")
         public int methodCount;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public RoleRegistryLoadedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**

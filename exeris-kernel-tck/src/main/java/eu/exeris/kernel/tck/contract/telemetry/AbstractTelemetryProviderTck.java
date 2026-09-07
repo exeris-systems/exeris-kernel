@@ -22,26 +22,33 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * TCK: Abstract base for {@link TelemetryProvider} contract verification.
+ * Verifies that a {@link TelemetryProvider} builds a well-formed, working set of sinks and is
+ * discoverable through {@link ServiceLoader}.
  *
  * <h2>Contract</h2>
  * <ul>
  *   <li>{@code providerName()} returns a non-null, non-blank display name</li>
  *   <li>{@code priority()} follows the Open-Core convention (0 or 100)</li>
- *   <li>{@code createSinks(TelemetryConfig)} returns a non-null, non-empty immutable list</li>
- *   <li>All returned sinks accept {@link KernelEvent#info} without throwing</li>
+ *   <li>{@code createSinks(TelemetryConfig)} returns a non-null, non-empty list — not asserted to be
+ *       immutable, only that returned sinks are usable and closeable</li>
+ *   <li>All returned sinks accept {@link KernelEvent#info}, {@link KernelEvent#error} and
+ *       {@link KernelEvent#fatal}, and {@code increment()}/{@code gauge()}/{@code latency()},
+ *       without throwing</li>
  *   <li>Each sink has a non-blank {@code sinkName()}</li>
- *   <li>ServiceLoader discovery selects the highest-priority provider</li>
+ *   <li>A {@link TelemetryProvider} is discoverable via {@link ServiceLoader}; the priority
+ *       ordering itself is checked against whichever providers are on the running module's test
+ *       classpath, which in every current binding is this one provider alone, so the comparison
+ *       cannot fail a provider that ignores {@link ServiceLoader}'s ranking against a competitor</li>
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityTelemetryProviderTckTest extends AbstractTelemetryProviderTck {
  *     @Override protected TelemetryProvider createProvider() {
  *         return new CommunityTelemetryProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
@@ -49,11 +56,15 @@ public abstract class AbstractTelemetryProviderTck {
 
     /**
      * Creates the {@link TelemetryProvider} under test.
+     *
+     * @return a newly created provider; called once before each test
      */
     protected abstract TelemetryProvider createProvider();
 
     /**
      * Override to supply a custom config. Default: {@link TelemetryConfig#defaults()}.
+     *
+     * @return the {@link TelemetryConfig} passed to {@code createSinks()} in every test
      */
     protected TelemetryConfig createConfig() {
         return TelemetryConfig.defaults();
@@ -62,6 +73,9 @@ public abstract class AbstractTelemetryProviderTck {
     /**
      * Opt-in assertion hook: provider should expose the standard JFR sink
      * when JFR is explicitly enabled.
+     *
+     * @return {@code true} to run {@code usesStandardJfrSinkWhenEnabled()}; {@code false} (the
+     *         default) to skip it
      */
     protected boolean expectStandardJfrSinkWhenEnabled() {
         return false;
@@ -70,12 +84,23 @@ public abstract class AbstractTelemetryProviderTck {
     /**
      * Opt-in assertion hook: provider should expose SLF4J fallback sink when
      * JFR is disabled.
+     *
+     * @return {@code true} to run {@code usesSlf4jFallbackWhenJfrDisabled()}; {@code false} (the
+     *         default) to skip it
      */
     protected boolean expectSlf4jFallbackWhenJfrDisabled() {
         return false;
     }
 
     private TelemetryProvider provider;
+
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createProvider()}.
+     */
+    public AbstractTelemetryProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpProvider() {

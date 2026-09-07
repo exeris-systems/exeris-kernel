@@ -24,8 +24,7 @@ import java.lang.ref.Reference;
  * <h2>Close Actions — Flat Storage (Zero-GC)</h2>
  * <p>Close actions are stored as four plain {@code Runnable} fields instead of a
  * {@code List}. This eliminates the heap allocation of {@code CopyOnWriteArrayList}
- * and its backing {@code Object[]} on every buffer creation — which was a confirmed
- * GC leak identified by the Zero-GC JFR Monitor TCK test.
+ * and its backing {@code Object[]} on every buffer creation.
  * <p>These four close-action slots are optional <em>auxiliary</em> callbacks that run
  * when the buffer is closed. The mandatory resource release for the backing storage
  * is implemented by subclasses in {@link #onRelease()}; any of the close-action slots
@@ -36,9 +35,18 @@ import java.lang.ref.Reference;
  *   <li>Slot&nbsp;3–4: reserved for Enterprise-tier extensions (optional)</li>
  * </ul>
  *
- * <h2>Method Count Note</h2>
- * <p>This class intentionally implements the full {@link LoanedBuffer} contract here.
- * Splitting it would force subclasses to re-implement reference-counting boilerplate.
+ * <p><b>Allocation:</b> allocates one wrapper object per {@link #slice}, {@link #view}
+ * or {@link #peek} call; the backing {@link MemorySegment} itself is never copied,
+ * only re-sliced.
+ * <p><b>Thread confinement:</b> any thread — the reference count is mutated exclusively
+ * through a {@code VarHandle} compare-and-set, so {@link #retain()} and {@link #close()}
+ * need no external synchronization; a close action registered on one thread is made
+ * visible to whichever thread's {@link #close()} call fires it by the fence pair
+ * described on {@link #addCloseAction(Runnable)}.
+ * <p><b>Ownership:</b> the thread whose {@link #close()} call drives the reference
+ * count to zero triggers {@link #onRelease()} exactly once; a {@link #slice} or
+ * {@link #view} holds a reference of its own and must be closed independently of its
+ * parent, while a {@link #peek} view holds no reference and must not outlive its parent.
  *
  * @since 0.5
  */
@@ -75,10 +83,35 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
      */
     private LeakTracker.LeakHandle leakHandle = LeakTracker.LeakHandle.NOOP;
 
+    /**
+     * Initialises a buffer that is already live.
+     *
+     * <p>The reference count starts at one, so a subclass is usable the moment it is constructed and
+     * the first {@link #close()} that drives the count to zero is the one that calls
+     * {@link #onRelease()}. The four close-action slots start empty and leak tracking starts at
+     * {@link LeakTracker.LeakHandle#NOOP} until an allocator enables it.
+     */
+    public AbstractLoanedBuffer() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     // =========================================================================
     // Abstract contract
     // =========================================================================
 
+    /**
+     * Supplies the region of memory that backs this buffer's storage, without
+     * copying or adjustment.
+     *
+     * @return the backing memory segment; never {@code null}
+     * @implSpec The returned segment's {@link MemorySegment#byteSize() byteSize} is
+     *           this buffer's {@link #capacity()}. Because {@link #capacity()} calls
+     *           this method directly, without checking {@link #isAlive()} first,
+     *           implementations must keep returning a valid segment after
+     *           {@link #close()} — only {@link #segment()}, {@link #slice}, {@link #view}
+     *           and {@link #peek} guard the call behind {@link #checkAlive()}.
+     */
     protected abstract MemorySegment backingSegment();
 
     /**
@@ -92,6 +125,7 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     // =========================================================================
     // LoanedBuffer implementation
     // =========================================================================
+
 
     @Override
     public final MemorySegment segment() {
@@ -159,21 +193,24 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     }
 
     /**
-     * Registers a close action to execute (LIFO) when refCount reaches zero.
+     * Registers a close action to run, in LIFO order, when this buffer's reference
+     * count reaches zero.
      *
-     * <p>Supports at most 4 actions per buffer. Exceeding the limit indicates
-     * a design error in the caller — fail fast with {@link IllegalStateException}.
+     * <p>At most 4 actions may be registered per buffer instance; a caller that needs
+     * more should compose its own aggregate {@link Runnable} instead of registering a
+     * fifth. An action registered on one thread is guaranteed to be visible to whichever
+     * thread's {@link #close()} call drives the reference count to zero and runs it,
+     * even without other synchronization between the two threads.
      *
-     * <h2>JMM Guarantee — Release Fence</h2>
-     * <p>A {@link VarHandle#fullFence()} is issued after writing the action slot.
-     * This establishes a <em>happens-before</em> edge between the registering thread
-     * and the releasing thread that reads the slot in {@link #fireCloseActions()}.
-     * Without this fence, a thread B executing {@code close()} could observe a stale
-     * {@code null} in the slot even after thread A's write, because a plain field write
-     * carries no visibility guarantee under the JMM (the {@code VarHandle} CAS on
-     * {@code refCount} only synchronises the count itself, not the action slots).
-     *
-     * @throws IllegalStateException if all 4 slots are already occupied
+     * @param action the action to run on final release; must not be {@code null}
+     * @throws IllegalArgumentException if {@code action} is {@code null}
+     * @throws IllegalStateException if this buffer has already been closed, or if
+     *         4 close actions are already registered
+     * @implNote Visibility is established with a {@link VarHandle#fullFence()} issued
+     *           after the slot write, paired with the matching fence before the read
+     *           in {@link #fireCloseActions()} — the {@code VarHandle} CAS on the
+     *           reference count only synchronises the count itself, not these plain
+     *           {@code Runnable} fields.
      */
     @Override
     public final void addCloseAction(Runnable action) {
@@ -198,19 +235,20 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     }
 
     /**
-     * Registers a {@link LeakTracker} for this buffer instance.
+     * Registers a {@link LeakTracker} for this buffer instance so an unclosed buffer
+     * is reported after garbage collection.
      *
      * <p>Called by allocators operating in {@link eu.exeris.kernel.spi.memory.LeakDetectionMode#SAMPLED}
      * or {@link eu.exeris.kernel.spi.memory.LeakDetectionMode#PARANOID} mode immediately
-     * after buffer creation.
-     *
-     * <p>The tracker handle is cancelled in {@link #onRelease()} so a properly-closed
-     * buffer does not appear in {@link LeakTracker#leakCount()}. In PARANOID mode the
-     * allocation stack trace is captured via {@link #captureAllocationStack()}.
-     *
-     * <p>O(1) — stores a single reference. Safe to call once only.
+     * after buffer creation. The returned tracking is cancelled in {@link #onRelease()},
+     * so a buffer that is closed properly never appears in {@link LeakTracker#leakCount()}.
+     * In {@code PARANOID} mode the allocation stack trace is captured via
+     * {@link #captureAllocationStack()}.
      *
      * @param tracker the active leak tracker; must not be {@code null}
+     * @throws IllegalArgumentException if {@code tracker} is {@code null}
+     * @apiNote Call at most once per buffer instance; a second call replaces the
+     *          stored handle without cancelling the one from the first call.
      */
     public final void enableLeakTracking(LeakTracker tracker) {
         if (tracker == null) {
@@ -253,6 +291,11 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     // Internal helpers
     // =========================================================================
 
+    /**
+     * Throws if this buffer has already been released.
+     *
+     * @throws IllegalStateException if {@link #isAlive()} is {@code false}
+     */
     protected final void checkAlive() {
         if (!isAlive()) {
             throw new IllegalStateException("LoanedBuffer is closed (refCount=0)");
@@ -279,19 +322,17 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
     }
 
     /**
-     * Fires close actions in LIFO order: action4 first, then action3, action2, action1.
-     * Neither failure propagates — kernel stability takes priority.
+     * Fires the close actions in LIFO order — action 4 first, down to action 1 —
+     * from the single thread whose {@link #close()} call drove the reference count
+     * to zero. An action that throws is absorbed and reported via
+     * {@link CloseActionFailureEvent} instead of stopping the remaining actions or
+     * propagating to the caller of {@link #close()}.
      *
-     * <h2>JMM Guarantee — Acquire Fence</h2>
-     * <p>A {@link VarHandle#fullFence()} is issued before reading any action slot.
-     * This is the matching Acquire side of the Release fence inserted by
-     * {@link #addCloseAction(Runnable)}, completing the happens-before chain:
-     * <pre>
-     *   Thread A: addCloseAction(action) → fullFence()
-     *   Thread B: fullFence() → fireCloseActions() reads action slots
-     * </pre>
-     * Without this fence, the C2 JIT or CPU store-buffer reordering could allow thread B
-     * to read a stale {@code null} from a slot that thread A has already written.
+     * @implNote Reads the four action-slot fields behind a {@link VarHandle#fullFence()},
+     *           the acquire side of the release fence described on
+     *           {@link #addCloseAction(Runnable)} — together they guarantee this thread
+     *           observes every slot the registering thread wrote, even though the
+     *           fields themselves are plain (non-volatile).
      */
     private void fireCloseActions() {
         VarHandle.fullFence();
@@ -451,11 +492,11 @@ public abstract class AbstractLoanedBuffer implements LoanedBuffer { //NOPMD Too
      * Callers must never assume that a parent's close transitively fires actions registered
      * on its slices.
      *
-     * <pre>
-     *   parent.addCloseAction(parentCleanup);  // fires when parent refCount → 0
-     *   slice = parent.slice(0, 64);
-     *   slice.addCloseAction(sliceCleanup);    // fires when SLICE refCount → 0
-     * </pre>
+     * {@snippet lang="java" :
+     * parent.addCloseAction(parentCleanup);   // fires when the parent's refCount -> 0
+     * LoanedBuffer slice = parent.slice(0, 64);
+     * slice.addCloseAction(sliceCleanup);     // fires when the SLICE's refCount -> 0
+     * }
      */
     private static final class SliceLoanedBuffer extends AbstractLoanedBuffer {
 

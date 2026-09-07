@@ -51,7 +51,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       a fresh store instance created against the same database.</li>
  *   <li>Concurrent saves under contention: when two writers race on the same instance
  *       with the same incoming {@code schemaVersion}, exactly one wins; the loser
- *       receives {@link FlowEngineException} with {@code phase=OPTIMISTIC_LOCK_CONFLICT}.</li>
+ *       receives {@link FlowEngineException} ({@code EX-FLOW-7002},
+ *       {@code phase=OPTIMISTIC_LOCK_CONFLICT}).</li>
+ *   <li>Round-trip preserves the fields ADR-062 and ADR-064 added — {@code currentStepName},
+ *       {@code definitionVersion} and {@code compensationStepNames} — not only the fields the
+ *       store predates; a resume guard reads every one of them.</li>
  * </ul>
  *
  * @since 0.7
@@ -61,29 +65,52 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
 
     private FlowSnapshotStore store;
 
-    /** Returns a fresh, empty store. Implementations are responsible for cleaning state. */
+    /**
+     * Creates the contract; subclasses supply the durable binding via {@link #createStore()} and
+     * {@link #reopenStore(FlowSnapshotStore)}.
+     *
+     * <p>The {@code store} field starts unset — {@link #setUpStore()} populates it from
+     * {@link #createStore()} before each test.
+     */
+    public AbstractDistributedFlowSnapshotStoreTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Returns a fresh, empty store.
+     *
+     * @return a newly created {@link FlowSnapshotStore} holding no snapshots
+     * @implSpec Implementations are responsible for cleaning any prior state so the returned
+     *           store starts empty.
+     */
     protected abstract FlowSnapshotStore createStore();
 
     /**
      * Returns a brand-new store instance sharing the same underlying database as
-     * {@code current}. Used to simulate a kernel restart while the data persists.
+     * {@code current}, simulating a kernel restart while the data persists.
      *
-     * <p><b>Contract parameter.</b> The abstract base does not consume {@code current} —
-     * concrete implementations such as {@code CommunityJdbcFlowSnapshotStoreTckTest} use it to
-     * extract the shared {@code DataSource} (or container handle) from the previous store so the
-     * "reopened" store reads from the same database. Static analyzers flag this as an unused
-     * parameter; the suppression below is intentional.
+     * @param current the store instance being replaced; the abstract base itself does not
+     *                consume it
+     * @return a new {@link FlowSnapshotStore} bound to the same underlying database as
+     *         {@code current}
+     * @implSpec Extract the shared {@code DataSource} (or container handle) from
+     *           {@code current} so the reopened store reads from the same database — see
+     *           {@code CommunityJdbcFlowSnapshotStoreTckIT} for a binding that does this.
+     *           Static analyzers flag {@code current} as unused on the abstract declaration;
+     *           the suppression below is intentional.
      */
     @SuppressWarnings("java:S1172")
     protected abstract FlowSnapshotStore reopenStore(FlowSnapshotStore current);
 
     /**
-     * Optional: implementations may override to release resources (close pool, etc.).
+     * Releases resources held by a store this TCK created, once the run using it has finished.
+     * The default implementation does nothing.
      *
-     * <p><b>Contract parameter.</b> The default no-op does not consume {@code current};
-     * implementations that own a connection pool, container, or any external resource use it to
-     * close that resource between TCK runs. Static analyzers flag this as an unused parameter
-     * on the default body — the suppression below is intentional.
+     * @param current the store instance to dispose of; the default body does not consume it
+     * @implSpec Override to close a connection pool, container, or any other external resource
+     *           the store owns. Static analyzers flag {@code current} as unused on the default
+     *           body; the suppression below is intentional.
      */
     @SuppressWarnings("java:S1172")
     protected void disposeStore(FlowSnapshotStore current) {
@@ -126,6 +153,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @Nested
     @DisplayName("save → load round-trip")
     class SaveLoadRoundTrip {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise the save → load round trip.
+         */
+        SaveLoadRoundTrip() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("First save (no row) inserts; load returns equivalent snapshot with bumped schemaVersion")
@@ -202,6 +238,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @DisplayName("delete + exists semantics")
     class DeleteAndExists {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise {@code delete} and {@code exists} semantics.
+         */
+        DeleteAndExists() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("delete removes the row; subsequent load is empty and exists is false")
         void deleteRemovesEntry() {
@@ -228,6 +273,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @Nested
     @DisplayName("listParked enumeration")
     class ListParkedContract {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise {@code listParked} enumeration.
+         */
+        ListParkedContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("listParked returns only PARKED snapshots; running/completed are excluded")
@@ -261,6 +315,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @DisplayName("Cross-restart recovery")
     class CrossRestartRecovery {
 
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise cross-restart recovery.
+         */
+        CrossRestartRecovery() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("Snapshot saved through store-A is visible through reopened store-B")
         void persistedSnapshotSurvivesStoreReopen() {
@@ -283,6 +346,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
     @Nested
     @DisplayName("Concurrent save under contention")
     class ConcurrentSaveContention {
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise concurrent saves under contention.
+         */
+        ConcurrentSaveContention() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("UPDATE race: two writers, same loaded version — one wins, the other observes OCC conflict")
@@ -363,6 +435,15 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
             final AtomicInteger successes = new AtomicInteger();
             final AtomicInteger conflicts = new AtomicInteger();
             final AtomicReference<Throwable> unexpected = new AtomicReference<>();
+
+            /**
+             * Creates an outcome with zero successes, zero conflicts, and no unexpected error
+             * recorded yet.
+             */
+            private RaceOutcome() {
+                // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+                super();
+            }
         }
     }
 }

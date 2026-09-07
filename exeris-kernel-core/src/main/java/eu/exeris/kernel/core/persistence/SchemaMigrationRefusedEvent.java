@@ -57,6 +57,17 @@ public final class SchemaMigrationRefusedEvent extends Event {
     public String classpathChecksum;
 
     /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SchemaMigrationRefusedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * The refusal's four fields, carried together.
      *
      * <p>Follows the {@code PersistenceAdmissionStageEvent.Payload} precedent rather than four bare
@@ -82,6 +93,8 @@ public final class SchemaMigrationRefusedEvent extends Event {
      * package this one does allocate when JFR is inactive — one record, once, on a path that is
      * about to end the boot. Trading that for a call site where two checksums cannot be silently
      * transposed is the right way round.
+     *
+     * @param payload the refusal's four fields, allocated by the caller; see {@link Payload}
      */
     public static void commitRefusal(Payload payload) {
         if (!FlightRecorder.isInitialized()) {

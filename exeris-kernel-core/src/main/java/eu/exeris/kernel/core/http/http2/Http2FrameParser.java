@@ -24,8 +24,9 @@ import java.lang.foreign.ValueLayout;
  * </pre>
  *
  * <h2>Zero-Copy</h2>
- * <p>This parser reads directly from a {@link MemorySegment} — no intermediate
- * byte arrays, no heap allocation per frame.
+ * <p>This parser reads directly from a {@link MemorySegment} — no intermediate byte arrays
+ * and no copying of the payload bytes. Each parse allocates one immutable {@link FrameHeader}
+ * record to carry the decoded fields back to the caller.
  *
  * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-4">RFC 7540 §4</a>
@@ -54,27 +55,52 @@ public final class Http2FrameParser {
             return Http2FrameType.fromCode(type);
         }
 
-        /** Returns {@code true} if the END_STREAM flag (0x01) is set. */
+        /**
+         * Tests whether the END_STREAM flag (0x01) is set on this frame — DATA or HEADERS
+         * announcing that no further frames will follow on the stream.
+         *
+         * @return {@code true} if END_STREAM is set
+         */
         public boolean isEndStream() {
             return (flags & 0x01) != 0;
         }
 
-        /** Returns {@code true} if the END_HEADERS flag (0x04) is set. */
+        /**
+         * Tests whether the END_HEADERS flag (0x04) is set — HEADERS or CONTINUATION announcing
+         * that this frame completes the header block.
+         *
+         * @return {@code true} if END_HEADERS is set
+         */
         public boolean isEndHeaders() {
             return (flags & 0x04) != 0;
         }
 
-        /** Returns {@code true} if the PADDED flag (0x08) is set. */
+        /**
+         * Tests whether the PADDED flag (0x08) is set — the frame payload begins with a
+         * pad-length octet and ends with that many padding octets.
+         *
+         * @return {@code true} if PADDED is set
+         */
         public boolean isPadded() {
             return (flags & 0x08) != 0;
         }
 
-        /** Returns {@code true} if the PRIORITY flag (0x20) is set. */
+        /**
+         * Tests whether the PRIORITY flag (0x20) is set — a HEADERS frame carrying stream
+         * dependency and weight fields ahead of the header block fragment.
+         *
+         * @return {@code true} if PRIORITY is set
+         */
         public boolean isPriority() {
             return (flags & 0x20) != 0;
         }
 
-        /** Returns {@code true} if the ACK flag (0x01) is set (SETTINGS/PING). */
+        /**
+         * Tests whether the ACK flag (0x01) is set on a SETTINGS or PING frame, marking it as
+         * the acknowledgement of a previously sent frame of the same type.
+         *
+         * @return {@code true} if ACK is set
+         */
         public boolean isAck() {
             return (flags & 0x01) != 0;
         }
@@ -104,6 +130,7 @@ public final class Http2FrameParser {
      * @param seg    source segment
      * @param offset byte offset
      * @return parsed frame header
+     * @throws IndexOutOfBoundsException if the segment does not hold 9 bytes from {@code offset}
      */
     public static FrameHeader parseHeaderBigEndian(MemorySegment seg, long offset) {
         int byte0 = seg.get(ValueLayout.JAVA_BYTE, offset) & 0xFF;

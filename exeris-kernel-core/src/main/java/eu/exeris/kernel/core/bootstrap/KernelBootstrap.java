@@ -113,9 +113,9 @@ public final class KernelBootstrap {
      * {@link ScopedValue} scope.
      *
      * <p>On return — whether normal or exceptional — {@link SubsystemOrchestrator#shutdown()}
-     * is always called, ensuring no subsystem leaks.
+     * is always called.
      *
-     * <h2>Boot sequence</h2>
+     * <h4>Boot sequence</h4>
      * <ol>
      *   <li>Emit {@code KernelStart} JFR event.</li>
      *   <li>Resolve {@link ConfigProvider} via {@code ServiceLoader}.</li>
@@ -211,6 +211,7 @@ public final class KernelBootstrap {
     /**
      * Returns the live kernel health monitor while boot/runtime is active.
      *
+     * @return the health monitor of the currently active boot
      * @throws IllegalStateException when bootstrap is not currently active
      */
     public KernelHealthMonitor healthMonitor() {
@@ -428,10 +429,21 @@ public final class KernelBootstrap {
      */
     public static final class BootstrapException extends Exception {
 
+        /**
+         * Creates the exception with {@code message} and no cause.
+         *
+         * @param message failure detail message
+         */
         public BootstrapException(String message) {
             super(message);
         }
 
+        /**
+         * Creates the exception with {@code message} and the underlying {@code cause}.
+         *
+         * @param message failure detail message
+         * @param cause   the underlying failure
+         */
         public BootstrapException(String message, Throwable cause) {
             super(message, cause);
         }
@@ -441,7 +453,11 @@ public final class KernelBootstrap {
     // Builder
     // =========================================================================
 
-    /** Creates a new {@link Builder} for {@link KernelBootstrap}. */
+    /**
+     * Creates a new {@link Builder} for {@link KernelBootstrap}.
+     *
+     * @return a new builder with default settings
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -450,13 +466,13 @@ public final class KernelBootstrap {
      * Fluent builder for {@link KernelBootstrap}.
      *
      * <p>Minimal example:
-     * <pre>{@code
+     * {@snippet lang="java" :
      * KernelBootstrap.builder()
      *     .selector(BootstrapSelector.all())
      *     .failurePolicy(SubsystemOrchestrator.FailurePolicy.FAIL_FAST)
      *     .build()
      *     .boot(myApp::run);
-     * }</pre>
+     * }
      */
     public static final class Builder {
 
@@ -464,6 +480,17 @@ public final class KernelBootstrap {
                 SubsystemOrchestrator.FailurePolicy.FAIL_FAST;
         private BootstrapSelector selector   = BootstrapSelector.all();
         private ClassLoader       classLoader;
+
+        /**
+         * Creates a builder with every setting at its default.
+         *
+         * <p>Obtain one through {@link KernelBootstrap#builder()} rather than directly; the factory is the
+         * documented entry point and this constructor exists only because the class is public.
+         */
+        public Builder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         /**
          * Sets the failure policy (default: {@link SubsystemOrchestrator.FailurePolicy#FAIL_FAST}).

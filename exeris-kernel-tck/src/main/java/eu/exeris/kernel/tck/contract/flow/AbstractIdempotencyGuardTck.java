@@ -25,12 +25,27 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public abstract class AbstractIdempotencyGuardTck {
 
+    /**
+     * Creates a fresh {@link IdempotencyGuard} with no steps claimed.
+     *
+     * @return a new, empty guard instance
+     */
     protected abstract IdempotencyGuard createGuard();
 
     private IdempotencyGuard guard;
 
     private static final long MOST  = 0xABCDEF0123456789L;
     private static final long LEAST = 0x9876543210FEDCBAL;
+
+    /**
+     * Creates the contract; subclasses supply the guard via {@link #createGuard()}.
+     *
+     * <p>The {@code guard} field starts unset — {@link #setUp()} populates it before each test.
+     */
+    public AbstractIdempotencyGuardTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {

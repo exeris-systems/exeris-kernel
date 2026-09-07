@@ -34,14 +34,13 @@ import java.lang.foreign.ValueLayout;
  *       {@link ContinuationViolationException}.</li>
  * </ul>
  *
- * <h2>Memory</h2>
- * <p>Fragment bytes are appended into a {@link LoanedBuffer} obtained from the
- * injected {@link MemoryAllocator}. The buffer is closed and replaced when the
- * assembled block exceeds the current allocation. The caller MUST call
- * {@link #reset()} after consuming the complete block to release the buffer.
- *
- * <h2>Thread Safety</h2>
- * <p>Not thread-safe. One instance per HTTP/2 connection.
+ * <p><b>Allocation:</b> allocates a {@link LoanedBuffer} from the injected
+ * {@link MemoryAllocator} on first use, and a new, larger buffer — copying forward the bytes
+ * already written — each time the assembled block outgrows the current one.
+ * <p><b>Thread confinement:</b> owner thread — not thread-safe; each instance belongs to one
+ * HTTP/2 connection and must be driven from a single thread at a time.
+ * <p><b>Ownership:</b> this assembler owns the buffer; the caller MUST call {@link #reset()}
+ * after consuming the block returned by {@link #completeBlock()} to release it.
  *
  * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.10">RFC 7540 §6.10</a>
@@ -50,13 +49,14 @@ import java.lang.foreign.ValueLayout;
 public final class Http2HeaderBlockAssembler {
 
     /**
-     * Default bound on an assembled HEADERS + CONTINUATION block, in bytes.
+     * Default bound on an assembled HEADERS + CONTINUATION block, in bytes, applied when the
+     * caller does not supply an explicit {@code maxHeaderBlockSize}.
      *
-     * <p>The value this class enforced unconditionally until 0.12. It stays the default rather than
-     * becoming derived from {@code http.maxRequestHeaderCount} × {@code http.maxRequestHeaderSize}:
-     * those describe a per-field size and a field count on HTTP/1, and multiplying them out yields
-     * roughly 800 KiB at the shipped defaults — a twelve-fold LOOSENING of a protective bound, which
-     * is the wrong direction for a limit whose job is to refuse a header-bomb.
+     * <p>Deliberately not derived from {@code http.maxRequestHeaderCount} ×
+     * {@code http.maxRequestHeaderSize}: those describe a per-field size and a field count on
+     * HTTP/1, and multiplying them out yields roughly 800 KiB at the shipped defaults — a
+     * twelve-fold loosening of a protective bound, which is the wrong direction for a limit whose
+     * job is to refuse a header-bomb.
      */
     public static final int DEFAULT_MAX_HEADER_BLOCK_SIZE = 65_536;
 
@@ -130,7 +130,7 @@ public final class Http2HeaderBlockAssembler {
 
     /**
      * Returns {@code true} when the assembled HPACK block is complete and ready
-     * to be passed to {@link eu.exeris.kernel.http.hpack.HpackDecoder}.
+     * to be passed to {@link eu.exeris.kernel.core.http.hpack.HpackDecoder}.
      *
      * @return {@code true} if END_HEADERS has been seen for the current header block
      */
@@ -158,7 +158,8 @@ public final class Http2HeaderBlockAssembler {
      * @param payload    segment containing the full connection read buffer
      * @param dataOffset byte offset to the start of the HPACK payload within {@code payload}
      * @param dataLength byte length of the HPACK fragment (after stripping pad/priority)
-     * @throws ContinuationViolationException if called while already in continuation mode
+     * @throws ContinuationViolationException if called while already in continuation mode, or if
+     *         {@code header.streamId()} is not greater than 0 ({@code EX-HTTP-4005})
      */
     public void beginHeaders(Http2FrameParser.FrameHeader header,
                              MemorySegment payload, long dataOffset, int dataLength) {
@@ -186,7 +187,7 @@ public final class Http2HeaderBlockAssembler {
      * @param dataOffset byte offset to the HPACK fragment
      * @param dataLength byte length of the HPACK fragment
      * @throws ContinuationViolationException on stream ID mismatch, wrong frame type,
-     *                                        or unexpected CONTINUATION
+     *                                        or unexpected CONTINUATION ({@code EX-HTTP-4005})
      */
     public void appendContinuation(Http2FrameParser.FrameHeader header,
                                    MemorySegment payload, long dataOffset, int dataLength) {
@@ -218,7 +219,7 @@ public final class Http2HeaderBlockAssembler {
      * GOAWAY(PROTOCOL_ERROR) and close the connection.
      *
      * @param header parsed inbound frame header
-     * @throws ContinuationViolationException if the frame violates §6.10
+     * @throws ContinuationViolationException if the frame violates §6.10 ({@code EX-HTTP-4005})
      */
     public void validateContinuationMode(Http2FrameParser.FrameHeader header) {
         if (!awaitingContinuation) {
@@ -258,7 +259,7 @@ public final class Http2HeaderBlockAssembler {
      * Releases the internal buffer and resets all assembler state.
      *
      * <p>Must be called after the complete block has been consumed by
-     * {@link eu.exeris.kernel.http.hpack.HpackDecoder}.
+     * {@link eu.exeris.kernel.core.http.hpack.HpackDecoder}.
      */
     @SuppressWarnings("PMD.NullAssignment")
     public void reset() {
@@ -329,6 +330,14 @@ public final class Http2HeaderBlockAssembler {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4005;
 
+        /**
+         * Creates a CONTINUATION sequencing violation.
+         *
+         * @param messageTemplate detail message describing the violated §6.10 rule
+         * @param rawArgs         zero or more domain values (for example the offending stream ID)
+         *                        recorded alongside the template for the Glass-Box telemetry
+         *                        serializer
+         */
         public ContinuationViolationException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
         }

@@ -14,8 +14,11 @@ import java.lang.foreign.ValueLayout;
  * RFC 7540 §4 — HTTP/2 Frame Encoder (structured frame → wire).
  *
  * <h2>Zero-Copy</h2>
- * <p>Writes the 9-byte frame header directly into a {@link MemorySegment}.
- * The caller is responsible for writing the frame payload after the header.
+ * <p>Writes HTTP/2 frames directly into a {@link MemorySegment}, with no intermediate
+ * buffer. {@link #writeHeader} and {@link #writeContinuation} write only the 9-byte
+ * frame header, leaving the frame payload for the caller to write; every other
+ * {@code write*} method writes the complete frame, including its payload, because
+ * that payload is small and fully determined by the frame's own arguments.
  *
  * @since 0.5
  */
@@ -34,6 +37,8 @@ public final class Http2FrameEncoder {
      * @param type     frame type code
      * @param flags    frame flags byte
      * @param streamId stream identifier (31-bit)
+     * @throws FrameEncodingException if {@code length}, {@code streamId}, {@code type} or
+     *         {@code flags} is outside its wire-format range ({@code EX-HTTP-4006})
      */
     public static void writeHeader(MemorySegment seg, long offset,
                                    int length, int type, int flags, int streamId) {
@@ -73,6 +78,9 @@ public final class Http2FrameEncoder {
      * @param ack      {@code true} for ACK frame (empty payload)
      * @param params   settings parameters as {@code [id, value, id, value, ...]}
      * @return number of bytes written (header + payload)
+     * @throws FrameEncodingException if {@code streamId} is not 0, if {@code ack} is {@code true}
+     *         with a non-empty {@code params}, or if {@code params} has an odd length
+     *         ({@code EX-HTTP-4006})
      */
     public static long writeSettings(MemorySegment seg, long offset, int streamId,
                                      boolean ack, int... params) {
@@ -120,6 +128,8 @@ public final class Http2FrameEncoder {
      * @param streamId       stream identifier (0 for connection-level)
      * @param windowIncrement window size increment (31-bit, must be &gt; 0)
      * @return number of bytes written (9 + 4 = 13)
+     * @throws FrameEncodingException if {@code windowIncrement} is not greater than 0
+     *         ({@code EX-HTTP-4006})
      */
     public static long writeWindowUpdate(MemorySegment seg, long offset,
                                          int streamId, int windowIncrement) {
@@ -147,6 +157,7 @@ public final class Http2FrameEncoder {
      * @param streamId  stream identifier (must be &gt; 0)
      * @param errorCode 32-bit error code ({@link Http2ErrorCode#code()})
      * @return number of bytes written (9 + 4 = 13)
+     * @throws FrameEncodingException if {@code streamId} is not greater than 0 ({@code EX-HTTP-4006})
      */
     public static long writeRstStream(MemorySegment seg, long offset,
                                       int streamId, int errorCode) {
@@ -175,6 +186,7 @@ public final class Http2FrameEncoder {
      * @param lastStreamId highest-numbered stream the sender will process (31-bit)
      * @param errorCode    32-bit error code ({@link Http2ErrorCode#code()})
      * @return number of bytes written (9 + 8 = 17)
+     * @throws FrameEncodingException if {@code lastStreamId} is negative ({@code EX-HTTP-4006})
      */
     public static long writeGoAway(MemorySegment seg, long offset,
                                    int lastStreamId, int errorCode) {
@@ -211,6 +223,7 @@ public final class Http2FrameEncoder {
      * @param length     HPACK fragment payload length
      * @param endHeaders {@code true} to set END_HEADERS flag, completing the block
      * @return number of bytes written (always 9 — header only; caller writes payload)
+     * @throws FrameEncodingException if {@code streamId} is not greater than 0 ({@code EX-HTTP-4006})
      */
     public static long writeContinuation(MemorySegment seg, long offset,
                                          int streamId, int length, boolean endHeaders) {
@@ -233,18 +246,46 @@ public final class Http2FrameEncoder {
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4006;
         private static final String MESSAGE_TEMPLATE = "HTTP/2 frame encoding violation";
 
+        /**
+         * Creates a violation with a detail template that carries no substitution values.
+         *
+         * @param detailTemplate detail message describing the violated constraint; recorded as
+         *                       {@code rawArgs} index 0 for the Glass-Box telemetry serializer
+         */
         public FrameEncodingException(String detailTemplate) {
             super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate);
         }
 
+        /**
+         * Creates a violation with a detail template and one substitution value.
+         *
+         * @param detailTemplate detail message describing the violated constraint
+         * @param arg0           the offending value, recorded alongside the template as raw
+         *                       telemetry data
+         */
         public FrameEncodingException(String detailTemplate, Object arg0) {
             super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate, arg0);
         }
 
+        /**
+         * Creates a violation with a detail template and two substitution values.
+         *
+         * @param detailTemplate detail message describing the violated constraint
+         * @param arg0           first value recorded alongside the template as raw telemetry data
+         * @param arg1           second value recorded alongside the template as raw telemetry data
+         */
         public FrameEncodingException(String detailTemplate, Object arg0, Object arg1) {
             super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate, arg0, arg1);
         }
 
+        /**
+         * Creates a violation with a detail template and three substitution values.
+         *
+         * @param detailTemplate detail message describing the violated constraint
+         * @param arg0           first value recorded alongside the template as raw telemetry data
+         * @param arg1           second value recorded alongside the template as raw telemetry data
+         * @param arg2           third value recorded alongside the template as raw telemetry data
+         */
         public FrameEncodingException(String detailTemplate, Object arg0, Object arg1, Object arg2) {
             super(ERROR_CODE, MESSAGE_TEMPLATE, detailTemplate, arg0, arg1, arg2);
         }

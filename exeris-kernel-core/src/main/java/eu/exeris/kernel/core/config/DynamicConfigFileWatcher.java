@@ -35,7 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * all registered callbacks in order, each atomically updating its own VarHandle field.
  *
  * <h2>L0 Mandate: No ExecutorService</h2>
- * <p>The background task is started via {@link Thread#ofVirtual().start(Runnable)} —
+ * <p>The background task is started via {@code Thread.ofVirtual().start(Runnable)} —
  * a single, named Virtual Thread. Using {@code ExecutorService} or
  * {@code ScheduledThreadPoolExecutor} is banned by the Performance Contract.
  * A {@link java.util.concurrent.StructuredTaskScope} is not used here because the

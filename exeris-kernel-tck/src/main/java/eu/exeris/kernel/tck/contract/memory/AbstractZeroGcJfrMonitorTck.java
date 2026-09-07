@@ -37,11 +37,22 @@ public abstract class AbstractZeroGcJfrMonitorTck extends AbstractSubsystemZeroA
 
     /**
      * Subclass supplies the allocator under test.
+     *
+     * @return allocator; must not be {@code null}
      */
     protected abstract MemoryAllocator createAllocator();
 
     private MemoryAllocator allocator;
     private int iterationCounter;
+
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryAllocator} under test via
+     * {@link #createAllocator()}.
+     */
+    public AbstractZeroGcJfrMonitorTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     protected String subsystemName() {

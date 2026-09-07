@@ -161,14 +161,14 @@ public final class NativeCipherContext implements AutoCloseable {
      *
      * <p>The caller MUST call {@link #release()} in a {@code finally} block to avoid
      * a Use-After-Free segfault or a reference-count leak:
-     * <pre>{@code
+     * {@snippet lang="java" :
      * long ptr = ctx.retainSslPointer();
      * try {
      *     handles.ioHandles().invokeWrite(ptr, bufAddr, len);
      * } finally {
      *     ctx.release();
      * }
-     * }</pre>
+     * }
      *
      * @return the raw {@code long} address of the {@code SSL} structure
      * @throws IllegalStateException if the context has already been destroyed

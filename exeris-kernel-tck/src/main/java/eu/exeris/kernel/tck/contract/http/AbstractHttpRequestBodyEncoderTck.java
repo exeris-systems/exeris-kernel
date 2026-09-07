@@ -57,7 +57,7 @@ import java.util.Locale;
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityJsonRequestBodyEncoderTckTest extends AbstractHttpRequestBodyEncoderTck {
  *     @Override
  *     protected HttpRequestBodyEncoder createEncoder() {
@@ -74,7 +74,7 @@ import java.util.Locale;
  *         return "application/json";
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>The Wall (SPI compliance)</h2>
  * <p>This TCK imports only from {@code exeris-kernel-spi}. Drivers may not leak
@@ -87,6 +87,14 @@ import java.util.Locale;
 public abstract class AbstractHttpRequestBodyEncoderTck {
 
     private MemoryAllocator allocator;
+
+    /**
+     * Creates the contract; subclasses supply the encoder under test via {@link #createEncoder()}.
+     */
+    public AbstractHttpRequestBodyEncoderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Creates the encoder under test. Implementations may return a fresh instance

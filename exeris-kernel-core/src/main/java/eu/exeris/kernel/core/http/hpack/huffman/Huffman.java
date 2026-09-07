@@ -56,7 +56,11 @@ public final class Huffman {
      * @param inputLength number of bytes to decode
      * @param output      destination segment for decoded octets
      * @return number of bytes written to {@code output}
-     * @throws HuffmanDecodingException on EOS in data stream, output overflow, or invalid padding
+     * @throws HuffmanDecodingException ({@code EX-HTTP-4001}) if {@code inputLength} is
+     *                                  negative, {@code output} has no room left for the next
+     *                                  decoded octet, the stream decodes to the EOS symbol
+     *                                  before its end, or the trailing padding is not the
+     *                                  all-ones prefix of the EOS code
      */
     @SuppressWarnings({"PMD.CyclomaticComplexity", "java:S3776"}) // Complexity justified by direct table-driven decode
     public static int decode(MemorySegment input, long inputOffset, long inputLength,
@@ -104,6 +108,8 @@ public final class Huffman {
      * @param input  source segment containing raw octets
      * @param output destination segment (must be large enough for worst-case expansion)
      * @return number of bytes written to {@code output} (byte-aligned, EOS-padded)
+     * @throws HuffmanDecodingException ({@code EX-HTTP-4001}) if {@code output} does not have
+     *                                  enough remaining capacity for the encoded bits
      */
     public static long encode(MemorySegment input, MemorySegment output) {
         long bitPos = 0;
@@ -203,6 +209,12 @@ public final class Huffman {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4001;
 
+        /**
+         * Creates an exception with no chained cause.
+         *
+         * @param messageTemplate static, pre-defined message template — no runtime formatting
+         * @param rawArgs         domain arguments for the {@code EX-HTTP-4001} Glass-Box payload
+         */
         public HuffmanDecodingException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
         }

@@ -36,13 +36,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>In SAMPLED mode the allocator MUST:
  * <ol>
  *   <li>Report {@link MemoryStats#leakDetectionMode()} == {@code SAMPLED}.</li>
- *   <li>Track a statistically meaningful subset of allocations (not every allocation,
- *       not zero allocations). Over 1024 allocations, at least one tracked sample is expected.</li>
+ *   <li>Count every physical allocation via {@link MemoryStats#allocationCount()} regardless
+ *       of the sampling rate. {@link MemoryStats} exposes no separate sampled-count signal,
+ *       so this TCK does not assert how large a subset is actually tracked internally for
+ *       leak detection — only that the coarse allocation counter is unaffected by sampling.</li>
  *   <li>Not increase {@link MemoryStats#leakCount()} for properly-closed buffers.</li>
- *   <li>Operate at lower overhead than PARANOID: the per-allocation cost in SAMPLED mode
- *       MUST be significantly lower than PARANOID (verified via allocationCount ratio).</li>
- *   <li>Remain correct under Virtual Thread concurrency — no race conditions in the
- *       sampling counter or Cleaner registration path.</li>
+ *   <li>Operating at lower overhead than PARANOID is the mode's design intent, but this TCK
+ *       does not measure or compare per-allocation cost between the two modes — there is no
+ *       timing or allocation-ratio assertion here for that comparison.</li>
+ *   <li>Remain correct under Virtual Thread concurrency: 10 000 concurrent allocate/close
+ *       pairs must complete without error and leave {@code releaseCount == allocationCount}
+ *       and {@code leakCount == 0}.</li>
  * </ol>
  *
  * <h2>The Wall (SPI Compliance)</h2>
@@ -50,18 +54,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the internal {@code LeakTracker} class in Core, or any Community/Enterprise detail.
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityLeakDetectionSampledTest extends AbstractLeakDetectionSampledTck {
- *     \@Override
+ *     @Override
  *     protected MemoryProvider createProvider() {
  *         return new CommunityMemoryProvider();
  *     }
  * }
- * }</pre>
+ * }
  *
+ * @since 0.5
  * @see AbstractMemoryLeakDetectionTck
  * @see LeakDetectionMode#SAMPLED
- * @since 0.5
  */
 public abstract class AbstractLeakDetectionSampledTck {
 
@@ -79,6 +83,8 @@ public abstract class AbstractLeakDetectionSampledTck {
     /**
      * Number of allocations to use in the sampling-density test.
      * Default: {@code 512} — enough to hit at least one sample with 1/128 rate.
+     *
+     * @return number of allocations to perform in the sampling-density probe
      */
     protected int samplingProbeCount() {
         return 512;
@@ -89,6 +95,14 @@ public abstract class AbstractLeakDetectionSampledTck {
     // =========================================================================
 
     private MemoryAllocator allocator;
+
+    /**
+     * Creates the contract; subclasses supply the {@link MemoryProvider} under test via {@link #createProvider()}.
+     */
+    public AbstractLeakDetectionSampledTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUpSampledAllocator() {
@@ -110,6 +124,14 @@ public abstract class AbstractLeakDetectionSampledTck {
     @Nested
     @DisplayName("L1: Mode reporting")
     class ModeReporting {
+
+        /**
+         * Groups the assertions for mode reporting.
+         */
+        ModeReporting() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("stats().leakDetectionMode() == SAMPLED when configured as SAMPLED")
@@ -133,6 +155,14 @@ public abstract class AbstractLeakDetectionSampledTck {
     @Nested
     @DisplayName("L2: No false positives — closed buffers do not count as leaks")
     class NoFalsePositives {
+
+        /**
+         * Groups the assertions proving that closed buffers do not count as leaks.
+         */
+        NoFalsePositives() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("Closing all allocated buffers → leakCount() stays 0 after GC")
@@ -183,6 +213,14 @@ public abstract class AbstractLeakDetectionSampledTck {
     @DisplayName("L3: Sampling density — not all, not none")
     class SamplingDensity {
 
+        /**
+         * Groups the assertions for sampling density.
+         */
+        SamplingDensity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
         @Test
         @DisplayName("allocationCount() tracks all physical allocations regardless of sampling mode")
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -205,6 +243,14 @@ public abstract class AbstractLeakDetectionSampledTck {
     @Nested
     @DisplayName("L4: Virtual Thread concurrency in SAMPLED mode")
     class VirtualThreadConcurrency {
+
+        /**
+         * Groups the assertions for virtual-thread concurrency in SAMPLED mode.
+         */
+        VirtualThreadConcurrency() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
 
         @Test
         @DisplayName("10 000 VTs allocate + close in SAMPLED mode — leakCount stays 0")

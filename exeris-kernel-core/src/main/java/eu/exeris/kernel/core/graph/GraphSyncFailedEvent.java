@@ -38,6 +38,13 @@ final class GraphSyncFailedEvent extends Event {
     @Description("Static failure message from the upstream cause")
     /* default */ String detail;
 
+    /**
+     * Emits the sync-failed event if JFR recording is active; a no-op otherwise.
+     *
+     * @param edgeOrLabel the edge type or node label whose synchronisation failed
+     * @param detail      the upstream failure's message; may be {@code null} if the
+     *                    cause carried none
+     */
     /* default */ static void emit(String edgeOrLabel, String detail) {
         if (!FlightRecorder.isInitialized()) {
             return;

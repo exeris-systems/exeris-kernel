@@ -28,30 +28,34 @@ import java.util.concurrent.TimeUnit;
 /**
  * JMH Benchmark: TLS Engine wrap/unwrap throughput (zero-copy in-place).
  *
- * <h2>Front 4 — Arena wydajności (Crypto SLO)</h2>
  * <p>Measures the hot-path cryptographic throughput:
  * <ol>
  *   <li><b>{@code wrap} throughput:</b> plaintext → ciphertext encryption of a
- *       1 KB application data record. Enterprise MUST operate entirely on off-heap
- *       {@link LoanedBuffer}s — no {@code byte[]} copy to the heap.</li>
+ *       1 KB application data record. Enterprise is required to operate entirely on
+ *       off-heap {@link LoanedBuffer}s — no {@code byte[]} copy to the heap.</li>
  *   <li><b>{@code unwrap} throughput:</b> ciphertext → plaintext decryption of a
  *       pre-encrypted record. Same zero-copy constraint.</li>
  * </ol>
  *
- * <h2>SLO</h2>
+ * <h2>SLO targets</h2>
+ * <p>None of these figures are enforced by this class — conformance means reading the
+ * printed report and comparing it to these targets by hand.
  * <ul>
  *   <li>wrap throughput: {@code ≥ 500 000 ops/s} at 1 KB record size.</li>
  *   <li>wrap + unwrap round-trip: {@code ≤ 5 µs} p99.</li>
  *   <li>Enterprise: {@code 0 B/op} heap allocation in steady state (post-handshake).</li>
  * </ul>
  *
- * <h2>SecurityZeroAllocTck alignment</h2>
- * <p>Run with {@code -prof gc} to verify {@code norm.alloc = 0 B/op}:
- * TLS vectors MUST work in-place on {@link LoanedBuffer}, never materialising
- * temporary {@code byte[]} arrays on the Java heap. This is the
- * <em>SecurityZeroAllocTck</em> verification at benchmark scale.
+ * <h2>Allocation profiling</h2>
+ * <p>Run with {@code -prof gc} to read {@code norm.alloc}: TLS vectors are required to
+ * work in-place on {@link LoanedBuffer}, never materialising temporary {@code byte[]}
+ * arrays on the Java heap. This benchmark does not assert {@code norm.alloc = 0 B/op}
+ * itself; {@link eu.exeris.kernel.tck.contract.crypto.CryptoZeroAllocTck} is the contract
+ * test that enforces zero {@code eu.exeris.*} allocations per {@code wrap()}/{@code unwrap()}
+ * call for an Enterprise-tier implementation.
  *
  * @since 0.5
+ * @see eu.exeris.kernel.tck.contract.crypto.CryptoZeroAllocTck
  */
 @State(Scope.Thread)
 @BenchmarkMode({Mode.Throughput, Mode.SampleTime})
@@ -66,17 +70,23 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
 
     /**
      * Returns a {@link KernelCryptoProvider} under test (post-ServiceLoader discovery).
+     *
+     * @return non-null provider, ready to create a {@link TlsEngine}
      */
     protected abstract KernelCryptoProvider createCryptoProvider();
 
     /**
      * Returns the {@link MemoryAllocator} used for off-heap plaintext/ciphertext buffers.
      * Must be started before {@link #setUpTrial()} returns.
+     *
+     * @return non-null, ready-to-use allocator
      */
     protected abstract MemoryAllocator createAllocator();
 
     /**
      * Returns {@code true} if this is Enterprise-tier (zero-GC TLS path). Default: false.
+     *
+     * @return {@code true} for an Enterprise-tier implementation, {@code false} otherwise
      */
     protected boolean isEnterpriseTier() {
         return false;
@@ -97,6 +107,20 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
      */
     private static final int PAYLOAD_BYTES = 1024;
 
+    /**
+     * Creates the contract; subclasses supply the crypto provider under test via
+     * {@link #createCryptoProvider()} and its allocator via {@link #createAllocator()}.
+     */
+    public AbstractTlsEngineBenchmark() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Trial-level setup: creates the allocator and TLS engine, pre-allocates the
+     * plaintext/ciphertext/decrypted buffers reused across every iteration, fills the
+     * plaintext payload, and drives the handshake to completion.
+     */
     @Setup(Level.Trial)
     public void setUpTrial() {
         allocator = createAllocator();
@@ -117,6 +141,9 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
         completeHandshake();
     }
 
+    /**
+     * Trial-level teardown: closes the TLS engine, the three buffers, and the allocator.
+     */
     @TearDown(Level.Trial)
     public void tearDownTrial() {
         if (tlsEngine != null) tlsEngine.close();
@@ -134,10 +161,13 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
     /**
      * Encrypts {@code plaintext} → {@code ciphertext} using the pre-warmed TLS session.
      *
-     * <p>The buffer is reused across iterations: Enterprise implementations MUST
-     * operate in-place on the {@code LoanedBuffer}'s {@code MemorySegment.asSlice()}
+     * <p>The buffer is reused across iterations: Enterprise implementations are required
+     * to operate in-place on the {@code LoanedBuffer}'s {@code MemorySegment.asSlice()}
      * view without creating temporary {@code byte[]} arrays. Any heap allocation here
-     * is a violation of the SecurityZeroAlloc contract.
+     * is a violation of the {@link eu.exeris.kernel.tck.contract.crypto.CryptoZeroAllocTck}
+     * contract.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the wrap status
      */
     @Benchmark
     @BenchmarkMode(Mode.Throughput)
@@ -158,6 +188,8 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
      * <p>This measures the symmetric crypto path as experienced by a transport
      * handler receiving a complete TLS record and decrypting it into the
      * application-layer buffer.
+     *
+     * @param bh JMH blackhole — prevents the JIT from eliminating the wrap/unwrap status
      */
     @Benchmark
     @BenchmarkMode(Mode.SampleTime)
@@ -176,6 +208,8 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
     /**
      * Builds a minimal TLS config for benchmark purposes.
      * Subclass may override to customise (e.g., QUIC for Enterprise).
+     *
+     * @return non-null config, TLS 1.3 over TCP with no certificate, key or session cache
      */
     protected eu.exeris.kernel.spi.crypto.CryptoProviderConfig buildTlsConfig() {
         return new eu.exeris.kernel.spi.crypto.CryptoProviderConfig(

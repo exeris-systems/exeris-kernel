@@ -101,6 +101,17 @@ public final class TlsStateMachine implements TlsSessionState {
     // Static helpers — build transition table
     // =========================================================================
 
+    /**
+     * Creates a machine in {@link TlsPhase#UNINITIALIZED}.
+     *
+     * <p>No handshake step has run and no transition is recorded; the first legal move out of this
+     * phase is the one the transition table permits.
+     */
+    public TlsStateMachine() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     private static int[] buildTransitionTable() {
         int[] table = new int[PHASE_COUNT];
         // UNINITIALIZED → HANDSHAKE_IN_PROGRESS | ERROR
@@ -220,7 +231,18 @@ public final class TlsStateMachine implements TlsSessionState {
     // Query helpers (all O(1), no allocation)
     // =========================================================================
 
-    /** Returns {@code true} if the current phase allows the transition to {@code target}. */
+    /**
+     * Returns {@code true} if the phase observed at the time of the call allows a
+     * transition to {@code target}.
+     *
+     * <p>The read is not atomic with any subsequent action the caller takes: another
+     * thread's CAS may change the phase immediately after this method returns, so the
+     * answer may already be stale by the time the caller acts on it.
+     *
+     * @param target the phase to test for legality from the current phase
+     * @return {@code true} if the transition from the currently observed phase to
+     *         {@code target} is legal
+     */
     public boolean canTransitionTo(TlsPhase target) {
         int current = (int) PHASE.getAcquire(this);
         return (ALLOWED_TARGETS[current] & (1 << target.ordinal())) != 0;

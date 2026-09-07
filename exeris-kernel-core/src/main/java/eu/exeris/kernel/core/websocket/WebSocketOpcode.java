@@ -42,6 +42,8 @@ public enum WebSocketOpcode {
     }
 
     /**
+     * Identifies this opcode's four-bit value on the wire (RFC 6455 §5.2).
+     *
      * @return the wire value
      */
     public int code() {
@@ -49,6 +51,9 @@ public enum WebSocketOpcode {
     }
 
     /**
+     * Distinguishes a control opcode, which RFC 6455 §5.4 permits to interleave between the
+     * fragments of a data message, from a data opcode, which may not.
+     *
      * @return whether this is a control opcode, which may appear between data fragments
      */
     public boolean isControl() {

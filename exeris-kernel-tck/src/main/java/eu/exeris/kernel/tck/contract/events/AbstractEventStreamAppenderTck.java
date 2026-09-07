@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
- * TCK: Abstract base for {@link EventStreamAppender} contract verification (since 0.7.0; per-stream
- * ordering + optimistic-concurrency contract added in 0.10.0 per ADR-049).
+ * TCK: Abstract base for {@link EventStreamAppender} contract verification — per-stream
+ * total ordering and optimistic-concurrency control (ADR-049).
  *
  * <h2>Verified Constraints</h2>
  * <ol>
@@ -38,8 +38,8 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
  *       and commits at {@code 1}; passing the previous {@code committedSequence} as the next
  *       {@code expectedVersion} commits at {@code +1}.</li>
  *   <li><b>Conflict is fail-closed (ADR-049):</b> a stale {@code expectedVersion} raises
- *       {@link EventStreamAppendConflictException} ({@code EX-EVENT-6008}) and does not advance
- *       the head.</li>
+ *       {@link EventStreamAppendConflictException} ({@code EX-EVENT-6008}); this suite does not
+ *       verify that the head is left unadvanced by the rejected append.</li>
  *   <li>The appender takes ownership of the supplied {@link EventPayload}: after a successful call
  *       the payload's effective refCount has been adjusted by the binding (the caller MUST NOT call
  *       {@code close()} on the same reference). Enforced via a tracking payload asserting at least
@@ -48,11 +48,11 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
  * </ol>
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class CommunityKafkaEventStreamAppenderTckIT extends AbstractEventStreamAppenderTck {
- *     \@Override protected EventStreamAppender createAppender() { return kafkaAppenderFromTestcontainer(); }
+ *     @Override protected EventStreamAppender createAppender() { return kafkaAppenderFromTestcontainer(); }
  * }
- * }</pre>
+ * }
  *
  * @since 0.7
  * @see EventStreamAppender
@@ -62,10 +62,23 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 @DisplayName("EventStreamAppender TCK — durable append + ordering/OCC contract")
 public abstract class AbstractEventStreamAppenderTck {
 
-    /** Creates a fresh, ready-to-use {@link EventStreamAppender}. */
+    /**
+     * Creates a fresh, ready-to-use {@link EventStreamAppender}.
+     *
+     * @return a fresh {@link EventStreamAppender}
+     */
     protected abstract EventStreamAppender createAppender();
 
     private EventStreamAppender appender;
+
+    /**
+     * Creates the contract; subclasses supply the {@link EventStreamAppender} under test via
+     * {@link #createAppender()}.
+     */
+    public AbstractEventStreamAppenderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {

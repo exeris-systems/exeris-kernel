@@ -26,33 +26,52 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
- * TCK Inquisition: Abstract base for typed JFR telemetry sink contract verification.
+ * Verifies that a {@link TelemetrySink} routes a {@link KernelEvent} carrying a typed exception to
+ * the JFR event named for its error code, populates that event's fields directly from
+ * {@code rawArgs}, and does not throw across {@code emit()}/{@code close()}.
  *
  * <h2>What is verified (telemetry.md §JFR-First)</h2>
  * <ul>
- *   <li>Every {@link KernelEvent} with a typed exception routes to the correct strongly-typed
- *       JFR event class ({@code eu.exeris.kernel.telemetry.*}).</li>
- *   <li>{@code isEnabled() == false} results in zero observable JFR events — the fast-path
- *       gate is proven by the absence of events outside of an active {@link Recording}.</li>
+ *   <li>Every {@link KernelEvent} whose {@link KernelEvent#exception()} is non-null routes to the
+ *       JFR event named for its {@code EX-*} code prefix ({@code eu.exeris.kernel.telemetry.*}); an
+ *       unrecognized code falls back to {@code eu.exeris.kernel.telemetry.KernelLifecycle}.</li>
  *   <li>Structured {@code rawArgs} fields ({@code requestedBytes}, {@code port},
- *       {@code blockTimeMs}) are correctly populated — no {@code toString()} substitution.</li>
- *   <li>Sink is idempotently closeable and emits no events after {@code close()}.</li>
+ *       {@code blockTimeMs}) are read directly onto the JFR event's fields — no {@code toString()}
+ *       substitution.</li>
+ *   <li>{@code emit()} does not throw when no {@link Recording} is active, and {@code close()} is
+ *       idempotent and leaves {@code emit()} non-throwing afterward. Neither case opens a
+ *       {@link Recording} to read back, so it is the absence of an exception that is established,
+ *       not the absence of an emitted event.</li>
  * </ul>
  *
  * <h2>How to use</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * class JfrTelemetrySinkTckTest extends AbstractJfrTelemetrySinkTck {
  *     @Override protected TelemetrySink createSink() { return new JfrTelemetrySink(); }
  * }
- * }</pre>
+ * }
  *
  * @since 0.5
  */
 public abstract class AbstractJfrTelemetrySinkTck {
 
+    /**
+     * Creates the {@link TelemetrySink} under test.
+     *
+     * @return a newly created, open sink; called before each test and closed by the fixture's
+     *         teardown
+     */
     protected abstract TelemetrySink createSink();
 
     private TelemetrySink sink;
+
+    /**
+     * Creates the contract; subclasses supply the binding via {@link #createSink()}.
+     */
+    public AbstractJfrTelemetrySinkTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @BeforeEach
     final void setUp() {
