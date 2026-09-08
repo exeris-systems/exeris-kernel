@@ -1,3 +1,12 @@
+---
+title: "Storage Subsystem — Blob Contract"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Storage Subsystem — Blob Contract
 
 **Status:** SPI + two Community drivers shipped in v0.11 (ADR-056). Post-1.0 per the ROADMAP's
@@ -154,7 +163,7 @@ can do safely because they know which instances are running.
 
 Failures are raised through `CommunityBlobFailures`, which emits the JFR event and returns the exception,
 so a call site reads `throw failures.transferFailed(...)`. The drivers have some twenty failure sites
-across seven classes; pairing an emit with a throw by hand at each one makes "recorded but not thrown"
+across eight classes; pairing an emit with a throw by hand at each one makes "recorded but not thrown"
 and "thrown but not recorded" both reachable by omission, and returning the exception removes the
 pairing. The channel is bound once per driver to that driver's name, so a failure cannot be attributed to
 the sibling driver by an argument slip, and both drivers share the event names — filter
@@ -279,8 +288,11 @@ drivers sit on every Community classpath, so refusing to boot without the key wo
 deployment that never wanted blob storage. What is refused is asking for storage *without saying
 which*: an id naming no discovered driver fails at boot with `EX-BLOB-8008`, carrying the key, the
 value that was set and the ids that were available. An empty classpath is `EX-BLOB-8007` instead —
-nothing is ambiguous there, and the fix is a dependency rather than a key. A key the selected driver
-needs but nobody set is `EX-BLOB-8009`, carrying that key and what a value for it looks like.
+nothing is ambiguous there, and the fix is a dependency rather than a key. A missing
+`storage.blob.location` is `EX-BLOB-8009`, carrying that key and what a value for it looks like. A
+missing S3-specific required property (`s3.bucket`, `s3.accessKey`, `s3.secretKey`) is not this
+code at all: `CommunityS3Settings` refuses it with a plain, unwrapped `IllegalArgumentException`
+naming the property, carrying no `EX-BLOB` code.
 
 Three codes rather than one because `rawArgs` is read positionally by Glass-Box tooling and the
 layouts differ: 8008's last slot is the list of provider ids that were available, so a free-text

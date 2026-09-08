@@ -1,3 +1,12 @@
+---
+title: "RFC-2026-08-28: What does `RowCursor.getString` promise, and over which column types?"
+type: rfc
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # RFC-2026-08-28: What does `RowCursor.getString` promise, and over which column types?
 
 |                   |                                                                                                |

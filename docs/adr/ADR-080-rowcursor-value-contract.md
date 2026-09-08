@@ -1,3 +1,13 @@
+---
+title: "ADR-080: `RowCursor` states what it returns, and refuses what it cannot"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+slug: adr/ADR-080
+---
+
 # ADR-080: `RowCursor` states what it returns, and refuses what it cannot
 
 | Attribute       | Value                                                                                     |

@@ -1,3 +1,12 @@
+---
+title: "Implement a Provider"
+type: howto
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Implement a Provider
 
 **Audience:** you are implementing one of the kernel's SPI contracts — a driver, an engine, a
@@ -6,30 +15,32 @@ provider — either inside this repository or as your own module.
 **Prerequisite:** [01 — Platform and Dependencies](./01-platform-and-dependencies.md) for the TCK
 coordinates.
 
-> **Verified against** `0.11.0-SNAPSHOT` at commit `1b93bf65`, 2026-08-11. Every snippet below is
+> **Verified against** `0.12.0` at commit `38208e69`, 2026-09-08. Every snippet below is
 > quoted or minimally adapted from the cited file, and the citation is printed above it. If a
-> snippet and its source disagree, **the source wins and this guide is the bug**.
+> snippet and its source disagree, **the source wins and this guide is the bug**. Citations name
+> the file and the symbol to look for, never a line number — line numbers rot and symbols don't.
 
 ---
 
 ## What implementing a provider means
 
-You implement a root interface in `exeris-kernel-spi`. Most of them — 15 of the 16 — are found
+You implement a root interface in `exeris-kernel-spi`. Most of them — 16 of the 17 — are found
 through `java.util.ServiceLoader` at bootstrap, which means registering the class in a
 `META-INF/services` file. One is not: see *The contract that is not ServiceLoader-discovered* below,
 and check which kind yours is before you write that file.
 
-There is no dependency injection, and that is enforced rather than encouraged —
-`exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/arch/ExerisArchitectureTest.java:107-113`
-fails the build if a Spring, Guice, or `jakarta.inject` type appears in SPI, *"because Zero-Magic DI:
-use pure constructors and ServiceLoader."*
+There is no dependency injection, and that is enforced rather than encouraged — the
+`noDiFrameworksInSpi` rule in
+`exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/arch/ExerisArchitectureTest.java` fails the
+build if a Spring, Guice, or `jakarta.inject` type appears in SPI, *"because Zero-Magic DI: use pure
+constructors and ServiceLoader."*
 
 ---
 
-## The 15 ServiceLoader-discovered root interfaces
+## The 16 ServiceLoader-discovered root interfaces
 
 Each is registered under its fully-qualified name in `META-INF/services/`. This inventory is the
-contents of `exeris-kernel-community/src/main/resources/META-INF/services/` read on 2026-08-11.
+contents of `exeris-kernel-community/src/main/resources/META-INF/services/` read on 2026-09-08.
 
 | SPI interface (`eu.exeris.kernel.spi.…`) | Community implementation | Contract doc |
 |:--|:--|:--|
@@ -48,9 +59,15 @@ contents of `exeris-kernel-community/src/main/resources/META-INF/services/` read
 | `storage.blob.BlobStorageProvider` | `CommunityFilesystemBlobStorageProvider`, `CommunityS3BlobStorageProvider` | [storage](../subsystems/storage.md) |
 | `telemetry.TelemetryProvider` | `CommunityTelemetryProvider` | [telemetry](../subsystems/telemetry.md) |
 | `transport.TransportProvider` | `NativeTcpTransportProvider` | [transport](../subsystems/transport.md) |
+| `websocket.WebSocketProvider` | `CommunityWebSocketProvider` | ADR-084 |
+
+`websocket.WebSocketProvider` is the newest of the sixteen (landed for 0.12.0) and there is no
+`docs/subsystems/websocket.md` yet — the diagnostics row above has carried an ADR link instead of a
+subsystem doc for the same reason since before this guide existed.
 
 Check [`docs/stability-matrix.md`](../stability-matrix.md) before you build on one — some of these
-surfaces are `preview` and may still move.
+surfaces are `preview` and may still move. `websocket` in particular is `preview` for a stated
+reason, not the default one — read the matrix entry before treating it as stable.
 
 ### The contract that is not ServiceLoader-discovered
 
@@ -61,10 +78,16 @@ binding in `CommunityOidcIdentityProviderTckTest` — but it appears in **no** `
 file, and writing one for it accomplishes nothing.
 
 It is selected per-token instead of per-boot, so a static classpath scan is the wrong mechanism.
-`IdentityProviderRegistry` picks **exactly one** provider: highest `priority()` wins, ties resolve by
-registration order, and the first candidate whose `canAttempt(rawToken)` returns `true` is selected
+`IdentityProviderRegistry` (a `@FunctionalInterface`, built through its `of(List<IdentityProvider>)`
+factory) picks **exactly one** provider: highest `priority()` wins, ties resolve by registration
+order, and the first candidate whose `canAttempt(rawToken)` returns `true` is selected
 (`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/security/identity/IdentityProviderRegistry.java`).
-`SecurityProvider` — which *is* ServiceLoader-discovered — owns the registry and dispatches into it.
+The `SecurityProvider` *interface* has no knowledge of the registry at all — it is
+`CommunitySecurityProvider`, the ServiceLoader-discovered Community implementation of that interface
+(`exeris-kernel-community/src/main/java/eu/exeris/kernel/community/security/CommunitySecurityProvider.java`),
+that builds one in its constructor and dispatches `authenticate` into it. An out-of-tree
+`SecurityProvider` is free to select identity providers a different way; the registry is Community's
+chosen mechanism, not a requirement the SPI states.
 
 The dispatch is fail-closed by contract, and that constrains your implementation: if the selected
 provider's `authenticate` fails, the caller must **not** re-select another provider for the same
@@ -73,7 +96,7 @@ accepted by a laxer provider. If no provider claims the token, the registry retu
 dispatcher maps that to a terminal `EX-SEC-2002` deny.
 
 So before writing artifact 3 below, check which kind of contract yours is. The four-artifact recipe
-is right for the 15 above; for `IdentityProvider` the third artifact is registry wiring, not a
+is right for the 16 above; for `IdentityProvider` the third artifact is registry wiring, not a
 services file.
 
 ---
@@ -88,13 +111,13 @@ code compiles, the tests you wrote pass, and the kernel never loads your class.
 3. A **`META-INF/services` registration file**.
 4. A **TCK binding test**.
 
-The worked example below is `CommunityTelemetryProvider` — the smallest complete provider-and-TCK
-pair in the repository.
+The worked example below is `CommunityTelemetryProvider` — a small, complete provider-and-TCK pair
+(not the smallest; `CommunityJobSchedulerProvider`'s pair is roughly half its size).
 
 ### 1. The SPI interface
 
-Source: `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/telemetry/TelemetryProvider.java:33-58`
-(quoted).
+Source: `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/telemetry/TelemetryProvider.java`,
+the `TelemetryProvider` interface body (javadoc elided).
 
 ```java
 public interface TelemetryProvider {
@@ -122,8 +145,9 @@ public interface TelemetryProvider {
 
 ### 2. The implementation
 
-Source: `exeris-kernel-community/src/main/java/eu/exeris/kernel/community/telemetry/CommunityTelemetryProvider.java:36-81`
-(quoted, `closeCreatedSinks` body elided).
+Source: `exeris-kernel-community/src/main/java/eu/exeris/kernel/community/telemetry/CommunityTelemetryProvider.java`,
+the `CommunityTelemetryProvider` class (javadoc, the explicit no-arg constructor, and
+`closeCreatedSinks`'s body elided).
 
 ```java
 public final class CommunityTelemetryProvider implements TelemetryProvider {
@@ -161,9 +185,10 @@ public final class CommunityTelemetryProvider implements TelemetryProvider {
 
 Three things here are house style, not incidental:
 
-- **`public final class`** with an implicit public no-arg constructor. `ServiceLoader` requires the
-  no-arg constructor; if you add a constructor with arguments and no default, discovery fails at
-  runtime, not at compile time.
+- **`public final class`** with a public no-arg constructor — `CommunityTelemetryProvider` now writes
+  it out explicitly, with a javadoc comment explaining it exists for `ServiceLoader`, rather than
+  leaving it implicit. `ServiceLoader` requires the no-arg constructor either way; if you add a
+  constructor with arguments and no no-arg one, discovery fails at runtime, not at compile time.
 - **`PROVIDER_NAME` as a constant**, returned by `providerName()` and reused in the failure path —
   not a literal repeated at each site.
 - **Partial construction is cleaned up before throwing.** If the third sink fails, the two already
@@ -182,15 +207,19 @@ The filename is the fully-qualified interface name; the content is one fully-qua
 implementation class per line. Two implementations of one interface means two lines — as
 `BlobStorageProvider` does for the filesystem and S3 drivers.
 
-The contract is documented in the SPI itself
-(`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/SubsystemProvider.java:36-45`):
-the factory method MUST be pure — no side effects, no I/O, no locks — the returned list MUST NOT
-contain duplicates, and implementations MUST have a public no-arg constructor.
+The contract is documented on `SubsystemProvider.getSubsystems(ConfigProvider)` itself
+(`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/SubsystemProvider.java`):
+the factory method must be pure — no side effects, no I/O, no locks, and it must not open a socket,
+pool or file — implementations must have a public no-arg constructor, as `ServiceLoader` requires,
+and a single call must not return two subsystems sharing one `Subsystem#name()`. A name collision
+*across* providers is not an error at this level: the registry is keyed by name and keeps the first
+entry it sees, so a lower-priority provider's subsystem is silently dropped rather than rejected —
+see *Two selection rules* below.
 
 ### 4. The TCK binding test
 
-Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/telemetry/CommunityTelemetryProviderTckTest.java:30-47`
-(quoted — this is the entire class).
+Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/telemetry/CommunityTelemetryProviderTckTest.java`,
+the `CommunityTelemetryProviderTckTest` class (quoted — this is the entire class body, javadoc elided).
 
 ```java
 @DisplayName("Community: CommunityTelemetryProvider TCK")
@@ -222,8 +251,8 @@ That is the whole binding. You supply a factory; the abstract suite supplies the
 Every root interface declares `default int priority()` returning `0`. When several providers for the
 same interface are on the classpath, the highest wins.
 
-The convention, quoted from
-`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/events/EventProvider.java:66-72`:
+The convention, quoted from `EventProvider#priority()`'s javadoc in
+`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/events/EventProvider.java`:
 
 ```
  * Convention:
@@ -234,24 +263,27 @@ The convention, quoted from
 
 > **A real value in this repository does not fit that table, and copying it as a tier is wrong.**
 > `KafkaEventProvider.PRIORITY = 50`
-> (`exeris-kernel-community-kafka/src/main/java/eu/exeris/kernel/community/kafka/KafkaEventProvider.java:41-45`).
+> (`exeris-kernel-community-kafka/src/main/java/eu/exeris/kernel/community/kafka/KafkaEventProvider.java`).
 > Its own comment says why: *"above in-memory Community (0) so Kafka wins ServiceLoader, and below
-> the Enterprise tier slot (100). **Intra-Community precedence, not a tier value.**"* Use values
+> the Enterprise tier slot (100). Intra-Community precedence, not a tier value."* Use values
 > between the tier slots to order providers *within* a tier — do not read 50 as a tier of its own.
 
 ### Two selection rules, and they differ
 
-- **Most providers** — `BootstrapProviderSelector.loadHighestPriority(...)`
-  (`exeris-kernel-core/src/main/java/eu/exeris/kernel/core/bootstrap/BootstrapProviderSelector.java:65-100`):
+- **Most providers** — `BootstrapProviderSelector.loadHighestPriority(...)` in
+  `exeris-kernel-core/src/main/java/eu/exeris/kernel/core/bootstrap/BootstrapProviderSelector.java`:
   highest priority wins, filtered by an availability predicate, with a deterministic class-name
-  tie-break so two equal-priority providers never resolve at random.
-- **Subsystems** — `SubsystemRegistryLoader`
-  (`exeris-kernel-core/src/main/java/eu/exeris/kernel/core/bootstrap/SubsystemRegistryLoader.java:66-95`): providers are sorted by
-  priority, then **first write wins per subsystem name** (`putIfAbsent`). A lower-priority provider
-  can still contribute a subsystem that no higher-priority provider claimed.
+  tie-break (`selectFrom`'s `deterministicComparator`) so two equal-priority providers never resolve
+  at random.
+- **Subsystems** — `SubsystemRegistryLoader.loadRegistry(...)` in
+  `exeris-kernel-core/src/main/java/eu/exeris/kernel/core/bootstrap/SubsystemRegistryLoader.java`:
+  providers are sorted by priority (with a moduleName, then class-name tie-break), then **first write
+  wins per subsystem name** (`registry.putIfAbsent`). A lower-priority provider can still contribute a
+  subsystem that no higher-priority provider claimed.
 
-Community also carries its own copy of the selector for its internal wiring
-(`exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/CommunityProviderDiscovery.java:39-46`).
+Community also carries its own copy of the selector, `CommunityProviderDiscovery.highestPriority(...)`,
+for its internal wiring
+(`exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/CommunityProviderDiscovery.java`).
 
 ---
 
@@ -262,29 +294,35 @@ A provider that needs lifecycle — something to start and stop with the kernel 
 
 Contract (`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/Subsystem.java`):
 
-| Method | Line | Purpose |
-|:--|:--|:--|
-| `name()` | 65 | unique identity; what `BootstrapSelector.forNames` matches |
-| `dependsOn()` | 90 | names that must be `RUNNING` first |
-| `phase()` | 100 | `FOUNDATION` / `SERVICES` / `RUNTIME` |
-| `initialize()` | 112 | phase 1 — resolve providers, allocate |
-| `start()` | 123 | phase 2 — bind sockets, begin work |
-| `stop()` | 133 | phase 3 — graceful shutdown |
-| `isRunning()` | 141 | default-implemented health signal |
-| `isOptional()` | 154 | whether `DEGRADE` policy may skip you |
-| `providerBindings()` | 214 | `UnaryOperator<ScopedValue.Carrier>` — called after `initialize()`, before `start()` |
+| Method | Purpose |
+|:--|:--|
+| `name()` | unique identity; what `BootstrapSelector.forNames` matches |
+| `dependsOn()` | names that must reach `INITIALIZED` (then `RUNNING`) first |
+| `phase()` | `FOUNDATION` / `SERVICES` / `RUNTIME` |
+| `initialize()` | phase 1 — resolve providers, allocate |
+| `start()` | phase 2 — bind sockets, begin work |
+| `stop()` | phase 3 — graceful shutdown |
+| `isRunning()` | default-implemented health signal (default `false`) |
+| `isOptional()` | whether `DEGRADE` policy may skip you (default `false`) |
+| `providerBindings()` | `UnaryOperator<ScopedValue.Carrier>` — applied once, after every eligible subsystem's `initialize()` and before `start()` |
 
-> **`stop()` must not throw.** Quoted from `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/Subsystem.java:128-132`:
-> *"The orchestrator calls `stop()` in reverse topological order so that dependents are always
-> stopped before their dependencies. Implementations MUST NOT throw from this method — exceptions
-> are caught and logged as WARN by the orchestrator."*
+> **`stop()` must not throw.** Quoted from `Subsystem#stop()`'s javadoc in
+> `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/Subsystem.java`:
+> *"Implementations must not throw from this method, and must not leave a resource unreleased
+> because a preceding release failed: shutdown has no second attempt and no failure policy — a
+> subsystem that throws here is the last one the kernel hears from about that resource."* And, on
+> what actually happens if you do: *"The Core orchestrator swallows any unchecked exception thrown
+> here, logs it at `WARNING`, and continues with the next subsystem; the subsystem is then not
+> marked `STOPPED`."*
 > A throwing `stop()` does not fail loudly; it disappears into a log line while the resource stays
 > open.
 
 For the common shape — one subsystem resolving one provider into one `ScopedValue` slot — extend
 `AbstractSingleProviderSubsystem`
-(`exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/AbstractSingleProviderSubsystem.java:62-92`)
-rather than reimplementing discovery.
+(`exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/AbstractSingleProviderSubsystem.java`)
+rather than reimplementing discovery. Its own javadoc is explicit about when *not* to: persistence and
+HTTP build engines and own lifecycles that are not "one provider, one slot", and deliberately do not
+extend it.
 
 ---
 
@@ -292,14 +330,14 @@ rather than reimplementing discovery.
 
 Every kernel exception extends `ExerisKernelException` and carries a registered error code plus
 **raw, unformatted arguments**. The reason is allocation discipline: failure paths must not build
-strings. The banned-versus-correct contrast is written out at
-`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/memory/MemoryExhaustedException.java:33-45`
-— read it once and the rule sticks.
+strings. The banned-versus-correct contrast is written out in the class javadoc of
+`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/ExerisKernelException.java` itself
+(look for the `// Correct` / `// Wrong` snippet) — read it once and the rule sticks.
 
 Two files, always. First the code, in the single registry:
 
-Source: `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/KernelErrorCodes.java:145-154`
-(quoted).
+Source: `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/KernelErrorCodes.java`,
+the `EX_BOOT_3001` constant and its javadoc (quoted).
 
 ```java
 /**
@@ -316,8 +354,9 @@ public static final String EX_BOOT_3001 = "EX-BOOT-3001";
 
 Then the exception, mirroring that layout in its own javadoc:
 
-Source: `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/telemetry/TelemetryBootstrapException.java:14-36`
-(quoted).
+Source: `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/telemetry/TelemetryBootstrapException.java`,
+the class javadoc and constructors (quoted; the descriptive paragraph, the `Error Code` section, and
+the `@implNote`/`@since` tags are elided).
 
 ```java
 /**
@@ -349,8 +388,13 @@ places**, because the binary Glass-Box decoder reads by index and a silent reord
 decoded frame.
 
 Codes are `EX-[DOMAIN]-[4 digits]`. There are 14 domains — `MEM`, `BOOT`, `NET`, `HTTP`, `PERS`,
-`SEC`, `GRPH`, `EVENT`, `FLOW`, `CFG`, `RUN`, `DIAG`, `BLOB`, `JOB`. **Retired codes are never reused**;
-`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/KernelErrorCodes.java:893` records one retirement explicitly rather than freeing the number.
+`SEC`, `GRPH`, `EVENT`, `FLOW`, `CFG`, `RUN`, `DIAG`, `BLOB`, `JOB` — plus one code that is not a
+domain: `EX-UNK-0000`, stamped on a telemetry record that carried no error code at all, "the one code
+that means 'the emitter did not say.'" Do not register a code under `UNK`; it exists so a decoder
+always has something to put in the code field, not as a domain to grow. **Retired codes are never
+reused**; `KernelErrorCodes.java` in
+`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/` records exactly one retirement so
+far — `EX-DIAG-1002`, with a comment explaining why the gap is kept rather than the number reused.
 
 ---
 
@@ -366,17 +410,22 @@ Codes are `EX-[DOMAIN]-[4 digits]`. There are 14 domains — `MEM`, `BOOT`, `NET
 - **`providerName()`** is formatted `Tier/Component` — `"ExerisCommunity/TextTelemetry"`,
   `"ExerisCommunityKafka/Events"`. **`providerId()`** is kebab-case — `"community-transport"`,
   `"blob-fs-community"`.
-- **Test naming:** `Community<Thing>TckTest`, or `Community<Thing>TckIT` when the test needs
-  Testcontainers — the `IT` suffix and its tag keep it out of the default build.
+- **Test naming for a root-provider binding:** `Community<Thing>TckTest`, or `Community<Thing>TckIT`
+  when the test needs Testcontainers — the `IT` suffix and its tag keep it out of the default build.
+  Internal-collaborator TCK bindings (sinks, encoders) instead use `<Collaborator>TckTest` with no
+  `Community` prefix — `JfrTelemetrySinkTckTest`, `Argon2idPasswordEncoderTckTest`.
 
 ---
 
 ## Binding the TCK
 
-Add the TCK test-jar (coordinates in
-[01](./01-platform-and-dependencies.md#test-scope-coordinates)); the abstract suites live in the TCK
-module's *test* sources at
-`exeris-kernel-tck/src/test/java/eu/exeris/kernel/tck/contract/<subsystem>/Abstract*Tck.java`.
+Add the TCK dependency (coordinates in
+[01](./01-platform-and-dependencies.md#test-scope-coordinates)) — a plain `test`-scoped dependency
+with no `classifier` or `type` as of `0.12.0`; the abstract suites live in the TCK module's *main*
+sources at
+`exeris-kernel-tck/src/main/java/eu/exeris/kernel/tck/contract/<subsystem>/Abstract*Tck.java` and
+ship as that module's ordinary jar, not a `tests`-classified test-jar the way they did through
+`0.11.x`.
 
 Every abstract suite has the same shape: a `How to use` javadoc snippet, one or more `protected
 abstract` factory methods, optional `protected` hooks you override to opt into extra assertions, a
@@ -385,7 +434,7 @@ abstract` factory methods, optional `protected` hooks you override to opt into e
 **The minimum is: implement every abstract method.** Nothing more. The smallest real binding in the
 repository is four lines of body:
 
-Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/transport/CommunityNativeTcpProviderTckTest.java:15-22`
+Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/transport/CommunityNativeTcpProviderTckTest.java`
 (quoted — the entire class).
 
 ```java
@@ -402,8 +451,8 @@ class CommunityNativeTcpProviderTckTest extends AbstractTransportProviderTck {
 Effort varies a lot by contract: `AbstractTransportProviderTck` has one abstract method,
 `AbstractSecurityProviderTck` has thirteen.
 
-> **The suite is what forces artifact 3 to exist.** `AbstractTelemetryProviderTck:273-297` contains a
-> `@Nested` ServiceLoader group asserting the provider is discoverable on the classpath and that the
+> **The suite is what forces artifact 3 to exist.** `AbstractTelemetryProviderTck`'s `@Nested
+> ServiceLoaderIntegration` group asserts the provider is discoverable on the classpath and that the
 > highest-priority provider wins. A provider with no registration file compiles, passes its own unit
 > tests, and fails here.
 
@@ -412,8 +461,8 @@ Effort varies a lot by contract: `AbstractTransportProviderTck` has one abstract
 The abstract suite deliberately under-constrains some things so that other tiers can implement them
 differently. Where your binding has a stricter obligation, pin it locally:
 
-Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/bootstrap/CommunitySubsystemProviderTckTest.java:26-33`
-(quoted).
+Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/bootstrap/CommunitySubsystemProviderTckTest.java`,
+the `priorityIsCommunitySlot` test (quoted).
 
 ```java
 @Test
@@ -439,27 +488,35 @@ SPI, Core and Community, which is where a Community provider is actually checked
 
 Rules in `ExerisArchitectureTest`, all SPI-scoped:
 
-| Rule | Line | What it forbids |
-|:--|:--|:--|
-| `noJavaIoInSpi` | 52 | `java.io` in SPI — use `java.nio` or Panama FFM |
-| `noFilesystemTypesInStorageSpi` | 58 | `java.nio.file` in the blob contract (ADR-056 §9) |
-| `noStructuredTaskScopeInSchedulingSpi` | 67 | the last preview dependency, in scheduling SPI (ADR-057 §2) |
-| `noExecutorsInSpi` | 80 | `Executors` / `ExecutorService` in SPI |
-| `noCompletableFutureInSpi` | 90 | unstructured async in SPI |
-| `noThreadLocalInSpi` | 98 | `ThreadLocal` in SPI — use `ScopedValue` |
-| `noImplLeaksInSpi` | 104 | driver types in SPI (Netty, Hikari, `java.sql`, Nimbus, Kafka) |
-| `noDiFrameworksInSpi` | 114 | Spring / Guice / `jakarta.inject` in SPI |
-| `noDirectArenaInSpi` | 122 | ad-hoc `Arena` — allocate through `MemoryAllocator` |
-| `noUnsafeInSpi` | 128 | `sun.misc.Unsafe` in SPI — use FFM |
+| Rule | What it forbids |
+|:--|:--|
+| `noJavaIoInSpi` | `java.io` in SPI — use `java.nio` or Panama FFM |
+| `noFilesystemTypesInStorageSpi` | `java.nio.file` in the blob contract (ADR-056 §9) |
+| `noStructuredTaskScopeInSchedulingSpi` | the last preview dependency, in scheduling SPI (ADR-057 §2) |
+| `noExecutorsInSpi` | the `java.util.concurrent.Executors` factory class in SPI (not the `ExecutorService` interface itself) |
+| `noCompletableFutureInSpi` | unstructured async in SPI |
+| `noThreadLocalInSpi` | `ThreadLocal` in SPI — use `ScopedValue` |
+| `noImplLeaksInSpi` | driver types in SPI (Netty, `io_uring`, OpenSSL, Hikari, `java.sql`, Nimbus, Kafka) |
+| `noDiFrameworksInSpi` | Spring / Guice / `jakarta.inject` in SPI |
+| `noDirectArenaInSpi` | ad-hoc `Arena` — allocate through `MemoryAllocator` |
+| `noUnsafeInSpi` | `sun.misc.Unsafe` in SPI — use FFM |
+| `streamingSpiCarriesNoWireOrTransportTypes` | `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` reaching into Core HTTP, Community, transport SPI, or `jdk.jfr` (ADR-043) |
+| `diagnosticsSpiIsEventFree` | the diagnostics SPI depending on the telemetry-spec or `jdk.jfr` packages (ADR-033 Obligation 10 / ADR-039) |
 
 Rules in `KernelTierBanArchitectureTest`, reaching Core and Community as well:
 
 | Rule | What it forbids |
 |:--|:--|
-| `noExecutors` | `Executors` / `ExecutorService` |
+| `noExecutors` | the `java.util.concurrent.Executors` factory class (not the `ExecutorService` interface itself) |
 | `noCompletableFuture` | unstructured async |
 | `noThreadLocal` | `java.lang.ThreadLocal` — use `ScopedValue` (note `ThreadLocalRandom` is a different type and is not banned) |
 | `noUnsafe` | `sun.misc.Unsafe` — use FFM |
+
+The last two `ExerisArchitectureTest` rules above are narrowly scoped — one to three named streaming
+classes, one to the `spi.diagnostics` package — and easy to miss if you only skim the ban list for the
+familiar ones (`noExecutorsInSpi` and friends). If your provider touches streaming exchanges or
+diagnostics, read the rule's own `because(...)` text before assuming the familiar bans are the whole
+list.
 
 > A provider in `exeris-kernel-community-kafka` is checked by **neither**: nothing depends on that
 > module, so it is on no suite's analysis classpath. Same for `exeris-kernel-diagnostics-cli`. Run the
@@ -476,8 +533,9 @@ The reasoning behind each ban is in
 [`CONTRIBUTING.md`](../../CONTRIBUTING.md) → *Architectural Guardrails (The Wall)*.
 
 > **One documented tension, so you are not surprised by the poms.** Guidance describes Community as
-> depending on SPI only, but `exeris-kernel-community/pom.xml:81-84` declares a compile dependency on
-> `exeris-kernel-core`. That is deliberate and reconciled in
+> depending on SPI only, but `exeris-kernel-community/pom.xml` declares a compile dependency on
+> `exeris-kernel-core` (its own comment there: `AbstractLoanedBuffer` lives in core). That is
+> deliberate and reconciled in
 > [`docs/modules/03-community.md`](../modules/03-community.md) as *"Controlled Core Access
 > (ADR-008)"*. The pom is the reality; the "SPI only" phrasing is the aspiration for driver code.
 
@@ -498,7 +556,10 @@ the TCK it chooses to run.
   Is Not Vacuous*.
 - **The test triad:** unit + integration + TCK expansion. A PR touching an SPI boundary with only
   unit tests is incomplete.
-- **The golden command:** `mvn clean install`. It is lint-gated; `mvn compile` and `mvn test` are not.
+- **The golden command:** `mvn clean install`. Checkstyle runs at the `validate` phase — before
+  `compile`, so it also gates `mvn compile` and `mvn test`, not just `install` — but PMD's complexity
+  check is bound to `verify`, which `compile` and `test` never reach. A `mvn test` that passes has
+  not proven PMD-clean; only `mvn clean install` (or an explicit `mvn pmd:check`) has.
 
 ---
 

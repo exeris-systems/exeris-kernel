@@ -1,3 +1,12 @@
+---
+title: "Exeris Kernel — Support Matrix"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Exeris Kernel — Support Matrix
 
 > **Pre-1.0 / TRL-3 statement of scope.** This document declares what the **open-core (Community)**
@@ -22,15 +31,18 @@
 
 ## SPI surface status
 
-Mirrors [`stability-matrix.md`](./stability-matrix.md) — that document is the authority (with the
-`Abstract*Tck` evidence per surface); this is the consumer-facing summary.
+Summarizes [`stability-matrix.md`](./stability-matrix.md) — that document is the authority (with the
+`Abstract*Tck` evidence per surface) and its own per-surface `http` breakdown is exhaustive; this
+table is a consumer-facing digest, not a 1:1 mirror of every row there.
 
 | Subsystem (`eu.exeris.kernel.spi.*`) | Status | Since |
 |:-------------------------------------|:-------|:------|
 | `memory`, `transport`, `bootstrap`, `context`, `persistence`, `flow`, `exceptions`, `telemetry`, `config`¹ | **stable** | 0.5.0 |
 | `diagnostics` | **stable** | 0.9.0 (ADR-033) |
 | `http` — `HttpServerEngine`/`HttpClientEngine`/`HttpExchange`/`HttpHandler`/`HttpProvider`, `HttpClientRequestEnricher` | **stable** | 0.5.0 / 0.8.0 |
-| `http` — `HttpRequestBodyEncoder`/`Decoder`, `HttpResponseBodyDecoder` (ADR-034) | **preview** | 0.8.0 |
+| `http` — `HttpRequestBodyEncoder`/`Decoder`, `HttpResponseBodyEncoder`/`Decoder` (ADR-034, ADR-036) | **preview** | 0.8.0 |
+| `http` — Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` (ADR-045) | **preview** | 0.10.0 |
+| `http` — Route authorization: `HttpRoutePolicy`, `RouteRequirement` (ADR-061, ADR-077) | **preview** | 0.11.0 |
 | `http` — `HttpStreamExchange`/`HttpStreamHandler`/`StreamEvent`, SSE server-push (ADR-043) | **preview** | 0.10.0 |
 | `security.identity` — `IdentityProvider`/`TokenValidator`/`VerifiedClaims` (ADR-040) | **preview** | 0.10.0 |
 | `events`, `graph`, `security`, `crypto` | **preview** | 0.5.0 |
@@ -50,7 +62,7 @@ transport in Enterprise):
 - **Single-node only** — no built-in clustering/discovery; horizontal scale is the host application's concern.
 - **NIO transport carrier** — `java.nio` selector reactors, not `io_uring`; OpenSSL fd-owner TLS.
 - **No in-process cache ships at all** — no cache dependency is declared anywhere in the reactor, and there is no `CacheProvider` SPI. An application that needs one supplies its own.
-- **Full duplex ships, one-directional push still does too** — `HttpStreamExchange` (SSE) since 0.10 (ADR-043) and `WebSocketExchange` since 0.12 (ADR-084). The WebSocket surface is text-frame-only on the application side and carries **no server-initiated keepalive**: the read path parks without a timeout, so a ping the server originates has nothing to ride. A deployment that needs liveness detection drives it from the client.
+- **Full duplex ships, one-directional push still does too** — `HttpStreamExchange` (SSE) since 0.10 (ADR-043) and `WebSocketExchange` since 0.12 (ADR-084). The WebSocket surface is text-frame-only on the application side. Dead-peer detection is server-side and timeout-based — `idleTimeoutMillis` drives the same idle-connection reaper the TCP carrier already runs, closing a connection that has moved no bytes for that long — but the SPI's `keepAliveIntervalMillis` knob, which would have the engine itself send periodic pings, is **not honoured by the Community binding**: no server-initiated ping is sent, so a NAT or proxy path that drops silently-idle connections is not held open by the kernel. A peer that sends its own ping is always answered with a pong (RFC 6455 §5.5.2); a deployment that needs to keep an intermediary's path open drives that from the client.
 - **No per-tenant rate limit or quota** — `isolationKey` isolates tenant *data*, not tenant *throughput*. Admission is global; one tenant's burst is shed against the same counters as every other tenant's. Post-1.0.
 - **Events are single-node by default** — the in-heap bus does not cross the node boundary and the Outbox is durable *emission*, not cross-node delivery; that needs the Kafka driver. See [`subsystems/events.md`](./subsystems/events.md) → *Delivery Boundary*.
 - Best-effort performance contract (No Waste Compute on hot paths, but not the Enterprise zero-copy native tier).

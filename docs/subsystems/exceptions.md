@@ -1,3 +1,12 @@
+---
+title: "Kernel Subsystem: Exceptions (L0 Foundation)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: Exceptions (L0 Foundation)
 
 **Physical Layout:**
@@ -32,12 +41,13 @@ formatting. It implements:
 
 - **Glass Box Pattern:** We store raw primitives (`long`, `int`, `Enum`) in `rawArgs[]`. Binary crash logs are dumped
   in nanoseconds — `StringBuilder` and `String.formatted()` are strictly banned in constructors.
-- **Autoboxing on the Exception Path:** `rawArgs: Object[]` requires autoboxing primitives (e.g., `long` → `Long`).
-  This is the **only** place in the Kernel where autoboxing is permitted, because exceptions are exceptional states —
-  not data flow. A healthy system never pays this cost.
-- **Protocol Blindness:** Core is blind to HTTP, QUIC, or Database protocols. It speaks only in abstract states:
-  `EXCESSIVE_LOAD`, `UNAUTHORIZED`, `INTERNAL_ERROR`. Each Driver independently translates
-  these to its native protocol codes.
+- **Autoboxing on the Exception Path:** `rawArgs: Object[]` requires autoboxing primitives (e.g., `long` → `Long`)
+  at the throw site — a deliberate, bounded cost accepted because exceptions are not steady-state data flow.
+- **Protocol Blindness:** Core is blind to HTTP, QUIC, or Database protocols. It speaks only in the
+  abstract states `TransportErrorCode` actually declares (`INTERNAL_ERROR`, `RESOURCE_EXHAUSTED`,
+  `BIND_FAILURE`, `SEND_FAILURE`, `RECEIVE_TIMEOUT`, `BOOTSTRAP_FAILURE`, `SECURITY_VIOLATION`,
+  `PERSISTENCE_FAILURE`, `CARRIER_PINNED`). Each Driver independently translates these to its native
+  protocol codes.
 - **Privacy-First Telemetry (CWE-532 Contract):** Any configuration value, connection URL, or persistence argument
   captured in `rawArgs` **MUST** be redacted or truncated by the caller before emission. Emitting raw secrets,
   credentials, or tokens into the binary telemetry dump constitutes a CWE-532 violation against the Exeris Security
@@ -77,8 +87,8 @@ formatting. It implements:
 
 | Code           | Description                  | Glass-Box Payload                                |
 |:---------------|:-----------------------------|:-------------------------------------------------|
-| `EX-BOOT-0001` | DAG Cycle Detected           | `[0] String[] cycleMembers`                      |
-| `EX-BOOT-0002` | Subsystem Init Failure       | *(opaque — variable arity per pathway)*          |
+| `EX-BOOT-0001` | DAG Cycle Detected           | *(JFR-only — no rawArgs)*: the type actually thrown, `SubsystemCircularDependencyException`, is a plain `RuntimeException`, not an `ExerisKernelException` — it carries no `rawArgs` at all. The JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` records `cycleMembers` as one comma-joined `String`, not a `String[]`. (`KernelErrorCodes.java`'s own Javadoc for this code still describes a `String[]` rawArgs layout "emitted by the orchestrator" — that description is stale against the current `SubsystemOrchestrator`/`BootstrapJfrEvents` implementation.) |
+| `EX-BOOT-0002` | Subsystem Init Failure       | `[0] String subsystemName, [1] Phase phase (INITIALIZE\|START\|STOP), [2] String detail` — the sole thrower, `SubsystemException`, uses this fixed 3-slot layout every time. `KernelErrorCodes.java`'s Javadoc still calls this code "opaque … variable arity per pathway"; that is stale — there is exactly one pathway today. |
 | `EX-BOOT-0003` | Init Timeout                 | `[0] String subsystemName, [1] long deadlineMs`  |
 | `EX-BOOT-0004` | Memory Provider Init Failure | `[0] String providerName, [1] long reqBytes`     |
 | `EX-BOOT-3001` | Telemetry Provider Failure   | `[0] String providerName, [1] String reason`     |
@@ -102,7 +112,7 @@ formatting. It implements:
 | `EX-NET-4004` | Transport Engine Bootstrap  | `[0] String transportName, [1] String reason`         |
 | `EX-NET-4005` | Transport Engine Start      | `[0] String transportName, [1] int port`              |
 | `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] int streamPriority, [2] int thresholdPriority` |
-| `EX-NET-4007` | Buffer Exhaustion           | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs`         |
+| `EX-NET-4007` | Buffer Exhaustion           | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs` — declared in `KernelErrorCodes` but, as of this tree, no `TransportException` factory (or any other code) constructs it; there is no throw site to verify the layout against |
 
 ### HTTP (`EX-HTTP-`, codec-level violations 4001..4006; subsystem, streaming and request-decode faults 4007..)
 
@@ -117,7 +127,7 @@ formatting. It implements:
 | `EX-HTTP-4007` | HTTP Provider Bootstrap Failure              | `rawArgs[0]: String providerName`       |
 | `EX-HTTP-4008` | HTTP Server Engine Start Failure             | `rawArgs[0]: String providerName, rawArgs[1]: int port` |
 | `EX-HTTP-4009` | HTTP Client Engine Connection Failure        | `rawArgs[0]: String providerName, rawArgs[1]: String host, rawArgs[2]: int port` |
-| `EX-HTTP-4010` | HTTP/2 Rapid Reset Flood Defense (CVE-2023-44487) | `rawArgs[0]: int resetCount, rawArgs[1]: int lastProcessedStreamId` |
+| `EX-HTTP-4010` | HTTP/2 Rapid Reset Flood Defense (CVE-2023-44487) | *(JFR-only — no rawArgs)*: unlike the codes around it, this one is never thrown; `Http2RapidResetFloodEvent` emits `resetCount: int, lastProcessedStreamId: int` directly, in this order |
 | `EX-HTTP-4011` | Stream Emit After Close (ADR-043)            | `rawArgs[0]: long eventsEmitted`        |
 | `EX-HTTP-4012` | Stream Principal Expired Mid-Stream (ADR-012 §5) | `rawArgs[0]: long streamAgeMillis, rawArgs[1]: long eventsEmitted` |
 | `EX-HTTP-4013` | Request Body Decode Failure (caller fault → 400, ADR-036) | `rawArgs[0]: String targetTypeName, rawArgs[1]: long bodySize` |
@@ -142,7 +152,7 @@ formatting. It implements:
 | `EX-PERS-5003` | Query Execution Failure        | `[0] String sqlState, [1] String detail`                             |
 | `EX-PERS-5004` | Authentication Failure         | `[0] String authMechanism, [1] String serverMessage`                 |
 | `EX-PERS-5005` | Persistence Transport Failure  | `[0] String transportName, [1] long fd, [2] int errno`               |
-| `EX-PERS-5006` | Interceptor Init Failure       | `[0] String interceptorClass, [1] String isolationKey`               |
+| `EX-PERS-5006` | Interceptor Init Failure       | `[0] String interceptorClass, [1] String isolationKey` — **or**, from `PersistenceProviderException.dedicatedDatasourceNotFound()`, `[0] String providerName, [1] String dataSourceKey`. Two shapes share this code (both `String, String`); only the message text tells them apart. |
 | `EX-PERS-5007` | No Provider on Classpath       | `[0] String message`                                                 |
 | `EX-PERS-5008` | Unsupported Column Type (ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
 
@@ -160,7 +170,7 @@ formatting. It implements:
 
 | Code            | Description              | Glass-Box Payload                                               |
 |:----------------|:-------------------------|:----------------------------------------------------------------|
-| `EX-EVENT-6001` | Generic Engine Failure   | `[0] String message`                                            |
+| `EX-EVENT-6001` | Generic Engine Failure   | *(no rawArgs)* — every current throw site uses `EventEngineException`'s message-only constructor, which puts the text in `getMessage()`; `rawArgs` stays empty, not `[0] String message` |
 | `EX-EVENT-6002` | Queue Overflow           | `[0] String eventType, [1] long depth, [2] long capacity`       |
 | `EX-EVENT-6003` | Registry Conflict        | `[0] String eventType, [1] int ordinal`                         |
 | `EX-EVENT-6004` | Provider Creation Failure| `[0] String providerName, [1] String reason`                    |
@@ -174,7 +184,7 @@ formatting. It implements:
 | Code           | Description               | Glass-Box Payload                                                               |
 |:---------------|:--------------------------|:--------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure   | `[0] String providerName, [1] String reason`                                    |
-| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx` — **except `phase="WAKE"`, which carries five slots**: `[3] long instanceIdMost, [4] long instanceIdLeast` (since 0.12; a flow identity is 128 bits and does not fit the `int`). Read this layout by phase, not by arity; index 2 is the reason code on every phase |
+| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx` — **except `phase="WAKE"`, which carries five slots**: `[3] long instanceIdMost, [4] long instanceIdLeast` (since 0.12; a flow identity is 128 bits and does not fit the `int`). Read this layout by phase, not by arity; index 2 is the reason code on every phase. `phase` is one of `START`, `COMPILE`, `SCHEDULE`, `WAKE`, `OPTIMISTIC_LOCK_CONFLICT` (since 0.7), `SCHEMA_MISMATCH` (since 0.10, the phase behind eight of `FlowEngineException`'s fourteen factory methods) — `STOP` is named in the class-level contract but as of this tree no factory constructs it |
 | `EX-FLOW-7003` | Step Execution Failure    | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType (cause.getClass().getName() or "none")` |
 | `EX-FLOW-7004` | Registry Conflict         | `[0] int stepId, [1] String reason`                                             |
 
@@ -185,7 +195,7 @@ formatting. It implements:
 | `EX-CFG-1001` | Missing Property         | `[0] String missingKey, [1] String providerName`                              |
 | `EX-CFG-1002` | Type Mismatch            | `[0] String key, [1] String expectedType, [2] String actualValue` ⚠️ redact  |
 | `EX-CFG-1003` | Hot-Reload Read Error    | `[0] String filename, [1] String reason`                                      |
-| `EX-CFG-1004` | Immutable Key Reload Refused | `[0] String filename, [1] String key`                                     |
+| `EX-CFG-1004` | Immutable Key Reload Refused | *(JFR-only — no rawArgs)*: `DynamicConfigFileWatcher` never throws for this code, it only logs and calls `ImmutableReloadEvent.emitRefused(filename, key)`. The JFR event `eu.exeris.kernel.config.ImmutableReloadRefused` carries `file` and `key` fields in that shape, but no exception carries them. |
 
 ### Blob Storage (`EX-BLOB-`)
 
@@ -205,7 +215,11 @@ formatting. It implements:
 
 `9001` and `9003` are **JFR-only**: a dispatched job runs on its own thread and has no caller to
 throw to, so both are recorded on `eu.exeris.kernel.scheduling.JobFailure` rather than carried on an
-exception, and neither has a `rawArgs` layout.
+exception, and neither has a `rawArgs` layout. `JobFailureEvent` carries `schedulerName`, `jobName`,
+`jobId`, `errorCode` and `reason` for **both** codes — `CommunityJobScheduler` calls
+`emitFailure(..., EX_JOB_9001, "no-captured-context")` with a fixed reason string, and
+`emitFailure(..., EX_JOB_9003, e.getClass().getName())` with the job body's thrown exception's class
+name as the reason.
 
 | Code           | Description                                | Glass-Box Payload                              |
 |:---------------|:-------------------------------------------|:------------------------------------------------|
@@ -271,11 +285,13 @@ The origin is **not** a status code. HTTP reads `CALLER` as `4xx` but picks betw
 `403` and `409` from the exception itself; a non-HTTP binding maps it elsewhere. Keeping status out
 of the SPI is the same constraint that put status mapping on the handler in ADR-036.
 
-Four subclasses declare `CALLER` today — `RequestBodyDecodeException`,
-`SecurityAuthenticationException`, `InsufficientPrivilegesException` and
-`EventStreamAppendConflictException`. **A new subclass should state its origin when the answer is
-clear from its own contract, and leave the default when it is not**; a wrong `CALLER` is worse than
-an unclassified `SYSTEM`.
+Five subclasses declare `CALLER` today — `RequestBodyDecodeException`,
+`SecurityAuthenticationException`, `InsufficientPrivilegesException`,
+`EventStreamAppendConflictException` (all four in `exeris-kernel-spi`), and
+`eu.exeris.kernel.core.websocket.WebSocketProtocolException` in `exeris-kernel-core` — a Core-only
+type (it never reaches a handler; the engine catches it itself), carrying `EX-HTTP-4015`.
+**A new subclass should state its origin when the answer is clear from its own contract, and leave
+the default when it is not**; a wrong `CALLER` is worse than an unclassified `SYSTEM`.
 
 ## Code Examples
 
@@ -297,19 +313,33 @@ public class VirtualThreadPinningException extends ExerisKernelException {
 
 ### 2. Error Mapper Registry (Core — Protocol Blindness)
 
+// NOTE: this mirrors the real `ErrorMapperRegistry` (`exeris-kernel-core`) — it dispatches on the
+// `errorCode` *string prefix*, not `instanceof`, and only the `TransportErrorCode` values that
+// class actually declares. An earlier version of this example used a fictional
+// `mapToTransportCode(Throwable)` method and enum constants (`EXCESSIVE_LOAD`, `UNAUTHORIZED`)
+// that do not exist anywhere in the codebase; that has been replaced with the real shape below.
+
 ```java
 package eu.exeris.kernel.core.telemetry;
 
-public class ErrorMapperRegistry {
+public final class ErrorMapperRegistry {
 
-    public TransportErrorCode mapToTransportCode(Throwable ex) {
-        if (ex instanceof MemoryExhaustedException) {
-            return TransportErrorCode.EXCESSIVE_LOAD;
+    public static TransportErrorCode map(ExerisKernelException exception) {
+        if (exception == null) {
+            return TransportErrorCode.INTERNAL_ERROR;
         }
-        if (ex instanceof PrincipalContextMissingException) {
-            return TransportErrorCode.UNAUTHORIZED;
+        return mapCode(exception.errorCode());
+    }
+
+    static TransportErrorCode mapCode(String errorCode) {
+        if (errorCode.startsWith("EX-MEM-")) {
+            return TransportErrorCode.RESOURCE_EXHAUSTED; // e.g. MemoryExhaustedException
         }
-        return TransportErrorCode.INTERNAL_ERROR;
+        if (errorCode.startsWith("EX-SEC-")) {
+            return TransportErrorCode.SECURITY_VIOLATION;  // e.g. PrincipalContextMissingException
+        }
+        // ... EX-NET-, EX-PERS-, EX-BOOT-, EX-RUN-, EX-CFG- each map to their own category
+        return TransportErrorCode.INTERNAL_ERROR; // the default, including every EX-HTTP-* and EX-GRPH-* code
     }
 }
 ```
@@ -368,9 +398,9 @@ TCK obligations:
 ## Summary
 
 The Exceptions subsystem provides type-safe, traced, and environment-aware error handling. By enforcing the `EX-` code
-standard, the `rawArgs` binary contract, and CWE-532 privacy rules, it ensures that even under 1M RPS load the Kernel
-leaves a perfect, zero-allocation forensic trail — without coupling itself to any specific network protocol or database
-driver.
+standard, the `rawArgs` binary contract, and CWE-532 privacy rules, it ensures the Kernel leaves a structured,
+low-allocation forensic trail on the ordinary throw path, and a genuinely zero-allocation one when a subclass uses the
+Sentinel constructor — without coupling itself to any specific network protocol or database driver.
 
 ---
 

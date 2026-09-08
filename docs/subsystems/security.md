@@ -1,13 +1,22 @@
+---
+title: "Kernel Subsystem: Security (L1 Citadel)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: Security (L1 Citadel)
 
 **Physical Layout:**
 
-- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles` + `RoleRegistry` + `PrincipalContext.roleMask()`** since 0.7.0)
+- SPI: `eu.exeris.kernel.spi.security.*` (PrincipalContext, StorageContext, SecurityProvider, AuthenticationResult, ImmutablePrincipal, ImmutableStorageContext, KernelIsolationClaims, credentials/KernelPasswordEncoder, credentials/PasswordEncoderConfig, **`@RequiresRole` + `RoleMatch` + `KernelRoles` + `RoleRegistry` + `PrincipalContext.roleMask()`** since 0.7.0; `identity/` sub-package — `IdentityProvider`, `IdentityProviderRegistry`, `TokenValidator`, `ClaimsMapper`, `IdentityStorageMapping`, `KeyRotationPolicy`, `VerifiedClaims` — since 0.10)
   > **Note:** the SPI surface for compile-time RBAC ships in 0.7.0 — annotation + role-bit catalogue (Sprint 8a), `RoleRegistry` interface + `roleMask()` carrier (Sprint 8b-ii). The APT processor in `exeris-kernel-build-config` ships in Sprint 8b-i; the Core `RoleCheckEnforcer` runtime decision helper ships in Sprint 8b-ii.
   >
   > **Corrected 2026-08-05.** This note previously said that wiring the generated registry into a bootstrap loader and auto-binding the enforcer into the transport admission path "remain operator concerns until the auto-bind landing". Both halves of that were wrong by 0.8.0 and the sentence misled a later audit, so it is replaced rather than amended. Registry wiring **shipped** in Sprint 4 (SEC-080): `GeneratedRoleRegistryLoader.load()` is called in production from `CommunityHttpRequestProcessor`, and `SecurityInterceptor` binds a `MaskedPrincipal` carrying the precomputed `roleMask()`. Enforcer auto-binding is not pending either — kernel-edge `methodId` enforcement was **descoped**, for the reason recorded in §"`@RequiresRole` Processing" below, which is the authoritative statement.
-- Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityJwksValidator`)
-- Core: `eu.exeris.kernel.core.security.*` (Token Extractors, ScopedValue Orchestration)
+- Community: `eu.exeris.kernel.community.security.*` (`CommunitySecurityProvider`, `Argon2idPasswordEncoder`, `CommunityOidcIdentityProvider`, `CommunityOidcTokenValidator`, `CommunityClaimsMapper` + `CommunityClaimsMapperResolver`, `CommunityJwksHttpKeySetSource` + `CommunityRotatingKeySet` + `StaticJwksKeyResolver`)
+- Core: `eu.exeris.kernel.core.security.*` (`SecurityInterceptor`, `StorageContextBridge`, `CitadelGuard`, `RouteAuthorizationEnforcer`, `RoleCheckEnforcer`, `GeneratedRoleRegistryLoader`, `MaskedPrincipal`)
 
 **Layer:** L1 (Data & Integrity)
 **Status:** Validated Architectural Prototype (TRL-3)
@@ -37,8 +46,10 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
    or bypassed once the request enters the Kernel.
 2. **Clean Domain (No Context Pollution):** Domain Entities do NOT contain security metadata. Context is propagated
    invisibly to the Persistence layer to enforce Row-Level Security (RLS).
-3. **Fail-Closed Architecture:** If a security context cannot be established at the transport edge, the Virtual Thread
-   is terminated immediately — before any business logic executes. This prevents wasted CPU cycles on unauthorized
+3. **Fail-Closed Architecture:** If a security context cannot be established, the request is dropped before the
+   handler runs and a `401` is returned. The connection's virtual thread is *not* terminated — one virtual thread
+   serves a whole keep-alive connection, so `CommunityHttpRequestProcessor`'s loop continues with the next request
+   on the same thread. What fails closed is the request, not the carrier. This still prevents work on unauthorized
    work and is the Kernel's first line of defense.
 4. **Framework Ready:** `PrincipalContext` is an interface, allowing seamless integration with external frameworks via
    adapters (e.g., Spring Security) without leaking framework types into the SPI.
@@ -58,8 +69,8 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 1. Orchestrate identity authentication at the transport boundary through `SecurityInterceptor` + `SecurityProvider` SPI (provider implementations perform token/JWKS verification).
 2. Bind `PrincipalContext` and `StorageContext` via `ScopedValue.where(...)` for the duration of the request.
 3. Coordinate with the Persistence subsystem to enforce Row-Level Security (RLS).
-4. `CitadelGuard` — sentinel-pool RBAC enforcement gate with `preAllocate(String role)` / `seal()` / `requireRole(String role)`. Sealed at bootstrap READY transition.
-5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext` (SHARED-only derivation contract per ADR-010 §4a; full SEPARATED_SCHEMA/DEDICATED derivation comes from `SecurityProvider.authenticate()`). Fail-closed: when the `PrincipalContext` ScopedValue is unbound at the call site, `StorageContextBridge.derive()` raises `PrincipalContextMissingException` (`EX-SEC-2001`) and the request is rejected at the security boundary before any persistence interaction.
+4. `CitadelGuard` — sentinel-pool RBAC enforcement gate with `preAllocate(String role)` / `seal()` / `requireRole(String role)`. It is a standalone Core utility class: neither `CommunitySecuritySubsystem` nor any other bootstrap path in this repository constructs a `CitadelGuard` or calls `seal()` — an application that wants dynamic (non-`@RequiresRole`) RBAC decisions instantiates and seals its own instance during its own warm-up. The "sealed at bootstrap READY" pattern is the class's documented usage contract, not something the kernel does automatically today.
+5. `StorageContextBridge` — derives a SHARED `StorageContext` from a `PrincipalContext` (SHARED-only derivation contract per ADR-012 §4a / ADR-040 §2.4; full SEPARATED_SCHEMA/DEDICATED derivation comes from `SecurityProvider.authenticate()`). Fail-closed: `derive(PrincipalContext)` raises `PrincipalContextMissingException` (`EX-SEC-2001`) when handed a `null` principal, and the convenience overload `deriveFromActivePrincipal()` raises the same exception when the `PrincipalContext` ScopedValue is unbound at the call site — either way the request is rejected at the security boundary before any persistence interaction.
 
 > **TCK status:**
 >
@@ -80,9 +91,20 @@ zero-leak, hyper-density concurrency with immutable identity at every layer. It 
 | `EX-SEC-2004` | StorageContext Missing     | Prevent DB access to avoid RLS leakage              | *(no rawArgs)*                                       |
 
 **RLS integrity note for `EX-SEC-2004`:** The `StorageContext` ScopedValue carries the tenant identifier injected
-into the DB connection state. If it is absent when the Persistence layer is reached, the Kernel must abort the
-query immediately — a missing `StorageContext` is equivalent to a missing `WHERE tenant_id = ?`, which would
-expose cross-tenant data.
+into the DB connection state. A missing `StorageContext` is equivalent to a missing `WHERE tenant_id = ?`, so
+`KernelProviders.storageContext()` raises `EX-SEC-2004` rather than returning a default.
+
+> **The request-scoped path does not use that accessor, and this is the gap to know about.**
+> `KernelProviders` also exposes `storageContextOrSystem()`, which returns `ImmutableStorageContext.GLOBAL`
+> when the ScopedValue is unbound, raising nothing. `CommunityPersistenceEngine.openConnection()` — the
+> zero-arg overload — calls that one, and it is the overload `PersistenceSessionBox` uses for every
+> non-`LONG_RUNNING` HTTP request. `TransactionOrchestrator`'s default constructor documents the same
+> fallback.
+>
+> A `permitAll()` route never runs the interceptor at all (`CommunityHttpRequestDispatcher` returns early on
+> `RouteRequirement.Kind.PERMIT_ALL`), so `STORAGE_CONTEXT` is never bound for it. If such a handler touches
+> persistence it therefore receives a `GLOBAL`-scoped connection **silently** — not an aborted query and not
+> an `EX-SEC-2004`. Treat `permitAll()` plus persistence as a route that must scope its own reads.
 
 ---
 
@@ -115,7 +137,8 @@ The `ScopedValue` bound here is automatically inherited by every child task fork
 `StructuredTaskScope`. There is no need to pass `PrincipalContext` as a method parameter — it flows
 invisibly into all subtasks for the lifetime of the scope.
 
-> **Citadel Contract:** `runInContext` does **not** accept a `StorageContext` parameter from the caller.
+> **Citadel Contract:** `SecurityInterceptor.interceptPreAuthenticated(PrincipalContext, Runnable)` does
+> **not** accept a `StorageContext` parameter from the caller.
 > The Citadel derives the database identity itself, cryptographically, from the verified `PrincipalContext`
 > (e.g., JWT claims). Never trust upper layers with storage routing — doing so opens a
 > Privilege Escalation / Cross-Tenant Data Leak vector where a developer in L3 could couple a token
@@ -124,28 +147,28 @@ invisibly into all subtasks for the lifetime of the scope.
 ```java
 package eu.exeris.kernel.core.security;
 
-public class SecurityInterceptor {
+public final class SecurityInterceptor {
 
-    // intercept(LoanedBuffer rawToken, Runnable operation): boolean
-    // runAsSystem(PrincipalContext system, Runnable operation): void
-    // bindPreAuthenticated(PrincipalContext principal, Runnable operation): void
+    // intercept(LoanedBuffer rawToken, Runnable requestHandler): boolean
+    // interceptPreAuthenticated(PrincipalContext principal, Runnable requestHandler): boolean
+    // runAsSystem(PrincipalContext system, Runnable task): void
 
-    public boolean intercept(LoanedBuffer rawToken, Runnable operation) {
-        StorageContext storage = StorageContextBridge.derive(authenticate(rawToken));
+    public boolean intercept(LoanedBuffer rawToken, Runnable requestHandler) {
+        AuthenticationResult result = provider.authenticate(rawToken); // throws on failure
 
-        ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal)
-                   .where(KernelProviders.STORAGE_CONTEXT, storage)
-                   .run(operation);
+        ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, result.principal())
+                   .where(KernelProviders.STORAGE_CONTEXT, result.storage())
+                   .run(requestHandler);
         return true;
     }
 }
 ```
 
-> The interceptor takes a raw token buffer (not a pre-authenticated `PrincipalContext`) for the normal authentication path. For SEPARATED_SCHEMA / DEDICATED strategies, `SecurityProvider.authenticate()` produces the `StorageContext` directly; `StorageContextBridge.derive()` applies only to the SHARED fallback path.
+> `intercept()` — the normal, raw-token path — never calls `StorageContextBridge.derive()`: `SecurityProvider.authenticate()` returns an `AuthenticationResult` carrying both the `PrincipalContext` and the `StorageContext` (SHARED, SEPARATED_SCHEMA or DEDICATED, decided by the provider from verified token claims), and the interceptor binds `result.storage()` directly. `StorageContextBridge.derive()` is used only by `interceptPreAuthenticated()`, which accepts a caller-supplied `PrincipalContext` with no paired `StorageContext` and derives one (SHARED-only — see the Isolation Bridge note below).
 
 ### 3. Fail-Closed Enforcement at Transport Edge
 
-> **Note:** `TokenValidator` does not exist as a class. Fail-closed token rejection is handled inside `SecurityInterceptor.intercept()`, which catches `SecurityAuthenticationException`, emits `SecurityContextMissingEvent` (JFR), and returns `false` without propagating the exception.
+> **Corrected 2026-09-08.** This note previously said `TokenValidator` does not exist as a class. It does, since 0.10: `eu.exeris.kernel.spi.security.identity.TokenValidator` is the SPI interface for the cryptographic-verification half of an `IdentityProvider` (`kid → key → algorithm → signature → issuer → audience → time`), implemented by Community's `CommunityOidcTokenValidator`. Fail-closed token rejection at the transport edge is still handled inside `SecurityInterceptor.intercept()`, which catches `SecurityAuthenticationException` (raised by `TokenValidator` and by the `SecurityProvider`/`IdentityProvider` chain above it), emits `SecurityContextMissingEvent` (JFR), and returns `false` without propagating the exception.
 
 ---
 
@@ -154,12 +177,12 @@ public class SecurityInterceptor {
 ### Unit Tests
 
 - `PrincipalContext` implementations (record-based vs adapter-based).
-- RBAC logic: role matching, hierarchy, and `@RequiresRole` annotation processor.
+- RBAC logic: `RoleMatch.ANY`/`RoleMatch.ALL` bitmask matching and the `@RequiresRole` annotation processor. Roles are flat — there is no role-hierarchy concept anywhere in the SPI or Core (e.g. holding `ROLE_ADMIN` does not imply `ROLE_OPERATOR`); each `@RequiresRole` declaration lists exactly the roles it accepts.
 - `EX-SEC-2004` is thrown when `STORAGE_CONTEXT` slot is empty at Persistence handover.
 
 ### Integration Tests
 
-- Token extraction validation in the Community TCP transport driver.
+- Token extraction and validation in the Community HTTP request processor (`CommunityHttpRequestProcessor` / `CommunityHttpRequestDispatcher`, layered over the native TCP carrier) — `SecurityInterceptor` is wired at the HTTP layer, not inside the raw TCP transport driver itself.
 - `ScopedValue` inheritance during parallel processing: verify `PrincipalContext` is accessible
   in all subtasks forked within a `StructuredTaskScope` without explicit parameter passing.
 - RLS enforcement: DB queries are physically restricted to the bound tenant — verified by attempting
@@ -200,17 +223,29 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 
 | Scenario                                          | Kernel Behaviour                                                                                    |
 |:--------------------------------------------------|:----------------------------------------------------------------------------------------------------|
-| Token expires while VT is **parked** (saga wait)  | The `PrincipalContext` ScopedValue retains the last-validated principal until the Saga step completes. Re-validation is triggered only at the **next transport boundary** (next incoming stream), not during park/wake cycles. |
+| Token expires while a Saga step is **parked**     | Re-validation happens only at the **next transport boundary** (the next incoming request that gets a fresh `SecurityInterceptor.intercept()` call), not during park/wake — see the correction below for why there is no `PrincipalContext` to hold onto in the meantime. |
 | Token expires during **active execution**         | The security layer does NOT interrupt in-flight requests. The token was valid at admission — the Kernel honours admission-time decisions. |
-| Token is **revoked** (not merely expired)         | Revocation is enforced only at the next request admission boundary. There is no in-flight revocation mechanism — this is a deliberate trade-off between latency and strict revocation semantics. Operators requiring strict revocation must use short-lived tokens (≤ 60 s) combined with PAQS watermark-driven shedding to limit the revocation window. |
-| Vault dynamic secret **rotation** during boot     | Config's `@Dynamic`-annotated secret fields participate in hot-reload. When Vault rotates a secret, the configuration hot-reload watcher (using `inotify`/`WatchService`) invalidates the cached `VarHandle` value. New tokens signed with the rotated signing key are validated against the updated JWKS — no restart required. |
-| Vault is **down during boot**                     | `FAIL_FAST` mode (default): the Config subsystem throws `EX-CFG-1001` and the Boot DAG halts. `DEGRADE` mode: last-known configuration is used; this mode is reserved for local development and MUST NOT be deployed to production. The `config.vault.timeoutMs` key controls the connection timeout before fail-fast fires. |
+| Token is **revoked** (not merely expired)         | The Community `TokenValidator` checks signature, issuer, audience and expiry against the JWKS — it has no revocation-list or introspection check, so a self-contained JWT that is still cryptographically valid and unexpired is accepted regardless of revocation. Revocation therefore only takes effect once the token itself expires or a rotated JWKS makes its signature invalid. Operators requiring tighter revocation windows must issue short-lived tokens. |
 
-> **Saga Parking Security Contract:** A Saga's `PrincipalContext` is captured at the point the Saga is
-> **admitted** through the PAQS gate. The `ScopedValue` is re-bound at `state.wake(event)` using the
-> **same admitted principal** — not re-extracted from an incoming event. This means the Saga's security
-> context is immutable for its entire lifetime. If a revocation must apply to a parked Saga, the operator
-> must use a saga cancellation API (planned for the `FlowEngine` SPI) which will force compensation and drop the Saga.
+> **Corrected 2026-09-08 — "Saga Parking Security Contract" withdrawn, and the Vault rows above it
+> removed.** This section previously described a `PrincipalContext` captured at PAQS admission and
+> re-bound at `state.wake(event)`, plus a Vault-backed secret-rotation and boot-failure contract with
+> a `config.vault.timeoutMs` key. Neither exists in this codebase. There is no Vault integration
+> anywhere in the kernel, and no `config.vault.timeoutMs` property; `Config` is an L0 FOUNDATION
+> subsystem, so a boot-time Config failure is always `FAIL_FAST` — `SubsystemOrchestrator`'s `DEGRADE`
+> policy explicitly cannot apply to a FOUNDATION subsystem, which rules out the described
+> "last-known configuration" fallback for Config specifically.
+>
+> On the Saga side: a Saga (`RuntimeFlowInstance`) runs each schedule or wake on a **freshly created,
+> bare virtual thread that inherits no `ScopedValue` binding at all** — not `PrincipalContext`, not
+> `StorageContext`. `CoreFlowRuntime` captures only an `EventEngine`, an `IdempotencyGuard` and a
+> `TimeSource` at schedule/wake time and holds them as fields for exactly this reason; there is no
+> equivalent capture of a security identity anywhere in the flow engine, and `FlowScheduler.wake(...)`
+> takes no principal parameter. A running or parked Saga step therefore has **no bound
+> `PrincipalContext`** unless the step's own business logic explicitly re-establishes one (e.g. via
+> `SecurityInterceptor.runAsSystem(...)`) — RLS enforcement and role checks that depend on the
+> ScopedValue slots do not apply inside a Saga step by default. A saga cancellation API on the
+> `FlowEngine` SPI is not implemented as of 0.12.
 
 ---
 
@@ -252,8 +287,12 @@ token lifetime. The following contract governs token lifecycle in the Kernel:
 > coverage (`AbstractGeneratedRoleRegistryLoaderTck`, `AbstractRoleMaskPopulationTck`); it
 > deliberately does not add URL→methodId routing to `CommunityHttpRequestDispatcher`.
 >
-> Dynamic role decisions continue to use `CitadelGuard.requireRole(...)` — both paths emit
-> `EX-SEC-2003` so operators see uniform telemetry.
+> Dynamic role decisions continue to use `CitadelGuard.requireRole(...)`. Both paths raise
+> `InsufficientPrivilegesException` and so carry `EX-SEC-2003`, but the telemetry is not uniform:
+> `SecurityJfrEvents.emitInsufficientPrivileges(...)` has exactly one call site in the tree,
+> `CitadelGuard.requireRole()`. `RoleCheckEnforcer.check()` — the compile-time `@RequiresRole` path this
+> section describes — throws directly and commits no JFR event, so an operator watching
+> `InsufficientPrivilegesEvent` sees nothing for a `@RequiresRole` denial.
 
 ### SPI surface (since 0.7.0)
 
@@ -285,9 +324,13 @@ contract end-to-end.
    the annotation by FQN string and declares no project-scope dependency on
    `exeris-kernel-spi` — that would create a reactor cycle (SPI consumes
    build-config rulesets via plugin classpath).
-2. **Runtime lookup:** At admission time, the transport layer performs a single `long` bitmask AND operation
-   between the principal's role bitmask (extracted from the JWT at parse time) and the required role bitmask
-   from the registry. This is O(1) and allocation-free.
+2. **Runtime lookup:** wherever a caller invokes `RoleCheckEnforcer` with a compile-time `methodId`, the
+   check is a single `long` bitmask AND (or EQ) operation between the principal's precomputed
+   `roleMask()` and the required role bitmask from the registry — O(1) and allocation-free. As the
+   "Kernel-edge `methodId` enforcement is descoped" note above states, the Community HTTP dispatcher
+   does **not** call this automatically at request admission; nothing currently maps a request URL to
+   a `methodId`, so this hot-path check applies wherever an application (or a future codegen layer)
+   calls `RoleCheckEnforcer` itself with a resolved `methodId`.
 3. **No `Class.getAnnotation()` on hot path:** Zero reflection calls occur after JVM startup. The APT-generated
    registry is resolved once at bootstrap by `eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader`
    (reflective `Class.forName` by FQN, then `MethodHandle` binding of the five static accessors). The
@@ -362,8 +405,11 @@ For mTLS requirements, operate an mTLS-terminating proxy (e.g., Envoy, Nginx) in
 
 | Event | When Emitted | Key Fields |
 |:------|:-------------|:-----------|
+| `PrincipalBoundEvent` | `SecurityInterceptor` successfully authenticates a request and binds `PrincipalContext`/`StorageContext` | `providerId`, `isolationStrategy`, `hasTenant`, `durationMicros` |
 | `SecurityContextMissingEvent` | Any denial where no security context could be established | `errorCode`, `dropReason` |
-| `InsufficientPrivilegesEvent` | `CitadelGuard` RBAC gate denial (EX-SEC-2003) | `errorCode`, `requiredRole` |
+| `InsufficientPrivilegesEvent` | `CitadelGuard` RBAC gate denial (EX-SEC-2003) | `requiredRole`, `principalIdHash` |
+| `StorageContextDerivedEvent` | `StorageContextBridge` derives a `StorageContext` from the active `PrincipalContext` | `isolationStrategy`, `hasTenant` |
+| `RoleRegistryLoadedEvent` | Once at bootstrap, when `GeneratedRoleRegistryLoader` resolves (or fails to find) the generated `RoleCheckRegistry` | `generatedClassFound`, `methodCount` |
 
 ### Why a denial names its reason (since 0.12)
 

@@ -1,3 +1,12 @@
+---
+title: "Build an Application on Exeris Kernel"
+type: tutorial
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Build an Application on Exeris Kernel
 
 **Audience:** you are writing an application and want the kernel to run it — boot it, serve HTTP,
@@ -6,9 +15,10 @@ configure it, and test it.
 **Prerequisite:** [01 — Platform and Dependencies](./01-platform-and-dependencies.md). This page
 assumes `eu.exeris:exeris-kernel-community` is on your classpath.
 
-> **Verified against** `0.11.0-SNAPSHOT` at commit `1b93bf65`, 2026-08-11. Every snippet below is
-> quoted or minimally adapted from the cited file, and the citation is printed above it. If a
-> snippet and its source disagree, **the source wins and this guide is the bug**.
+> **Verified against** `0.12.0` at commit `38208e69`, 2026-09-08, on the `development/0.12.0` line.
+> Every snippet below is quoted or minimally adapted from the cited class or method, not a line
+> range — line numbers rot on every unrelated edit to the same file, symbols don't. If a snippet
+> and its source disagree, **the source wins and this guide is the bug**.
 
 ---
 
@@ -24,14 +34,15 @@ call `KernelBootstrap`, it brings up the subsystems you asked for, and it hands 
 ## The one thing to get right
 
 **`boot(Runnable)` is blocking, and the `Runnable` you pass it *is* your application's lifetime.**
-When that `Runnable` returns, the kernel shuts down — in reverse-topological order, from a `finally`
-block that always runs
-(`exeris-kernel-core/src/main/java/eu/exeris/kernel/core/bootstrap/KernelBootstrap.java:294-298`).
+When that `Runnable` returns, the kernel shuts down — in reverse-topological order, from the
+`finally` block inside `KernelBootstrap`'s private `runBootInsideScope(...)`, which always calls
+`orchestrator.shutdown()` regardless of how the boot exited.
 
 So a server must **park inside the lambda**. If you boot and return immediately, you have written a
 program that starts a kernel and then stops it.
 
-Source: `exeris-kernel-community-testkit/src/main/java/eu/exeris/kernel/community/testkit/http/KernelBootstrapHttpEngineFixture.java:192-196`
+Source: `KernelBootstrapHttpEngineFixture`'s runtime lambda, in
+`exeris-kernel-community-testkit/src/main/java/eu/exeris/kernel/community/testkit/http/`
 (adapted — the fixture's latch and `AtomicReference` plumbing removed).
 
 ```java
@@ -53,9 +64,12 @@ bootstrap.boot(() -> {
 
 ## A minimal boot
 
-`KernelBootstrap` is a builder. This is the only real `main()` in the repository:
+`KernelBootstrap` is a builder. This is the only `main()` in the repository that boots the kernel
+(a second `main()` exists in the `jfr-reporter` tool, but it post-processes recorded JFR files
+offline and never touches `KernelBootstrap`):
 
-Source: `exeris-kernel-diagnostics-cli/src/main/java/eu/exeris/kernel/diagnostics/cli/DiagnosticsCli.java:75-88`
+Source: `DiagnosticsCli.main(String[])`, in
+`exeris-kernel-diagnostics-cli/src/main/java/eu/exeris/kernel/diagnostics/cli/`
 (quoted).
 
 ```java
@@ -85,7 +99,7 @@ Note it calls **`inspect()`**, not `boot()`. The two differ in how far they take
 
 `inspect()` is the zero-risk way to check your classpath resolves before you commit to a real boot.
 
-Builder options (`exeris-kernel-core/src/main/java/eu/exeris/kernel/core/bootstrap/KernelBootstrap.java:464-513`): `selector(...)`, `failurePolicy(...)`,
+Builder options (`KernelBootstrap.Builder`): `selector(...)`, `failurePolicy(...)`,
 `classLoader(...)`, `build()`.
 
 ---
@@ -102,7 +116,7 @@ BootstrapSelector.forNames("http")             // http + everything it depends o
 BootstrapSelector.forNames("persistence", "events")
 ```
 
-Source: `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/BootstrapSelector.java:67, 81, 102`.
+Source: `BootstrapSelector.all()`, `.none()`, `.forNames(String...)`.
 
 The Community subsystems, with what each declares:
 
@@ -112,26 +126,29 @@ The Community subsystems, with what each declares:
 | `crypto` | `memory` | SERVICES |
 | `security` | `memory` | SERVICES |
 | `persistence` | `memory` | SERVICES |
+| `storage` | `memory` | SERVICES |
 | `transport` | `memory`, `crypto` | SERVICES |
 | `graph` | `memory`, `persistence` | SERVICES |
 | `scheduling` | — | SERVICES |
 | `events` | `memory`, `persistence` | RUNTIME |
 | `flow` | `persistence` | RUNTIME |
 | `http` | `memory` | RUNTIME |
+| `websocket` | `memory` | RUNTIME |
 
-Source: the `name()` / `dependsOn()` / `phase()` methods of
-`exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/Community*Subsystem.java`
-(read from source, 2026-08-11).
+Source: the `name()` / `dependsOn()` / `phase()` methods of the twelve `Community*Subsystem`
+classes in `exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/`
+(read from source, 2026-09-08). `storage` and `websocket` are the two additions since this page was
+last checked — do not assume the ten-subsystem set from an older reading is still the whole story.
 
 Phases run in order — `FOUNDATION(0)` → `SERVICES(1)` → `RUNTIME(2)` — and a subsystem in phase N
-starts only after every subsystem in phase N-1 is `RUNNING`
-(`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/BootstrapPhase.java:12-22`).
+starts only after every subsystem in phase N-1 is `RUNNING` (`BootstrapPhase`'s class Javadoc,
+"The Holy Order").
 
 > **Note on [`docs/subsystems/bootstrap.md`](../subsystems/bootstrap.md).** Its Diagram 1 predates
-> the current Community set — it omits `security` and `scheduling` — and its `(parallel)` phase
-> labels predate the v0.11 change described later in that same document, where phases start on the
-> booting thread (ADR-066). The table above is the current set; read the diagram for the DAG
-> concept, not the membership.
+> the current Community set — it omits `security`, `scheduling`, `storage`, and `websocket` — and
+> its `(parallel)` phase labels predate the v0.11 change described later in that same document,
+> where phases start on the booting thread (ADR-066). The table above is the current set; read the
+> diagram for the DAG concept, not the membership.
 
 ### Failure policy
 
@@ -145,11 +162,9 @@ failures, but only for subsystems that declare `isOptional()`, and never for `FO
 ### The rule: bind the handler *around* `boot()`, not inside it
 
 Your handler reaches the HTTP engine through a `ScopedValue`,
-`HttpKernelProviders.HTTP_SERVER_HANDLER`
-(`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/http/HttpKernelProviders.java:80`). The HTTP
-subsystem reads it during `start()`.
+`HttpKernelProviders.HTTP_SERVER_HANDLER`. The HTTP subsystem reads it during `start()`.
 
-That ordering is the whole trick. From `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/bootstrap/BootstrapPhase.java:16-22`:
+That ordering is the whole trick. From `BootstrapPhase`'s class Javadoc:
 
 > *"the Core orchestrator starts them in order on the booting thread (ADR-066), because a subsystem's
 > `start()` must observe the `ScopedValue` bindings the application established around `boot()`, and
@@ -157,7 +172,8 @@ That ordering is the whole trick. From `exeris-kernel-spi/src/main/java/eu/exeri
 
 Bind it inside the lambda and the subsystem has already started without it.
 
-Source: `exeris-kernel-community-testkit/src/main/java/eu/exeris/kernel/community/testkit/http/KernelBootstrapHttpEngineFixture.java:185-202`
+Source: `KernelBootstrapHttpEngineFixture`'s runtime lambda, in
+`exeris-kernel-community-testkit/src/main/java/eu/exeris/kernel/community/testkit/http/`
 (adapted — latch, `AtomicReference`, and failure capture removed).
 
 ```java
@@ -181,11 +197,12 @@ ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, handler)
 
 ### Writing a handler
 
-`HttpHandler` is a `@FunctionalInterface` with one method, `void handle(HttpExchange)`
-(`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/http/HttpHandler.java:37-50`). On the exchange you get `request()`,
-`pathParams()`, and `respond(...)` — which you must call **exactly once**.
+`HttpHandler` is a `@FunctionalInterface` with one method, `void handle(HttpExchange)`. On the
+exchange you get `request()`, `pathParams()`, and `respond(...)` — which you must call
+**exactly once**.
 
-Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/testing/http/KernelBootstrapHttpEngineFixtureIntegrationTest.java:38-47`
+Source: `KernelBootstrapHttpEngineFixtureIntegrationTest`, in
+`exeris-kernel-community/src/test/java/eu/exeris/kernel/community/testing/http/`
 (quoted).
 
 ```java
@@ -201,18 +218,19 @@ fixture.start(exchange -> {
 });
 ```
 
-`respond` has four forms (`exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/http/HttpExchange.java:86-122`): `respond(HttpResponse)`,
+`respond` has four forms (`HttpExchange`): `respond(HttpResponse)`,
 `respond(HttpTypedResponse)`, `respond(HttpStatus, Object)` — which serialises the payload through
 the response encoder — and `respond(HttpStatus)` for a bare status.
 
 ### Routing
 
 You do not have to `switch` on paths. `HttpRouter` **is** an `HttpHandler`
-(`exeris-kernel-core/src/main/java/eu/exeris/kernel/core/http/routing/HttpRouter.java:51`), so it
-drops into the same slot.
+(`public final class HttpRouter implements HttpHandler`), so it drops into the same slot.
 
-Source: `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/testing/http/GeneratedAppBootPathReachabilityIntegrationTest.java:66-71, 104-111`
-(quoted, two fragments joined).
+Source: `GeneratedAppBootPathReachabilityIntegrationTest`, in
+`exeris-kernel-community/src/test/java/eu/exeris/kernel/community/testing/http/`
+(quoted, two fragments joined: `byIdRoutesResolveAndJsonPostDecodes()` and its
+`respondWithCapturedId` helper).
 
 ```java
 HttpRouter router = HttpRouter.builder()
@@ -230,7 +248,7 @@ private static void respondWithCapturedId(HttpExchange exchange) {
 }
 ```
 
-Builder surface (`exeris-kernel-core/src/main/java/eu/exeris/kernel/core/http/routing/HttpRouter.java:235-315`): `route(method, path, handler)`,
+Builder surface (`HttpRouter.Builder`): `route(method, path, handler)`,
 `route(handler, path, methods...)`, `prefixRoute(method, prefix, handler)`,
 `streamRoute(method, path, streamHandler)` for SSE, and `notFound(handler)`.
 
@@ -246,15 +264,21 @@ There is no configuration file. Community resolves every key in this order:
 2. Environment variable `EXERIS_<KEY>` — dots and dashes become underscores, uppercased: `EXERIS_HTTP_PORT=8080`
 3. The compiled default
 
-Source: `exeris-kernel-community/src/main/java/eu/exeris/kernel/community/config/CommunityConfigProvider.java:180-197`.
+Source: `CommunityConfigProvider`'s "Resolution Order" class Javadoc.
 
 Inside your application, read config with `KernelProviders.CURRENT_CONFIG.get()`.
 
 > **Two limits worth knowing before you design around config.**
-> - **No file is read at startup.** The `DynamicConfigFileWatcher` in Core parses `.properties` files
->   for *hot-reload* only, from `exeris.config.dir` / `EXERIS_CONFIG_DIR` / `/etc/exeris/config`.
+> - **A file can be read at startup — but only for `@Immutable`-guarded keys.** The
+>   `DynamicConfigFileWatcher` in Core parses `.properties` files for hot-reload, and — for every
+>   key sealed via `ConfigProvider.guardImmutable(file, key)` with a file registered — it also
+>   performs one synchronous startup read to seed the pre-boot baseline that a later on-disk
+>   mutation is checked against and refused. This runs once at boot, whether or not the file ever
+>   changes. It resolves its watch directory from `exeris.config.dir` / `EXERIS_CONFIG_DIR` /
+>   `/etc/exeris/config`.
 > - **Community's `watch()` is a documented no-op** — hot-reload is an Enterprise capability
->   (`exeris-kernel-community/src/main/java/eu/exeris/kernel/community/config/CommunityConfigProvider.java:151-159`: *"No-op — Community tier does not support hot-reload"*).
+>   (`CommunityConfigProvider.watch(String, String, Consumer)`: *"No-op — Community tier does not
+>   support hot-reload"*).
 >
 > So in Community, configuration is entirely system properties and environment variables. See
 > [`docs/subsystems/config.md`](../subsystems/config.md) for the full contract.
@@ -293,14 +317,14 @@ SINGLE decoded literal. Compression is what makes the first two independent, and
 what the server advertises as SETTINGS_MAX_HEADER_LIST_SIZE. All three are protective bounds, so
 `0` is refused rather than read as "unlimited".
 
-Source: `CommunityHttpConfigResolver.resolve`.
+Source: `CommunityHttpConfigResolver.buildHttpConfig(ConfigProvider)`.
 
 > ### Gotcha: HTTP binds nothing, silently
 >
 > If **neither** `http.mode` **nor** a port is set, the resolver returns `HttpMode.DISABLED` and the
 > subsystem binds no socket. No exception, no warning — the `ScopedValue` slots simply stay unbound.
 >
-> Source: `exeris-kernel-community/src/main/java/eu/exeris/kernel/community/bootstrap/CommunityHttpConfigResolver.java:110-112` (quoted).
+> Source: `CommunityHttpConfigResolver.resolveMode(ConfigProvider)` (quoted).
 >
 > ```java
 > boolean hasExplicitPort = configProvider.getInt("http.port").isPresent()
@@ -352,7 +376,7 @@ fixtures deliberately do not cover.
 | Only `/health*` responds; everything else unserved | `HTTP_SERVER_HANDLER` was never bound — or was bound *inside* `boot()` instead of around it. |
 | `BootstrapException` … `[EX-CFG-0001]` | No `ConfigProvider` on the classpath. Add `exeris-kernel-community` — see [01](./01-platform-and-dependencies.md). |
 | Ctrl-C leaves resources open | No signal handling exists. Register your own hook to release the park. |
-| A subsystem you expected is missing | Check your `BootstrapSelector`. `forNames` pulls transitive dependencies, but not unrelated subsystems. |
+| A subsystem you expected is missing | Check your `BootstrapSelector`. `forNames` only records the names you gave it — the orchestrator expands those to their transitive `dependsOn()` closure, but never pulls in an unrelated subsystem. |
 
 ---
 
@@ -365,7 +389,10 @@ Stated so you do not go looking:
 - **No hot-reload** in Community — `watch()` is a no-op.
 - **No example application or Maven archetype** in this repository. The closest runnable references
   are `exeris-kernel-diagnostics-cli` and the integration tests cited above.
-- **No published release.** See *Resolving today* in [01](./01-platform-and-dependencies.md).
+- **Publish status.** The reactor is at the release version `0.12.0` (not a `-SNAPSHOT`) as of this
+  writing, but this page cannot itself confirm whether that version currently resolves from GitHub
+  Packages or Maven Central — check *Resolving today* in [01](./01-platform-and-dependencies.md) for
+  the current answer rather than trusting a state that predates the release cut.
 
 ---
 
