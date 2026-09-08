@@ -1,3 +1,11 @@
+---
+title: "Exeris Kernel Open-Core Roadmap"
+type: roadmap
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
 # Exeris Kernel Open-Core Roadmap
 
 > This roadmap applies only to the **open-core / foundation / community** scope of Exeris Kernel.

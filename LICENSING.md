@@ -1,3 +1,11 @@
+---
+title: "Licensing"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
 # Licensing
 
 This file is the answer to "what licence is this, exactly" — the question a legal

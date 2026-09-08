@@ -1,3 +1,12 @@
+---
+title: "ADR-056: Adopt a `BlobStorageProvider` SPI for binary-object storage"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-056
+last-verified: 2026-09-08
+---
 # ADR-056: Adopt a `BlobStorageProvider` SPI for binary-object storage
 
 | Attribute       | Value                                                                                      |

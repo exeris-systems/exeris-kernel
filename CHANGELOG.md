@@ -1,3 +1,11 @@
+---
+title: "Changelog — Exeris Kernel (open-core)"
+type: changelog
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
 # Changelog — Exeris Kernel (open-core)
 
 All notable changes to the open-core kernel are recorded here. The roadmap source of truth is `docs/ROADMAP.md`. Detailed per-release notes live under `docs/release/` (e.g. `docs/release/v0.7.0-release-notes.md`).
