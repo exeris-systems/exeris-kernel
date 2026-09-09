@@ -102,6 +102,12 @@ class DiagnosticsCliShadedJarIT {
     }
 
     @Test
+    @DisplayName("a malformed line degrades one answer and the shipped jar keeps serving")
+    void malformedLineDoesNotEndTheSession() {
+        DiagnosticsProtocolContract.assertMalformedLineDoesNotEndTheSession(responses);
+    }
+
+    @Test
     @DisplayName("shading kept every META-INF/services entry — all nine providers are still found")
     void shadedServiceFilesSurvive() {
         DiagnosticsProtocolContract.assertProviderInventoryComplete(responses);

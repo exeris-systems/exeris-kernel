@@ -28,6 +28,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * what the defect these suites exist for produced. Without the rule, the assertions that survive a
  * dead session are the ones that prove least.
  *
+ * <p>A clause that iterates must also decide what it does with the one line in {@link #REQUESTS}
+ * that is deliberately not a request. An error object carries no {@code capturedAt} and never
+ * will — it is a refusal, not a reading of the system at a moment — so a clause about snapshot
+ * shape skips it by index and says so, rather than being relaxed into something both shapes
+ * satisfy.
+ *
  * <p>Neither layer is redundant, because the two fail apart: a dependency the reactor resolves can
  * still be dropped or version-collapsed by the shade plugin, and a jar that starts can still have
  * been built from a classpath that never held the right artifact. {@link DiagnosticsCliTest} sees
@@ -42,11 +48,19 @@ final class DiagnosticsProtocolContract {
      * method return the wrong answer — it made the method kill the process, which costs a consumer
      * every later request too (the adapter caches the child and its close is sticky). A per-method
      * session would have found the broken method and hidden the blast radius.
+     *
+     * <p>One line is deliberately <b>not</b> a request, and it sits in the MIDDLE. {@code handle()}
+     * documents that nothing escapes it, and {@link DiagnosticsCliTest} asserts that by calling it
+     * directly — but a promise about one call is not a promise about the read loop that makes the
+     * calls, and no suite drove a bad line through {@code serve()}. At the end of the list it would
+     * prove nothing: the stream closes straight after, so surviving it and ending are the same
+     * observation. In the middle, every later response is the proof.
      */
     static final List<String> REQUESTS = List.of(
             "{\"method\":\"listProviders\"}",
             "{\"method\":\"getBootstrapDag\"}",
             "{\"method\":\"getJvmErgonomics\"}",
+            "this is not json",
             "{\"method\":\"describeSubsystem\",\"name\":\"memory\"}",
             "{\"method\":\"describeSubsystem\",\"name\":\"no-such-subsystem\"}");
 
@@ -54,8 +68,9 @@ final class DiagnosticsProtocolContract {
     private static final int LIST_PROVIDERS = 0;
     private static final int BOOTSTRAP_DAG = 1;
     private static final int JVM_ERGONOMICS = 2;
-    private static final int DESCRIBE_KNOWN = 3;
-    private static final int DESCRIBE_UNKNOWN = 4;
+    private static final int MALFORMED = 3;
+    private static final int DESCRIBE_KNOWN = 4;
+    private static final int DESCRIBE_UNKNOWN = 5;
 
     /**
      * Every SPI {@code CommunityProviderInventory} sweeps. Spelled out rather than counted: a
@@ -69,14 +84,47 @@ final class DiagnosticsProtocolContract {
     private DiagnosticsProtocolContract() {
     }
 
-    /** One response line per request, none of them an error. */
+    /** One response line per line sent, and every WELL-FORMED one answered without an error. */
     static void assertEveryRequestAnswered(List<String> responses, String diagnosis) {
         assertThat(responses)
-                .as("one NDJSON response per request; the child's stderr was:%n%s", diagnosis)
+                .as("one NDJSON response per line sent; the child's stderr was:%n%s", diagnosis)
                 .hasSameSizeAs(REQUESTS);
-        assertThat(responses)
-                .as("every request in REQUESTS is valid, so none may answer with an error")
-                .noneMatch(line -> line.contains("\"error\""));
+        for (int i = 0; i < responses.size(); i++) {
+            if (i == MALFORMED) {
+                continue;   // its own clause below; it is SUPPOSED to be an error
+            }
+            assertThat(responses.get(i))
+                    .as("request %d in REQUESTS is well-formed, so it may not answer with an error", i)
+                    .doesNotContain("\"error\"");
+        }
+    }
+
+    /**
+     * A malformed line is answered, and the session keeps serving.
+     *
+     * <p>The process boundary is the contract {@code handle()} documents in twelve lines: one bad
+     * request degrades one answer, never the session, because a consumer caches the child and a
+     * dead process is a dead session. {@link DiagnosticsCliTest} proves the promise for a single
+     * call by invoking {@code handle()} directly; this proves it for the loop that makes the calls,
+     * which is where the promise is actually spent.
+     *
+     * <p>The responses AFTER the bad line are the assertion. An error object on its own would be
+     * satisfied by a process that answered and then died — indistinguishable from the failure this
+     * whole suite exists for.
+     */
+    static void assertMalformedLineDoesNotEndTheSession(List<String> responses) {
+        assertThat(responses.get(MALFORMED))
+                .as("a line that is not JSON is answered, not thrown")
+                .contains("\"error\"")
+                .contains("malformed request");
+        assertThat(responses.get(DESCRIBE_KNOWN))
+                .as("the session kept serving after the bad line — this, not the error above, is "
+                        + "what distinguishes degrading one answer from ending the session")
+                .contains("\"schemaVersion\"")
+                .doesNotContain("\"error\"");
+        assertThat(responses.get(DESCRIBE_UNKNOWN))
+                .as("and it was still serving two requests later")
+                .isNotEmpty();
     }
 
     /**
@@ -111,8 +159,17 @@ final class DiagnosticsProtocolContract {
         // passes. An empty list is precisely what the defect this suite exists for produced, so
         // without this the one assertion that survives a dead session is the one that proves least.
         assertThat(responses).hasSameSizeAs(REQUESTS);
-        assertThat(responses).allSatisfy(line -> assertThat(line).containsPattern(
-                "\"capturedAt\":\"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z\""));
+        // Every SNAPSHOT carries the stamp. The error object answering the malformed line does not,
+        // and must not: it is a refusal, not a reading of the system at a moment. Excluding it is a
+        // statement about the wire shape, not a weakening — `assertMalformedLineDoesNotEndTheSession`
+        // asserts that line separately, and the size check above still covers a dead session.
+        for (int i = 0; i < responses.size(); i++) {
+            if (i == MALFORMED) {
+                continue;
+            }
+            assertThat(responses.get(i)).containsPattern(
+                    "\"capturedAt\":\"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z\"");
+        }
     }
 
     /**
