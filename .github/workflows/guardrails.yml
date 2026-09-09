@@ -78,7 +78,7 @@ jobs:
       # `imports[].ref` in the manifest, so the commit is named once and cannot disagree with
       # itself. It cannot be removed before that — an unset input means `main` in the version
       # pinned above, which is not this repository's pin.
-      agents-ref: cf98363e5747038492948ed9fcc1fa67589c1bf6 # exeris-systems/exeris-agents 1.4.0
+      agents-ref: 56d9716a74ad911d4a9a8fb055d8259de65dc43c # exeris-systems/exeris-agents 1.4.0
       # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
       # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
       # what it edits and not for a backlog it did not create. Flip to strict when the backfill
