@@ -40,7 +40,7 @@ Catch the recurring, expensive footguns that a green build alone does **not** pr
 
 5. **Docs / ADR drift**
    - If behavior/boundary meaning changed, confirm docs/ADR are synced (delegate to `exeris-docs-adr-check`).
-   - If an ADR is involved: numbers are a GLOBAL namespace — reserve the slot in `~/exeris-systems/exeris-docs/adr-index.md` BEFORE writing content (see `exeris-adr-register`). PR #129 (ADR-026 collision) is the cautionary tale.
+   - If an ADR is involved: numbers are a GLOBAL namespace — reserve the slot in `adr-index.md` in the `exeris-systems/exeris-docs` repository BEFORE writing content (see `exeris-adr-register`). PR #129 (ADR-026 collision) is the cautionary tale.
 
 6. **Public-docs hygiene**
    - Release notes/CHANGELOG describe only what is published: no unpublished-consumer-behavior-as-shipped, no local-only links, no cross-repo/private PR# leaks, no deep links into enterprise-private repos.
