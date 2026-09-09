@@ -8,10 +8,22 @@
 # and `forbidden` are substrings of the raw answer, `min_findings` counts, and `any_check_result`
 # asserts the verdict admitted a check it did not run.
 #
-# Half of these cases assert a REFUSAL to escalate. That is deliberate: every profile here carries
-# a non-goal about over-policing, and a suite of only positive cases passes against an agent that
-# blocks everything — the same shape as a TCK that only tests the happy flow, which this repository
-# rejects in code and should not accept in its own agent layer.
+# Six of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
+# derivable rather than remembered — `--tags negative` selects exactly them. That balance is
+# deliberate: every profile here carries a non-goal about over-policing, and a suite of only
+# positive cases passes against an agent that blocks everything — the same shape as a TCK that only
+# tests the happy flow, which this repository rejects in code and should not accept in its own
+# agent layer.
+#
+# Four of the six are one half of a PAIR, and the pairing is the point: the same construct is a
+# defect or ordinary depending on where it sits, so a case that only asserts the defect passes
+# against an agent that has learned the string and nothing about the scope.
+#
+#   ThreadLocal            hot path -> blocking      | testkit fixture -> PASS
+#   an allocation          write path -> blocking    | bootstrap, once per JVM -> PASS
+#   a cross-module import  SPI -> Community -> BLOCK | Community -> Core -> PASS
+#   target-state prose     reported as shipped -> flag | labelled as not-here -> PASS
+#   MULTI_DOMAIN           a real four-surface change | a typo -> DOCS_ADR
 #
 # They run on demand and on a schedule, never on every pull request: model-in-the-loop CI on a solo
 # project is cost without a signal. A change to a profile, skill or policy a case covers reruns that
@@ -49,6 +61,20 @@ cases:
       contains: ["driver-agnostic"]
     tags: [wall, architect]
 
+  - id: wall-community-may-depend-on-core
+    # The paired negative for the two above. Without it the suite passes against an agent that has
+    # learned "a cross-module import is a finding" and nothing about which way the arrow may point:
+    # Community -> Core -> SPI is the legal direction, and a reviewer that blocks it has inverted
+    # the rule it is enforcing.
+    agent: exeris-architect
+    fixture: community-depends-on-core.md
+    prompt: "Review this change for placement and boundary integrity."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+    tags: [wall, architect, negative]
+
   # ── scope discipline — the same construct is a defect or fine depending on where it sits ─────
   - id: scope-threadlocal-on-a-hot-path-is-blocking
     agent: exeris-performance
@@ -74,6 +100,20 @@ cases:
         decision: PASS
         scope_class: test-tooling
     tags: [scope, performance, bans, negative]
+
+  - id: scope-a-bootstrap-allocation-is-not-a-hot-path-defect
+    # The other axis of the same discipline. The testkit case above separates production from test;
+    # this one separates hot from cold inside production, which is where "No Waste Compute" is most
+    # often misapplied — a HashMap built once per JVM is not an allocation regression.
+    agent: exeris-performance
+    fixture: bootstrap-allocation.md
+    prompt: "Review this change against the hot-path performance contract."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: runtime non-hot
+    tags: [scope, performance, negative]
 
   # ── contract verification ────────────────────────────────────────────────────────────────────
   - id: tck-signature-change-owes-abstract-tck
@@ -115,6 +155,21 @@ cases:
       # done the opposite of the review.
       forbidden: ["the transport submits reads and writes through io_uring"]
     tags: [docs, drift]
+
+  - id: docs-target-state-labelled-as-target-is-fine
+    # The paired negative. The policy is that planned architecture must be MARKED as planned, not
+    # that it may never be mentioned; a reviewer that flags the word `io_uring` wherever it appears
+    # has turned a labelling rule into a vocabulary ban, and the next author deletes the section
+    # that was doing the disambiguating.
+    agent: exeris-docs-adr
+    fixture: subsystem-doc-labels-target-state.md
+    prompt: "Review this documentation change for drift against the repository as it is."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: docs-only
+    tags: [docs, drift, negative]
 
   - id: docs-missing-rows-are-a-registry-defect
     agent: exeris-docs-adr
@@ -171,6 +226,19 @@ cases:
       fields:
         task_class: DOCS_ADR
     tags: [routing, negative]
+
+  - id: route-a-four-surface-change-is-multi-domain
+    # The direction `route-typo-is-not-multi-domain` cannot test on its own: without this case an
+    # agent that never answers MULTI_DOMAIN passes that one perfectly. SPI contract, a hot-path
+    # allocation, a JFR event and a missing subsystem page is what the class is for.
+    agent: exeris-router
+    fixture: websocket-backpressure.md
+    prompt: "Triage this task and route it."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: MULTI_DOMAIN
+    tags: [routing]
 
   # ── evidence discipline ──────────────────────────────────────────────────────────────────────
   - id: verdict-admits-the-check-it-could-not-run
