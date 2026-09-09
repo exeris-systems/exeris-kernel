@@ -4,7 +4,7 @@ type: changelog
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-09
 ---
 # Changelog — Exeris Kernel (open-core)
 
@@ -1299,6 +1299,55 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   building it: 180 allocation events through the streaming generator, all five JSON artefacts
   written, exit 0 — the check the CLI regression taught, where a jar that assembled was executed
   nowhere.
+
+### Documentation
+
+- **The published Javadoc states contracts instead of reporting implementations.** Measured on
+  2026-09-05, before the sweep: `exeris-kernel-spi` 62 doclint errors and 100 warnings,
+  `exeris-kernel-tck` 13 and 100, `exeris-kernel-core` 31 and 100+, `exeris-kernel-community` 6 and
+  91, `exeris-kernel-community-testkit` 0 and 24, `exeris-kernel-community-kafka` 0 and 11. Every
+  one of them is now **0/0**, against `failOnWarnings` and the shared Checkstyle ruleset.
+
+  The sweep was not a formatting pass. It removed samples calling types that do not exist, corrected
+  a field name and an event name a consumer would have copied, and rewrote the SPI sentences that
+  had drifted into describing what one binding happens to do — which reads as accurate, passes every
+  other gate, and ships to Maven Central as the contract. `spi-contract-blindness-check.sh` is the
+  gate that keeps that direction from inverting again; nine such sentences reached the tree during
+  the sweep itself.
+
+  Thirty-one constructors were written out to carry a comment. All **374 `javap` dumps are
+  byte-identical** before and after, so the published API is unchanged.
+
+- **Every page says when a human last checked it against the code.** The gate CI runs reports
+  **0 errors in ramp mode, from 53**, and `last-verified` means what it says rather than the date a
+  script ran: the pass that set it took **156 corrections across 24 living documents**, then put
+  every sentence left standing to an adversary reading the code — of **644 claims judged, 37 did not
+  survive**, and the adversary found **29 more** the audit had not thought to flag. Two corrections were made
+  by hand because the sweep missed them — `docs/subsystems/transport.md` said the Community carrier
+  "remains NIO-backed" and that the POSIX path was "planned but gated"; both halves were wrong, and
+  the transport is a hybrid: NIO owns the selector and the accept loop, and plain-TCP data I/O goes
+  through POSIX `recv`/`send` via Panama FFM when the seam is armed.
+
+  **The backlog is halved, not cleared.** Of the 120 files the gate reads, 54 still carry no
+  frontmatter — they are unchanged files, which ramp mode correctly downgrades to warnings so a
+  pull request answers for what it edits and not for a backlog it did not create. The four required
+  sections of a `subsystem` page
+  (`## Contract`, `## Hot path`, `## Failure modes`, `## Owning ADRs`) exist on none of the fifteen,
+  which is why CI passes `--no-section-check`. Both are named as the next piece of work rather than
+  implied to be done.
+
+- **The documentation standards became enforced rather than merely binding.** `guardrails.yml`
+  calls five reusable workflows from `exeris-systems/.github` — frontmatter and registry checks,
+  commit format, pull-request body, the documentation review of ADR-085 §J.33, and the Javadoc gate
+  of §F.21. Before this, a pull request could contradict a standard and merge green.
+
+- **The agent layer is vendor-neutral, and has a runtime layer beneath it.** Seven role profiles at
+  `.agents/agents/<name>/AGENT.md` declaring capabilities rather than one runtime's tool names;
+  three decision schemas; nineteen behaviour tests, seven of which assert a refusal to escalate;
+  four nested `AGENTS.md` where a module's constraints differ; and four L0 hooks that deny an
+  irreversible action and block a session from reporting itself finished while a required check has
+  not run. The shared half is imported from `exeris-agents` 1.4.0, pinned, vendored and
+  digest-verified; this repository no longer carries a renderer of its own.
 
 ## [0.11.0] — 2026-08-11
 
