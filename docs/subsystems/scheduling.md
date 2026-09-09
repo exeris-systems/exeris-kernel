@@ -1,3 +1,12 @@
+---
+title: "Scheduling Subsystem"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Scheduling Subsystem
 
 Deferred and repeating work, scoped to the tenant that scheduled it. Decided in
@@ -120,8 +129,10 @@ carve-outs stays empty.
 
 The seam injects **both** the clock and the wait primitive. A time source alone is not sufficient: a
 test that advances a clock while the dispatcher sleeps on a real monitor still waits in wall-clock
-time. It is deliberately subsystem-local — the kernel has no unified clock abstraction yet, and this
-is shaped so migrating onto one is a substitution, not a redesign.
+time. The kernel now has a unified clock abstraction (`eu.exeris.kernel.spi.time.TimeSource`,
+[ADR-082](../adr/ADR-082-injectable-time-seam.md), since 0.12.0); `CommunitySchedulerClock` extends
+it and adds only the wait primitives (`lock()`/`awaitUntil()`/`awaitSignal()`/`signal()`) that a
+`TimeSource` alone cannot provide, since a `ReentrantLock` has no place in the SPI.
 
 ## Telemetry
 
@@ -210,7 +221,7 @@ This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is classified
 [ADR-057](../adr/ADR-057-job-scheduler-spi.md) and the contract tests are
 `AbstractJobSchedulerTck`. See the matrix for the semver policy this label commits to.
 
-Thirteen of the fifteen subsystem docs carried this section and this one did not, so a reader
-checking how far they could lean on `JobScheduler` had to find the matrix themselves — which is the
-gap, not the label.
+Every other subsystem doc under `docs/subsystems/` already carried this section, and this one did
+not, so a reader checking how far they could lean on `JobScheduler` had to find the matrix
+themselves — which is the gap, not the label.
 

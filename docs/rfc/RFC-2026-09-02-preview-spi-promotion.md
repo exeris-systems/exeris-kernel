@@ -1,3 +1,12 @@
+---
+title: "RFC-2026-09-02: What blocks each `preview` SPI from becoming `stable`, and which of them 1.0 owes?"
+type: rfc
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # RFC-2026-09-02: What blocks each `preview` SPI from becoming `stable`, and which of them 1.0 owes?
 
 |                    |                                                                          |

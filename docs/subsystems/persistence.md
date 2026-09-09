@@ -1,10 +1,19 @@
+---
+title: "Kernel Subsystem: Persistence (L1 Data & Integrity)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: Persistence (L1 Data & Integrity)
 
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.persistence.*` (Contracts, ConnectionInterceptor — StorageContext is in Security SPI)
   > Key SPI contracts: `PersistenceEngine`, `PersistenceProvider`, `PersistenceConfig`,
-  > `PersistenceHealthStatus`, `BaseRepository`, `EventStore`, `ConnectionInterceptor`, `TransactionalExecutor`, 
+  > `PersistenceHealthStatus`, `PersistenceConnection`, `BaseRepository`, `EventStore`, `ConnectionInterceptor`, `TransactionalExecutor`, 
   > `RowCursor`, `QueryResult`, `PersistenceStatement`, `BulkInserter`, `EngineStats`, 
   > `TransactionIsolation`; codec sub-package: `codec.EntityEncoder`, `codec.EntityDecoder` 
   > (zero-copy off-heap encode/decode contract, TCK: `AbstractEntityCodecTck`).
@@ -32,8 +41,9 @@ complex reactive streams.
   "Tenants", or authentication. It operates exclusively on a generic `StorageContext`, resolving isolation
   (RLS, schemas) as a transparent side-effect via `ConnectionInterceptor` plugins. This is the physical
   enforcement of "The Wall" between the Security (L1 Citadel) and Persistence subsystems.
-- **Loom-First JDBC:** Java 26 Virtual Threads make blocking I/O cheap. Simple, imperative code with full stack
-  traces and minimal object churn — no reactive pipeline overhead, no `Mono<T>` wrappers, no callback hell.
+- **Loom-First JDBC:** Virtual Threads (the GA line builds at JDK 25) make blocking I/O cheap. Simple, imperative
+  code with full stack traces and minimal object churn — no reactive pipeline overhead, no `Mono<T>` wrappers, no
+  callback hell.
 - **Plug-and-Play Isolation:** Supports RLS (Shared Schema), Dedicated Schemas, and Dedicated Databases via the
   `ConnectionInterceptor` API — switched transparently by the `StorageContext` without any change in business code.
 - **Transactional Outbox:** Guaranteed at-least-once delivery of domain events, atomically bound to the same
@@ -84,7 +94,7 @@ Java-side logic and serialization waste.
 
 1. Orchestrate the transaction lifecycle and `ScopedValue` propagation.
 2. Manage a registry of `ConnectionInterceptors`.
-3. Manage a registry of `ConnectionInterceptor` instances via `InterceptorRegistry` (`eu.exeris.kernel.core.persistence.InterceptorRegistry`). Interceptors handle RLS injection, schema switching, and audit setup.
+3. Manage a registry of `ConnectionInterceptor` instances via `InterceptorRegistry` (`eu.exeris.kernel.core.persistence.InterceptorRegistry`). The shipped Community interceptor (`RlsConnectionInterceptor`) handles RLS session-key publication and schema switching; the registry itself is generic and does not presuppose what a registered interceptor does.
 4. Translate database-specific errors into standardized Kernel codes.
 
 ---
@@ -152,7 +162,7 @@ Exeris supports three levels of physical isolation, resolved transparently throu
 
 | Strategy                | Mechanism                     | Target Use-Case                        |
 |:------------------------|:------------------------------|:---------------------------------------|
-| **Shared Schema (RLS)** | `SET LOCAL exeris.tenant_id`  | Standard SaaS, High-Density            |
+| **Shared Schema (RLS)** | `set_config('exeris.tenant_id', value, false)` — session-scoped, not transaction-local | Standard SaaS, High-Density |
 | **Dedicated Schema**    | `SET search_path TO [schema]` | Professional Tier, easier migrations   |
 | **Dedicated Database**  | Dynamic DataSource Routing    | Maximum physical isolation             |
 
@@ -375,6 +385,7 @@ shed) are covered by the Community admission tests.
 | `EX-PERS-5005` | Persistence Transport Failure    | `[0] String transportName, [1] long fd, [2] int errno`            |
 | `EX-PERS-5006` | Interceptor Initialization Error | `[0] String interceptorClass, [1] String isolationKey`            |
 | `EX-PERS-5007` | No Provider on Classpath         | `[0] String message` — **Fatal:** add a persistence provider implementation jar |
+| `EX-PERS-5008` | RowCursor Type Outside Accessor Domain (since 0.12, ADR-080 §2) | `[0] String declaredTypeName, [1] Integer columnIndex, [2] String accessor` |
 
 **Privacy note for `EX-PERS-5001`:** The `sanitizedConnectionUrl` field MUST have the `user:password@` userinfo
 segment stripped before capture. Emitting raw credentials constitutes a CWE-532 violation. See
@@ -408,10 +419,12 @@ The context that drives isolation without knowing any business or security detai
 package eu.exeris.kernel.spi.security;
 
 public interface StorageContext {
+    Optional<String> isolationKey();
     IsolationStrategy strategy();
     Optional<String> schemaName();
     Optional<String> dataSourceKey();
-    Map<String, String> attributes();
+    default Optional<String> sharedScopeKey() { return Optional.empty(); }
+    default Map<String, String> attributes() { return Map.of(); }
 }
 ```
 
@@ -435,11 +448,16 @@ public class OrderService {
 
 ### 4. Fail-Fast on Missing Provider (Core Bootstrap)
 
+Simplified from `PersistenceBootstrap.load` — the real bootstrap selects the highest-`priority()`
+provider rather than the first one `ServiceLoader` happens to yield, but the fail-fast shape and
+exception are exactly this:
+
 ```java
-PersistenceProvider provider = ServiceLoader.load(PersistenceProvider.class)
-        .findFirst()
-        .orElseThrow(() -> new PersistenceBootstrapException(
-                KernelErrorCodes.EX_PERS_5007,
+PersistenceProvider provider = BootstrapProviderSelector.loadHighestPriority(
+                PersistenceProvider.class,
+                Comparator.comparingInt(PersistenceProvider::priority)
+                    .thenComparing(p -> p.getClass().getName()))
+        .orElseThrow(() -> PersistenceProviderException.noProviderAvailable(
                 "No PersistenceProvider found on classpath. Add a persistence provider jar."
         ));
 ```
@@ -457,8 +475,8 @@ thread. The following guidance applies:
 | **Pool size formula**          | `cores × 2 + effective_spindle_count` (PgBouncer rule). For NVMe-backed PostgreSQL: `cores × 2`. Ignore VT count entirely — pool size is a DB resource limit, not a thread limit. |
 | **Typical range**              | 10–50 connections per JVM instance. Do NOT scale pool size proportionally to VT count (millions of VTs with 50 connections = correct; 1M connections = PostgreSQL crash). |
 | **Overflow behaviour**         | When pool is exhausted, the JDBC driver blocks the VT (parking, not pinning — see VT Pinning Check below). If the acquisition timeout fires, `EX-PERS-5002` is thrown with `rawArgs[1]=timeoutMs`. |
-| **HikariCP minimum config**    | `maximumPoolSize`: bounded (see formula); `connectionTimeout`: 5 000 ms; `idleTimeout`: 600 000 ms; `keepaliveTime`: 30 000 ms; `validationTimeout`: 5 000 ms. |
-| **Connection validation**      | Stale connections (idle timeout, PostgreSQL failover, `tcp_keepalive_time` breach) are detected via HikariCP's `keepaliveTime` heartbeat. A new connection is acquired transparently. If validation fails at acquisition time, the pool discards the stale connection and retries up to `initializationFailTimeout`. On repeated failure: `EX-PERS-5003` (sqlState `08006` = connection failure). |
+| **HikariCP minimum config**    | `maximumPoolSize`: bounded (see formula); `connectionTimeout` (`persistence.connectionTimeoutMs`): 30 000 ms default; `idleTimeout` (`persistence.idleTimeoutMs`): 600 000 ms default; `keepaliveTime`: 30 000 ms (hardcoded, not operator-tunable); `validationTimeout`: 5 000 ms (hardcoded, not operator-tunable). |
+| **Connection validation**      | Stale connections (idle timeout, PostgreSQL failover, `tcp_keepalive_time` breach) are detected via HikariCP's `keepaliveTime` heartbeat. A new connection is acquired transparently. If the pool cannot obtain a connection within `connectionTimeoutMs`: `EX-PERS-5002`. A query-time failure translates by SQLSTATE class, e.g. `08006` (connection failure) to `EX-PERS-5003`. |
 
 > **Anti-pattern:** `maximumPoolSize=1000` in a 10-core Kubernetes pod. This creates 1000 PostgreSQL
 > backend processes, each consuming ~5 MB RAM. On a 3-replica deployment that is 3000 backends —
@@ -473,7 +491,7 @@ The Exeris Kernel **does not manage application schemas**. Schema creation, vers
 are the responsibility of the application layer or a dedicated migration tool.
 
 > **Exception — internal kernel tables:** The Community tier includes an opt-in migration path
-> (`persistence.run.migrations=true`) that executes built-in SQL scripts to create internal kernel
+> (`persistence.runMigrations=true`) that executes built-in SQL scripts to create internal kernel
 > tables (`exeris_outbox`, `exeris_outbox_dlq`, `exeris_saga_state` since 0.7). This applies only to
 > Kernel-owned tables and is explicitly disabled by default. The migration list is maintained in
 > `CommunityPersistenceEngine.MIGRATION_RESOURCES`; new internal tables follow the
@@ -531,28 +549,48 @@ fail delivery to the broker regardless of retries — must be handled explicitly
 
 ### Retry Policy
 
-| Attempt | Delay (exponential backoff)  | Action                                                   |
-|:--------|:-----------------------------|:---------------------------------------------------------|
-| 1       | 0 ms (immediate)             | First delivery attempt                                   |
-| 2–5     | `2^n × 100 ms` (capped 16 s) | Retry with exponential backoff                           |
-### Dead Letter Queue (DLQ)
-After `exeris.persistence.outbox.max-retries` (default: 10) failed delivery attempts, the record
-is moved atomically to the `exeris_outbox_dlq` table and removed from the main outbox. A `JFR` event
-(`OutboxDlqEvent`) is emitted with `rawArgs[0]=String eventType, rawArgs[1]=long outboxRecordId`.
+Retry is per-event, inside `OutboxBatchFlusher.retryEntry`, and runs only after the batch-level
+`brokerPort.publish()` call reports that event as failed (or throws). The backoff is **linear**,
+not exponential — `pollIntervalNanos × attempt` between attempts — and both the attempt budget and
+the interval are `OutboxOrchestrator.Builder` fields with no bound config key wiring them to
+`ConfigProvider` today (`CommunityEventEngine` sets only `batchSize` from config; `maxRetries` and
+`pollIntervalNanos` stay at their builder defaults):
 
-**DLQ schema (auto-created on first boot):**
+| Builder field | Default | Meaning |
+|:---|:---|:---|
+| `maxRetries` | `5` | per-event retry attempts before the entry is routed to the DLQ |
+| `pollIntervalNanos` | `100_000_000` (100 ms) | also the retry backoff unit — attempt *n* waits `100 ms × n` |
+
+With both at default, a failed event is retried 5 times with waits of 100/200/300/400/500 ms
+(1.5 s total) before falling through to the DLQ.
+
+### Dead Letter Queue (DLQ)
+
+After the retry budget is exhausted, or a retry attempt raises an unhandled `RuntimeException`, the
+record is moved atomically (`INSERT` into `exeris_outbox_dlq`, `DELETE` from `exeris_outbox`, one
+transaction) and removed from the main outbox. A JFR event named `eu.exeris.kernel.core.events.jfr.OutboxDlqEvent`
+is committed with fields `eventType` (the entry's registry ordinal as a decimal string),
+`streamIdHigh`/`streamIdLow` (the aggregate stream UUID), `reason` (`"max retries exhausted"` or the
+triggering exception's message), and `retryCount` (the *configured* limit, not necessarily the
+attempts actually made).
+
+**DLQ schema** (created by the same opt-in, ledger-tracked migration as `exeris_outbox` — see
+*Database Schema Management* above, not a separate auto-create):
 
 ```sql
 CREATE TABLE IF NOT EXISTS exeris_outbox_dlq (
-    id            BIGSERIAL PRIMARY KEY,
-    original_id   BIGINT NOT NULL,
-    event_type    TEXT NOT NULL,
-    payload       BYTEA NOT NULL,
-    failure_reason TEXT,
-    moved_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    tenant_id     TEXT
+    id             UUID PRIMARY KEY,
+    stream_id      TEXT NOT NULL,
+    event_type     TEXT NOT NULL,
+    payload        BYTEA NOT NULL,
+    occurred_at    BIGINT NOT NULL,
+    failure_reason TEXT NOT NULL,
+    moved_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 ```
+
+There is no `tenant_id` column — consistent with the Tenant-Atheist design: the outbox tables are
+Core-owned kernel tables and carry no notion of tenant.
 
 **Operator recovery:** Inspect `exeris_outbox_dlq` and either re-queue records manually
 (`INSERT INTO exeris_outbox SELECT ... FROM exeris_outbox_dlq WHERE id = ?`) or discard them after
@@ -578,7 +616,7 @@ infinite retry storms.
 - **Pool Exhaustion:** `EX-PERS-5002` is thrown with correct `rawArgs` when all connections are in use.
 - **No Provider:** `EX-PERS-5007` is thrown at bootstrap when no `PersistenceProvider` is on the classpath.
 
-**Full TCK abstract class set:** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH).
+**TCK abstract class set (10 named here):** `AbstractPersistenceEngineTck`, `AbstractPersistenceProviderTck`, `AbstractPersistenceEngineAdmissionControlTck`, `AbstractOutboxGuaranteeTck`, `AbstractEventStoreTck`, `AbstractEntityCodecTck`, `PersistenceCarrierPinningTck`, `PersistenceIsolationLeakTck`, `PersistenceZeroAllocTck`, `AbstractRowCursorThroughputBenchmark` (JMH, lives in `tck/perf`, not `tck/contract/persistence`). The `tck/contract/persistence` package itself holds 14 `*Tck` classes; four are not named above: `AbstractConnectionInterceptorInitTck`, `AbstractRowCursorTck`, `AbstractSharedScopeAccessMatrixTck`, `AbstractTransactionalExecutorTck`.
 
 ---
 

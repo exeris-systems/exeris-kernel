@@ -1,3 +1,13 @@
+---
+title: "ADR-073: The migration runner gets a schema-history ledger, and stops relying on every migration being idempotent"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+slug: adr/ADR-073
+---
+
 # ADR-073: The migration runner gets a schema-history ledger, and stops relying on every migration being idempotent
 
 | Attribute       | Value                                                                       |

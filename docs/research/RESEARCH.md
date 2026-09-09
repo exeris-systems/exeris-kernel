@@ -1,3 +1,12 @@
+---
+title: "Research Framework"
+type: methodology
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Research Framework
 
 Exeris Kernel uses **branch-scoped research** to investigate architectural, performance,
@@ -48,15 +57,19 @@ evidence, it probably does not need a research branch.
 Every concrete research effort lives in its **own branch**:
 
 - `research/loom-continuation-locality`
-- `research/openssl-4-migration-envelope`
-- `research/jdk27-preparation`
+- `research/http1-header-allocation`
+- `research/http-header-name-table`
 - etc.
 
-The canonical research document for that effort is stored in the branch itself,
-typically as:
-
-- `research.md`
-- or a more specific path inside `docs/research/`
+The canonical research document for that effort is stored in the branch itself. Every research
+branch that has adopted this framework's documentation convention has used a dated, slug-specific
+path inside `docs/research/` —
+`docs/research/RESEARCH-2026-09-01-http1-header-allocation.md`,
+`docs/research/loom-continuation-locality/RESEARCH-loom-continuation-locality.md` — never a bare
+`research.md` at the branch root. This convention postdates at least one earlier research branch:
+`research/0.9.0-tls-records-per-event` predates the framework and recorded its findings only in
+test names and commit messages (tagged `PERF-RESEARCH`), with no dedicated document anywhere under
+`docs/research/` — that directory on the branch holds only this framework file.
 
 Use one canonical path per research effort.
 Do not maintain duplicated full copies of the same living research document in multiple locations.
@@ -222,49 +235,26 @@ But every effort must produce evidence appropriate to its claims.
 
 ## Active Research Portfolio
 
-The following research tracks are currently recognized as load-bearing for Exeris Kernel.
+As of this writing, no research branch is open against this framework. The two entries this
+section used to carry as "currently recognized as load-bearing" do not reflect the repository:
 
-### 1. OpenSSL 4.0 Migration Envelope for Native Crypto
-
-**Branch:** `research/openssl-4-migration-envelope`
-
-Focus:
-- OpenSSL 4.0 readiness,
-- opaque types,
-- const-correct API drift,
-- lifecycle/init/cleanup behavior,
-- provider-era assumptions,
-- shared crypto boundary across Core/Community and Enterprise.
-
-Why it matters:
-- OpenSSL is foundational across the stack,
-- migration debt grows if 3.x assumptions continue to leak upward,
-- native crypto boundary must be hardened before 4.0 becomes unavoidable.
-
-Expected outcome:
-- migration envelope,
-- native crypto boundary hardening guidance,
-- possible ADR if the shared crypto boundary must change materially.
-
-### 2. JDK 27 Preparation
-
-**Branch:** `research/jdk27-preparation`
-
-Focus:
-- preparation for JDK 27 language/runtime/toolchain changes,
-- preview/incubator maturity tracking,
-- Loom / FFM / GC / runtime behavior shifts,
-- compatibility and migration planning across build and runtime surfaces.
-
-Why it matters:
-- Exeris is intentionally close to modern JVM capabilities,
-- delayed preparation creates architectural and operational debt,
-- runtime assumptions must be revalidated before adoption.
-
-Expected outcome:
-- migration-readiness matrix,
-- compatibility inventory,
-- adoption / defer / watch recommendations per JEP or feature area.
+- **OpenSSL 4.0 migration.** No `research/openssl-4-migration-envelope` branch was ever opened —
+  the migration was carried directly as roadmap work instead and is **delivered**: `CoreOpenSslLoader`
+  moved to the provider-aware `SSL_CTX_new_ex` constructor, library candidate lists resolve
+  `.so.4` alongside the retained `.so.3` floor, and ADR-008 was refreshed to declare the new
+  baseline (v0.9 Sprint 4b; see `docs/ROADMAP.md` and `docs/adr/ADR-008-*`). Naming an
+  unopened branch here as active portfolio work was simply wrong.
+- **JDK 27 preparation.** No `research/jdk27-preparation` branch exists either, locally or on the
+  remote, and the entry is stale in a second way: the question it names has already been overtaken.
+  JVM-preview tracking now runs as a standing process, not a one-off research branch — the `preview`
+  branch stays on the newest JDK regardless of LTS status and absorbs `StructuredTaskScope` API churn
+  release over release, decided under ADR-066 (`docs/adr/ADR-066-preview-clean-ga-baseline.md`). That
+  branch's `pom.xml` targets JDK 28 today (`maven.compiler.release=28`), so it has already moved past
+  27 to 28 without this framework ever being used for it. The GA line separately holds at the newest
+  LTS (JDK 25, `maven.compiler.release=25` in this repository's own `pom.xml`). A research branch
+  under this framework would still make sense for a specific open JVM question — e.g. whether a
+  named JEP changes the kernel's architecture — but "JDK 27 preparation" as a general heading is not
+  that question any more.
 
 ---
 
@@ -327,21 +317,33 @@ Outcome:
 
 Final decision:
 - primary disposition: **Promote to Feature**
-- delivered in v0.12: the double parse was collapsed to one pass and the list copy dropped —
-  9 848 B to 5 472 B for that request, 44%, with ADR-071 gaining a 2026-09-01 amendment because
-  the change also made the configured header bound structural rather than maintained by convention,
-- follow-up: the zero-copy header representation is **not** promoted from here. It needs an RFC
-  first, because its hard question is lifetime — header slices would point into a `LoanedBuffer`
-  that is recycled after the request, and `HttpRequest.headers()` is SPI surface.
+- merged into the `development/0.12.0` line, targeted for the v0.12 release (not yet shipped —
+  see the note on `CanonicalHeaderNames` below): the double parse was collapsed to one pass and
+  the list copy dropped — 9 848 B to 5 472 B for that request, 44%, with ADR-071 gaining a
+  2026-09-01 amendment because the change also made the configured header bound structural rather
+  than maintained by convention,
+- follow-up: the zero-copy header representation was **not** promoted directly from here — it went
+  through RFC-2026-09-01 (`docs/rfc/RFC-2026-09-01-http-header-representation.md`) first, because
+  its hard question is lifetime: a header held as an offset into a pooled buffer segment can be read
+  after that segment is recycled, silently returning another request's bytes rather than throwing.
 
 Note:
-The four remaining sweep sites were taken after the RFC settled the representation question, so none
-of them was edited twice. Two of the five rows in the sweep table described their site inaccurately
-and are corrected in the note: the router row named a conditional `substring` when the unconditional
-cost beside it was a path split run twice per request, and the response-header merge turned out to
+The RFC settled the representation question: it rejected the wire-slice option (Option A) for 1.0 on
+that lifetime hazard and accepted a canonical name table (Option B) instead, which changes no SPI
+contract and needed no ADR. `CanonicalHeaderNames` is implemented and merged into the
+`development/0.12.0` line, targeted for the v0.12 release, which has not shipped yet as of this
+writing — `main`'s `pom.xml` is still at `0.11.0` and the release-integration PR is still open. It
+is measured at 21-25% of the whole request on realistic fixtures (browser, service, health-probe) —
+more than the
+name-only share of a header field's own bytes, because long values dilute what remains once a name
+hits the table. The four remaining sweep sites were taken after the RFC settled, so none of them was
+edited twice. Two of the five rows in the original sweep table described their site inaccurately and
+are corrected in the note: the router row named a conditional `substring` when the unconditional cost
+beside it was a path split run twice per request, and the response-header merge turned out to
 allocate nothing removable — the finding that survived there was a duplicated method, not waste.
-The remaining per-header cost is token materialization, which the RFC deliberately did not promote:
-its hard question is lifetime, not shape.
+What is left after the name table is the value half of each header, which the RFC deliberately left
+open rather than promoted: its hard question is still lifetime, and no fix has changed that a pooled
+segment can be recycled without the read failing loudly.
 
 ---
 
@@ -392,7 +394,8 @@ Decision section.
 ## Recommended Branch Lifecycle
 
 1. Create `research/[slug]`
-2. Add `research.md` from `exeris-docs/templates/RESEARCH-TEMPLATE.md`
+2. Add a dated research document (`docs/research/RESEARCH-YYYY-MM-DD-<slug>.md`) built from
+   `exeris-docs/templates/RESEARCH-TEMPLATE.md`
 3. Define hypothesis and methodology before large prototype work
 4. Collect evidence and update implementation notes continuously
 5. Record results
@@ -413,8 +416,8 @@ Use:
 
 Examples:
 - `research/loom-continuation-locality`
-- `research/openssl-4-migration-envelope`
-- `research/jdk27-preparation`
+- `research/http1-header-allocation`
+- `research/http-header-name-table`
 
 ### Document title
 Use:
@@ -426,10 +429,14 @@ Use:
 - `exeris-docs/templates/RESEARCH-TEMPLATE.md` — canonical template (platform-wide)
 
 ### Branch-local document
-Prefer:
-- `research.md`
-
-unless the branch has a compelling reason to use a more specific path.
+Use a dated, slug-specific path inside `docs/research/`, e.g.
+`docs/research/RESEARCH-YYYY-MM-DD-<slug>.md`, or a subdirectory under `docs/research/<slug>/` for
+an effort that produces more than one document (findings plus a benchmark handoff, for example).
+This is the convention every research branch that has adopted this framework has actually used; a
+bare `research.md` at the branch root has not been observed. One earlier branch,
+`research/0.9.0-tls-records-per-event`, predates the framework and recorded its findings only in
+test names and commit messages, with no document under `docs/research/` at all — see
+"Research Model" above.
 
 ---
 

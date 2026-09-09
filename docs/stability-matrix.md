@@ -1,3 +1,12 @@
+---
+title: "Exeris Kernel — SPI Stability Matrix"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Exeris Kernel — SPI Stability Matrix
 
 **Status:** Tracked / consumer-facing
@@ -58,8 +67,8 @@ this is informational and **not** a dependency of the open-core surface.
 | SPI package | Level | Since | Anchor ADR | TCK coverage | Enterprise overlay |
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
-| `…spi.persistence` | **stable** | 0.5.0 | ADR-022, ADR-080 [^rowcursor] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, +6 | yes (slab/FFM tier) |
-| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +3 | v0.11 record-component note below |
+| `…spi.persistence` | **stable** | 0.5.0 | ADR-022, ADR-080 [^rowcursor] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, +7 | yes (slab/FFM tier) |
+| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +4 | v0.11 record-component note below |
 
 > **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
 >
@@ -76,10 +85,10 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
 | `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
 | `…spi.telemetry` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractTelemetryProviderTck`, `…SinkTck`, `…RingBufferTck`, `…JfrTelemetrySinkTck` | yes (binary glass-box sink) |
-| `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +5 | — |
+| `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
-| `…spi.events` | **preview** | 0.5.0 | — | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +5 | — |
+| `…spi.events` | **preview** | 0.5.0 | — | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
@@ -87,7 +96,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.scheduling` | **preview** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
 | `…spi.storage.blob` | **preview** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
 | `…spi.time` | **preview** | 0.12.0 | ADR-082 | — (no provider contract; `TimeSource` is bound, not discovered) | — |
-| `…spi.websocket`³ | **preview** | 0.12.0 | ADR-084 | `AbstractWebSocketExchangeTck` | — |
+| `…spi.websocket`³ | **preview** | 0.12.0 | ADR-084 | `AbstractWebSocketExchangeTck`, `…WebSocketProviderTck` | — |
 | `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
 
@@ -223,8 +232,11 @@ maturity change here.
 - When a surface changes maturity (e.g. a `preview` surface promoted to `stable` after its sprint
   lands), update **this table first**, then the relevant `docs/modules/*.md` and
   `docs/subsystems/*.md` cross-references.
-- The drift gate: every `## Stability` / `[stable|preview|experimental]` mention in module and
-  subsystem docs must resolve to a row here.
+- Consistency convention, not an automated gate: every `## Stability` / `[stable|preview|experimental]`
+  mention in module and subsystem docs is expected to resolve to a row here, checked in PR review
+  (including by the `claude-code-review.yml` prompt). Unlike the compatibility gate in
+  [Semver policy](#semver-policy), no script in `tools/` or workflow in `.github/workflows/` parses
+  `docs/modules/*.md` or `docs/subsystems/*.md` for these mentions and diffs them against this table.
 
 ---
 

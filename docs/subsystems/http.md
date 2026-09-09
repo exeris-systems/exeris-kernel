@@ -1,7 +1,16 @@
+---
+title: "Kernel Subsystem: HTTP (HPACK + HTTP/2 + HTTP/1.1)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: HTTP (HPACK + HTTP/2 + HTTP/1.1)
 
 **Layer:** L2 (Wire Translation)  
-**Status:** Implemented in `exeris-kernel-core` (`v0.6.0`)
+**Status:** Validated Architectural Prototype (TRL-3) — SPI shipped v0.5.0, extended through v0.12.0 (SSE, route policy, WebSocket)
 
 ---
 
@@ -77,7 +86,10 @@ HTTP codec package: `eu.exeris.kernel.core.http`
 Implemented components:
 
 - **HPACK / Huffman:** `hpack.*`, `hpack.huffman.*`
-- **HTTP/2 framing:** `http2.*`
+- **HTTP/2 framing:** `http2.*` — consumed by the Community **server** engine only. The Community
+  **client** engine (`CommunityHttpClientEngine`) is HTTP/1.x-only by its own class doc and never
+  imports this package: every outbound request the kernel sends goes out as HTTP/1.1, regardless
+  of what the server side of the same process can accept.
 - **HTTP/1.1 codec:** `http1.*`
 - **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact, path-template (`{name}` placeholder), and prefix routing plus HEAD→GET fallback (RFC 9110 §9.3.2). Resolution precedence is exact → template → prefix; a template hit captures each placeholder and exposes it to the handler via `HttpExchange.pathParams()` (the router wraps the exchange in a `PathParamHttpExchange` decorator — Core never depends on a concrete transport-side exchange). `HttpRouterRegisteredEvent` (JFR) records exact/template/prefix route counts.
   The **streaming table follows the same rules** — exact before template, same `{name}` syntax, captured values reaching the handler through `HttpStreamExchange.pathParams()` via a `PathParamStreamExchange` decorator. It did not always: until v0.11 the streaming table was an exact-match map while the tooling generator emitted templated stream paths, so a per-action stream route registered successfully and then never matched a concrete request. A registration that cannot match is now unrepresentable — a malformed brace throws at `Builder.streamRoute`, and a well-formed one compiles to a template. Both tables share one compiled `PathTemplate`, so they cannot drift into disagreeing about what `/x/{id}` means.
@@ -152,13 +164,20 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 - `hpack.*`
 - `hpack.huffman.*`
 
-**Community tier is implemented.** Since the v0.8 Sprint 3 ADR-026 amendment (2026-05-17) the Community HTTP source tree is split into `shared/` / `client/` / `server/` / `h2/` subpackages under `eu.exeris.kernel.community.http`; the production classes are:
+**Community tier is implemented.** The Community HTTP source tree remains a single flat package,
+`eu.exeris.kernel.community.http`; a `shared/` / `client/` / `server/` / `h2/` subpackage split was
+proposed as an optional follow-up in the v0.8 Sprint 3 ADR-026 amendment (2026-05-17) but has not been
+executed. The production classes include:
 - `CommunityHttpProvider`, `CommunityHttpServerEngine`, `CommunityHttpClientEngine`
 - `CommunityHttpRequestProcessor`, `CommunityHttpTransportFactory`
 - `CommunityHttpExchange`, `Http2DecodedRequest`, `Http2RequestStreamState`, `Http2SessionContext`, `CommunityHttp2SessionProcessor`
 - `InMemoryHttp2Exchange`, `JsonBodyEncoder`
 - `CommunityHttpLifecycleEvent` (JFR)
-- `eu.exeris.kernel.community.http.client.CommunityWebClient` + `WebClientException` (since v0.8 Sprint 2, ADR-026) — typed HTTP verbs + Jackson 3 JSON binding façade on top of `HttpClientEngine`; the SPI surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
+
+The typed HTTP client facade is `KernelWebClient` (with nested `WebClientException`), which lives in
+`exeris-kernel-core`'s `eu.exeris.kernel.core.http.client` package as a tier-neutral class, not a
+Community class — typed HTTP verbs + Jackson 3 JSON binding on top of `HttpClientEngine`; the SPI
+surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
 
 ### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))
 
@@ -364,7 +383,9 @@ The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset:
 ## Architectural Notes (Current State)
 
 - `QPACK` / HTTP/3 implementation is not present in this open repository module set.
-- Root Maven modules are currently: `build-config`, `bom`, `parent`, `spi`, `tck`, `core`, `community`.
+- Root Maven modules are currently: `build-config`, `bom`, `parent`, `spi`, `tck`, `core`,
+  `community-testkit`, `community`, `community-kafka`, `diagnostics-cli`. HTTP code lives only in
+  `spi`, `core`, `community`, and `tck`.
 - Documentation and design discussions that mention dedicated `exeris-kernel-http` module
   should be treated as target/roadmap unless that module appears in the root reactor.
 
@@ -382,7 +403,12 @@ The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset:
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.http.*`) is classified **mixed** in the
 [SPI Stability Matrix](../stability-matrix.md): `HttpClientEngine`, `HttpServerEngine`,
-`HttpProvider`, and `HttpClientRequestEnricher` are **stable**, while the body-codec quadrant
-(`HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` / `HttpResponseBodyDecoder`, ADR-034) is held
-at **preview** until the server-side generator loop that consumes the request decoder closes. See
-the matrix's `…spi.http` per-surface breakdown for the semver policy and TCK coverage status.
+`HttpProvider`, `HttpExchange`, `HttpHandler`, the request/response carriers, and
+`HttpClientRequestEnricher` are **stable**. Everything else covered in detail above is still
+**preview**: the body-codec quadrant (`HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` /
+`HttpResponseBodyDecoder`, ADR-034) until the server-side generator loop that consumes the request
+decoder closes, client retry (`HttpRetryPolicy`, ADR-045), route authorization
+(`HttpRoutePolicy` / `RouteRequirement`, ADR-061/ADR-077), and the SSE streaming contracts
+(`HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent`, ADR-043). `eu.exeris.kernel.spi.websocket`
+is a separate surface (see above) and is also **preview**. See the matrix's `…spi.http` per-surface
+breakdown for the semver policy and TCK coverage status.

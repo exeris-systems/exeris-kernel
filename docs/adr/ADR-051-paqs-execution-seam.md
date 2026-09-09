@@ -1,3 +1,12 @@
+---
+title: "ADR-051: PAQS Execution-Seam (`StreamExecutionBackend`) — an agnostic stream-execution injection point"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-051
+last-verified: 2026-09-08
+---
 # ADR-051: PAQS Execution-Seam (`StreamExecutionBackend`) — an agnostic stream-execution injection point
 
 | Attribute       | Value                                                                                                                                                                                       |

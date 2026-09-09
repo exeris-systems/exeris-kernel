@@ -1,3 +1,13 @@
+---
+title: "ADR-077: A route declares how it executes, and the dispatcher draws the connection consequence"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+slug: adr/ADR-077
+---
+
 # ADR-077: A route declares how it executes, and the dispatcher draws the connection consequence
 
 | Attribute       | Value                                                                                     |

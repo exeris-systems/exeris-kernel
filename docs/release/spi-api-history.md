@@ -1,3 +1,12 @@
+---
+title: "SPI API compatibility history"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # SPI API compatibility history
 
 **Status:** Generated artefact — do not edit by hand

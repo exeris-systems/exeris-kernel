@@ -1,3 +1,11 @@
+---
+title: "Trademark Policy"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
 # Trademark Policy
 
 "Exeris" and the Exeris logo are trademarks of Arkadiusz Przychocki, trading as

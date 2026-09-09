@@ -1,3 +1,13 @@
+---
+title: "ADR-081: The connection cap and stream shedding are layers, and neither answers with a status"
+type: adr
+slug: adr/ADR-081
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # ADR-081: The connection cap and stream shedding are layers, and neither answers with a status
 
 | Attribute       | Value                                                                                     |

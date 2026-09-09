@@ -1,3 +1,12 @@
+---
+title: "ADR-036: Server-Side Request Body Decoder SPI — `HttpRequestBodyDecoder` + Generated-Handler Resolution"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-036
+last-verified: 2026-09-08
+---
 # ADR-036: Server-Side Request Body Decoder SPI — `HttpRequestBodyDecoder` + Generated-Handler Resolution
 
 **Status:** Accepted

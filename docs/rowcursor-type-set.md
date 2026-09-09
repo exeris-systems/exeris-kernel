@@ -1,13 +1,31 @@
+---
+title: "The `RowCursor` type set"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # The `RowCursor` type set
 
-The set `AbstractRowCursorTck` asserts, fixed by [ADR-080](adr/ADR-080-rowcursor-value-contract.md).
+The set `AbstractRowCursorTypeSetTck` asserts, fixed by the type-set decision recorded in
+[ADR-080](adr/ADR-080-rowcursor-value-contract.md) §2. ADR-080's own Compliance section still names
+`AbstractRowCursorTck` — a different, engine-agnostic TCK — as the one "widened per §5"; that text
+was not updated when the type-set assertions landed in this separate class instead.
+`AbstractRowCursorTck` itself carries no PostgreSQL rendering assertion at all — flyweight identity,
+NULL and out-of-range behaviour on any binding's own choice of three columns. The type-set contract
+below is this file and the class named above.
 
 **Every expectation here was measured against a running server, not read out of the PostgreSQL
-sources.** 79 expressions against PostgreSQL 17 (`server_version_num` 170010), each run twice through
-one connection — once through the extended-query protocol with binary results decoded client-side,
-once through the simple-query protocol, which always returns text. That second answer is the server's
-own `<type>_out`, and it is also what the Community driver returns, because pgjdbc's text path passes
-those bytes through untouched. Zero mismatches on the implemented set.
+sources.** 79 expressions against PostgreSQL 17, each run twice through one connection — once through
+the extended-query protocol with binary results decoded client-side, once through the simple-query
+protocol, which always returns text. That second answer is the server's own `<type>_out`, and it is
+also what the Community driver returns, because pgjdbc's text path passes those bytes through
+untouched. ADR-080 §2 records the measurement itself but not a mismatch count for it, and it is not
+independently re-measurable in this document (no live server to check against). The TCK's own binding runs this against
+`postgres:17` under Testcontainers — a floating tag, so the exact patch level is whatever `17.x` was
+current at measurement time, not pinned in the test source.
 
 This file is open-core because its content is **server behaviour**, not any driver's internals. What
 measured it is not the subject; what PostgreSQL renders is.
@@ -64,7 +82,7 @@ bag of types.
 | `float8` | 701 | `1e6` | `1000000` | the same value, the other side of that cutoff — this pair is the whole point |
 | `float8` | 701 | `0.1 + 0.2` | `0.30000000000000004` | shortest round-trip |
 | `float8` | 701 | `'Infinity'` | `Infinity` | capitalised, unlike the temporal sentinels |
-| `text` | 25 | non-ASCII + astral | verbatim | UTF-8 round trip through whatever buffer the driver reuses |
+| `text` | 25 | non-ASCII (`zażółć gęślą jaźń`) | verbatim | UTF-8 round trip through whatever buffer the driver reuses — the seed is BMP-only, no astral (supplementary-plane) character is exercised |
 | `varchar` | 1043 | `'v'::varchar(10)` | `v` | no padding |
 | `bpchar` | 1042 | `'abc'::char(10)` | `abc` + 7 spaces | padding **is data** — a driver that trims looks tidier and is wrong |
 | `bytea` | 17 | `'\x48656c6c6f'` | `\x48656c6c6f` | lowercase hex behind the `\x` prefix |
@@ -104,30 +122,39 @@ type the driver does not implement, `getString` fails with a typed exception rat
 one**. That is testable without implementing a single one of them, and it is what closes the
 silent-corruption class permanently.
 
+Twelve rows below, thirteen types — `bit` and `varbit` share one row — matching ADR-080 §2's own
+count of "thirteen entries."
+
 | Type | OID | Server `_out` | Note |
 |---|---:|---|---|
 | `int4[]` | 1007 | `{1,2}` | Arrays are the largest real gap — an ordinary application type |
 | `text[]` | 1009 | `{a,b}` | `array_out` quoting is a sub-algorithm of its own |
-| `uuid[]` | 2951 | `{a0eebc99-…}` | |
 | `numeric[]` | 1231 | `{1.5}` | |
 | `enum` | user | `happy` | `enum_send` is a text passthrough, so a naive UTF-8 wrap is *accidentally correct* — which is exactly why a driver must not guess by OID range |
-| composite | user | `(1,a)` | Shares the user OID range with enum and has genuinely binary send |
-| `int4range` | 3904 | `[1,5)` | Same range, same hazard |
+| `int4range` | 3904 | `[1,5)` | Needs the same per-declared-type handling as `enum` — not because their OIDs share a range (3904 is a fixed system-catalog value, not a user one), but because an OID-range heuristic would still miss it, which is why the refusal is name-keyed, never OID-range-keyed |
 | `int4multirange` | 4451 | `{[1,5)}` | PG ≥ 14 |
-| `inet` / `cidr` | 869 / 650 | `192.168.0.1/24` | |
+| `inet` | 869 | `192.168.0.1/24` | |
+| `cidr` | 650 | `192.168.0.0/24` | Needs a network address with the host bits zero — `cidr` rejects the `.1/24` form `inet` accepts |
 | `macaddr` | 829 | `08:00:2b:01:02:03` | |
-| `bit` / `varbit` | 1560 / 1562 | `1011` | |
+| `bit` / `varbit` | 1560 / 1562 | `1011` | pgjdbc reports `Types.BIT` for `bit` **and** for `bool` — only the declared name separates them |
 | `tsvector` | 3614 | `'a' 'b'` | |
 | `pg_lsn` | 3220 | `0/16B3748` | |
+
+`uuid[]` (OID 2951) and composite types share the same refusal hazard — genuinely binary send, user
+OID range for composites — but neither is currently an assertion in `AbstractRowCursorTypeSetTck`.
+They are not part of the measured set until a row for each lands there.
 
 ### Domains are not in Tier C
 
 Measured: PostgreSQL reports the **base type OID** in `RowDescription`, so a domain over `int4`
-arrives as OID 23 and one over `text` as OID 25. They render correctly with no special handling.
+arrives as OID 23. It renders correctly with no special handling — the TCK's own domain, `tck_posint
+AS int4`, is the row that pins this.
 
-A row for each is worth having precisely to pin that — the opposite belief is easy to hold, and it
-would justify an OID-range heuristic that silently corrupts ranges and composites, which share the
-user range and have genuinely binary send functions.
+That a domain over `text` (arriving as OID 25) behaves the same way follows from the same mechanism
+and is not independently asserted; the TCK has one domain row, over `int4`, not one per base type.
+Having even one is worth it precisely because the opposite belief is easy to hold, and it would
+justify an OID-range heuristic that silently corrupts ranges and composites, which share the user
+range and have genuinely binary send functions.
 
 ## Tier D — out
 
@@ -143,18 +170,32 @@ Written down so they are not re-litigated.
 
 ## Beyond `getString`
 
-The type set is half the widening. The divergence that motivated ADR-080 was reachable through
-**five other accessors** that read a fixed width at the column offset regardless of the declared
-type. For every Tier A row, the widened TCK asserts:
+The type set is half the widening. The divergence that motivated ADR-080 §3 was reachable through
+five other accessors (`getInt`, `getLong`, `getShort`, `getFloat`, `getDouble` — the numeric ones
+capable of lossless widening; `getBoolean` has no width hierarchy to widen along) that read a fixed
+width at the column offset regardless of the declared type. What `AbstractRowCursorTypeSetTck` — the
+class this file's set is fixed by — actually asserts about them:
 
-1. **`getString` works on every type** — the JDBC-shaped contract a driver-agnostic application
-   relies on, and the one assertion that makes the implementations comparable at all.
-2. **The matching typed accessor agrees** — `getInt` on `int4`, `getBoolean` on `bool`,
-   `getInstant` on `timestamptz`.
-3. **A mismatched typed accessor obeys ADR-080 §3** — `getInt` on a two-byte `int2` must not read
-   four bytes and return `809500672`. Lossless widening is accepted; lossy conversion throws.
-4. **SQL NULL returns `null` for every reference-typed accessor**, resolved before any type dispatch.
-5. **The undescribed-column path is declared** — a supported state, or a programming error.
+1. **`getString` renders every Tier A row** — looped over the whole table above, not a sample. The
+   JDBC-shaped contract a driver-agnostic application relies on, and the one assertion that makes the
+   implementations comparable at all.
+2. **The matching typed accessor agrees with `getString`** — asserted on two representative columns,
+   `getInt` on `int4` and `getBoolean` on `bool`, not iterated over the full Tier A table.
+3. **A mismatched typed accessor obeys ADR-080 §3** — also two representative cases, not one per row:
+   `getInt` on a two-byte `int2` widens losslessly to `12345`; `getInt` on an out-of-range `int8`
+   throws rather than returning `809500672`.
+
+Two more properties are real but live outside this TCK, so they are not part of "the set" this file
+fixes:
+
+4. **SQL NULL returns `null` for every reference-typed accessor**, resolved before any type dispatch
+   — asserted by the *other* TCK, `AbstractRowCursorTck`'s `SqlNullContract`, against whatever three
+   columns a binding's own fixture chooses. It holds for any engine and is not scoped to Tier A.
+5. **An undescribed column refuses rather than crashing** — Community's column-policy resolution
+   falls back to an empty declared-type name when `ResultSetMetaData` is unavailable, which the same
+   refusal path then rejects like any unsupported type. That fallback exists in
+   `JdbcQueryResult`; no TCK test — in either class — currently drives a connection into it, so this
+   is implementation behaviour, not an executable assertion yet.
 
 ## Using this file
 

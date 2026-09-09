@@ -1,3 +1,13 @@
+---
+title: "ADR-074: A request names its own peer — the client stops dialling the address its server listens on"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+slug: adr/ADR-074
+---
+
 # ADR-074: A request names its own peer — the client stops dialling the address its server listens on
 
 | Attribute       | Value                                                                                     |

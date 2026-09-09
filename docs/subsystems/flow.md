@@ -1,3 +1,12 @@
+---
+title: "Kernel Subsystem: Flow / Sagas (L4 Orchestration)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: Flow / Sagas (L4 Orchestration)
 
 - SPI: `eu.exeris.kernel.spi.flow.*`
@@ -15,7 +24,7 @@
 
 ## Runtime Behavior
 
-- Flow execution is step-based and stateful: `CREATED`, `RUNNING`, `PARKED`, `COMPENSATING`, `COMPLETED`, `FAILED_ROLLEDBACK`.
+- Flow execution is step-based and stateful: `CREATED`, `RUNNING`, `PARKED`, `COMPLETED`, `COMPENSATING`, `FAILED_ROLLEDBACK` (`FlowState`'s declared/code order).
 - Park/wake is supported through the Flow scheduler API.
 - Compensation is supported when enabled in `FlowEngineConfig`.
 - Snapshot persistence is optional and only used when a `FlowSnapshotStore` is bound and persistence is enabled.
@@ -32,9 +41,9 @@
 
 | Scenario                                           | Kernel Behaviour                                                                                         |
 |:---------------------------------------------------|:---------------------------------------------------------------------------------------------------------|
-| **New deployment adds a step** to a Saga           | Existing in-flight Sagas (persisted in `exeris_saga_state`) continue on the **old definition**. New Sagas use the new definition. The `FlowRegistry` stores the definition snapshot at submission time. |
-| **New deployment removes a step** (or otherwise shrinks the plan) | **Enforced fail-closed since v0.10** (`reason="STEP_OUT_OF_RANGE"`). On wake, `CoreFlowRuntime` validates the persisted resume step (`stepIdx`) against the redeployed plan's step count; if the step no longer exists (index out of range), it throws `EX-FLOW-7002` with `phase="SCHEMA_MISMATCH"` (`reason="STEP_OUT_OF_RANGE"`, `rawArgs[3]`=persisted step) **before any step replays** — never a silent stale-index re-execution. Manual intervention / a version-aware migration is required. This is a **bounds/arity** guard. |
-| **New deployment reorders steps** (same step count) | **Enforced fail-closed since v0.11 (ADR-062).** The snapshot records the *identity* of the step it parked at (`FlowSnapshot.currentStepName`, sourced from `FlowStepDescriptor.name`, which `FlowDefinition` now requires to be distinct). On wake, `CoreFlowRuntime` compares it against the step the persisted index addresses in the redeployed plan; a mismatch throws `EX-FLOW-7002` with `phase="SCHEMA_MISMATCH"`, `reason="STEP_IDENTITY_MISMATCH"` **before any step replays**. This is the case the bounds guard structurally cannot see — a same-arity reorder leaves the index valid, which is precisely why replaying it bound the saga to the wrong step. Renaming a step is therefore a compatibility change for in-flight Sagas. |
+| **New deployment adds a step** to a Saga           | Existing in-flight Sagas (persisted in `exeris_saga_state`) continue on the **old definition**. New Sagas use the new definition. The binding happens at `schedule()`: the caller passes a specific compiled `CoreFlowExecutionPlan`, and `RuntimeFlowInstance` holds that reference for its life — since ADR-064 the plan's version is also durably recorded in `FlowSnapshot.definitionVersion`, so a resume rebinds to the same version rather than whichever is newest. |
+| **New deployment removes a step** (or otherwise shrinks the plan) | **Enforced fail-closed since v0.10** (`reason="STEP_OUT_OF_RANGE"`). On wake, `CoreFlowRuntime` hands the persisted snapshot to `FlowSnapshotValidator`, which validates the persisted resume step (`FlowSnapshot.currentStep`) against the redeployed plan's step count; if the step no longer exists (index out of range), it throws `EX-FLOW-7002` with `phase="SCHEMA_MISMATCH"` (`reason="STEP_OUT_OF_RANGE"`, `rawArgs[3]`=persisted step) **before any step replays** — never a silent stale-index re-execution. Manual intervention / a version-aware migration is required. This is a **bounds/arity** guard. |
+| **New deployment reorders steps** (same step count) | **Enforced fail-closed since v0.11 (ADR-062).** The snapshot records the *identity* of the step it parked at (`FlowSnapshot.currentStepName`, sourced from `FlowStepDescriptor.name`, which `FlowDefinition` now requires to be distinct). On wake, `FlowSnapshotValidator` compares it against the step the persisted index addresses in the redeployed plan; a mismatch throws `EX-FLOW-7002` with `phase="SCHEMA_MISMATCH"`, `reason="STEP_IDENTITY_MISMATCH"` **before any step replays**. This is the case the bounds guard structurally cannot see — a same-arity reorder leaves the index valid, which is precisely why replaying it bound the saga to the wrong step. Renaming a step is therefore a compatibility change for in-flight Sagas. |
 | **Saga parked before upgrading to 0.11** | **Rejected fail-closed** (`reason="STEP_IDENTITY_ABSENT"`). Such a snapshot carries no step identity, so the reorder check cannot run — and resuming it would mean trusting the index again, the behaviour ADR-062 removes. Admitting it would leave a permanent route back to positional resume. **Drain in-flight Sagas before upgrading**, the same blue/green procedure this table already prescribes for reordering deploys. |
 | **New deployment changes a definition and bumps its version** | **Coexistence since v0.11 (ADR-064).** `FlowDefinition` carries an `int version` and the plan catalog is keyed by `(name, version)`, so registering v2 no longer evicts v1. A parked saga resumes on the version it recorded in `FlowSnapshot.definitionVersion`, not on whichever version is newest — the rebinding the rows above merely *detect* is what this removes. New instances start on the newest registered version. Retaining versions costs catalog slots: `FlowEngineConfig.maxExecutionPlans` bounds versions as well as distinct definitions, and retiring a version is an operator action with no automatic reclamation. Declaring no version is still valid — a definition built without one is version 1 and an application that never bumps behaves exactly as before. **Declaring one through the fluent API works only since 0.12** (ADR-064 amendment): `newDefinition(name)….version(n).build()`. For the whole of v0.11 `FlowDefinitionBuilder` had no `version`, so every definition assembled the supported way was version 1 and the coexistence this row describes was unreachable from application code. |
 | **Parked saga names a version this engine does not host** | **Rejected fail-closed** (`reason="DEFINITION_VERSION_UNRESOLVED"`). Distinguished from a definition this engine hosts *no* version of, which is not an error at all but the cross-restart / cross-engine fallback (ADR-013 §8) — collapsing the two would break choreography on any node hosting only part of the flow catalogue. **The parked row is left untouched**, so deploying the missing version recovers the saga; the kernel deliberately introduces no quarantine state, because marking it terminal would be irreversible and would run compensation for a definition the runtime cannot bind. |
@@ -48,6 +57,12 @@
 > catalog slot automatically, and nothing sweeps sagas onto newer versions ahead of a wake. Migration
 > transforms are registered in code against `(definitionName, fromVersion)`; the kernel has no
 > annotation-driven or configuration-driven declaration of them.
+
+> **Since 0.12, every refusal in this table is owned by `FlowSnapshotValidator`** (Core-internal),
+> not inlined in `CoreFlowRuntime`. `CoreFlowRuntime` still resolves the plan and calls it on the
+> resume path (both the wake path against the catalog-resolved plan and the resubmit path against a
+> caller-supplied plan), but the bounds/identity/version/compensation-stack checks themselves, and
+> the `FlowSchemaMismatchEvent` each emits before throwing, live in that one class.
 
 ---
 
@@ -72,9 +87,12 @@ downward without mutating it, so an entry stays live after its compensation has 
 therefore a reverse read, not a drain.
 
 **A per-step compensation failure does not stop the unwind.** `runCompensationStep` catches `Exception`
-around the compensation action and emits `FlowStepFailedEvent` with
-`staticReasonCode="COMPENSATION_FAILED"`, then continues to the next entry — cleanup must reach every
-step that needs it, not only the ones before the first failure. `Error` still propagates.
+around the compensation action and emits `FlowStepFailedEvent`, then continues to the next entry —
+cleanup must reach every step that needs it, not only the ones before the first failure. `Error` still
+propagates. The event itself does not distinguish a failing forward step from a failing compensation —
+per its own Javadoc, "the same event covers both call sites... the event itself carries no field naming
+which of the two produced it"; only the step index and definition name the caller supplies tell them
+apart.
 
 **What is not caught, and why that is where the guards live.** The entry read and the `plan.stepAt`
 lookup sit *outside* that catch, so an entry that does not index the plan throws out of the unwind
@@ -131,6 +149,9 @@ Flow can be driven by external events through the choreography bridge:
 | `FlowSchemaMismatchEvent` (since 0.10) | `eu.exeris.kernel.flow.SchemaMismatch` | Every fail-closed resume refusal, emitted single-phase immediately before the `EX-FLOW-7002 / phase=SCHEMA_MISMATCH` throw. No longer only the step-bounds check: since 0.11 the cursor-identity, definition-version, compensation-stack bounds and compensation-stack identity guards all emit it, discriminated by `reason` | `engineName`, `definitionName`, `instanceIdMost`, `instanceIdLeast`, `persistedStep`, `planStepCount`, `reason`, `persistedStepName`, `planStepName` |
 | `FlowSnapshotSaveFailedEvent` (since v0.8 Sprint 5, JFR-091) | `eu.exeris.kernel.flow.FlowSnapshotSaveFailed` | `JdbcFlowSnapshotStore.save()` non-OCC `PersistenceProviderException` rollback path — the **non-OCC** sibling of `OptimisticLockConflictEvent`. OCC race losers continue to emit `OptimisticLockConflictEvent` and never overlap with this event. Public visibility — application code may install `RecordingStream` consumers (matches `OptimisticLockConflictEvent`). | `engineName`, `sqlState` (`SQLSTATE_UNKNOWN` sentinel when no `SQLException` in cause chain), `exceptionClass`, `exceptionMessage` |
 | `FlowSnapshotPersistFailedEvent` (since 0.12) | `eu.exeris.kernel.flow.SnapshotPersistFailed` | `FlowSnapshotWriter.save()`, i.e. `CoreFlowRuntime.persistSnapshot`'s call site — fires for **any** store failure, whichever binding is installed. Complements `FlowSnapshotSaveFailedEvent` rather than duplicating it: that one is emitted from inside `JdbcFlowSnapshotStore.save`'s try-with-resources **body**, so a failure raised by the resource expression itself (`engine.openConnection()` — pool exhaustion, acquire timeout) escapes every catch there and emitted nothing. That is also the failure that leaves the instance running on a transition the store never accepted, since `applyParkOutcome` sets `PARKED` and registers the instance *before* persisting, and the exception then escapes `runInstance` uncaught. | `definitionName`, `state`, `stepIndex`, `instanceIdMost`, `instanceIdLeast`, `failureReason` |
+| `FlowDefinitionMigratedEvent` | `eu.exeris.kernel.flow.DefinitionMigrated` | `CoreFlowRuntime.restoreFromSnapshot()`, after `migrateIfNeeded` walks a parked saga onto a version this engine hosts and the migrated snapshot is persisted — one event per completed migration (all hops collapsed, not one per hop) | `engineName`, `definitionName`, `instanceIdMost`, `instanceIdLeast`, `fromVersion`, `toVersion`, `hops` |
+| `FlowProgressDisabledEvent` | `eu.exeris.kernel.flow.ProgressDisabled` | `FlowProgressPublisher.resolveFlowProgressOrdinal()`, once per engine, when every candidate ordinal in a bounded probe window collides with an already-registered event type — progress publication is then permanently disabled for that engine's lifetime | `eventTypeName`, `baseOrdinal`, `probeLimit` |
+| `FlowDeferredWakeFailedEvent` | `eu.exeris.kernel.flow.DeferredWakeFailed` | `CoreFlowRuntime.restoreParkedAfterFailedWake()` — a wake deferred past a still-running step (see Deferred Wake, below) that could not be re-submitted; unless the instance has since become terminal it is put back to `PARKED` with the wake re-armed, then this fires unconditionally | `definitionName`, `exceptionType` |
 
 ---
 
@@ -155,8 +176,9 @@ So parallelism is not a missing field on `FlowDefinition`. It is a different dur
 and both halves of ADR-062/ADR-064's fail-closed resume are built on the linear one.
 
 **This is what a downstream generator is up against.** `@SagaStep` in the SDK declares `parallel`,
-`waitForAll` and `failFast`, with semantics the kernel has no model for — *"steps with the same
-`order` can execute in parallel"*, *"cancel other parallel steps immediately"*. A generator compiling
+`waitForAll` and `failFast`, with semantics the kernel has no model for — `parallel()`'s javadoc says
+a step *"can run in parallel with other parallel steps of same order"*, and `failFast()`'s says to
+*"cancel other parallel steps immediately"*. A generator compiling
 those to anything other than a linear chain would be inventing a contract the runtime does not offer,
 so **emitting the linear chain is the correct compilation**, and the unread attributes record a
 kernel gap rather than a generator omission. Tracked in `docs/ROADMAP.md`.
@@ -209,13 +231,15 @@ The consequence was invisible, which is what made it dangerous. A choreography w
 
 Core records the refused wake on the instance under the same monitor that guards its scheduled flag, and the draining run re-submits it after releasing its own bookkeeping. Two refusals stay deliberately silent because neither loses work: a **terminal** instance has already finished, and a **superseded lifecycle generation** means the engine restarted underneath the run — re-launching there would resurrect a reclaimed snapshot row rather than resume anything.
 
+That deferred re-submission (`launch`) can itself fail — most commonly `maxConcurrentFlows` already exhausted. `CoreFlowRuntime` does not let that escape uncaught: it emits `FlowDeferredWakeFailedEvent`, carrying the failure's exception type only, and — unless the instance has since become terminal — puts it back to `PARKED` with the wake re-armed (recoverable from a later wake).
+
 **Enterprise obligation.** The ring-buffer scheduler has the same window on its CAS-enqueue path (a wake enqueued while a consumer still owns the slot) and inherits this contract through the same TCK case.
 
 ### Cross-Restart Choreography Wake
 
 For choreography-driven wake, the in-memory parked map remains the O(1) fast path during a live runtime.
 
-When persistence is enabled, a restart-aware implementation may consult `FlowSnapshotStore` only after an in-memory miss to recover a `PARKED` `FlowContext` for wake. That fallback is a bounded miss-path rather than an unbounded repeated store probe: repeated unknown-flow misses are negatively suppressed in `CoreFlowRuntime` via a `parkedLookupMisses` set capped at 256 entries with FIFO eviction (`MAX_PARKED_LOOKUP_MISSES`). The cache is cleared on every successful lookup, on park/wake/complete transitions, on plan recompilation, and on engine restart. This bounds persistence cost under choreography polling without ever masking a genuine PARKED instance.
+When persistence is enabled, a restart-aware implementation may consult `FlowSnapshotStore` only after an in-memory miss to recover a `PARKED` `FlowContext` for wake. That fallback is a bounded miss-path rather than an unbounded repeated store probe: repeated unknown-flow misses are negatively suppressed via `CoreFlowRuntime`'s `parkedLookupMisses` field, a dedicated `ParkedLookupMissCache` capped at 256 entries (`MAX_ENTRIES`) with FIFO eviction. The cache is cleared on every successful lookup, on park/wake/complete transitions, on plan recompilation (`clearLookupSuppressionAfterPlanCompile()`), and on engine `close()` (not on `start()`, which never touches `parkedLookupMisses`). This bounds persistence cost under choreography polling without ever masking a genuine PARKED instance.
 
 **A refused PARK checkpoint keeps the saga, not the claim (since 0.12).** `save()` throwing at park used to escape `runInstance` uncaught, killing the flow virtual thread while the instance had already been flipped to `PARKED` and registered - so it advertised a durability it did not have. Flipping the state only after a successful write is the obvious repair and is worse: the instance is wakeable in this JVM, so refusing to park it turns a transient store outage into a saga lost even without a restart. The engine therefore parks it, retries the write once (unspaced, because this runs under the instance monitor and the failure it most often meets is an exhausted connection pool, where waiting longer holds a thread against the contention that caused it), and past that marks the instance non-durable. Every attempt emits `FlowSnapshotPersistFailedEvent`, and the count surfaces as `nonDurableParkedFlows` on `FlowEngineShutdownEvent`. The mark clears on the next accepted write, whichever transition carries it. `Error` still propagates: an exhausted heap is not a checkpoint that can be retried.
 
@@ -256,8 +280,8 @@ The same defaults apply to the outbox-orchestrator pump and the RLS-interceptor 
 | Code           | Meaning                  | Glass-Box Payload (`rawArgs`)                                                                                                                           |
 |:---------------|:-------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure  | `[0] String providerName, [1] String reason`                                                                                                            |
-| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values include `START`, `STOP`, `COMPILE`, `SCHEDULE`, `SCHEMA_MISMATCH`, `WAKE_FAILED`, `SUBMIT_REJECTED`, `OPTIMISTIC_LOCK_CONFLICT` (since 0.7) |
-| `EX-FLOW-7003` | Step Execution Failure   | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType` |
+| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values documented on `FlowEngineException`: `START`, `STOP`, `COMPILE`, `SCHEDULE`, `SCHEMA_MISMATCH` (since 0.10), `OPTIMISTIC_LOCK_CONFLICT` (since 0.7). **The `WAKE` phase carries five slots, not four (since 0.12)** — `[3] long instanceIdMost, [4] long instanceIdLeast` instead of a single `int contextVal`, because its context is a 128-bit flow instance identity. A consumer must read this layout by phase rather than assume a fixed arity; index 2 (`reasonCode`) stays in place on every phase. |
+| `EX-FLOW-7003` | Step Execution Failure   | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType`. Layout is defined and unit-tested for shape (`FlowExceptionLayoutTest`), but **no code path in Core or Community currently throws `FlowExecutionException`** — a step or compensation failure is instead recorded only via the `FlowStepFailedEvent` JFR event, with the flow routed to `FAILED_ROLLEDBACK`. This code is currently dead outside its own layout test. |
 | `EX-FLOW-7004` | Registry Conflict        | `[0] int stepId, [1] String reason`                                                                                                                     |
 
 > **Note — `EX-EVENT-6004` / `EX-FLOW-7001` Identical Schema:** These share the same `rawArgs` layout (`providerName`, `reason`) intentionally — they model the same class of failure in two distinct subsystem domains (Event Bus vs. Flow Engine). The duplication is deliberate; see `telemetry.md` for details.
@@ -271,18 +295,18 @@ The same defaults apply to the outbox-orchestrator pump and the RLS-interceptor 
 | `AbstractFlowEngineTck` | `exeris-kernel-tck` | Full flow lifecycle: submit, run, park, wake, complete, compensate; JFR shutdown event (TCK-062), restart-aware semantics (TCK-063), saga timeout enforcement (DIST-303), per-outcome transition correctness incl. thrown-exception FAIL path + `FAILED_ROLLEDBACK` terminal idempotency (FLOW-110, `OutcomeTransitions`) |
 | `AbstractFlowSchedulerTck` | `exeris-kernel-tck` | Scheduler contract: schedule, cancel, peek parked, drain |
 | `AbstractFlowChoreographyTck` | `exeris-kernel-tck` | Choreography mapper registration and event-driven wake |
-| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store; restart-under-load (N=16 concurrent parked instances survive force-close, resume, no re-exec/orphans, counter reset) (FLOW-110, `RestartUnderLoad`) |
+| `AbstractSagaRecoveryTck` | `exeris-kernel-tck` | Crash-recovery replay semantics from snapshot store; restart-under-load (`restartLoadCount()`, default 16, concurrently scheduled flows, half of them driven to PARK; the parked half's checkpoints survive force-close, resume, and reach COMPLETED with no re-exec/orphans and counters reset) (FLOW-110, `RestartUnderLoad`) |
 | `AbstractIdempotencyGuardTck` | `exeris-kernel-tck` | Step-level deduplication contract for `IdempotencyGuard` |
 | `AbstractFlowDefinitionVersioningTck` | `exeris-kernel-tck` | Definition versioning (since 0.11, ADR-064) — version coexistence and resume on the parked version (`Coexistence`); the four fail-closed refusals incl. the unhosted-definition non-refusal (`Refusals`); in-flight migration: single hop, chained hops, stop-at-first-hosted, missing link, throwing transform, unknown emitted step, out-of-range emitted compensation stack, duplicate registration, persistence before the resumed step runs (`Migration`); compensation-stack step identity (since 0.11, ADR-064 A5) — in-range entry addressing a different step, agreeing identities resuming, live stack with no identities, empty stack not treated as absent, transform emitting contradicted identities, transform refused before it runs on an unnamed stack, and identities the engine itself recorded round-tripping end to end (`StackIdentity`); the retained 0.10.0 `FlowSnapshot` constructor still failing closed (`StabilityCompatibility`); builder-declared versions (since 0.12, ADR-064 amendment) — the version reaching definition and compiled plan, and a sub-initial version refused at the call site that named it (`VersionThroughTheBuilder`) |
 | `FlowZeroAllocTck` | `exeris-kernel-tck` | Zero-allocation assertion on hot flow scheduling path |
 | `FlowCarrierPinningTck` | `exeris-kernel-tck` | Flow orchestration does not pin Virtual Thread carrier |
 | `AbstractDistributedFlowSnapshotStoreTck` | `exeris-kernel-tck` | Durable snapshot store contract (since 0.7) — save/load round-trip, delete, listParked filter, cross-restart recovery, OCC stale-version conflict |
 
-Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest`, `CommunityFlowChoreographyTckTest`, `CommunitySagaRecoveryTckTest`, `CommunityFlowDefinitionVersioningTckTest`, `CommunityFlowCarrierPinningTckTest`, `CommunityJdbcFlowSnapshotStoreTckIT` (Postgres via Testcontainers) in `exeris-kernel-community`.
+Community bindings: `CommunityFlowEngineTckTest`, `CommunityFlowSchedulerTckTest`, `CommunityFlowChoreographyTckTest`, `CommunitySagaRecoveryTckTest`, `CommunityFlowDefinitionVersioningTckTest`, `CommunityFlowCarrierPinningTckTest`, `CommunityJdbcFlowSnapshotStoreTckIT` (Postgres via Testcontainers), `CommunityFlowIdempotencyGuardTckTest`, `CommunityFlowZeroAllocTckTest` in `exeris-kernel-community`.
 
 End-to-end cross-engine recovery (DIST-302 closure, since 0.7 Sprint 6c) is covered by `CommunityCrossEngineChoreographyIT` in `exeris-kernel-community-kafka`: two `FlowEngine`s share a `JdbcFlowSnapshotStore` and a Kafka broker. Service A schedules a saga that PARKs (snapshot persisted); Service A's `EventEngine` is then closed so it cannot consume the wake event. Service B publishes the wake event over Kafka, its `FlowChoreographyBridge` finds nothing in B's in-memory parked-instance index, falls back to the shared snapshot store, restores the saga, and completes it locally — proving the snapshot fallback path runs end-to-end against a real durable store with real broker delivery.
 
-> **Gap:** `AbstractIdempotencyGuardTck` and `FlowZeroAllocTck` have no Community-tier concrete binding in `exeris-kernel-community/src/test/`. The `IdempotencyGuard` contract is covered only by unit-level tests; no community provider binding extends `AbstractIdempotencyGuardTck`. Tracking: see `docs/ROADMAP.md`.
+`AbstractIdempotencyGuardTck` and `FlowZeroAllocTck` both have concrete Community-tier bindings (`CommunityFlowIdempotencyGuardTckTest`, `CommunityFlowZeroAllocTckTest`) under `exeris-kernel-community/src/test/`, listed above.
 
 ---
 
