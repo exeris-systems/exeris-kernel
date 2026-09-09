@@ -14,8 +14,50 @@ need the opposite shape: a connection that stays open and carries messages in bo
 as long as the peer is there. That is what this subsystem is, and it is a **sibling of HTTP rather
 than a mode of it** — the two share a port and a handshake, and nothing else.
 
-It shipped in v0.12.0. It is **off unless you turn it on**: `websocket.enabled` defaults to
-`false`, and a boot with it unset brings up no engine and binds no port.
+It shipped in v0.12.0, and it has **two entry points**: embedded without a kernel boot, or
+bootstrapped alongside one. That distinction comes first below, because the embedded one is the
+reason the SPI has the shape it has.
+
+## Two modes
+
+**Embedded, without a kernel boot.** `createServerEngine(config)`, then `setHandler(...)`, then
+`start()` — no `KernelBootstrap`, no DI container, no configuration key:
+
+```java
+WebSocketServerEngine engine = ServiceLoader.load(WebSocketProvider.class)
+        .findFirst()
+        .orElseThrow()
+        .createServerEngine(
+                WebSocketConfig.defaultServer("127.0.0.1", 0, List.of("http://localhost")));
+engine.setHandler(exchange -> {
+    String message;
+    while ((message = exchange.receive()) != null) {
+        exchange.send(message);
+    }
+});
+engine.start();
+```
+
+ADR-084 §1 treats this as the deciding constraint rather than a convenience: **the platform must get
+an endpoint without booting the kernel.** An LSP server starts per editor session, and requiring a
+runtime boot to open a socket would make a developer tool pay for a runtime it does not use. HTTP and
+persistence already behave this way; the WebSocket provider deliberately mirrors
+`HttpProvider.createServerEngine` so the property is shared rather than re-argued.
+
+When ADR-084 §1 says "no `ServiceLoader`", it rules discovery out as a *requirement*, not as an
+option — and discovery is the better route here, because it keeps a Community type off a consumer's
+compile classpath, which is what the Wall exists to prevent.
+
+**The engine covers its own dependency on this path.** `MEMORY_ALLOCATOR` is typically unbound when
+nothing was booted — exactly the embedded case — so the engine creates a private allocator instead of
+refusing, and `close()` releases it **only when the engine created it**. An ambient allocator belongs
+to whoever bound it, and closing another component's allocator is the failure that ownership flag
+exists to prevent.
+
+**Bootstrapped, alongside the kernel.** The `websocket` subsystem constructs the same engine during
+boot and wires the handler from the ambient binding. This mode is **off unless you turn it on**:
+`websocket.enabled` defaults to `false`, and a boot with it unset brings up no engine and binds no
+port. The embedded mode never reads that key — nothing reads configuration on that path.
 
 ## Contract
 
@@ -60,11 +102,11 @@ checking happens **before** the callback and cannot be overridden by it: an orig
 have accepted. Two TCK cases pin exactly that ordering, because a callback that could widen the
 origin set would make the configuration advisory.
 
-An implementer binds through `WebSocketKernelProviders`: `WEBSOCKET_PROVIDER`,
+**Under a boot**, an implementer binds through `WebSocketKernelProviders`: `WEBSOCKET_PROVIDER`,
 `WEBSOCKET_SERVER_ENGINE`, `WEBSOCKET_SERVER_HANDLER`, `WEBSOCKET_HANDSHAKE_HANDLER`. As with HTTP,
 the handler is bound **around** `boot()` and not inside it — the subsystem reads the `ScopedValue`
 during `start()`, and a binding established inside the boot lambda arrives after the subsystem that
-needed it.
+needed it. An embedded caller binds nothing and hands the handler to `setHandler` directly.
 
 ## Hot path
 
@@ -101,6 +143,7 @@ handler a message that looks complete.
 | Origin not in `allowedOrigins` | Handshake refused before the callback runs |
 | The callback refuses | The client receives the status the callback chose |
 | `websocket.enabled=true` and no provider on the classpath | Boot fails, naming that exact condition — not a silent no-op |
+| Embedded, with no allocator bound | The engine creates one it owns; `close()` releases it, and a second `close()` does not double-release |
 
 `WebSocketCloseCode` distinguishes what may be **sent** from what may only be **observed**:
 `NO_STATUS_RECEIVED` (1005) and `ABNORMAL_CLOSURE` (1006) report `sendable() == false`, because RFC
@@ -117,6 +160,9 @@ handler a message that looks complete.
   is one-way and stays the right answer where one way is enough.
 
 ## Configuration and bootstrap
+
+**This section is the bootstrapped mode.** An embedded caller constructs `WebSocketConfig` itself
+and no key below is consulted.
 
 Two keys, resolved the way every Community key is — system property `exeris.<key>`, then
 environment `EXERIS_<KEY>`, then the compiled default:
@@ -142,6 +188,12 @@ contract above. They pin the round trip, fragment reassembly, the size ceiling c
 truncating, the binary refusal, `receive()` returning `null` on peer close, close-code fidelity,
 `send`-after-close carrying no content, both origin-refusal orderings, callback refusal and
 subprotocol acceptance, and session identity within and across connections.
+
+`CommunityWebSocketEmbeddedBootlessTest` pins the embedded mode itself: an engine that starts with no
+`ScopedValue` bound and nothing booted, a provider reachable through `ServiceLoader`, and a repeated
+`close()` that does not double-release an allocator the engine owns. The requirement had been stated
+in ADR-084 and asserted nowhere, while the code refused an unbound allocator outright — the class
+named the scenario and the method rejected it.
 
 **What they do not yet cover**: nothing opens a real client socket against the engine. Handler and
 handshake are proven through the TCK's fixture, not through a socket-level handshake — recorded in
