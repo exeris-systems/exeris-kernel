@@ -327,7 +327,8 @@ To understand how these concepts map to actual code, read the subsystem definiti
 - [Bootstrap](subsystems/bootstrap.md) | [Config](subsystems/config.md) | [Memory](subsystems/memory.md) | [Security](subsystems/security.md)
 - [Transport](subsystems/transport.md) | [Persistence](subsystems/persistence.md) | [Graph](subsystems/graph.md) | [Flow](subsystems/flow.md)
 - [Crypto](subsystems/crypto.md) | [Telemetry](subsystems/telemetry.md) | [Events](subsystems/events.md)
-- [HTTP](subsystems/http.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md) | [Exceptions](subsystems/exceptions.md)
+- [HTTP](subsystems/http.md) | [WebSocket](subsystems/websocket.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md)
+- [Diagnostics](subsystems/diagnostics.md) | [Exceptions](subsystems/exceptions.md)
 
 ---
 
