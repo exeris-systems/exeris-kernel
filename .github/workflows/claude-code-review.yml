@@ -50,91 +50,44 @@ jobs:
 
           track_progress: true
 
+          # The review criteria are NOT authored here. They were — eighty-seven lines of them —
+          # and that made this file the third place the same rules lived, after AGENTS.md and
+          # .agents/policies/. Measured before removing it: the inline prompt named ONE of this
+          # repository's eight policies and omitted EIGHT of the ten mechanical gates CI actually
+          # runs, including `coreDoesNotDependOnCommunity` and every tagged gate. A rule added to a
+          # policy never reached the reviewer, and a rule edited here diverged in silence.
+          #
+          # `agents_file_check.py` cannot see this: .github/workflows is operational configuration
+          # and exempt from the adapter check by design, so rule 2 binds here at review level only.
+          # That is why it went unnoticed through the v2 migration itself.
+          #
+          # The action checks the repository out, so the routine, the role it names and the scripts
+          # both name are on disk. This prompt's whole job is to say which one to run.
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
+            BASE BRANCH: ${{ github.event.pull_request.base.ref }}
 
-            Review this PR. The repo is `exeris-kernel` — the open-core runtime
-            kernel: an SPI tier (`exeris-kernel-spi`), a driver-agnostic Core
-            (`exeris-kernel-core`), Community drivers (`exeris-kernel-community*`),
-            and a contract TCK (`exeris-kernel-tck`). Built with Maven.
+            Review this pull request by running the repository's own review routine.
 
-            **Which distribution track a PR is on decides what is correct**
-            (ADR-066). The default line — `main` and `development/*` — baselines
-            on **JDK 25 LTS** and its main sources are **preview-clean**: no
-            `--enable-preview` on distributed code, and therefore no
-            `StructuredTaskScope`. Test and TCK fixtures are exempt (not
-            distributed) and still compile with it. The `preview` branch is the
-            opposite: newest JDK, `--enable-preview`, `StructuredTaskScope`, JEP
-            401 value classes. Check the base branch before applying any rule
-            below that mentions preview features — the same code can be correct
-            on one track and disqualifying on the other.
+            1. Read `AGENTS.md`. It is the entry point and it names where the rules live.
+            2. Read `.agents/workflows/kernel-pr-review.md` and follow it, acting as the
+               `exeris-evaluator` role in `.agents/agents/exeris-evaluator/AGENT.md`.
+               Read the policies, subsystem contracts and nested `AGENTS.md` those two files
+               name — the ones your diff actually touches — rather than working from memory.
+               Each is the single owner of its list.
+            3. Run the mechanical checks that routine's table earns for this diff, and report
+               each as pass, fail or not-run with its exit code. A check you could not run is
+               reported as not-run, never omitted.
 
-            Source-of-truth docs (in precedence order):
-            1. `docs/modules/*.md`, `docs/subsystems/*.md` — placement + behavior
-            2. `docs/adr/*.md` — boundaries, lifecycle model, module split
-            3. `docs/whitepaper.md`, `docs/architecture.md`,
-               `docs/performance-contract.md` — when relevant
-            4. `AGENTS.md` — the repository's agent contract, and the index to `.agents/` (read this first)
+            The base branch above decides which distribution track applies, and the same code can
+            be correct on one and disqualifying on the other. Establish it before applying any
+            rule that mentions preview features.
 
-            Focus on (in priority order):
-            1. **The Wall (ADR-006) — boundary integrity.** `exeris-kernel-spi` and
-               `exeris-kernel-core` MUST be Spring-free and framework-DI-free. The
-               SPI MUST stay implementation-blind — no driver/native/`io_uring`/QUIC/
-               FIPS vocabulary or types leak into SPI contracts. Core MUST remain
-               driver-agnostic and orchestrate only through SPI contracts. Flag any
-               leak in either direction.
-            2. **Open-core placement.** Is the change in the right tier? Community
-               concrete classes use the `Community*` prefix. Logic that belongs in a
-               driver must not land in Core; SPI surface additions need justification.
-            3. **No Waste Compute / hot-path discipline.** Zero-allocation on runtime
-               hot paths; prefer `MemorySegment` / `LoanedBuffer` / `VarHandle`. All
-               native memory has an explicit owner and deterministic lifecycle
-               (`MemoryAllocator` / `LoanedBuffer` / approved native wrappers, not
-               ad-hoc Arenas). Banned on hot paths unless contract-justified:
-               `ExecutorService`/`Executors`/`CompletableFuture` (replacing structured
-               orchestration), `java.io.*`/`Socket`/`ByteBuffer` (in zero-copy paths),
-               `sun.misc.Unsafe`, checked exceptions on hot state-machine paths.
-            4. **Runtime idioms.** `ScopedValue` (NOT `ThreadLocal`) for context
-               propagation; Panama FFM for native interop; carriers Valhalla-ready
-               (records / immutable final, no identity-sensitive ops). For
-               orchestration concurrency the mechanism is track-dependent: on the
-               default line it is `core.concurrent.StructuredScope` (the kernel's own
-               GA fork/join/cancel layer over virtual threads) — flagging its use as
-               "should be `StructuredTaskScope`" is WRONG there and reverses ADR-066.
-               Note also that two sites deliberately run in-thread rather than fork
-               (`InMemoryEventBus.publishAndAwait`, `SubsystemOrchestrator` phase
-               start): their contracts require `ScopedValue` bindings an application
-               owns and the kernel cannot enumerate, so a `Carrier` cannot carry them.
-               On the `preview` branch, `StructuredTaskScope` is correct.
-            5. **JFR-first telemetry.** Lifecycle/failure points (bootstrap, allocation
-               failure, bind/start, state transitions) emit JFR events. Emission is
-               lightweight, payloads are secret-safe (NO key/token bytes, no raw args),
-               and commits are SINGLE-PHASE — never begin()->blocking-op->commit() on a
-               virtual thread (carrier-bound `EventWriter`; first observed as a
-               SIGSEGV on JDK 26, but the hazard is the straddle, not the release).
-            6. **TCK-first discipline.** Any change to observable SPI behavior or a
-               provider binding needs executable `Abstract*Tck` coverage plus a
-               concrete binding (Community in-repo; Enterprise obligation declared). A
-               red bound TCK is a contract-violation finding, not a reason to weaken
-               the test. Watch for fail-OPEN contract anchors (security defaults must
-               be deterministic deny per ADR-012, never fall-through).
-            7. **ADR / contract impact.** If the change alters a boundary, lifecycle
-               model, module split, or architecture intent, flag the need for an ADR or
-               subsystem-doc update — don't just edit code. ADR numbering is GLOBAL
-               across `exeris-*` (reserved in `exeris-docs/adr-index.md`).
-            8. **Correctness** — bugs, edge cases, broken contracts, merge artefacts.
-            9. **Scope** — does the diff match the PR title/description? Anything in
-               scope that's missing? Anything out of scope that should be split?
-
-            Skip cosmetic nits unless they affect the above. Be specific: cite
-            `file:line`. Lead with blockers, then in-scope improvements, then
-            non-blocking suggestions. End with a clear verdict
-            (LGTM / Approve with nits / Request changes).
-
-            Post your review as a single PR review (not many separate comments).
-            Use inline comments only when they materially help — `file:line` in the
-            text body is usually clearer.
+            Post one PR review, not many separate comments. Lead with blockers, then in-scope
+            improvements, then non-blocking suggestions, citing `file:line`. End with the verdict
+            and, after it, the same content as a fenced `json` block conforming to
+            `.agents/schemas/verdict.schema.json`.
 
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*),Bash(git branch:*),Bash(git remote:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(tools/spi-contract-blindness-check/*),Bash(tools/error-code-registry-check/*),Bash(tools/checkstyle-parity-check/*),Bash(tools/scope-register-check/*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*),Bash(git branch:*),Bash(git remote:*)"

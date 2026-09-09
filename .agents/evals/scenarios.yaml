@@ -8,7 +8,7 @@
 # and `forbidden` are substrings of the raw answer, `min_findings` counts, and `any_check_result`
 # asserts the verdict admitted a check it did not run.
 #
-# Six of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
+# Seven of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
 # derivable rather than remembered — `--tags negative` selects exactly them. That balance is
 # deliberate: every profile here carries a non-goal about over-policing, and a suite of only
 # positive cases passes against an agent that blocks everything — the same shape as a TCK that only
@@ -239,6 +239,36 @@ cases:
       fields:
         task_class: MULTI_DOMAIN
     tags: [routing]
+
+  # ── the evaluator, the role the CI review runs as ────────────────────────────────────────────
+  - id: evaluator-reports-every-surface-a-change-touches
+    # The reason this role exists. The fixture moves an SPI contract, a hot-path allocation, a JFR
+    # event and a missing subsystem page at once; a reviewer wearing one lens reports a subset and
+    # calls it a verdict. Two findings is the floor, not the target.
+    agent: exeris-evaluator
+    fixture: websocket-backpressure.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        scope_class: runtime hot path
+      min_findings: 2
+      contains: ["AbstractWebSocketSessionTck"]
+    tags: [evaluator, review]
+
+  - id: evaluator-does-not-escalate-a-typo
+    # The paired negative, and the one that keeps the role usable. An evaluator that answers
+    # BLOCKED to everything has replaced review with a veto, and is the reviewer people route
+    # around within a week.
+    agent: exeris-evaluator
+    fixture: javadoc-typo-fix.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: docs-only
+    tags: [evaluator, review, negative]
 
   # ── evidence discipline ──────────────────────────────────────────────────────────────────────
   - id: verdict-admits-the-check-it-could-not-run

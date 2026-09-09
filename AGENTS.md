@@ -78,7 +78,7 @@ and bounds them.
 | [`.agents/policies/`](.agents/policies) | What is permitted or forbidden — the Wall, scoped bans, memory ownership, the JDK track, definition of done, operating standards, branching, the SonarQube MCP server. Two more arrive from the bundle as `bundle:<name>`. |
 | [`.agents/references/`](.agents/references) | The short form of facts owned elsewhere: `build-and-ci`, `testing-model`. Each names its source and yields to it. |
 | [`.agents/skills/`](.agents/skills) | Bounded capabilities: the PR-review and subsystem lenses, single-pass triage, preflight, ADR registration, JFR research, release integration, tagged gates. |
-| [`.agents/agents/`](.agents/agents) | Role profiles at `<name>/AGENT.md`, composed from those skills — router, architect, implementer, TCK, performance, docs. Vendor-neutral: they declare capabilities and a model tier, never a runtime's tool names. |
+| [`.agents/agents/`](.agents/agents) | Role profiles at `<name>/AGENT.md`, composed from those skills — router, architect, implementer, TCK, performance, docs, evaluator. Vendor-neutral: they declare capabilities and a model tier, not a runtime's tool names. |
 | [`.agents/workflows/`](.agents/workflows) | User-invoked review sequences, each declaring its steps and the gates that enforce them. |
 | [`.agents/schemas/`](.agents/schemas) | The shape of a decision handed between roles: triage, verdict, handoff. |
 | [`.agents/hooks/`](.agents/hooks) | The L0 layer: what is denied, and what is allowed with a consequence the stop gate then requires. It enforces rules written elsewhere and states none. |
