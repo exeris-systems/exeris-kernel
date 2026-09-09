@@ -1,6 +1,15 @@
 ---
+name: spi-purity
 description: Audit an Exeris SPI change for contract purity and The Wall compliance, with minimal corrective direction.
 argument-hint: SPI diff or contract surface to audit
+steps:
+  - {skill: exeris-architect-guardrails}
+  - {agent: exeris-architect}
+  - {agent: exeris-tck, when: "the corrected contract is one no Abstract*Tck asserts"}
+gates:
+  - script:tools/spi-contract-blindness-check/spi-contract-blindness-check.sh
+  - hook:guardrails-gate-on-stop
+  - ci:maven / spi-compatibility-gate
 ---
 
 Audit this Exeris SPI change for purity and The Wall compliance.
