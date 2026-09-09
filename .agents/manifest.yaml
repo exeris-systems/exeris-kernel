@@ -98,9 +98,26 @@ evals: evals/scenarios.yaml
 # Nested AGENTS.md, one per subtree whose constraints differ from the root's and are enforced by
 # something nameable. `paths:` scopes the adapters a renderer emits; `enforced-by:` is what makes
 # the file a rule rather than a preference.
+# Four, not the three ADR-085's Engineering Protocol 4a counted: the criterion is the schema's —
+# materially different constraints plus something nameable that enforces them — and applying it
+# rather than the number puts exeris-kernel-community on the list. Three of the four ArchUnit
+# suites live there, `coreDoesNotDependOnCommunity` runs nowhere else, and `-Dtest` activates a
+# profile declared in exactly one pom in this repository.
+#
+# Deliberately absent, each for a stated reason:
+#   community-kafka  — its one distinct rule is "a green default build says nothing about a tagged
+#                      gate", which is not Kafka's rule; it is testing-model.md's.
+#   community-testkit— no tagged tests, three foreign group ids, no constraint the parent lacks.
+#   diagnostics-cli  — a real and expensive constraint (Jackson 2 and 3 cannot share a classpath,
+#                      because jackson-annotations is one artifact and nearest-wins picks one
+#                      version), but it is already written where it binds, in fifteen lines of that
+#                      module's pom, and NOTHING ENFORCES IT: the shaded jar is executed nowhere in
+#                      CI. A nested file naming no enforcement is a preference. The CI step comes
+#                      first; the file, if still wanted, comes after it.
 nested:
   - exeris-kernel-spi/AGENTS.md
   - exeris-kernel-core/AGENTS.md
+  - exeris-kernel-community/AGENTS.md
   - exeris-kernel-tck/AGENTS.md
 
 scripts:

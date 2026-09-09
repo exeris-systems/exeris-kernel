@@ -79,16 +79,16 @@ and bounds them.
 | [`.agents/references/`](.agents/references) | The short form of facts owned elsewhere: `build-and-ci`, `testing-model`. Each names its source and yields to it. |
 | [`.agents/skills/`](.agents/skills) | Bounded capabilities: the PR-review and subsystem lenses, single-pass triage, preflight, ADR registration, JFR research, release integration, tagged gates. |
 | [`.agents/agents/`](.agents/agents) | Role profiles at `<name>/AGENT.md`, composed from those skills — router, architect, implementer, TCK, performance, docs. Vendor-neutral: they declare capabilities and a model tier, never a runtime's tool names. |
-| [`.agents/workflows/`](.agents/workflows) | User-invoked Community / Open-Core review sequences, each declaring its steps and the gates that enforce them. |
+| [`.agents/workflows/`](.agents/workflows) | User-invoked review sequences, each declaring its steps and the gates that enforce them. |
 | [`.agents/schemas/`](.agents/schemas) | The shape of a decision handed between roles: triage, verdict, handoff. |
 | [`.agents/hooks/`](.agents/hooks) | The L0 layer: what is denied, and what is allowed with a consequence the stop gate then requires. It enforces rules written elsewhere and states none. |
-| [`.agents/evals/`](.agents/evals) | Behaviour tests for the profiles. On demand, never per pull request. |
+| [`.agents/evals/`](.agents/evals) | Behaviour tests for the profiles. On demand, not per pull request. |
 | [`.agents/vendor/`](.agents/vendor) | The pinned, digest-verified copy of the shared bundle. Never edited. |
-| [`.agents/manifest.yaml`](.agents/manifest.yaml) | The composition, the pinned import, the render map, and what each runtime cannot do. |
+| [`.agents/manifest.yaml`](.agents/manifest.yaml) | The composition, the pinned import, the render map, and each runtime's limits. |
 
-Three subtrees add their own `AGENTS.md`, each naming what enforces it and restricting only:
+Four subtrees add their own `AGENTS.md`, each naming what enforces it and restricting only:
 [spi](exeris-kernel-spi/AGENTS.md), [core](exeris-kernel-core/AGENTS.md),
-[tck](exeris-kernel-tck/AGENTS.md).
+[community](exeris-kernel-community/AGENTS.md), [tck](exeris-kernel-tck/AGENTS.md).
 
 Instruction sources resolve broad to narrow: organisation bundle, repository, subtree, selected
 workflow. A narrower file may restrict behaviour; it may never relax a higher-order rule. Accepted
