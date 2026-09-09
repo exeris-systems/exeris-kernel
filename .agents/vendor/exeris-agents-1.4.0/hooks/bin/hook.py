@@ -251,9 +251,12 @@ def tool_result(event: dict) -> bool | None:
     # successful Bash event, and treating that as "the runtime said it succeeded" made every script
     # look successful — including one that exited 1 — which is exactly the collapse the docstring
     # above promises not to make. An absent or falsy `interrupted` says nothing at all.
-    code = resp.get("exit_code", resp.get("exitCode"))
-    if isinstance(code, int) and not isinstance(code, bool):
-        return code != 0
+    for key in ("exit_code", "exitCode"):
+        code = resp.get(key)
+        if isinstance(code, int) and not isinstance(code, bool):
+            return code != 0
+    # `resp.get("exit_code", resp.get("exitCode"))` reads the camelCase spelling only as a DEFAULT,
+    # so a present-but-null `exit_code` shadowed a valid `exitCode` and the outcome was lost.
     for key in ("is_error", "isError"):
         if key in resp:
             return bool(resp[key])          # an explicit flag, in both directions
@@ -330,19 +333,20 @@ def run(hook_id: str, vendor: str, on_error: str, wired_event: str) -> int:
         # actually observed instead of implying success.
         suffix = "" if failed is False else "?"
         if spec.get("tool") == "shell":
-            # EVERY matching pattern, not the first. `a.sh && b.sh` is one tool event running two
-            # gates; stopping at the first left the second undischarged, so a session that ran
-            # both was still blocked on the one it had run.
-            seen: set[str] = set()
-            for pat in spec.get("match") or []:
-                m = re.search(pat, command)
-                if not m:
-                    continue
-                entry = m.group(0).replace("\\", "").strip() + suffix
-                if entry in seen:
-                    continue
-                seen.add(entry)
-                append_state(cfg, spec["record"], entry, session)
+            # EVERY matching pattern, not the first: `a.sh && b.sh` is one tool event naming two
+            # gates, and stopping at the first left the second undischarged.
+            #
+            # But a command naming two is a command whose single exit code belongs to neither in
+            # particular — and `a.sh || b.sh` names two and runs one. So when more than one
+            # matches, every entry is recorded UNVERIFIED (`?`) whatever the runtime reported: the
+            # invocation was observed, the result cannot be attributed. Recording them as passed
+            # would credit a check a short-circuit skipped, which is worse than the `break` this
+            # replaces. `append_state` de-duplicates, so nothing here needs to.
+            hits = [m for m in (re.search(pat, command) for pat in spec.get("match") or []) if m]
+            mark = suffix if len(hits) == 1 else "?"
+            for m in hits:
+                append_state(cfg, spec["record"],
+                             m.group(0).replace("\\", "").strip() + mark, session)
         elif path and path_matches(spec.get("paths"), path):
             rel = os.path.relpath(path, repo_root()) if os.path.isabs(path) else path
             append_state(cfg, spec["record"], rel.replace(os.sep, "/"), session)
@@ -354,6 +358,17 @@ def run(hook_id: str, vendor: str, on_error: str, wired_event: str) -> int:
         # using to satisfy it. Report and yield instead — the requirement was stated on the first
         # block, and repeating it is not additional enforcement, it is a loop.
         if _first(event, "stop_hook_active", "stopHookActive"):
+            # Clear, exactly as the clean-stop branch below does and for the same reason: this stop
+            # is being allowed, so the session is over. Returning without clearing left the
+            # `no-session` key — used where a runtime names none — to accumulate, and the next
+            # session then answered for edits it never made. The requirement was already stated on
+            # the first block; saying so on stderr is the "report" half of report-and-yield, which
+            # an empty `allow` reason does not deliver.
+            import shutil
+            shutil.rmtree(state_dir(cfg, session), ignore_errors=True)
+            print("exeris-hook: this stop was already blocked once; the requirement stands and the "
+                  "gate is yielding rather than re-firing on the turn being used to satisfy it.",
+                  file=sys.stderr)
             return emit(vendor, kind, "allow", "")
         edited = read_state(cfg, "docs-edited", session)
         ran = read_state(cfg, "guardrails-run", session)
@@ -395,13 +410,17 @@ def run(hook_id: str, vendor: str, on_error: str, wired_event: str) -> int:
     return emit(vendor, kind, "allow", "")
 
 
+VENDORS = ("claude", "copilot", "codex", "gemini", "antigravity", "cursor")
+EVENTS = ("pre-tool", "post-tool", "stop", "session-start")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="Exeris agent hook dispatcher")
     ap.add_argument("--hook", required=True, help="hook id from .agents/hooks/hooks.yaml")
     ap.add_argument("--vendor", default=os.environ.get("EXERIS_HOOK_VENDOR", "claude"),
-                    choices=["claude", "copilot", "codex", "gemini", "antigravity", "cursor"])
+                    choices=list(VENDORS))
     ap.add_argument("--event", dest="event", default="pre-tool",
-                    choices=["pre-tool", "post-tool", "stop", "session-start"],
+                    choices=list(EVENTS),
                     help="the event this hook is wired to. Rendered alongside --on-error, because "
                          "the event normally comes from the config — and when the config is what "
                          "cannot be read, a stop gate must still answer with a stop-shaped refusal "
@@ -410,7 +429,27 @@ def main() -> int:
                     help="what to do when the rules cannot be read. Rendered from the hook's own "
                          "`decision`; the default is deny, so a command predating this flag fails "
                          "in the safe direction.")
-    a = ap.parse_args()
+    # argparse answers an unrecognised argument OR an out-of-`choices` value by printing usage and
+    # exiting 2 — and exit 2 from a pre-tool hook is a DENY on every shell call, whatever
+    # --on-error says. That is the failure the shim exists to remove, and it cannot be removed
+    # THERE without copying this vocabulary into a second file on a different pin. It is removed
+    # here, where the vocabulary is defined: parse errors become a refusal in the vendor's shape.
+    try:
+        a = ap.parse_args()
+    except SystemExit as exc:
+        if exc.code == 0:                      # --help, which is not a failure
+            raise
+        argv = sys.argv[1:]
+        def flag(name: str, fallback: str) -> str:
+            return argv[argv.index(name) + 1] if name in argv[:-1] else fallback
+        vendor = flag("--vendor", "claude")
+        vendor = vendor if vendor in VENDORS else "claude"
+        event = flag("--event", "pre-tool")
+        event = event if event in EVENTS else "pre-tool"
+        on_error = flag("--on-error", "deny")
+        on_error = on_error if on_error in ("deny", "allow") else "deny"
+        return refuse(vendor, on_error, "the hook was invoked with arguments this dispatcher does "
+                                        "not accept", event)
     try:
         return run(a.hook, a.vendor, a.on_error, a.event)
     except Exception as exc:

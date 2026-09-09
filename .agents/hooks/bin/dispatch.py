@@ -75,8 +75,6 @@ BLOCK_BY_EXIT = ("claude", "codex", "copilot")
 def repo_root() -> str:
     """The checkout holding `.agents/manifest.yaml`, working directory first.
 
-
-
     Deliberately smaller than hook.py's rule, and it does not have to agree with it: this answer
     only locates the manifest and the vendored file. Which repository's *rules* apply is decided by
     hook.py, from its own working directory, after this file has handed off to it.
@@ -253,24 +251,24 @@ def refuse(argv: list[str], reason: str) -> int:
                 f"rather than waving the action through: {reason}")
 
 
-# The flags hook.py defines. Shape is not enough: an unknown but well-formed `--flag value` pair
-# passed shape validation, reached argparse inside the delegated hook, and argparse answers an
-# unrecognised argument by exiting 2 — which from a pre-tool hook is a DENY on every shell call.
-# That is the class of failure this file exists to eliminate, so the vocabulary is checked HERE,
-# where a refusal can still carry a reason. Adding a flag to hook.py means adding it here; the two
-# names each other in a comment so the pairing is visible from either side.
-KNOWN_FLAGS = frozenset({"--hook", "--vendor", "--event", "--on-error"})
-
-
 def sanitised(argv: list[str]) -> list[str] | None:
-    """The argument vector if it is known `--flag value` pairs and nothing else, otherwise None."""
+    """The argument vector if it is `--flag value` pairs and nothing else, otherwise None.
+
+    Shape only, and deliberately. The vocabulary — which flags exist and which values each accepts
+    — belongs to `hook.py`, which defines it; checking it here would put one list in two artifacts
+    on two different pins (this file comes from the MANIFEST-pinned vendored tree, the command that
+    invokes it from the renderer at the ref CI pins), which is the "one string, two owners" defect
+    this file's own docstring says it exists to remove — moved from the path to the vocabulary.
+
+    The failure that motivated checking it here — argparse answering an unknown flag or an
+    out-of-`choices` value by exiting 2, which from a pre-tool hook is a deny on every shell call —
+    is fixed in `hook.py`, where a parse error now becomes a refusal in the vendor's shape.
+    """
     if len(argv) % 2:
         return None
     seen: set[str] = set()
     for flag, value in zip(argv[0::2], argv[1::2]):
-        if not FLAG.match(flag) or not VALUE.match(value):
-            return None
-        if flag not in KNOWN_FLAGS or flag in seen:
+        if not FLAG.match(flag) or not VALUE.match(value) or flag in seen:
             return None
         seen.add(flag)
     return list(argv)

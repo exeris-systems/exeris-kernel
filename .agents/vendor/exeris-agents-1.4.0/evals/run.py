@@ -95,7 +95,13 @@ def validate(instance, schema_path: str) -> list[str]:
         import jsonschema
     except ImportError:
         schema = json.load(open(schema_path, encoding="utf-8"))
-        required = schema.get("required") or []
+        # A composed schema declares its `required` inside the `allOf` branches, not at the top
+        # level — the base's branch is a `$ref` this fallback cannot follow, but a repository's own
+        # branch is inline and readable. Collect what IS reachable before giving up.
+        required = list(schema.get("required") or [])
+        for branch in schema.get("allOf") or []:
+            if isinstance(branch, dict):
+                required += list(branch.get("required") or [])
         if not required:
             # The shallow check has nothing to check. Every schema written the way rule 13's
             # composition prescribes — an `allOf` of a `$ref` into the vendored base plus the

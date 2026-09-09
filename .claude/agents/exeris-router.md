@@ -108,7 +108,7 @@ Read the ones your change touches. Each is authoritative for its own list; do no
 - `.agents/policies/the-wall.md`
 - `.agents/policies/scoped-bans.md`
 - `.agents/policies/operating-standards.md`
-- `.agents/vendor/exeris-agents-1.3.1/policies/agent-safety-and-autonomy.md`
+- `.agents/vendor/exeris-agents-1.4.0/policies/agent-safety-and-autonomy.md`
 - `.agents/references/build-and-ci.md`
 
 ## Handoffs

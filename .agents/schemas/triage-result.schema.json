@@ -4,7 +4,7 @@
   "description": "The bundle's shape, narrowed to this repository's task classes, roles and scope vocabulary. The required fields and the `validation_gates` contract — a gate is never named without the risk it retires — are the base's; only the vocabulary is local.",
   "allOf": [
     {
-      "$ref": "../vendor/exeris-agents-1.3.1/schemas/triage-result.base.schema.json"
+      "$ref": "../vendor/exeris-agents-1.4.0/schemas/triage-result.base.schema.json"
     },
     {
       "properties": {
