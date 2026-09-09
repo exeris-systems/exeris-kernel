@@ -74,6 +74,12 @@ class DiagnosticsCliLiveKernelTest {
     }
 
     @Test
+    @DisplayName("a malformed line degrades one answer and the session keeps serving")
+    void malformedLineDoesNotEndTheSession() {
+        DiagnosticsProtocolContract.assertMalformedLineDoesNotEndTheSession(responses);
+    }
+
+    @Test
     @DisplayName("capturedAt is ISO-8601 with no module registered — the tools.jackson default")
     void instantsAreIso8601() {
         DiagnosticsProtocolContract.assertInstantsAreIso8601(responses);
