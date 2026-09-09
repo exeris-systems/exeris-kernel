@@ -132,9 +132,14 @@ once shipped a CLI dying on its first command.
 
 ## Telemetry
 
-One JFR event, `eu.exeris.kernel.diagnostics.KernelDiagnostics`, carrying the method name and an
-error code. Every call is audited, including the ones that answer empty — an operator asking why a
-tool saw nothing needs to know the call happened.
+One JFR event, carrying the method name and an error code:
+
+```text
+eu.exeris.kernel.diagnostics.KernelDiagnostics
+```
+
+Every call is audited, including the ones that answer empty — an operator asking why a tool saw
+nothing needs to know the call happened.
 
 ## Not in scope
 
