@@ -95,6 +95,7 @@ hooks:
       - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?spi-contract-blindness-check\.sh\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?module-name-check\.sh\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?scope-register-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?eval-consistency-check\.sh\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?preview-bytecode-scan\.sh\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_file_check\.py\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_render\.py\b'
@@ -110,6 +111,7 @@ hooks:
     paths:
       - 'exeris-kernel-spi/src/main/java/**'
       - 'docs/subsystems/exceptions.md'
+      - '.agents/evals/scenarios.yaml'
       - 'exeris-kernel-build-config/src/main/resources/checkstyle.xml'
       - 'exeris-kernel-build-config/src/main/resources/checkstyle-tck.xml'
     record: docs-edited
@@ -148,6 +150,13 @@ hooks:
           in a log. The drift is silent in both directions: a code with no row reaches an operator
           as an identifier nothing explains, and a documented code with no thrower is a promise
           nothing keeps.
+      - when-edited: ['.agents/evals/scenarios.yaml']
+        requires: ['eval-consistency-check.sh']
+        reason: >-
+          .agents/evals/scenarios.yaml states how many of its cases assert a refusal to escalate,
+          and that number is the argument the suite is not skewed toward positives — the failure its
+          own header names. It was wrong twice within a day of being written, both times because a
+          case was added and the sentence describing the set was not.
       - when-edited:
           - 'exeris-kernel-build-config/src/main/resources/checkstyle.xml'
           - 'exeris-kernel-build-config/src/main/resources/checkstyle-tck.xml'

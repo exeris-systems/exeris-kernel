@@ -47,6 +47,7 @@ reported as not-run — never omitted, and never implied to have passed.*
 | `KernelErrorCodes.java` or `docs/subsystems/exceptions.md` | `tools/error-code-registry-check/error-code-registry-check.sh` |
 | either `checkstyle*.xml` | `tools/checkstyle-parity-check/checkstyle-parity-check.sh` |
 | `docs/ROADMAP.md` or `docs/release/1.0-scope.md` | `tools/scope-register-check/scope-register-check.sh` |
+| `.agents/evals/scenarios.yaml` | `tools/eval-consistency-check/eval-consistency-check.sh` |
 | `.agents/**`, `AGENTS.md`, `CLAUDE.md` | nothing here — the agent-file and adapter-render checks run in `docs / docs-lint` from the pinned bundle, which this checkout does not carry. Read that job's result and report it; do not claim to have run them. |
 
 **4. Judge what no script can.**

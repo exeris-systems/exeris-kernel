@@ -155,6 +155,21 @@ jobs:
         # Docs-only, so it needs no build artifact; it sits here rather than in its own job because
         # a second checkout would cost more than the check.
         run: tools/scope-register-check/scope-register-check.sh
+      - name: Eval-Consistency Gate
+        # Keeps .agents/evals/scenarios.yaml's header honest about its own contents. The suite
+        # states how many of its cases assert a REFUSAL to escalate, and that number is the whole
+        # argument that it is not skewed toward positives — the failure its own header names, since
+        # a suite of only positive cases passes against an agent that blocks everything. Both stated
+        # numbers were wrong within a day of being written, twice, in the pull request that added
+        # them: a case was added and the sentence describing the set was not.
+        #
+        # It also asserts the property the count is shorthand FOR — that the `negative` tag and the
+        # expectation agree in both directions — because `--tags negative` is how the number is
+        # meant to be derivable rather than remembered, and a mistagged case makes that selector
+        # answer for the wrong set.
+        #
+        # Docs-and-sources only, so it needs no build artifact.
+        run: tools/eval-consistency-check/eval-consistency-check.sh
       - name: Error-Code Registry Gate
         # Keeps KernelErrorCodes and docs/subsystems/exceptions.md in agreement, both directions,
         # plus the single-source-of-truth rule the registry rests on.
