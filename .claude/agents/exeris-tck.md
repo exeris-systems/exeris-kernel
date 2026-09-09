@@ -76,8 +76,8 @@ Read the ones your change touches. Each is authoritative for its own list; do no
 - `.agents/policies/the-wall.md`
 - `.agents/policies/definition-of-done.md`
 - `.agents/policies/operating-standards.md`
-- `.agents/vendor/exeris-agents-1.1.1/policies/agent-safety-and-autonomy.md`
-- `.agents/vendor/exeris-agents-1.1.1/policies/error-handling-and-fallback.md`
+- `.agents/vendor/exeris-agents-1.2.0/policies/agent-safety-and-autonomy.md`
+- `.agents/vendor/exeris-agents-1.2.0/policies/error-handling-and-fallback.md`
 - `.agents/references/testing-model.md`
 - `.agents/references/build-and-ci.md`
 

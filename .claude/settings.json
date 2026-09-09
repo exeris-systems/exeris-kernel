@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook record-guardrail-run --vendor claude --event post-tool --on-error allow",
+            "command": "python3 .agents/vendor/exeris-agents-1.2.0/hooks/bin/hook.py --hook record-guardrail-run --vendor claude --event post-tool --on-error allow",
             "timeout": 15
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook record-gated-edit --vendor claude --event post-tool --on-error allow",
+            "command": "python3 .agents/vendor/exeris-agents-1.2.0/hooks/bin/hook.py --hook record-gated-edit --vendor claude --event post-tool --on-error allow",
             "timeout": 15
           }
         ]
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook deny-irreversible --vendor claude --event pre-tool --on-error deny",
+            "command": "python3 .agents/vendor/exeris-agents-1.2.0/hooks/bin/hook.py --hook deny-irreversible --vendor claude --event pre-tool --on-error deny",
             "timeout": 15
           }
         ]
@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook guardrails-gate-on-stop --vendor claude --event stop --on-error deny",
+            "command": "python3 .agents/vendor/exeris-agents-1.2.0/hooks/bin/hook.py --hook guardrails-gate-on-stop --vendor claude --event stop --on-error deny",
             "timeout": 15
           }
         ]

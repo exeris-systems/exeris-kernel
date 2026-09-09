@@ -69,7 +69,7 @@ jobs:
       # an input. So they drift, and the drift is silent. The check that catches it is
       # agents_bundle.py verify, which the agent-file step runs anyway — a tooling checkout that
       # disagrees with the vendored digest fails there rather than passing quietly.
-      agents-ref: b229007cfd40e640e8c5cefe128451ddb2a397c4 # exeris-systems/exeris-agents 1.1.1
+      agents-ref: b55bb8ad734f7a7b678216302ee9c4f34d213aad # exeris-systems/exeris-agents 1.2.0
       # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
       # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
       # what it edits and not for a backlog it did not create. Flip to strict when the backfill
