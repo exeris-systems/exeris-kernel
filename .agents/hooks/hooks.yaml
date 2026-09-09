@@ -1,0 +1,151 @@
+# Canonical hook definitions — the L0 layer of ADR-085 §J.31a, authored once here and rendered to
+# each vendor's hook file by the shared renderer. agents-md-schema.md rule 12.
+#
+# This file is read at runtime by the vendored dispatcher, so it is the implementation and not a
+# description of one. A pattern changed here changes behaviour on every vendor; a pattern changed
+# in a rendered file is overwritten by the next render.
+#
+# Two shapes only, and the difference is the whole design:
+#   deny            — the action is one no policy permits. Refuse it.
+#   record + gate   — the action is one policy permits *with a consequence*. Allow it, write down
+#                     that it happened, and block the stop until the consequence is discharged.
+# Denying what a policy allows produces a hook that is switched off within a week.
+#
+# Every gate below names a check that takes well under a second and that CI already runs. That is a
+# deliberate limit, not an oversight: on this runtime a stop hook fires at the end of every turn,
+# so a rule requiring `mvn clean install` would demand a multi-minute reactor build per turn and be
+# switched off the same day. The build-and-test half of definition-of-done.md stays where it is —
+# in the policy and in the `exeris-pr-preflight` skill, which is a go/no-go gate run once.
+version: 1
+
+state-dir: .agents-state          # git-ignored; the dispatcher keys a subdirectory per session, so
+                                  # a check run in one session discharges nothing in the next
+
+hooks:
+  # ── deny ────────────────────────────────────────────────────────────────────────────────────
+  - id: deny-irreversible
+    event: pre-tool
+    tool: shell
+    decision: deny
+    reason: >-
+      agent-safety-and-autonomy.md §1 (shared bundle policy, vendored under .agents/vendor/):
+      irreversible or outward-facing action. The founder asks for these in the session they
+      happen in, and approval for one does not carry to the next.
+    # Ordinary `git push` of a topic branch is deliberately absent: it is reversible, it is how a
+    # pull request is opened, and denying it would make the hook the thing people disable.
+    match:
+      # Force. `--force-with-lease` is deliberately absent — it refuses when anyone else has
+      # pushed, and denying it would forbid rewriting an unreviewed commit message on one's own
+      # branch, which is the rule people learn to route around. Bare `--force`, `-f` and bundled
+      # short forms (`-fu`, `-uf`) have no such guard.
+      - 'git\s+push\b[^|;&]*(--force(?!-with-lease)|--mirror|\s-[a-zA-Z]*f[a-zA-Z]*(\s|$))'
+      # Protected refs, in every spelling git accepts: bare name, refspec, forced refspec, and
+      # --all/--tags, which push them without naming them. `preview` is on the list because it is
+      # a long-lived distribution track here, not a topic branch.
+      - 'git\s+push\b[^|;&]*\s\+?(main|master|preview|development/\S+)(\s|$)'
+      - 'git\s+push\b[^|;&]*\s\+?[^\s:]*:(refs/heads/)?(main|master|preview|development/)'
+      - 'git\s+push\b[^|;&]*\s--(all|tags)\b'
+      - 'git\s+push\b[^|;&]*--delete\b'
+      # Tag CREATION only. `-l`, `--list`, `-n`, `--contains`, `-v` are read-only, and denying them
+      # is the over-block this file's own header warns about. A tag here is a release trigger:
+      # release.yml fires on `v*`, so an accidental tag is a staged Maven Central upload.
+      - 'git\s+tag\s+(?!-(l|-list|n\d*|-contains|-no-contains|v|-verify|-points-at|-merged|-no-merged)\b)(-[a-zA-Z]+\s+)*\S'
+      - 'git\s+branch\s+-[dD]\b'
+      - 'git\s+reset\s+--hard\b'
+      - 'git\s+clean\s+-[a-zA-Z]*[fd][a-zA-Z]*\b'
+      # This repository runs dozens of worktrees at once and a session shares the tree with others.
+      - 'git\s+worktree\s+remove\b'
+      # Publish and deploy. `mvn deploy` and `release:perform` reach Maven Central, which is an
+      # immutable channel: a wrong upload is not withdrawn, it is superseded.
+      - 'mvn\b[^|;&]*\s(deploy|release:(prepare|perform))\b'
+      - '(^|[|;&]\s*)npm\s+(publish|unpublish|deprecate)\b'
+      - '(^|[|;&]\s*)(yarn|pnpm)\s+publish\b'
+      - '(^|[|;&]\s*)docker\s+push\b'
+      - '(^|[|;&]\s*)gh\s+release\s+(create|delete|upload)\b'
+      - '(^|[|;&]\s*)gh\s+pr\s+(merge|close)\b'
+      # Repository lifecycle and visibility — irreversible, and outward-facing.
+      - '(^|[|;&]\s*)gh\s+repo\s+(delete|archive|rename)\b'
+      - '(^|[|;&]\s*)gh\s+repo\s+edit\b[^|;&]*--visibility\b'
+
+  # ── record ──────────────────────────────────────────────────────────────────────────────────
+  # The two record keys are the dispatcher's, not this file's: it reads `docs-edited` and
+  # `guardrails-run` by name when it evaluates the stop gate. `docs-edited` is the bundle's word
+  # for "a path the gate cares about", and in this repository most of those paths are Java.
+  - id: record-guardrail-run
+    event: post-tool
+    tool: shell
+    decision: allow
+    # Anchored to a command POSITION — start of line, or after a pipe, `&&`, `;` or `$(` — because
+    # a bare substring match lets `echo error-code-registry-check.sh` discharge the gate. The
+    # dispatcher additionally refuses to record a call the runtime reported as failed: a check that
+    # ran and failed has discharged nothing.
+    match:
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?error-code-registry-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?checkstyle-parity-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?spi-contract-blindness-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?module-name-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?scope-register-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?preview-bytecode-scan\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_file_check\.py\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_render\.py\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?frontmatter_check\.py\b'
+    record: guardrails-run
+
+  - id: record-gated-edit
+    event: post-tool
+    tool: edit
+    decision: allow
+    # Only the paths a gate rule below actually names. A wider list would record edits nothing can
+    # discharge, and the gate would report a requirement no rule states.
+    paths:
+      - '.agents/**'
+      - 'AGENTS.md'
+      - 'CLAUDE.md'
+      - 'exeris-kernel-spi/src/main/java/**'
+      - 'docs/subsystems/exceptions.md'
+      - 'exeris-kernel-build-config/src/main/resources/checkstyle.xml'
+      - 'exeris-kernel-build-config/src/main/resources/checkstyle-tck.xml'
+    record: docs-edited
+
+  # ── gate ────────────────────────────────────────────────────────────────────────────────────
+  - id: guardrails-gate-on-stop
+    event: stop
+    decision: block-or-allow
+    degrade: warn                 # only Claude Code and Codex document a blockable stop
+    # Each rule: if <when-edited> matched something and <requires> never ran, the session may not
+    # finish. ALL of the required checks, not one of them.
+    rules:
+      - when-edited: ['.agents/**', 'AGENTS.md', 'CLAUDE.md']
+        requires: ['agents_file_check.py']
+        reason: >-
+          exeris-docs/standards/agents-md-schema.md: the agent layer changed without the agent-file
+          check. Run it, and regenerate the adapters with agents_render.py rather than editing them
+          — rule 7 makes an adapter that differs from its source a CI failure.
+      - when-edited:
+          - 'exeris-kernel-spi/src/main/java/**'
+        requires: ['spi-contract-blindness-check.sh']
+        reason: >-
+          .agents/policies/the-wall.md and ADR-006: SPI source changed without the contract-
+          blindness check. An SPI contract position that reports what a shipped driver does today
+          inverts the direction of the contract, reads as accurate, and passes every other gate —
+          nine such sentences reached the tree during the 0.12 Javadoc sweep, which is why the
+          script exists. It is a CI gate in maven.yml; running it here costs 0.05s.
+      - when-edited:
+          - 'exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/exceptions/KernelErrorCodes.java'
+          - 'docs/subsystems/exceptions.md'
+        requires: ['error-code-registry-check.sh']
+        reason: >-
+          .agents/policies/the-wall.md names KernelErrorCodes the single source of truth for error
+          codes, and docs/subsystems/exceptions.md is what an operator reads when a code turns up
+          in a log. The drift is silent in both directions: a code with no row reaches an operator
+          as an identifier nothing explains, and a documented code with no thrower is a promise
+          nothing keeps.
+      - when-edited:
+          - 'exeris-kernel-build-config/src/main/resources/checkstyle.xml'
+          - 'exeris-kernel-build-config/src/main/resources/checkstyle-tck.xml'
+        requires: ['checkstyle-parity-check.sh']
+        reason: >-
+          checkstyle-tck.xml is a COPY of checkstyle.xml, not a reference to it — Checkstyle has no
+          mechanism for one config to extend another. A module added upstream therefore never
+          reaches the TCK contract classes, silently, and the build stays green because the TCK
+          config is by itself valid.

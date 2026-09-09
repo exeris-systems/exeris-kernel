@@ -1,96 +1,208 @@
 # Composition and delivery metadata for this repository's agent material.
-# agents-md-schema.md rules 5 and 8: profiles and workflows compose by reference, and any imported
-# bundle is version-pinned. This repository imports nothing — the organisation bundle does not exist
-# as a published artefact yet, and a floating import would be a rule-8 violation, not a shortcut.
-version: 1
+# agents-md-schema.md rules 5, 7, 8 and 12: profiles and workflows compose by reference, provider
+# directories are generated, imports are version-pinned, and what a vendor cannot do is written
+# down rather than assumed.
+#
+# The check asserts this file and the filesystem agree in BOTH directions: every name here exists,
+# and every profile, skill and workflow on disk is named here. A file that exists but is not listed
+# is the failure this agreement is meant to catch.
+version: 2
 repository: exeris-kernel
-imports: []
 
-policies:
-  - policies/branch-and-release.md
-  - policies/definition-of-done.md
-  - policies/jdk-and-preview-track.md
-  - policies/memory-ownership.md
-  - policies/operating-standards.md
-  - policies/scoped-bans.md
-  - policies/sonarqube-mcp.md
-  - policies/the-wall.md
-
-references:
-  # The short form of facts owned elsewhere in this repository. Each names its authoritative
-  # source and yields to it (rule 6).
-  - references/build-and-ci.md
-  - references/testing-model.md
-
-skills:
-  - skills/exeris-adr-register
-  - skills/exeris-architect-guardrails
-  - skills/exeris-doc-impact-triage
-  - skills/exeris-docs-adr-check
-  - skills/exeris-java26-panama-loom
-  - skills/exeris-jfr-perf-research
-  - skills/exeris-jfr-telemetry-review
-  - skills/exeris-performance-contract
-  - skills/exeris-pr-preflight
-  - skills/exeris-pr-review-waste-hunter
-  - skills/exeris-release-integration
-  - skills/exeris-service-loader-and-bootstrap
-  - skills/exeris-subsystem-specialist
-  - skills/exeris-tagged-gate-runner
-  - skills/exeris-tck-first
-  - skills/exeris-triage
+# The organisation bundle, pinned and vendored under .agents/vendor/. `ref` is the commit the
+# vendored tree was taken from and `sha256` is a digest over every byte of it, so a hand-edit of the
+# vendored copy is a CI failure rather than a silent local fork (rule 8). Bumping the version means
+# re-vendoring, not editing in place.
+imports:
+  - bundle: exeris-agents
+    version: 1.1.1
+    ref: d1e34da648305b8a6bfd1f3dc23cdb186f4cbd18
+    sha256: sha256:9a0bf309619c54ffa0719456dd8e0a66d5622b147d1a4f9623f17332438816c1
 
 agents:
-  - agents/exeris-architect.md
-  - agents/exeris-docs-adr.md
-  - agents/exeris-implementer.md
-  - agents/exeris-performance.md
-  - agents/exeris-router.md
-  - agents/exeris-tck.md
+  - exeris-router
+  - exeris-architect
+  - exeris-implementer
+  - exeris-tck
+  - exeris-performance
+  - exeris-docs-adr
+# Not adopted here yet: a security role. ADR-085's 2026-09-08 amendment locates one in this
+# repository — it is where the substrate that justifies one lives (Panama FFM downcalls, Arena
+# lifetimes, off-heap ownership) — but the Engineering Protocol item that this change discharges
+# (4a) names six profiles, which are the six that exist. Adding a seventh is new content, not a
+# migration, and it is tracked separately.
+
+skills:
+  - exeris-adr-register
+  - exeris-architect-guardrails
+  - exeris-doc-impact-triage
+  - exeris-docs-adr-check
+  - exeris-java26-panama-loom
+  - exeris-jfr-perf-research
+  - exeris-jfr-telemetry-review
+  - exeris-performance-contract
+  - exeris-pr-preflight
+  - exeris-pr-review-waste-hunter
+  - exeris-release-integration
+  - exeris-service-loader-and-bootstrap
+  - exeris-subsystem-specialist
+  - exeris-tagged-gate-runner
+  - exeris-tck-first
+  - exeris-triage
 
 workflows:
-  # User-invoked Community / Open-Core review and implementation sequences. They render to
-  # .claude/commands/, which is the provider's name for the same thing.
-  - workflows/community-architecture-review.md
-  - workflows/community-docs-adr-review.md
-  - workflows/community-implementer.md
-  - workflows/community-performance-memory.md
-  - workflows/community-pr-review.md
-  - workflows/community-provider-serviceloader.md
-  - workflows/community-refactor-safety.md
-  - workflows/community-subsystem-review.md
-  - workflows/community-tck-first-review.md
-  - workflows/core-vs-community-placement.md
-  - workflows/open-core-boundary.md
-  - workflows/spi-purity.md
+  # User-invoked Community / Open-Core review and implementation sequences. Each declares the steps
+  # it hands between roles and the gates that actually enforce its promises; the model reads the
+  # steps as guidance, and the `hook:`, `ci:`, `script:` and `test:` prefixes say which of them is
+  # a check rather than an intention.
+  - community-architecture-review
+  - community-docs-adr-review
+  - community-implementer
+  - community-performance-memory
+  - community-pr-review
+  - community-provider-serviceloader
+  - community-refactor-safety
+  - community-subsystem-review
+  - community-tck-first-review
+  - core-vs-community-placement
+  - open-core-boundary
+  - spi-purity
+
+# Repository-owned policies only. Profiles reference the two shared ones as
+# `bundle:agent-safety-and-autonomy` and `bundle:error-handling-and-fallback`, so a reader can tell
+# whose rule it is without knowing the layout.
+policies:
+  - branch-and-release
+  - definition-of-done
+  - jdk-and-preview-track
+  - memory-ownership
+  - operating-standards
+  - scoped-bans
+  - sonarqube-mcp
+  - the-wall
+
+references:
+  # The short form of facts owned elsewhere in this repository. Each names its authoritative source
+  # and yields to it (rule 6).
+  - build-and-ci
+  - testing-model
+
+schemas:
+  - triage-result
+  - verdict
+  - handoff
+
+hooks: hooks/hooks.yaml
+evals: evals/scenarios.yaml
+
+# Nested AGENTS.md, one per subtree whose constraints differ from the root's and are enforced by
+# something nameable. `paths:` scopes the adapters a renderer emits; `enforced-by:` is what makes
+# the file a rule rather than a preference.
+nested:
+  - exeris-kernel-spi/AGENTS.md
+  - exeris-kernel-core/AGENTS.md
+  - exeris-kernel-tck/AGENTS.md
+
+scripts:
+  # Provider-agnostic checks the canonical files call, and the four the L0 stop gate can require.
+  # They live in tools/ rather than under a provider directory because CI, humans and several
+  # skills all call them, and a canonical file must not depend on an adapter (rules 2 and 7).
+  - tools/spi-contract-blindness-check/spi-contract-blindness-check.sh
+  - tools/error-code-registry-check/error-code-registry-check.sh
+  - tools/checkstyle-parity-check/checkstyle-parity-check.sh
+  - tools/module-name-check/module-name-check.sh
+  - tools/scope-register-check/scope-register-check.sh
+  - tools/preview-bytecode-scan/preview-bytecode-scan.sh
+
+renderer:
+  # One implementation, shared across repositories. Until this change this repository carried two
+  # shell scripts of its own, which ADR-085 §C.11 now forbids in as many words: two implementations
+  # of one schema is how the schema stops being one. They are deleted here, not kept as a fallback.
+  source: exeris-systems/exeris-agents
+  entrypoint: tools/agents_render.py
+  check: tools/agents_file_check.py
+  bundle: tools/agents_bundle.py
 
 adapters:
-  # Both sets are rewritten by tools/agent-adapter-check/agent-adapter-render.sh, which preserves
-  # each destination's own frontmatter and replaces the body. Every generated file carries the
-  # do-not-edit marker twice: once as a YAML comment inside the frontmatter, because the
-  # organisation gate reads only the first 600 characters and Copilot's tool lists are longer than
-  # that, and once as an HTML comment below it for a human opening the file.
   claude:
     target: .claude
-    generated: true
-    renderer: tools/agent-adapter-check/agent-adapter-render.sh
-    map:
-      skills: .claude/skills
-      agents: .claude/agents
-      workflows: .claude/commands
+    agents: .claude/agents/{name}.md
+    # One symlink PER SKILL, not one for the directory: workflows render into the same directory,
+    # so a directory-level link makes the two kinds fight over one path.
+    skills: symlink
+    workflows: .claude/skills/{name}/SKILL.md   # `commands/` is the legacy flat-file form
+    hooks: .claude/settings.json#hooks
   copilot:
     target: .github
-    generated: true
-    renderer: tools/agent-adapter-check/agent-adapter-render.sh
-    entry: .github/copilot-instructions.md
-    map:
-      skills: .github/skills
-      agents: .github/agents
-      workflows: .github/prompts
-    naming:
-      agents: "{name}.agent.md"
-      workflows: "{name}.prompt.md"
-    extra:
-      # A Copilot instructions file rendered from a single policy. branch-protection.md beside it is
-      # operational documentation of repository settings, provider-owned, and not generated.
-      .github/instructions/sonarqube_mcp.instructions.md: policies/sonarqube-mcp.md
+    agents: .github/agents/{name}.agent.md
+    skills: native                        # Copilot reads .agents/skills directly
+    workflows: .github/prompts/{name}.prompt.md
+    hooks: .github/hooks/exeris.json
+    # Deferred with the other four, and for a stated reason: a Copilot adapter needs a mapping of
+    # capabilities onto that runtime's tool names, and one written from memory would silently grant
+    # or withhold tools. The mapping file is the deliverable, not the adapter. The hand-maintained
+    # v1 adapters that used to sit under .github/{agents,prompts,skills} are removed rather than
+    # left behind: nothing renders them any more, so they could only rot while still carrying a
+    # marker that says they are generated.
+    status: deferred
+  codex:
+    target: .codex
+    skills: native
+    hooks: .codex/hooks.json
+    status: deferred
+  gemini:
+    target: .gemini
+    skills: native
+    status: deferred
+  antigravity:
+    target: .agents
+    skills: native
+    hooks: .agents/hooks.json             # RENDERED, never authored — see rule 2
+    status: deferred
+  cursor:
+    target: .cursor
+    skills: native
+    status: deferred
+
+degradations:
+  # What each runtime cannot do. An unrecorded degradation is an operator believing a gate runs on
+  # a client that never had it.
+  claude:
+    # The v1 profiles granted TodoWrite. The canonical vocabulary of rule 11 has no capability for
+    # it, and inventing one would be this repository defining a word the schema owns — so the four
+    # profiles that carried it lose it rather than being translated by hand in the adapter, which
+    # is the practice §I.29a exists to end.
+    - no-canonical-capability-for-todo-tracking
+  copilot: [stop-hook-warn-only]
+  gemini: [stop-hook-warn-only, no-agent-scoped-hooks]
+  cursor: [stop-hook-warn-only]
+  antigravity:
+    - stop-hook-warn-only
+    # Recorded in ADR-085's 2026-09-08 amendment, measured there on agy 1.1.27: `--agent <name>`
+    # runs the turn with the default agent and exits 0 when the name does not resolve, and
+    # `agy agents` lists nothing for a repository profile. Not re-measured here; it is a property
+    # of that runtime, not of this repository. Automation that selects a role on it must assert the
+    # profile was applied, because the exit code does not.
+    - agent-selection-fails-silently
+  windows:
+    # .claude/skills holds one symlink per skill. A checkout without Developer Mode needs
+    # `agents_render.py --skills-copy`, and the FFM and OpenSSL tests auto-skip there anyway.
+    - skills-symlink-needs-copy-fallback
+
+provider-owned:
+  # Operational configuration, exempt from the generated-marker check by this list rather than by a
+  # regex (rule 7).
+  - .claude/settings.local.json
+  - .claude/README.md
+  # Dozens of git worktrees are parked here. Each is its own checkout and its files belong to the
+  # branch it has out, not to this one.
+  - .claude/worktrees
+  - .github/workflows
+  - .github/branch-protection.md
+  - .github/dependabot.yml
+  - .github/maven-settings.xml
+  # Carries a GENERATED REGION: the renderer writes only the `hooks` key and merges around
+  # everything else, so the file is the human's and the region is ours. JSON has no comments, which
+  # is why the region is declared here and described in .claude/README.md.
+  - path: .claude/settings.json
+    generated-region: hooks

@@ -1,12 +1,12 @@
 ---
-# DO NOT EDIT — generated from .agents/agents/exeris-implementer.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-implementer
 description: Runtime-focused coding agent for Exeris Kernel. Use to implement changes with Java 26+, Loom/Panama/ScopedValue patterns while preserving existing architecture decisions.
-tools: Read, Edit, Write, Bash, Grep, Glob, WebFetch, TodoWrite
+tools: Read, Grep, Glob, Edit, Write, Bash, WebFetch, WebSearch
 model: inherit
 ---
-<!-- DO NOT EDIT. Generated from .agents/agents/exeris-implementer.md by the AGENTS.md adapter step
-     (agents-md-schema.md rule 7). Edit the source, not this file. -->
+
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-implementer/AGENT.md by agents_render.py
+     (exeris-systems/exeris-agents; agents-md-schema.md rule 7). Edit the source. -->
 # Exeris Implementer
 
 ## Role
@@ -60,3 +60,39 @@ or `None`
 
 ### Escalation Needed
 `<None | exeris-architect | exeris-tck | exeris-performance | exeris-docs-adr>`
+
+<!-- BEGIN GENERATED: composition (agents-md-schema.md rule 5) -->
+
+## Skills
+
+Load these before working; each is the single owner of its procedure.
+
+- `.agents/skills/exeris-java26-panama-loom/SKILL.md`
+- `.agents/skills/exeris-pr-preflight/SKILL.md`
+- `.agents/skills/exeris-tagged-gate-runner/SKILL.md`
+
+## Applies
+
+Read the ones your change touches. Each is authoritative for its own list; do not work from a remembered subset.
+
+- `.agents/policies/the-wall.md`
+- `.agents/policies/scoped-bans.md`
+- `.agents/policies/memory-ownership.md`
+- `.agents/policies/jdk-and-preview-track.md`
+- `.agents/policies/definition-of-done.md`
+- `.agents/policies/branch-and-release.md`
+- `.agents/policies/operating-standards.md`
+- `.agents/vendor/exeris-agents-1.1.1/policies/agent-safety-and-autonomy.md`
+- `.agents/vendor/exeris-agents-1.1.1/policies/error-handling-and-fallback.md`
+- `.agents/references/build-and-ci.md`
+- `.agents/references/testing-model.md`
+
+## Handoffs
+
+| To | When | Blocking |
+|:--|:--|:--|
+| `exeris-tck` | the change moved SPI-observable semantics — the implementer does not self-approve that as done | yes |
+| `exeris-performance` | a hot path, an allocation site or a native-memory lifetime was touched | no |
+| `exeris-architect` | the requested change conflicts with a boundary the implementer must not decide alone | yes |
+
+<!-- END GENERATED -->

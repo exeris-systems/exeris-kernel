@@ -1,0 +1,49 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook record-guardrail-run --vendor claude --event post-tool --on-error allow",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook record-gated-edit --vendor claude --event post-tool --on-error allow",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook deny-irreversible --vendor claude --event pre-tool --on-error deny",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 .agents/vendor/exeris-agents-1.1.1/hooks/bin/hook.py --hook guardrails-gate-on-stop --vendor claude --event stop --on-error deny",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

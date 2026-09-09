@@ -1,12 +1,12 @@
 ---
-# DO NOT EDIT — generated from .agents/agents/exeris-router.md (agents-md-schema.md rule 7). Edit the source.
 name: exeris-router
 description: Entry router for Exeris Kernel. Use proactively for triage to classify work and recommend a specialist agent (architect, implementer, tck, performance, docs-adr). Invoke when the task scope crosses domains or the right specialist is not obvious.
-tools: Read, Grep, Glob, WebFetch, TodoWrite
+tools: Read, Grep, Glob, WebFetch, WebSearch
 model: inherit
 ---
-<!-- DO NOT EDIT. Generated from .agents/agents/exeris-router.md by the AGENTS.md adapter step
-     (agents-md-schema.md rule 7). Edit the source, not this file. -->
+
+<!-- DO NOT EDIT. Generated from .agents/agents/exeris-router/AGENT.md by agents_render.py
+     (exeris-systems/exeris-agents; agents-md-schema.md rule 7). Edit the source. -->
 # Exeris Router
 
 ## Role
@@ -91,3 +91,38 @@ or `None`
 
 ## Non-goal
 Do not behave as an all-in-one mandatory release gate unless explicitly asked.
+
+<!-- BEGIN GENERATED: composition (agents-md-schema.md rule 5) -->
+
+## Skills
+
+Load these before working; each is the single owner of its procedure.
+
+- `.agents/skills/exeris-triage/SKILL.md`
+- `.agents/skills/exeris-doc-impact-triage/SKILL.md`
+
+## Applies
+
+Read the ones your change touches. Each is authoritative for its own list; do not work from a remembered subset.
+
+- `.agents/policies/the-wall.md`
+- `.agents/policies/scoped-bans.md`
+- `.agents/policies/operating-standards.md`
+- `.agents/vendor/exeris-agents-1.1.1/policies/agent-safety-and-autonomy.md`
+- `.agents/references/build-and-ci.md`
+
+## Handoffs
+
+| To | When | Blocking |
+|:--|:--|:--|
+| `exeris-architect` | placement, a module boundary or ADR alignment is the primary risk | yes |
+| `exeris-tck` | observable SPI behaviour changes — the contract judge answers before the work is called done | yes |
+| `exeris-implementer` | placement and contract are already settled | no |
+| `exeris-performance` | a hot path, an allocation or a native-memory lifetime is in play | no |
+| `exeris-docs-adr` | the change moves what a subsystem contract or an ADR says | no |
+
+## Response contract
+
+After the Markdown response above, emit the same content as a fenced `json` block conforming to `.agents/schemas/triage-result.schema.json`. The Markdown is for the human; the JSON is what the eval runner and the CI review consume. If the two cannot be made to agree, the Markdown is wrong.
+
+<!-- END GENERATED -->

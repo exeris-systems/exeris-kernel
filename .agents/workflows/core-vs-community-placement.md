@@ -1,6 +1,13 @@
 ---
+name: core-vs-community-placement
 description: Decide whether an Exeris change belongs in Core or Community, with boundary/dependency implications and a minimal safe refactoring path.
 argument-hint: Change scope to place in Core vs Community
+steps:
+  - {agent: exeris-architect}
+  - {skill: exeris-architect-guardrails}
+gates:
+  - test:KernelTierDirectionArchitectureTest
+  - test:KernelTierBanArchitectureTest
 ---
 
 Help decide whether this Exeris change belongs in Core or Community.
