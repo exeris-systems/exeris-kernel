@@ -73,6 +73,8 @@ BLOCK_BY_EXIT = ("claude", "codex", "copilot")
 def repo_root() -> str:
     """The checkout holding `.agents/manifest.yaml`, working directory first.
 
+
+
     Deliberately smaller than hook.py's rule, and it does not have to agree with it: this answer
     only locates the manifest and the vendored file. Which repository's *rules* apply is decided by
     hook.py, from its own working directory, after this file has handed off to it.
@@ -249,13 +251,26 @@ def refuse(argv: list[str], reason: str) -> int:
                 f"rather than waving the action through: {reason}")
 
 
+# The flags hook.py defines. Shape is not enough: an unknown but well-formed `--flag value` pair
+# passed shape validation, reached argparse inside the delegated hook, and argparse answers an
+# unrecognised argument by exiting 2 — which from a pre-tool hook is a DENY on every shell call.
+# That is the class of failure this file exists to eliminate, so the vocabulary is checked HERE,
+# where a refusal can still carry a reason. Adding a flag to hook.py means adding it here; the two
+# names each other in a comment so the pairing is visible from either side.
+KNOWN_FLAGS = frozenset({"--hook", "--vendor", "--event", "--on-error"})
+
+
 def sanitised(argv: list[str]) -> list[str] | None:
-    """The argument vector if it is `--flag value` pairs and nothing else, otherwise None."""
+    """The argument vector if it is known `--flag value` pairs and nothing else, otherwise None."""
     if len(argv) % 2:
         return None
+    seen: set[str] = set()
     for flag, value in zip(argv[0::2], argv[1::2]):
         if not FLAG.match(flag) or not VALUE.match(value):
             return None
+        if flag not in KNOWN_FLAGS or flag in seen:
+            return None
+        seen.add(flag)
     return list(argv)
 
 

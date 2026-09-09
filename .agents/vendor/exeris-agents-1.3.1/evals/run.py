@@ -95,7 +95,17 @@ def validate(instance, schema_path: str) -> list[str]:
         import jsonschema
     except ImportError:
         schema = json.load(open(schema_path, encoding="utf-8"))
-        missing = [k for k in schema.get("required", []) if k not in (instance or {})]
+        required = schema.get("required") or []
+        if not required:
+            # The shallow check has nothing to check. Every schema written the way rule 13's
+            # composition prescribes — an `allOf` of a `$ref` into the vendored base plus the
+            # repository's enums — carries no top-level `required`, so this branch validated ZERO
+            # fields and returned "valid". That is a grader silently weakening to nothing, which
+            # this function's own docstring says is worse than one that is missing. Say so instead.
+            return [f"cannot validate {os.path.basename(schema_path)}: jsonschema is not installed "
+                    f"and the schema declares no top-level `required` to fall back on "
+                    f"(pip install jsonschema)"]
+        missing = [k for k in required if k not in (instance or {})]
         return [f"missing required key '{k}' (shallow check: jsonschema not installed)"
                 for k in missing]
     schema = json.load(open(schema_path, encoding="utf-8"))

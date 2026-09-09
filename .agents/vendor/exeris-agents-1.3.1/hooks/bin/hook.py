@@ -245,12 +245,21 @@ def tool_result(event: dict) -> bool | None:
         return None
     if not isinstance(resp, dict):
         return None
-    for key in ("is_error", "isError", "error", "interrupted"):
-        if key in resp:
-            return bool(resp[key])
-    code = resp.get("exit_code", resp.get("exitCode"), )
-    if isinstance(code, int):
+    # Order matters, and getting it wrong collapses the distinction this function exists to keep.
+    # `exit_code` is the only field that states the outcome, so it is read first. `interrupted` and
+    # `error` are read ONLY as failure signals: Claude Code sends `interrupted: false` on every
+    # successful Bash event, and treating that as "the runtime said it succeeded" made every script
+    # look successful — including one that exited 1 — which is exactly the collapse the docstring
+    # above promises not to make. An absent or falsy `interrupted` says nothing at all.
+    code = resp.get("exit_code", resp.get("exitCode"))
+    if isinstance(code, int) and not isinstance(code, bool):
         return code != 0
+    for key in ("is_error", "isError"):
+        if key in resp:
+            return bool(resp[key])          # an explicit flag, in both directions
+    for key in ("error", "interrupted"):
+        if resp.get(key):
+            return True                     # truthy means failed; falsy means no information
     return None
 
 
@@ -300,9 +309,10 @@ def run(hook_id: str, vendor: str, on_error: str, wired_event: str) -> int:
         return refuse(vendor, on_error, f"no hook '{hook_id}' in hooks.yaml", wired_event)
 
     kind = spec.get("event", wired_event)
-    # The config IS readable here, so the rule itself decides — the flag was only ever the
-    # fallback for the case where it could not be read.
-    on_error = "deny" if spec.get("decision") in ("deny", "block-or-allow") else "allow"
+    # `on_error` is deliberately NOT recomputed from the spec here. It exists for the two refusals
+    # above, which happen when the spec cannot be read at all; past this point every path emits a
+    # decision directly. It used to be reassigned and never read again, which read as though the
+    # rule were overriding the flag when nothing consulted either.
     command, path = extract(event)
 
     if spec.get("decision") == "deny":
@@ -320,18 +330,31 @@ def run(hook_id: str, vendor: str, on_error: str, wired_event: str) -> int:
         # actually observed instead of implying success.
         suffix = "" if failed is False else "?"
         if spec.get("tool") == "shell":
+            # EVERY matching pattern, not the first. `a.sh && b.sh` is one tool event running two
+            # gates; stopping at the first left the second undischarged, so a session that ran
+            # both was still blocked on the one it had run.
+            seen: set[str] = set()
             for pat in spec.get("match") or []:
                 m = re.search(pat, command)
-                if m:
-                    append_state(cfg, spec["record"],
-                                 m.group(0).replace("\\", "").strip() + suffix, session)
-                    break
+                if not m:
+                    continue
+                entry = m.group(0).replace("\\", "").strip() + suffix
+                if entry in seen:
+                    continue
+                seen.add(entry)
+                append_state(cfg, spec["record"], entry, session)
         elif path and path_matches(spec.get("paths"), path):
             rel = os.path.relpath(path, repo_root()) if os.path.isabs(path) else path
             append_state(cfg, spec["record"], rel.replace(os.sep, "/"), session)
         return emit(vendor, kind, "allow", "")
 
     if kind == "stop":
+        # A runtime that already blocked this stop once sets `stop_hook_active`, and blocking again
+        # is how a session becomes unable to finish: the gate re-fires on the turn the operator is
+        # using to satisfy it. Report and yield instead — the requirement was stated on the first
+        # block, and repeating it is not additional enforcement, it is a loop.
+        if _first(event, "stop_hook_active", "stopHookActive"):
+            return emit(vendor, kind, "allow", "")
         edited = read_state(cfg, "docs-edited", session)
         ran = read_state(cfg, "guardrails-run", session)
         blocked = []
