@@ -23,7 +23,8 @@ the version is chosen.
 |:--|:--|:--|
 | `policies/` | Organisation-wide constraints. A repository may restrict further, never relax. | every role, through its `policies: [bundle:<name>]` |
 | `schemas/*.base.schema.json` | The decision handoffs, minus the role vocabulary. | the repository's own schemas, by `$ref` + `allOf` |
-| `hooks/bin/hook.py` | The L0 dispatcher. Carries no patterns: it reads the repository's own `hooks.yaml` at runtime. | every rendered vendor hook config |
+| `hooks/bin/hook.py` | The L0 dispatcher. Carries no patterns: it reads the repository's own `hooks.yaml` at runtime. | `hooks/bin/dispatch.py`, on every hook event |
+| `hooks/bin/dispatch.py` | A version-free shim, copied by the renderer to `.agents/hooks/bin/dispatch.py`. It reads the pin from `manifest.yaml` and hands off to the `hook.py` above, so the rendered command never carries a version and a stale adapter still finds the current tree. | every rendered vendor hook config |
 | `evals/run.py`, `evals/eval-rubric.md` | The runtime-independent eval runner and the rubric for its prose residue. | `.agents/evals/scenarios.yaml` |
 
 Not vendored, and deliberately: `tools/` — the renderer, the checker and this materialiser. They
