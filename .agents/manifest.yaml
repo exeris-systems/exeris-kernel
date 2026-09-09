@@ -199,7 +199,16 @@ degradations:
     # profiles that carried it lose it rather than being translated by hand in the adapter, which
     # is the practice §I.29a exists to end.
     - no-canonical-capability-for-todo-tracking
-  copilot: [stop-hook-warn-only]
+  copilot:
+    - stop-hook-warn-only
+    # The adapter is deferred, so on that runtime this repository currently has NO role profiles
+    # and NO workflows — seven and thirteen of them respectively. Copilot reads `.agents/skills/`
+    # natively, so the sixteen skills are not lost; the roles and the routines are. Recorded here
+    # rather than left to be inferred from `adapters.copilot.status`, because this key is where
+    # this file says a loss is written down, and an unrecorded degradation is an operator
+    # believing something runs on a client that never had it.
+    - no-role-profiles
+    - no-workflows
   gemini: [stop-hook-warn-only, no-agent-scoped-hooks]
   cursor: [stop-hook-warn-only]
   antigravity:

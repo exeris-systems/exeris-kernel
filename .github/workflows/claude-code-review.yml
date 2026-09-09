@@ -90,4 +90,4 @@ jobs:
             `.agents/schemas/verdict.schema.json`.
 
           claude_args: |
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(tools/spi-contract-blindness-check/*),Bash(tools/error-code-registry-check/*),Bash(tools/checkstyle-parity-check/*),Bash(tools/scope-register-check/*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*),Bash(git branch:*),Bash(git remote:*)"
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(tools/spi-contract-blindness-check/spi-contract-blindness-check.sh:*),Bash(tools/error-code-registry-check/error-code-registry-check.sh:*),Bash(tools/checkstyle-parity-check/checkstyle-parity-check.sh:*),Bash(tools/scope-register-check/scope-register-check.sh:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git log:*),Bash(git show:*),Bash(git diff:*),Bash(git status:*),Bash(git branch:*),Bash(git remote:*)"

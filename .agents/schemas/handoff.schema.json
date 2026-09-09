@@ -3,7 +3,9 @@
   "title": "Handoff (exeris-kernel)",
   "description": "The bundle's shape, narrowed to this repository's roles. `blocking` stays required: the difference between a handoff that may proceed in parallel and one that may not is the only thing a receiving role cannot infer.",
   "allOf": [
-    { "$ref": "../vendor/exeris-agents-1.3.0/schemas/handoff.base.schema.json" },
+    {
+      "$ref": "../vendor/exeris-agents-1.3.0/schemas/handoff.base.schema.json"
+    },
     {
       "properties": {
         "from": {
@@ -13,7 +15,8 @@
             "exeris-implementer",
             "exeris-tck",
             "exeris-performance",
-            "exeris-docs-adr"
+            "exeris-docs-adr",
+            "exeris-evaluator"
           ]
         },
         "to": {
@@ -23,7 +26,8 @@
             "exeris-implementer",
             "exeris-tck",
             "exeris-performance",
-            "exeris-docs-adr"
+            "exeris-docs-adr",
+            "exeris-evaluator"
           ]
         }
       }

@@ -15,7 +15,7 @@
 # tests the happy flow, which this repository rejects in code and should not accept in its own
 # agent layer.
 #
-# Four of the six are one half of a PAIR, and the pairing is the point: the same construct is a
+# Five of the 7 are one half of a PAIR, and the pairing is the point: the same construct is a
 # defect or ordinary depending on where it sits, so a case that only asserts the defect passes
 # against an agent that has learned the string and nothing about the scope.
 #
@@ -24,6 +24,7 @@
 #   a cross-module import  SPI -> Community -> BLOCK | Community -> Core -> PASS
 #   target-state prose     reported as shipped -> flag | labelled as not-here -> PASS
 #   MULTI_DOMAIN           a real four-surface change | a typo -> DOCS_ADR
+#   the whole-PR verdict   that same four-surface change | a typo -> PASS
 #
 # They run on demand and on a schedule, never on every pull request: model-in-the-loop CI on a solo
 # project is cost without a signal. A change to a profile, skill or policy a case covers reruns that
@@ -151,9 +152,12 @@ cases:
       fields:
         scope_class: docs-only
       min_findings: 1
-      # The failure mode is agreeing with the page. An answer that repeats the claim as fact has
-      # done the opposite of the review.
-      forbidden: ["the transport submits reads and writes through io_uring"]
+      # No `forbidden` here, and the removal is deliberate. It read
+      # "the transport submits reads and writes through io_uring" — a substring the fixture itself
+      # does not contain, because the fixture writes `io_uring` in backticks, so the grader could
+      # never fire. Worse, had it fired it would have failed the RIGHT answer: a review that
+      # refutes a claim quotes it first. The failure mode this case guards is captured by
+      # `min_findings` and by the decision, which an answer agreeing with the page cannot produce.
     tags: [docs, drift]
 
   - id: docs-target-state-labelled-as-target-is-fine

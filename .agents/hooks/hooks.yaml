@@ -38,14 +38,20 @@ hooks:
       # pushed, and denying it would forbid rewriting an unreviewed commit message on one's own
       # branch, which is the rule people learn to route around. Bare `--force`, `-f` and bundled
       # short forms (`-fu`, `-uf`) have no such guard.
-      - 'git\s+push\b[^|;&]*(--force(?!-with-lease)|--mirror|\s-[a-zA-Z]*f[a-zA-Z]*(\s|$))'
+      - 'git\b[^|;&]*\spush\b[^|;&]*(--force(?!-with-lease)|--mirror|\s-[a-zA-Z]*f[a-zA-Z]*(\s|$))'
       # Protected refs, in every spelling git accepts: bare name, refspec, forced refspec, and
       # --all/--tags, which push them without naming them. `preview` is on the list because it is
       # a long-lived distribution track here, not a topic branch.
-      - 'git\s+push\b[^|;&]*\s\+?(main|master|preview|development/\S+)(\s|$)'
-      - 'git\s+push\b[^|;&]*\s\+?[^\s:]*:(refs/heads/)?(main|master|preview|development/)'
-      - 'git\s+push\b[^|;&]*\s--(all|tags)\b'
-      - 'git\s+push\b[^|;&]*--delete\b'
+      #
+      # `git\s+push` is wrong on its own: `git -C <path> push`, `git --git-dir=… push` and
+      # `git push --repo=…` all reach the same remote, so the verb is matched with any global
+      # options between it and `push`. Quotes are stripped from the ref by the alternation rather
+      # than assumed absent — `git push origin "main"` is the same push — and `refs/heads/main`
+      # is spelled out, because the bare-name pattern below it requires the ref to BE `main`.
+      - 'git\b[^|;&]*\spush\b[^|;&]*\s\+?[\x27"]?(refs/heads/)?(main|master|preview|development/\S+?)[\x27"]?(\s|$)'
+      - 'git\b[^|;&]*\spush\b[^|;&]*\s\+?[^\s:]*:[\x27"]?(refs/heads/)?(main|master|preview|development/)'
+      - 'git\b[^|;&]*\spush\b[^|;&]*\s--(all|tags)\b'
+      - 'git\b[^|;&]*\spush\b[^|;&]*--delete\b'
       # Tag CREATION only. `-l`, `--list`, `-n`, `--contains`, `-v` are read-only, and denying them
       # is the over-block this file's own header warns about. A tag here is a release trigger:
       # release.yml fires on `v*`, so an accidental tag is a staged Maven Central upload.
@@ -79,13 +85,17 @@ hooks:
     # a bare substring match lets `echo error-code-registry-check.sh` discharge the gate. The
     # dispatcher additionally refuses to record a call the runtime reported as failed: a check that
     # ran and failed has discharged nothing.
+    #
+    # `(?:ba|z|k)?sh\s+` and `python3?\s+` are part of the anchor, not decoration: `bash tools/x.sh`
+    # is a run, and without them the gate reports "not run" for a check that ran — which is worse
+    # than not gating, because the operator then distrusts the gate rather than the claim.
     match:
-      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?error-code-registry-check\.sh\b'
-      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?checkstyle-parity-check\.sh\b'
-      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?spi-contract-blindness-check\.sh\b'
-      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?module-name-check\.sh\b'
-      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?scope-register-check\.sh\b'
-      - '(?:^|[|;&]\s*|\$\(\s*)(?:\S*/)?preview-bytecode-scan\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?error-code-registry-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?checkstyle-parity-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?spi-contract-blindness-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?module-name-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?scope-register-check\.sh\b'
+      - '(?:^|[|;&]\s*|\$\(\s*)(?:(?:ba|z|k)?sh\s+)?(?:\S*/)?preview-bytecode-scan\.sh\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_file_check\.py\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?agents_render\.py\b'
       - '(?:^|[|;&]\s*|\$\(\s*)(?:python3?\s+)?(?:\S*/)?frontmatter_check\.py\b'
@@ -98,9 +108,6 @@ hooks:
     # Only the paths a gate rule below actually names. A wider list would record edits nothing can
     # discharge, and the gate would report a requirement no rule states.
     paths:
-      - '.agents/**'
-      - 'AGENTS.md'
-      - 'CLAUDE.md'
       - 'exeris-kernel-spi/src/main/java/**'
       - 'docs/subsystems/exceptions.md'
       - 'exeris-kernel-build-config/src/main/resources/checkstyle.xml'
@@ -115,12 +122,13 @@ hooks:
     # Each rule: if <when-edited> matched something and <requires> never ran, the session may not
     # finish. ALL of the required checks, not one of them.
     rules:
-      - when-edited: ['.agents/**', 'AGENTS.md', 'CLAUDE.md']
-        requires: ['agents_file_check.py']
-        reason: >-
-          exeris-docs/standards/agents-md-schema.md: the agent layer changed without the agent-file
-          check. Run it, and regenerate the adapters with agents_render.py rather than editing them
-          — rule 7 makes an adapter that differs from its source a CI failure.
+      # NOT a rule here, and the omission is the point: the agent layer's own check
+      # (`agents_file_check.py`) lives in the pinned bundle's `tools/`, which is NOT vendored and
+      # therefore not in a checkout. Requiring it would arm a gate that a contributor without the
+      # bundle beside them cannot discharge — a stop that can never be satisfied, on the runtime
+      # where a stop hook fires at the end of every turn. It is enforced where it can actually run:
+      # `docs / docs-lint` checks the agent files and the rendered adapters on every pull request.
+      # Every rule below requires a script that is in this repository.
       - when-edited:
           - 'exeris-kernel-spi/src/main/java/**'
         requires: ['spi-contract-blindness-check.sh']
