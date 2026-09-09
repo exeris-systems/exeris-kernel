@@ -65,11 +65,20 @@ jobs:
       # .agents/manifest.yaml pins, so the tooling that checks this repository and the semantics it
       # vendors come from one place — which is the whole reason the bundle has a version.
       #
-      # Dependabot will move the `uses:` sha above and will NOT move this value: it has no rule for
-      # an input. So they drift, and the drift is silent. The check that catches it is
-      # agents_bundle.py verify, which the agent-file step runs anyway — a tooling checkout that
-      # disagrees with the vendored digest fails there rather than passing quietly.
-      agents-ref: b41183a9258d135f1faec82e1ff15de495b4b640 # exeris-systems/exeris-agents 1.4.0
+      # Dependabot moves the `uses:` sha above and has no rule for an input, so this value and the
+      # manifest pin below drift silently.
+      #
+      # An earlier version of this comment said `agents_bundle.py verify` catches that. It does
+      # not, and the correction is worth keeping: verify compares the MANIFEST pin against the
+      # VENDORED TREE, two things that move together in one commit. Nothing compares either of them
+      # against this input. It drifted here within a day of the comment being written — manifest at
+      # cf98363, this line at b41183a — and every check stayed green.
+      #
+      # REMOVE THIS LINE once exeris-systems/.github#27 lands: docs-lint then resolves the ref from
+      # `imports[].ref` in the manifest, so the commit is named once and cannot disagree with
+      # itself. It cannot be removed before that — an unset input means `main` in the version
+      # pinned above, which is not this repository's pin.
+      agents-ref: cf98363e5747038492948ed9fcc1fa67589c1bf6 # exeris-systems/exeris-agents 1.4.0
       # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
       # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
       # what it edits and not for a backlog it did not create. Flip to strict when the backfill
