@@ -59,26 +59,8 @@ permissions:
 
 jobs:
   docs:
-    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@7731f9e2e18dca55831f13c758e3a273eb08ea3d # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
     with:
-      # The agent layer of ADR-085 §I.29a and §J.31a. `agents-ref` names the SAME commit
-      # .agents/manifest.yaml pins, so the tooling that checks this repository and the semantics it
-      # vendors come from one place — which is the whole reason the bundle has a version.
-      #
-      # Dependabot moves the `uses:` sha above and has no rule for an input, so this value and the
-      # manifest pin below drift silently.
-      #
-      # An earlier version of this comment said `agents_bundle.py verify` catches that. It does
-      # not, and the correction is worth keeping: verify compares the MANIFEST pin against the
-      # VENDORED TREE, two things that move together in one commit. Nothing compares either of them
-      # against this input. It drifted here within a day of the comment being written — manifest at
-      # cf98363, this line at b41183a — and every check stayed green.
-      #
-      # REMOVE THIS LINE once exeris-systems/.github#27 lands: docs-lint then resolves the ref from
-      # `imports[].ref` in the manifest, so the commit is named once and cannot disagree with
-      # itself. It cannot be removed before that — an unset input means `main` in the version
-      # pinned above, which is not this repository's pin.
-      agents-ref: 56d9716a74ad911d4a9a8fb055d8259de65dc43c # exeris-systems/exeris-agents 1.4.0
       # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
       # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
       # what it edits and not for a backlog it did not create. Flip to strict when the backfill
@@ -88,15 +70,15 @@ jobs:
       # Fifteen subsystem pages exist and none has the section set yet.
       section-check: false
   commits:
-    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@7731f9e2e18dca55831f13c758e3a273eb08ea3d # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
   pr-body:
-    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@7731f9e2e18dca55831f13c758e3a273eb08ea3d # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
   # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
   # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
   # against the documentation standards. They are different questions and both are wanted.
   # Skips itself when no Markdown or Java changed.
   docs-review:
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@7731f9e2e18dca55831f13c758e3a273eb08ea3d # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
     # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
     # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
     # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
@@ -115,7 +97,7 @@ jobs:
   # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
   # the strict settings there instead would have made a red gate block a release.
   javadoc:
-    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@7731f9e2e18dca55831f13c758e3a273eb08ea3d # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
     with:
       # The two published surfaces that are neither Core, Community nor tooling — the set
       # javadoc-conventions.md rule 11 sends to diff-aware checking instead of a hard gate. Every
