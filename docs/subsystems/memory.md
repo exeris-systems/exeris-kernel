@@ -395,6 +395,10 @@ regardless of which allocator is active.
 
 ---
 
+## Owning ADRs
+
+- [ADR-007](../adr/ADR-007-next-gen-runtime-architecture.md) — Next-Gen Runtime Architecture (Exeris Kernel)
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.memory.*`) is classified **stable** in the

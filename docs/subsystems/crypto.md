@@ -503,6 +503,10 @@ or `mvn install`. OpenSSL 3.x or 4.x must be present on the CI host for Linux ta
 
 ---
 
+## Owning ADRs
+
+- [ADR-008](../adr/ADR-008-open-core-strategy-and-commoditization-of-off-heap-tls.md) — Open-Core Strategy & Commoditization of Off-Heap TLS
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.crypto.*`) is classified **preview** in the

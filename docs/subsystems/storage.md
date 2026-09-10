@@ -331,6 +331,10 @@ appearing rather than on the argument being made.
 - ADR-012 — the isolation model this subsystem resolves against.
 - `docs/subsystems/memory.md`, `CONTRIBUTING.md` §"Off-Heap Memory" — `LoanedBuffer` lifecycle.
 
+## Owning ADRs
+
+- [ADR-056](../adr/ADR-056-blob-storage-provider-spi.md) — Adopt a `BlobStorageProvider` SPI for binary-object storage
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.storage.blob.*`) is classified **preview** since

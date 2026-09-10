@@ -214,6 +214,11 @@ Both slots are bound: `KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProvid
 Durable job stores, leader election, distributed coordination, retry and back-off policy, job
 priorities, and dispatch-time re-validation of a captured identity.
 
+## Owning ADRs
+
+- [ADR-057](../adr/ADR-057-job-scheduler-spi.md) — Adopt a `JobScheduler` SPI dispatching on virtual threads, without a scheduled executor
+- [ADR-082](../adr/ADR-082-injectable-time-seam.md) — Time the kernel *decides* on goes through a seam; time it *measures* does not
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is classified **preview** since

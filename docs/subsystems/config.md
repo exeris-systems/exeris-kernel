@@ -536,6 +536,10 @@ the mechanisms exist; a required-key bootstrap check wiring them in system-wide 
 
 ---
 
+## Owning ADRs
+
+- [ADR-071](../adr/ADR-071-operational-limit-configuration-path.md) — Give operational limits a configuration path, and rule what a zero means
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.config.*`) is classified **stable** in the

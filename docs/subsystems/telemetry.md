@@ -617,6 +617,11 @@ Community bindings: `JfrTelemetrySinkTckTest`, `CommunityTelemetryProviderTckTes
 
 ---
 
+## Owning ADRs
+
+- [ADR-005](../adr/ADR-005-jfr-first-telemetry-strategy.md) — JFR-First Telemetry Strategy
+- [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) — Open-Core Observability Boundary — Shared Telemetry Wire Contract & Crash-File Decoder Cut
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.telemetry.*`) is classified **stable** in the

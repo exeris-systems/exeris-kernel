@@ -478,6 +478,13 @@ Community implementation: `Argon2idPasswordEncoder` (Bouncy Castle Argon2id, PHC
 
 ---
 
+## Owning ADRs
+
+- [ADR-012](../adr/ADR-012-security-trust-model-upgrade-for-resource-server-validation-and-fail-closed-runtime.md) — Security Trust Model Upgrade for Resource-Server Validation and Fail-Closed Runtime
+- [ADR-014](../adr/ADR-014-requiresrole-compile-time-rbac-generation.md) — `@RequiresRole` Compile-Time RBAC Generation
+- [ADR-040](../adr/ADR-040-identity-provider-spi.md) — Identity Provider SPI — Pluggable Token Validation + `SecurityProvider` Dispatcher
+- [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — Replace the hardcoded `/secure` prefix with a declarable HTTP route-authorization policy
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.security.*`) is classified **preview** in the
