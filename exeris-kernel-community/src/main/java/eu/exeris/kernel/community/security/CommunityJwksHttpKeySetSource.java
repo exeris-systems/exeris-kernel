@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -35,7 +31,7 @@ import java.util.function.Supplier;
  * {@link KeySetRefreshException} — never an empty or partial map. RSA is the only Community-tier
  * signing algorithm, so non-RSA JWK entries are skipped rather than failing the whole load.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 final class CommunityJwksHttpKeySetSource implements KeySetSource {
 
@@ -54,6 +50,10 @@ final class CommunityJwksHttpKeySetSource implements KeySetSource {
      * {@link eu.exeris.kernel.community.http.CommunityTextResponseBodyDecoder}, not a JSON
      * object-mapping decoder (a JWKS advertises {@code application/json}, which a JSON decoder
      * cannot coerce into a {@code String}).
+     *
+     * @param client the HTTP client used to fetch the JWKS document; targets the IDP host
+     * @param jwksPath the path the JWKS document is served from on {@code client}
+     * @return a source that fetches and parses the JWKS document on each {@link #load()} call
      */
     /* default */ static CommunityJwksHttpKeySetSource overWebClient(KernelWebClient client, String jwksPath) {
         Objects.requireNonNull(client, "client must not be null");
@@ -61,6 +61,15 @@ final class CommunityJwksHttpKeySetSource implements KeySetSource {
         return new CommunityJwksHttpKeySetSource(() -> client.get(jwksPath, String.class));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Fetches the JWKS document via this source's injected fetcher, parses it as a
+     *           JOSE {@code JWKSet}, and keeps only the RSA entries — Community's only
+     *           supported signing algorithm — indexed by {@code kid}; non-RSA entries are
+     *           skipped rather than failing the load. Never returns an empty map: an empty or
+     *           all-non-RSA document raises {@link KeySetRefreshException}.
+     */
     @Override
     public Map<String, RSAPublicKey> load() throws KeySetRefreshException {
         JWKSet jwkSet = parse(fetchJson());

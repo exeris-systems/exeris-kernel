@@ -193,11 +193,21 @@ jobs:
           architecture: x64
           cache: maven
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          # `gpg-passphrase` is deliberately NOT set. This action would write it into settings.xml
-          # as the `gpg.passphrase` property, and maven-gpg-plugin 3.1.0+ ignores that property
-          # entirely — it reads the MAVEN_GPG_PASSPHRASE environment variable instead. Setting it
-          # here produces a build that looks configured and hangs waiting for a passphrase prompt
-          # that will never be answered. It is passed as `env:` on the build steps below.
+          # This input is the env var NAME, not the passphrase. It has to be set, and it has to
+          # match the variable the build steps export — that is the whole of what it does.
+          #
+          # It used to be omitted, on the reasoning that "maven-gpg-plugin 3.1.0+ ignores what
+          # setup-java writes into settings.xml and reads MAVEN_GPG_PASSPHRASE from the environment
+          # instead". Backwards, and measured to be so: what setup-java writes is precisely what
+          # DECIDES which variable the plugin reads. Omitting this input does not fall back to the
+          # plugin default — the action still configures the plugin, using its own default name
+          # `GPG_PASSPHRASE`, while the steps below export `MAVEN_GPG_PASSPHRASE`. The plugin then
+          # reads a variable nobody set.
+          #
+          # The first dry run of this workflow failed exactly there, five seconds in, on the root
+          # pom, with `gpg: signing failed: No pinentry` — a message about the agent, naming nothing
+          # about the passphrase. `-X` named it: `(f) passphraseEnvName = GPG_PASSPHRASE`.
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Set the release version — or, on a tag, check it
         # On a dispatch the tree is a -SNAPSHOT development line and setting the version is the

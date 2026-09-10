@@ -1,15 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * Core: Graph subsystem orchestration (L2 Data Synthesis).
  *
- * <h2>Package Layout (Graph Engine SPI Refactor)</h2>
+ * <h2>Package Layout</h2>
  * <ul>
  *   <li>{@link eu.exeris.kernel.core.graph.GraphBootstrap} — ServiceLoader bootstrap,
  *       selects the highest-priority {@link eu.exeris.kernel.spi.graph.GraphProvider}</li>
@@ -26,11 +22,12 @@
  * </ul>
  *
  * <h2>The Wall (SPI Compliance)</h2>
- * <p>This package depends exclusively on {@code exeris-kernel-spi}. No class in this
- * package may import JDBC, Bolt, io_uring, HikariCP, or any Community/Enterprise
- * implementation class. "The Brain" orchestrates; it never executes I/O.
+ * <p>This package depends on {@code exeris-kernel-spi} types and Core-internal bootstrap
+ * utilities only. No class in this package may import JDBC, Bolt, io_uring, HikariCP, or
+ * any Community/Enterprise implementation class. "The Brain" orchestrates; it never
+ * executes I/O.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.core.graph;
 

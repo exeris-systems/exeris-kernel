@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -42,7 +38,7 @@ import java.util.function.IntFunction;
  * {@link OutboxBrokerPort#publish(List)} at the cost of pipelining throughput. A future
  * iteration may switch to async send + barrier flush once the orchestrator can absorb gaps.
  *
- * @since 0.7.0
+ * @since 0.7
  * @see OutboxBrokerPort
  * @see KafkaEventEngine
  */
@@ -54,6 +50,9 @@ public final class KafkaEventBrokerPort implements OutboxBrokerPort {
     private final IntFunction<String>      ordinalToTopic;
 
     /**
+     * Constructs a port that publishes outbox entries through {@code producer}, resolving each
+     * entry's destination topic via {@code ordinalToTopic}.
+     *
      * @param producer        a configured Kafka producer; the port does NOT close it
      * @param ordinalToTopic  resolves a registered event-type ordinal to its destination topic.
      *                        To stay consistent with the {@code KafkaEventEngine} publish path,

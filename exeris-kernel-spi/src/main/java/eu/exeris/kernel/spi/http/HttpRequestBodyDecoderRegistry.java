@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -16,14 +12,13 @@ import java.util.Objects;
 /**
  * SPI: Registry contract for typed request body decoder resolution.
  *
- * <h2>Priority ordering</h2>
- * <p>When multiple candidates report {@code supports(...) == true}, the resolver
- * MUST return the candidate with the highest {@link HttpRequestBodyDecoder#priority()}
- * value. Ties resolve by registration order (first-registered wins). The resolver
- * returns {@code null} when no candidate supports the inputs — the generated handler
- * maps this to a server-side configuration error at the call site.
- *
- * @since 0.8.0
+ * @implSpec When several candidates report {@code supports(...) == true}, return the one with the
+ *           highest {@link HttpRequestBodyDecoder#priority()}, and let registration order break a
+ *           tie (first registered wins). Return {@code null} when no candidate supports the inputs
+ *           — the generated handler maps that to a server-side configuration error, so answering
+ *           with an unsuitable decoder would turn a deployment fault into a decode failure blamed
+ *           on the caller.
+ * @since 0.8
  */
 @FunctionalInterface
 public interface HttpRequestBodyDecoderRegistry {

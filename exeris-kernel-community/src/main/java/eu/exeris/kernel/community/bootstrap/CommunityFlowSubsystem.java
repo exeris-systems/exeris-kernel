@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -24,6 +20,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
+/**
+ * Bootstraps the Community flow engine and, when {@code flow.persistenceEnabled} is set, its
+ * snapshot store.
+ *
+ * <p>Depends on {@code persistence} so that {@link #resolveSnapshotStore} can read the
+ * {@link PersistenceEngine} {@link CommunityPersistenceSubsystem} publishes into the
+ * Community-internal {@link CommunityBootstrapServices} registry during the SERVICES phase — the
+ * handoff exists because {@code providerBindings()} composition, which would otherwise make
+ * {@code KernelProviders.PERSISTENCE_ENGINE} visible, runs only after every subsystem's own
+ * {@code initialize()} has already returned (ADR-022 §4). With no engine bound, snapshotting falls
+ * back to the heap-resident {@link CommunityFlowSnapshotStore} instead of failing the boot.
+ */
 final class CommunityFlowSubsystem extends AbstractCommunitySubsystem {
 
     private FlowProvider flowProvider;

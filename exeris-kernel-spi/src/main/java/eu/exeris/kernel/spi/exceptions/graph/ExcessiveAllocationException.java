@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.graph;
 
@@ -28,7 +24,14 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@value KernelErrorCodes#EX_GRPH_5005}
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> allocates (one {@code rawArgs} array per instance, boxing its two
+ * long components); no constructor formats a string, and the message text is a shared
+ * constant.
+ *
+ * @implNote The subsystem TCK ({@code GraphChurnRatioTck}) enforces the churn-to-data ratio
+ *           this exception describes by failing the build with an assertion, not by
+ *           throwing it — no kernel code path raises this exception today.
+ * @since 0.5
  */
 public final class ExcessiveAllocationException extends ExerisKernelException {
 

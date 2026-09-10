@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.graph;
 
@@ -24,7 +20,7 @@ import jdk.jfr.StackTrace;
  * which graph provider (Community/Enterprise) was activated and at what priority.
  * SRE tooling uses this to confirm Enterprise was chosen over Community in production.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.graph.BootstrapSelected")
 @Label("Graph Bootstrap — Provider Selected")
@@ -49,6 +45,15 @@ final class GraphBootstrapSelectedEvent extends Event {
     @Description("Human-readable engine name from GraphEngine.engineName()")
     /* default */ String engineName;
 
+    /**
+     * Emits the bootstrap-selected event if JFR recording is active; a no-op otherwise.
+     *
+     * @param providerClass FQN of the selected {@link eu.exeris.kernel.spi.graph.GraphProvider}
+     * @param priority      {@code ServiceLoader} priority of the selected provider
+     * @param providerId    stable identifier reported by the selected provider
+     * @param engineName    human-readable name of the {@link eu.exeris.kernel.spi.graph.GraphEngine}
+     *                      the provider created
+     */
     /* default */ static void emit(String providerClass, int priority,
                                    String providerId, String engineName) {
         GraphBootstrapSelectedEvent event = BootstrapJfrEvents.beginIfEnabled(

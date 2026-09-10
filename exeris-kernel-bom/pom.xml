@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-root</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
     </parent>
 
     <artifactId>exeris-kernel-bom</artifactId>
@@ -15,15 +15,16 @@
 
     <name>Exeris Kernel BOM</name>
     <description>Single Source of Truth for Exeris Kernel (Java 26+, FFM, Virtual Threads, Agrona, JCTools).</description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
         <agrona.version>2.3.2</agrona.version>
         <jctools.version>4.0.5</jctools.version>
-        <lz4.version>1.10.2</lz4.version>
+        <lz4.version>1.11.2</lz4.version>
         <java.uuid.version>5.2.0</java.uuid.version>
 
-        <jackson.version>3.1.1</jackson.version>
-        <postgresql.version>42.7.11</postgresql.version>
+        <jackson.version>3.2.2</jackson.version>
+        <postgresql.version>42.7.13</postgresql.version>
         <bouncycastle.version>1.84</bouncycastle.version>
         <hikaricp.version>7.0.2</hikaricp.version>
         <flyway.version>11.19.1</flyway.version>
@@ -78,14 +79,6 @@
                 <version>${project.version}</version>
                 <scope>test</scope>
             </dependency>
-            <dependency>
-                <groupId>eu.exeris</groupId>
-                <artifactId>exeris-kernel-tck</artifactId>
-                <version>${project.version}</version>
-                <classifier>tests</classifier>
-                <type>test-jar</type>
-                <scope>test</scope>
-            </dependency>
 
             <dependency>
                 <groupId>org.agrona</groupId>
@@ -126,6 +119,13 @@
             <dependency>
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcprov-jdk18on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
+            <!-- Test-scope only: certificate authoring for the TLS carrier suites, which had no
+                 certificate to run against. Same version as bcprov by construction. -->
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcpkix-jdk18on</artifactId>
                 <version>${bouncycastle.version}</version>
             </dependency>
             <dependency>

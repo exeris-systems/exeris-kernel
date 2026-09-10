@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -15,7 +11,9 @@ import eu.exeris.kernel.core.http.hpack.HpackEncoder;
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
@@ -54,6 +52,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class CommunityHttpRequestProcessorTest {
 
+    /** One SETTINGS entry on the wire: 2-byte identifier + 4-byte value (RFC 9113 §6.5.1). */
+    private static final int SETTINGS_ENTRY_BYTES = 6;
+    private static final int SETTINGS_MAX_HEADER_LIST_SIZE = 0x06;
+
+
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
 
@@ -81,6 +84,134 @@ class CommunityHttpRequestProcessorTest {
 
         assertThat(stream.responseText()).startsWith("HTTP/1.1 200 OK");
         assertThat(recordingAllocator.maxRequestedNetworkAllocation()).isLessThan(64 * 1024);
+    }
+
+    /** A server config identical to the default except for the two header bounds. */
+    private static HttpConfig serverWithHeaderBounds(int maxHeaderCount, int maxHeaderSize) {
+        return new HttpConfig(
+                HttpMode.SERVER,
+                HttpConfig.DEFAULT_BIND_HOST,
+                HttpConfig.DEFAULT_PORT,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                maxHeaderCount,
+                maxHeaderSize,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                true,
+                HttpVersion.HTTP_2);
+    }
+
+    private static final String THREE_HEADER_REQUEST = """
+            GET /x HTTP/1.1\r
+            Host: localhost\r
+            A: 1\r
+            B: 2\r
+            \r
+            """;
+
+    @Test
+    void configuredHeaderCountLimitReachesTheProductionParsePath() {
+        // The binding this PR is actually about: CommunityHttpRequestProcessor builds the codec from
+        // HttpConfig, and CommunityHttp1RequestReader parses with the codec's bounds on both passes.
+        // Asserted as a pair -- the same request under the default config and under a tight one --
+        // because either half alone would pass with the configured bound still ignored.
+        CommunityHttpRequestProcessor permissive = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream allowed = new CapturingTransportStream(THREE_HEADER_REQUEST);
+        permissive.process(allowed, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+        assertThat(allowed.responseText())
+                .as("three headers are well inside the default bound of 100")
+                .startsWith("HTTP/1.1 200 OK");
+
+        CommunityHttpRequestProcessor tight = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(),
+                serverWithHeaderBounds(1, HttpConfig.DEFAULT_MAX_HEADER_SIZE));
+        CapturingTransportStream refused = new CapturingTransportStream(THREE_HEADER_REQUEST);
+        tight.process(refused, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+
+        // No status line at all: a header-limit breach on the HTTP/1 path closes the stream rather
+        // than answering. That is pre-existing behaviour of the parse-fault path and not something
+        // this change introduces -- the default bound behaved identically, just at 100 instead of 1.
+        // It is worth its own slice (RFC 6585 defines 431 for exactly this) and is out of scope here.
+        assertThat(refused.responseText())
+                .as("the configured bound of 1 must decide the outcome, not the default of 100")
+                .isEmpty();
+    }
+
+    @Test
+    void configuredHeaderSizeLimitReachesTheProductionParsePath() {
+        String bigHeaderRequest = """
+                GET /x HTTP/1.1\r
+                Host: localhost\r
+                X-Big: %s\r
+                \r
+                """.formatted("v".repeat(200));
+
+        CommunityHttpRequestProcessor permissive = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream allowed = new CapturingTransportStream(bigHeaderRequest);
+        permissive.process(allowed, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+        assertThat(allowed.responseText())
+                .as("a 200-byte header is well inside the default bound of 8 192")
+                .startsWith("HTTP/1.1 200 OK");
+
+        CommunityHttpRequestProcessor tight = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(),
+                serverWithHeaderBounds(HttpConfig.DEFAULT_MAX_HEADER_COUNT, 32));
+        CapturingTransportStream refused = new CapturingTransportStream(bigHeaderRequest);
+        tight.process(refused, exchange ->
+                exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
+        assertThat(refused.responseText())
+                .as("the configured size bound must decide the outcome, not the default")
+                .isEmpty();
+    }
+
+    @Test
+    void memoryAllocatorIsBoundOnTheRequestScope() {
+        // The reactor threads are started with Thread.ofPlatform(), which does not inherit a
+        // ScopedValue, so the kernel's FOUNDATION binding of MEMORY_ALLOCATOR is not visible on a
+        // request. Kernel code handles that by capturing the allocator at construction
+        // (NativeTcpTransportProvider does); generated application code cannot, because
+        // HttpRequestDecodingContext mandates an allocator and the generated parseBody resolves one
+        // from this slot per request. Unbound, that raised NoSuchElementException inside the
+        // handler's own try, which the handler answered as 400 -- a missing server-side binding
+        // reported as the caller's malformed body.
+        AtomicBoolean boundDuringDispatch = new AtomicBoolean();
+        AtomicBoolean sameInstance = new AtomicBoolean();
+
+        assertThat(KernelProviders.MEMORY_ALLOCATOR.isBound())
+                .as("precondition: nothing is bound on this thread before dispatch")
+                .isFalse();
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), HttpConfig.defaultServer());
+        CapturingTransportStream stream = new CapturingTransportStream("""
+                GET /alloc HTTP/1.1\r
+                Host: localhost\r
+                \r
+                """);
+
+        processor.process(stream, exchange -> {
+            boundDuringDispatch.set(KernelProviders.MEMORY_ALLOCATOR.isBound());
+            if (boundDuringDispatch.get()) {
+                sameInstance.set(KernelProviders.MEMORY_ALLOCATOR.get() == ALLOCATOR);
+            }
+            exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1));
+        });
+
+        assertThat(stream.responseText()).startsWith("HTTP/1.1 200 OK");
+        assertThat(boundDuringDispatch.get())
+                .as("a handler must be able to resolve the allocator the SPI requires it to pass on")
+                .isTrue();
+        assertThat(sameInstance.get())
+                .as("and it must be the engine's allocator, not a second one")
+                .isTrue();
+        assertThat(KernelProviders.MEMORY_ALLOCATOR.isBound())
+                .as("the binding is request-scoped and must not outlive the dispatch")
+                .isFalse();
     }
 
     @Test
@@ -393,17 +524,97 @@ class CommunityHttpRequestProcessorTest {
         assertThat(outbound).hasSizeGreaterThanOrEqualTo(27);
 
         MemorySegment outboundSegment = MemorySegment.ofArray(outbound);
-        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 0);
+        // Walk by declared payload length rather than by 9-byte strides. The stride assumption held
+        // only while the server's initial SETTINGS was EMPTY, which was the defect ADR-071's tail
+        // named: it advertised no limits at all. Now it carries SETTINGS_MAX_HEADER_LIST_SIZE, so a
+        // fixed-offset walker reads the middle of a payload and reports whatever byte it lands on.
+        long pos = 0;
+        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame1.frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frame1.streamId()).isZero();
+        assertThat(frame1.length())
+                .as("the server must advertise a bound it enforces, not an empty SETTINGS; WHICH "
+                        + "bound is asserted by serverSettingsAdvertisesTheDecodedListBound")
+                .isEqualTo(6);
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame1.length();
 
-        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 9);
+        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame2.frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frame2.isAck()).isTrue();
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame2.length();
 
-        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 18);
+        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame3.frameType()).isEqualTo(Http2FrameType.GOAWAY);
         assertThat(frame3.streamId()).isZero();
+    }
+
+    @Test
+    @DisplayName("SETTINGS advertises the bound the DECODER enforces, not the header-block bound")
+    void serverSettingsAdvertisesTheDecodedListBound() {
+        // The three HTTP/2 bounds are given DISTINCT values on purpose. They ship with the same
+        // default, so a fixture that left them equal would pass against a server advertising any
+        // of them — which is exactly how advertising the wrong one survived review once already.
+        HttpConfig config = http2Bounds(32_768, 200_000, 16_384);
+
+        byte[] outbound = priorKnowledgeExchange(config);
+
+        MemorySegment outboundSegment = MemorySegment.ofArray(outbound);
+        Http2FrameParser.FrameHeader settings = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 0);
+        assertThat(settings.frameType()).isEqualTo(Http2FrameType.SETTINGS);
+        assertThat(settings.length()).isEqualTo(SETTINGS_ENTRY_BYTES);
+
+        int payload = (int) Http2FrameParser.FRAME_HEADER_SIZE;
+        int settingId = ((outbound[payload] & 0xFF) << 8) | (outbound[payload + 1] & 0xFF);
+        long advertised = ((long) (outbound[payload + 2] & 0xFF) << 24)
+                | ((long) (outbound[payload + 3] & 0xFF) << 16)
+                | ((long) (outbound[payload + 4] & 0xFF) << 8)
+                | (outbound[payload + 5] & 0xFF);
+
+        assertThat(settingId).isEqualTo(SETTINGS_MAX_HEADER_LIST_SIZE);
+        assertThat(advertised)
+                .as("RFC 9113 §6.5.2 defines this setting against the DECODED field section, which "
+                        + "is what HpackDecoder bounds; advertising the compressed-block bound "
+                        + "tells a peer a limit nothing checks")
+                .isEqualTo(config.maxHeaderListSize())
+                .isNotEqualTo(config.maxHeaderBlockSize());
+    }
+
+    /** Drives the h2c prior-knowledge path far enough to capture the server's initial SETTINGS. */
+    private static byte[] priorKnowledgeExchange(HttpConfig config) {
+        byte[] preface = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
+        byte[] emptyClientSettingsFrameHeader = new byte[]{0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+        ByteArrayOutputStream inboundBytes = new ByteArrayOutputStream();
+        inboundBytes.writeBytes(preface);
+        inboundBytes.writeBytes(emptyClientSettingsFrameHeader);
+
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(
+                ALLOCATOR, HttpResponseBodyEncoderRegistry.empty(), config);
+        CapturingTransportStream stream = new CapturingTransportStream(inboundBytes.toByteArray());
+        processor.process(stream, exchange -> {
+            throw new AssertionError("Handler should not be called on the prior-knowledge path");
+        });
+        return stream.responseBytes();
+    }
+
+    private static HttpConfig http2Bounds(int maxHeaderBlockSize,
+                                          int maxHeaderListSize,
+                                          int maxStringLiteralSize) {
+        return new HttpConfig(
+                HttpMode.SERVER,
+                HttpConfig.DEFAULT_BIND_HOST,
+                HttpConfig.DEFAULT_PORT,
+                HttpConfig.DEFAULT_MAX_CONNECTIONS,
+                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
+                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
+                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
+                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
+                true,
+                HttpVersion.HTTP_2,
+                null,
+                maxHeaderBlockSize,
+                maxHeaderListSize,
+                maxStringLiteralSize);
     }
 
     @Test
@@ -435,22 +646,28 @@ class CommunityHttpRequestProcessorTest {
         assertThat(outbound).hasSizeGreaterThanOrEqualTo(52);
 
         MemorySegment outboundSegment = MemorySegment.ofArray(outbound);
-        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 0);
+        // Same reason as above: stride by declared length, not by a constant.
+        long pos = 0;
+        Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame1.frameType()).isEqualTo(Http2FrameType.SETTINGS);
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame1.length();
 
-        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 9);
+        Http2FrameParser.FrameHeader frame2 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame2.frameType()).isEqualTo(Http2FrameType.SETTINGS);
         assertThat(frame2.isAck()).isTrue();
+        pos += Http2FrameParser.FRAME_HEADER_SIZE + frame2.length();
 
-        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 18);
+        Http2FrameParser.FrameHeader frame3 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame3.frameType()).isEqualTo(Http2FrameType.PING);
         assertThat(frame3.isAck()).isTrue();
+        pos += Http2FrameParser.FRAME_HEADER_SIZE;
 
         byte[] echoedPingPayload = new byte[8];
-        MemorySegment.copy(outboundSegment, 27, MemorySegment.ofArray(echoedPingPayload), 0, 8);
+        MemorySegment.copy(outboundSegment, pos, MemorySegment.ofArray(echoedPingPayload), 0, 8);
         assertThat(echoedPingPayload).containsExactly(pingPayload);
+        pos += frame3.length();
 
-        Http2FrameParser.FrameHeader frame4 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, 35);
+        Http2FrameParser.FrameHeader frame4 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame4.frameType()).isEqualTo(Http2FrameType.GOAWAY);
     }
 
@@ -783,7 +1000,7 @@ class CommunityHttpRequestProcessorTest {
         }
 
         byte[] headerBlock = encoded.toByteArray();
-        HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), ALLOCATOR, 65_536);
+        HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), ALLOCATOR, 65_536, 65_536);
         String[] status = new String[1];
         decoder.decode(MemorySegment.ofArray(headerBlock), 0, headerBlock.length,
                 (name, value, _) -> {

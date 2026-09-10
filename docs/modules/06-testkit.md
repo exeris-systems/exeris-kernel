@@ -1,3 +1,12 @@
+---
+title: "Module: `exeris-kernel-community-testkit`"
+type: module
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Module: `exeris-kernel-community-testkit`
 
 **Role:** fixtures that boot the **real** kernel for consumers outside this repository.
@@ -46,10 +55,13 @@ try (EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootst
 }
 ```
 
-`close()` is a **hard stop**, not a graceful drain — it releases the boot and joins. Since v0.11 the
-underlying `TransportEngine.stop()` does drain in-flight streams (see
-[`transport.md`](../subsystems/transport.md) → *Graceful-shutdown phase order*), so a request in flight
-when the fixture closes completes rather than being severed.
+`close()` is a **hard stop**, not a graceful drain. It signals the boot thread to stop and joins it for
+up to `KernelBootstrapHttpEngineFixture.STOP_TIMEOUT_SECONDS` (10 seconds), interrupting it if it is
+still alive after that. `TransportEngine.stop()` does drain in-flight streams since v0.11 (see
+[`transport.md`](../subsystems/transport.md) → *Graceful-shutdown phase order*), but that drain's own
+deadline (`PaqsScheduler.DRAIN_DEADLINE_NANOS`, 60 seconds) is longer than the fixture's 10-second join
+window — so a request in flight when the fixture closes completes only if it finishes within those 10
+seconds, not the full drain budget the SPI otherwise allows.
 
 ### Persistence — `EmbeddedPersistenceEngineFixture` (since 0.11)
 
@@ -67,12 +79,16 @@ try (EmbeddedPersistenceEngineFixture fixture = EmbeddedPersistenceEngineFixture
 ```
 
 - `inMemoryH2()` — a fresh in-memory H2 in PostgreSQL-compatibility mode, unique per call, **migrations
-  applied**. The engine ships its own DDL and applies it only when told to; `run.migrations` defaults
-  to `false`, which is the step most easily missed when standing the engine up by hand and the reason a
+  applied**. The engine ships its own DDL and applies it only when told to; `PersistenceSettings.runMigrations`
+  defaults to `false`, which is the step most easily missed when standing the engine up by hand and the reason a
   correctly-configured pool can still meet an empty database.
 - `forJdbcUrl(url, runMigrations)` — for a container-backed Postgres or a pre-migrated schema.
 
-**Which thread.** `engine()` is safe from the test thread: the Community engine reads no `ScopedValue`.
+**Which thread.** `engine()` is safe from the test thread. Its `openConnection()` path does read two
+`ScopedValue`s — `KernelProviders.STORAGE_CONTEXT` (via `storageContextOrSystem()`) and
+`PersistenceSessionBox.REQUEST_SESSION` (via `currentOrNull()`) — but both fall back gracefully instead
+of throwing when unbound (to `ImmutableStorageContext.GLOBAL`, and to `null`, respectively), so calling
+from a thread with no bound scope is safe by design, not because the engine avoids `ScopedValue`.
 Consumer code that resolves kernel slots — the usual shape of a host runtime's transaction manager —
 must go through `runInKernelScope(Runnable)`, which carries the work to the thread holding the boot.
 A `ScopedValue` binding cannot outlive the frame that opened it, so the scope cannot be handed out;
@@ -82,6 +98,37 @@ work goes to it instead.
 the URL in use (`com.h2database:h2` for `inMemoryH2()`). The testkit declares neither: it references no driver
 class, and a test library has no business putting a database on the classpath of everything downstream
 of it.
+
+### Events and flow — `EmbeddedKernelFixture` (since 0.12)
+
+Boots `events`, `flow`, or both — transitively pulling `persistence` and, for events, `memory` — and
+hands back the engines out of **one** kernel.
+
+```java
+try (EmbeddedKernelFixture fixture = EmbeddedKernelFixtures.eventsAndFlowOnH2()) {
+    fixture.start();
+    fixture.eventEngine().bus().publish(descriptor, payload);
+    // saga state written by fixture.flowEngine() is readable through:
+    fixture.persistenceEngine();
+}
+```
+
+Factories: `eventsOnH2()`, `flowOnH2()`, `eventsAndFlowOnH2()`, and
+`forJdbcUrl(Set<String>, String, boolean)` for a container-backed database.
+
+**One fixture over a subsystem set, not one fixture per subsystem** — and the reason is mechanical
+rather than stylistic. Each fixture holds an entire `KernelBootstrap` open on its own thread, and
+`FixtureBootLock` serialises boots because configuration travels through JVM-global system properties.
+Three fixtures for one saga test would be three kernels, booted in sequence, sharing nothing. A saga
+that emits an event needs both engines out of the *same* runtime, which is also how production wires
+it.
+
+`persistenceEngine()` is always available, because both subsystems declare `dependsOn("persistence")`.
+That is what makes an assertion on saga state or on the outbox possible: the test reads the rows the
+engine wrote. Asking for an engine whose subsystem was not selected fails with a message naming it,
+not with a `NullPointerException`.
+
+---
 
 ### Security — `TestJwt`
 
@@ -95,18 +142,34 @@ test pass while proving nothing.
 
 ## Coverage note
 
-The two `KernelBootstrap*Fixture` classes are roughly half this module's lines and **cannot be covered
-from inside it**: exercising them requires a provider on the classpath, and the module deliberately
-declares none. Their coverage lives in `exeris-kernel-community`'s test scope, which JaCoCo attributes
-to that module's bundle instead. The module clears its floor on the plumbing and `TestJwt`; expect the
-ratio to fall as each new fixture lands, since every one adds uncoverable lines here and coverable
-lines elsewhere.
+The **three** `KernelBootstrap*Fixture` classes (`KernelBootstrapHttpEngineFixture`,
+`KernelBootstrapPersistenceEngineFixture`, `KernelBootstrapRuntimeFixture`) are roughly half this
+module's executable lines by JaCoCo's own count (239 of 506 LINE-counter lines, measured against this
+tree) and their real boot path **cannot be exercised from inside this module**: doing so requires a
+provider on the classpath, and the module deliberately declares none. A handful of their guard-clause
+lines — the ones an "unstarted fixture refuses" test reaches without booting anything — do execute here,
+which is why none of the three reads as literally 0% covered except the HTTP one.
+
+Their real exercise lives in `exeris-kernel-community`'s test scope, which has both a provider and the
+JDBC driver on its classpath — but that execution is **not** attributed to `exeris-kernel-community`'s
+own JaCoCo bundle either: `jacoco:report` cross-references execution data only against class files
+under the analysing module's own `target/classes`, and these classes are compiled into a different
+module's jar. Running `exeris-kernel-community`'s consumer tests under `-P coverage` confirms this
+directly — `eu/exeris/kernel/community/testkit/**` class names show up by the dozen in its raw
+`jacoco.exec`, and not once in the `jacoco.xml` report generated from it. The exercise is real (that is
+what the consumer tests in `exeris-kernel-community` prove) but it is invisible to every module's
+reported coverage ratio, not "attributed elsewhere."
+
+The module clears its own floor — the reactor default of 20% line coverage, since this module sets no
+override — on the plumbing and `TestJwt`; expect the ratio to fall as each new `KernelBootstrap*Fixture`
+lands, since every one adds unexercisable lines here without adding a counted line anywhere.
 
 ---
 
 ## Shared plumbing
 
-`SystemPropertySnapshot`, `FixtureThreads` and `FixtureBootLock` sit in the root package. All three are
+`SystemPropertySnapshot`, `FixtureThreads`, `FixtureBootLock` and `KernelScopePump` sit in the root
+package. All four are
 **testkit-internal** — public only because Java package access does not reach across subpackages — and
 none is fixture API. They exist because every fixture that holds a kernel boot open on a dedicated
 thread has to publish configuration properties before booting and put them back afterwards, has to join
@@ -138,11 +201,18 @@ spawning a second boot thread and leaking the first.
 
 ## Not yet covered
 
-Events, flow, graph, scheduling, storage, and telemetry have no fixtures. Consumers binding those SPIs
-are still writing doubles, with the exposure described above. Tracked in
-[`ROADMAP.md`](../ROADMAP.md) → *Testkit: No Real-Runtime Fixtures Outside HTTP*; persistence was taken
-first because transactions are the sharpest case — propagation, rollback, and connection lifecycle are
-data-integrity behaviour.
+Graph, scheduling, storage, and telemetry have no fixtures. Consumers binding those SPIs are still
+writing doubles, with the exposure described above. Tracked in
+[`ROADMAP.md`](../ROADMAP.md) → *Testkit: No Real-Runtime Fixtures Outside HTTP*.
+
+The order was not arbitrary: persistence came first because transactions are the sharpest case
+(propagation, rollback, connection lifecycle are data-integrity behaviour), then events and flow
+because they compose with it over the same engine. Graph is next and is a different shape — its
+Community driver is swappable, and only the SQL/PGQ backend needs persistence, while the Cypher one
+needs a Neo4j container and so cannot be a fixture a consumer runs without Docker. Its PGQ DDL is also
+not yet H2-clean: `TIMESTAMPTZ` in the edge table is unknown to H2 even in PostgreSQL mode, where the
+standard `TIMESTAMP WITH TIME ZONE` spelling PostgreSQL also accepts works. That is a production
+change, not a fixture one, which is why it did not ride along here.
 
 ---
 

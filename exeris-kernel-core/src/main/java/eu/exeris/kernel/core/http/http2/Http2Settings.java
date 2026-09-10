@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.http2;
 
@@ -29,7 +25,7 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * @param initialWindowSize    SETTINGS_INITIAL_WINDOW_SIZE (default: 65535)
  * @param maxFrameSize         SETTINGS_MAX_FRAME_SIZE (default: 16384)
  * @param maxHeaderListSize    SETTINGS_MAX_HEADER_LIST_SIZE (default: {@code -1} — no limit)
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-6.5">RFC 7540 §6.5</a>
  */
 public record Http2Settings(
@@ -67,7 +63,9 @@ public record Http2Settings(
      * @param identifier settings parameter identifier (0x01–0x06)
      * @param value      parameter value as an unsigned 32-bit quantity (0 to 2^32-1)
      * @return updated settings (original is unchanged)
-     * @throws Http2SettingsException if the value is out of range for the given identifier
+     * @throws Http2SettingsException if the value falls outside the numeric range allowed for
+     *         the given identifier, or — for {@code SETTINGS_ENABLE_PUSH} — is neither 0 nor 1
+     *         ({@code EX-HTTP-4003})
      */
     @SuppressWarnings("PMD.CyclomaticComplexity")
     public Http2Settings withSetting(int identifier, long value) {
@@ -112,7 +110,8 @@ public record Http2Settings(
      * @param identifier settings parameter identifier (0x01–0x06)
      * @param value      parameter value as a signed 32-bit integer (treated as unsigned on wire)
      * @return updated settings (original is unchanged)
-     * @throws Http2SettingsException if the unsigned-widened value is out of range
+     * @throws Http2SettingsException if the unsigned-widened value is invalid for the given
+     *         identifier, per {@link #withSetting(int, long)} ({@code EX-HTTP-4003})
      */
     public Http2Settings withSetting(int identifier, int value) {
         return withSetting(identifier, Integer.toUnsignedLong(value));
@@ -143,7 +142,7 @@ public record Http2Settings(
     /**
      * Unchecked validation exception for HTTP/2 SETTINGS parameter violations.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class Http2SettingsException extends ExerisKernelException {
 

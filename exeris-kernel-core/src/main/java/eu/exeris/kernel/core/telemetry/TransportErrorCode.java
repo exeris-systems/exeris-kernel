@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.telemetry;
 
@@ -24,7 +20,7 @@ package eu.exeris.kernel.core.telemetry;
  * to obtain a stable integer for protocol frames. These codes are frozen — new entries
  * MUST be appended; existing entries MUST NOT be renumbered.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum TransportErrorCode {
 

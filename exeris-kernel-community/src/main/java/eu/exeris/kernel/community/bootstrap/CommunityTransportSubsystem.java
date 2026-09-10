@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
@@ -23,6 +20,22 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.UnaryOperator;
 
+/**
+ * Bootstraps the Community transport engine: selects the highest-priority available
+ * {@link TransportProvider}, builds its {@link TransportConfig}, and — unless
+ * {@code transport.mode}/{@code network.transportMode} is unset or {@code DISABLED} — creates and
+ * starts a {@link TransportEngine}.
+ *
+ * <p>Depends on {@code memory} and {@code crypto}, and runs in the SERVICES phase: the Community
+ * driver requires {@code KernelProviders.MEMORY_ALLOCATOR} to be bound when the engine is created,
+ * and separately reads {@code KernelProviders.CRYPTO_PROVIDER} — optionally, since not every
+ * transport configuration wants TLS at all.
+ *
+ * <p>A server-or-dual engine started with no stream handler configured during bootstrap installs a
+ * default that closes every inbound {@code TransportStream} immediately, and logs a warning that
+ * streams will be dropped until the application installs its own handler — a running-but-useless
+ * transport rather than a boot failure.
+ */
 final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
 
     private static final System.Logger LOG = System.getLogger(CommunityTransportSubsystem.class.getName());
@@ -103,7 +116,7 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
         );
     }
 
-    private static TransportConfig buildTransportConfig(ConfigProvider configProvider) {
+    /* default */ static TransportConfig buildTransportConfig(ConfigProvider configProvider) {
         ConfigProvider.KernelSettings settings = configProvider.kernelSettings().get();
         ConfigProvider.NetworkSettings network = settings.network();
 
@@ -126,6 +139,8 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
         long idleTimeoutMillis = configProvider.getLong("transport.idleTimeoutMillis")
             .orElse(30_000L);
 
+        int maxActiveStreams = CommunityAdmissionCeilingResolver.resolve(configProvider);
+
         String certPath = configProvider.getString("transport.certPath")
                 .orElse(configProvider.getString("network.certPath").orElse(null));
         String keyPath = configProvider.getString("transport.keyPath")
@@ -139,7 +154,8 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
                 certPath,
                 keyPath,
             maxConnections,
-            idleTimeoutMillis
+            idleTimeoutMillis,
+            maxActiveStreams
         );
     }
 

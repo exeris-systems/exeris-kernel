@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Triage result (base)",
+  "description": "What a router hands to whoever runs next. agents-md-schema.md rule 13.\n\nBASE: `task_class` and `primary_agent` are left open and narrowed by the composing repository \u2014 a kernel router classifies contract and performance work, a docs router classifies records and narrative, and neither vocabulary belongs to the other. Two conventions the base does fix: `MULTI_DOMAIN` means no single class dominates, and a repository's `primary_agent` enum includes its own router, so re-entry is expressed rather than left implicit.\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_class",
+    "primary_risk",
+    "primary_agent",
+    "validation_gates",
+    "next_action"
+  ],
+  "properties": {
+    "task_class": {
+      "description": "The kind of work, decided before the route. SCREAMING_SNAKE_CASE; narrowed to the repository's enum.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "maxLength": 48
+    },
+    "primary_risk": {
+      "description": "One sentence: what goes wrong if this is routed badly. Not a restatement of the task.",
+      "type": "string",
+      "minLength": 10
+    },
+    "primary_agent": {
+      "description": "The role that runs. Narrowed to the repository's enum, which includes its router.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "secondary_handoffs": {
+      "type": "array",
+      "items": {
+        "$ref": "handoff.base.schema.json"
+      },
+      "default": []
+    },
+    "execution_plan": {
+      "description": "Ordered steps. Lightweight by default: sequence, handoffs, gates.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 3
+      }
+    },
+    "validation_gates": {
+      "description": "Objects, not strings: the triage rule is that no gate is named without the risk it retires.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "gate",
+          "risk"
+        ],
+        "properties": {
+          "gate": {
+            "type": "string",
+            "minLength": 3
+          },
+          "risk": {
+            "type": "string",
+            "minLength": 3
+          }
+        }
+      }
+    },
+    "document_shape": {
+      "description": "Set when the task was a document-shape question. The vocabulary is ecosystem-wide (ADR-085 \u00a7G, and the three templates that are not interchangeable), so it is fixed here rather than per repository.",
+      "enum": [
+        "RESEARCH",
+        "RFC",
+        "ADR",
+        "NOT_A_DECISION_DOC"
+      ]
+    },
+    "template_path": {
+      "description": "The template the shape selects, repository-relative. The layout differs per repository, so the pattern is narrowed by the composing schema.",
+      "type": "string",
+      "minLength": 5
+    },
+    "next_action": {
+      "description": "The single best immediate move. One action, not a plan.",
+      "type": "string",
+      "minLength": 5
+    }
+  },
+  "allOf": [
+    {
+      "description": "A shape decision that names ADR, RFC or RESEARCH names the template it selects.",
+      "if": {
+        "properties": {
+          "document_shape": {
+            "enum": [
+              "RESEARCH",
+              "RFC",
+              "ADR"
+            ]
+          }
+        },
+        "required": [
+          "document_shape"
+        ]
+      },
+      "then": {
+        "required": [
+          "template_path"
+        ]
+      }
+    }
+  ]
+}

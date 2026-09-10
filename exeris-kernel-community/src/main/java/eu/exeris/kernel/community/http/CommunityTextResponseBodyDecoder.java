@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -34,11 +30,21 @@ import java.util.Objects;
  * NOT close, retain, or extend the lifetime of the {@link LoanedBuffer} — ownership stays with the
  * façade.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class CommunityTextResponseBodyDecoder implements HttpResponseBodyDecoder {
 
     private static final long EMPTY_SIZE = 0L;
+
+    /**
+     * Built directly by any caller assembling a decoder registry that must resolve
+     * {@code String.class} to raw bytes instead of a JSON-object decoder — most notably the JWKS
+     * fetch registry described above — and by tests exercising this decoder in isolation.
+     */
+    public CommunityTextResponseBodyDecoder() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     public boolean supports(Class<?> targetType, String contentType) {

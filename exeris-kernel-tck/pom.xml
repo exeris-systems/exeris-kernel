@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
@@ -17,6 +17,68 @@
         Technology Compatibility Kit: L1 unit tests, L2 integration tests, L3 system guarantees.
         Zero-GC JFR monitor, Panama Segfault Shield, Virtual Thread Avalanche, Bootstrap Matrix.
     </description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
+
+
+    <properties>
+        <!--
+            This module's main sources are contract tests, and Sonar has to be told so explicitly:
+            it keys production rules off sonar.sources alone, and the scanner derives that from the
+            Maven source roots, which say src/main. Judging test code by production rules says so in
+            its own words. The analysis taken right after these classes moved to src/main reported
+            92 x java:S5960 "Remove this assertion from production code" and 9 x java:S5443 (a temp
+            directory in a fixture) as CRITICAL vulnerabilities; all 115 new bugs and vulnerabilities
+            on that run were in this one module, and all of them closed once it was classified as
+            test code.
+
+            sonar.sources is deliberately empty: there is no main source here to analyse as
+            production. Both roots go to sonar.tests instead.
+        -->
+        <sonar.sources></sonar.sources>
+        <sonar.tests>src/main/java,src/test/java</sonar.tests>
+
+        <exeris.module.name>eu.exeris.kernel.tck</exeris.module.name>
+
+        <!--
+            The TCK's own ruleset, as a property rather than a plugin-level <configLocation>.
+            The parent pom carries the same fix and the reason with it: an explicit
+            <configLocation> in a pom silently beats the plugin's own user property, so
+            `-Dcheckstyle.config.location=...` does not reach the module and does not fail
+            either. This module still had the literal, so the shared javadoc gate audited
+            checkstyle-tck.xml here and reported clean against a ruleset it never read.
+            Declared here so the default is unchanged and an override lands.
+        -->
+        <checkstyle.config.location>checkstyle-tck.xml</checkstyle.config.location>
+
+        <!--
+            This module's main sources are contract tests, so they are linted by rules written for
+            contract tests. The delta from the kernel ruleset is a named list in
+            pmd-ruleset-tck.xml, not a skip: 1782 PMD violations across 56 rules appeared the moment
+            these classes became main sources, and every one was either excluded there with a reason
+            or fixed in the code here.
+
+            Checkstyle likewise, via checkstyle-tck.xml. Its 502 findings across 93 files were the
+            same category mismatch — DeclarationOrder 180, LeftCurly 125, NeedBraces 60,
+            MethodName 54, LineLength 53.
+
+            Measured twice, because the first measurement measured nothing: PMD fails the build
+            before Checkstyle runs, so an early "Checkstyle reports 0" was the absence of a run.
+        -->
+
+        <!--
+            Coverage floors off, for the same reason and with the same shape as the two above. The
+            root POM applies a default 0.20 line / 0.15 branch floor to every module that produces a
+            jacoco.exec, ratcheted per module. This module now has 130 main classes exercised by its
+            own 5 tests, because the other 125 are exercised by the PROVIDERS that subclass them, in
+            other modules — which is what a TCK is. Measured against its own module the ratio is
+            near zero, and it would be near zero however good the contract is.
+
+            `exeris-kernel-diagnostics-cli` already sits at 0.0 with a stated reason, so a module
+            declaring itself ungated is an established shape rather than a new escape hatch.
+        -->
+        <jacoco.line.minimum>0.0</jacoco.line.minimum>
+        <jacoco.branch.minimum>0.0</jacoco.branch.minimum>
+    </properties>
 
     <dependencies>
         <!-- SPI contracts — TCK tests only against interfaces, never implementations -->
@@ -25,61 +87,90 @@
             <artifactId>exeris-kernel-spi</artifactId>
         </dependency>
 
-        <!-- Test framework — versions managed by BOM (junit-bom import) -->
+        <!--
+            COMPILE scope, and the change of scope is the point of this module's shape.
+
+            The Abstract*Tck classes are this module's published API: they are `abstract class`
+            declarations carrying @Test methods that a provider subclasses. A consumer that extends
+            one needs JUnit, AssertJ and Mockito on the same classpath to compile at all, so these
+            are dependencies of the contract rather than of testing it. Declaring them `test` while
+            the classes lived in src/test happened to work because nothing outside compiled against
+            them; it stops being true the moment they are published.
+
+            Consumers take this module at `test` scope themselves, so nothing here reaches anybody's
+            runtime classpath.
+
+            Versions are managed by the BOM (junit-bom import). The `compile` scope is stated
+            explicitly rather than left out: exeris-kernel-parent manages every one of these at
+            `test`, so an omitted scope inherits `test` and the module fails to compile with
+            "package org.assertj.core.api does not exist" — measured, not guessed.
+        -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.tngtech.archunit</groupId>
-            <artifactId>archunit-junit5</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
 
-        <!-- JMH — JVM Microbenchmark Harness (versions managed by BOM) -->
+        <!-- JMH — the abstract benchmarks in perf/ are part of the published surface too. -->
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-core</artifactId>
-            <scope>test</scope>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.openjdk.jmh</groupId>
             <artifactId>jmh-generator-annprocess</artifactId>
+            <scope>compile</scope>
+        </dependency>
+
+        <!--
+            ArchUnit stays `test`: the only class that uses it is ExerisArchitectureTest, which is
+            this module's own test and remains in src/test. It is not part of what a provider
+            subclasses.
+        -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!--
+                No `test-jar` execution any more, and its removal is what this change is for. The
+                classifier-`tests` artefact used to carry all 492 real classes while the main jar
+                held seven files of metadata; now the main jar holds the contract and src/test holds
+                five self-tests that nobody consumes. Producing a test-jar of those five would
+                publish a coordinate whose name promises the TCK and whose content is not it.
+
+                Consumers therefore drop `<classifier>tests</classifier><type>test-jar</type>` and
+                depend on the plain artefact at `test` scope. The out-of-repo enterprise
+                distribution does the same, in lockstep.
+            -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.4.1</version>
-                <executions>
-                    <execution>
-                        <id>test-jar</id>
-                        <phase>process-test-classes</phase>
-                        <goals>
-                            <goal>test-jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <configuration>
+                    <rulesets>
+                        <ruleset>pmd-ruleset-tck.xml</ruleset>
+                    </rulesets>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -88,7 +179,6 @@
                 <configuration>
                     <argLine>
                         @{coverage.argLine}
-                        --enable-preview
                         --enable-native-access=ALL-UNNAMED
                         -XX:+UnlockExperimentalVMOptions
                         -XX:+UseZGC
@@ -113,4 +203,68 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+            The Javadoc gate - ADR-085 SS-F.21, run by .github/workflows/guardrails.yml, never by a
+            normal build.
+
+            It lives in THIS pom and not the root one, and that is not cosmetic. The gate invokes
+            `mvn -pl <modules> -am javadoc:javadoc`, and `-am` pulls every dependency into the
+            reactor. From the root pom the profile applied to them too, so the first CI run failed on
+            `exeris-kernel-build-config` - a module nobody meant to gate - and never reached its
+            target at all. javadoc-conventions.md gates named modules; so does this. The TCK is
+            gated because it is a published contract surface that is neither Core, Community nor
+            tooling, which is the set rule 11 sends to diff-aware checking instead.
+
+            It is a profile and not a change to the `release` block in the root pom, deliberately.
+            That block keeps `doclint none` and `failOnError false` because the ability to publish
+            must not depend on the state of the prose: the comment there calls tightening it
+            "quality work with its own slice", and this is that slice, held separately so a red gate
+            never stops a release from being cut.
+
+            Measured before switching on, on this module: 13 doclint errors and warnings capped at
+            javadoc's default -Xmaxwarns of 100, so the warning figure is a floor. That list was
+            cleared by the sweep in #464 before this gate reached main, so it lands green; it is a
+            reported check rather than a required one, and what it now does is hold the zero rather
+            than display the backlog.
+
+            The three custom tags are registered because rule 6 of javadoc-conventions.md is written
+            in them and an unregistered tag is itself a doclint error - which is how the need was
+            found, from the single @apiNote the SPI carried across 276 sources when this profile was
+            written. The sweep in #464 then wrote the vocabulary here: 20 @apiNote and 35 @implSpec
+            across 131 sources. @implNote is zero and that is the correct number, not a gap - rule 6
+            defines it as facts about *this* implementation, and an abstract contract test has none;
+            what it has is what a binding must satisfy (@implSpec) and how to satisfy it (@apiNote).
+            Registering them makes writing the tags possible; writing them is L2 work no gate
+            measures.
+
+            The preview flag from the bundle's port target is deliberately absent: this line dropped
+            preview from the whole build (see the MAVEN_OPTS comment in maven.yml), and javadoc
+            accepts that flag only when `-source` equals the running JDK.
+        -->
+        <profile>
+            <id>javadoc-gate</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <configuration>
+                            <doclint>all</doclint>
+                            <failOnWarnings>true</failOnWarnings>
+                            <failOnError>true</failOnError>
+                            <quiet>false</quiet>
+                            <tags>
+                                <tag><name>apiNote</name><placement>a</placement><head>API Note:</head></tag>
+                                <tag><name>implSpec</name><placement>a</placement><head>Implementation Requirements:</head></tag>
+                                <tag><name>implNote</name><placement>a</placement><head>Implementation Note:</head></tag>
+                            </tags>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

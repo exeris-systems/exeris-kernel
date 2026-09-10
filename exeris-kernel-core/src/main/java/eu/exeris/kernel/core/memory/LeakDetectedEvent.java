@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.memory;
 
@@ -30,15 +26,17 @@ import jdk.jfr.StackTrace;
  * is stored as the {@code allocationStack} field, <em>not</em> the JFR stack-capture mechanism.
  * The JFR stack is enabled to capture the Cleaner callback context for correlation.
  *
- * <h2>rawArgs Binary Layout (Glass-Box Telemetry)</h2>
+ * <h2>Event Field Layout</h2>
+ * <p>This is a {@code jdk.jfr.Event} with typed fields, not an
+ * {@code ExerisKernelException} — it carries no {@code rawArgs} array.
  * <pre>
  *   bufferLabel       — String: opaque label assigned at creation (hex address or class name)
  *   allocationStack   — String: stack trace captured at allocation time (PARANOID mode only)
  *   capacityBytes     — long:   size of the leaked segment
  * </pre>
  *
+ * @since 0.5
  * @see LeakTracker
- * @since 0.5.0
  */
 @Name("eu.exeris.kernel.core.BufferLeak")
 @Label("LoanedBuffer Leak Detected")

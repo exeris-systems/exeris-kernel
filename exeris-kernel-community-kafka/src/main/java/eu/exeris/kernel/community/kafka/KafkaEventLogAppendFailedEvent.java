@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -26,7 +22,7 @@ import jdk.jfr.StackTrace;
  * exception's class name — never the payload bytes, the failure message, or {@code bootstrap.servers}
  * / credentials. {@code @StackTrace(false)}, guarded by {@link Event#isEnabled()}.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @Name("eu.exeris.kernel.events.kafka.EventLogAppendFailed")
 @Label("Kafka Event-Log Append Failed")
@@ -59,6 +55,24 @@ public final class KafkaEventLogAppendFailedEvent extends Event {
     @Description("Class name of the failing exception; no message is recorded (secret-safe)")
     /* default */ String failureClass;
 
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public KafkaEventLogAppendFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Emits this event with the given fields when JFR recording is enabled; a no-op otherwise.
+     *
+     * @param engineName human-readable engine name from {@code EventEngineConfig.engineName()}
+     * @param streamType the target stream's {@code StreamId.streamType()}
+     * @param reason     one of {@link #REASON_KAFKA} or {@link #REASON_INTERRUPTED}
+     * @param failure    the triggering exception, or {@code null} to record an empty failure class
+     */
     public static void emit(String engineName, String streamType, String reason, Throwable failure) {
         KafkaEventLogAppendFailedEvent event = new KafkaEventLogAppendFailedEvent();
         if (!event.isEnabled()) {

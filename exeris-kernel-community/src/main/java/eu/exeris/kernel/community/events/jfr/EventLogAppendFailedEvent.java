@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.events.jfr;
 
@@ -25,7 +21,10 @@ import jdk.jfr.StackTrace;
  * exception's class name — never the payload bytes or the failure message (which could echo payload
  * content). {@code @StackTrace(false)}, guarded by {@link Event#isEnabled()}.
  *
- * @since 0.10.0
+ * @since 0.10
+ * @implNote {@link #emit} commits in two phases — {@link Event#begin()}, then only local field
+ *           assignment, then {@link Event#commit()} — so the timed interval never straddles a
+ *           blocking operation on the emitting thread.
  */
 @Name("eu.exeris.kernel.events.EventLogAppendFailed")
 @Label("Event-Log Append Failed")
@@ -52,6 +51,29 @@ public final class EventLogAppendFailedEvent extends Event {
     @Description("Class name of the failing exception; no message is recorded (secret-safe)")
     /* default */ String failureClass;
 
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public EventLogAppendFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Commits this event, recording the engine name, stream type, SQLSTATE, and the failing
+     * exception's class name.
+     *
+     * <p>A no-op when the event is disabled.
+     *
+     * @param engineName human-readable engine name from {@code EventEngineConfig.engineName()}
+     * @param streamType the target stream's type qualifier
+     * @param sqlState   SQLSTATE extracted from the failure's cause chain; recorded as empty
+     *                   when {@code null}
+     * @param failure    the failure that aborted the append; only its class name is recorded,
+     *                   never {@link Throwable#getMessage()}
+     */
     public static void emit(String engineName, String streamType, String sqlState, Throwable failure) {
         EventLogAppendFailedEvent event = new EventLogAppendFailedEvent();
         if (!event.isEnabled()) {

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -60,7 +56,7 @@ import java.util.function.LongBinaryOperator;
  * {@link AppendResult} / {@link EventStreamAppendConflictException}. The {@link Producer} is owned by
  * the caller (mirrors {@link KafkaEventBrokerPort}) — this appender never closes it.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class KafkaEventStreamAppender implements EventStreamAppender {
 
@@ -80,6 +76,9 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
     private final Map<StreamKey, ReentrantLock> streamLocks = new ConcurrentHashMap<>();
 
     /**
+     * Constructs an appender bound to {@code config}'s durable event-log topic, recovering each
+     * stream's head from the log tail on first use.
+     *
      * @param producer   a configured Kafka producer ({@code acks=all} recommended); NOT closed here
      * @param config     the Kafka binding config (bootstrap servers, log topic, poll timeout)
      * @param engineName human-readable engine name for JFR telemetry

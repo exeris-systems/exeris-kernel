@@ -1,12 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence.jdbc;
+
+import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.context.KernelProviders;
 
 import eu.exeris.kernel.core.persistence.PersistenceErrorTranslator;
 import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
@@ -24,6 +23,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Community: {@link PersistenceConnection} backed by a JDBC {@link Connection}.
@@ -38,10 +38,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>No reference to off-heap buffers, io_uring, or any Enterprise class.
  * This is the free-tier implementation — correct, not fast.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class JdbcPersistenceConnection implements PersistenceConnection {
+
+    /** Config key for the SQL placeholder-translation cache bound. */
+    /* default */ static final String SQL_TRANSLATION_CACHE_KEY = "persistence.sqlTranslationCacheMaxEntries";
+
+    /** Bound applied when nothing is configured. */
+    /* default */ static final int DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES = 1_024;
 
     private final Connection conn;
     private final Runnable onClose;
@@ -52,10 +58,25 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
     private int baselineIsolation;
     private boolean baselineCaptured;
 
+    /**
+     * Wraps {@code conn} with no release callback — {@link #close()} closes the JDBC
+     * connection directly and runs nothing else.
+     *
+     * @param conn the backing JDBC connection; not {@code null}
+     */
     public JdbcPersistenceConnection(Connection conn) {
         this(conn, () -> { });
     }
 
+    /**
+     * Wraps {@code conn}, running {@code onClose} after the underlying connection has been
+     * rolled back (if needed) and closed — the hook a pool uses to record release telemetry
+     * or return the physical connection.
+     *
+     * @param conn    the backing JDBC connection; not {@code null}
+     * @param onClose invoked from {@link #close()}, after the JDBC connection is closed;
+     *                not {@code null}
+     */
     public JdbcPersistenceConnection(Connection conn, Runnable onClose) {
         this.conn          = Objects.requireNonNull(conn, "conn must not be null");
         this.onClose       = Objects.requireNonNull(onClose, "onClose must not be null");
@@ -219,7 +240,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
      * <p>Ownership is not transferred: the returned {@link Connection} stays
      * owned by this instance; callers MUST NOT close it directly.
      *
-     * @since 0.8.1
+     * @since 0.8
      */
     @Override
     public <T> Optional<T> unwrap(Class<T> type) {
@@ -257,8 +278,57 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         return SqlPlaceholderTranslator.translate(sql);
     }
 
+    /**
+     * Resolves the translation-cache bound from configuration.
+     *
+     * <p>Package-private because the bound is invisible from {@code translateParams}: translation
+     * is deterministic, so a cached and an uncached result are the same string. Testing the
+     * decision therefore has to reach the decision, not the output.
+     *
+     * @return the configured bound, or the default when nothing is bound or set
+     * @throws IllegalArgumentException on a negative value, refused rather than corrected, because
+     *         silently substituting the default leaves a misconfigured deployment believing it set
+     *         something
+     */
+    /* default */ static int resolveSqlTranslationCacheMaxEntries() {
+        int configured = readConfiguredCacheMaxEntries();
+        if (configured < 0) {
+            throw refusedCacheBound(configured);
+        }
+        return configured;
+    }
+
+    /** The configured value, unvalidated — a negative one is carried out so the caller can keep it. */
+    private static int readConfiguredCacheMaxEntries() {
+        if (!KernelProviders.CURRENT_CONFIG.isBound()) {
+            return DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES;
+        }
+        ConfigProvider config = KernelProviders.CURRENT_CONFIG.get();
+        return config == null
+                ? DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES
+                : config.getIntOrDefault(SQL_TRANSLATION_CACHE_KEY, DEFAULT_SQL_TRANSLATION_CACHE_MAX_ENTRIES);
+    }
+
+    private static IllegalArgumentException refusedCacheBound(int configured) {
+        return new IllegalArgumentException(
+                SQL_TRANSLATION_CACHE_KEY + " must be >= 0 (0 disables caching), got: " + configured);
+    }
+
     private static final class SqlPlaceholderTranslator {
-        private static final int TRANSLATION_CACHE_MAX_ENTRIES = 1024;
+        /**
+         * Unresolved marker. {@code Integer.MIN_VALUE} rather than {@code -1} so that any OTHER
+         * negative in this field is the refused configured value itself — which is what lets a
+         * misconfigured deployment fail identically on every statement without re-resolving.
+         */
+        private static final int CACHE_LIMIT_UNRESOLVED = Integer.MIN_VALUE;
+
+        /**
+         * Compute-once via CAS rather than double-checked locking, per CONTRIBUTING's lazy-init
+         * rule. A benign race resolves twice and stores the same value; the alternative — reading
+         * the provider on every translate — would put a config lookup on the statement path.
+         */
+        private static final AtomicInteger CACHE_LIMIT = new AtomicInteger(CACHE_LIMIT_UNRESOLVED);
+
         private static final ConcurrentMap<String, String> TRANSLATED_SQL_CACHE = new ConcurrentHashMap<>();
         private static final char SINGLE_QUOTE = '\'';
         private static final char DOUBLE_QUOTE = '"';
@@ -281,6 +351,40 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
             this.activeDollarDelimiter = EMPTY_DELIMITER;
         }
 
+        /**
+         * The memoization bound, resolved once from configuration.
+         *
+         * <p><b>This cache never evicts.</b> It fills with the first N distinct statements the
+         * process happens to see and then stops admitting — so on an application with more than N
+         * statements the resident set is the earliest ones, not the hottest, and every other
+         * statement is re-translated on every call. That is why the bound is worth configuring
+         * rather than merely worth having: raising it is the only lever, and until 0.12 there was
+         * none.
+         *
+         * <p>{@code 0} disables caching entirely — a coherent setting for a workload with
+         * unbounded statement variety, where the cache is pure overhead. A negative value is
+         * refused rather than corrected, because silently substituting the default would leave a
+         * misconfigured deployment believing it had set something.
+         *
+         * @return the maximum number of cached translations
+         * @throws IllegalArgumentException on a negative configured value
+         */
+        private static int cacheMaxEntries() {
+            int cached = CACHE_LIMIT.get();
+            if (cached == CACHE_LIMIT_UNRESOLVED) {
+                CACHE_LIMIT.compareAndSet(CACHE_LIMIT_UNRESOLVED, readConfiguredCacheMaxEntries());
+                cached = CACHE_LIMIT.get();
+            }
+            if (cached < 0) {
+                // The refused value itself, remembered. translateParams runs from prepareStatement
+                // on every statement, so re-resolving would make a misconfigured deployment pay a
+                // provider lookup per statement to be told the same thing. It is broken either way;
+                // it should not be slow about it.
+                throw refusedCacheBound(cached);
+            }
+            return cached;
+        }
+
         private static String translate(String sql) {
             if (sql == null || sql.isEmpty()) {
                 return sql;
@@ -291,7 +395,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
             }
 
             String translatedSql = new SqlPlaceholderTranslator(sql).translateInternal();
-            if (TRANSLATED_SQL_CACHE.size() < TRANSLATION_CACHE_MAX_ENTRIES) {
+            if (TRANSLATED_SQL_CACHE.size() < cacheMaxEntries()) {
                 String existingTranslation = TRANSLATED_SQL_CACHE.putIfAbsent(sql, translatedSql);
                 if (existingTranslation != null) {
                     return existingTranslation;

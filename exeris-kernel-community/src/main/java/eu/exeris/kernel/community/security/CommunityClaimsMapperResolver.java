@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -20,9 +16,9 @@ import java.util.ServiceLoader;
  * <p>{@code ClaimsMapper}'s own contract calls it "the <b>only</b> application-customisable mapping
  * point in the identity pipeline" — where a deployment decides how {@code sub} becomes a
  * {@code principalId}, which claims carry roles versus scopes, and how a tenant identifier is
- * derived. Until v0.11 that was not reachable: {@code CommunityOidcIdentityProvider} accepted a
- * mapper, but every path {@code CommunitySecurityProvider} used to build it passed none, so a booted
- * kernel could only ever run the default. The seam existed and the road to it did not.
+ * derived. This resolver is what makes that mapping reachable from a booted kernel:
+ * {@code CommunitySecurityProvider} builds its {@code CommunityOidcIdentityProvider} through
+ * {@link #resolve()} rather than passing no mapper, so a deployment that registers one is used.
  *
  * <p>Discovery follows the kernel's plugin model rather than introducing a second one:
  * {@link ServiceLoader}, exactly as {@code SecurityProvider} and {@code IdentityProvider} are found.
@@ -35,7 +31,7 @@ import java.util.ServiceLoader;
  * accident, which matches the fail-closed doctrine the surrounding identity code already applies to
  * an unclaimed token.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityClaimsMapperResolver {
 
@@ -46,6 +42,9 @@ final class CommunityClaimsMapperResolver {
     }
 
     /**
+     * Resolves the {@link ClaimsMapper} this Community identity pipeline maps with, discovering
+     * it via {@link ServiceLoader} on the current thread's context class loader.
+     *
      * @return the single registered {@link ClaimsMapper}, or the Community default when none is
      *         registered
      * @throws IllegalStateException if more than one mapper is on the classpath

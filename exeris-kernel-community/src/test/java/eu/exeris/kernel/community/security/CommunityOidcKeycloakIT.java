@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -226,7 +222,13 @@ class CommunityOidcKeycloakIT {
                 HttpConfig.DEFAULT_MAX_HEADER_SIZE,
                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
-                HttpVersion.HTTP_1_1
+                HttpVersion.HTTP_1_1,
+                // ADR-074: the JWKS fetch used to reach Keycloak because the engine dialled
+                // bindHost. Same value, now stated as the dial address it always was.
+                KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(KC_PORT),
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 }

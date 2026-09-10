@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.persistence;
 
@@ -21,9 +17,13 @@ import jdk.jfr.StackTrace;
  *
  * <h2>JFR-First Contract</h2>
  * <p>Every critical transaction lifecycle event MUST produce a JFR record.
- * SRE tooling watches for {@code retryExhausted=true} as an early deadlock/hotspot signal.
- * The full observable sequence for a managed transaction is:
- * {@code BEGIN → COMMIT | ROLLBACK}, and {@code RETRY_EXHAUSTED} if all attempts fail.
+ * {@code retryExhausted=true} marks an attempt sequence that exhausted
+ * {@link TransactionRetryPolicy#maxAttempts()} without a successful attempt — an early
+ * deadlock/contention signal that needs no exception message parsed to be watched for.
+ * {@code outcome} records one boundary crossing per event: {@code BEGIN} opens a managed
+ * transaction, {@code COMMIT} and {@code ROLLBACK} close one, {@code WORK_COMPLETE} reports
+ * success on a path whose transaction boundary the work lambda itself owns (see
+ * {@link #recordWorkComplete}), and {@code RETRY_EXHAUSTED} marks the retry loop giving up.
  *
  * <h2>Virtual-Thread Safety</h2>
  * <p>All emit methods check {@link #EVENT_TYPE} before allocating a
@@ -31,7 +31,7 @@ import jdk.jfr.StackTrace;
  * the event type is disabled.  No shared mutable state — safe under concurrent
  * Virtual Thread execution.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.TransactionLifecycle")
 @Label("Transaction Lifecycle")

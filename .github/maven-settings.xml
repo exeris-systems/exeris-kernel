@@ -13,5 +13,17 @@
       <username>exeris-systems</username>
       <password>${env.GITHUB_TOKEN}</password>
     </server>
+
+    <!--
+      Maven Central (Central Portal, not the retired OSSRH).
+      Credentials are a USER TOKEN generated at central.sonatype.com/usertoken — not the
+      account password — and arrive from the workflow environment, never from this file.
+      The id must match <publishingServerId> in the root POM's `release` profile.
+    -->
+    <server>
+      <id>central</id>
+      <username>${env.CENTRAL_TOKEN_USERNAME}</username>
+      <password>${env.CENTRAL_TOKEN_PASSWORD}</password>
+    </server>
   </servers>
 </settings>

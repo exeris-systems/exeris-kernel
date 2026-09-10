@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.transport;
 
@@ -32,9 +28,9 @@ package eu.exeris.kernel.spi.transport;
  * protocol-agnostic slot for higher-layer state (e.g., HTTP/3 session resources,
  * QPACK tables). The transport layer never inspects the attachment — it is opaque.
  *
+ * @since 0.5
  * @see TransportStream
  * @see TransportEngine
- * @since 0.5.0
  */
 public interface TransportConnection extends AutoCloseable {
 
@@ -86,7 +82,7 @@ public interface TransportConnection extends AutoCloseable {
      * transports).
      *
      * @return the remote peer's port number; semantics for special cases are
-     * implementation-specific
+     *         implementation-specific
      */
     int remotePort();
 
@@ -104,25 +100,26 @@ public interface TransportConnection extends AutoCloseable {
      * <p>Used by higher layers (HTTP/3, application handlers) to associate per-connection
      * state without the transport layer knowing the type.
      *
-     * <h3>Thread-Safety Contract</h3>
-     * <p>Implementations MUST provide safe-publication semantics equivalent to a
-     * {@code volatile} read: a value written by {@link #setAttachment(Object)} on one
-     * virtual thread MUST be visible to any subsequent {@code attachment()} call on any
-     * other virtual thread. Concurrent writes are permitted but callers are responsible
-     * for coordinating if ordering between writers matters.
-     *
      * @return the attachment, or {@code null}
+     * @implNote The Community binding ({@code NativeTcpConnection}) stores the attachment in an
+     *           {@code AtomicReference<Object>}, which gives cross-thread visibility equivalent
+     *           to a {@code volatile} read: a value written by {@link #setAttachment(Object)} on
+     *           one virtual thread is visible to a subsequent call to this method on another.
+     *           That visibility guarantee is a property of this reference implementation, not
+     *           one the TCK enforces on every binding.
      */
     Object attachment();
 
     /**
      * Stores an opaque attachment on this connection.
      *
-     * <p>Implementations MUST provide safe-publication semantics equivalent to a
-     * {@code volatile} write — visibility to all subsequent {@link #attachment()}
-     * readers is guaranteed. Passing {@code null} clears the attachment.
+     * <p>Passing {@code null} clears the attachment.
      *
      * @param attachment object to attach (may be {@code null} to clear)
+     * @implNote The Community binding publishes the attachment through an
+     *           {@code AtomicReference<Object>}, giving visibility to subsequent
+     *           {@link #attachment()} readers equivalent to a {@code volatile} write; other
+     *           implementations are not required by the TCK to match this.
      */
     void setAttachment(Object attachment);
 

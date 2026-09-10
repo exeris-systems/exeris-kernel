@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.security;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
@@ -18,17 +15,15 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code</h2>
  * <p>{@link KernelErrorCodes#EX_SEC_2003} — insufficient privileges.
  *
- * <h2>Sentinel Pattern</h2>
- * <p>On the hot path, code SHOULD NOT allocate a new instance per rejected request.
- * Use {@code CitadelGuard} which holds pre-allocated
- * Sentinel instances (stack-trace disabled) to honour the zero-allocation contract.
- *
  * <h2>rawArgs layout (Glass-Box Telemetry)</h2>
  * <ul>
  *   <li>index 0 – {@code String} requiredRole — the role that was missing</li>
  * </ul>
  *
- * @since 0.5.0
+ * @apiNote On the hot path, do not allocate a new instance per rejected request. Obtain one from
+ *          {@link #sentinel(String)} and cache it — {@code CitadelGuard} does this per role — so
+ *          rejection carries no allocation cost.
+ * @since 0.5
  * @see eu.exeris.kernel.spi.security.PrincipalContext#hasRole(String)
  */
 public final class InsufficientPrivilegesException extends ExerisKernelException {
@@ -71,6 +66,18 @@ public final class InsufficientPrivilegesException extends ExerisKernelException
     public static InsufficientPrivilegesException sentinel(String requiredRole) {
         return new InsufficientPrivilegesException(
                 false, false, new Object[]{requiredRole});
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the authenticated principal does not hold the required privilege.
+     * Granting it is an authorisation change rather than a deployment fix, and the same request from
+     * the same principal fails identically until it is granted.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }
 

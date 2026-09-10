@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.hpack;
 
@@ -36,13 +32,12 @@ import java.nio.charset.StandardCharsets;
  * {@link MemoryAllocator} injected via the constructor — respecting the
  * tier-specific pooling contract (Community heap-pool or Enterprise slab).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7541#section-3">RFC 7541 §3</a>
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 public final class HpackDecoder {
 
-    private static final int MAX_STRING_LITERAL = 65_536;
     private static final int MAX_INTEGER_SHIFT = 28;
     private static final long MAX_UINT32 = 0xFFFF_FFFFL;
 
@@ -67,6 +62,7 @@ public final class HpackDecoder {
     private final HpackDynamicTable dynamicTable;
     private final MemoryAllocator allocator;
     private final long maxHeaderListSize;
+    private final int maxStringLiteralSize;
     private long protocolMaxTableSize;
 
     /** Transient decode position — valid only within a {@link #decode} invocation. */
@@ -81,7 +77,8 @@ public final class HpackDecoder {
     @FunctionalInterface
     public interface HeaderListener {
         /**
-         * Called for each decoded header field.
+         * Receives one header field, invoked once per field in the order the fields appear
+         * in the header block.
          *
          * @param name       header field name
          * @param value      header field value
@@ -97,16 +94,26 @@ public final class HpackDecoder {
      * dynamic table max size. Call {@link #setProtocolMaxTableSize(long)} after a
      * SETTINGS_HEADER_TABLE_SIZE acknowledgement (RFC 7541 §4.2).
      *
-     * @param dynamicTable      dynamic table for this decoding context
-     * @param allocator         memory allocator for Huffman scratch buffers
-     * @param maxHeaderListSize maximum cumulative size of decoded header list (bytes)
+     * <p>The two bounds are different quantities and neither substitutes for the other.
+     * {@code maxHeaderListSize} is cumulative over the whole decoded field section — it is what
+     * RFC 9113 §6.5.2 defines SETTINGS_MAX_HEADER_LIST_SIZE against, so it is the one a server
+     * advertises. {@code maxStringLiteralSize} bounds a <em>single</em> name or value before its
+     * bytes are read, which is what stops one declared length from asking for an allocation the
+     * cumulative bound would only notice afterwards.
+     *
+     * @param dynamicTable         dynamic table for this decoding context
+     * @param allocator            memory allocator for Huffman scratch buffers
+     * @param maxHeaderListSize    maximum cumulative size of decoded header list (bytes)
+     * @param maxStringLiteralSize maximum size of one decoded name or value literal (bytes)
      */
     public HpackDecoder(HpackDynamicTable dynamicTable,
                         MemoryAllocator allocator,
-                        long maxHeaderListSize) {
+                        long maxHeaderListSize,
+                        int maxStringLiteralSize) {
         this.dynamicTable = dynamicTable;
         this.allocator = allocator;
         this.maxHeaderListSize = maxHeaderListSize;
+        this.maxStringLiteralSize = maxStringLiteralSize;
         this.protocolMaxTableSize = dynamicTable.maxSize();
     }
 
@@ -119,6 +126,8 @@ public final class HpackDecoder {
      * the decoder will reject any size update exceeding this limit.
      *
      * @param newProtocolMax new SETTINGS_HEADER_TABLE_SIZE value
+     * @throws IllegalArgumentException if {@code newProtocolMax} is negative or greater than
+     *                                  {@code 2^32-1}
      */
     public void setProtocolMaxTableSize(long newProtocolMax) {
         if (newProtocolMax < 0L || newProtocolMax > 0xFFFF_FFFFL) {
@@ -135,7 +144,18 @@ public final class HpackDecoder {
      * @param offset   byte offset into {@code block}
      * @param length   byte length of the header block
      * @param listener callback receiving decoded header fields
-     * @throws HpackDecodingException on any decoding error (RFC 7541 §3.1)
+     * @throws HpackDecodingException ({@code EX-HTTP-4002}) if {@code block} does not hold a
+     *                                well-formed header field representation sequence (RFC 7541
+     *                                §3.1, including a malformed or non-decodable string literal
+     *                                per §5.2), refers to an invalid table index, or exceeds a
+     *                                configured size bound (string literal, dynamic table, or
+     *                                cumulative header list)
+     * @implNote For a literal-with-incremental-indexing field, the dynamic table is updated
+     *           before the cumulative {@code maxHeaderListSize} bound is checked, so a field
+     *           that pushes the header list over that bound is still added to the table before
+     *           this method throws. This keeps the table's index numbering in step with the
+     *           peer's encoder, which already committed the entry to its own table when it
+     *           encoded the field with incremental indexing.
      */
     public void decode(MemorySegment block, long offset, long length,
                        HeaderListener listener) {
@@ -287,8 +307,8 @@ public final class HpackDecoder {
 
         int strLen = readInteger(seg, end, 7);
 
-        if (strLen > MAX_STRING_LITERAL) {
-            throw new HpackDecodingException(MSG_STRING_LITERAL_TOO_LONG, strLen, MAX_STRING_LITERAL);
+        if (strLen > maxStringLiteralSize) {
+            throw new HpackDecodingException(MSG_STRING_LITERAL_TOO_LONG, strLen, maxStringLiteralSize);
         }
 
         long strStart = decodePos;
@@ -381,16 +401,30 @@ public final class HpackDecoder {
     /**
      * Unchecked exception for HPACK decoding errors (RFC 7541 §3 violations).
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class HpackDecodingException extends ExerisKernelException {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4002;
 
+        /**
+         * Creates an exception with no chained cause.
+         *
+         * @param messageTemplate static, pre-defined message template — no runtime formatting
+         * @param rawArgs         domain arguments for the {@code EX-HTTP-4002} Glass-Box payload
+         */
         public HpackDecodingException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
         }
 
+        /**
+         * Creates an exception chained to the failure that caused it, such as a Huffman
+         * decoding error.
+         *
+         * @param messageTemplate static, pre-defined message template — no runtime formatting
+         * @param cause           the underlying failure
+         * @param rawArgs         domain arguments for the {@code EX-HTTP-4002} Glass-Box payload
+         */
         public HpackDecodingException(String messageTemplate, Throwable cause, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, cause, rawArgs);
         }

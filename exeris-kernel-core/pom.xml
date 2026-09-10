@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
@@ -18,8 +18,10 @@
         The "Brain": KernelBootstrap orchestrator, AbstractLoanedBuffer base class,
         WatermarkManager, ResourceArbiter. Depends only on exeris-kernel-spi.
     </description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.core</exeris.module.name>
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Core bundle.
             Current measurement: ~74% (deepest test coverage in the reactor — TCK
@@ -52,8 +54,6 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-tck</artifactId>
-            <classifier>tests</classifier>
-            <type>test-jar</type>
             <scope>test</scope>
         </dependency>
         <!-- JMH — JVM Microbenchmark Harness (abstract benchmarks live in TCK test-jar) -->
@@ -99,6 +99,7 @@
             </resource>
         </resources>
         <plugins>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -190,7 +191,6 @@
                                     <executable>java</executable>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
-                                        <argument>--enable-preview</argument>
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>${benchmark.jvm.gc}</argument>
                                         <argument>--enable-native-access=ALL-UNNAMED</argument>

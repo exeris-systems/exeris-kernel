@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -17,20 +13,16 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Package-private static decoder for inbound HTTP/1.x responses received by
  * {@link CommunityHttpClientEngine}.
  *
- * <p>Extracted from {@link CommunityHttpClientEngine} in v0.8 Sprint 3 (QA-015)
- * as the second seam of the engine's God-class decomposition (request encoding
- * lives in {@link CommunityHttpClientRequestEncoder}). Owns status-line parsing,
- * header parsing, body length resolution, and the incremental completeness
- * helpers that the engine's read loop consults to know when to stop reading.
+ * <p>Owns status-line parsing, header parsing, body length resolution, and the incremental
+ * completeness helpers that {@link CommunityHttpClientResponseReader}'s read loop consults to know
+ * when to stop reading. Request encoding is the separate, symmetric responsibility of
+ * {@link CommunityHttpClientRequestEncoder}.
  */
 @SuppressWarnings("PMD.CyclomaticComplexity") // parseStatusLine + parseHeaders + completeness checks have flat CC.
 final class CommunityHttpClientResponseDecoder {
@@ -77,14 +69,22 @@ final class CommunityHttpClientResponseDecoder {
         if (statusLineEnd < 0) {
             return -1;
         }
-        List<HttpHeader> headers = parseHeaders(segment, statusLineEnd + 2, headerTerminator);
-        long contentLength = resolveContentLengthFromHeaders(headers);
+        // Only one field is wanted here. Building the whole header list to read it — which is what
+        // this did until v0.12 — materialised every name and value of a response the caller is still
+        // waiting for, and then threw the list away.
+        long contentLength = CommunityHttpHeaderBlock.findContentLength(
+                segment, statusLineEnd + 2, headerTerminator);
         if (contentLength < 0) {
             return -1;
         }
         return headerTerminator + 4 + contentLength;
     }
 
+    /**
+     * Whether enough bytes have been read to decode the full response — {@code false} while
+     * {@code expectedTotalBytes} is not yet known ({@code <= 0}, i.e. header terminator or
+     * {@code Content-Length} still unresolved).
+     */
     /* default */ static boolean isResponseComplete(long totalBytes, long expectedTotalBytes) {
         return expectedTotalBytes > 0 && totalBytes >= expectedTotalBytes;
     }
@@ -104,7 +104,7 @@ final class CommunityHttpClientResponseDecoder {
             throw new IllegalStateException("Invalid HTTP response: missing status line terminator");
         }
 
-        String statusLine = asciiString(aggregate.segment(), 0, statusLineEnd);
+        String statusLine = CommunityHttpBufferOps.asciiString(aggregate.segment(), 0, statusLineEnd);
         StatusLine parsedStatus = parseStatusLine(statusLine, requestVersion);
 
         long headerStart = statusLineEnd + 2;
@@ -113,7 +113,8 @@ final class CommunityHttpClientResponseDecoder {
             throw new IllegalStateException("Invalid HTTP response: missing header terminator");
         }
 
-        List<HttpHeader> headers = parseHeaders(aggregate.segment(), headerStart, headerEnd);
+        List<HttpHeader> headers = CommunityHttpHeaderBlock.parse(
+                aggregate.segment(), headerStart, headerEnd);
         long bodyStart = headerEnd + 4;
         long availableBodyBytes = total - bodyStart;
         if (availableBodyBytes < 0) {
@@ -135,52 +136,17 @@ final class CommunityHttpClientResponseDecoder {
         return new HttpResponse(parsedStatus.status(), parsedStatus.version(), headers, bodyBuffer);
     }
 
-    private static List<HttpHeader> parseHeaders(MemorySegment segment, long start, long endExclusive) {
-        List<HttpHeader> headers = new ArrayList<>();
-        long cursor = start;
-        while (cursor < endExclusive) {
-            long lineEnd = CommunityHttpBufferOps.findCrLf(segment, cursor, endExclusive + 2);
-            if (lineEnd < 0 || lineEnd == cursor) {
-                break;
-            }
-            String line = asciiString(segment, cursor, lineEnd);
-            int separator = line.indexOf(':');
-            if (separator > 0) {
-                String name = line.substring(0, separator).trim();
-                String value = line.substring(separator + 1).trim();
-                headers.add(new HttpHeader(name, value));
-            }
-            cursor = lineEnd + 2;
-        }
-        return List.copyOf(headers);
-    }
-
     private static long resolveBodyLength(List<HttpHeader> headers, long fallbackBytes) {
-        Optional<String> contentLength = headers.stream()
-                .filter(header -> header.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH))
-                .map(HttpHeader::value)
-                .findFirst();
-        if (contentLength.isPresent()) {
-            try {
-                return Long.parseLong(contentLength.get());
-            } catch (NumberFormatException _) {
-                return Math.max(fallbackBytes, 0L);
-            }
-        }
-        return Math.max(fallbackBytes, 0L);
-    }
-
-    private static long resolveContentLengthFromHeaders(List<HttpHeader> headers) {
-        for (HttpHeader h : headers) {
-            if (h.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH)) {
+        for (HttpHeader header : headers) {
+            if (header.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH)) {
                 try {
-                    return Long.parseLong(h.value().trim());
+                    return Long.parseLong(header.value());
                 } catch (NumberFormatException _) {
-                    return -1;
+                    return Math.max(fallbackBytes, 0L);
                 }
             }
         }
-        return -1;
+        return Math.max(fallbackBytes, 0L);
     }
 
     private static StatusLine parseStatusLine(String statusLine, HttpVersion requestVersion) {
@@ -216,12 +182,7 @@ final class CommunityHttpClientResponseDecoder {
         return -1;
     }
 
-    private static String asciiString(MemorySegment segment, long startInclusive, long endExclusive) {
-        int length = Math.toIntExact(endExclusive - startInclusive);
-        byte[] bytes = segment.asSlice(startInclusive, length).toArray(ValueLayout.JAVA_BYTE);
-        return new String(bytes, StandardCharsets.US_ASCII);
-    }
-
+    /** A parsed HTTP/1.x status line: the resolved protocol version and status. */
     /* default */ record StatusLine(HttpVersion version, HttpStatus status) {
     }
 }

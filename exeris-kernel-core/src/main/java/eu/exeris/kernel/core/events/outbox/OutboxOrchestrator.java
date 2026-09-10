@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.events.outbox;
 
@@ -52,7 +48,7 @@ import java.util.concurrent.locks.LockSupport;
  * close), the owner virtual thread and {@code StructuredScope} wiring,
  * the poll-flush tick loop, and the fluent builder.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class OutboxOrchestrator implements AutoCloseable {
 
@@ -64,6 +60,7 @@ public final class OutboxOrchestrator implements AutoCloseable {
     private final OutboxStateMachine stateMachine;
     private final OutboxBatchFlusher batchFlusher;
 
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread ownerThread;
 
     @SuppressWarnings("PMD.LawOfDemeter") // builder field access is the canonical Builder pattern.
@@ -241,7 +238,11 @@ public final class OutboxOrchestrator implements AutoCloseable {
     // Builder
     // =========================================================================
 
-    /** Creates a new {@link Builder}. */
+    /**
+     * Creates a new {@link Builder}.
+     *
+     * @return a new builder
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -257,19 +258,46 @@ public final class OutboxOrchestrator implements AutoCloseable {
         private long             pollIntervalNanos  = 100_000_000L; // 100 ms
         private int              maxRetries        = 5;
 
-        /** The store to poll for pending outbox events. */
+        /**
+         * Creates a builder with every setting at its default.
+         *
+         * <p>Obtain one through {@link OutboxOrchestrator#builder()} rather than directly; the factory is the
+         * documented entry point and this constructor exists only because the class is public.
+         */
+        public Builder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
+         * Sets the store polled for pending outbox events.
+         *
+         * @param store the event store to poll; must be non-null
+         * @return this builder
+         */
         public Builder eventStore(OutboxEventStore store) {
             this.eventStore = Objects.requireNonNull(store, "eventStore");
             return this;
         }
 
-        /** The broker port to which flushed events are delivered. */
+        /**
+         * Sets the broker port to which flushed events are delivered.
+         *
+         * @param port the broker port; must be non-null
+         * @return this builder
+         */
         public Builder brokerPort(OutboxBrokerPort port) {
             this.brokerPort = Objects.requireNonNull(port, "brokerPort");
             return this;
         }
 
-        /** Maximum events per poll-flush cycle (default: 500). */
+        /**
+         * Sets the maximum number of events processed per poll-flush cycle.
+         *
+         * @param size the batch size (default: 500); must be positive
+         * @return this builder
+         * @throws IllegalArgumentException if {@code size <= 0}
+         */
         public Builder batchSize(int size) {
             if (size <= 0) {
                 throw new IllegalArgumentException("batchSize must be > 0");
@@ -278,7 +306,13 @@ public final class OutboxOrchestrator implements AutoCloseable {
             return this;
         }
 
-        /** Idle wait between empty polls in nanoseconds (default: 100 ms). */
+        /**
+         * Sets the idle wait between empty polls.
+         *
+         * @param nanos the poll interval in nanoseconds (default: 100 ms); must be positive
+         * @return this builder
+         * @throws IllegalArgumentException if {@code nanos <= 0}
+         */
         public Builder pollIntervalNanos(long nanos) {
             if (nanos <= 0) {
                 throw new IllegalArgumentException("pollIntervalNanos must be > 0");
@@ -287,7 +321,13 @@ public final class OutboxOrchestrator implements AutoCloseable {
             return this;
         }
 
-        /** Maximum per-event retry attempts before DLQ (default: 5). */
+        /**
+         * Sets the maximum per-event retry attempts before an event is routed to the DLQ.
+         *
+         * @param retries the maximum retry count (default: 5); must be non-negative
+         * @return this builder
+         * @throws IllegalArgumentException if {@code retries < 0}
+         */
         public Builder maxRetries(int retries) {
             if (retries < 0) {
                 throw new IllegalArgumentException("maxRetries must be >= 0");
@@ -296,7 +336,11 @@ public final class OutboxOrchestrator implements AutoCloseable {
             return this;
         }
 
-        /** Builds the orchestrator. Does not start the loop. */
+        /**
+         * Builds the orchestrator. Does not start the loop.
+         *
+         * @return a new, unstarted orchestrator
+         */
         public OutboxOrchestrator build() {
             Objects.requireNonNull(eventStore, "eventStore is required");
             Objects.requireNonNull(brokerPort, "brokerPort is required");

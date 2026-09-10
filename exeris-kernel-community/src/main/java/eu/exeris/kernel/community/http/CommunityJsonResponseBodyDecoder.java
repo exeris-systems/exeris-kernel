@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -34,7 +30,7 @@ import java.util.Objects;
  * the {@link LoanedBuffer}; ownership stays with the façade, which closes the
  * buffer in a {@code finally} after the call returns.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class CommunityJsonResponseBodyDecoder implements HttpResponseBodyDecoder {
 
@@ -54,6 +50,11 @@ public final class CommunityJsonResponseBodyDecoder implements HttpResponseBodyD
         return targetType != null && JsonBodyCodecs.isJsonCompatible(contentType);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalStateException if the body does not decode into {@code targetType}
+     */
     @Override
     public Object decode(LoanedBuffer body, Class<?> targetType, HttpResponseDecodingContext context) {
         Objects.requireNonNull(context, "context must not be null");

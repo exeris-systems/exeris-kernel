@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.transport.tck;
 
@@ -22,6 +18,7 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.spi.transport.StreamHandler;
 import eu.exeris.kernel.spi.transport.StreamPriority;
+import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,6 +83,19 @@ public abstract class AbstractPaqsSchedulerTck {
         ResourceArbiter arbiter = ResourceArbiterTestHelper.expiredGraceArbiter(watermarkManager);
         admissionController = new AdmissionController(arbiter);
         loadShedder = new StreamLoadShedder(ENGINE_NAME);
+    }
+
+    /**
+     * Rebuilds the admission gate with an explicit ceiling, as a driver does when an operator has
+     * configured {@code transport.paqs.maxActiveStreams}. Call before building a scheduler.
+     *
+     * @param maxActiveStreams the ceiling to enforce, or
+     *                         {@link eu.exeris.kernel.spi.transport.TransportConfig#UNBOUNDED_ACTIVE_STREAMS}
+     * @since 0.12.0
+     */
+    protected final void useAdmissionCeiling(int maxActiveStreams) {
+        ResourceArbiter arbiter = ResourceArbiterTestHelper.expiredGraceArbiter(watermarkManager);
+        admissionController = new AdmissionController(arbiter, maxActiveStreams);
     }
 
     protected final void setPressure(WatermarkLevel level) {
@@ -313,8 +323,111 @@ public abstract class AbstractPaqsSchedulerTck {
     }
 
     // =========================================================================
+    // Configured admission ceiling
+    // =========================================================================
+    @Nested
+    @DisplayName("Configured admission ceiling (transport.paqs.maxActiveStreams)")
+    class ConfiguredAdmissionCeiling {
+
+        @Test
+        @DisplayName("Under load the configured ceiling, not the default, bounds concurrent service")
+        @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+        void ceilingBoundsConcurrentlyServedStreams() throws InterruptedException {
+            setPressure(WatermarkLevel.NORMAL);
+            int ceiling = 4;
+            int offered = 12;
+            useAdmissionCeiling(ceiling);
+
+            CountDownLatch ceilingReached = new CountDownLatch(ceiling);
+            CountDownLatch release = new CountDownLatch(1);
+            CountDownLatch handlersLeft = new CountDownLatch(ceiling);
+            AtomicInteger entered = new AtomicInteger();
+
+            PaqsScheduler sut = buildScheduler(stream -> {
+                entered.incrementAndGet();
+                ceilingReached.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                handlersLeft.countDown();
+            }, s -> StreamPriority.NORMAL);
+
+            for (int i = 0; i < offered; i++) {
+                sut.schedule(stubStream(400L + i));
+            }
+
+            assertThat(ceilingReached.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            // Every schedule() has returned, so every admission decision is already made: no
+            // thirteenth handler can still be on its way in. Memory pressure is NORMAL throughout,
+            // which is what makes this a statement about the count ceiling and not about the arbiter.
+            assertThat(entered.get()).isEqualTo(ceiling);
+            assertThat(admissionController.activeStreamCount()).isEqualTo(ceiling);
+
+            release.countDown();
+            assertThat(handlersLeft.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+            awaitCounterZero();
+
+            // A ceiling is a concurrency bound, not a lifetime quota — the slots come back.
+            CountDownLatch afterDrain = new CountDownLatch(1);
+            buildScheduler(stream -> afterDrain.countDown(), s -> StreamPriority.NORMAL)
+                    .schedule(stubStream(500L));
+            assertThat(afterDrain.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+        }
+
+        @Test
+        @DisplayName("The unbounded sentinel admits past the default ceiling")
+        @Timeout(value = TIMEOUT_MS, unit = TimeUnit.MILLISECONDS)
+        void unboundedAdmitsPastDefaultCeiling() throws InterruptedException {
+            setPressure(WatermarkLevel.NORMAL);
+            useAdmissionCeiling(TransportConfig.UNBOUNDED_ACTIVE_STREAMS);
+
+            int offered = TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS + 50;
+            CountDownLatch allEntered = new CountDownLatch(offered);
+            CountDownLatch release = new CountDownLatch(1);
+
+            // Handlers hold their slot until every offered stream has one. Letting them return
+            // immediately would recycle slots faster than the streams arrive, and the assertion
+            // would hold under any ceiling at all — including the default this case exists to
+            // prove has been lifted.
+            PaqsScheduler sut = buildScheduler(stream -> {
+                allEntered.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }, s -> StreamPriority.NORMAL);
+
+            for (int i = 0; i < offered; i++) {
+                sut.schedule(stubStream(i));
+            }
+
+            try {
+                assertThat(allEntered.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+                assertThat(admissionController.activeStreamCount()).isEqualTo(offered);
+            } finally {
+                release.countDown();
+            }
+            awaitCounterZero();
+        }
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
+    private void awaitCounterZero() throws InterruptedException {
+        CountDownLatch counterZero = new CountDownLatch(1);
+        Thread.ofVirtual().start(() -> {
+            while (admissionController.activeStreamCount() > 0) {
+                Thread.onSpinWait();
+            }
+            counterZero.countDown();
+        });
+        assertThat(counterZero.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)).isTrue();
+    }
+
     protected PaqsScheduler buildScheduler(StreamHandler handler,
                                            Function<TransportStream, StreamPriority> extractor) {
         return new PaqsScheduler(admissionController, loadShedder, handler, extractor, ENGINE_NAME);

@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-root</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
 
@@ -19,23 +19,10 @@
         Main Parent POM for Kernel modules.
         Imports the BOM and enforces strict Code Quality gates (Checkstyle, PMD).
     </description>
-
-    <licenses>
-        <license>
-            <name>Apache License, Version 2.0</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
-            <distribution>repo</distribution>
-            <comments>
-                The Exeris Kernel open-core sources are distributed under the Apache License,
-                Version 2.0, with the Commons Clause condition restricting commercial resale
-                of the software as a competing product. See LICENSE-COMMUNITY in the
-                repository root for the combined text and SPDX identifier
-                "Apache-2.0 WITH Commons-Clause".
-            </comments>
-        </license>
-    </licenses>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <checkstyle.config.location>checkstyle.xml</checkstyle.config.location>
         <exec.maven.plugin.version>3.5.0</exec.maven.plugin.version>
 
         <!-- Benchmark parameters — all overridable on CLI with -D -->
@@ -169,7 +156,14 @@
                     </dependency>
                 </dependencies>
                 <configuration>
-                    <configLocation>checkstyle.xml</configLocation>
+                    <!--
+                        A property, not a literal. `checkstyle.config.location` is the plugin's
+                        documented user property, but an explicit <configLocation> in the pom
+                        overrides it silently: `-Dcheckstyle.config.location=/nonexistent.xml`
+                        does not even fail. That is how the shared javadoc-gate came to run this
+                        ruleset instead of its own, and report clean.
+                    -->
+                    <configLocation>${checkstyle.config.location}</configLocation>
                     <consoleOutput>true</consoleOutput>
                     <failsOnError>true</failsOnError>
                 </configuration>

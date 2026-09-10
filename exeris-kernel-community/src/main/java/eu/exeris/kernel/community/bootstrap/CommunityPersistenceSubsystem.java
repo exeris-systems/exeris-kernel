@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -27,6 +23,25 @@ import java.util.List;
 import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
+/**
+ * Bootstraps the Community persistence engine over a HikariCP-pooled JDBC connection, and publishes
+ * the shared {@link PersistenceEngine} other subsystems read through
+ * {@link CommunityBootstrapServices}.
+ *
+ * <p>Depends on {@code memory} only, and runs in the SERVICES phase. During {@code initialize()} it
+ * also resolves {@link CommunityAdmissionConfig#CURRENT} directly from config and separately
+ * registers a watch callback that would perform the same resolution — but Community's
+ * {@link ConfigProvider#watch} is a no-op that never invokes it, so only Enterprise's
+ * live-file-watching override (ADR-035) ever calls back into it — and, when
+ * {@code persistence.rlsEnabled} is set, installs {@link RlsConnectionInterceptor} on every
+ * connection the engine hands out.
+ *
+ * <p>{@code start()} installs an off-request-thread {@link JfrEventCommitter} so admission and
+ * connection-acquire JFR events commit on a platform thread rather than the virtual thread serving
+ * the request (ADR-035, working around a carrier-bound-buffer crash in the JFR path); {@code stop()}
+ * clears the commit gate before draining and closing that committer, then clears the shared engine
+ * reference from {@link CommunityBootstrapServices} before closing the engine itself.
+ */
 final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     private static final long DEFAULT_CONNECTION_TIMEOUT_MS = 250L;  // was 5_000L; fail-fast on pool exhaustion

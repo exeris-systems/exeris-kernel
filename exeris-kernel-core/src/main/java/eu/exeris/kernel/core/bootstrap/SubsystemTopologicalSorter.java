@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.bootstrap;
 
@@ -25,12 +21,12 @@ import java.util.Set;
  * Package-private pure topological sort over {@link Subsystem} dependency
  * edges (Kahn's BFS, O(V+E)) used by {@link SubsystemOrchestrator}.
  *
- * <p>Extracted from {@link SubsystemOrchestrator} in v0.8 Sprint 3 (QA-018b)
- * to close the orchestrator's God-class suppression block. Pure — no LOG,
- * no JFR, no health-monitor side effects. Side-effecting cycle handling
- * (ENTROPY INTERVENTION banner, {@code BootstrapJfrEvents.emitCircularDependency},
- * forced JVM diagnostic) stays in the orchestrator's {@code initialize} path
- * which catches {@link SubsystemCircularDependencyException}.
+ * <p>Pure — no LOG, no JFR, no health-monitor side effects — so it can be reasoned
+ * about and tested independently of {@link SubsystemOrchestrator}'s lifecycle.
+ * Side-effecting cycle handling (ENTROPY INTERVENTION banner,
+ * {@code BootstrapJfrEvents.emitCircularDependency}, forced JVM diagnostic) stays
+ * in the orchestrator's {@code initialize} path, which catches
+ * {@link SubsystemCircularDependencyException}.
  *
  * <p>The {@link DependencyGraph} record is intentionally pkg-private — its
  * adjacency representation is internal to the sort algorithm and not

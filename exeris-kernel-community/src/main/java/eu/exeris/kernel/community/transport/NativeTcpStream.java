@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -40,19 +36,40 @@ import java.util.concurrent.locks.LockSupport;
 /**
  * Community TCP stream backed by a single socket file descriptor.
  *
- * <p>Ingress is slab-backed: carrier loop reads directly to {@link LoanedBuffer} and
- * enqueues slabs for the stream VT.
+ * <p>Ingress is slab-backed: the carrier's reactor thread reads directly into a
+ * {@link LoanedBuffer} and enqueues the slab for the stream's virtual thread to consume.
  *
- * <h2>Decomposition (v0.8 Sprint 3 QA-016)</h2>
+ * <h2>Collaborators</h2>
  * <p>Plain-socket I/O dispatch (core-socket seam vs NIO fallback) lives in
  * {@link NativeTcpStreamPlainSocketIo}; single-consumer-gate helpers live in
  * {@link NativeTcpStreamConsumerGate}; outbound pending-write records (plain
  * + lazy ciphertext + offsets) live in {@link NativeTcpStreamPendingWrite}.
- * This class retains the {@link TransportStream} interface, carrier-facing
- * callbacks, TLS handshake state machine, inbound state, and close
+ * This class itself holds the {@link TransportStream} contract, carrier-facing
+ * callbacks, the TLS handshake state machine, inbound state, and close
  * orchestration.
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> on the TLS fd-owner ingress path, allocates one {@link LoanedBuffer} per
+ * record in {@link #readTlsIngressFromFd()}; on the plain path, the carrier's {@code readIngress}
+ * allocates the inbound buffer and this class only retains a reference to it. Every write that
+ * cannot be sent directly ({@link #enqueueDeferredWrite}, or {@link #write} on the TLS branch)
+ * allocates one {@link LoanedBuffer} to hold a private copy of the caller's bytes before queueing
+ * it. A TLS stream additionally allocates one per-stream ciphertext placeholder at construction,
+ * reused for every unwrap/wrap rather than allocated per record, plus small transient buffers for
+ * the handshake and the shutdown record.
+ * <p><b>Thread confinement:</b> not confined to one thread over its lifetime, but single-consumer
+ * per direction at any instant — {@link NativeTcpStreamConsumerGate} lets exactly one thread at a
+ * time drain the inbound queue and exactly one (possibly different) thread at a time drain the
+ * outbound queue, so ingress and egress may run concurrently on different threads but never two
+ * readers or two writers at once.
+ * <p><b>Ownership:</b> every {@link LoanedBuffer} handed to this stream (via {@link #offerIngress}
+ * or a queued write) is closed by whichever consumer drains it — inbound buffers in
+ * {@link #closeCurrentInbound()} / {@link #drainInboundQueue()}, outbound ones in
+ * {@link NativeTcpStreamPendingWrite#close()} — and {@link #finishCloseIfDrained()} releases every
+ * buffer still queued at close time once it holds (or can idly acquire) the outbound consumer slot;
+ * if a different thread still holds that slot after {@link #close()}'s bounded wait, releasing the
+ * queued buffers is deferred to that thread's own subsequent call, not performed by this one.
+ *
+ * @since 0.5
  */
 // QA-016 extracted 3 seams (PlainSocketIo, ConsumerGate, PendingWrite); residual TLS handshake state +
 // inbound/outbound machinery remains cohesive. QA-016b can extract inbound state if WMC threshold
@@ -121,6 +138,14 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
     // Set by reset(long): abandon queued writes (no drain wait) and terminate abortively (RST).
     private final AtomicBoolean resetRequested = new AtomicBoolean(false);
+    // Last time the application moved bytes on this connection, for idle reclamation
+    // (transport.idleTimeoutMillis, swept by NativeTcpIdleReaper on the owning reactor).
+    // "Activity" is an attempted read or queued write, not bytes observed on the wire: a peer that
+    // opens a connection and then sends nothing never reaches either, which is what makes the same
+    // stamp bound a slow-loris hold as well as an idle keep-alive. Volatile because the writer is
+    // whichever virtual thread served the request and the reader is the reactor thread; a plain
+    // long would let a reactor read an indefinitely stale stamp and reclaim a live connection.
+    private volatile long lastActivityNanos = System.nanoTime();
     private final Queue<NativeTcpStreamPendingWrite> outboundQueue =
             new MpscUnboundedArrayQueue<>(JCTOOLS_QUEUE_CHUNK_SIZE);
     private final Queue<LoanedBuffer> inboundQueue = QUEUE_BACKPRESSURE_ENABLED
@@ -134,6 +159,7 @@ final class NativeTcpStream implements TransportStream {
     // (plaintext: reactor registration armed; TLS: reactor-driven handshake reached ACTIVE).
     // Replaces the acceptor thread blocking on the handshake — see fireEstablishedOnce().
     private final AtomicBoolean establishedFired = new AtomicBoolean(false);
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Runnable onEstablishedCallback;
     private volatile long registrationReadyNanos;
     private final Object tlsLock = new Object();
@@ -211,6 +237,21 @@ final class NativeTcpStream implements TransportStream {
         this.pendingWriteTryWriter = this::tryWrite;
     }
 
+    /**
+     * Reads up to {@code maxBytes} bytes into {@code target}, parking the calling virtual thread
+     * until a slab arrives on the inbound queue, the remote peer closes, or the stream closes.
+     *
+     * @param target   off-heap segment to read into
+     * @param maxBytes maximum number of bytes to read; a value {@code <= 0} is a no-op that
+     *                 returns {@code 0}
+     * @return the number of bytes read, {@code 0} if {@code maxBytes <= 0}, or {@code -1} on EOF
+     * @throws IllegalArgumentException if {@code target} is {@code null} or {@code maxBytes}
+     *                                   exceeds its capacity
+     * @throws IllegalStateException    if this stream has been closed and the remote side did not
+     *                                   close first
+     * @throws TransportException       if the TLS handshake does not complete within its timeout
+     *                                   ({@code EX-NET-4003})
+     */
     @Override
     public int read(MemorySegment target, int maxBytes) {
         if (target == null) {
@@ -222,6 +263,7 @@ final class NativeTcpStream implements TransportStream {
         if (maxBytes <= 0) {
             return 0;
         }
+        lastActivityNanos = System.nanoTime();
 
         Thread currentThread = Thread.currentThread();
         NativeTcpStreamConsumerGate.acquireSingleConsumer(runtime.inboundConsumer(), currentThread, "inbound");
@@ -303,6 +345,20 @@ final class NativeTcpStream implements TransportStream {
         return bytes;
     }
 
+    /**
+     * Writes {@code length} bytes from {@code source}: written straight to the socket with no
+     * intermediate copy when nothing is already queued and the stream is plaintext; otherwise
+     * copied into a buffered pending write, which a TLS stream always uses and which may still
+     * drain before this call returns.
+     *
+     * @param source off-heap segment containing the data to send; this stream never retains a
+     *               reference to it after the call returns
+     * @param length number of bytes to write, from offset {@code 0}; {@code 0} is a no-op
+     * @throws IllegalArgumentException if {@code source} is {@code null} or {@code length} is out
+     *                                   of range for it
+     * @throws IllegalStateException    if this stream has been closed
+     * @throws TransportException       if an unrecoverable send failure occurs ({@code EX-NET-4002})
+     */
     @Override
     public void write(MemorySegment source, int length) {
         ensureOpen();
@@ -315,6 +371,11 @@ final class NativeTcpStream implements TransportStream {
         if (length == 0) {
             return;
         }
+        // Both public egress entries stamp. Only queueWrite did until #374 review: write()
+        // reaches queueWrite ONLY on the TLS branch, so every plaintext response — which is
+        // CommunityHttpExchange's path, and the default one — moved bytes without counting as
+        // activity, and idle reclamation became a property of whether TLS was configured.
+        lastActivityNanos = System.nanoTime();
 
         if (tlsEngine == null) {
             if (hasPendingData()) {
@@ -358,6 +419,7 @@ final class NativeTcpStream implements TransportStream {
         if (length < 0 || length > buffer.capacity()) {
             throw new IllegalArgumentException("length out of range for loaned buffer");
         }
+        lastActivityNanos = System.nanoTime();
         if (closeRequested.get() || closed.get()) {
             throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
         }
@@ -392,6 +454,15 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
+    /**
+     * Nanosecond stamp of the last read or queued write, for the owning reactor's idle sweep.
+     *
+     * @return a {@link System#nanoTime()} reading; comparable only by subtraction
+     */
+    /* default */ long lastActivityNanos() {
+        return lastActivityNanos;
+    }
+
     @Override
     public long streamId() {
         return streamId;
@@ -417,6 +488,12 @@ final class NativeTcpStream implements TransportStream {
         return outboundQueueDepth.get() > 0;
     }
 
+    /**
+     * Closes this stream: unparks any thread waiting to read, write, or complete registration,
+     * waits briefly for whichever thread currently holds the outbound consumer slot to yield it,
+     * then best-effort flushes any remaining queued writes before finishing the teardown.
+     * Idempotent.
+     */
     @Override
     public void close() {
         if (!closeRequested.compareAndSet(false, true)) {
@@ -449,6 +526,15 @@ final class NativeTcpStream implements TransportStream {
         finishCloseIfDrained();
     }
 
+    /**
+     * Abortively terminates the stream: queued writes are abandoned rather than drained, and the
+     * socket is closed with {@code SO_LINGER} {@code 0} so the peer observes a TCP RST instead of
+     * a graceful FIN (best effort — if the socket option cannot be set, the terminal close falls
+     * back to an ordinary FIN).
+     *
+     * @param errorCode advisory only; the Community TCP driver has no protocol-level channel to
+     *                   carry it, unlike a transport whose own stream reset is a protocol frame
+     */
     @Override
     public void reset(long errorCode) {
         // Idempotent abortive termination (TransportStream#reset). Distinct from close():
@@ -766,6 +852,10 @@ final class NativeTcpStream implements TransportStream {
                 finalizeCloseIfRequestedAfterBestEffortFlush();
                 return false;
             }
+            // Covers the TLS drain, whose ciphertext goes out through tlsEngine.wrap and so never
+            // passes tryWrite: without this, a response queued once and drained slowly would carry
+            // only its enqueue stamp.
+            lastActivityNanos = System.nanoTime();
             completeQueueHeadAfterDrain(pending);
             pending = outboundQueue.peek();
         }
@@ -926,11 +1016,19 @@ final class NativeTcpStream implements TransportStream {
         if (length <= 0) {
             return 0;
         }
-        if (plainSocketBackend.usesCoreSocketSeam()) {
-            return NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(
-                    socketHandles, plainSocketHandle, channel, source, offset, length, streamId);
+        // The single point plaintext bytes leave this socket: writeDirect's loop and the
+        // reactor's deferred drain (via pendingWriteTryWriter) both arrive here. Stamping on
+        // egress — not only on the application's call — is what keeps a large response draining
+        // to a slow client from being reclaimed mid-transfer while its bytes are still flowing.
+        // One volatile store per syscall.
+        int written = plainSocketBackend.usesCoreSocketSeam()
+                ? NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(
+                        socketHandles, plainSocketHandle, channel, source, offset, length, streamId)
+                : NativeTcpStreamPlainSocketIo.nioFallbackWrite(channel, source, offset, length);
+        if (written > 0) {
+            lastActivityNanos = System.nanoTime();
         }
-        return NativeTcpStreamPlainSocketIo.nioFallbackWrite(channel, source, offset, length);
+        return written;
     }
 
     private void ensureOpen() {

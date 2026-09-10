@@ -7,15 +7,17 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
 
     <artifactId>exeris-kernel-spi</artifactId>
     <name>Exeris Kernel :: SPI</name>
     <description>The "Invisible Wall" — agnostic L0/L1/L2 contracts and RAII memory protocols.</description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.spi</exeris.module.name>
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the SPI bundle.
             Current measurement: ~36% (records / enums / interface skeletons inflate
@@ -47,4 +49,63 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!--
+            The Javadoc gate - ADR-085 SS-F.21, run by .github/workflows/guardrails.yml, never by a
+            normal build.
+
+            It lives in THIS pom and not the root one, and that is not cosmetic. The gate invokes
+            `mvn -pl exeris-kernel-spi -am javadoc:javadoc`, and `-am` pulls every dependency into
+            the reactor. From the root pom the profile applied to them too, so the first CI run
+            failed on `exeris-kernel-build-config` - a module nobody meant to gate - and never
+            reached the SPI at all. javadoc-conventions.md gates named modules; so does this.
+
+            It is a profile and not a change to the `release` block in the root pom, deliberately.
+            That block keeps `doclint none` and `failOnError false` because the ability to publish
+            must not depend on the state of the prose: the comment there calls tightening it
+            "quality work with its own slice", and this is that slice, held separately so a red gate
+            never stops a release from being cut.
+
+            Measured before switching on, on this module: 62 doclint errors and 100 warnings. That
+            list was cleared by the sweep in #456 before this gate reached main, so it lands green;
+            it is a reported check rather than a required one, and what it now does is hold the zero
+            rather than display the backlog.
+
+            The three custom tags are registered because rule 6 of javadoc-conventions.md is written
+            in them and an unregistered tag is itself a doclint error - which is how the need was
+            found, from the single @apiNote that existed across these 276 sources when this profile
+            was written. The sweep in #456 then wrote the vocabulary the registration made possible:
+            217 @apiNote, 235 @implSpec, 144 @implNote today.
+            Registering them makes writing the tags possible; writing them is L2 work no gate
+            measures.
+
+            The preview flag from the bundle's port target is deliberately absent: this line dropped
+            preview from the whole build (see the MAVEN_OPTS comment in maven.yml), and javadoc
+            accepts that flag only when `-source` equals the running JDK.
+        -->
+        <profile>
+            <id>javadoc-gate</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.11.2</version>
+                        <configuration>
+                            <doclint>all</doclint>
+                            <failOnWarnings>true</failOnWarnings>
+                            <failOnError>true</failOnError>
+                            <quiet>false</quiet>
+                            <tags>
+                                <tag><name>apiNote</name><placement>a</placement><head>API Note:</head></tag>
+                                <tag><name>implSpec</name><placement>a</placement><head>Implementation Requirements:</head></tag>
+                                <tag><name>implNote</name><placement>a</placement><head>Implementation Note:</head></tag>
+                            </tags>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

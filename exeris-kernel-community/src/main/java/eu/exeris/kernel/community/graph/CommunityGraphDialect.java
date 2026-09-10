@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.graph;
 
@@ -17,13 +13,16 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * Community Graph Dialect — SQL query and DDL generator for PostgreSQL.
+ * Community-tier {@link GraphDialect}: generates SQL/PGQ query text and DDL for PostgreSQL,
+ * or Cypher query text for a Cypher-speaking backend (Neo4j, Memgraph, FalkorDB) — chosen
+ * once at construction from {@code backendType} and fixed for the dialect's lifetime.
  *
- * <p>Generates standard recursive CTE queries for traversal/shortest-path (SQL/PGQ mode)
- * and Cypher queries (Cypher mode). DDL uses plain PostgreSQL syntax.
- * Enterprise may use raw PG wire protocol to send the same SQL without JDBC overhead.
+ * <p>Generates standard recursive CTE queries for traversal/shortest-path in SQL/PGQ mode,
+ * and native Cypher queries in Cypher mode. DDL uses plain PostgreSQL syntax and is only
+ * ever generated in SQL/PGQ mode — in Cypher mode the DDL-shaped methods return a comment
+ * string instead, since Cypher backends manage node and edge storage implicitly.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 // CyclomaticComplexity/TooManyMethods: two-dialect (SQL/PGQ + Cypher) factory; complexity is structural.
@@ -50,6 +49,13 @@ final class CommunityGraphDialect implements GraphDialect {
         this.mode = isCypherBackend(backendType) ? Mode.CYPHER : Mode.SQL_PGQ;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalArgumentException if {@code edge}'s relevant identifier (relationship
+     *         type in Cypher mode, table name in SQL/PGQ mode) does not match
+     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public String buildMatchQuery(GraphEdgeDescriptor edge) {
         if (mode == Mode.CYPHER) {
@@ -65,6 +71,13 @@ final class CommunityGraphDialect implements GraphDialect {
                 """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalArgumentException if {@code edge}'s relevant identifier (relationship
+     *         type in Cypher mode, table name in SQL/PGQ mode) does not match
+     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public String buildMultiHopQuery(GraphEdgeDescriptor edge, int minHops, int maxHops) {
         if (mode == Mode.CYPHER) {
@@ -90,6 +103,13 @@ final class CommunityGraphDialect implements GraphDialect {
                 """.formatted(tableName, tableName, maxHops, minHops);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalArgumentException if {@code edge}'s relevant identifier (relationship
+     *         type in Cypher mode, table name in SQL/PGQ mode) does not match
+     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public String buildShortestPathQuery(GraphEdgeDescriptor edge, int maxDepth) {
         if (mode == Mode.CYPHER) {
@@ -125,6 +145,17 @@ final class CommunityGraphDialect implements GraphDialect {
                 """.formatted(tableName, tableName, maxDepth);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>In Cypher mode, returns a comment string and performs no identifier validation
+     * (Cypher backends manage the graph namespace implicitly, so nothing here is spliced
+     * into an executable query).
+     *
+     * @throws IllegalArgumentException in SQL/PGQ mode, if the graph name or any node's
+     *         source table, label, or ID property, or any edge's table, relation type,
+     *         source node, or target node does not match {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public String buildCreatePropertyGraph(List<GraphNodeDescriptor> nodeList,
                                            List<GraphEdgeDescriptor> edgeList) {
@@ -170,6 +201,14 @@ final class CommunityGraphDialect implements GraphDialect {
         return builder.toString();
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>In Cypher mode, returns a comment string and performs no identifier validation.
+     *
+     * @throws IllegalArgumentException in SQL/PGQ mode, if {@code edge}'s table name does
+     *         not match {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public String buildCreateEdgeTable(GraphEdgeDescriptor edge) {
         if (mode == Mode.CYPHER) {
@@ -187,6 +226,17 @@ final class CommunityGraphDialect implements GraphDialect {
                 """.formatted(requireSqlIdentifier(edge.tableName()));
     }
 
+    /**
+     * Generates the DDL for the shared {@code graph_nodes} table (SQL/PGQ mode), or a
+     * comment string (Cypher mode, which manages node storage implicitly). Not part of the
+     * {@link GraphDialect} SPI — called directly by {@link CommunityGraphEngine} on this
+     * concrete type.
+     *
+     * <p>Unlike {@link #buildCreateEdgeTable}, node storage is one shared table across every
+     * label, not one table per label.
+     *
+     * @return the DDL statement, or a Cypher comment when in Cypher mode
+     */
     /* default */ String buildCreateNodeTable() {
         if (mode == Mode.CYPHER) {
             return "// Cypher backend manages node storage implicitly";
@@ -201,6 +251,14 @@ final class CommunityGraphDialect implements GraphDialect {
                 """;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>In Cypher mode, returns a comment string and performs no identifier validation.
+     *
+     * @throws IllegalArgumentException in SQL/PGQ mode, if the graph name does not match
+     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     */
     @Override
     public String buildDropPropertyGraph() {
         if (mode == Mode.CYPHER) {
@@ -209,11 +267,22 @@ final class CommunityGraphDialect implements GraphDialect {
         return "DROP PROPERTY GRAPH IF EXISTS " + requireSqlIdentifier(graphName);
     }
 
+    /**
+     * Returns {@code "Cypher"} when this dialect was constructed in Cypher mode,
+     * {@code "SQL/PGQ"} otherwise.
+     *
+     * @return the dialect identifier for diagnostics and JFR events
+     */
     @Override
     public String dialectName() {
         return mode == Mode.CYPHER ? CYPHER_DIALECT_NAME : SQL_DIALECT_NAME;
     }
 
+    /**
+     * Returns whether this dialect was constructed in Cypher mode.
+     *
+     * @return {@code true} for a Cypher-speaking backend, {@code false} for SQL/PGQ
+     */
     /* default */ boolean isCypherMode() {
         return mode == Mode.CYPHER;
     }

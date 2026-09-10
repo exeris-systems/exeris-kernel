@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.hpack;
 
@@ -71,7 +67,7 @@ class HpackRoundTripTest {
             HpackEncoder encoder =
                     new HpackEncoder(encTable, testAllocator, true);
             HpackDecoder decoder =
-                    new HpackDecoder(decTable, testAllocator, 65_536);
+                    new HpackDecoder(decTable, testAllocator, 65_536, 65_536);
 
             MemorySegment buf = testArena.allocate(4096);
             long pos = 0;
@@ -95,7 +91,7 @@ class HpackRoundTripTest {
             HpackEncoder encoder =
                     new HpackEncoder(encTable, testAllocator, false);
             HpackDecoder decoder =
-                    new HpackDecoder(decTable, testAllocator, 65_536);
+                    new HpackDecoder(decTable, testAllocator, 65_536, 65_536);
 
             MemorySegment buf = testArena.allocate(4096);
             long pos = encoder.encodeHeader(
@@ -114,7 +110,7 @@ class HpackRoundTripTest {
             HpackEncoder encoder =
                     new HpackEncoder(encTable, testAllocator, true);
             HpackDecoder decoder =
-                    new HpackDecoder(decTable, testAllocator, 65_536);
+                    new HpackDecoder(decTable, testAllocator, 65_536, 65_536);
 
             MemorySegment buf = testArena.allocate(4096);
             long pos = 0;

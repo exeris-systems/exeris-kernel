@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -15,6 +11,17 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Emitted when {@link CoreFlowRuntime} cannot re-launch a wake that arrived for an instance still
+ * running its current step.
+ *
+ * <p>The instance is put back into {@code PARKED} with the wake re-armed before this fires, so it
+ * stays recoverable from a later wake; without this event, the abandoned re-submission would be
+ * indistinguishable from a saga that simply had no more work to do.
+ *
+ * <p>Carries the failure's exception type only — a saga's failure message can hold the business
+ * payload the step was processing.
+ */
 @Name("eu.exeris.kernel.flow.DeferredWakeFailed")
 @Label("Flow Deferred Wake Failed")
 @Category({"Exeris Kernel", "Flow"})

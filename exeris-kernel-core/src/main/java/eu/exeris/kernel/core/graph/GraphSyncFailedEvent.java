@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.graph;
 
@@ -25,7 +21,7 @@ import jdk.jfr.StackTrace;
  * so that JFR recordings contain a timestamped record of every sync failure without requiring
  * exception stack trace capture (overhead: ~0 ns when JFR is disabled).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.graph.SyncFailed")
 @Label("Graph Sync Failed (EX-GRPH-5003)")
@@ -42,6 +38,13 @@ final class GraphSyncFailedEvent extends Event {
     @Description("Static failure message from the upstream cause")
     /* default */ String detail;
 
+    /**
+     * Emits the sync-failed event if JFR recording is active; a no-op otherwise.
+     *
+     * @param edgeOrLabel the edge type or node label whose synchronisation failed
+     * @param detail      the upstream failure's message; may be {@code null} if the
+     *                    cause carried none
+     */
     /* default */ static void emit(String edgeOrLabel, String detail) {
         if (!FlightRecorder.isInitialized()) {
             return;

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -14,6 +10,8 @@ import eu.exeris.kernel.spi.flow.model.FlowContext;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshot;
 import eu.exeris.kernel.spi.flow.model.FlowState;
 
+import eu.exeris.kernel.spi.time.TimeSource;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
@@ -21,6 +19,28 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Core: the in-memory state of one running or parked saga — identity, definition binding,
+ * lifecycle {@link FlowState}, the compensation stack, and the optimistic-lock
+ * {@link #schemaVersion() schema version} that round-trips with the durable snapshot store.
+ *
+ * <p>Built once per saga by {@link #fromContext} (a fresh instance) or {@link #fromSnapshot}
+ * (recovered from a persisted {@link FlowSnapshot}), then mutated in place by
+ * {@link CoreFlowRuntime} for the life of the saga. A saga is not confined to one thread — each
+ * schedule or wake launches it on a freshly created virtual thread — but
+ * {@link #beginScheduleForSchedule()} and {@link #beginScheduleAfterWake()} admit at most one
+ * runner at a time, synchronized on {@link #monitor()}, so exactly one thread ever mutates the
+ * instance at once.
+ *
+ * <p>Also implements {@link RuntimeFlowContextStateView}, the seam {@link RuntimeFlowContext}
+ * reads through to serve the {@link FlowContext} handed to step and compensation actions.
+ *
+ * @implNote {@link #captureEventEngine()} and the {@code timeSource} field both exist because a
+ *           saga runs on a bare virtual thread, which inherits no {@code ScopedValue} binding:
+ *           anything this class needs from {@link KernelProviders} must be captured while a
+ *           binding is available — at schedule or wake time — and held as a field rather than
+ *           read again later on the run.
+ */
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPMD
 
@@ -38,11 +58,22 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     private final AtomicBoolean scheduled = new AtomicBoolean(false);
     private final Object monitor = new Object();
     private final RuntimeFlowContext contextView;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile CoreFlowExecutionPlan plan;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile EventEngine eventEngine;
     private volatile FlowState state;
     /** A wake refused because a run still held the instance; guarded by {@code monitor}. */
     private boolean wakePending;
+    private volatile boolean checkpointDirty;
+    /**
+     * The source this instance decides time on (ADR-082). Held as a field rather than read from
+     * {@code KernelProviders} at use: a flow runs on a bare virtual thread, which inherits no
+     * {@code ScopedValue} binding, so a slot read here would always find the system clock and the
+     * seam would look applied while being undrivable.
+     */
+    private final TimeSource timeSource;
+
     private volatile int currentStep;
     private volatile long timeoutNanos;
     private int[] compensationStack;
@@ -65,7 +96,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      * stays under the SonarQube S107 arity limit (≤ 7).
      *
      * <p>The {@code int[] compensationStack} component is shared by reference with the
-     * surrounding instance — this preserves the historical ownership semantics (the array
+     * surrounding instance — this is the ownership the rest of the class relies on (the array
      * is mutated in place by {@code pushCompensation()} / {@code compensationStepAt()})
      * and keeps the bootstrap allocation-free. Because the record holds a mutable array
      * it is <em>not</em> a Valhalla value-type candidate; the carrier is intentionally
@@ -77,6 +108,18 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      * acceptable here because {@code Seed} is a private one-shot carrier — never compared,
      * hashed, or logged. Suppressing rather than overriding keeps the carrier lean and
      * avoids accidental array copies on a path that runs once per flow instance.
+     *
+     * @param key                 the saga's identity
+     * @param definitionName      the compiled definition's name
+     * @param definitionVersion   the compiled definition's version
+     * @param lifecycleGeneration the runtime generation this instance is created under
+     * @param plan                the execution plan this instance is bound to
+     * @param state               the lifecycle state to start from
+     * @param currentStep         the step index to start from
+     * @param timeoutNanos        the absolute timeout deadline, in the {@code System.nanoTime()} epoch
+     * @param compensationStack   the compensation stack, shared by reference with the surrounding instance
+     * @param stackPointer        the number of live entries at the bottom of {@code compensationStack}
+     * @param schemaVersion       the optimistic-lock version to seed {@link #schemaVersion()} with
      */
     @SuppressWarnings("java:S6218")
     private record Seed(FlowKey key,
@@ -91,7 +134,8 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                         int stackPointer,
                         long schemaVersion) { }
 
-    private RuntimeFlowInstance(Seed seed) {
+    private RuntimeFlowInstance(Seed seed, TimeSource timeSource) {
+        this.timeSource = timeSource;
         this.key = seed.key();
         this.definitionName = seed.definitionName();
         this.definitionVersion = seed.definitionVersion();
@@ -106,14 +150,19 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         this.schemaVersion = new AtomicLong(seed.schemaVersion());
     }
 
+    private static RuntimeFlowInstance newInstance(TimeSource time, Seed seed) {
+        return new RuntimeFlowInstance(seed, time);
+    }
+
     public static RuntimeFlowInstance fromContext(
             CoreFlowExecutionPlan plan,
             FlowContext context,
-            long lifecycleGeneration) {
+            long lifecycleGeneration,
+            TimeSource time) {
         long timeoutNanos = context.timeoutNanos() > 0
                 ? context.timeoutNanos()
-                : System.nanoTime() + plan.timeoutDurationNanos();
-        return new RuntimeFlowInstance(new Seed(
+                : time.nanoTime() + plan.timeoutDurationNanos();
+        return newInstance(time, new Seed(
                 FlowKey.from(context),
                 context.definitionName(),
                 plan.definitionVersion(),
@@ -131,19 +180,23 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     public static RuntimeFlowInstance fromSnapshot(
             CoreFlowExecutionPlan plan,
             FlowSnapshot snapshot,
-            long lifecycleGeneration) {
+            long lifecycleGeneration,
+            TimeSource time) {
         long timeoutNanos;
         if (Instant.MAX.equals(snapshot.timeout())) {
             timeoutNanos = Long.MAX_VALUE;
         } else {
-            long remainingNanos = Duration.between(Instant.now(), snapshot.timeout()).toNanos();
-            timeoutNanos = System.nanoTime() + Math.max(0L, remainingNanos);
+            // Both reads come from ONE source (ADR-082): this converts a persisted calendar
+            // deadline into a monotonic one, and a virtual clock that moved only one of them would
+            // make the conversion drift instead of advancing the saga's remaining time.
+            long remainingNanos = Duration.between(time.wallTime(), snapshot.timeout()).toNanos();
+            timeoutNanos = time.nanoTime() + Math.max(0L, remainingNanos);
         }
         int[] snapshotStack = snapshot.compensationStack();
         int[] compensationStack = snapshotStack.length == 0
                 ? new int[Math.max(4, plan.stepCount())]
                 : snapshotStack;
-        return new RuntimeFlowInstance(new Seed(
+        return newInstance(time, new Seed(
                 new FlowKey(snapshot.instanceIdMost(), snapshot.instanceIdLeast()),
                 snapshot.definitionName(),
                 plan.definitionVersion(),
@@ -330,7 +383,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
                 Math.max(0, stepIndex),
                 stepNameAt(Math.max(0, stepIndex)),
                 snapshotState,
-                Instant.now(),
+                timeSource.wallTime(),
                 timeoutInstant(),
                 stack,
                 compensationStepNames(),
@@ -386,6 +439,8 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
     /**
      * Returns the optimistic-lock version expected by the durable snapshot store
      * for the next save (ADR-013 §5).
+     *
+     * @return the schema version this instance expects the durable row to currently hold
      */
     public long schemaVersion() {
         return schemaVersion.get();
@@ -400,6 +455,26 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
      */
     public void markPersisted() {
         schemaVersion.incrementAndGet();
+        checkpointDirty = false;
+    }
+
+    /**
+     * Records that this instance is running on a state the durable store refused.
+     *
+     * <p>Set when a PARK checkpoint cannot be written. The instance stays parked and stays
+     * wakeable in this JVM - dropping it there would turn a transient store outage into a
+     * lost saga - but it is not recoverable across a restart until a later write lands, so
+     * the flag is what keeps that difference visible instead of implied. Cleared by
+     * {@link #markPersisted()}, i.e. by the next accepted write, whichever transition
+     * carries it.
+     */
+    public void markCheckpointDirty() {
+        checkpointDirty = true;
+    }
+
+    /** Whether the durable store is known to be behind this instance's in-memory state. */
+    public boolean checkpointDirty() {
+        return checkpointDirty;
     }
 
     public RuntimeFlowContext contextView() {
@@ -410,7 +485,7 @@ final class RuntimeFlowInstance implements RuntimeFlowContextStateView { // NOPM
         if (timeoutNanos == Long.MAX_VALUE) {
             return Instant.MAX;
         }
-        long remainingNanos = Math.max(0L, timeoutNanos - System.nanoTime());
-        return Instant.now().plusNanos(remainingNanos);
+        long remainingNanos = Math.max(0L, timeoutNanos - timeSource.nanoTime());
+        return timeSource.wallTime().plusNanos(remainingNanos);
     }
 }

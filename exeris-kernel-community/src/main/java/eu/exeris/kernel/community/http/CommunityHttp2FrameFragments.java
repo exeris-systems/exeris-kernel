@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -17,11 +13,9 @@ import java.lang.foreign.ValueLayout;
  * Package-private pad/priority field extraction for HEADERS and DATA frame
  * payloads used by {@link CommunityHttp2SessionProcessor}.
  *
- * <p>Extracted from {@link CommunityHttp2SessionProcessor} in v0.8 Sprint 3
- * (QA-018a) as one of four seams of the processor's God-class decomposition.
- * RFC 7540 §6.2 (HEADERS) and §6.1 (DATA) allow padding and (for HEADERS)
- * an optional 5-byte priority section; the extracted helpers strip these
- * envelope fields and return the inner header-block / data fragment.
+ * <p>RFC 7540 §6.2 (HEADERS) and §6.1 (DATA) allow padding and (for HEADERS)
+ * an optional 5-byte priority section; the two extraction methods here strip
+ * these envelope fields and return the inner header-block / data fragment.
  */
 final class CommunityHttp2FrameFragments {
 

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * Exeris Kernel SPI — Config subsystem contracts (L0 Foundation).
@@ -15,6 +11,9 @@
  *   <li>{@link eu.exeris.kernel.spi.config.ConfigProvider} — the single SPI entry point,
  *       loaded via {@code ServiceLoader}. Contains all Valhalla-ready Value Record types.</li>
  *   <li>{@link eu.exeris.kernel.spi.config.Dynamic} — annotation for hot-reload fields.</li>
+ *   <li>{@link eu.exeris.kernel.spi.config.Immutable} — annotation sealing a key against
+ *       hot-reload for the lifetime of the process; the deliberate inverse of
+ *       {@code @Dynamic}.</li>
  *   <li>{@link eu.exeris.kernel.spi.config.KernelProfile} — profile enum (DEV/TEST/PROD).</li>
  * </ul>
  *
@@ -31,8 +30,8 @@
  * are used, enabling clean scalarization via C2 JIT Escape Analysis today and
  * heap-flattening once JEP 401 is mainline.
  *
+ * @since 0.5
  * @see eu.exeris.kernel.spi.config.ConfigProvider
- * @since 0.5.0
  */
 package eu.exeris.kernel.spi.config;
 

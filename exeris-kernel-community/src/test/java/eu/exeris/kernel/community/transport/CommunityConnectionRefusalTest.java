@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -16,20 +12,19 @@ import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
-import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
-import jdk.jfr.consumer.RecordingFile;
+import jdk.jfr.consumer.RecordingStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -59,14 +54,27 @@ class CommunityConnectionRefusalTest {
 
     @Test
     @DisplayName("commits a refusal event and counts it into TransportStats.totalRejected")
-    void refusalIsCountedAndRecorded(@TempDir Path tmp) throws Exception {
-        Path jfr = tmp.resolve("refusal.jfr");
+    void refusalIsCountedAndRecorded() throws Exception {
         List<Socket> sockets = new ArrayList<>();
         TransportEngine engine = null;
+        AtomicReference<RecordedEvent> captured = new AtomicReference<>();
+        CountDownLatch eventSeen = new CountDownLatch(1);
 
-        try (Recording recording = new Recording()) {
-            recording.enable(REFUSED);
-            recording.start();
+        // Awaits the EVENT, not a proxy for it. The previous shape spun on
+        // TransportStats.totalRejected and then stopped the recording immediately — but
+        // NativeTcpCarrier.recordRefusal increments that counter BEFORE it emits, so the signal
+        // being waited on is published one statement earlier than the thing being asserted. The
+        // window is nanoseconds, which is why it only ever failed on a fast, otherwise-idle
+        // machine and never once in CI: the race is won by the FASTER observer, so a loaded runner
+        // hid it and a quiet laptop did not. Widening the gap to 300 ms failed it 100/100.
+        try (RecordingStream stream = new RecordingStream()) {
+            stream.enable(REFUSED);
+            stream.onEvent(REFUSED, event -> {
+                if (captured.compareAndSet(null, event)) {
+                    eventSeen.countDown();
+                }
+            });
+            stream.startAsync();
 
             int port = CommunityTransportTestHarness.nextFreePort();
             engine = startEngine(port);
@@ -77,8 +85,9 @@ class CommunityConnectionRefusalTest {
             }
             awaitRefusal(engine);
 
-            recording.stop();
-            recording.dump(jfr);
+            assertThat(eventSeen.await(SETTLE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                    .as("a refusal that emits nothing is indistinguishable from a healthy server")
+                    .isTrue();
         } finally {
             sockets.forEach(CommunityConnectionRefusalTest::closeQuietly);
             if (engine != null) {
@@ -86,15 +95,7 @@ class CommunityConnectionRefusalTest {
             }
         }
 
-        List<RecordedEvent> events = RecordingFile.readAllEvents(jfr).stream()
-                .filter(e -> REFUSED.equals(e.getEventType().getName()))
-                .toList();
-
-        assertThat(events)
-                .as("a refusal that emits nothing is indistinguishable from a healthy server")
-                .isNotEmpty();
-
-        RecordedEvent first = events.getFirst();
+        RecordedEvent first = captured.get();
         assertThat(first.getInt("maxConnections")).isEqualTo(MAX_CONNECTIONS);
         assertThat(first.getLong("activeConnections")).isEqualTo(MAX_CONNECTIONS);
         assertThat(first.getLong("totalRefused")).isPositive();

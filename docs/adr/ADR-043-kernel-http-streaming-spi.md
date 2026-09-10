@@ -1,3 +1,11 @@
+---
+title: "ADR-043: Adopt SSE-First Kernel HTTP Streaming via a Sibling `HttpStreamExchange`"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-043
+---
 # ADR-043: Adopt SSE-First Kernel HTTP Streaming via a Sibling `HttpStreamExchange`
 
 | Attribute       | Value                                                                                              |
@@ -67,7 +75,7 @@ SSE rides the existing HTTP/1.1 + h2 server with no upgrade handshake and no new
 
 ### 📋 What is NOT in scope
 
-- **WebSocket / full-duplex.** Deferred to a later, separately-justified RFC/ADR gated on a proven bidirectional low-latency client-streaming use case. **Not pinned to a release milestone** — it may well land before 1.0; this ADR neither schedules nor precludes it, it only declines to build it speculatively alongside SSE here.
+- **WebSocket / full-duplex.** Deferred to a later, separately-justified RFC/ADR gated on a proven bidirectional low-latency client-streaming use case. **Not pinned to a release milestone** — it may well land before 1.0; this ADR neither schedules nor precludes it, it only declines to build it speculatively alongside SSE here. *(That decision was taken in v0.12 by [ADR-084](ADR-084-websocket-provider-spi.md), which supersedes this exclusion. The SSE ruling above stands untouched.)*
 - **Backpressure park-timeout policy.** No timeout code in v0.10 (see above).
 - **The Enterprise native/io_uring streaming binding itself** — a concrete cross-repo obligation tracked in `exeris-kernel-enterprise`, not implemented here.
 - **Data-scope / shared-world modelling** (cross-tenant streams) — orthogonal; tracked by the Multi-Tenancy Shared-World RFC.

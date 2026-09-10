@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.http1;
 
@@ -23,7 +19,7 @@ import java.lang.foreign.ValueLayout;
  * <h2>Termination</h2>
  * <p>The chunked message is terminated by a final chunk with size 0, followed by CRLF CRLF.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class Http1ChunkedEncoder {
 
@@ -40,6 +36,7 @@ public final class Http1ChunkedEncoder {
      * @param offset byte offset
      * @param size   chunk data size
      * @return byte position after the chunk header (caller writes data, then CRLF)
+     * @throws IllegalArgumentException if {@code size} is negative
      */
     public static long writeChunkHeader(MemorySegment seg, long offset, int size) {
         if (size < 0) {
@@ -102,6 +99,7 @@ public final class Http1ChunkedEncoder {
      * @param offset byte offset
      * @param data   chunk data segment
      * @return new byte position after the complete chunk
+     * @throws IllegalArgumentException if {@code data}'s size exceeds {@code Integer.MAX_VALUE}
      */
     public static long writeChunk(MemorySegment seg, long offset, MemorySegment data) {
         long dataSize = data.byteSize();

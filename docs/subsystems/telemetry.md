@@ -1,3 +1,12 @@
+---
+title: "Kernel Subsystem: Telemetry (L1 Observability)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: Telemetry (L1 Observability)
 
 **Physical Layout:**
@@ -20,7 +29,12 @@
 > type — not yet implemented in this repository.
 >
 > Implications for contributors:
-> - In the planned KernelBootstrap-backed runtime, `TelemetryProvider` will be discoverable via `ServiceLoader` from L1+ code. In this repo, `exeris-kernel-core` does not yet provide a `KernelBootstrap` implementation; treat this discovery path as forward-looking.
+> - `TelemetryProvider` is meant to be discoverable via `ServiceLoader` from L1+ code, and Community
+>   already registers `CommunityTelemetryProvider` under `META-INF/services`. `exeris-kernel-core`
+>   does provide a `KernelBootstrap` implementation, but neither it nor `SubsystemOrchestrator` yet
+>   wires a Telemetry subsystem that calls that `ServiceLoader` lookup or binds
+>   `KernelProviders.TELEMETRY_PROVIDER` / `TELEMETRY_SINKS` — no production code path in this repo
+>   binds either slot today. Treat this discovery path as forward-looking.
 >   New sink implementations belong in `exeris-kernel-community`, guarded
 >   by the existing TCKs.
 > - The `KernelProviders.TELEMETRY_PROVIDER` `ScopedValue` slot holds the factory (bound once at bootstrap).
@@ -122,11 +136,11 @@ EX-NET-4002  Transport send failure         rawArgs[0]=String transportName,    
 EX-NET-4003  Transport receive timeout      rawArgs[0]=String transportName,    [1]=long timeoutMs
 EX-NET-4004  Transport engine bootstrap     rawArgs[0]=String transportName,    [1]=String reason
 EX-NET-4005  Transport engine start         rawArgs[0]=String transportName,    [1]=int port
-EX-NET-4006  PAQS load shedding             rawArgs[0]=String transportName,    [1]=int streamPriority,    [2]=int thresholdPriority
+EX-NET-4006  PAQS load shedding             rawArgs[0]=String transportName,    [1]=long streamId          (exception carrier only — the JFR StreamShedEvent for this code has its own typed fields; see the JFR Events table)
 EX-NET-4007  Buffer exhaustion              rawArgs[0]=String transportName,    [1]=int poolCapacity,      [2]=int activeSlabs
 EX-SEC-2001  PrincipalContext missing        (no rawArgs)
 EX-SEC-2002  Token validation failure       rawArgs[0]=String tokenType,        [1]=String failureReason
-EX-RUN-3002  Carrier pinned                 rawArgs[0]=long blockTimeMs,        [1]=String carrierName
+EX-RUN-3002  Carrier pinned                 rawArgs[0]=long blockTimeMs,        [1]=String carrierThreadName
 EX-EVENT-6001 Generic event failure         rawArgs[0]=String message
 EX-EVENT-6002 Bus publish failure           rawArgs[0]=String eventType,        [1]=long queueDepth,        [2]=long queueCapacity
 EX-EVENT-6003 Registry conflict             rawArgs[0]=String eventType,        [1]=int ordinal
@@ -206,23 +220,24 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | Event Class             | When Emitted                                    | Key Fields                                            |
 |:------------------------|:------------------------------------------------|:------------------------------------------------------|
 | `TelemetryJfrEvents.KernelLifecycleJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Kernel bootstrap, subsystem lifecycle (including completion of each subsystem `initialize()`), warnings, and errors | `errorCode`, `level`, `component`, `message` |
-| `CommunityAllocationEvent` *(implemented, community module; `eu.exeris.kernel.community.memory.CommunityAllocationEvent`)* | Community-tier buffer allocation (when `jfrEnabled=true`) | `sizeBytes`, `hint`, `tierName` |
+| `CommunityAllocationEvent` *(implemented, community module; `eu.exeris.kernel.community.memory.CommunityAllocationEvent`)* | Community-tier buffer allocation (when `jfrEnabled=true`, sampled) | `allocationBytes`, `totalCount` |
 | `TelemetryJfrEvents.MemoryExhaustionJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On every `MemoryExhaustedException` (EX-MEM-1001) | `errorCode`, `requestedBytes`, `availableBytes`, `component` |
 | `LeakDetectedEvent` *(eu.exeris.kernel.core.memory)* | `LeakTracker` detection (PARANOID/SAMPLED mode) | `bufferLabel (String)`, `allocationStack (String)`, `capacityBytes (long)` |
 | `TelemetryJfrEvents.TransportBindJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On transport bind / engine-start lifecycle (EX-NET-4001/4005) | `errorCode`, `transportName`, `port`, `component` |
-| `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | On every PAQS load-shed | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
-| `TelemetryJfrEvents.CarrierPinnedJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `component` |
+| `StreamShedEvent` *(eu.exeris.kernel.core.transport.jfr)* | Shared by two independent admission paths: every PAQS load-shed, and every SSE stream-open admission gate shed. Only the SSE path throws a `TransportException`; the PAQS path closes the stream directly with no exception thrown | `streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount` |
+| `TelemetryJfrEvents.CarrierPinnedJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Virtual thread pins carrier > threshold (EX-RUN-3002) | `errorCode`, `blockTimeMs`, `carrierThreadName`, `component` |
+| `RouteExecutionEvent` *(implemented, community module; `eu.exeris.kernel.community.http.RouteExecutionEvent`; since 0.12.0, ADR-077)* | A route declared `LONG_RUNNING` finishes — the duration is what reveals a declaration that has gone stale. **Carries a request path**, the first kernel event that does; see the class Javadoc for why and what it exposes | `method`, `path`, `declaredExecution`, `handlerDurationNs` |
 | `AsyncTelemetryDropEvent` *(eu.exeris.kernel.core.telemetry; since 0.7.0)* | Emitted on every drop by `AsyncTelemetrySink` when the bounded ring is full | `sinkName`, `eventCode`, `totalDrops`, `ringCapacity` |
 | `CommunityTlsHandshakeEvent` *(implemented, community module; present in this repo)* | Each `SSL_do_handshake` invocation | `complete`, `opensslError` |
-| `TlsPhaseTransitionEvent` *(planned, TRL‑4 target; not yet implemented)* | Every `TlsStateMachine` phase transition | `sslPtr`, `fromPhase`, `toPhase` |
-| `TlsEngineCloseEvent` *(planned, TRL‑4 target; not yet implemented)* | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
-| `TlsHandshakeEvent` *(planned, TRL‑4 target; not yet implemented)* | Start and end of TLS handshake | `sessionId`, `protocol`, `cipher`, `durationNanos` |
-| `TlsHandshakeFailureEvent` *(planned, TRL‑4 target; not yet implemented)* | Handshake exception | `errorCode`, `peerAddress`, `failureReason` |
+| `TlsPhaseTransitionEvent` | Every `TlsStateMachine` phase transition | `fromPhase`, `toPhase` |
+| `TlsEngineCloseEvent` | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
+| `TlsHandshakeEvent` | Start and end of TLS handshake | `sslPtr`, `mode`, `protocol`, `cipher`, `negotiatedAlpn`, `durationNanos` |
+| `TlsHandshakeFailureEvent` | Handshake exception | `sslPtr`, `mode`, `errorCode`, `failureReason`, `sslErrorCode` |
 | `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
 | `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
 | `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |
-| `TelemetryJfrEvents.KernelMetricJfrEvent` *(eu.exeris.kernel.telemetry.KernelMetric)* | Emitted on `increment()` / `gauge()` calls | `metricName`, `metricType (COUNTER/GAUGE)`, `value` |
-| `TelemetryJfrEvents.KernelLatencyJfrEvent` *(eu.exeris.kernel.telemetry.KernelLatency)* | Emitted on `latency()` calls | `metricName`, `nanoseconds` |
+| `TelemetryJfrEvents.KernelMetricJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr; JFR event name `eu.exeris.kernel.telemetry.KernelMetric`)* | Emitted on `increment()` / `gauge()` calls | `metricName`, `metricType (COUNTER/GAUGE)`, `value` |
+| `TelemetryJfrEvents.KernelLatencyJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr; JFR event name `eu.exeris.kernel.telemetry.KernelLatency`)* | Emitted on `latency()` calls | `metricName`, `nanoseconds` |
 | `CommunityEventQueueOverflowEvent` *(eu.exeris.kernel.events.CommunityEventQueueOverflow; community module, since v0.8 Sprint 5 — EVENT-111)* | `CommunityEventQueue.push` refuses a fail-fast publish because the queue is at capacity (paired with `EX-EVENT-6002`) | `engineName`, `eventType`, `queueDepth`, `queueCapacity` |
 | `KafkaPublishFailedEvent` *(eu.exeris.kernel.events.kafka.PublishFailed; community-kafka module, pkg-private, since v0.8 Sprint 5 — JFR-091)* | `KafkaEventEngine.KafkaPublishBus` `publish` / `publishAndAwait` catch block, before wrapping as `EventBusException`. Payload bytes NEVER logged (Glass-Box secret-safe). | `engineName`, `topic`, `eventTypeOrdinal`, `publishMode`, `exceptionClass`, `exceptionMessage` |
 | `FlowSnapshotSaveFailedEvent` *(eu.exeris.kernel.flow.FlowSnapshotSaveFailed; community module, public, since v0.8 Sprint 5 — JFR-091)* | `JdbcFlowSnapshotStore.save` non-OCC `PersistenceProviderException` rollback path. OCC race losers continue to emit `OptimisticLockConflictEvent` (no overlap). | `engineName`, `sqlState` (`SQLSTATE_UNKNOWN` sentinel when no `SQLException` in cause chain), `exceptionClass`, `exceptionMessage` |
@@ -235,7 +250,20 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `SchedulingBootstrapSelectedEvent` *(eu.exeris.kernel.scheduling.SchedulingBootstrapSelected; core module, public, since v0.11 — ADR-057 §1)* | Bootstrap selects a `JobSchedulerProvider` through `BootstrapProviderSelector`. Which provider won a ServiceLoader race is otherwise invisible after the fact. Single-phase commit on the bootstrap thread. | `providerClass`, `providerId`, `priority`, `schedulerName` |
 | `CommunityConnectionRefusedEvent` *(eu.exeris.kernel.transport.CommunityConnectionRefused; community module, pkg-private, since v0.11)* | `NativeTcpCarrier` accepts a connection at TCP level and immediately closes it because the carrier is at `TransportConfig.maxConnections()`. Previously silent — no log, no event, and `TransportStats.totalRejected` counted only PAQS load-sheds, so the field an operator consults read zero while every connection was refused. One event per refusal (the path only runs at the ceiling); no peer identity, which is not yet resolved at that point. | `bindAddress`, `port`, `activeConnections`, `maxConnections`, `totalRefused` |
 | `CommunityAcceptFaultEvent` *(eu.exeris.kernel.transport.CommunityAcceptFault; community module, pkg-private, since v0.11)* | A connection was accepted but threw during setup (channel configuration, peer resolution, stream construction, registration). Previously discarded entirely by the accept loop's `catch (RuntimeException)`. Distinct from `CommunityConnectionRefused`: that is a policy decision at a ceiling, this is a defect — and it is deliberately **not** counted in `TransportStats.totalRejected`, which means work *declined*. Exception class only, never the message. | `bindAddress`, `port`, `faultClass`, `totalFaults` |
+| `FlowProgressDisabledEvent` *(eu.exeris.kernel.flow.ProgressDisabled; core module, pkg-private, since v0.12)* | `FlowProgressPublisher` could not claim an event ordinal within its probe window and disabled progress publication for the life of the process. It is the only trace of that: `publishProgress` afterwards returns on a cached sentinel, so a subscriber to `FlowProgress` simply never receives anything — indistinguishable from a system in which no flow ever terminated. Emitted once, on the transition, not per call. | `eventTypeName`, `baseOrdinal`, `probeLimit` |
+| `CommunityConnectionIdleTimeoutEvent` *(eu.exeris.kernel.transport.CommunityConnectionIdleTimeout; community module, pkg-private, since v0.12)* | `NativeTcpIdleReaper` reclaimed a connection that moved no bytes for `transport.idleTimeoutMillis`. It is the **only** signal that the timeout did anything: no handler runs, and at the peer the reset is indistinguishable from any other — so without it an operator who lowers the limit cannot tell whether it took effect or the traffic changed. Both the observed idle span and the configured limit are carried, because the ratio is the diagnostic: spans clustered just past the limit mean a fleet trimmed on a threshold, spans far past it mean dead peers. No threshold is baked in. One event per reclaimed connection; no peer identity. | `streamId`, `reactorIndex`, `idleMillis`, `configuredTimeoutMillis` |
 | `CommunityKernelDiagnosticsEvent` *(eu.exeris.kernel.diagnostics.KernelDiagnostics; community module, pkg-private, since v0.9 — ADR-033 §EP step 8)* | One INFO audit event per out-of-process `KernelDiagnostics` call (codes `EX-DIAG-1001..1005`, where `EX-DIAG-1005` is the `getJvmErgonomics()` runtime-ergonomics snapshot), so operators can audit who introspected the kernel. Cold path, `@StackTrace(false)`, single-phase commit. | `errorCode`, `method` |
+
+> **Four of the TLS rows above were marked "not yet implemented" until 0.12, and have been emitted
+> since 0.5.0.** `TlsHandshakeEvent` carries `@since 0.5`; all four are committed from
+> `TlsStateMachine` / `OffHeapTlsEngine`, with `CommunityTlsHandshakeEvent` on the Community path.
+> Their field lists were wrong too — `TlsHandshakeEvent` was documented with a `sessionId` that does
+> not exist and without `sslPtr`, `mode` and `negotiatedAlpn`, and `TlsPhaseTransitionEvent` with an
+> `sslPtr` it does not carry: it names the transition, and the state machine's identity is the
+> engine's, not a field on every phase change. Glass-Box is this project's headline
+> observability claim, so a contract document under-reporting which of its events exist is a defect
+> in the claim rather than in the prose. `ConfigHotReloadEvent`, `OutboxDlqTransferEvent` and
+> `SagaLifecycleEvent` are genuinely absent.
 ### JFR Event Pattern (Zero-Allocation)
 
 ```java
@@ -277,8 +305,18 @@ TelemetryProvider (SPI interface — factory)
 
 TelemetrySink (SPI interface) — implemented by:
   ├─ [Community] JfrTelemetrySink          → writes to JFR event stream
-  └─ [Community] Slf4jTelemetrySink        → structured fallback via SLF4J + MDC
+  ├─ [Community] Slf4jTelemetrySink        → structured fallback via SLF4J + MDC
+  ├─ [Community] ConsoleSink               → human-readable stdout diagnostics (optional)
+  ├─ [Community] FileSink                  → human-readable file diagnostics (optional)
+  ├─ [Community] PrometheusMetricsSink     → counter/gauge/latency exposition (see below)
+  └─ [Core]      AsyncTelemetrySink        → async fan-out wrapper over any of the above (see below)
 ```
+
+`CommunityTelemetryProvider.createSinks()` — the default Community `TelemetryProvider` — wires exactly
+one of JFR or SLF4J (JFR when `TelemetryConfig.jfrSinkEnabled()`, SLF4J otherwise), plus `ConsoleSink`
+and/or `FileSink` when their respective config flags request them; they are not all active
+simultaneously by default. `PrometheusMetricsSink` is wired by application code directly (see
+"Operational metrics export — Prometheus" below), not through this provider.
 
 > **Why `List<TelemetrySink>` not a single sink?** `TelemetryProvider.createSinks()` returns a
 > list to support fan-out (e.g., JFR + File simultaneously in Community). The list is built once at
@@ -290,8 +328,12 @@ TelemetrySink (SPI interface) — implemented by:
 ### ScopedValue Propagation
 
 Both `TELEMETRY_PROVIDER` (the factory) and `TELEMETRY_SINKS` (the pre-built, ready-to-use list) are
-bound as `ScopedValue` slots by `KernelBootstrap`. Hot-path subsystems use `TELEMETRY_SINKS` directly.
-**No static router singleton** — any static `TelemetryRouter.isEnabled()` method is banned.
+declared as `ScopedValue` slots in `KernelProviders`, designed to be bound once during bootstrap; hot-path
+subsystems are meant to use `TELEMETRY_SINKS` directly. As of this repo, no `KernelBootstrap` /
+`SubsystemOrchestrator` code path actually binds either slot yet (see the Implementation Note above) —
+this section describes the intended contract, which the Community TCKs (`AbstractTelemetrySinkTck`,
+`AbstractTelemetryProviderTck`) exercise directly against sink/provider instances rather than through
+a bootstrap-bound scope. **No static router singleton** — any static `TelemetryRouter.isEnabled()` method is banned.
 
 > **Core-internal note:** `exeris-kernel-core` may use an internal fan-out helper to iterate over
 > `TELEMETRY_SINKS`, but this is **not** an SPI type and is invisible to consumers of the public API.
@@ -341,12 +383,12 @@ When the ring is full, `emit()` discards the incoming event (drop-newest), incre
 ### Lifecycle
 
 - Construction starts the VT consumer immediately.
-- `close()` stops accepting new events, interrupts the consumer to wake it from `poll`, and waits up to the configured drain timeout (default 2 s) for in-flight events. A misbehaving downstream sink that throws is logged-and-skipped — it cannot starve the consumer or other sinks.
+- `close()` stops accepting new events, interrupts the consumer to wake it from `poll`, and waits up to the configured drain timeout (default 2 s) for in-flight events. A misbehaving downstream sink that throws on `emit()` has the `RuntimeException` swallowed by the consumer loop — `AsyncTelemetrySink` itself does not log it, but it cannot starve the consumer or other wrapped sinks; the throwing sink's own diagnostic channel (SLF4J, JFR) is expected to surface the failure.
 
 ### Validation gates
 
 - `AsyncTelemetrySinkTest` (Core unit) covers correctness: fan-out delivery, drop counter on overflow, drain on close, metric pass-through, throwing-sink isolation, post-close emit no-op.
-- `CoreAsyncTelemetryRingBufferTckTest` extends `AbstractTelemetryRingBufferTck` to prove the wrapper sustains 100k events/s with no exceptions and a sub-100 ms close-flush.
+- `CoreAsyncTelemetryRingBufferTckTest` extends `AbstractTelemetryRingBufferTck` to prove the wrapper does not throw under 100k concurrent emissions and that `close()` returns within 100 ms after a burst; by the TCK's own class Javadoc, neither test establishes that the ring buffer retains every event without dropping under saturation, and the Core binding sizes its ring at 2x the emission count specifically to keep the drop path out of scope.
 - `CoreTelemetryZeroAllocTckTest` continues to pin the underlying `JfrTelemetrySink` allocation discipline; the async wrapper inherits the contract for the caller path.
 
 ---
@@ -476,8 +518,7 @@ exeris-decode --filter EX-MEM /tmp/exeris-crash/kernel-12345.ring
 
 [0000001840ns] EX-NET-4006 [WARN] PAQS load shedding
                rawArgs[0]: transportName=CommunityTcpTransport
-               rawArgs[1]: streamPriority=3 (LOW)
-               rawArgs[2]: thresholdPriority=2 (NORMAL)
+               rawArgs[1]: streamId=482910
 ```
 
 ---
@@ -507,8 +548,8 @@ completes. This creates a deliberate gap: L0 subsystems cannot emit JFR events t
 | Phase               | Telemetry Available                                    | Mechanism                                      |
 |:--------------------|:-------------------------------------------------------|:-----------------------------------------------|
 | **L0 boot (pre-JFR)** | ❌ JFR sink not yet bound                            | Glass-Box pre-allocated in-RAM buffer (L0-only) |
-| **L1 boot**         | ✅ JFR sink bound; `KernelProviders.TELEMETRY_PROVIDER` populated | `ScopedValue` slot bound by `KernelBootstrap` |
-| **READY**           | ✅ Full — `JfrTelemetrySink` + `Slf4jTelemetrySink` + Binary sink | Normal operation |
+| **L1 boot**         | 🚧 Target: JFR sink bound; `KernelProviders.TELEMETRY_PROVIDER` populated | Designed as a `ScopedValue` slot bound by `KernelBootstrap`; not yet wired in this repo — see the Implementation Note above |
+| **READY**           | ✅ Available Community sinks — `JfrTelemetrySink`, `Slf4jTelemetrySink`, `ConsoleSink`, `FileSink` — when application code constructs and wires them itself | Application-driven wiring today, not bootstrap-driven |
 | **SHUTTING_DOWN**   | ✅ Until `releaseArenas()` call                         | Events after Arena release are lost             |
 
 **L0 failure observability:** Any `ExerisKernelException` thrown during L0 (Config, Memory, Exceptions init)
@@ -544,7 +585,7 @@ Without it, L0 crash data is lost on a hard JVM crash.
 > **TCK coverage table:**
 > | TCK Abstract | Core binding | Community binding |
 > |---|---|---|
-> | `AbstractTelemetrySinkTck` | ✓ | ✓ |
+> | `AbstractTelemetrySinkTck` | — | ✓ (`JfrTelemetrySinkTckTest`, `ConsoleSinkTckTest`, `Slf4jTelemetrySinkTckTest`, `FileSinkTckTest`) |
 > | `AbstractTelemetryProviderTck` | — | ✓ |
 > | `AbstractJfrTelemetrySinkTck` | ✓ | **MISSING** — Community wrapper not bound to typed JFR TCK |
 > | `TelemetryZeroAllocTck` | ✓ | **MISSING** |
@@ -575,6 +616,11 @@ Community bindings: `JfrTelemetrySinkTckTest`, `CommunityTelemetryProviderTckTes
 > **Gap:** `AbstractTelemetryRingBufferTck` has no Community-tier concrete binding. No Community concrete test exists in `exeris-kernel-community/src/test/`.
 
 ---
+
+## Owning ADRs
+
+- [ADR-005](../adr/ADR-005-jfr-first-telemetry-strategy.md) — JFR-First Telemetry Strategy
+- [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) — Open-Core Observability Boundary — Shared Telemetry Wire Contract & Crash-File Decoder Cut
 
 ## Stability
 

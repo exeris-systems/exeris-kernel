@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.storage;
 
@@ -38,12 +34,11 @@ import java.util.Optional;
  *
  * <h2>Engine ownership</h2>
  * <p>This owns a {@code CLIENT}-mode engine of its own rather than borrowing the ambient
- * {@code HTTP_CLIENT_ENGINE}. Two reasons, and the second is the load-bearing one: an engine is bound
- * to a single host by {@code HttpConfig}, so a shared application client cannot address the storage
- * endpoint at all; and object transfers are large and long, so putting them through the pool that
- * serves application traffic would let one upload sit in front of every other request.
+ * {@code HTTP_CLIENT_ENGINE} (ADR-074): object transfers are large and long, and putting them through
+ * the pool that serves application traffic would let one upload sit in front of every other request.
+ * Head-of-line isolation is why this engine is private.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityS3Client implements AutoCloseable {
 
@@ -84,7 +79,14 @@ final class CommunityS3Client implements AutoCloseable {
                 MAX_HEADER_SIZE,
                 settings.engineBodyCeiling(),
                 false,
-                HttpVersion.HTTP_1_1));
+                HttpVersion.HTTP_1_1,
+                // ADR-074. Until 0.12 the engine dialled bindHost, so this client reached its
+                // endpoint by setting a LISTEN address to a DIAL value — the coincidence the ADR
+                // removed. The value is unchanged; it is now stated where it is read.
+                settings.host() + ":" + settings.port(),
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE));
         this.engine.start();
     }
 

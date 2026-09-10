@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -29,7 +25,7 @@ import java.util.function.LongSupplier;
  * buckets are periodically reclaimed and old entries removed.
  * VarHandle for lock-free counters on hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class FairnessTracker {
 
@@ -203,6 +199,7 @@ final class FairnessTracker {
             long waitSampleCount) {
     }
 
+    /** A computed, time-windowed fairness reading — see {@link #computeSnapshot()}. */
     /* default */ record FairnessSnapshot(double fairnessRatio, long queueDepthP95, long queueWaitP95Ms) {
     }
 

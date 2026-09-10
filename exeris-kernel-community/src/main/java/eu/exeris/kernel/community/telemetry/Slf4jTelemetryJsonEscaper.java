@@ -1,18 +1,13 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.telemetry;
 
 /**
  * Package-private JSON string-escape helper for {@link Slf4jTelemetrySink}.
  *
- * <p>Extracted from {@link Slf4jTelemetrySink} in v0.8 Sprint 1 (QA-012) as the
- * leaf of the JSON serialization split. Owns {@link #escapeJson(String)} and
+ * <p>The leaf of the JSON serialization split: owns {@link #escapeJson(String)} and
  * {@link #appendJsonString(StringBuilder, String)}, both consumed by
  * {@link Slf4jTelemetryJsonWriter} (top entry) and
  * {@link Slf4jTelemetryRawArgsWriter} (rawArgs walker).

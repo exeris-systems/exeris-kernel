@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.hpack.huffman;
 
@@ -30,7 +26,7 @@ package eu.exeris.kernel.core.http.hpack.huffman;
  * <p>{@link #getEntry(int, int)} is the only method intended for the decode hot path.
  * It returns a packed {@code int} — zero heap allocation per nibble.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
         "PMD.CyclomaticComplexity",
@@ -115,7 +111,11 @@ public final class HuffmanTable {
         return HUFFMAN_LENS_INT[symbol];
     }
 
-    /** Returns the number of symbols in the Huffman alphabet (257: 0–255 + EOS). */
+    /**
+     * Returns the number of symbols in the Huffman alphabet.
+     *
+     * @return the alphabet size (257: byte values 0–255 plus the EOS symbol)
+     */
     public static int symbolCount() {
         return HUFFMAN_LENS.length;
     }

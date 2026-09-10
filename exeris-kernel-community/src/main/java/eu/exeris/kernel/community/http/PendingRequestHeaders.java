@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -12,6 +8,7 @@ import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -20,14 +17,14 @@ import java.util.Set;
  * Package-private HPACK-decode accumulator for one HTTP/2 request used by
  * {@link Http2SessionContext#decodePendingRequest()}.
  *
- * <p>Extracted from {@link CommunityHttp2SessionProcessor} in v0.8 Sprint 3
- * (QA-018a) as one of four seams of the processor's God-class decomposition.
- * Enforces RFC 7540 §8.1.2.1 pseudo-header ordering (pseudo-headers MUST
+ * <p>Enforces RFC 7540 §8.1.2.1 pseudo-header ordering (pseudo-headers MUST
  * precede regular headers), §8.1.2.2 connection-specific header rejection,
  * §8.1.2.3 the prohibition on duplicate request pseudo-headers, and the
  * {@code :method} / {@code :path} pseudo-header requirements.
  *
- * <p>Instances are short-lived (one per HEADERS+CONTINUATION block).
+ * <p>Instances are short-lived (one per HEADERS+CONTINUATION block) and single-use: the accumulator
+ * is built, filled, and consumed by {@link #toDecodedRequest} inside one call, and never touched
+ * again. That is what lets the decoded request wrap this list rather than copy it.
  */
 final class PendingRequestHeaders {
 
@@ -41,6 +38,14 @@ final class PendingRequestHeaders {
     private final Set<Pseudo> seenPseudoHeaders = EnumSet.noneOf(Pseudo.class);
     private final List<HttpHeader> requestHeaders = new ArrayList<>();
 
+    /**
+     * Accumulates one decoded header field, applying it as a pseudo-header (a name starting with
+     * {@code :}) or a regular header depending on its name. A no-op once this accumulator has
+     * already been marked invalid.
+     *
+     * @param name  the decoded header name, exactly as HPACK produced it
+     * @param value the decoded header value
+     */
     /* default */ void accept(String name, String value) {
         if (!valid) {
             return;
@@ -57,15 +62,23 @@ final class PendingRequestHeaders {
         requestHeaders.add(new HttpHeader(name, value));
     }
 
+    /** Marks this accumulator invalid regardless of what it has accepted so far. */
     /* default */ void invalidate() {
         valid = false;
     }
 
+    /**
+     * Ends this accumulator's life, handing the decoded request an unmodifiable view of the
+     * accumulated headers. A view, not a copy: nothing else holds the list, and the accumulator is
+     * unreachable the moment this returns, so a copy would only duplicate every header of every
+     * HTTP/2 request to protect a reference no caller can obtain.
+     */
     /* default */ Http2DecodedRequest toDecodedRequest(int streamId) {
         HttpMethod method = parseHttp2Method(methodToken);
         String resolvedPath = path == null ? "" : path;
         boolean requestValid = valid && method != null && !resolvedPath.isEmpty();
-        return new Http2DecodedRequest(streamId, method, resolvedPath, List.copyOf(requestHeaders), requestValid);
+        return new Http2DecodedRequest(streamId, method, resolvedPath,
+                Collections.unmodifiableList(requestHeaders), requestValid);
     }
 
     private void acceptPseudoHeader(String name, String value) {

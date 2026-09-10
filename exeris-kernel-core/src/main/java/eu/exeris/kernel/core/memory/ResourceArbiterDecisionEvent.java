@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.memory;
 
@@ -32,12 +28,12 @@ import jdk.jfr.StackTrace;
  *   action         — String: ALLOW | THROTTLE | REJECT | SHED_LOAD
  *   contextName    — String: TRANSPORT_IO | KERNEL_LOGIC
  *   utilizationPct — int:   memory utilization percentage [0..100]
- *   decisionNs     — long:  VarHandle CAS decision cache timestamp (nanos)
+ *   decisionNs     — long:  nanosecond timestamp of this decision ({@code System.nanoTime()})
  * </pre>
  *
+ * @since 0.5
  * @see ResourceArbiter
  * @see ResourceArbiter.Action
- * @since 0.5.0
  */
 @Name("eu.exeris.kernel.core.ResourceArbiterDecision")
 @Label("Resource Arbiter Decision")

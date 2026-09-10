@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -16,6 +12,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
+import eu.exeris.kernel.tck.support.TckScope;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -32,7 +29,6 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.StructuredTaskScope;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -109,8 +105,7 @@ class CommunityPersistenceTenantIsolationIT {
     void vtStress_sharedContext_hasNoLeaksAndNoInitFailureStorm() throws Exception {
         int taskCount = 128;
 
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.<Void>awaitAllSuccessfulOrThrow())) {
+        try (var scope = TckScope.openFailFast()) {
             for (int i = 0; i < taskCount; i++) {
                 final int idx = i;
                 final boolean isA = (idx % 2 == 0);

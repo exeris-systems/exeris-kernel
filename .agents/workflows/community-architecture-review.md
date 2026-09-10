@@ -1,6 +1,14 @@
 ---
+name: community-architecture-review
 description: Review an Exeris change for Open-Core architecture placement, boundary integrity, ADR/contract alignment, and minimal safe direction.
 argument-hint: PR diff or task scope to review
+steps:
+  - {skill: exeris-triage, when: "the scope crosses more than one subsystem"}
+  - {agent: exeris-architect}
+  - {skill: exeris-architect-guardrails}
+gates:
+  - test:ExerisArchitectureTest
+  - test:KernelTierDirectionArchitectureTest
 ---
 
 Review this change as an Exeris Community/Open-Core architecture task.

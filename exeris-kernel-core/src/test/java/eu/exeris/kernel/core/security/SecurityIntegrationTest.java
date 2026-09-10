@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.security;
 
+import eu.exeris.kernel.core.concurrent.StructuredScope;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.security.InsufficientPrivilegesException;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
@@ -19,6 +16,7 @@ import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.security.StorageContext.IsolationStrategy;
+import eu.exeris.kernel.tck.support.TckScope;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -26,7 +24,6 @@ import org.junit.jupiter.api.Test;
 import java.lang.foreign.MemorySegment;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -37,8 +34,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Integration tests for the Security subsystem:
  * {@link SecurityInterceptor} + {@link CitadelGuard} + {@link StorageContextBridge}.
  *
- * <p>Verifies end-to-end flows across Virtual Thread boundaries using
- * {@link StructuredTaskScope} — the only permitted concurrency primitive.
+ * <p>Verifies end-to-end flows across thread boundaries. The GA line does not inherit {@code
+ * ScopedValue} bindings across a fork, so a child sees the security context only if the parent
+ * captured it and rebound it explicitly — {@link StructuredScope} is that seam, and the tests below
+ * exercise it rather than a JDK capability the distributed artifact does not use.
  */
 @DisplayName("Security subsystem — integration tests")
 class SecurityIntegrationTest {
@@ -145,16 +144,16 @@ class SecurityIntegrationTest {
     }
 
     // =========================================================================
-    // Virtual Thread inheritance — StructuredTaskScope
+    // Security context across thread boundaries
     // =========================================================================
 
     @Nested
-    @DisplayName("Virtual Thread inheritance via StructuredTaskScope")
-    class VirtualThreadInheritance {
+    @DisplayName("Security context across thread boundaries")
+    class ContextAcrossThreads {
 
         @Test
-        @DisplayName("PRINCIPAL_CONTEXT and STORAGE_CONTEXT propagate to child VTs inside StructuredTaskScope")
-        void contextsInheritedByChildVirtualThreads() {
+        @DisplayName("PRINCIPAL_CONTEXT and STORAGE_CONTEXT reach 50 concurrent children through the carrier")
+        void contextsReachChildrenThroughTheCarrier() {
             SecurityInterceptor interceptor =
                     new SecurityInterceptor(new TenantProvider(ADMIN_PRINCIPAL));
 
@@ -163,7 +162,13 @@ class SecurityIntegrationTest {
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
             interceptor.intercept(new StubBuffer(), () -> {
-                try (var scope = StructuredTaskScope.open()) {
+                // Captured inside the interceptor's binding and rebound onto the children: the
+                // children are forked, and a fork does not inherit what the parent bound. This is
+                // the propagation a consumer has to write, so it is the one worth asserting.
+                ScopedValue.Carrier carrier = ScopedValue
+                        .where(KernelProviders.PRINCIPAL_CONTEXT, KernelProviders.principal())
+                        .where(KernelProviders.STORAGE_CONTEXT, KernelProviders.storageContext());
+                try (StructuredScope scope = StructuredScope.open(carrier)) {
                     for (int i = 0; i < vtCount; i++) {
                         scope.fork(() -> {
                             try {
@@ -184,7 +189,7 @@ class SecurityIntegrationTest {
                     scope.join();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new AssertionError("StructuredTaskScope interrupted", e);
+                    throw new AssertionError("interrupted while joining the child scope", e);
                 }
             });
 
@@ -208,7 +213,9 @@ class SecurityIntegrationTest {
             AtomicInteger userRejectedCount = new AtomicInteger(0);
             AtomicReference<Throwable> failure = new AtomicReference<>();
 
-            try (var scope = StructuredTaskScope.open()) {
+            // No binding crosses this fork: each task opens its own interceptor scope, so the
+            // fixture only needs fan-out and a rethrow of whatever escaped.
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < requestCount; i++) {
                     boolean isAdmin = (i % 2 == 0);
                     ImmutablePrincipal principal = isAdmin ? ADMIN_PRINCIPAL : USER_PRINCIPAL;

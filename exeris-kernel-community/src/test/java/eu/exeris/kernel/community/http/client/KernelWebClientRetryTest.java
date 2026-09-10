@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http.client;
 
@@ -37,6 +33,7 @@ import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +60,64 @@ class KernelWebClientRetryTest {
 
     private KernelWebClient client(HttpClientEngine engine, HttpClientRequestEnricher enricher) {
         return new KernelWebClient(engine, ALLOCATOR, REQUEST_ENCODERS, RESPONSE_DECODERS, enricher, FAST_POLICY);
+    }
+
+    @Test
+    @DisplayName("one engine serves two peers — withAuthority derives, it does not mutate")
+    void oneEngineServesManyPeers() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of(
+                okJson("{\"ok\":\"a\"}"), okJson("{\"ok\":\"b\"}"), okJson("{\"ok\":\"c\"}")));
+        engine.defaultAuthority = "default.internal:80";
+
+        KernelWebClient base = client(engine, HttpClientRequestEnricher.noop());
+        KernelWebClient payments = base.withAuthority("payments.internal:8443");
+
+        // This is the whole point of putting the authority on the request rather than on the engine,
+        // and until this method existed it was unreachable from the typed surface: every call went
+        // to whatever single peer the engine was configured with.
+        payments.get("/charge", Map.class);
+        base.get("/health", Map.class);
+        payments.get("/refund", Map.class);
+
+        assertThat(engine.received).extracting(HttpRequest::authority)
+                .as("the derived client addresses its peer and leaves the original addressing the default")
+                .containsExactly("payments.internal:8443", "default.internal:80", "payments.internal:8443");
+    }
+
+    @Test
+    @DisplayName("withAuthority returns the same instance when the peer is already the bound one")
+    void withAuthorityIsIdentityWhenUnchanged() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of());
+        KernelWebClient base = client(engine, HttpClientRequestEnricher.noop());
+
+        assertThat(base.withAuthority(null)).isSameAs(base);
+        KernelWebClient bound = base.withAuthority("a.internal:1");
+        assertThat(bound.withAuthority("a.internal:1")).isSameAs(bound);
+        assertThat(bound).isNotSameAs(base);
+    }
+
+    @Test
+    @DisplayName("the enricher observes the resolved authority, not null (ADR-074 decision 5)")
+    void enricherObservesTheResolvedAuthority() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of(okJson("{\"ok\":\"yes\"}")));
+        engine.defaultAuthority = "payments.internal:8443";
+        AtomicReference<String> seenByEnricher = new AtomicReference<>();
+
+        // ADR-074 decided the ordering as authority-THEN-enrich-THEN-send, and the reason is not
+        // tidiness: an enricher binding an outbound credential's audience to its peer (ADR-040) has
+        // only the request to read. If the engine substituted its default inside send(), enrichment
+        // would already have run and this would be null on every request — which was the case until
+        // KernelWebClient started resolving it first.
+        HttpClientRequestEnricher recording = request -> {
+            seenByEnricher.set(request.authority());
+            return request;
+        };
+
+        client(engine, recording).get("/widget/1", Map.class);
+
+        assertThat(seenByEnricher.get())
+                .as("the enricher must see the peer the request is actually sent to")
+                .isEqualTo("payments.internal:8443");
     }
 
     @Test
@@ -167,6 +222,13 @@ class KernelWebClientRetryTest {
 
         ProgrammedEngine(List<Supplier<HttpResponse>> responses) {
             this.script = new ArrayDeque<>(responses);
+        }
+
+        private String defaultAuthority;
+
+        @Override
+        public String defaultAuthority() {
+            return defaultAuthority;
         }
 
         @Override

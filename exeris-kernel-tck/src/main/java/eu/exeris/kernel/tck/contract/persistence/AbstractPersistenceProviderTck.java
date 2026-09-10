@@ -1,0 +1,135 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package eu.exeris.kernel.tck.contract.persistence;
+
+import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.util.Comparator;
+import java.util.ServiceLoader;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * TCK: Abstract base for {@link PersistenceProvider} contract verification.
+ *
+ * <h2>Contract</h2>
+ * <ul>
+ *   <li>{@code providerId()} is non-null and non-blank</li>
+ *   <li>{@code providerName()} is non-null and non-blank</li>
+ *   <li>{@code priority()} follows Open-Core convention (0 or 100)</li>
+ *   <li>Provider is discoverable via {@link ServiceLoader}</li>
+ * </ul>
+ *
+ * @since 0.5
+ */
+public abstract class AbstractPersistenceProviderTck {
+
+    /**
+     * Creates the {@link PersistenceProvider} under test.
+     *
+     * @return a provider under test
+     */
+    protected abstract PersistenceProvider createProvider();
+
+    private PersistenceProvider provider;
+
+    /**
+     * Creates the contract; subclasses supply the provider via {@link #createProvider()}.
+     */
+    public AbstractPersistenceProviderTck() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    @BeforeEach
+    final void setUpProvider() {
+        provider = createProvider();
+    }
+
+    @Nested
+    @DisplayName("Provider identity")
+    class Identity {
+
+        /**
+         * Groups the {@code providerId()}/{@code providerName()}/{@code priority()} identity
+         * assertions.
+         */
+        Identity() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @DisplayName("providerId() is non-blank")
+        void providerIdNonBlank() {
+            assertThat(provider.providerId()).isNotNull().isNotBlank();
+        }
+
+        @Test
+        @DisplayName("providerName() is non-blank")
+        void providerNameNonBlank() {
+            assertThat(provider.providerName()).isNotNull().isNotBlank();
+        }
+
+        @Test
+        @DisplayName("providerId() is stable across calls")
+        void providerIdStable() {
+            assertThat(provider.providerId()).isEqualTo(provider.providerId());
+        }
+
+        @Test
+        @DisplayName("priority() follows Open-Core convention")
+        void priorityConvention() {
+            assertThat(provider.priority()).isIn(0, 100);
+        }
+    }
+
+    @Nested
+    @DisplayName("ServiceLoader integration")
+    class ServiceLoaderContract {
+
+        /**
+         * Groups the {@link ServiceLoader} discoverability and priority-ordering assertions.
+         */
+        ServiceLoaderContract() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @DisplayName("PersistenceProvider is discoverable via ServiceLoader")
+        void discoverable() {
+            long count = ServiceLoader.load(PersistenceProvider.class).stream().count();
+            assertThat(count).isGreaterThanOrEqualTo(1);
+        }
+
+        /**
+         * Confirms {@link PersistenceProvider#priority()} yields a well-defined ordering over
+         * the {@link ServiceLoader}-discovered providers.
+         *
+         * @apiNote This does not prove that bootstrap wiring resolves a tie by selecting the
+         *          highest-priority provider: {@code selected} is independently recomputed here
+         *          as the maximum of the very set {@code provider} was drawn from, so the
+         *          assertion holds for any discovered provider regardless of how — or whether —
+         *          production selection logic uses {@code priority()}. Proving precedence
+         *          requires exercising the engine's own provider-selection path with two
+         *          competing providers registered.
+         */
+        @Test
+        @DisplayName("Highest-priority provider wins")
+        void highestPriorityWins() {
+            PersistenceProvider selected = ServiceLoader.load(PersistenceProvider.class)
+                    .stream()
+                    .map(ServiceLoader.Provider::get)
+                    .max(Comparator.comparingInt(PersistenceProvider::priority))
+                    .orElseThrow();
+            assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
+        }
+    }
+}

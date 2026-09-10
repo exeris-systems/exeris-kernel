@@ -1,13 +1,9 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
- * Graph Subsystem SPI — L2 Data Synthesis.
+ * Exeris Kernel SPI – Graph subsystem contracts (L2 Data Synthesis).
  *
  * <h2>Entry Point</h2>
  * <p>{@link eu.exeris.kernel.spi.graph.GraphProvider} is the {@code ServiceLoader}
@@ -20,7 +16,7 @@
  * contracts and Valhalla-ready value records, and remains implementation-blind at
  * the SPI surface. References to specific technologies (e.g., JDBC, Neo4j Bolt,
  * io_uring) appear solely in documentation to describe expected implementation
- * bindings; they must never appear in types or method signatures within this package.
+ * bindings; they MUST NOT appear in types or method signatures within this package.
  *
  * <h2>Package Layout</h2>
  * <pre>
@@ -41,9 +37,10 @@
  *       Zero dynamic allocation after startup.</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.spi.graph.GraphProvider
  * @see eu.exeris.kernel.spi.graph.GraphEngine
+ * @see <a href="../../../../../../docs/subsystems/graph.md">graph.md</a>
  */
 package eu.exeris.kernel.spi.graph;
 

@@ -1,7 +1,16 @@
+---
+title: "Kernel Subsystem: HTTP (HPACK + HTTP/2 + HTTP/1.1)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: HTTP (HPACK + HTTP/2 + HTTP/1.1)
 
 **Layer:** L2 (Wire Translation)  
-**Status:** Implemented in `exeris-kernel-core` (`v0.6.0`)
+**Status:** Validated Architectural Prototype (TRL-3) — SPI shipped v0.5.0, extended through v0.12.0 (SSE, route policy, WebSocket)
 
 ---
 
@@ -77,7 +86,10 @@ HTTP codec package: `eu.exeris.kernel.core.http`
 Implemented components:
 
 - **HPACK / Huffman:** `hpack.*`, `hpack.huffman.*`
-- **HTTP/2 framing:** `http2.*`
+- **HTTP/2 framing:** `http2.*` — consumed by the Community **server** engine only. The Community
+  **client** engine (`CommunityHttpClientEngine`) is HTTP/1.x-only by its own class doc and never
+  imports this package: every outbound request the kernel sends goes out as HTTP/1.1, regardless
+  of what the server side of the same process can accept.
 - **HTTP/1.1 codec:** `http1.*`
 - **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact, path-template (`{name}` placeholder), and prefix routing plus HEAD→GET fallback (RFC 9110 §9.3.2). Resolution precedence is exact → template → prefix; a template hit captures each placeholder and exposes it to the handler via `HttpExchange.pathParams()` (the router wraps the exchange in a `PathParamHttpExchange` decorator — Core never depends on a concrete transport-side exchange). `HttpRouterRegisteredEvent` (JFR) records exact/template/prefix route counts.
   The **streaming table follows the same rules** — exact before template, same `{name}` syntax, captured values reaching the handler through `HttpStreamExchange.pathParams()` via a `PathParamStreamExchange` decorator. It did not always: until v0.11 the streaming table was an exact-match map while the tooling generator emitted templated stream paths, so a per-action stream route registered successfully and then never matched a concrete request. A registration that cannot match is now unrepresentable — a malformed brace throws at `Builder.streamRoute`, and a well-formed one compiles to a template. Both tables share one compiled `PathTemplate`, so they cannot drift into disagreeing about what `/x/{id}` means.
@@ -152,13 +164,20 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 - `hpack.*`
 - `hpack.huffman.*`
 
-**Community tier is implemented.** Since the v0.8 Sprint 3 ADR-026 amendment (2026-05-17) the Community HTTP source tree is split into `shared/` / `client/` / `server/` / `h2/` subpackages under `eu.exeris.kernel.community.http`; the production classes are:
+**Community tier is implemented.** The Community HTTP source tree remains a single flat package,
+`eu.exeris.kernel.community.http`; a `shared/` / `client/` / `server/` / `h2/` subpackage split was
+proposed as an optional follow-up in the v0.8 Sprint 3 ADR-026 amendment (2026-05-17) but has not been
+executed. The production classes include:
 - `CommunityHttpProvider`, `CommunityHttpServerEngine`, `CommunityHttpClientEngine`
 - `CommunityHttpRequestProcessor`, `CommunityHttpTransportFactory`
 - `CommunityHttpExchange`, `Http2DecodedRequest`, `Http2RequestStreamState`, `Http2SessionContext`, `CommunityHttp2SessionProcessor`
 - `InMemoryHttp2Exchange`, `JsonBodyEncoder`
 - `CommunityHttpLifecycleEvent` (JFR)
-- `eu.exeris.kernel.community.http.client.CommunityWebClient` + `WebClientException` (since v0.8 Sprint 2, ADR-026) — typed HTTP verbs + Jackson 3 JSON binding façade on top of `HttpClientEngine`; the SPI surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
+
+The typed HTTP client facade is `KernelWebClient` (with nested `WebClientException`), which lives in
+`exeris-kernel-core`'s `eu.exeris.kernel.core.http.client` package as a tier-neutral class, not a
+Community class — typed HTTP verbs + Jackson 3 JSON binding on top of `HttpClientEngine`; the SPI
+surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
 
 ### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))
 
@@ -215,6 +234,40 @@ The policy answers `RouteRequirement` (`permitAll` / `authenticated` / `requirin
 `PrincipalContext` into admit / `401` / `403`. Roles are not expressible here — see
 [`security.md`](security.md) for why the edge checks scopes and `@RequiresRole` stays at the method.
 
+**A policy may decline a route, so two authors can share the URL space (since 0.12, ADR-061 A2).**
+`requirementFor` is total, which is right for one policy and is exactly what stopped two from
+coexisting: whichever was bound had to answer for every route, including those it knew nothing about,
+and its only options were the fail-open/fail-closed pair the application had already chosen. Build-time
+tooling hit this first — a generated policy can describe generated routes and nothing else.
+
+`RouteRequirement.abstain()` says *"this policy does not describe this route"*, which is neither
+`permitAll()` (that describes it as public) nor `null` (that is a defect).
+`HttpRoutePolicy.firstDeclared(policies, whenNoneDeclares)` folds an ordered list and takes the first
+non-abstaining answer. Three properties are load-bearing:
+
+- **Totality moves to the fold.** A composed policy is total over its own routes; the composition is
+  what is total. A policy bound directly to the slot is still total alone, because nothing folds for
+  it — an abstention reaching the enforcer is a defect and denies, exactly as `null` does.
+- **`whenNoneDeclares` has no default.** It is the unmatched stance, and giving it a default would
+  re-create the problem abstention solves: a second author answering a question the application had
+  already answered. Passing an abstention there is refused at composition time.
+- **Order is the declaration.** With two policies claiming one route the earlier wins and the later
+  never runs, so composing a generated policy *after* a hand-written one is how an application keeps
+  the last word on a route it wrote.
+
+Abstention covers the whole carrier, execution facet included — `abstain().longRunning()` throws
+rather than returning a non-declaration marked long-running. Two policies cannot each contribute half
+a route's answer; splitting the facets would be a different decision and ADR-061 A2 does not take it.
+
+**A route also declares how it executes (since 0.12, ADR-077).** `RouteRequirement` carries an
+execution facet — `PROMPT` by default, `LONG_RUNNING` via `longRunning()`. It is about the route, not
+about a connection: this SPI stays blind to what a driver holds, and the Community dispatcher is what
+draws the consequence (a `LONG_RUNNING` route gets no request-scoped persistence session bound, so a
+handler that blocks pins nothing pooled across the block). The facet changes no authorization
+decision — `AbstractHttpRoutePolicyTck` asserts that a requirement and its `LONG_RUNNING` twin decide
+identically on every shape and every principal. See [`persistence.md`](persistence.md) for the cost
+side of the trade.
+
 **A stream open passes the same gate as a request, through the same code.** Opening an SSE stream is
 a request that happens to be answered by an engine rather than an exchange, so it is subject to the
 route requirement identically: `CommunityHttpRequestDispatcher.dispatchStream` runs the same
@@ -230,6 +283,81 @@ exchange is supplied lazily, so an admitted open — every open, in a healthy de
 allocate one.
 
 ---
+
+### Duplex: WebSocket (since 0.12, [ADR-084](../adr/ADR-084-websocket-provider-spi.md)) — `preview`
+
+**A separate package, not an extension of this one.** `eu.exeris.kernel.spi.websocket` carries the
+provider, engine, per-connection exchange and session, handshake decision, close codes and config.
+Only the handshake is HTTP, and it reuses `HttpRequest` and `HttpStatus` rather than minting parallel
+carriers — the handshake *is* an HTTP GET and its refusal *is* an HTTP response. The record's `body`
+is meaningless there and is `null`.
+
+**Why it exists at all.** SSE (ADR-043) is one-directional by construction, so a bidirectional
+request/response protocol cannot ride it. That is the whole justification, and it is structural
+rather than a preference: RFC-2026-06-18 deferred WebSocket precisely because "the dominant use case
+is unidirectional server push", and recorded it as a later, separately-justified addition.
+
+**The engine is embeddable.** `WebSocketProvider.createServerEngine(config)` → `setHandler` →
+`start()`, deliberately the same lifecycle as `HttpServerEngine`, so a consumer obtains an endpoint
+**without booting the kernel**. A tool that starts per editing session should not pay for a runtime
+it does not use.
+
+**Three contract properties worth knowing before writing a handler:**
+
+| Property | What it means |
+|---|---|
+| Text-only on the surface | `send(String)` / `receive()`. Control and continuation frames are the codec's — a peer fragmenting a large message is speaking the protocol correctly and the handler sees one message. The *binary opcode* is declined and closes the connection. |
+| `send` parks and serialises | Parks the virtual thread under backpressure, never queues on the heap (ADR-043 obligation 4). RFC 6455 forbids interleaving two messages' frames, so concurrent senders are ordered rather than rejected — and **a slow peer therefore blocks every sender on that connection**. |
+| The directions end differently | `receive()` returns `null` at close, because that is the ordinary end of a loop; `send()` throws `WebSocketClosedException` (`EX-HTTP-4014`), because a handler that had something to say and could not has to see it. |
+
+**The handshake refuses by default.** A WebSocket handshake is not subject to CORS, so a server that
+ignores `Origin` can be opened by any page the user has visited, carrying their cookies — and a
+browser cannot set request headers, which leaves `Origin`, cookies, `Sec-WebSocket-Protocol` and the
+query as the only channels a consumer has. `WebSocketConfig.allowedOrigins` is a **hard pre-filter**
+and the optional `WebSocketHandshakeHandler` can only **narrow** it; an empty allowlist accepts no
+browser origin rather than any. Forgetting to write a callback therefore produces a refusal somebody
+notices, not a hole nobody does.
+
+A request carrying **no `Origin` at all is not a browser**, and the allowlist does not apply to it.
+That is deliberate: the attack being defended against is CSWSH, which works because the victim's own
+browser attaches ambient cookies, and a client that chooses its own headers has none to abuse.
+Refusing header-less clients would break every non-browser consumer — an LSP over a plain socket
+among them — while stopping an attacker who need only omit one header.
+
+**The Community binding (since 0.12.0)** is `eu.exeris.kernel.community.websocket`:
+`CommunityWebSocketProvider`, `CommunityWebSocketServerEngine`, `CommunityWebSocketUpgrade` (the
+HTTP upgrade and the origin pre-filter), `CommunityWebSocketExchange` and a JFR lifecycle event. It
+runs the Core RFC 6455 codec over the community TCP carrier, one virtual thread per connection, and
+binds `AbstractWebSocketExchangeTck` over a real loopback socket.
+
+**Both directions use `LoanedBuffer`, one per connection**, and the reason is mechanical rather than
+stylistic. `TransportStream` documents its segments as off-heap; the community carrier hands them to
+a POSIX `send()` downcall built without `Linker.Option.critical`, which **rejects a heap segment**,
+and that rejection is absorbed by a `catch (Throwable)` that falls back to NIO. A heap buffer here
+therefore does not fail — it throws and is caught on every frame, leaving the fast seam permanently
+unused. One buffer for the connection's life, grown when a frame does not fit, rather than one
+allocation per frame: a duplex connection sends many small messages over a long life.
+
+**One thing it does not do, stated rather than left to be found: `keepAliveIntervalMillis` is not
+honoured — no server-initiated pings are sent.** The function a keepalive usually serves here *is*
+served, by a different mechanism: the carrier receives `idleTimeoutMillis` and the transport's idle
+reaper reclaims a connection that has moved no bytes for that long, so a dead peer is detected and
+released. What is missing is the other use — holding a NAT or proxy path open through a quiet period,
+which only an outbound frame can do. A client that sends its own pings is answered: a `PING` is
+always replied to with a `PONG` carrying the same payload (RFC 6455 §5.5.2). The knob stays on the
+SPI because an enterprise engine with its own timer wheel can honour it; this is one of the gaps the
+benchmark evidence gating promotion (ADR-084 §10) has to close.
+
+**Session identity is per connection and does not survive a reconnect.** A consumer wanting
+continuity builds it on the handshake — a returning client presents its own token. The kernel does
+not own resumption because the cost concentrates in buffering the disconnect window, which is the
+on-heap queue obligation 4 forbids, and without that buffer resumption restores identity rather than
+the stream.
+
+**`preview`, on stated criteria.** The TCK is not the promotion gate: a contract test proves a shape
+is honoured, not that it survives, and for a long-lived duplex protocol that is where the two
+diverge. `stable` is gated on benchmark evidence — concurrent connections, frame throughput,
+backpressure under a slow reader, teardown of a dead peer.
 
 ### HTTP/2 stream admission (since v0.8 Sprint 5, HTTP-112)
 
@@ -255,7 +383,9 @@ The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset:
 ## Architectural Notes (Current State)
 
 - `QPACK` / HTTP/3 implementation is not present in this open repository module set.
-- Root Maven modules are currently: `build-config`, `bom`, `parent`, `spi`, `tck`, `core`, `community`.
+- Root Maven modules are currently: `build-config`, `bom`, `parent`, `spi`, `tck`, `core`,
+  `community-testkit`, `community`, `community-kafka`, `diagnostics-cli`. HTTP code lives only in
+  `spi`, `core`, `community`, and `tck`.
 - Documentation and design discussions that mention dedicated `exeris-kernel-http` module
   should be treated as target/roadmap unless that module appears in the root reactor.
 
@@ -269,11 +399,29 @@ The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset:
 
 ---
 
+## Owning ADRs
+
+- [ADR-009](../adr/ADR-009-http-codec-module.md) — HTTP Codec Placement (Core-Embedded)
+- [ADR-026](../adr/ADR-026-client-side-application-api.md) — Client-Side Application API — `CommunityWebClient`
+- [ADR-032](../adr/ADR-032-http-client-request-enricher-spi.md) — `HttpClientRequestEnricher` SPI — Implicit Context Propagation to Outbound HTTP
+- [ADR-034](../adr/ADR-034-client-side-body-codec-spi.md) — Client-Side Body Codec SPI — `HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` + `KernelWebClient` Facade
+- [ADR-036](../adr/ADR-036-server-side-request-body-decoder-spi.md) — Server-Side Request Body Decoder SPI — `HttpRequestBodyDecoder` + Generated-Handler Resolution
+- [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) — Adopt SSE-First Kernel HTTP Streaming via a Sibling `HttpStreamExchange`
+- [ADR-045](../adr/ADR-045-client-side-http-retry-policy-spi.md) — `HttpRetryPolicy` SPI — Opt-in Client-Side Retry for `KernelWebClient`
+- [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — Replace the hardcoded `/secure` prefix with a declarable HTTP route-authorization policy
+- [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) — A request names its own peer — the client stops dialling the address its server listens on
+- [ADR-077](../adr/ADR-077-route-declared-connection-lifetime.md) — A route declares how it executes, and the dispatcher draws the connection consequence
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.http.*`) is classified **mixed** in the
 [SPI Stability Matrix](../stability-matrix.md): `HttpClientEngine`, `HttpServerEngine`,
-`HttpProvider`, and `HttpClientRequestEnricher` are **stable**, while the body-codec quadrant
-(`HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` / `HttpResponseBodyDecoder`, ADR-034) is held
-at **preview** until the server-side generator loop that consumes the request decoder closes. See
-the matrix's `…spi.http` per-surface breakdown for the semver policy and TCK coverage status.
+`HttpProvider`, `HttpExchange`, `HttpHandler`, the request/response carriers, and
+`HttpClientRequestEnricher` are **stable**. Everything else covered in detail above is still
+**preview**: the body-codec quadrant (`HttpRequestBodyEncoder` / `HttpRequestBodyDecoder` /
+`HttpResponseBodyDecoder`, ADR-034) until the server-side generator loop that consumes the request
+decoder closes, client retry (`HttpRetryPolicy`, ADR-045), route authorization
+(`HttpRoutePolicy` / `RouteRequirement`, ADR-061/ADR-077), and the SSE streaming contracts
+(`HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent`, ADR-043). `eu.exeris.kernel.spi.websocket`
+is a separate surface (see above) and is also **preview**. See the matrix's `…spi.http` per-surface
+breakdown for the semver policy and TCK coverage status.

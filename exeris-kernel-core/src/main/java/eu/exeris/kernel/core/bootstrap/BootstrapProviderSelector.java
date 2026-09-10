@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.bootstrap;
 
@@ -40,6 +36,11 @@ public final class BootstrapProviderSelector {
      * {@code comparator}. No availability filtering is applied. Use
      * {@link #loadHighestPriority(Class, Comparator, Predicate)} for SPI types that
      * declare a platform-availability predicate.
+     *
+     * @param providerType SPI type loaded via {@code ServiceLoader}
+     * @param comparator   ranking comparator (higher rank wins)
+     * @param <T>          provider type
+     * @return highest-ranked provider, or empty if none is registered
      */
     public static <T> Optional<T> loadHighestPriority(Class<T> providerType,
                                                       Comparator<? super T> comparator) {

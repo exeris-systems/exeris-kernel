@@ -38,9 +38,9 @@ SPI_PATH="exeris-kernel-spi/src/main/java"
 # Derived from the running JDK rather than hardcoded. A fixed value silently rots the moment the
 # build's baseline moves: this defaulted to 26 and broke the gate the day CI pinned JDK 25 LTS
 # (ADR-066), with "release version 26 not supported" — a message that names the flag, not the cause.
-# --enable-preview below is only legal when the release equals the running JDK, so deriving keeps
-# the two consistent by construction. Override with SPI_API_DIFF_RELEASE when diffing deliberately
-# against another level.
+# Deriving also keeps the gate working on whatever JDK a contributor happens to run, since a JDK
+# cannot target a release newer than itself. Override with SPI_API_DIFF_RELEASE when diffing
+# deliberately against another level.
 DETECTED_RELEASE="$(java -XshowSettings:properties -version 2>&1 \
   | awk -F'= ' '/java\.specification\.version/ {gsub(/ /,"",$2); print $2}')"
 RELEASE_FLAG="${SPI_API_DIFF_RELEASE:-${DETECTED_RELEASE:-25}}"
@@ -125,7 +125,7 @@ build_ref() {
     || die "revision $ref has no $SPI_PATH"
   find "$dest/src" -name '*.java' > "$dest/files.txt"
   [[ -s "$dest/files.txt" ]] || die "no SPI sources at $ref"
-  javac --enable-preview --release "$RELEASE_FLAG" -nowarn \
+  javac --release "$RELEASE_FLAG" -nowarn \
         -d "$dest/out" "@$dest/files.txt" 2>"$dest/javac.log" \
     || { sed 's/^/    /' "$dest/javac.log" >&2; die "SPI at $ref does not compile"; }
   ( cd "$dest/out" && jar cf "$dest/spi.jar" . )

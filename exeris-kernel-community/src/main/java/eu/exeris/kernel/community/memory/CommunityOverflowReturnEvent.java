@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.memory;
 
@@ -17,14 +13,15 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when returning an overflow-sized segment to the shard pool.
+ * JFR event recording one overflow-sized segment returned to
+ * {@link CommunityArenaShardPool}.
  *
  * <h2>Safety Net</h2>
- * <p>Segments larger than the largest size class are not pooled. This event
- * provides visibility into these overflow returns without changing pooling
- * behavior.
+ * <p>Segments larger than the pool's largest size class are never added to a free-list
+ * bucket — {@link CommunityArenaShardPool#returnSegment} only accounts for them via this
+ * event; the segment itself is reclaimed only when the pool's shard {@code Arena} closes.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.memory.CommunityOverflowReturn")
 @Label("Community Overflow Return")

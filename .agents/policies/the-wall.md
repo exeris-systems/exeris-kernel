@@ -23,10 +23,10 @@ the poms disagree, the poms win and this file is the defect.
 |---|---|---|
 | `exeris-kernel-spi` | Contracts + carriers ("The Constitution") | **only `java.*` / `jdk.*`** |
 | `exeris-kernel-core` | Driver-agnostic orchestration, bootstrap; the HTTP codec and runtime currently live here | SPI. **Never** community or enterprise |
-| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI, plus the Core packages it already reaches: `core.bootstrap`, `core.concurrent`, `core.crypto`, `core.events`, `core.flow`, `core.graph`, `core.http`, `core.memory`, `core.persistence`, `core.scheduling`, `core.security`, `core.telemetry`, `core.transport`. A Core package outside that set is a boundary change and needs an ADR |
+| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI, plus the Core packages it already reaches: `core.bootstrap`, `core.concurrent`, `core.crypto`, `core.events`, `core.flow`, `core.graph`, `core.http`, `core.memory`, `core.persistence`, `core.scheduling`, `core.security`, `core.storage`, `core.telemetry`, `core.transport`, `core.websocket`. A Core package outside that set is a boundary change and needs an ADR |
 | `exeris-kernel-community-kafka` | Kafka/Redpanda event and flow bindings | SPI, community |
 | `exeris-kernel-community-testkit` | Shared test fixtures | — |
-| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) and `ExerisArchitectureTest`, the ArchUnit Wall guard | SPI |
+| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) and `ExerisArchitectureTest`, the ArchUnit Wall guard — **SPI reach only**; the Core/Community half is `KernelTierBanArchitectureTest` in Community | SPI |
 | `exeris-kernel-diagnostics-cli` | Diagnostics tooling (thin, coverage-ungated) | — |
 | `exeris-kernel-bom` / `-parent` / `-build-config` | Build plumbing; build-config ships the lint rulesets and is itself lint-exempt | — |
 
@@ -36,8 +36,8 @@ matched: `exeris-kernel-community/pom.xml` declares `exeris-kernel-core`. It the
 orchestration or bootstrap internals", which is false too — Community main sources import
 `core.bootstrap.BootstrapProviderSelector`, `core.bootstrap.health.KernelHealthMonitor`,
 `core.events.outbox.OutboxOrchestrator` and the `*Bootstrap` entry points of flow, graph, scheduling,
-persistence and events. Measured on this branch: **93 import statements across 66 distinct
-types**, in the 13 packages listed above. The rule that can be checked is the set; regenerate
+persistence and events. Measured on this branch: **111 import statements across 79 distinct
+types**, in the 15 packages listed above. The rule that can be checked is the set; regenerate
 it with
 
 ```bash

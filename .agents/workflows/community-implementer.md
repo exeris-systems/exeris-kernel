@@ -1,6 +1,14 @@
 ---
+name: community-implementer
 description: Implement an Exeris Community/Open-Core change with minimal targeted edits while preserving boundaries and runtime-safe idioms.
 argument-hint: Implementation task or PR scope
+steps:
+  - {agent: exeris-implementer}
+  - {skill: exeris-java26-panama-loom, when: "the change touches concurrency, FFM, ScopedValue or a runtime carrier"}
+  - {skill: exeris-pr-preflight}
+gates:
+  - ci:maven / build-and-verify
+  - hook:guardrails-gate-on-stop
 ---
 
 Implement this as an Exeris Community/Open-Core change.

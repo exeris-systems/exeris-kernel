@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-09-09
 ---
 
 # exeris-kernel
@@ -22,14 +22,13 @@ FFM. **It is not a standard Java application, and standard Java idioms are often
 
 Two ideas carry the design and everything defers to them: **No Waste Compute** — every byte and
 cycle must add value — and **The Wall**, the SPI/implementation separation.
-[`docs/glossary.md`](docs/glossary.md) is authoritative for both, and for *software inflation* and
-*Glass-Box*.
+[`docs/glossary.md`](docs/glossary.md) is authoritative for both.
 
 Coordinates: groupId `eu.exeris`, packages `eu.exeris.kernel.<module>.<subsystem>`. Every subsystem
 has a contract document in [`docs/subsystems/`](docs/subsystems), and it outranks this file on that
-subsystem's behaviour. The active development base is written down nowhere in this repository: resolve it from the remote
-with `git branch -r --list 'origin/development/*' | sort -V | tail -1`, never from a version in a
-file ([branching](.agents/policies/branch-and-release.md)).
+subsystem's behaviour. The active development base is written down nowhere here: resolve it from the
+remote with `git branch -r --list 'origin/development/*' | sort -V | tail -1`, never from a version
+in a file ([branching](.agents/policies/branch-and-release.md)).
 
 ## Operating contract
 
@@ -52,7 +51,7 @@ are on decides what a concurrency mandate means —
   source layout.
 - Never deep-link a public document into an enterprise-private repository.
 
-Each of these is stated once, with its reasoning and its exceptions, under `.agents/policies/`.
+Each is stated once, with its reasoning and its exceptions, under `.agents/policies/`.
 
 ## Architecture and documentation entry points
 
@@ -72,16 +71,24 @@ the registry before writing content.
 ## `.agents/` — the canonical semantic source
 
 Detailed rules are authored once, under [`.agents/`](.agents), and nowhere else. This file indexes
-them and bounds them; it does not restate them.
+and bounds them.
 
 | Path | What it holds |
 |:--|:--|
-| [`.agents/policies/`](.agents/policies) | What is permitted or forbidden: [the Wall](.agents/policies/the-wall.md), [scoped bans](.agents/policies/scoped-bans.md), [memory ownership](.agents/policies/memory-ownership.md), [the JDK track](.agents/policies/jdk-and-preview-track.md), [definition of done](.agents/policies/definition-of-done.md), [operating standards](.agents/policies/operating-standards.md), [branching](.agents/policies/branch-and-release.md), [the SonarQube MCP server](.agents/policies/sonarqube-mcp.md). |
-| [`.agents/references/`](.agents/references) | The short form of facts owned elsewhere — [build and CI](.agents/references/build-and-ci.md), [the testing model](.agents/references/testing-model.md). Each names its source and yields to it. |
-| [`.agents/skills/`](.agents/skills) | Bounded capabilities: PR-review and subsystem lenses, single-pass triage, and the workflow skills — preflight, ADR registration, JFR research, release integration, tagged gates. |
-| [`.agents/agents/`](.agents/agents) | Role profiles composed from those skills — router, architect, implementer, TCK, performance, docs. |
-| [`.agents/workflows/`](.agents/workflows) | User-invoked Community / Open-Core review sequences. |
-| [`.agents/manifest.yaml`](.agents/manifest.yaml) | The composition, and the version-pinned bundles this repository imports. It imports none. |
+| [`.agents/policies/`](.agents/policies) | What is permitted or forbidden — the Wall, scoped bans, memory ownership, the JDK track, definition of done, operating standards, branching, the SonarQube MCP server. Two more arrive from the bundle as `bundle:<name>`. |
+| [`.agents/references/`](.agents/references) | The short form of facts owned elsewhere: `build-and-ci`, `testing-model`. Each names its source and yields to it. |
+| [`.agents/skills/`](.agents/skills) | Bounded capabilities: the PR-review and subsystem lenses, single-pass triage, preflight, ADR registration, JFR research, release integration, tagged gates. |
+| [`.agents/agents/`](.agents/agents) | Role profiles at `<name>/AGENT.md`, composed from those skills — router, architect, implementer, TCK, performance, docs, evaluator. Vendor-neutral: they declare capabilities and a model tier, not a runtime's tool names. |
+| [`.agents/workflows/`](.agents/workflows) | User-invoked review sequences, each declaring its steps and the gates that enforce them. |
+| [`.agents/schemas/`](.agents/schemas) | The shape of a decision handed between roles: triage, verdict, handoff. |
+| [`.agents/hooks/`](.agents/hooks) | The L0 layer: what is denied, and what is allowed with a consequence the stop gate then requires. It enforces rules written elsewhere and states none. |
+| [`.agents/evals/`](.agents/evals) | Behaviour tests for the profiles. On demand, not per pull request. |
+| [`.agents/vendor/`](.agents/vendor) | The pinned, digest-verified copy of the shared bundle. Never edited. |
+| [`.agents/manifest.yaml`](.agents/manifest.yaml) | The composition, the pinned import, the render map, and each runtime's limits. |
+
+Four subtrees add their own `AGENTS.md`, each naming what enforces it and restricting only:
+[spi](exeris-kernel-spi/AGENTS.md), [core](exeris-kernel-core/AGENTS.md),
+[community](exeris-kernel-community/AGENTS.md), [tck](exeris-kernel-tck/AGENTS.md).
 
 Instruction sources resolve broad to narrow: organisation bundle, repository, subtree, selected
 workflow. A narrower file may restrict behaviour; it may never relax a higher-order rule. Accepted
@@ -89,9 +96,8 @@ ADRs, the subsystem contracts and the ecosystem standards outrank anything summa
 they disagree, this file is the defect.
 
 **Pick a surface by how the work should run, not by what it is.** A *skill* runs inline and is the
-default — start any review with `exeris-pr-review-waste-hunter`, which dispatches to the focused
-lenses. An *agent* gets its own context window, for read-heavy fan-out. A *workflow* is invoked by
-the user as a slash command. Skills and agents mirror the same personas on purpose.
+default — start any review with `exeris-pr-review-waste-hunter`. An *agent* gets its own context
+window, for read-heavy fan-out. A *workflow* is user-invoked as a slash command.
 
 ## Verification and reporting
 
@@ -109,12 +115,9 @@ plainly as what you did.
 
 The binding standards live in
 [`exeris-docs/standards/`](https://github.com/exeris-systems/exeris-docs/tree/main/standards) — commit
-and PR conventions, the docs style guide, ADR conventions, the
-[agent-file schema](https://github.com/exeris-systems/exeris-docs/blob/main/standards/agents-md-schema.md)
-this file answers to, and
-[AI provenance](https://github.com/exeris-systems/exeris-docs/blob/main/standards/ai-provenance.md).
-They are not restated here; where this file and a standard disagree, the standard wins and this file
-is the defect.
+and PR conventions, the docs style guide, ADR conventions, `ai-provenance.md`, and the
+`agents-md-schema.md` this file answers to. Where this file and a standard disagree, the standard
+wins and this file is the defect.
 
 An AI-assisted commit keeps its `Co-authored-by:` trailer, a named human is accountable for every
 line, and an agent does not open pull requests or file issues on its own. Contribution terms:
@@ -123,6 +126,7 @@ line, and an agent does not open pull requests or file issues on its own. Contri
 ## Provider adapters
 
 [`.claude/`](.claude) holds Claude Code adapters generated from `.agents/`, each carrying a
-do-not-edit marker naming its source, plus provider-owned configuration. Rewrite them with
-`tools/agent-adapter-check/agent-adapter-render.sh` and verify with `…/agent-adapter-check.sh`;
-never edit an adapter. `CLAUDE.md` points here.
+do-not-edit marker naming its source, plus provider-owned configuration. **This repository carries
+no renderer**: one implementation, shared, lives in `exeris-systems/exeris-agents` and is pinned —
+mechanics in [`.claude/README.md`](.claude/README.md). Never edit an adapter; an adapter that
+differs from its source fails CI. `CLAUDE.md` points here.
