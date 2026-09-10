@@ -4,7 +4,7 @@ type: changelog
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-09
 ---
 # Changelog — Exeris Kernel (open-core)
 
@@ -1299,6 +1299,38 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   building it: 180 allocation events through the streaming generator, all five JSON artefacts
   written, exit 0 — the check the CLI regression taught, where a jar that assembled was executed
   nowhere.
+
+### Documentation
+
+- **Published Javadoc states contracts instead of reporting implementations** — `spi`, `tck`, `core`,
+  `community`, `community-testkit`, `community-kafka` and `diagnostics-cli` brought to 0 doclint
+  errors and 0 warnings. `spi` and `tck` are held there by a `javadoc-gate` profile under
+  `failOnWarnings`; the other five carry no such profile and are measured, not gated. All 374
+  `javap` dumps byte-identical, so the published API did not move. (#456, #464, #465, #469)
+- **`spi-contract-blindness-check.sh`** — fails a build when an SPI sentence states what one binding
+  happens to do instead of what the contract requires.
+- **Prose audited against the code rather than proofread** — 156 corrections across 24 living
+  documents, then every surviving sentence put to an adversary reading the source. `last-verified`
+  on a page means a human checked it. (#474)
+- **`docs/subsystems/` covers websocket and diagnostics** — the two subsystems that shipped without
+  a page. (#481, closes #477)
+- **The documentation standards run on every pull request** — five reusable workflows from
+  `exeris-systems/.github`: frontmatter and registry, commit format, pull-request body, the ADR-085
+  §J.33 documentation review, and the §F.21 Javadoc gate. All five are **reported, not required**;
+  the required contexts remain Build & TCK Verification, SPI Compatibility Gate and SonarCloud. (#452)
+- **The agent layer is vendor-neutral, with an L0 runtime layer beneath it** — role profiles at
+  `.agents/agents/<name>/AGENT.md` declaring capabilities rather than one runtime's tool names,
+  three decision schemas, nineteen behaviour tests, four nested `AGENTS.md`, and four L0 hooks that
+  divide the work: one denies an action no policy permits, one blocks a session from reporting
+  itself finished while an owed check has not run, and two record the state it reads. The shared
+  half is imported from `exeris-agents` 1.4.0, pinned, vendored and digest-verified; this repository
+  no longer carries a renderer of its own. (#449, #478)
+- **The diagnostics NDJSON session is driven with a malformed line mid-session** — through `serve()`
+  for the first time, from the CLI documentation pass. (#479)
+
+Measurements, method and what is explicitly not done are in
+[`docs/release/v0.12.0-release-notes.md`](docs/release/v0.12.0-release-notes.md); this file does not
+restate them.
 
 ## [0.11.0] — 2026-08-11
 
