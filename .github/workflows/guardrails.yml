@@ -2,8 +2,14 @@
 # this file only says which gates apply here and how strictly.
 #
 # Nothing in the repository ran these before: the documentation standards were binding but
-# unenforced, and the L2 documentation review existed only inside a Cowork session, so a pull
-# request could contradict a standard and merge green.
+# unenforced, and the L2 documentation review existed only inside a Cowork session, so a standard
+# could be contradicted with nothing to say so.
+#
+# What this file does NOT do is block a merge. None of the five jobs below is a required status
+# check -- the required contexts are Build & TCK Verification, SPI Compatibility Gate and SonarCloud
+# Code Analysis -- so a red gate here annotates the pull request and a green merge is still
+# permitted. Making one required is a branch-protection change, not a change to this file. Say
+# "runs" rather than "enforces" anywhere this file is described.
 name: guardrails
 on:
   pull_request:
@@ -61,13 +67,15 @@ jobs:
   docs:
     uses: exeris-systems/.github/.github/workflows/docs-lint.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
     with:
-      # ramp, not strict, and deliberately: 113 tracked pages here carry no frontmatter at all.
-      # In ramp the gate fails only on files the pull request touches, so a PR is answerable for
-      # what it edits and not for a backlog it did not create. Flip to strict when the backfill
-      # has landed — 88 of the 113 are machine-fillable, the rest need a type chosen by hand.
+      # ramp, not strict, and deliberately: of the 120 files the gate reads, 54 carry no frontmatter
+      # at all. In ramp the gate fails only on files the pull request touches, so a PR is answerable
+      # for what it edits and not for a backlog it did not create. Flip to strict when the backfill
+      # has landed. The count moves with the backfill; 113 was the figure before the 0.12 pass, and
+      # a stale number here contradicts the release notes rather than merely aging.
       mode: ramp
       # Off until docs/subsystems/*.md carry Contract / Hot path / Failure modes / Owning ADRs.
-      # Fifteen subsystem pages exist and none has the section set yet.
+      # Seventeen subsystem pages exist; the two added for websocket and diagnostics carry the set
+      # and the other fifteen do not, so this stays off until that retrofit lands.
       section-check: false
   commits:
     uses: exeris-systems/.github/.github/workflows/commit-lint.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
@@ -105,8 +113,12 @@ jobs:
       # narrows it is rule 11, and what is left after it is the SPI and the TCK.
       #
       # The set is still SPI + TCK, but the reason rule 11 exempted the rest has expired. Those
-      # counts were core 31/100+, community 6/91, community-testkit 0/24, community-kafka 0/11,
-      # diagnostics-cli and build-config clean; after #464 and #465 every one of them is 0/0.
+      # pre-sweep counts were core 31 errors, community 6/91, community-testkit 0/24,
+      # community-kafka 0/11; core's warning figure sat at javadoc's -Xmaxwarns 100 ceiling, so it
+      # is a cap and not a measurement. diagnostics-cli counted as clean and was not: #469 found a
+      # class comment advertising three protocol methods where handle dispatches four, which no
+      # doclint run can see. After #464, #465 and #469 every one of them is 0/0 -- measured, and
+      # held there by nothing, because only the two modules named below carry the profile.
       # Adding them here is a decision rather than an oversight: it costs each pom a javadoc-gate
       # profile block, and it holds those modules to a whole-module bar where rule 11 asks only
       # for diff-aware checking. Gating a module whose backfill is already done mandates no

@@ -3131,6 +3131,49 @@ be selected as a baseline on either. Verified by diffing the two workflow files 
 
 ---
 
+### Documentation + Standards: binding rules that nothing ran, and prose nothing checked
+
+**Gap:** ADR-085 made a set of documentation standards binding, and no gate ran any of them. A pull
+request could contradict a standard and nothing would say so. Separately, the published Javadoc is
+part of the artifact and had never been audited against the code: SPI sentences had drifted into
+reporting what one binding happens to do, which reads as accurate, passes every other gate, and
+ships to Maven Central as the contract. Two subsystems that shipped in this milestone — websocket
+and diagnostics — had no page in `docs/subsystems/` at all.
+
+**Owner:** documentation, with the SPI and Community module owners for the Javadoc halves.
+
+**Resolution (v0.12):** `guardrails.yml` calls five reusable workflows from `exeris-systems/.github`
+— frontmatter and registry, commit format, pull-request body, the ADR-085 §J.33 documentation
+review, and the §F.21 Javadoc gate (#452). Every measured module reached 0 doclint errors and 0
+warnings (#456, #464, #465, #469) with all 374 `javap` dumps byte-identical, and
+`spi-contract-blindness-check.sh` fails a build on a contract sentence that describes a binding.
+The prose was audited against the source rather than proofread — 156 corrections across 24 living
+documents, then adversarial re-reading (#474). The agent layer became vendor-neutral with an L0
+runtime layer beneath it (#449, #478). `docs/subsystems/` gained the websocket and diagnostics pages
+(#481, closing #477).
+
+**Merge Gate:** the five workflows run on every pull request, and the release notes state what each
+gate does and does not cover.
+
+---
+
+**Status (v0.12): DELIVERED, and three limits are recorded rather than left to be discovered.**
+
+1. **The five guardrails are reported, not required.** The required status checks are *Build & TCK
+   Verification*, *SPI Compatibility Gate* and *SonarCloud Code Analysis*. A red guardrail annotates
+   a pull request and still permits a green merge; making one required is a branch-protection change
+   and has not been made.
+2. **Two of seven modules are gated.** The `javadoc-gate` profile exists in `exeris-kernel-spi` and
+   `exeris-kernel-tck` only. Core, Community, the testkit, the Kafka driver and the diagnostics CLI
+   are at 0/0 and held there by nothing, and the release jar still builds with `doclint none` so that
+   publishing never depends on the state of ungated prose.
+3. **The backfill is half done.** Of the 120 files the gate reads, 54 carry no frontmatter — warnings
+   in `ramp`, errors in `strict`, which is why CI runs `ramp`. Of seventeen `subsystem` pages, the
+   two added for websocket and diagnostics carry the four required sections and the other fifteen do
+   not, which is why CI passes `--no-section-check`.
+
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.

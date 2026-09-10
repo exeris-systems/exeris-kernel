@@ -552,13 +552,16 @@
 
                     <!--
                         Central requires a javadoc jar to EXIST; it does not inspect its quality.
-                        doclint is therefore off and failOnError false, deliberately and with the
-                        cost stated: this tree currently has ~160 doclint findings across spi, core
-                        and community (missing @param/@return, heading sequence), so a strict run
-                        would block every release on documentation debt that no consumer is waiting
-                        for. Measured before choosing, not assumed — with doclint off the jar builds
-                        clean. Tightening this is quality work with its own slice; coupling it to
-                        the ability to publish would be the wrong dependency.
+                        doclint is therefore off and failOnError false, and the reason has CHANGED
+                        rather than expired. It was the ~160 doclint findings across spi, core and
+                        community that a strict run would have blocked every release on; the 0.12
+                        sweep took every measured module to 0 errors and 0 warnings, so that debt is
+                        gone. What remains is the dependency itself: only spi and tck carry a
+                        `javadoc-gate` profile, so core, community, the testkit and the kafka driver
+                        are held at 0/0 by nothing, and a prose regression there must not be able to
+                        stop a release. Coupling the ability to publish to the state of ungated prose
+                        would be the wrong dependency whatever the current count is. Revisit when
+                        every published module is gated, not when the count next reads zero.
                     -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
