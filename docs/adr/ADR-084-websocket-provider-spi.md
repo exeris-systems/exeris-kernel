@@ -5,7 +5,6 @@ slug: adr/ADR-084
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
 ---
 
 # ADR-084: A duplex wire the platform's own tools can embed

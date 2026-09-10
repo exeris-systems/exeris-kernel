@@ -5,7 +5,6 @@ visibility: public
 owning-repo: exeris-kernel
 status: active
 slug: adr/ADR-066
-last-verified: 2026-09-08
 ---
 
 # ADR-066: The distributable line is preview-clean on a GA LTS

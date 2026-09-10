@@ -5,7 +5,6 @@ visibility: public
 owning-repo: exeris-kernel
 status: active
 slug: adr/ADR-061
-last-verified: 2026-09-08
 ---
 # ADR-061: Replace the hardcoded `/secure` prefix with a declarable HTTP route-authorization policy
 

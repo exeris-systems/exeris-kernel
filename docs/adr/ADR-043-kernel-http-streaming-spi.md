@@ -5,7 +5,6 @@ visibility: public
 owning-repo: exeris-kernel
 status: active
 slug: adr/ADR-043
-last-verified: 2026-09-08
 ---
 # ADR-043: Adopt SSE-First Kernel HTTP Streaming via a Sibling `HttpStreamExchange`
 

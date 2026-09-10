@@ -5,7 +5,6 @@ slug: adr/ADR-083
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
 ---
 
 # ADR-083: A kernel exception says whose fault it is
