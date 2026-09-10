@@ -4,7 +4,6 @@ type: rfc
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
 ---
 
 # RFC-2026-09-01: What representation should a parsed HTTP header field have?

@@ -5,7 +5,6 @@ visibility: public
 owning-repo: exeris-kernel
 status: active
 slug: adr/ADR-064
-last-verified: 2026-09-08
 ---
 
 # ADR-064: Version flow definitions, and resume a saga on the version it parked under

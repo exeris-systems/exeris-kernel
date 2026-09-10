@@ -5,7 +5,6 @@ visibility: public
 owning-repo: exeris-kernel
 status: active
 slug: adr/ADR-071
-last-verified: 2026-09-08
 ---
 
 # ADR-071: Give operational limits a configuration path, and rule what a zero means

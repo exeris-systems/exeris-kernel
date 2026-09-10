@@ -5,7 +5,6 @@ slug: adr/ADR-082
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
 ---
 
 # ADR-082: Time the kernel *decides* on goes through a seam; time it *measures* does not

@@ -4,7 +4,6 @@ type: research
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
 ---
 
 # Research: what the HTTP/1 read path allocates per request

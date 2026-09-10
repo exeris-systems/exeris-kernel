@@ -4,7 +4,6 @@ type: adr
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
 slug: adr/ADR-077
 ---
 

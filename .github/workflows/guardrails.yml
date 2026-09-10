@@ -47,6 +47,15 @@ permissions:
 # grew 197 lines but its one required input became optional and every new input defaults to the
 # previous behaviour, so the call below still means what it meant.
 #
+# Bumped again 2026-09-10, one commit, for a reason this file can state exactly: .github#28 stops
+# `frontmatter_check.py` requiring `last-verified` of a record type and stops
+# `frontmatter_backfill.py` writing it. Because `docs-lint.yml` is the one shared workflow that
+# takes `ref: ${{ github.job_workflow_sha }}`, its scripts follow this pin — so the bump is what
+# lets the same pull request delete the key from 26 records rather than needing two. Measured both
+# ways rather than assumed: those 26 files report 26 errors under 0509e289 and 0 under this pin.
+# The other four move with it and change nothing — the compare is one commit touching only
+# `scripts/_common.py`, `frontmatter_check.py` and `frontmatter_backfill.py`, no workflow file.
+#
 # Pinned by commit SHA, like every other `uses:` in this repository — `dependabot.yml` explains
 # why: a SHA is immune to a moved tag but invisible to a reader, and Dependabot is what keeps it
 # current, rewriting the SHA and the trailing comment together. SonarCloud enforces the same rule
@@ -65,7 +74,7 @@ permissions:
 
 jobs:
   docs:
-    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
     with:
       # ramp, not strict, and deliberately: of the 120 files the gate reads, 54 carry no frontmatter
       # at all. In ramp the gate fails only on files the pull request touches, so a PR is answerable
@@ -78,15 +87,15 @@ jobs:
       # and the other fifteen do not, so this stays off until that retrofit lands.
       section-check: false
   commits:
-    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
   pr-body:
-    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
   # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
   # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
   # against the documentation standards. They are different questions and both are wanted.
   # Skips itself when no Markdown or Java changed.
   docs-review:
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
     # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
     # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
     # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
@@ -105,7 +114,7 @@ jobs:
   # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
   # the strict settings there instead would have made a red gate block a release.
   javadoc:
-    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@0509e289b3bbb8b6e8df46393ef7a696e127032c # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
     with:
       # The two published surfaces that are neither Core, Community nor tooling — the set
       # javadoc-conventions.md rule 11 sends to diff-aware checking instead of a hard gate. Every

@@ -4,7 +4,6 @@ type: rfc
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
 ---
 
 # RFC-2026-08-26: What connection lifetime does the kernel promise a request handler?
