@@ -128,10 +128,10 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 
 > **WebSocket** is a fourth L2 protocol surface not pictured above: a full `spi.websocket.*` contract
 > (`WebSocketProvider`, `WebSocketServerEngine`, `WebSocketExchange`, handshake and close-code types)
-> with a Community driver implementation exists in this repository as of `0.12.0`. It has no dedicated
-> subsystem doc yet — see the source directly under `eu.exeris.kernel.spi.websocket` and
-> `eu.exeris.kernel.community.websocket` — so it is omitted from the diagram to avoid documenting a
-> contract this file cannot yet point a reader at in detail.
+> with a Community driver implementation exists in this repository as of `0.12.0`. It is documented in
+> [subsystems/websocket.md](subsystems/websocket.md), including the embedded and bootstrapped modes
+> and its `preview` classification; the diagram is unchanged because redrawing an L2 row is a
+> larger edit than adding a surface to it.
 
 ### L1 — Data & Integrity (Security, Persistence, Crypto)
 
@@ -327,7 +327,8 @@ To understand how these concepts map to actual code, read the subsystem definiti
 - [Bootstrap](subsystems/bootstrap.md) | [Config](subsystems/config.md) | [Memory](subsystems/memory.md) | [Security](subsystems/security.md)
 - [Transport](subsystems/transport.md) | [Persistence](subsystems/persistence.md) | [Graph](subsystems/graph.md) | [Flow](subsystems/flow.md)
 - [Crypto](subsystems/crypto.md) | [Telemetry](subsystems/telemetry.md) | [Events](subsystems/events.md)
-- [HTTP](subsystems/http.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md) | [Exceptions](subsystems/exceptions.md)
+- [HTTP](subsystems/http.md) | [WebSocket](subsystems/websocket.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md)
+- [Diagnostics](subsystems/diagnostics.md) | [Exceptions](subsystems/exceptions.md)
 
 ---
 
