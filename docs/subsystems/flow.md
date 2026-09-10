@@ -310,6 +310,12 @@ End-to-end cross-engine recovery (DIST-302 closure, since 0.7 Sprint 6c) is cove
 
 ---
 
+## Owning ADRs
+
+- [ADR-013](../adr/ADR-013-distributed-saga-state-distribution-model.md) — Distributed Saga State Distribution Model
+- [ADR-062](../adr/ADR-062-flow-step-identity-on-resume.md) — Bind flow resume to a named step, not a position
+- [ADR-064](../adr/ADR-064-flow-definition-versioning-and-in-flight-migration.md) — Version flow definitions, and resume a saga on the version it parked under
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.flow.*`) is classified **stable** in the

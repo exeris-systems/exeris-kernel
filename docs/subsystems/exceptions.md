@@ -404,6 +404,10 @@ Sentinel constructor — without coupling itself to any specific network protoco
 
 ---
 
+## Owning ADRs
+
+- [ADR-083](../adr/ADR-083-exception-fault-origin.md) — A kernel exception says whose fault it is
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.exceptions.*`) is classified **stable** in the

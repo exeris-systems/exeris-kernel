@@ -630,6 +630,14 @@ no unauthorized data ever reaches the application layer and no unguarded mutatio
 
 ---
 
+## Owning ADRs
+
+- [ADR-022](../adr/ADR-022-persistence-spi-extension-instant-binders.md) — Persistence SPI Extension — Instant Binders and Readers
+- [ADR-035](../adr/ADR-035-persistence-admission-control-tunability.md) — Persistence Admission Control Tunability and Small-Pool Recalibration
+- [ADR-073](../adr/ADR-073-schema-history-ledger.md) — The migration runner gets a schema-history ledger, and stops relying on every migration being idempotent
+- [ADR-077](../adr/ADR-077-route-declared-connection-lifetime.md) — A route declares how it executes, and the dispatcher draws the connection consequence
+- [ADR-080](../adr/ADR-080-rowcursor-value-contract.md) — `RowCursor` states what it returns, and refuses what it cannot
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.persistence.*`) is classified **stable** in the

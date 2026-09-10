@@ -352,6 +352,14 @@ Community drivers without changing a single line of business code.
 
 ---
 
+## Owning ADRs
+
+**No ADR in this repository decides this subsystem.** The only registry entry naming the
+kernel graph SPI is [ADR-030](../adr/ADR-030.link.md), which is owned by `exeris-spring-runtime` and
+decides the Spring-side seam *onto* this SPI rather than the SPI itself. The one graph decision the
+roadmap requires — heterogeneous multi-hop traversal, which `docs/ROADMAP.md` places **in 1.0** and
+sequences out of 0.12 — is an RFC that has not been written.
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.graph.*`) is classified **preview** in the

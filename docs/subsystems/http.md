@@ -399,6 +399,19 @@ The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset:
 
 ---
 
+## Owning ADRs
+
+- [ADR-009](../adr/ADR-009-http-codec-module.md) — HTTP Codec Placement (Core-Embedded)
+- [ADR-026](../adr/ADR-026-client-side-application-api.md) — Client-Side Application API — `CommunityWebClient`
+- [ADR-032](../adr/ADR-032-http-client-request-enricher-spi.md) — `HttpClientRequestEnricher` SPI — Implicit Context Propagation to Outbound HTTP
+- [ADR-034](../adr/ADR-034-client-side-body-codec-spi.md) — Client-Side Body Codec SPI — `HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` + `KernelWebClient` Facade
+- [ADR-036](../adr/ADR-036-server-side-request-body-decoder-spi.md) — Server-Side Request Body Decoder SPI — `HttpRequestBodyDecoder` + Generated-Handler Resolution
+- [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) — Adopt SSE-First Kernel HTTP Streaming via a Sibling `HttpStreamExchange`
+- [ADR-045](../adr/ADR-045-client-side-http-retry-policy-spi.md) — `HttpRetryPolicy` SPI — Opt-in Client-Side Retry for `KernelWebClient`
+- [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — Replace the hardcoded `/secure` prefix with a declarable HTTP route-authorization policy
+- [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) — A request names its own peer — the client stops dialling the address its server listens on
+- [ADR-077](../adr/ADR-077-route-declared-connection-lifetime.md) — A route declares how it executes, and the dispatcher draws the connection consequence
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.http.*`) is classified **mixed** in the

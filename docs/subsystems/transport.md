@@ -765,6 +765,11 @@ consumes heap, CPU, or a Virtual Thread.
 
 ---
 
+## Owning ADRs
+
+- [ADR-071](../adr/ADR-071-operational-limit-configuration-path.md) — Give operational limits a configuration path, and rule what a zero means
+- [ADR-081](../adr/ADR-081-accept-time-connection-cap.md) — The connection cap and stream shedding are layers, and neither answers with a status
+
 ## Stability
 
 This subsystem's SPI surface (`eu.exeris.kernel.spi.transport.*`) is classified **stable** in the
