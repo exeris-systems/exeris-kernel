@@ -24,11 +24,14 @@ reason the SPI has the shape it has.
 `start()` — no `KernelBootstrap`, no DI container, no configuration key:
 
 ```java
-WebSocketServerEngine engine = ServiceLoader.load(WebSocketProvider.class)
-        .findFirst()
-        .orElseThrow()
-        .createServerEngine(
-                WebSocketConfig.defaultServer("127.0.0.1", 0, List.of("http://localhost")));
+WebSocketProvider provider = ServiceLoader.load(WebSocketProvider.class)
+        .stream()
+        .map(ServiceLoader.Provider::get)
+        .max(Comparator.comparingInt(WebSocketProvider::priority))
+        .orElseThrow();
+
+WebSocketServerEngine engine = provider.createServerEngine(
+        WebSocketConfig.defaultServer("127.0.0.1", 0, List.of("http://localhost")));
 engine.setHandler(exchange -> {
     String message;
     while ((message = exchange.receive()) != null) {
@@ -44,6 +47,11 @@ runtime boot to open a socket would make a developer tool pay for a runtime it d
 persistence already behave this way; the WebSocket provider deliberately mirrors
 `HttpProvider.createServerEngine` so the property is shared rather than re-argued.
 
+**Select by `priority()`, not by `findFirst()`** — that is what the subsystem does, and an embedded
+caller that diverges gets a different driver than a booted one on the same classpath. The open-core
+convention puts Community at `0` and Enterprise at `100`, so `findFirst()` on a classpath carrying
+both picks whichever the loader happened to enumerate first.
+
 When ADR-084 §1 says "no `ServiceLoader`", it rules discovery out as a *requirement*, not as an
 option — and discovery is the better route here, because it keeps a Community type off a consumer's
 compile classpath, which is what the Wall exists to prevent.
@@ -58,6 +66,12 @@ exists to prevent.
 boot and wires the handler from the ambient binding. This mode is **off unless you turn it on**:
 `websocket.enabled` defaults to `false`, and a boot with it unset brings up no engine and binds no
 port. The embedded mode never reads that key — nothing reads configuration on that path.
+
+**Neither path is preferred; they serve different deployments** (ADR-084 Amendment A2). §1 decided
+that an endpoint is reachable *without* a boot, and that was read as deciding it is the only way in —
+which left an application that does boot the kernel able to reach an endpoint only by naming
+`CommunityWebSocketProvider`, putting a driver on its compile classpath. Both paths are supported
+from v0.12.
 
 ## Contract
 
@@ -93,6 +107,14 @@ condition, not an error: a handler is written as `while ((msg = exchange.receive
 **Identity is per connection.** It is stable while the connection lives and distinct across
 connections; a reconnect is a new session and resumption is the consumer's problem, not the
 kernel's.
+
+**The allowlist is a browser control, not an access control.** A request carrying **no `Origin`
+header is not filtered by it** and reaches the callback. That is deliberate: the attack §6 defends
+against is CSWSH, where the victim's own browser supplies ambient cookies and cannot be told to omit
+a header — while a client that chooses its own headers has no ambient credentials to abuse, and
+refusing header-less clients would break every non-browser consumer, the embedded LSP among them.
+The operator consequence is worth stating plainly: **`allowedOrigins` restricts browsers; it does not
+keep other clients off the port.** Bind, network policy and the handshake callback are what do that.
 
 **The handshake is visible, refusable, and refuses by default.**
 `WebSocketHandshakeHandler.decide(HttpRequest)` receives the request — headers, path, authority —
@@ -141,8 +163,10 @@ handler a message that looks complete.
 | A binary frame arrives | Refused — the application surface is text-only |
 | `send` after close | `WebSocketClosedException`, **carrying no message content** |
 | Origin not in `allowedOrigins` | Handshake refused before the callback runs |
+| A request carries **no** `Origin` header | The allowlist does not apply; the callback decides |
 | The callback refuses | The client receives the status the callback chose |
 | `websocket.enabled=true` and no provider on the classpath | Boot fails, naming that exact condition — not a silent no-op |
+| `websocket.enabled=true` and no handler bound | The engine starts and **drains** — messages are read and discarded, not refused |
 | Embedded, with no allocator bound | The engine creates one it owns; `close()` releases it, and a second `close()` does not double-release |
 
 `WebSocketCloseCode` distinguishes what may be **sent** from what may only be **observed**:
@@ -164,22 +188,47 @@ handler a message that looks complete.
 **This section is the bootstrapped mode.** An embedded caller constructs `WebSocketConfig` itself
 and no key below is consulted.
 
-Two keys, resolved the way every Community key is — system property `exeris.<key>`, then
-environment `EXERIS_<KEY>`, then the compiled default:
+`CommunityWebSocketConfigResolver` reads **eight** keys, each the way every Community key is
+resolved — system property `exeris.<key>`, then environment `EXERIS_<KEY>`, then the compiled
+default:
 
-| Key | Default |
-|:--|:--|
-| `websocket.enabled` | `false` |
-| `websocket.port` | see `WebSocketConfig.defaultServer` |
+| Key | Default | Note |
+|:--|:--|:--|
+| `websocket.enabled` | `false` | Upgrading a dependency must not open a socket |
+| `websocket.allowedOrigins` | *empty* | Comma-separated. Empty accepts **no browser origin** |
+| `websocket.bindHost` | the loopback address | Asked of the JDK, so an IPv6-only host still binds |
+| `websocket.port` | `8081` | RFC 6455 defines no default; an enabled endpoint must be told where |
+| `websocket.maxConnections` | `1024` | |
+| `websocket.idleTimeoutMillis` | **60 s** | |
+| `websocket.keepAliveIntervalMillis` | **20 s** | The engine pings; a handler never has to |
+| `websocket.maxMessageBytes` | **1 MiB** | |
 
-The rest of `WebSocketConfig` — `bindHost`, `maxConnections`, `idleTimeoutMillis`,
-`keepAliveIntervalMillis`, `maxMessageBytes`, `allowedOrigins` — is constructed rather than
-key-driven today. Compiled defaults: **1 MiB** per message, **60 s** idle, **20 s** keep-alive,
-**1024** connections.
+**`allowedOrigins` is the one an operator must set before a browser can connect**, and leaving it
+alone is the refusing default rather than an oversight (ADR-084 §6).
+
+**There is no TLS key, because `WebSocketConfig` carries no TLS seam yet.** A browser on `https://`
+cannot open `ws://`, so a browser-facing deployment terminates `wss://` at a proxy in front of the
+kernel today. ADR-084 §11 records the seam as required and additive — it is configuration, so it can
+arrive without changing the handler surface.
 
 The subsystem is named `websocket`, sits in phase `RUNTIME` and declares `dependsOn("memory")` — it
 needs an allocator for the two buffers above. `BootstrapSelector.forNames("websocket")` expands that
 closure for you.
+
+## Stability
+
+`eu.exeris.kernel.spi.websocket` is **preview** in the
+[SPI Stability Matrix](../stability-matrix.md), since 0.12.0 — and preview for a stated reason
+rather than a default one (ADR-084 §10). **A contract test proves a shape is honoured, not that it
+survives**, and a duplex, long-lived, per-connection protocol is exactly where those diverge: the TCK
+opens a connection, exchanges messages and closes, saying nothing about a thousand of them, a reader
+that stops reading, or a peer that dies without a close frame.
+
+Promotion to `stable` is therefore gated on benchmark evidence in `exeris-benchmarks` — concurrent
+connection count, frame throughput, backpressure under a slow reader, teardown of a dead peer — not
+on the TCK going green. The consequence is recorded rather than discovered later: **Studio and the
+LSP server consume a `preview` surface for at least one release**, which also makes any migration
+ours to absorb rather than a consumer's.
 
 ## Verification
 
@@ -195,9 +244,20 @@ subprotocol acceptance, and session identity within and across connections.
 in ADR-084 and asserted nowhere, while the code refused an unbound allocator outright — the class
 named the scenario and the method rejected it.
 
-**What they do not yet cover**: nothing opens a real client socket against the engine. Handler and
-handshake are proven through the TCK's fixture, not through a socket-level handshake — recorded in
-the v0.12.0 release notes as carry-over, and it is the gap to close before 1.0.
+**The Community binding drives a real socket.** `TestWebSocketClient` opens a `java.net.Socket` to
+the bound port, sends a genuine RFC 6455 handshake — `GET /ws HTTP/1.1`, `Upgrade: websocket`,
+`Sec-WebSocket-Version: 13`, a generated `Sec-WebSocket-Key` — and reads the `101`. It frames by hand
+rather than through the kernel codec, so a defect in the codec cannot hide by being shared with the
+client that tests it.
+
+`AbstractWebSocketProviderTck` binds no `ScopedValue` and boots nothing, so a binding that quietly
+requires a kernel scope fails the shared suite instead of passing every wire-level test
+(ADR-084 Amendment A1).
+
+**What is not yet covered is the bootstrapped path's own wiring.** Nothing opens a client connection
+against an engine the `websocket` subsystem started, and nothing asserts a handshake handler supplied
+into a boot reaching that engine. Both need a socket-level fixture, and both are carry-over in the
+v0.12.0 notes.
 
 ## Telemetry
 
@@ -207,7 +267,7 @@ thread; that straddle has crashed the JVM in this repository.
 
 ## Not in scope
 
-`permessage-deflate` is deferred, not rejected (ADR-084 §5): it is negotiated at the handshake and
+`permessage-deflate` is deferred, not rejected (ADR-084 §11): it is negotiated at the handshake and
 does not touch the handler surface, so it stays additive. Binary frames are not a deferral — the
 application surface is text by decision. Session resumption across reconnects belongs to the
 consumer, because the kernel holds no session store.

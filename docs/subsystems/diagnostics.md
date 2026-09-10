@@ -48,7 +48,7 @@ The records, in full:
 | `DagNode` | `name`, `phase`, `dependsOn`, `running`, `optional` |
 | `SubsystemSnapshot` | `schemaVersion`, `capturedAt`, `requestedName`, `subsystem` |
 | `SubsystemDescriptor` | `name`, `phase`, `dependsOn`, `running`, `optional` |
-| `RuntimeErgonomicsSnapshot` | `gcName`, `heapMaxBytes`, `heapCommittedBytes`, `availableProcessors`, `cpuQuotaMicros`, `cpuPeriodMicros`, `memoryMaxBytes`, `cpusetEffective`, `largePagesEnabled`, `transparentHugePages`, `classDataSharingActive`, `aotCacheActive` |
+| `RuntimeErgonomicsSnapshot` | `schemaVersion`, `capturedAt`, `gcName`, `heapMaxBytes`, `heapCommittedBytes`, `availableProcessors`, `cpuQuotaMicros`, `cpuPeriodMicros`, `memoryMaxBytes`, `cpusetEffective`, `largePagesEnabled`, `transparentHugePages`, `classDataSharingActive`, `aotCacheActive` |
 
 **Returned collections reject mutation.** A caller cannot edit a snapshot into something the kernel
 never said, and the TCK pins it.
@@ -74,7 +74,7 @@ all nine SPI types come back by name.
 | Situation | What the caller gets |
 |:--|:--|
 | Read outside a bound kernel scope | Subsystem-derived snapshots come back **empty, not thrown** — the honest answer for "nothing is running" |
-| `describeSubsystem` with an unknown name | A well-formed snapshot whose `subsystem` is `null`; the `requestedName` echoes what was asked |
+| `describeSubsystem` with an unknown name | A well-formed snapshot whose `subsystem` is `Optional.empty()` — `null` on the JSON wire, never a `null` component in Java; the `requestedName` echoes what was asked |
 | A provider's class initialiser fails | Reaches the CLI as an `Error`, not an exception, and is caught there — one broken provider degrades one method, never the session |
 | Not on Linux, or no cgroup v2 | The container fields read `null`; a `null` here means *unknown*, never *unlimited* |
 
@@ -82,8 +82,10 @@ That last distinction matters more than it looks. `cpuQuotaMicros: null` does no
 is unconstrained — it means this reading could not establish a constraint. A consumer that treats
 `null` as "no limit" will size a pool wrongly inside a container.
 
-Five error codes belong to this subsystem: `EX-DIAG-1001` through `EX-DIAG-1005`. Each names an
-audited call rather than a crash; the registry in
+**Four** error codes name an audited call rather than a crash: `EX-DIAG-1001`, `EX-DIAG-1003`,
+`EX-DIAG-1004` and `EX-DIAG-1005`. `EX-DIAG-1002` is a **reserved gap** — the `listCapabilities()`
+method it audited was removed before the SPI froze, and the number was kept rather than reused so the
+range still means what an older log says it meant. The registry in
 [`exceptions.md`](exceptions.md) is authoritative for their text.
 
 ## Owning ADRs
@@ -98,8 +100,10 @@ audited call rather than a crash; the registry in
 
 ## The CLI adapter
 
-`exeris-kernel-diagnostics-cli` publishes an executable shaded jar to Maven Central. It boots the
-kernel with `inspect()` — resolving config and topology **without** calling `initialize()` or
+`exeris-kernel-diagnostics-cli` builds an **executable shaded jar**, and v0.12.0 is the release that
+takes it to Maven Central — the coordinates are not resolvable there until that upload happens, so
+today it is built from this repository or taken from GitHub Packages. It boots the kernel with
+`inspect()` — resolving config and topology **without** calling `initialize()` or
 `start()` — and then serves **newline-delimited JSON**: one request object per line on stdin, one
 response line on stdout.
 
@@ -110,6 +114,10 @@ response line on stdout.
 {"method":"describeSubsystem","name":"memory"}
 ```
 
+**A blank line is the exception, and it is the one that can hang a caller**: `serve()` skips it and
+writes nothing, so a client that sends one and then blocks on `readLine()` waits for a response that
+is never coming. Send a request or send nothing.
+
 Anything else — an unknown method, a line that is not JSON — is answered with an `{"error":"…"}`
 object on the line the caller is waiting for. **The session survives it.** That is the contract, not
 a courtesy: a consumer caches the child process across calls, so a process that dies on one bad line
@@ -117,6 +125,21 @@ costs the caller every later request. `DiagnosticsCliShadedJarIT` drives the shi
 out-of-process and pins both halves — the error answer, and the responses that follow it.
 
 The caller owns the process; closing the child's stdin ends the session and the jar exits 0.
+
+## Stability
+
+`eu.exeris.kernel.spi.diagnostics` is **stable** in the
+[SPI Stability Matrix](../stability-matrix.md), and has been since 0.9.0 — the first new SPI surface
+this repository classified `stable` outright rather than promoting later. The surface was trimmed
+before it froze rather than after: `listCapabilities()`, `CompositionSnapshot` and
+`CapabilityDescriptor` were removed pre-1.0 because composition is a build-time and manifest concern,
+which is why `EX-DIAG-1002` is a gap.
+
+The matrix records one follow-up against this row: selecting a `KernelDiagnosticsProvider` at
+`priority=100`. Community ships the `priority=0` provider; an Enterprise overlay at `100` returns the
+**same record types** with Enterprise-only fields populated where useful. An overlay populates
+additional fields and never forks the shapes, so nothing in the contract above changes when one is
+present.
 
 ## Verification
 
@@ -138,8 +161,11 @@ One JFR event, carrying the method name and an error code:
 eu.exeris.kernel.diagnostics.KernelDiagnostics
 ```
 
-Every call is audited, including the ones that answer empty — an operator asking why a tool saw
-nothing needs to know the call happened.
+Every call that **returns** is audited, including the ones that answer empty — an operator asking
+why a tool saw nothing needs to know the call happened. A call that **throws** emits nothing: the
+event is committed after the operation produces its snapshot, so the failing branch is dark. An
+operator reconstructing a session from JFR alone therefore sees successes and silence, not successes
+and failures.
 
 ## Not in scope
 
