@@ -53,6 +53,9 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   Requiring it by name pins the ruleset to a version string and a matrix edit silently drops the
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with
   `needs:`.
+- **`JFR Reporter build & tests`** — `tools/jfr-reporter` is CI tooling outside the reactor; its
+  tests ran nowhere on a pull request before this job existed. Requiring it would make a merge
+  depend on a tool no artefact ships, so it reports and does not block.
 - **`javadoc-gate`** — written to arrive red, arriving green, and the second of those is the more
   useful state.
   Gated modules are `exeris-kernel-spi` and `exeris-kernel-tck` — the two published surfaces that
