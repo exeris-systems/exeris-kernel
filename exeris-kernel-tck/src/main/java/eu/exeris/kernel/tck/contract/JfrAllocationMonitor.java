@@ -70,13 +70,26 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <h2>Filter Strategy: objectClass, not Stack Trace</h2>
  * <p>Stack-trace filtering is fragile under C2 inlining — an inlined frame
  * may fall below the JFR capture depth, producing false negatives. Filtering
- * by <em>allocated type</em> is invariant to inlining depth.
+ * by <em>allocated type</em> is invariant to inlining depth. The count therefore includes
+ * every {@code eu.exeris.*} object the workload thread allocated, whoever called the allocating
+ * code: a production allocation made because a test invoked it is still a production allocation.
+ * Which <em>frame</em> owns an allocation is a different question, answered by
+ * {@code tools/jfr-reporter} over the same recording, and it answers it for every object type,
+ * not only {@code eu.exeris.*}.
+ *
+ * <h2>Window Marker</h2>
+ * <p>The steady-state recording carries a pair of {@link AllocationWindowEvent}s — {@code start}
+ * and {@code end} — that name the subsystem, the test class, the workload thread, the
+ * {@link Contract} asserted and the measured bytes delta, so the recording explains itself without
+ * its file name. Both event objects are allocated before the recording starts and both commits
+ * fall outside the {@code ThreadMXBean} bracket, so a zero-allocation contract cannot see them.
  *
  * @since 0.5
  */
 public final class JfrAllocationMonitor {
 
     private static final String EXERIS_PACKAGE = "eu.exeris.";
+    private static final String MARKER_CLASS = AllocationWindowEvent.class.getName();
     private static final DateTimeFormatter JFR_TS =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
@@ -104,20 +117,25 @@ public final class JfrAllocationMonitor {
      * @param testClassName     simple class name of the calling test (for file naming)
      * @param warmupIterations  iterations for the warm-up (discarded) phase
      * @param hotPathIterations iterations for the steady-state (measured) phase
+     * @param contract          the contract the caller will assert, written into the recording's
+     *                          window marker; {@link Contract#unspecified()} when the caller
+     *                          asserts something of its own
      */
     public record Config(
             String subsystemName,
             String testClassName,
             int warmupIterations,
-            int hotPathIterations
+            int hotPathIterations,
+            Contract contract
     ) {
         /**
-         * Validates the iteration counts.
+         * Validates the iteration counts; a {@code null} contract reads as unspecified.
          *
          * @param subsystemName     human-readable name (e.g. "Memory", "Transport")
          * @param testClassName     simple class name of the calling test (for file naming)
          * @param warmupIterations  iterations for the warm-up (discarded) phase
          * @param hotPathIterations iterations for the steady-state (measured) phase
+         * @param contract          the contract the caller will assert, or {@code null}
          * @throws IllegalArgumentException if {@code warmupIterations} is negative or
          *                                   {@code hotPathIterations} is less than 1
          */
@@ -128,6 +146,20 @@ public final class JfrAllocationMonitor {
             if (hotPathIterations < 1) {
                 throw new IllegalArgumentException("hotPathIterations must be >= 1");
             }
+            contract = contract == null ? Contract.unspecified() : contract;
+        }
+
+        /**
+         * A config whose contract is {@link Contract#unspecified()} — the shape every caller used
+         * before the window marker existed.
+         *
+         * @param subsystemName     human-readable name (e.g. "Memory", "Transport")
+         * @param testClassName     simple class name of the calling test (for file naming)
+         * @param warmupIterations  iterations for the warm-up (discarded) phase
+         * @param hotPathIterations iterations for the steady-state (measured) phase
+         */
+        public Config(String subsystemName, String testClassName, int warmupIterations, int hotPathIterations) {
+            this(subsystemName, testClassName, warmupIterations, hotPathIterations, Contract.unspecified());
         }
 
         /**
@@ -142,6 +174,18 @@ public final class JfrAllocationMonitor {
         }
 
         /**
+         * Default config with a stated contract: 1 000 warmup, 10 000 steady-state.
+         *
+         * @param subsystemName human-readable name (e.g. "Memory", "Transport")
+         * @param testClassName simple class name of the calling test (for file naming)
+         * @param contract      the contract the caller will assert
+         * @return a config with 1 000 warm-up and 10 000 steady-state iterations
+         */
+        public static Config ofDefaults(String subsystemName, String testClassName, Contract contract) {
+            return new Config(subsystemName, testClassName, 1_000, 10_000, contract);
+        }
+
+        /**
          * High-density config for E2E integrity: 1 000 warmup, 1 000 000 steady-state.
          *
          * @param subsystemName human-readable name (e.g. "Memory", "Transport")
@@ -150,6 +194,89 @@ public final class JfrAllocationMonitor {
          */
         public static Config ofHighDensity(String subsystemName, String testClassName) {
             return new Config(subsystemName, testClassName, 1_000, 1_000_000);
+        }
+
+        /**
+         * High-density config with a stated contract: 1 000 warmup, 1 000 000 steady-state.
+         *
+         * @param subsystemName human-readable name (e.g. "Memory", "Transport")
+         * @param testClassName simple class name of the calling test (for file naming)
+         * @param contract      the contract the caller will assert
+         * @return a config with 1 000 warm-up and 1 000 000 steady-state iterations
+         */
+        public static Config ofHighDensity(String subsystemName, String testClassName, Contract contract) {
+            return new Config(subsystemName, testClassName, 1_000, 1_000_000, contract);
+        }
+    }
+
+    /**
+     * The contract a measurement is asserted against, written into the recording's
+     * {@link AllocationWindowEvent} so a reader can reproduce the verdict.
+     *
+     * @param mode               zero, bounded, or unspecified
+     * @param budgetPerIteration the bounded budget of {@code eu.exeris.*} allocations per iteration;
+     *                           {@code -1} when the mode has none
+     * @since 0.13
+     */
+    public record Contract(Mode mode, int budgetPerIteration) {
+
+        /** How a measurement is judged. */
+        public enum Mode {
+            /** Zero {@code eu.exeris.*} events and fewer bytes than iterations — {@link #assertZeroExerisAllocations}. */
+            ZERO,
+            /** At most {@code iterations × budget} events — {@link #assertBoundedExerisAllocations}. */
+            BOUNDED,
+            /** The caller asserts something of its own; a reader reports the window as not measured. */
+            UNSPECIFIED;
+
+            /** The lower-case spelling written into the marker. */
+            String marker() {
+                return name().toLowerCase(java.util.Locale.ROOT);
+            }
+        }
+
+        /**
+         * Validates the pair.
+         *
+         * @param mode               zero, bounded, or unspecified
+         * @param budgetPerIteration the bounded budget, or {@code -1}
+         * @throws IllegalArgumentException if a bounded contract has a negative budget
+         */
+        public Contract {
+            if (mode == null) {
+                throw new IllegalArgumentException("mode must not be null");
+            }
+            if (mode == Mode.BOUNDED && budgetPerIteration < 0) {
+                throw new IllegalArgumentException("budgetPerIteration must be >= 0 for a bounded contract");
+            }
+        }
+
+        /**
+         * The zero-allocation contract.
+         *
+         * @return a contract of mode {@link Mode#ZERO}
+         */
+        public static Contract zero() {
+            return new Contract(Mode.ZERO, -1);
+        }
+
+        /**
+         * The bounded-allocation contract.
+         *
+         * @param budgetPerIteration maximum {@code eu.exeris.*} allocations per iteration
+         * @return a contract of mode {@link Mode#BOUNDED}
+         */
+        public static Contract bounded(int budgetPerIteration) {
+            return new Contract(Mode.BOUNDED, budgetPerIteration);
+        }
+
+        /**
+         * No contract stated to the recording.
+         *
+         * @return a contract of mode {@link Mode#UNSPECIFIED}
+         */
+        public static Contract unspecified() {
+            return new Contract(Mode.UNSPECIFIED, -1);
         }
     }
 
@@ -232,6 +359,13 @@ public final class JfrAllocationMonitor {
         // JFR records all threads globally — we filter collected events by the workload thread id.
         long workloadThreadId = Thread.currentThread().threadId();
 
+        // Both marker objects exist before the recording starts, so no sample inside the window can be
+        // attributed to them; their commits sit outside the ThreadMXBean bracket below, so the bytes
+        // delta never contains them. AllocationWindowEvent's Javadoc states this invariant and
+        // AllocationWindowMarkerSelfTest pins it against a zero-allocation assertion.
+        AllocationWindowEvent startMarker = newMarker("start", config, workloadThreadId);
+        AllocationWindowEvent endMarker = newMarker("end", config, workloadThreadId);
+
         // JFR-independent cross-check: ThreadMXBean reports exact per-thread allocated
         // bytes, immune to the TLAB-refill granularity that makes the JFR event stream under-report
         // small steady allocations. Bracketed TIGHTLY around workload.run() (inside rec.start()/
@@ -253,6 +387,7 @@ public final class JfrAllocationMonitor {
             enableAllocationEvents(rec);
             rec.setDestination(recordingFile);
             rec.start();
+            startMarker.commit();
 
             long allocBefore = threadAllocatedBytes(threadMx, workloadThreadId);
             workload.run(config.hotPathIterations());
@@ -262,6 +397,8 @@ public final class JfrAllocationMonitor {
                     ? ALLOCATED_BYTES_UNAVAILABLE
                     : allocAfter - allocBefore;
 
+            endMarker.allocatedBytesDelta = allocatedBytesDelta;
+            endMarker.commit();
             rec.stop();
         } finally {
             if (restoreAllocTracking) {
@@ -271,6 +408,19 @@ public final class JfrAllocationMonitor {
 
         List<RecordedEvent> exerisAllocs = collectExerisAllocations(recordingFile, workloadThreadId);
         return new Result(exerisAllocs, allocatedBytesDelta, config.hotPathIterations(), recordingFile);
+    }
+
+    private static AllocationWindowEvent newMarker(String boundary, Config config, long workloadThreadId) {
+        AllocationWindowEvent marker = new AllocationWindowEvent();
+        marker.boundary = boundary;
+        marker.subsystem = config.subsystemName();
+        marker.testClass = config.testClassName();
+        marker.iterations = config.hotPathIterations();
+        marker.workloadThreadId = workloadThreadId;
+        marker.contractMode = config.contract().mode().marker();
+        marker.budgetPerIteration = config.contract().budgetPerIteration();
+        marker.allocatedBytesDelta = ALLOCATED_BYTES_UNAVAILABLE;
+        return marker;
     }
 
     private static ThreadMXBean threadAllocationBean() {
@@ -377,7 +527,9 @@ public final class JfrAllocationMonitor {
      * <p>Events from other threads (e.g. a leaked transport carrier reactor still draining from a
      * prior test) are excluded — the zero/bounded-allocation contract concerns the measured hot
      * path, which runs on {@code workloadThreadId}, not unrelated background activity that happens
-     * to overlap the recording window.
+     * to overlap the recording window. The {@link AllocationWindowEvent} objects are excluded by
+     * class as well: they are allocated before the recording starts, so a sample cannot land on
+     * them, and the exclusion states that rather than relies on it.
      *
      * @param jfrFile          the recording to read
      * @param workloadThreadId {@link Thread#threadId()} of the thread that ran the workload
@@ -396,6 +548,7 @@ public final class JfrAllocationMonitor {
                     RecordedThread eventThread = e.getThread();
                     if (objectClass != null
                             && objectClass.getName().startsWith(EXERIS_PACKAGE)
+                            && !MARKER_CLASS.equals(objectClass.getName())
                             && eventThread != null
                             && eventThread.getJavaThreadId() == workloadThreadId) {
                         result.add(e);

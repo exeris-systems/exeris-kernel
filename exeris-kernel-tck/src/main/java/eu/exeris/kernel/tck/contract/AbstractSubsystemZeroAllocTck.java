@@ -197,11 +197,15 @@ public abstract class AbstractSubsystemZeroAllocTck {
     @Test
     @DisplayName("Hot path JFR allocation profile matches tier contract")
     public final void allocationProfileMatchesTierContract() throws IOException {
+        JfrAllocationMonitor.Contract contract = supportsZeroGcHotPath()
+                ? JfrAllocationMonitor.Contract.zero()
+                : JfrAllocationMonitor.Contract.bounded(maxExerisAllocationsPerIteration());
         Config config = new Config(
                 subsystemName(),
                 getClass().getSimpleName(),
                 warmupIterations(),
-                hotPathIterations()
+                hotPathIterations(),
+                contract
         );
 
         Result result = JfrAllocationMonitor.measure(config, iterations -> {

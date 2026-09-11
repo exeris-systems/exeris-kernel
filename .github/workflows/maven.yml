@@ -298,10 +298,10 @@ jobs:
         # It also brings all ten reactor modules into scope, where sonar.sources had been a
         # hand-written list missing three of them whose JaCoCo reports were nonetheless imported
         # (18 x `File not found in project sources`, and that coverage discarded). What it does not
-        # cover is tools/jfr-reporter, 6 files and 570 lines of CI tooling that sit outside the
-        # reactor deliberately: the old list named it, this cannot, and adding it back to the root
-        # module's sources would analyse it without its own dependencies, reintroducing the exact
-        # defect being removed here.
+        # cover is tools/jfr-reporter, CI tooling that sits outside the reactor deliberately and
+        # carries its own tests (the jfr-reporter job): the old list named it, this cannot, and
+        # adding it back to the root module's sources would analyse it without its own
+        # dependencies, reintroducing the exact defect being removed here.
         #
         # No third-party action any more, which also retires a SHA pin that existed because two
         # high-severity advisories (GHSA-f79p-9c5r-xg88, GHSA-5xq9-5g24-4g6f) covered every 4.x/5.x
@@ -987,6 +987,47 @@ jobs:
           path: exeris-kernel-core/target/jfr-reports/jmh-benchmarks.jfr
           if-no-files-found: warn
           retention-days: 14
+
+  jfr-reporter:
+    # The reporter's tests would otherwise run only inside parse-jfr-to-json, which is main-only:
+    # a pull request that broke the reader would merge green and be found by the publish job. This
+    # job builds and tests the tool on every push and pull request. It is not a required check
+    # (.github/branch-protection.md).
+    name: JFR Reporter build & tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Build and test the reporter
+        # Not -q: the surefire "Tests run:" line is the evidence that the tests ran.
+        run: mvn -f tools/jfr-reporter/pom.xml clean verify -B
 
   parse-jfr-to-json:
     name: Parse JFR → Lab JSON
