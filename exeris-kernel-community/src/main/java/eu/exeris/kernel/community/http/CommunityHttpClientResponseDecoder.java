@@ -5,11 +5,14 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.spi.http.HttpHeader;
+import eu.exeris.kernel.spi.http.HttpMethod;
+import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.transport.TransportConnection;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -28,6 +31,9 @@ import java.util.List;
 final class CommunityHttpClientResponseDecoder {
 
     private static final String HEADER_CONTENT_LENGTH = "Content-Length";
+    private static final String HEADER_CONNECTION = "Connection";
+    private static final String CONNECTION_CLOSE = "close";
+    private static final String CONNECTION_KEEP_ALIVE = "keep-alive";
     private static final int STATUS_LINE_MIN_PARTS = 2;
     private static final int STATUS_LINE_PARTS_WITH_REASON = 3;
 
@@ -180,6 +186,58 @@ final class CommunityHttpClientResponseDecoder {
             }
         }
         return -1;
+    }
+
+    /**
+     * Determines whether the underlying connection is eligible to be returned to the pool for reuse.
+     *
+     * <p>Requires an open connection, HTTP/1.1 (or HTTP/1.0 with keep-alive), framed response body
+     * (explicit {@code Content-Length} or {@code HEAD} request), and absence of {@code Connection: close}.
+     *
+     * @param request    the outbound request
+     * @param response   the decoded response
+     * @param connection the underlying transport connection
+     * @return true if the connection can be kept alive and pooled
+     */
+    /* default */ static boolean isKeepAlive(HttpRequest request,
+                                            HttpResponse response,
+                                            TransportConnection connection) {
+        if (connection == null || !connection.isOpen()) {
+            return false;
+        }
+        if (hasHeaderValue(request.headers(), HEADER_CONNECTION, CONNECTION_CLOSE)) {
+            return false;
+        }
+        if (hasHeaderValue(response.headers(), HEADER_CONNECTION, CONNECTION_CLOSE)) {
+            return false;
+        }
+        if (request.method() == HttpMethod.HEAD) {
+            return true;
+        }
+        if (!hasHeader(response.headers(), HEADER_CONTENT_LENGTH)) {
+            return false;
+        }
+        return response.version() == HttpVersion.HTTP_1_1
+                || (response.version() == HttpVersion.HTTP_1_0
+                    && hasHeaderValue(response.headers(), HEADER_CONNECTION, CONNECTION_KEEP_ALIVE));
+    }
+
+    private static boolean hasHeader(List<HttpHeader> headers, String name) {
+        for (HttpHeader h : headers) {
+            if (h.nameEqualsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasHeaderValue(List<HttpHeader> headers, String name, String expectedValue) {
+        for (HttpHeader h : headers) {
+            if (h.nameEqualsIgnoreCase(name) && expectedValue.equalsIgnoreCase(h.value().trim())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** A parsed HTTP/1.x status line: the resolved protocol version and status. */

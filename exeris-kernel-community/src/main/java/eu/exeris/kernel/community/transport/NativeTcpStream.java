@@ -276,7 +276,7 @@ final class NativeTcpStream implements TransportStream {
             }
             ensureTlsReady(true);
 
-            runtime.streamVt().compareAndSet(null, currentThread);
+            runtime.streamVt().set(currentThread);
 
             while (true) {
                 if (closed.get()) {
@@ -292,6 +292,7 @@ final class NativeTcpStream implements TransportStream {
                 return copyFromInbound(target, maxBytes);
             }
         } finally {
+            runtime.streamVt().compareAndSet(currentThread, null);
             NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
         }
     }

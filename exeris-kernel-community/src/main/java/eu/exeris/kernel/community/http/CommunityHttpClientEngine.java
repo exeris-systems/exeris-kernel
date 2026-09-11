@@ -41,12 +41,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @since 0.5
  */
-// CyclomaticComplexity: 32 against a class ceiling of 30, and more than half of it is ONE
-// method — Peer.parse measures 17 against a method ceiling of 10, parsing the authority
-// forms ADR-074 admits. The multi-state read loop this line used to name is no longer here;
-// it moved to CommunityHttpClientResponseReader. Re-measure by deleting the annotation and
-// running `mvn -pl exeris-kernel-community pmd:check` on a BUILT tree — on an unbuilt one
-// PMD has no auxclasspath and the type-resolution rules produce false positives.
 // TooManyMethods: SPI contract surface — the count is intrinsic. Every method here but
 // resolvePeer/sendRequest/readResponse implements HttpClientEngine, and ADR-074 added
 // defaultAuthority() to that interface; PersistenceConnection carries the same disposition.
@@ -60,6 +54,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
     private final TransportEngine transport;
     private final boolean closeAllocatorOnClose;
     private final String defaultAuthority;
+    private final CommunityHttpClientConnectionPool connectionPool;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -85,6 +80,7 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         this.transport = Objects.requireNonNull(transport, "transport must not be null");
         this.closeAllocatorOnClose = closeAllocatorOnClose;
         this.defaultAuthority = defaultAuthority;
+        this.connectionPool = new CommunityHttpClientConnectionPool(config);
     }
 
     @Override
@@ -107,17 +103,65 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
     }
 
     @Override
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
     public HttpResponse send(HttpRequest request) {
         Objects.requireNonNull(request, "request must not be null");
         if (!running.get() || closed.get()) {
             throw new IllegalStateException("Client engine is not running");
         }
-        Peer peer = resolvePeer(request);
+        CommunityHttpClientPeer peer = resolvePeer(request);
 
-        try (TransportConnection connection = transport.connect(peer.host(), peer.port());
-             TransportStream stream = connection.openStream()) {
+        // Try pooled connection first
+        CommunityHttpClientConnectionPool.PooledConnection pooled = connectionPool.acquire(peer.authority());
+        if (pooled != null) {
+            try {
+                return executeExchange(pooled.connection(), pooled.stream(), request, peer);
+            } catch (Exception _) {
+                pooled.close();
+            }
+        }
+
+        // Fresh connection dial
+        TransportConnection connection = transport.connect(peer.host(), peer.port());
+        TransportStream stream = null;
+        try {
+            stream = connection.openStream();
+            return executeExchange(connection, stream, request, peer);
+        } catch (Throwable t) {
+            CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
+            if (t instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (t instanceof Error err) {
+                throw err;
+            }
+            throw new IllegalStateException("Failed to send HTTP request", t);
+        }
+    }
+
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    private HttpResponse executeExchange(TransportConnection connection,
+                                         TransportStream stream,
+                                         HttpRequest request,
+                                         CommunityHttpClientPeer peer) {
+        try {
             sendRequest(stream, request, peer.authority());
-            return readResponse(stream, request.version(), request.method() == HttpMethod.HEAD);
+            HttpResponse response = readResponse(stream, request.version(), request.method() == HttpMethod.HEAD);
+            if (CommunityHttpClientResponseDecoder.isKeepAlive(request, response, connection)) {
+                connectionPool.release(peer.authority(), connection, stream);
+            } else {
+                CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
+            }
+            return response;
+        } catch (Throwable t) {
+            CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
+            if (t instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            if (t instanceof Error err) {
+                throw err;
+            }
+            throw new IllegalStateException("Failed to execute HTTP exchange", t);
         }
     }
 
@@ -135,57 +179,14 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
      * is no basis for choosing 80 over 443 — and defaulting to the listener port is precisely what
      * this decision removed.
      */
-    private Peer resolvePeer(HttpRequest request) {
+    private CommunityHttpClientPeer resolvePeer(HttpRequest request) {
         String authority = request.authority() != null ? request.authority() : defaultAuthority;
         if (authority == null || authority.isBlank()) {
             throw new IllegalStateException(
                     "Request carries no authority and no http.client.defaultAuthority is configured; "
                             + "set one, or address the request with HttpRequest.withAuthority(host:port)");
         }
-        return Peer.parse(authority);
-    }
-
-    /**
-     * The dialled endpoint plus the authority it came from, which the {@code Host} header follows.
-     *
-     * <p>Parsing lives here rather than in the engine so that the engine's method count stays under
-     * its PMD ceiling, and because splitting an authority is the record's own business.
-     */
-    private record Peer(String host, int port, String authority) {
-
-        private static final int MAX_PORT = 65_535;
-
-        private static Peer parse(String authority) {
-            int close = authority.startsWith("[") ? authority.indexOf(']') : -1;
-            if (authority.startsWith("[") && close < 0) {
-                throw new IllegalStateException("Unterminated IPv6 literal in authority: " + authority);
-            }
-            int separator = close >= 0 ? authority.indexOf(':', close) : authority.lastIndexOf(':');
-            if (separator <= 0 || separator == authority.length() - 1) {
-                throw new IllegalStateException(
-                        "Authority must carry an explicit port (host:port), got: " + authority);
-            }
-            String host = authority.substring(0, separator);
-            // An unbracketed IPv6 literal is not merely unusual, it is AMBIGUOUS: "::1:8080" is a
-            // valid IPv6 address in its own right, so reading it as host "::1" port 8080 is a guess.
-            // RFC 3986 requires the bracketed form for exactly this reason, and guessing is what
-            // ADR-074 exists to remove. Note the bracketed host keeps its brackets — InetSocketAddress
-            // accepts them (measured), so stripping would be work that also loses the disambiguation.
-            if (close < 0 && host.indexOf(':') >= 0) {
-                throw new IllegalStateException(
-                        "IPv6 authority must be bracketed as [address]:port, got: " + authority);
-            }
-            int port;
-            try {
-                port = Integer.parseInt(authority.substring(separator + 1));
-            } catch (NumberFormatException e) {
-                throw new IllegalStateException("Authority port is not a number: " + authority, e);
-            }
-            if (port <= 0 || port > MAX_PORT) {
-                throw new IllegalStateException("Authority port out of range: " + authority);
-            }
-            return new Peer(host, port, authority);
-        }
+        return CommunityHttpClientPeer.parse(authority);
     }
 
     @Override
@@ -211,10 +212,14 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         }
         running.set(false);
         try {
-            transport.close();
+            connectionPool.close();
         } finally {
-            if (closeAllocatorOnClose) {
-                allocator.close();
+            try {
+                transport.close();
+            } finally {
+                if (closeAllocatorOnClose) {
+                    allocator.close();
+                }
             }
         }
     }
