@@ -14,8 +14,13 @@ import java.nio.charset.StandardCharsets;
  * Package-private byte-level primitives — CRLF and byte search, ASCII decoding, and aggregate
  * buffer compaction — shared by the Community HTTP/1.x and HTTP/2 wire-parsing paths.
  */
-@SuppressWarnings("PMD.CyclomaticComplexity") // Cohesive byte-level wire parsing and buffer compaction primitives.
+// Cohesive byte-level wire parsing and buffer compaction primitives.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 /* default */ final class CommunityHttpBufferOps {
+
+    private static final byte BYTE_SPACE = (byte) ' ';
+    private static final byte BYTE_CR = (byte) '\r';
+    private static final byte BYTE_LF = (byte) '\n';
 
     private CommunityHttpBufferOps() {
     }
@@ -82,6 +87,28 @@ import java.nio.charset.StandardCharsets;
     }
 
     /**
+     * Compares the US-ASCII bytes in {@code [start, end)} against {@code candidate} case-insensitively,
+     * with zero allocations.
+     */
+    /* default */ static boolean matchesAsciiIgnoreCase(
+            MemorySegment segment, long start, long end, String candidate) {
+        int length = candidate.length();
+        if (start < 0 || end < start || end > segment.byteSize() || end - start != length) {
+            return false;
+        }
+        for (int offset = 0; offset < length; offset++) {
+            byte actual = segment.get(ValueLayout.JAVA_BYTE, start + offset);
+            char expected = candidate.charAt(offset);
+            byte lowerActual = (actual >= 'A' && actual <= 'Z') ? (byte) (actual + 32) : actual;
+            byte lowerExpected = (expected >= 'A' && expected <= 'Z') ? (byte) (expected + 32) : (byte) expected;
+            if (lowerActual != lowerExpected) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Compacts {@code aggregate} down to the bytes past {@code consumedBytes} — the unread
      * remainder of a keep-alive connection's buffer after one request or frame has been consumed
      * from its front.
@@ -113,17 +140,16 @@ import java.nio.charset.StandardCharsets;
         aggregate.setSize(unreadBytes);
         return unreadBytes;
     }
-
     /**
      * Extracts a 3-digit HTTP status code from the status line segment in {@code [start, end)}.
      * Returns the integer status code, or {@code -1} if no valid 3-digit code is found.
      */
     /* default */ static int parseStatusCode(MemorySegment segment, long start, long end) {
-        long spaceIndex = indexOfByte(segment, start, end, (byte) ' ');
+        long spaceIndex = indexOfByte(segment, start, end, BYTE_SPACE);
         if (spaceIndex < 0 || spaceIndex + 4 > end) {
             return -1;
         }
-        if (spaceIndex + 4 < end && !isValidStatusDelimiter(segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 4))) {
+        if (spaceIndex + 4 < end && !isValidStatusDelimiter(segment, spaceIndex + 4, end)) {
             return -1;
         }
         byte digitHundreds = segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 1);
@@ -137,9 +163,24 @@ import java.nio.charset.StandardCharsets;
         return (digitHundreds - '0') * 100 + (digitTens - '0') * 10 + digitUnits - '0';
     }
 
-    private static boolean isValidStatusDelimiter(byte delimiter) {
-        return delimiter == ' ' || delimiter == '\r' || delimiter == '\t';
+    /**
+     * Validates status-code delimiter byte before reason-phrase per RFC 9112 §3.1.2.
+     * When characters follow the 3-digit status code before CRLF (end), the delimiter must be SP,
+     * or CRLF directly if the reason-phrase is omitted.
+     */
+    private static boolean isValidStatusDelimiter(MemorySegment segment, long delimiterIndex, long end) {
+        byte delimiter = segment.get(ValueLayout.JAVA_BYTE, delimiterIndex);
+        if (delimiter == BYTE_SPACE) {
+            return true;
+        }
+        if (delimiter == BYTE_CR) {
+            long nextIndex = delimiterIndex + 1;
+            return nextIndex < end && segment.get(ValueLayout.JAVA_BYTE, nextIndex) == BYTE_LF;
+        }
+        return false;
     }
+
+
     /**
      * The offset of the header-block terminator ({@code CRLF CRLF}) in {@code [start, endExclusive)},
      * or {@code -1} when none is found.

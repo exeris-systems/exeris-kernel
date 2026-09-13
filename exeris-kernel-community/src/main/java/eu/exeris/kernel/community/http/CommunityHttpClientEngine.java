@@ -6,15 +6,18 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.http.HttpException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -47,7 +50,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 final class CommunityHttpClientEngine implements HttpClientEngine {
 
-    private static final String ENGINE_NAME = "community-http-client";
+    /* default */ static final String ENGINE_NAME = "community-http-client";
 
     private final HttpConfig config;
     private final MemoryAllocator allocator;
@@ -75,12 +78,21 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
                                             TransportEngine transport,
                                             boolean closeAllocatorOnClose,
                                             String defaultAuthority) {
+        this(config, allocator, transport, closeAllocatorOnClose, defaultAuthority, null);
+    }
+
+    /* default */ CommunityHttpClientEngine(HttpConfig config,
+                                            MemoryAllocator allocator,
+                                            TransportEngine transport,
+                                            boolean closeAllocatorOnClose,
+                                            String defaultAuthority,
+                                            TimeSource timeSource) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.transport = Objects.requireNonNull(transport, "transport must not be null");
         this.closeAllocatorOnClose = closeAllocatorOnClose;
         this.defaultAuthority = defaultAuthority;
-        this.connectionPool = new CommunityHttpClientConnectionPool(config);
+        this.connectionPool = new CommunityHttpClientConnectionPool(config, timeSource);
     }
 
     @Override
@@ -119,20 +131,32 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
 
     @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
     private HttpResponse sendFresh(HttpRequest request, CommunityHttpClientPeer peer) {
-        TransportConnection connection = transport.connect(peer.host(), peer.port());
+        TransportConnection connection;
+        try {
+            connection = transport.connect(peer.host(), peer.port());
+        } catch (Throwable t) {
+            if (t instanceof Error err) {
+                throw err;
+            }
+            if (t instanceof HttpException httpException) {
+                throw httpException;
+            }
+            throw HttpException.clientConnectFailure(ENGINE_NAME, peer.host(), peer.port(), t);
+        }
+
         TransportStream stream = null;
         try {
             stream = connection.openStream();
             return executeExchange(connection, stream, request, peer);
         } catch (Throwable t) {
             CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
-            if (t instanceof RuntimeException runtimeException) {
-                throw runtimeException;
+            if (t instanceof ExerisKernelException kernelException) {
+                throw kernelException;
             }
             if (t instanceof Error err) {
                 throw err;
             }
-            throw new IllegalStateException("Failed to send HTTP request", t);
+            throw TransportException.sendFailure(ENGINE_NAME, 0L, t);
         }
     }
 
@@ -143,23 +167,25 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
                                          CommunityHttpClientPeer peer) {
         try {
             sendRequest(stream, request, peer.authority());
-            HttpResponse response = readResponse(stream, request.version(), request.method() == HttpMethod.HEAD);
+            HttpResponse response = readResponse(stream, request.method() == HttpMethod.HEAD);
             if (CommunityHttpClientResponseDecoder.isKeepAlive(request, response, connection)
                     && !stream.hasPendingData()) {
                 connectionPool.release(peer.authority(), connection, stream);
             } else {
                 CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
+                connectionPool.pruneIfEmpty(peer.authority());
             }
             return response;
         } catch (Throwable t) {
             CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
-            if (t instanceof RuntimeException runtimeException) {
-                throw runtimeException;
+            connectionPool.pruneIfEmpty(peer.authority());
+            if (t instanceof ExerisKernelException kernelException) {
+                throw kernelException;
             }
             if (t instanceof Error err) {
                 throw err;
             }
-            throw new IllegalStateException("Failed to execute HTTP exchange", t);
+            throw TransportException.sendFailure(ENGINE_NAME, 0L, t);
         }
     }
 
@@ -233,12 +259,11 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         }
     }
 
-    private HttpResponse readResponse(TransportStream stream, HttpVersion requestVersion,
-                                      boolean bodyless) {
+    private HttpResponse readResponse(TransportStream stream, boolean bodyless) {
         try (CommunityHttpClientResponseReader reader = new CommunityHttpClientResponseReader(
                 allocator, resolveAggregateCapacity(), bodyless)) {
             reader.readFrom(stream);
-            return reader.decode(requestVersion);
+            return reader.decode();
         }
     }
 

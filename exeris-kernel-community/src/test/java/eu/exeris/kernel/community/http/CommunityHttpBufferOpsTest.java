@@ -100,6 +100,23 @@ class CommunityHttpBufferOpsTest {
         assertThat(offset).isEqualTo(-1);
     }
 
+    @Test
+    void matchesAsciiIgnoreCaseMatchingAndMismatching() {
+        byte[] bytes = "Prefix-Content-Length: 123".getBytes(StandardCharsets.US_ASCII);
+        MemorySegment seg = MemorySegment.ofArray(bytes);
+
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 7, 21, "content-length")).isTrue();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 7, 21, "CONTENT-LENGTH")).isTrue();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 7, 21, "Content-Length")).isTrue();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 7, 20, "Content-Length")).isFalse();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 7, 22, "Content-Length")).isFalse();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 0, 6, "prefix")).isTrue();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 0, 6, "PREFIY")).isFalse();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, -1, 5, "prefix")).isFalse();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 6, 5, "prefix")).isFalse();
+        assertThat(CommunityHttpBufferOps.matchesAsciiIgnoreCase(seg, 0, bytes.length + 1, "prefix")).isFalse();
+    }
+
     private static void assertStatusCode(String statusLine, int expected) {
         byte[] bytes = statusLine.getBytes(StandardCharsets.US_ASCII);
         MemorySegment seg = MemorySegment.ofArray(bytes);

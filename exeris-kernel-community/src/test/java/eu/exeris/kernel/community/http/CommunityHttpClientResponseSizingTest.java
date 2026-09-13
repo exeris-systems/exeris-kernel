@@ -5,6 +5,8 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpMode;
@@ -147,8 +149,12 @@ class CommunityHttpClientResponseSizingTest {
 
             assertThatThrownBy(() -> exchange(ceiling, canned,
                     HttpRequest.noBody(HttpMethod.GET, "/toobig", HttpVersion.HTTP_1_1, List.of())))
-                    .isInstanceOf(IllegalStateException.class)
-                    .hasMessageContaining("Truncated HTTP response body");
+                    .isInstanceOf(ExerisKernelException.class)
+                    .satisfies(ex -> {
+                        ExerisKernelException ke = (ExerisKernelException) ex;
+                        assertThat(ke.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
+                        assertThat(ke.getMessage()).containsIgnoringCase("truncated HTTP response body");
+                    });
         }
     }
 

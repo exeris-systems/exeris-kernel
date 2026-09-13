@@ -4,6 +4,9 @@
  */
 package eu.exeris.kernel.tck.contract.http;
 
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -17,10 +20,12 @@ import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -437,9 +442,12 @@ public abstract class AbstractHttpProviderLoopbackTck {
         HttpProvider provider = createProvider();
         String host = loopbackHost();
         int port = nextFreePort();
+        AtomicInteger serverHits = new AtomicInteger(0);
 
-        HttpHandler handler = exchange -> exchange.respond(
-                HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+        HttpHandler handler = exchange -> {
+            serverHits.incrementAndGet();
+            exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+        };
 
         try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
              HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
@@ -458,11 +466,43 @@ public abstract class AbstractHttpProviderLoopbackTck {
                     response.body().close();
                 }
             }
+            assertThat(serverHits.get()).isEqualTo(2);
         }
     }
 
     @Test
-    @DisplayName("Client request on closed target throws without implicit retry")
+    @DisplayName("304 Not Modified response is handled cleanly across sequential calls")
+    void notModifiedResponseHandledCleanlyAcrossSequentialCalls() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(
+                HttpResponse.noBody(HttpStatus.NOT_MODIFIED, exchange.request().version()));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            for (int i = 0; i < 2; i++) {
+                HttpResponse response = clientEngine.send(HttpRequest.noBody(
+                        HttpMethod.GET,
+                        requestPath(),
+                        requestVersion(),
+                        List.of()));
+                assertThat(response.status().code()).isEqualTo(304);
+                if (response.body() != null) {
+                    response.body().close();
+                }
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    @DisplayName("Client request on unreachable target throws fail-fast without implicit retry")
     void closedTargetThrowsWithoutImplicitRetry() {
         HttpProvider provider = createProvider();
         String host = loopbackHost();
@@ -475,10 +515,171 @@ public abstract class AbstractHttpProviderLoopbackTck {
                     requestPath(),
                     requestVersion(),
                     List.of())))
-                    .isInstanceOf(RuntimeException.class);
+                    .isInstanceOf(ExerisKernelException.class)
+                    .satisfies(ex -> {
+                        ExerisKernelException eke = (ExerisKernelException) ex;
+                        assertThat(eke.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4009);
+                        assertThat(eke.faultOrigin()).isEqualTo(FaultOrigin.SYSTEM);
+                    });
         }
     }
 
+    @Test
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    @DisplayName("Client request on severed server connection throws fail-fast without transparent retry")
+    void stalePooledConnectionThrowsFailFastWhenServerSevered() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(
+                HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            // First request succeeds and returns warm connection to client pool
+            HttpResponse response = clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.GET,
+                    requestPath(),
+                    requestVersion(),
+                    List.of()));
+            assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+            if (response.body() != null) {
+                response.body().close();
+            }
+
+            // Close server to sever the TCP connection
+            serverEngine.close();
+
+            // Second request on now-stale pooled connection must fail-fast without transparent retry
+            assertThatThrownBy(() -> clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.GET,
+                    requestPath(),
+                    requestVersion(),
+                    List.of())))
+                    .isInstanceOf(ExerisKernelException.class)
+                    .satisfies(ex -> {
+                        ExerisKernelException eke = (ExerisKernelException) ex;
+                        assertThat(eke.errorCode()).isIn(
+                                KernelErrorCodes.EX_HTTP_4009,
+                                KernelErrorCodes.EX_NET_4002);
+                        assertThat(eke.faultOrigin()).isEqualTo(FaultOrigin.SYSTEM);
+                    });
+        }
+    }
+
+    @Test
+    @DisplayName("Client engine does not implicitly retry on server failure (ADR-045 / ADR-026)")
+    void clientDoesNotImplicitlyRetryOnServerFailure() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+        AtomicInteger serverHits = new AtomicInteger(0);
+
+        HttpHandler handler = exchange -> {
+            serverHits.incrementAndGet();
+            exchange.respond(HttpResponse.noBody(HttpStatus.SERVICE_UNAVAILABLE, exchange.request().version()));
+        };
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            HttpResponse response = clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.GET,
+                    requestPath(),
+                    requestVersion(),
+                    List.of()));
+            assertThat(response.status().code()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE.code());
+            if (response.body() != null) {
+                response.body().close();
+            }
+
+            // Active server verifies client executed exactly one attempt without transparent retry
+            assertThat(serverHits.get()).isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("Conflicting Content-Length headers in server response throws fail-fast (RFC 9112 §6.3)")
+    void conflictingContentLengthHeadersThrowsFailFast() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(new HttpResponse(
+                HttpStatus.OK,
+                exchange.request().version(),
+                List.of(new HttpHeader("Content-Length", "10"), new HttpHeader("Content-Length", "20")),
+                null));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            assertThatThrownBy(() -> clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.GET,
+                    requestPath(),
+                    requestVersion(),
+                    List.of())))
+                    .isInstanceOf(ExerisKernelException.class)
+                    .satisfies(ex -> {
+                        ExerisKernelException eke = (ExerisKernelException) ex;
+                        assertThat(eke.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
+                        assertThat(eke.faultOrigin()).isEqualTo(FaultOrigin.SYSTEM);
+                    });
+        }
+    }
+
+    @Test
+    @DisplayName("Negative Content-Length header in server response throws fail-fast (RFC 9110 §8.6)")
+    void negativeContentLengthHeaderThrowsFailFast() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(new HttpResponse(
+                HttpStatus.OK,
+                exchange.request().version(),
+                List.of(new HttpHeader("Content-Length", "-5")),
+                null));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            assertThatThrownBy(() -> clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.GET,
+                    requestPath(),
+                    requestVersion(),
+                    List.of())))
+                    .isInstanceOf(ExerisKernelException.class)
+                    .satisfies(ex -> {
+                        ExerisKernelException eke = (ExerisKernelException) ex;
+                        assertThat(eke.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
+                        assertThat(eke.faultOrigin()).isEqualTo(FaultOrigin.SYSTEM);
+                    });
+        }
+    }
+
+    /**
+     * Allocates an ephemeral TCP port for loopback testing.
+     *
+     * <p>Note: Opening and immediately closing a {@link ServerSocket} on port 0 carries an inherent TOCTOU race
+     * where another concurrent test or container process may claim the port before the engine binds it.
+     * Full resolution at the SPI layer requires an ephemeral port binding contract (port 0 binding with
+     * an {@code engine.localPort()} accessor), deferred to a future SPI revision.
+     */
     private static int nextFreePort() {
         try (ServerSocket socket = new ServerSocket(0)) {
             return socket.getLocalPort();
