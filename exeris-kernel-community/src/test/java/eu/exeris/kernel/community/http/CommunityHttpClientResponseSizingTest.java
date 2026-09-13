@@ -152,6 +152,37 @@ class CommunityHttpClientResponseSizingTest {
         }
     }
 
+    @Nested
+    @DisplayName("Informational (1xx) responses are discarded before final response")
+    class InformationalResponses {
+
+        @Test
+        @DisplayName("100 Continue followed by 200 OK returns the final 200 response")
+        void informationalContinueDiscarded() {
+            String wire = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello";
+            Exchange exchange = exchange(CEILING_10_MIB, wire.getBytes(StandardCharsets.US_ASCII),
+                    HttpRequest.noBody(HttpMethod.GET, "/info", HttpVersion.HTTP_1_1, List.of()));
+
+            assertThat(exchange.response().status().code()).isEqualTo(200);
+            assertThat(bodyLength(exchange.response())).isEqualTo(5);
+            assertThat(new String(exchange.bodyBytes(), StandardCharsets.US_ASCII)).isEqualTo("hello");
+        }
+
+        @Test
+        @DisplayName("Multiple 1xx responses (103 Early Hints, 100 Continue) are discarded before final response")
+        void multipleInformationalResponsesDiscarded() {
+            String wire = "HTTP/1.1 103 Early Hints\r\nLink: </style.css>; rel=preload\r\n\r\n"
+                    + "HTTP/1.1 100 Continue\r\n\r\n"
+                    + "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone";
+            Exchange exchange = exchange(CEILING_10_MIB, wire.getBytes(StandardCharsets.US_ASCII),
+                    HttpRequest.noBody(HttpMethod.GET, "/hints", HttpVersion.HTTP_1_1, List.of()));
+
+            assertThat(exchange.response().status().code()).isEqualTo(200);
+            assertThat(bodyLength(exchange.response())).isEqualTo(4);
+            assertThat(new String(exchange.bodyBytes(), StandardCharsets.US_ASCII)).isEqualTo("done");
+        }
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     private record Exchange(HttpResponse response, long peakBytes, byte[] bodyBytes) {

@@ -26,7 +26,8 @@ import java.util.List;
  * when to stop reading. Request encoding is the separate, symmetric responsibility of
  * {@link CommunityHttpClientRequestEncoder}.
  */
-@SuppressWarnings("PMD.CyclomaticComplexity") // parseStatusLine + parseHeaders + completeness checks have flat CC.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
+// decoder parsing, completeness checks, and zero-allocation token matching
 final class CommunityHttpClientResponseDecoder {
 
     private static final String HEADER_CONTENT_LENGTH = "Content-Length";
@@ -223,18 +224,86 @@ final class CommunityHttpClientResponseDecoder {
         return false;
     }
 
-    private static boolean containsConnectionToken(List<HttpHeader> headers, String token) {
+    /* default */ static boolean containsConnectionToken(List<HttpHeader> headers, String token) {
         for (HttpHeader header : headers) {
             if (!header.nameEqualsIgnoreCase(HEADER_CONNECTION) || header.value() == null) {
                 continue;
             }
-            for (String part : header.value().split(",")) {
-                if (token.equalsIgnoreCase(part.trim())) {
-                    return true;
-                }
+            if (tokenMatches(header.value(), token)) {
+                return true;
             }
         }
         return false;
+    }
+
+    /* default */ static boolean tokenMatches(CharSequence headerValue, String token) {
+        if (headerValue == null || token == null) {
+            return false;
+        }
+        int length = headerValue.length();
+        int tokenLength = token.length();
+        int start = 0;
+        while (start < length) {
+            start = skipDelimiters(headerValue, start, length);
+            if (start >= length) {
+                break;
+            }
+            int delimiterIndex = findTokenDelimiter(headerValue, start, length);
+            int tokenEnd = trimTrailingWhitespace(headerValue, start, delimiterIndex);
+            if (tokenEnd - start == tokenLength
+                    && asciiEqualsIgnoreCase(headerValue, start, token, tokenLength)) {
+                return true;
+            }
+            start = delimiterIndex + 1;
+        }
+        return false;
+    }
+
+    private static int skipDelimiters(CharSequence headerValue, int start, int length) {
+        int index = start;
+        while (index < length
+                && (headerValue.charAt(index) == ' '
+                || headerValue.charAt(index) == '\t'
+                || headerValue.charAt(index) == ',')) {
+            index++;
+        }
+        return index;
+    }
+
+    private static int findTokenDelimiter(CharSequence headerValue, int start, int length) {
+        int index = start;
+        while (index < length && headerValue.charAt(index) != ',') {
+            index++;
+        }
+        return index;
+    }
+
+    private static int trimTrailingWhitespace(CharSequence headerValue, int start, int end) {
+        int index = end;
+        while (index > start
+                && (headerValue.charAt(index - 1) == ' '
+                || headerValue.charAt(index - 1) == '\t')) {
+            index--;
+        }
+        return index;
+    }
+
+    private static boolean asciiEqualsIgnoreCase(CharSequence sequence,
+                                                 int start,
+                                                 String target,
+                                                 int length) {
+        for (int index = 0; index < length; index++) {
+            char actual = sequence.charAt(start + index);
+            char expected = target.charAt(index);
+            if (actual != expected) {
+                char lowerActual = (actual >= 'A' && actual <= 'Z') ? (char) (actual + 32) : actual;
+                char lowerExpected = (expected >= 'A' && expected <= 'Z') ? (char) (expected + 32) : expected;
+                if (lowerActual != lowerExpected) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     /** A parsed HTTP/1.x status line: the resolved protocol version and status. */

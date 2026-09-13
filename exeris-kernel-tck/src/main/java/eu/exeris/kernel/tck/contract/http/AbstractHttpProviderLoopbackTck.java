@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TCK: Provider-level request/response loopback contract over implementation transport.
@@ -427,6 +428,54 @@ public abstract class AbstractHttpProviderLoopbackTck {
             if (getResponse.body() != null) {
                 getResponse.body().close();
             }
+        }
+    }
+
+    @Test
+    @DisplayName("Client request with Connection: close is handled cleanly across sequential calls")
+    void clientConnectionCloseHandledCleanly() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(
+                HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            for (int i = 0; i < 2; i++) {
+                HttpResponse response = clientEngine.send(HttpRequest.noBody(
+                        HttpMethod.GET,
+                        requestPath(),
+                        requestVersion(),
+                        List.of(new HttpHeader("Connection", "close"))));
+                assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+                if (response.body() != null) {
+                    response.body().close();
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Client request on closed target throws without implicit retry")
+    void closedTargetThrowsWithoutImplicitRetry() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        try (HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            clientEngine.start();
+            assertThatThrownBy(() -> clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.GET,
+                    requestPath(),
+                    requestVersion(),
+                    List.of())))
+                    .isInstanceOf(RuntimeException.class);
         }
     }
 

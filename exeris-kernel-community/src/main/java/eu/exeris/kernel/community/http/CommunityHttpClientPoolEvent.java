@@ -17,7 +17,7 @@ import jdk.jfr.StackTrace;
  *
  * @since 0.12
  */
-@Name("eu.exeris.kernel.http.CommunityHttpClientPool")
+@Name("eu.exeris.kernel.community.http.HttpClientPool")
 @Label("Community HTTP Client Pool")
 @Description("Community HTTP client connection pool operation")
 @Category({"Exeris Kernel", "HTTP"})

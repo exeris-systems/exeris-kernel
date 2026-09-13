@@ -8,13 +8,14 @@ import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
+import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 /**
  * Package-private client connection pool managing persistent HTTP/1.1 transport connections.
@@ -27,6 +28,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @SuppressWarnings("PMD.CyclomaticComplexity") // LIFO pool state, eviction, and capacity management
 final class CommunityHttpClientConnectionPool implements AutoCloseable {
+
+    private static final Function<String, DequeHolder> DEQUE_HOLDER_FACTORY = _ -> new DequeHolder();
 
     private final int maxTotalConnections;
     private final int maxIdlePerPeer;
@@ -54,7 +57,7 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
             return null;
         }
         PooledConnection pooled = pollUsable(holder, authority);
-        if (pooled == null && holder.isEmpty()) {
+        if (holder.tryRetireIfEmpty()) {
             pool.remove(authority, holder);
         }
         return pooled;
@@ -88,16 +91,30 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
             return;
         }
 
-        DequeHolder holder = pool.computeIfAbsent(authority, _ -> new DequeHolder());
         PooledConnection pooled = new PooledConnection(connection, stream);
-        if (!holder.offer(pooled, maxIdlePerPeer)) {
-            totalConnections.decrementAndGet();
-            CommunityHttpClientPoolEvent.emit("EVICT_CAPACITY", authority, totalConnections.get());
-            closeQuietly(stream, connection);
-            if (holder.isEmpty()) {
-                pool.remove(authority, holder);
+        while (true) {
+            if (closed.get()) {
+                totalConnections.decrementAndGet();
+                closeQuietly(stream, connection);
+                return;
             }
-            return;
+            DequeHolder holder = pool.computeIfAbsent(authority, DEQUE_HOLDER_FACTORY);
+            synchronized (holder) {
+                if (holder.isRetired()) {
+                    pool.remove(authority, holder);
+                    continue;
+                }
+                if (!holder.offer(pooled, maxIdlePerPeer)) {
+                    totalConnections.decrementAndGet();
+                    CommunityHttpClientPoolEvent.emit("EVICT_CAPACITY", authority, totalConnections.get());
+                    closeQuietly(stream, connection);
+                    if (holder.tryRetireIfEmpty()) {
+                        pool.remove(authority, holder);
+                    }
+                    return;
+                }
+                break;
+            }
         }
         CommunityHttpClientPoolEvent.emit("RELEASE", authority, totalConnections.get());
         if (closed.get()) {
@@ -129,7 +146,7 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
     private void drainAndClose() {
         for (DequeHolder holder : pool.values()) {
             while (true) {
-                PooledConnection pooled = holder.poll();
+                PooledConnection pooled = holder.pollAndRetire();
                 if (pooled == null) {
                     break;
                 }
@@ -158,45 +175,49 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
     }
 
     private static final class DequeHolder {
-        private final Deque<PooledConnection> connections = new ConcurrentLinkedDeque<>();
-        private final AtomicInteger count = new AtomicInteger(0);
+        private final Deque<PooledConnection> connections = new ArrayDeque<>();
+        private boolean retired;
 
         /* default */ DequeHolder() {
             // default access
         }
 
-        /* default */ PooledConnection poll() {
-            while (true) {
-                int current = count.get();
-                if (current <= 0) {
-                    return null;
-                }
-                if (count.compareAndSet(current, current - 1)) {
-                    PooledConnection pooled = connections.pollFirst();
-                    if (pooled != null) {
-                        return pooled;
-                    }
-                    count.incrementAndGet();
-                    return null;
-                }
+        /* default */ synchronized PooledConnection poll() {
+            if (retired) {
+                return null;
             }
+            return connections.pollFirst();
         }
 
-        /* default */ boolean offer(PooledConnection pooled, int max) {
-            while (true) {
-                int current = count.get();
-                if (current >= max) {
-                    return false;
-                }
-                if (count.compareAndSet(current, current + 1)) {
-                    connections.offerFirst(pooled);
-                    return true;
-                }
+        /* default */ synchronized boolean offer(PooledConnection pooled, int max) {
+            if (retired) {
+                return false;
             }
+            if (connections.size() >= max) {
+                return false;
+            }
+            connections.offerFirst(pooled);
+            return true;
         }
 
-        /* default */ boolean isEmpty() {
-            return count.get() == 0 && connections.isEmpty();
+        /* default */ synchronized boolean tryRetireIfEmpty() {
+            if (retired) {
+                return true;
+            }
+            if (connections.isEmpty()) {
+                retired = true;
+                return true;
+            }
+            return false;
+        }
+
+        /* default */ synchronized boolean isRetired() {
+            return retired;
+        }
+
+        /* default */ synchronized PooledConnection pollAndRetire() {
+            retired = true;
+            return connections.pollFirst();
         }
     }
 

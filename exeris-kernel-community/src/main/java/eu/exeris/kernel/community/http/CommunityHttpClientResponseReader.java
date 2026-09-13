@@ -176,7 +176,35 @@ final class CommunityHttpClientResponseReader implements AutoCloseable {
                     headerTerminator, aggregate.segment(), total);
             expectedTotal = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
                     expectedTotal, aggregate.segment(), total, headerTerminator, bodyless);
+            discardInformationalResponses();
         }
         return !CommunityHttpClientResponseDecoder.isResponseComplete(total, expectedTotal);
+    }
+
+    private void discardInformationalResponses() {
+        while (CommunityHttpClientResponseDecoder.isResponseComplete(total, expectedTotal)) {
+            long statusLineEnd = CommunityHttpBufferOps.findCrLf(aggregate.segment(), 0, total);
+            if (statusLineEnd < 0) {
+                break;
+            }
+            int statusCode = CommunityHttpBufferOps.parseStatusCode(aggregate.segment(), 0, statusLineEnd);
+            if (statusCode < 100 || statusCode >= 200 || statusCode == 101) {
+                break;
+            }
+            long remaining = total - expectedTotal;
+            if (remaining > 0) {
+                MemorySegment.copy(aggregate.segment(), expectedTotal, aggregate.segment(), 0, remaining);
+            }
+            total = remaining;
+            aggregate.setSize(total);
+            headerTerminator = -1;
+            expectedTotal = -1;
+            if (total > 0) {
+                headerTerminator = CommunityHttpClientResponseDecoder.resolveHeaderTerminator(
+                        headerTerminator, aggregate.segment(), total);
+                expectedTotal = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
+                        expectedTotal, aggregate.segment(), total, headerTerminator, bodyless);
+            }
+        }
     }
 }

@@ -207,4 +207,25 @@ class CommunityHttpClientResponseDecoderTest {
             return body.apply(buffer, (long) wire.length);
         }
     }
+
+    @Test
+    void containsConnectionTokenMatchesTokensCaseInsensitivelyWithoutAllocations() {
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("close", "close")).isTrue();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("CLOSE", "close")).isTrue();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("  close  ", "close")).isTrue();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("keep-alive, close", "close")).isTrue();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("close, keep-alive", "close")).isTrue();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("keep-alive, Upgrade", "upgrade")).isTrue();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("closer", "close")).isFalse();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("is-close", "close")).isFalse();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches("", "close")).isFalse();
+        assertThat(CommunityHttpClientResponseDecoder.tokenMatches(",,,", "close")).isFalse();
+
+        List<HttpHeader> headers = List.of(
+                new HttpHeader("Content-Type", "text/plain"),
+                new HttpHeader("Connection", "keep-alive, Upgrade")
+        );
+        assertThat(CommunityHttpClientResponseDecoder.containsConnectionToken(headers, "upgrade")).isTrue();
+        assertThat(CommunityHttpClientResponseDecoder.containsConnectionToken(headers, "close")).isFalse();
+    }
 }

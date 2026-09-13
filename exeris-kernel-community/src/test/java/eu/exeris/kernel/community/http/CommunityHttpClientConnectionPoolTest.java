@@ -5,6 +5,8 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpMode;
+import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -100,6 +102,94 @@ class CommunityHttpClientConnectionPoolTest {
         assertThat(pool.acquire("localhost:8080")).isNull();
     }
 
+    @Test
+    @DisplayName("Concurrent acquire and release across virtual threads does not leak or orphan sockets")
+    void concurrentAcquireReleaseUnderHeavyContentionDoesNotLeakOrOrphan() throws Exception {
+        int threads = 30;
+        int iterations = 100;
+        try (CommunityHttpClientConnectionPool pool = new CommunityHttpClientConnectionPool(HttpConfig.defaultClient())) {
+            Thread[] vts = new Thread[threads];
+            for (int i = 0; i < threads; i++) {
+                vts[i] = Thread.ofVirtual().start(() -> {
+                    for (int j = 0; j < iterations; j++) {
+                        CommunityHttpClientConnectionPool.PooledConnection acquired = pool.acquire("localhost:8080");
+                        if (acquired != null) {
+                            pool.release("localhost:8080", acquired.connection(), acquired.stream());
+                        } else {
+                            FakeConnection conn = new FakeConnection();
+                            FakeStream stream = new FakeStream(conn);
+                            pool.release("localhost:8080", conn, stream);
+                        }
+                    }
+                });
+            }
+            for (Thread vt : vts) {
+                vt.join();
+            }
+
+            pool.close();
+            assertThat(pool.acquire("localhost:8080")).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("Capacity eviction closes excess connections when pool is full")
+    void capacityEvictionWhenPoolFull() {
+        HttpConfig config = new HttpConfig(
+                HttpMode.CLIENT, null, -1, 2, 30_000L, 100, 8192, 1024L * 1024L, false,
+                HttpVersion.HTTP_2, null, 65536, 65536, 4096, 10L * 1024L * 1024L);
+        try (CommunityHttpClientConnectionPool pool = new CommunityHttpClientConnectionPool(config)) {
+            FakeConnection conn1 = new FakeConnection();
+            FakeConnection conn2 = new FakeConnection();
+            FakeConnection conn3 = new FakeConnection();
+
+            pool.release("localhost:8080", conn1, new FakeStream(conn1));
+            pool.release("localhost:8080", conn2, new FakeStream(conn2));
+            pool.release("localhost:8080", conn3, new FakeStream(conn3));
+
+            assertThat(conn3.closed.get()).isTrue();
+            assertThat(pool.acquire("localhost:8080")).isNotNull();
+            assertThat(pool.acquire("localhost:8080")).isNotNull();
+            assertThat(pool.acquire("localhost:8080")).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("Idle timeout evicts and closes expired connection on acquire")
+    void idleTimeoutEviction() throws InterruptedException {
+        // 1 ms idle timeout
+        HttpConfig config = new HttpConfig(
+                HttpMode.CLIENT, null, -1, 10, 1L, 100, 8192, 1024L * 1024L, false,
+                HttpVersion.HTTP_2, null, 65536, 65536, 4096, 10L * 1024L * 1024L);
+        try (CommunityHttpClientConnectionPool pool = new CommunityHttpClientConnectionPool(config)) {
+            FakeConnection conn = new FakeConnection();
+            FakeStream stream = new FakeStream(conn);
+            pool.release("localhost:8080", conn, stream);
+
+            Thread.sleep(15);
+
+            assertThat(pool.acquire("localhost:8080")).isNull();
+            assertThat(conn.closed.get()).isTrue();
+            assertThat(stream.closed.get()).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("Stream with pending unread data is rejected and closed on release")
+    void dirtyStreamWithPendingDataIsRejectedOnRelease() {
+        try (CommunityHttpClientConnectionPool pool = new CommunityHttpClientConnectionPool(HttpConfig.defaultClient())) {
+            FakeConnection conn = new FakeConnection();
+            FakeStream stream = new FakeStream(conn);
+            stream.setPendingData(true);
+
+            pool.release("localhost:8080", conn, stream);
+
+            assertThat(conn.closed.get()).isTrue();
+            assertThat(stream.closed.get()).isTrue();
+            assertThat(pool.acquire("localhost:8080")).isNull();
+        }
+    }
+
     private static final class FakeConnection implements TransportConnection {
         private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -152,8 +242,14 @@ class CommunityHttpClientConnectionPoolTest {
         private final AtomicBoolean closed = new AtomicBoolean(false);
         private final TransportConnection parentConnection;
 
+        private final AtomicBoolean pendingData = new AtomicBoolean(false);
+
         FakeStream(TransportConnection parentConnection) {
             this.parentConnection = parentConnection;
+        }
+
+        void setPendingData(boolean pending) {
+            this.pendingData.set(pending);
         }
 
         @Override
@@ -191,7 +287,7 @@ class CommunityHttpClientConnectionPoolTest {
 
         @Override
         public boolean hasPendingData() {
-            return false;
+            return pendingData.get();
         }
 
         @Override

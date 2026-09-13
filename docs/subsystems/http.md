@@ -184,7 +184,7 @@ surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-ent
 
 Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persistent TCP connection reuse via `CommunityHttpClientConnectionPool`:
 
-- **LIFO Reuse Queue:** Reuses connections per authority using a lock-free LIFO queue (`ConcurrentLinkedDeque` wrapped in an atomic CAS `DequeHolder`). LIFO ordering keeps the warmest connections active, avoiding keep-alive expiration races on the remote peer.
+- **LIFO Reuse Queue:** Reuses connections per authority using a synchronized LIFO queue (`ArrayDeque` wrapped in a `DequeHolder` with atomic retirement protection). LIFO ordering keeps the warmest connections active, avoiding keep-alive expiration races on the remote peer while guaranteeing zero heap allocation during offer/poll.
 - **Bounds & Eviction:** Global pool capacity is bounded by `HttpConfig.maxConnections()`, with per-authority idle capacity clamped to `[1, 64]`. Empty authority holders are pruned atomically upon draining to eliminate memory leaks. Idle connections exceeding `HttpConfig.idleTimeoutMillis()` (default 30s) are evicted on acquire.
 - **Carrier Disconnect & Zombie Prevention:** Sockets closed remotely (e.g. peer `FIN`) are marked as closed by the transport layer (`NativeTcpStream` sets `markClosedByCarrier()`), ensuring zombie sockets are not leased from the pool.
 - **Keep-Alive Qualification (RFC 9110 / RFC 9112):** Connections are returned to the pool only when:
@@ -192,7 +192,7 @@ Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persis
   2. The protocol is HTTP/1.1 (or HTTP/1.0 with explicit `Connection: keep-alive`).
   3. The response is properly framed — either explicitly via `Content-Length` or inherently bodyless (e.g., `HEAD` requests, `204 No Content`, `304 Not Modified`, or `1xx` informational responses).
   4. Neither request nor response carries `Connection: close` (including comma-separated token lists).
-- **Idempotency Gate for Retries (RFC 9110 §9.2.2):** When sending over a pooled connection encounters an I/O failure (such as a stale connection closed by the peer), transparent retry on a fresh connection is permitted **only** if `request.method().isIdempotent()`. Non-idempotent requests (e.g., `POST`, `PATCH`) fail immediately without retry once wire bytes may have been sent.
+- **No Implicit Transport Retries (ADR-045 / ADR-026):** `CommunityHttpClientEngine` performs zero silent or transport-level retries on failed pooled connections. If a pooled connection is closed or fails during an exchange, the connection is closed and the exception is propagated immediately to caller. Application-level or policy-driven retries remain strictly the responsibility of `KernelWebClient` and `HttpRetryPolicy`.
 - **JFR Telemetry:** `CommunityHttpClientPoolEvent` (`eu.exeris.kernel.community.http.HttpClientPool`) records pool lifecycle events: `ACQUIRE_HIT`, `ACQUIRE_MISS`, `RELEASE`, `EVICT_IDLE`, and `EVICT_CAPACITY` with authority and active pool size.
 
 ### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))

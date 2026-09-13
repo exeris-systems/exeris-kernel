@@ -123,15 +123,22 @@ import java.nio.charset.StandardCharsets;
         if (spaceIndex < 0 || spaceIndex + 4 > end) {
             return -1;
         }
+        if (spaceIndex + 4 < end && !isValidStatusDelimiter(segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 4))) {
+            return -1;
+        }
         byte digitHundreds = segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 1);
         byte digitTens = segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 2);
         byte digitUnits = segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 3);
-        if (digitHundreds >= '0' && digitHundreds <= '9'
-                && digitTens >= '0' && digitTens <= '9'
-                && digitUnits >= '0' && digitUnits <= '9') {
-            return (digitHundreds - '0') * 100 + (digitTens - '0') * 10 + digitUnits - '0';
+        if (digitHundreds < '0' || digitHundreds > '9'
+                || digitTens < '0' || digitTens > '9'
+                || digitUnits < '0' || digitUnits > '9') {
+            return -1;
         }
-        return -1;
+        return (digitHundreds - '0') * 100 + (digitTens - '0') * 10 + digitUnits - '0';
+    }
+
+    private static boolean isValidStatusDelimiter(byte delimiter) {
+        return delimiter == ' ' || delimiter == '\r' || delimiter == '\t';
     }
     /**
      * The offset of the header-block terminator ({@code CRLF CRLF}) in {@code [start, endExclusive)},
