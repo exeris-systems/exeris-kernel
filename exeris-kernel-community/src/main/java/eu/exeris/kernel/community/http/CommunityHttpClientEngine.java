@@ -103,7 +103,6 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
     }
 
     @Override
-    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
     public HttpResponse send(HttpRequest request) {
         Objects.requireNonNull(request, "request must not be null");
         if (!running.get() || closed.get()) {
@@ -111,17 +110,37 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         }
         CommunityHttpClientPeer peer = resolvePeer(request);
 
-        // Try pooled connection first
-        CommunityHttpClientConnectionPool.PooledConnection pooled = connectionPool.acquire(peer.authority());
-        if (pooled != null) {
-            try {
-                return executeExchange(pooled.connection(), pooled.stream(), request, peer);
-            } catch (Exception _) {
-                pooled.close();
-            }
+        HttpResponse pooledResponse = trySendPooled(request, peer);
+        if (pooledResponse != null) {
+            return pooledResponse;
         }
+        return sendFresh(request, peer);
+    }
 
-        // Fresh connection dial
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    private HttpResponse trySendPooled(HttpRequest request, CommunityHttpClientPeer peer) {
+        CommunityHttpClientConnectionPool.PooledConnection pooled = connectionPool.acquire(peer.authority());
+        if (pooled == null) {
+            return null;
+        }
+        try {
+            return executeExchange(pooled.connection(), pooled.stream(), request, peer);
+        } catch (Exception ex) {
+            pooled.close();
+            // RFC 9110 §9.2.2: Only idempotent requests may be retried on connection failure.
+            // Non-idempotent methods (e.g. POST) must not be silently retried once bytes may have left.
+            if (!request.method().isIdempotent()) {
+                if (ex instanceof RuntimeException runtimeException) {
+                    throw runtimeException;
+                }
+                throw new IllegalStateException("Failed to execute HTTP request on pooled connection", ex);
+            }
+            return null;
+        }
+    }
+
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    private HttpResponse sendFresh(HttpRequest request, CommunityHttpClientPeer peer) {
         TransportConnection connection = transport.connect(peer.host(), peer.port());
         TransportStream stream = null;
         try {
@@ -147,7 +166,8 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         try {
             sendRequest(stream, request, peer.authority());
             HttpResponse response = readResponse(stream, request.version(), request.method() == HttpMethod.HEAD);
-            if (CommunityHttpClientResponseDecoder.isKeepAlive(request, response, connection)) {
+            if (CommunityHttpClientResponseDecoder.isKeepAlive(request, response, connection)
+                    && !stream.hasPendingData()) {
                 connectionPool.release(peer.authority(), connection, stream);
             } else {
                 CommunityHttpClientConnectionPool.closeQuietly(stream, connection);

@@ -15,7 +15,6 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.ValueLayout;
 import java.util.List;
 
 /**
@@ -51,7 +50,7 @@ final class CommunityHttpClientResponseDecoder {
         if (currentHeaderTerminator >= 0) {
             return currentHeaderTerminator;
         }
-        return findHeaderTerminator(segment, 0, totalBytes);
+        return CommunityHttpBufferOps.findHeaderTerminator(segment, 0, totalBytes);
     }
 
     /**
@@ -66,14 +65,14 @@ final class CommunityHttpClientResponseDecoder {
         if (currentExpectedTotal >= 0 || headerTerminator < 0) {
             return currentExpectedTotal;
         }
-        if (bodyless) {
-            // RFC 9110 §6.4.1: the response to HEAD carries the Content-Length the object would
-            // have, and no body. Waiting for those bytes would block until the peer closed.
-            return headerTerminator + 4;
-        }
         long statusLineEnd = CommunityHttpBufferOps.findCrLf(segment, 0, totalBytes);
         if (statusLineEnd < 0) {
             return -1;
+        }
+        int statusCode = CommunityHttpBufferOps.parseStatusCode(segment, 0, statusLineEnd);
+        if (isBodyless(bodyless, statusCode)) {
+            // RFC 9110 §6.4.1: HEAD, 1xx, 204 (No Content), and 304 (Not Modified) responses MUST NOT contain a body.
+            return headerTerminator + 4;
         }
         // Only one field is wanted here. Building the whole header list to read it — which is what
         // this did until v0.12 — materialised every name and value of a response the caller is still
@@ -114,7 +113,7 @@ final class CommunityHttpClientResponseDecoder {
         StatusLine parsedStatus = parseStatusLine(statusLine, requestVersion);
 
         long headerStart = statusLineEnd + 2;
-        long headerEnd = findHeaderTerminator(aggregate.segment(), headerStart, total);
+        long headerEnd = CommunityHttpBufferOps.findHeaderTerminator(aggregate.segment(), headerStart, total);
         if (headerEnd < 0) {
             throw new IllegalStateException("Invalid HTTP response: missing header terminator");
         }
@@ -126,7 +125,8 @@ final class CommunityHttpClientResponseDecoder {
         if (availableBodyBytes < 0) {
             throw new IllegalStateException("Invalid HTTP response: body start exceeds received bytes");
         }
-        long bodyLength = bodyless ? 0L : resolveBodyLength(headers, availableBodyBytes);
+        boolean noBodyAllowed = isBodyless(bodyless, parsedStatus.status().code());
+        long bodyLength = noBodyAllowed ? 0L : resolveBodyLength(headers, availableBodyBytes);
         if (bodyLength > availableBodyBytes) {
             throw new IllegalStateException(
                     "Truncated HTTP response body: expected " + bodyLength
@@ -176,18 +176,6 @@ final class CommunityHttpClientResponseDecoder {
         return new StatusLine(version, new HttpStatus(code, reason));
     }
 
-    private static long findHeaderTerminator(MemorySegment segment, long start, long endExclusive) {
-        for (long index = start; index + 3 < endExclusive; index++) {
-            if (segment.get(ValueLayout.JAVA_BYTE, index) == '\r'
-                    && segment.get(ValueLayout.JAVA_BYTE, index + 1) == '\n'
-                    && segment.get(ValueLayout.JAVA_BYTE, index + 2) == '\r'
-                    && segment.get(ValueLayout.JAVA_BYTE, index + 3) == '\n') {
-                return index;
-            }
-        }
-        return -1;
-    }
-
     /**
      * Determines whether the underlying connection is eligible to be returned to the pool for reuse.
      *
@@ -205,21 +193,25 @@ final class CommunityHttpClientResponseDecoder {
         if (connection == null || !connection.isOpen()) {
             return false;
         }
-        if (hasHeaderValue(request.headers(), HEADER_CONNECTION, CONNECTION_CLOSE)) {
+        if (containsConnectionToken(request.headers(), CONNECTION_CLOSE)
+                || containsConnectionToken(response.headers(), CONNECTION_CLOSE)) {
             return false;
         }
-        if (hasHeaderValue(response.headers(), HEADER_CONNECTION, CONNECTION_CLOSE)) {
+        boolean noBody = isBodyless(request.method() == HttpMethod.HEAD, response.status().code());
+        if (!noBody && !hasHeader(response.headers(), HEADER_CONTENT_LENGTH)) {
             return false;
         }
-        if (request.method() == HttpMethod.HEAD) {
-            return true;
+        if (response.version() == HttpVersion.HTTP_1_0) {
+            return containsConnectionToken(response.headers(), CONNECTION_KEEP_ALIVE);
         }
-        if (!hasHeader(response.headers(), HEADER_CONTENT_LENGTH)) {
-            return false;
-        }
-        return response.version() == HttpVersion.HTTP_1_1
-                || (response.version() == HttpVersion.HTTP_1_0
-                    && hasHeaderValue(response.headers(), HEADER_CONNECTION, CONNECTION_KEEP_ALIVE));
+        return response.version() == HttpVersion.HTTP_1_1;
+    }
+
+    private static boolean isBodyless(boolean head, int statusCode) {
+        return head
+                || statusCode == 204
+                || statusCode == 304
+                || (statusCode >= 100 && statusCode < 200);
     }
 
     private static boolean hasHeader(List<HttpHeader> headers, String name) {
@@ -231,10 +223,15 @@ final class CommunityHttpClientResponseDecoder {
         return false;
     }
 
-    private static boolean hasHeaderValue(List<HttpHeader> headers, String name, String expectedValue) {
-        for (HttpHeader h : headers) {
-            if (h.nameEqualsIgnoreCase(name) && expectedValue.equalsIgnoreCase(h.value().trim())) {
-                return true;
+    private static boolean containsConnectionToken(List<HttpHeader> headers, String token) {
+        for (HttpHeader header : headers) {
+            if (!header.nameEqualsIgnoreCase(HEADER_CONNECTION) || header.value() == null) {
+                continue;
+            }
+            for (String part : header.value().split(",")) {
+                if (token.equalsIgnoreCase(part.trim())) {
+                    return true;
+                }
             }
         }
         return false;

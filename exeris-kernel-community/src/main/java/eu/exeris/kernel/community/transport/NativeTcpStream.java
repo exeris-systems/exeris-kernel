@@ -650,6 +650,7 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ void markRemoteClosed() {
         remoteClosed.set(true);
+        connection.markClosedByCarrier();
         signalReadableIngress();
     }
 
@@ -701,6 +702,10 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ boolean isClosed() {
         return closeRequested.get() || closed.get();
+    }
+
+    /* default */ boolean isRemoteClosed() {
+        return remoteClosed.get();
     }
 
     /* default */ TlsEngine tlsEngine() {

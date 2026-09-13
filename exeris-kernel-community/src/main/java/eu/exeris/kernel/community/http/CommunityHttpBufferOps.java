@@ -14,6 +14,7 @@ import java.nio.charset.StandardCharsets;
  * Package-private byte-level primitives — CRLF and byte search, ASCII decoding, and aggregate
  * buffer compaction — shared by the Community HTTP/1.x and HTTP/2 wire-parsing paths.
  */
+@SuppressWarnings("PMD.CyclomaticComplexity") // Cohesive byte-level wire parsing and buffer compaction primitives.
 /* default */ final class CommunityHttpBufferOps {
 
     private CommunityHttpBufferOps() {
@@ -111,5 +112,40 @@ import java.nio.charset.StandardCharsets;
         }
         aggregate.setSize(unreadBytes);
         return unreadBytes;
+    }
+
+    /**
+     * Extracts a 3-digit HTTP status code from the status line segment in {@code [start, end)}.
+     * Returns the integer status code, or {@code -1} if no valid 3-digit code is found.
+     */
+    /* default */ static int parseStatusCode(MemorySegment segment, long start, long end) {
+        long spaceIndex = indexOfByte(segment, start, end, (byte) ' ');
+        if (spaceIndex < 0 || spaceIndex + 4 > end) {
+            return -1;
+        }
+        byte digitHundreds = segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 1);
+        byte digitTens = segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 2);
+        byte digitUnits = segment.get(ValueLayout.JAVA_BYTE, spaceIndex + 3);
+        if (digitHundreds >= '0' && digitHundreds <= '9'
+                && digitTens >= '0' && digitTens <= '9'
+                && digitUnits >= '0' && digitUnits <= '9') {
+            return (digitHundreds - '0') * 100 + (digitTens - '0') * 10 + digitUnits - '0';
+        }
+        return -1;
+    }
+    /**
+     * The offset of the header-block terminator ({@code CRLF CRLF}) in {@code [start, endExclusive)},
+     * or {@code -1} when none is found.
+     */
+    /* default */ static long findHeaderTerminator(MemorySegment segment, long start, long endExclusive) {
+        for (long index = start; index + 3 < endExclusive; index++) {
+            if (segment.get(ValueLayout.JAVA_BYTE, index) == '\r'
+                    && segment.get(ValueLayout.JAVA_BYTE, index + 1) == '\n'
+                    && segment.get(ValueLayout.JAVA_BYTE, index + 2) == '\r'
+                    && segment.get(ValueLayout.JAVA_BYTE, index + 3) == '\n') {
+                return index;
+            }
+        }
+        return -1;
     }
 }

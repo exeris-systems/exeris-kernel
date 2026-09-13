@@ -25,17 +25,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * @since 0.12
  */
-@SuppressWarnings("PMD.CloseResource")
+@SuppressWarnings("PMD.CyclomaticComplexity") // LIFO pool state, eviction, and capacity management
 final class CommunityHttpClientConnectionPool implements AutoCloseable {
 
+    private final int maxTotalConnections;
     private final int maxIdlePerPeer;
     private final long idleTimeoutNanos;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicInteger totalConnections = new AtomicInteger(0);
     private final ConcurrentMap<String, DequeHolder> pool = new ConcurrentHashMap<>();
 
     /* default */ CommunityHttpClientConnectionPool(HttpConfig config) {
         Objects.requireNonNull(config, "config must not be null");
-        this.maxIdlePerPeer = Math.clamp(config.maxConnections(), 16, 256);
+        this.maxTotalConnections = Math.max(config.maxConnections(), 1);
+        this.maxIdlePerPeer = Math.clamp(config.maxConnections(), 1, 64);
         this.idleTimeoutNanos = config.idleTimeoutMillis() > 0
                 ? config.idleTimeoutMillis() * 1_000_000L
                 : 30_000_000_000L;
@@ -47,35 +50,72 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
         }
         DequeHolder holder = pool.get(authority);
         if (holder == null) {
+            CommunityHttpClientPoolEvent.emit("ACQUIRE_MISS", authority, totalConnections.get());
             return null;
         }
+        PooledConnection pooled = pollUsable(holder, authority);
+        if (pooled == null && holder.isEmpty()) {
+            pool.remove(authority, holder);
+        }
+        return pooled;
+    }
+
+    private PooledConnection pollUsable(DequeHolder holder, String authority) {
         while (true) {
             PooledConnection pooled = holder.poll();
             if (pooled == null) {
-                break;
+                CommunityHttpClientPoolEvent.emit("ACQUIRE_MISS", authority, totalConnections.get());
+                return null;
             }
+            totalConnections.decrementAndGet();
             if (pooled.isUsable(idleTimeoutNanos)) {
+                CommunityHttpClientPoolEvent.emit("ACQUIRE_HIT", authority, totalConnections.get());
                 return pooled;
             }
+            CommunityHttpClientPoolEvent.emit("EVICT_IDLE", authority, totalConnections.get());
             pooled.close();
         }
-        return null;
     }
 
     /* default */ void release(String authority, TransportConnection connection, TransportStream stream) {
-        if (closed.get() || connection == null || !connection.isOpen()) {
+        if (shouldReject(connection, stream)) {
             closeQuietly(stream, connection);
             return;
         }
+        if (!tryAcquireCapacity()) {
+            CommunityHttpClientPoolEvent.emit("EVICT_CAPACITY", authority, totalConnections.get());
+            closeQuietly(stream, connection);
+            return;
+        }
+
         DequeHolder holder = pool.computeIfAbsent(authority, _ -> new DequeHolder());
         PooledConnection pooled = new PooledConnection(connection, stream);
         if (!holder.offer(pooled, maxIdlePerPeer)) {
+            totalConnections.decrementAndGet();
+            CommunityHttpClientPoolEvent.emit("EVICT_CAPACITY", authority, totalConnections.get());
             closeQuietly(stream, connection);
+            if (holder.isEmpty()) {
+                pool.remove(authority, holder);
+            }
             return;
         }
+        CommunityHttpClientPoolEvent.emit("RELEASE", authority, totalConnections.get());
         if (closed.get()) {
             drainAndClose();
         }
+    }
+
+    private boolean shouldReject(TransportConnection connection, TransportStream stream) {
+        return closed.get() || connection == null || !connection.isOpen()
+                || (stream != null && stream.hasPendingData());
+    }
+
+    private boolean tryAcquireCapacity() {
+        if (totalConnections.incrementAndGet() > maxTotalConnections) {
+            totalConnections.decrementAndGet();
+            return false;
+        }
+        return true;
     }
 
     @Override
@@ -93,26 +133,28 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
                 if (pooled == null) {
                     break;
                 }
+                totalConnections.decrementAndGet();
                 pooled.close();
             }
         }
         pool.clear();
+        totalConnections.set(0);
     }
 
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
-    /* default */ static void closeQuietly(AutoCloseable... closeables) {
-        if (closeables == null) {
-            return;
-        }
-        for (AutoCloseable c : closeables) {
-            if (c != null) {
-                try {
-                    c.close();
-                } catch (Exception _) {
-                    // best-effort cleanup on close
-                }
+    /* default */ static void closeQuietly(AutoCloseable closeable) {
+        if (closeable != null) {
+            try {
+                closeable.close();
+            } catch (Exception _) {
+                // best-effort cleanup on close
             }
         }
+    }
+
+    /* default */ static void closeQuietly(AutoCloseable first, AutoCloseable second) {
+        closeQuietly(first);
+        closeQuietly(second);
     }
 
     private static final class DequeHolder {
@@ -124,20 +166,37 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
         }
 
         /* default */ PooledConnection poll() {
-            PooledConnection pooled = connections.pollFirst();
-            if (pooled != null) {
-                count.decrementAndGet();
+            while (true) {
+                int current = count.get();
+                if (current <= 0) {
+                    return null;
+                }
+                if (count.compareAndSet(current, current - 1)) {
+                    PooledConnection pooled = connections.pollFirst();
+                    if (pooled != null) {
+                        return pooled;
+                    }
+                    count.incrementAndGet();
+                    return null;
+                }
             }
-            return pooled;
         }
 
         /* default */ boolean offer(PooledConnection pooled, int max) {
-            if (count.get() >= max) {
-                return false;
+            while (true) {
+                int current = count.get();
+                if (current >= max) {
+                    return false;
+                }
+                if (count.compareAndSet(current, current + 1)) {
+                    connections.offerFirst(pooled);
+                    return true;
+                }
             }
-            connections.offerFirst(pooled);
-            count.incrementAndGet();
-            return true;
+        }
+
+        /* default */ boolean isEmpty() {
+            return count.get() == 0 && connections.isEmpty();
         }
     }
 
@@ -161,7 +220,9 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
         }
 
         /* default */ boolean isUsable(long timeoutNanos) {
-            return connection.isOpen() && (System.nanoTime() - lastUsedNanos) < timeoutNanos;
+            return connection.isOpen()
+                    && (stream == null || !stream.hasPendingData())
+                    && (System.nanoTime() - lastUsedNanos) < timeoutNanos;
         }
 
         /* default */ void close() {

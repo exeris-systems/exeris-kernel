@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -291,6 +292,141 @@ public abstract class AbstractHttpProviderLoopbackTck {
 
             assertThat(response.status().code()).isEqualTo(204);
             if (response.body() != null) { response.body().close(); }
+        }
+    }
+
+    @Test
+    @DisplayName("Provider handles sequential requests on the same client engine")
+    void providerHandlesSequentialRequests() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        AtomicInteger requestsServed = new AtomicInteger(0);
+        HttpHandler handler = exchange -> {
+            requestsServed.incrementAndGet();
+            exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+        };
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            for (int i = 0; i < 3; i++) {
+                HttpResponse response = clientEngine.send(HttpRequest.noBody(
+                        HttpMethod.GET,
+                        requestPath(),
+                        requestVersion(),
+                        List.of()));
+                assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+                if (response.body() != null) {
+                    response.body().close();
+                }
+            }
+        }
+        assertThat(requestsServed.get()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Sequential 204 No Content responses do not hang and complete cleanly")
+    void sequentialNoContentResponsesCompleteCleanly() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(
+                HttpResponse.noBody(HttpStatus.NO_CONTENT, exchange.request().version()));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            for (int i = 0; i < 2; i++) {
+                HttpResponse response = clientEngine.send(HttpRequest.noBody(
+                        HttpMethod.GET,
+                        requestPath(),
+                        requestVersion(),
+                        List.of()));
+                assertThat(response.status().code()).isEqualTo(204);
+                if (response.body() != null) {
+                    response.body().close();
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Server response with Connection: close is handled cleanly across sequential calls")
+    void serverConnectionCloseHandledCleanly() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(new HttpResponse(
+                expectedStatus(),
+                exchange.request().version(),
+                List.of(new HttpHeader("Connection", "close")),
+                null));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            for (int i = 0; i < 2; i++) {
+                HttpResponse response = clientEngine.send(HttpRequest.noBody(
+                        HttpMethod.GET,
+                        requestPath(),
+                        requestVersion(),
+                        List.of()));
+                assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+                if (response.body() != null) {
+                    response.body().close();
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("HEAD request followed by GET request succeeds without corruption")
+    void headRequestFollowedByGetRequest() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+
+        HttpHandler handler = exchange -> exchange.respond(
+                HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            HttpResponse headResponse = clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.HEAD,
+                    requestPath(),
+                    requestVersion(),
+                    List.of()));
+            assertThat(headResponse.status().code()).isEqualTo(expectedStatus().code());
+            if (headResponse.body() != null) {
+                headResponse.body().close();
+            }
+
+            HttpResponse getResponse = clientEngine.send(HttpRequest.noBody(
+                    HttpMethod.GET,
+                    requestPath(),
+                    requestVersion(),
+                    List.of()));
+            assertThat(getResponse.status().code()).isEqualTo(expectedStatus().code());
+            if (getResponse.body() != null) {
+                getResponse.body().close();
+            }
         }
     }
 

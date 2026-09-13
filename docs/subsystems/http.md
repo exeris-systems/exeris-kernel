@@ -169,6 +169,7 @@ Current `exeris-kernel-core` HTTP package focuses on codec/wire primitives:
 proposed as an optional follow-up in the v0.8 Sprint 3 ADR-026 amendment (2026-05-17) but has not been
 executed. The production classes include:
 - `CommunityHttpProvider`, `CommunityHttpServerEngine`, `CommunityHttpClientEngine`
+- `CommunityHttpClientConnectionPool`, `CommunityHttpClientPoolEvent` (JFR)
 - `CommunityHttpRequestProcessor`, `CommunityHttpTransportFactory`
 - `CommunityHttpExchange`, `Http2DecodedRequest`, `Http2RequestStreamState`, `Http2SessionContext`, `CommunityHttp2SessionProcessor`
 - `InMemoryHttp2Exchange`, `JsonBodyEncoder`
@@ -178,6 +179,21 @@ The typed HTTP client facade is `KernelWebClient` (with nested `WebClientExcepti
 `exeris-kernel-core`'s `eu.exeris.kernel.core.http.client` package as a tier-neutral class, not a
 Community class — typed HTTP verbs + Jackson 3 JSON binding on top of `HttpClientEngine`; the SPI
 surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
+
+### Client connection pooling and keep-alive (since v0.12.0)
+
+Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persistent TCP connection reuse via `CommunityHttpClientConnectionPool`:
+
+- **LIFO Reuse Queue:** Reuses connections per authority using a lock-free LIFO queue (`ConcurrentLinkedDeque` wrapped in an atomic CAS `DequeHolder`). LIFO ordering keeps the warmest connections active, avoiding keep-alive expiration races on the remote peer.
+- **Bounds & Eviction:** Global pool capacity is bounded by `HttpConfig.maxConnections()`, with per-authority idle capacity clamped to `[1, 64]`. Empty authority holders are pruned atomically upon draining to eliminate memory leaks. Idle connections exceeding `HttpConfig.idleTimeoutMillis()` (default 30s) are evicted on acquire.
+- **Carrier Disconnect & Zombie Prevention:** Sockets closed remotely (e.g. peer `FIN`) are marked as closed by the transport layer (`NativeTcpStream` sets `markClosedByCarrier()`), ensuring zombie sockets are not leased from the pool.
+- **Keep-Alive Qualification (RFC 9110 / RFC 9112):** Connections are returned to the pool only when:
+  1. The underlying connection is still open and the stream has zero pending unconsumed bytes (`!stream.hasPendingData()`).
+  2. The protocol is HTTP/1.1 (or HTTP/1.0 with explicit `Connection: keep-alive`).
+  3. The response is properly framed — either explicitly via `Content-Length` or inherently bodyless (e.g., `HEAD` requests, `204 No Content`, `304 Not Modified`, or `1xx` informational responses).
+  4. Neither request nor response carries `Connection: close` (including comma-separated token lists).
+- **Idempotency Gate for Retries (RFC 9110 §9.2.2):** When sending over a pooled connection encounters an I/O failure (such as a stale connection closed by the peer), transparent retry on a fresh connection is permitted **only** if `request.method().isIdempotent()`. Non-idempotent requests (e.g., `POST`, `PATCH`) fail immediately without retry once wire bytes may have been sent.
+- **JFR Telemetry:** `CommunityHttpClientPoolEvent` (`eu.exeris.kernel.community.http.HttpClientPool`) records pool lifecycle events: `ACQUIRE_HIT`, `ACQUIRE_MISS`, `RELEASE`, `EVICT_IDLE`, and `EVICT_CAPACITY` with authority and active pool size.
 
 ### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))
 
