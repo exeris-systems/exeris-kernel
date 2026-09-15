@@ -61,13 +61,50 @@ final class JfrDirectoryReader {
             return window() != null;
         }
 
-        /** The events that belong to this recording's subsystem: those inside the window when there is one. */
+        /**
+         * Everything inside the window, whichever thread allocated it — a diagnostic view.
+         *
+         * <p>Use it where the question is "what was this JVM doing", such as the thread table.
+         * For anything that speaks for the subsystem, use {@link #workloadEvents()}: the window is
+         * wall-clock, so a background carrier draining from a previous test falls inside it.
+         */
         List<AllocEvent> attributedEvents() {
             TckMarker.Window w = window();
             if (w == null) {
                 return events;
             }
             return events.stream().filter(e -> w.contains(e.t())).toList();
+        }
+
+        /**
+         * The events this recording's subsystem is answerable for: inside the window, on the
+         * workload thread, and not the marker's own class.
+         *
+         * <p>Only the contract count was scoped this way before; every published aggregate —
+         * the owned node, the top production frames, the per-subsystem timeline and class
+         * histogram — went through {@link #attributedEvents()} and so counted whatever else the
+         * JVM happened to be doing during the measurement.
+         *
+         * <p>With no window there is no workload thread to scope to, so this degrades to the
+         * unscoped list; such a recording is reported as not measured in any case.
+         */
+        List<AllocEvent> workloadEvents() {
+            TckMarker.Window w = window();
+            if (w == null) {
+                return events;
+            }
+            return events.stream()
+                    .filter(e -> w.contains(e.t()))
+                    .filter(e -> e.threadId() == w.workloadThreadId())
+                    .filter(e -> !TckMarker.EVENT_CLASS.equals(e.className()))
+                    .toList();
+        }
+
+        /** {@link #workloadEvents()} narrowed to {@code eu.exeris.*} objects: the contract count. */
+        List<AllocEvent> contractEvents() {
+            return workloadEvents().stream()
+                    .filter(e -> e.objectKind() == ObjectKind.EXERIS)
+                    .toList();
         }
 
         boolean tckShapedName() {

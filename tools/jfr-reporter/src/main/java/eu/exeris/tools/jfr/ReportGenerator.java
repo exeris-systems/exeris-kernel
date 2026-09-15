@@ -110,12 +110,7 @@ final class ReportGenerator {
             return ContractResult.notMeasured(NOT_MEASURED_NO_WINDOW);
         }
         String mode = w.contractMode();
-        long count = recording.events().stream()
-                .filter(e -> w.contains(e.t()))
-                .filter(e -> e.objectKind() == ObjectKind.EXERIS)
-                .filter(e -> e.threadId() == w.workloadThreadId())
-                .filter(e -> !TckMarker.EVENT_CLASS.equals(e.className()))
-                .count();
+        long count = recording.contractEvents().size();
         long delta = w.allocatedBytesDelta();
         Double perIteration = delta >= 0 && w.iterations() > 0 ? (double) delta / w.iterations() : null;
 
@@ -303,7 +298,13 @@ final class ReportGenerator {
         return candidate.events().size() < incumbent.events().size();
     }
 
+    /** The workload-scoped events of several recordings: what a subsystem is answerable for. */
     private static List<AllocEvent> flatten(List<RecordingData> recordings) {
+        return recordings.stream().flatMap(r -> r.workloadEvents().stream()).toList();
+    }
+
+    /** Everything inside the windows, any thread — for the diagnostic views only. */
+    private static List<AllocEvent> flattenUnscoped(List<RecordingData> recordings) {
         return recordings.stream().flatMap(r -> r.attributedEvents().stream()).toList();
     }
 
@@ -528,7 +529,9 @@ final class ReportGenerator {
         for (Map.Entry<String, Partition> moduleEntry : perModule.entrySet()) {
             List<RecordingData> identified = moduleEntry.getValue().bySubsystem().values().stream()
                     .flatMap(List::stream).toList();
-            List<AllocEvent> allEvents = flatten(identified);
+            // Unscoped on purpose: the thread table answers "which threads were active", and is
+            // meaningless if it can only ever name one.
+            List<AllocEvent> allEvents = flattenUnscoped(identified);
             ObjectNode moduleNode = root.putObject(moduleEntry.getKey());
 
             Map<String, Long> threadCounts = new LinkedHashMap<>();

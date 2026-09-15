@@ -29,6 +29,7 @@ class ReporterRoundTripTest {
 
     private static final int ITERATIONS = 3;
     private static final String FILE = "FakeZeroAllocTckTest-Fake-20260911-120000.jfr";
+    private static final String OTHER_THREAD = "not-the-workload-thread";
 
     @TempDir
     Path tmp;
@@ -56,6 +57,12 @@ class ReporterRoundTripTest {
                 rec.start();
                 start.commit();
                 long requested = FakeZeroAllocTck.runWorkload(ITERATIONS);
+                // Inside the window, on another thread: a carrier still draining from a previous
+                // test is the real shape of this. The window is wall-clock, so it cannot exclude
+                // such a thread - only the workload-thread scope can.
+                Thread other = new Thread(() -> FakeZeroAllocTck.runWorkload(2), OTHER_THREAD);
+                other.start();
+                other.join();
                 end.allocatedBytesDelta = requested;
                 end.commit();
                 rec.stop();
@@ -107,6 +114,17 @@ class ReporterRoundTripTest {
 
         assertThat(out.resolve("core").resolve("fake").resolve("timeline.json")).exists();
         assertThat(out.resolve("core").resolve("alloc-top-classes.json")).exists();
+
+        // The two scopes, pinned together: the subsystem answers for its workload thread, the
+        // module's thread table answers for the JVM. Collapsing them either way breaks one of these.
+        JsonNode timeline = mapper.readTree(out.resolve("core").resolve("fake").resolve("timeline.json").toFile());
+        assertThat(timeline).isNotEmpty();
+        assertThat(timeline).allSatisfy(row -> assertThat(row.path("thread").asText())
+                .as("another thread's allocation must not be attributed to the subsystem")
+                .isNotEqualTo(OTHER_THREAD));
+        assertThat(summary.path("core").path("topThreads").toString())
+                .as("but the thread table is a diagnostic of the whole JVM and must still name it")
+                .contains(OTHER_THREAD);
     }
 
     private static AllocationWindowFixtureEvent marker(String boundary, long measurementId) {
