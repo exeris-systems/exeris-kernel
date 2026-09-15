@@ -28,6 +28,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -88,10 +90,43 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public final class JfrAllocationMonitor {
 
+    /**
+     * The {@code boundary} of the marker that opens a measurement window.
+     *
+     * @since 0.12
+     */
+    public static final String BOUNDARY_START = "start";
+
+    /**
+     * The {@code boundary} of the marker that closes a window whose workload completed.
+     *
+     * @since 0.12
+     */
+    public static final String BOUNDARY_END = "end";
+
+    /**
+     * The {@code boundary} of the marker that closes a window whose workload threw. Distinct from
+     * {@link #BOUNDARY_END} because a truncated window is not evidence: an aborted measurement that
+     * happened to sample no allocation before the throw would otherwise read as compliance.
+     *
+     * @since 0.12
+     */
+    public static final String BOUNDARY_ABORT = "abort";
+
     private static final String EXERIS_PACKAGE = "eu.exeris.";
     private static final String MARKER_CLASS = AllocationWindowEvent.class.getName();
     private static final DateTimeFormatter JFR_TS =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+
+    /**
+     * High half of every {@code measurementId}: one nonce per JVM, so ids minted in two forks stay
+     * distinct if their recordings are ever read together. Class-load work, not per-measurement.
+     */
+    private static final long JVM_NONCE =
+            ThreadLocalRandom.current().nextLong() & 0xFFFF_FFFF_0000_0000L;
+
+    /** Low half: monotonic within the JVM. {@code incrementAndGet} returns a primitive — no allocation. */
+    private static final AtomicLong MEASUREMENT_SEQ = new AtomicLong();
 
     private JfrAllocationMonitor() {
         // utility class — no instances
@@ -342,8 +377,11 @@ public final class JfrAllocationMonitor {
                 warmup.start();
                 workload.run(config.warmupIterations());
                 warmup.stop();
+            } finally {
+                // Outside the try, a warm-up that threw would orphan this file in the system temp
+                // directory for the life of the machine.
+                Files.deleteIfExists(warmupFile);
             }
-            Files.deleteIfExists(warmupFile);
         }
 
         // ── STEADY-STATE RECORDING ───────────────────────────────────────────
@@ -363,8 +401,9 @@ public final class JfrAllocationMonitor {
         // attributed to them; their commits sit outside the ThreadMXBean bracket below, so the bytes
         // delta never contains them. AllocationWindowEvent's Javadoc states this invariant and
         // AllocationWindowMarkerSelfTest pins it against a zero-allocation assertion.
-        AllocationWindowEvent startMarker = newMarker("start", config, workloadThreadId);
-        AllocationWindowEvent endMarker = newMarker("end", config, workloadThreadId);
+        long measurementId = JVM_NONCE | (MEASUREMENT_SEQ.incrementAndGet() & 0xFFFF_FFFFL);
+        AllocationWindowEvent startMarker = newMarker(BOUNDARY_START, config, workloadThreadId, measurementId);
+        AllocationWindowEvent endMarker = newMarker(BOUNDARY_END, config, workloadThreadId, measurementId);
 
         // JFR-independent cross-check: ThreadMXBean reports exact per-thread allocated
         // bytes, immune to the TLAB-refill granularity that makes the JFR event stream under-report
@@ -389,13 +428,32 @@ public final class JfrAllocationMonitor {
             rec.start();
             startMarker.commit();
 
-            long allocBefore = threadAllocatedBytes(threadMx, workloadThreadId);
-            workload.run(config.hotPathIterations());
-            long allocAfter = threadAllocatedBytes(threadMx, workloadThreadId);
-            allocatedBytesDelta = (allocBefore == ALLOCATED_BYTES_UNAVAILABLE
-                    || allocAfter == ALLOCATED_BYTES_UNAVAILABLE)
-                    ? ALLOCATED_BYTES_UNAVAILABLE
-                    : allocAfter - allocBefore;
+            try {
+                long allocBefore = threadAllocatedBytes(threadMx, workloadThreadId);
+                workload.run(config.hotPathIterations());
+                long allocAfter = threadAllocatedBytes(threadMx, workloadThreadId);
+                allocatedBytesDelta = (allocBefore == ALLOCATED_BYTES_UNAVAILABLE
+                        || allocAfter == ALLOCATED_BYTES_UNAVAILABLE)
+                        ? ALLOCATED_BYTES_UNAVAILABLE
+                        : allocAfter - allocBefore;
+            } catch (RuntimeException | Error t) {
+                // The window closes on every path. An orphaned start is not a local defect: the
+                // same marker lands in the JVM-wide target/surefire.jfr, where a reader matches it
+                // with a LATER measurement's closing marker and mis-attributes that measurement.
+                //
+                // It closes as "abort", never as "end", because a window truncated at a throw is
+                // not evidence: an aborted run that sampled nothing before the throw would
+                // otherwise satisfy a zero-allocation contract and read as compliance.
+                //
+                // Only statements that allocate nothing on the workload thread belong here, and
+                // the bytes delta is deliberately left unread: allocAfter must NOT move into this
+                // block, because the throwable's construction and stack-trace fill happen first
+                // and would be counted into it.
+                endMarker.boundary = BOUNDARY_ABORT;
+                endMarker.commit();
+                rec.stop();
+                throw t;
+            }
 
             endMarker.allocatedBytesDelta = allocatedBytesDelta;
             endMarker.commit();
@@ -410,9 +468,11 @@ public final class JfrAllocationMonitor {
         return new Result(exerisAllocs, allocatedBytesDelta, config.hotPathIterations(), recordingFile);
     }
 
-    private static AllocationWindowEvent newMarker(String boundary, Config config, long workloadThreadId) {
+    private static AllocationWindowEvent newMarker(String boundary, Config config,
+                                                   long workloadThreadId, long measurementId) {
         AllocationWindowEvent marker = new AllocationWindowEvent();
         marker.boundary = boundary;
+        marker.measurementId = measurementId;
         marker.subsystem = config.subsystemName();
         marker.testClass = config.testClassName();
         marker.iterations = config.hotPathIterations();

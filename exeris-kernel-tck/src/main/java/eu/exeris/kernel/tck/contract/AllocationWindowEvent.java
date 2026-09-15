@@ -20,7 +20,8 @@ import jdk.jfr.StackTrace;
  * asserted, and the exact {@code ThreadMXBean} bytes delta the monitor measured, without parsing
  * the file name. Because JFR writes every enabled event to every active recording, the same pair
  * also lands in any JVM-wide recording open at the time, one pair per measurement that JVM ran; a
- * reader pairs the two by commit time, since a recording's file order is not its time order.
+ * reader pairs the two by {@link #measurementId}, since a recording's file order is not its time
+ * order and several measurements can share a subsystem, a test class and a thread.
  *
  * <p><b>Allocation ordering invariant.</b> Both event objects are allocated <em>before</em> the
  * steady-state recording starts, and both commits happen <em>outside</em> the
@@ -29,7 +30,7 @@ import jdk.jfr.StackTrace;
  * in the bytes delta (the commits sit outside it). {@code AllocationWindowMarkerSelfTest} pins this
  * against a zero-allocation assertion.
  *
- * @since 0.13
+ * @since 0.12
  */
 @Name("eu.exeris.tck.AllocationWindow")
 @Label("TCK allocation measurement window")
@@ -42,9 +43,28 @@ public final class AllocationWindowEvent extends Event {
         super();
     }
 
-    /** {@code "start"} or {@code "end"}. */
+    /**
+     * {@link JfrAllocationMonitor#BOUNDARY_START}, {@link JfrAllocationMonitor#BOUNDARY_END} or
+     * {@link JfrAllocationMonitor#BOUNDARY_ABORT}.
+     *
+     * @since 0.12
+     */
     @Label("Boundary")
     public String boundary;
+
+    /**
+     * Identifies the measurement this marker belongs to; the {@code start} and the closing marker
+     * of one {@link JfrAllocationMonitor#measure} call carry the same value, and no two calls in a
+     * JVM carry the same one.
+     *
+     * <p>Without it a reader has only {@code (subsystem, testClass, workloadThreadId)}, which is
+     * not a key: a {@code @Nested} contract class reports its own simple name, so two unrelated
+     * TCKs already write the same triple, and one test measuring twice writes it twice more.
+     *
+     * @since 0.12
+     */
+    @Label("Measurement id")
+    public long measurementId;
 
     /** Subsystem name as the TCK spells it, e.g. {@code EventBus}. */
     @Label("Subsystem")
