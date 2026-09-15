@@ -102,6 +102,22 @@ final class EventClassifier {
         return false;
     }
 
+    /**
+     * What was allocated.
+     *
+     * <p>The {@code eu.exeris.} test comes before the array test deliberately, and the order is not
+     * free to change: this kind decides the contract count, and the writer's own rule is
+     * {@code objectClass.getName().startsWith("eu.exeris.")} — see {@code EXERIS_PACKAGE} in
+     * {@code JfrAllocationMonitor}. JFR names every array by its JVM descriptor
+     * ({@code [B}, {@code [Ljava.lang.Object;}), measured over 1 393 real events with no
+     * {@code Foo[]} spelling among them, so a real array never reaches the prefix test at all.
+     * A source-shaped {@code eu.exeris.Foo[]} could only arrive from a hand-written fixture, and
+     * classifying it as an array here would drop it from the count while the TCK still counted it
+     * — a divergence of exactly the kind this tool exists to rule out.
+     *
+     * @param className the allocated class, as JFR names it
+     * @return the kind
+     */
     static ObjectKind classifyObject(String className) {
         if (className.startsWith(EXERIS_PREFIX)) {
             return ObjectKind.EXERIS;

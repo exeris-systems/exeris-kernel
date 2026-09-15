@@ -121,4 +121,20 @@ class EventClassifierTest {
     void objectKindByClass(String className, ObjectKind expected) {
         assertThat(EventClassifier.classifyObject(className)).isEqualTo(expected);
     }
+
+    @Test
+    @DisplayName("the kind of an eu.exeris array follows the writer's rule, not its spelling")
+    void anExerisArrayIsCountedTheWayTheTckCountsIt() {
+        // JfrAllocationMonitor counts an allocation against a contract iff the class name starts
+        // with "eu.exeris.", so these two must agree with that rule and not with each other:
+        // JFR itself only ever emits the descriptor form, and the source form can only come from a
+        // fixture. Reordering the classifier so the array test ran first would make the reporter
+        // drop an eu.exeris.Foo[] the TCK still counted.
+        assertThat(EventClassifier.classifyObject("eu.exeris.kernel.core.flow.FlowKey[]"))
+                .as("the TCK's startsWith(\"eu.exeris.\") counts this one")
+                .isEqualTo(ObjectKind.EXERIS);
+        assertThat(EventClassifier.classifyObject("[Leu.exeris.kernel.core.flow.FlowKey;"))
+                .as("and does not count this one - JFR's own spelling for the same allocation")
+                .isEqualTo(ObjectKind.ARRAY);
+    }
 }

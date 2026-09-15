@@ -35,10 +35,30 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class MarkerVocabularyTest {
 
-    private static final Path TCK_SRC =
-            Path.of("../../exeris-kernel-tck/src/main/java/eu/exeris/kernel/tck/contract");
+    private static final Path TCK_SRC = tckContractDir();
     private static final Path EVENT = TCK_SRC.resolve("AllocationWindowEvent.java");
     private static final Path MONITOR = TCK_SRC.resolve("JfrAllocationMonitor.java");
+
+    /**
+     * The TCK's contract package, found by walking up from wherever this test was started.
+     *
+     * <p>Not a fixed {@code ../../}: that assumes the working directory is the module's own, which
+     * holds for {@code mvn -f tools/jfr-reporter/pom.xml} and not for an IDE runner started at the
+     * repository root, where it would resolve to the parent of the checkout.
+     *
+     * @return the directory holding {@code AllocationWindowEvent.java}
+     */
+    private static Path tckContractDir() {
+        Path from = Path.of("").toAbsolutePath();
+        for (Path dir = from; dir != null; dir = dir.getParent()) {
+            Path candidate = dir.resolve("exeris-kernel-tck/src/main/java/eu/exeris/kernel/tck/contract");
+            if (Files.isDirectory(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("no exeris-kernel-tck above " + from
+                + " — this test reads the TCK's source and cannot run outside the repository");
+    }
 
     /** {@code public <type> <name>;} — the event's fields, never its constructor. */
     private static final Pattern PUBLIC_FIELD = Pattern.compile("^\\s*public\\s+\\w+\\s+(\\w+);\\s*$");
@@ -121,7 +141,11 @@ class MarkerVocabularyTest {
         String body = monitor.substring(monitor.indexOf("public enum Mode {"),
                 monitor.indexOf("String marker()"));
         Set<String> spellings = new LinkedHashSet<>();
-        Matcher m = Pattern.compile("^\\s{12}([A-Z][A-Z_]*)[,;]\\s*$", Pattern.MULTILINE).matcher(body);
+        // Indentation-agnostic: a fixed-width \s{12} would match nothing after a reformat, and an
+        // empty match set passes containsExactlyInAnyOrder against nothing. A whole line that is
+        // just an upper-case identifier and a separator is an enum constant; javadoc lines in the
+        // same block start with '*' and cannot match.
+        Matcher m = Pattern.compile("^\\s*([A-Z][A-Z_]*)[,;]\\s*$", Pattern.MULTILINE).matcher(body);
         while (m.find()) {
             spellings.add(m.group(1).toLowerCase(java.util.Locale.ROOT).replace('_', '-'));
         }

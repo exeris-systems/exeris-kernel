@@ -1016,8 +1016,10 @@ jobs:
   jfr-reporter:
     # The reporter's tests would otherwise run only inside parse-jfr-to-json, which is main-only:
     # a pull request that broke the reader would merge green and be found by the publish job. This
-    # job builds and tests the tool on every push and pull request. It is not a required check
-    # (.github/branch-protection.md).
+    # job builds and tests the tool on every push and pull request, and is a REQUIRED check
+    # (.github/branch-protection.md) — a merge that breaks the reader publishes a wrong report
+    # rather than a broken build. The writer/reader equivalence step lives in build-and-verify,
+    # where the recordings are.
     name: JFR Reporter build & tests
     runs-on: ubuntu-latest
     permissions:
