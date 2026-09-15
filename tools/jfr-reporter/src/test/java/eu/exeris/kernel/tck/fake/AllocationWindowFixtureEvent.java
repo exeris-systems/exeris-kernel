@@ -13,8 +13,8 @@ import jdk.jfr.StackTrace;
 /**
  * The reader's side of the marker contract, written by a fixture. The event name and the field
  * names must match {@code eu.exeris.kernel.tck.contract.AllocationWindowEvent}; the TCK's own
- * self-test proves the writer, this fixture proves the reader, and the end-to-end run in the
- * verification section of the pull request proves the pair.
+ * self-test proves the writer and this fixture proves the reader. {@code MarkerVocabularyTest}
+ * checks the two against each other, field for field, so a rename cannot leave both suites green.
  */
 @Name("eu.exeris.tck.AllocationWindow")
 @Label("TCK allocation measurement window (fixture)")
@@ -45,6 +45,9 @@ public final class AllocationWindowFixtureEvent extends Event {
 
     @Label("Budget per iteration")
     public int budgetPerIteration;
+
+    @Label("Budget bytes per iteration")
+    public double budgetBytesPerIteration;
 
     @Label("Allocated bytes delta")
     public long allocatedBytesDelta;

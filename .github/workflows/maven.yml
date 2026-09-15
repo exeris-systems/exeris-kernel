@@ -343,6 +343,31 @@ jobs:
             verify -P coverage \
             org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
 
+      - name: JFR writer to reader, end to end
+        # The only job on a pull request that has real recordings: parse-jfr-to-json needs the
+        # artefact uploaded below, and both it and the upload are main-only. Without this step the
+        # writer (exeris-kernel-tck) and the reader (tools/jfr-reporter) are never run against each
+        # other before a merge - each side's own suite passes against its own fixture, which is how
+        # a renamed marker field would reach the published report unnoticed.
+        run: |
+          set -euo pipefail
+          mvn -f tools/jfr-reporter/pom.xml -q -B clean package -DskipTests
+          jar=$(ls tools/jfr-reporter/target/jfr-reporter-*.jar 2>/dev/null | grep -v original | head -1)
+          if [ -z "$jar" ]; then
+            echo "ERROR: jfr-reporter shaded JAR not found" >&2
+            exit 1
+          fi
+          java -jar "$jar" \
+            --core exeris-kernel-core/target/ --community exeris-kernel-community/target/ \
+            --commit "${{ github.sha }}" --branch "${{ github.ref_name }}" \
+            --out build/jfr-e2e/
+          # At least one recording must have been identified by its marker. Zero means the two
+          # sides no longer agree on the event, whatever each one's own tests say.
+          jq -e '[.. | objects | select(.window_source? == "marker")] | length >= 1' \
+            build/jfr-e2e/evidence.json > /dev/null
+          echo "Unattributed reasons seen:"
+          jq '[.. | objects | select(has("reason")) | .reason] | unique' build/jfr-e2e/jfr-summary.json
+
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

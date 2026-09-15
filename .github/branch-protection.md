@@ -40,6 +40,7 @@ Names must match the workflow's `name:` exactly.
 | `Kafka Integration Gate` | `maven.yml` | The Community Kafka binding against a real broker. |
 | `Recovery Continuity Gate` | `maven.yml` | Restart and snapshot recovery for `Flow`. |
 | `Transport Stress Gate` | `maven.yml` | Native I/O under load — the tier where a regression is silent in unit tests. |
+| `JFR Reporter build & tests` | `maven.yml` | The reader of the allocation evidence published to GitHub Pages. It ships in no artefact, which is why it was not required at first — but a merge that breaks the reader publishes a wrong report rather than a broken build, and that is worse to discover late. The writer/reader equivalence check lives in `Build & TCK Verification`, where the recordings are; this context covers the reader's own 81 tests. |
 | `docs / docs-lint` | `guardrails.yml` → `exeris-systems/.github` | Frontmatter, filenames, the ADR registry, retracted figures. ADR-085 §J.31. |
 | `commits / commit-lint` | `guardrails.yml` → `exeris-systems/.github` | The pull-request title, which is the squash-commit subject that reaches the branch. |
 | `pr-body / pr-body-check` | `guardrails.yml` → `exeris-systems/.github` | The classification block parses, so the review can be routed from the body alone. |
@@ -53,9 +54,6 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   Requiring it by name pins the ruleset to a version string and a matrix edit silently drops the
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with
   `needs:`.
-- **`JFR Reporter build & tests`** — `tools/jfr-reporter` is CI tooling outside the reactor; its
-  tests ran nowhere on a pull request before this job existed. Requiring it would make a merge
-  depend on a tool no artefact ships, so it reports and does not block.
 - **`javadoc-gate`** — written to arrive red, arriving green, and the second of those is the more
   useful state.
   Gated modules are `exeris-kernel-spi` and `exeris-kernel-tck` — the two published surfaces that
