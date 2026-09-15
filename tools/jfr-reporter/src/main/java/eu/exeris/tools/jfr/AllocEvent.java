@@ -4,12 +4,13 @@
  */
 package eu.exeris.tools.jfr;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
  * One allocation event with both attributions applied.
  *
- * @param tEpochMillis  event time
+ * @param t             event time, at JFR's own resolution
  * @param eventType     the JFR event type name
  * @param className     the allocated class
  * @param threadName    the allocating thread's Java name, or {@code unknown}
@@ -23,7 +24,7 @@ import java.util.List;
  * @param objectKind    what was allocated
  */
 public record AllocEvent(
-        long tEpochMillis,
+        Instant t,
         String eventType,
         String className,
         String threadName,

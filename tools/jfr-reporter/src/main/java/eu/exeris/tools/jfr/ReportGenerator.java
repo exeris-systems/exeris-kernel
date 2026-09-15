@@ -111,7 +111,7 @@ final class ReportGenerator {
         }
         String mode = w.contractMode();
         long count = recording.events().stream()
-                .filter(e -> w.contains(e.tEpochMillis()))
+                .filter(e -> w.contains(e.t()))
                 .filter(e -> e.objectKind() == ObjectKind.EXERIS)
                 .filter(e -> e.threadId() == w.workloadThreadId())
                 .filter(e -> !TckMarker.EVENT_CLASS.equals(e.className()))
@@ -454,7 +454,7 @@ final class ReportGenerator {
                                Map<String, String> stackIdCache,
                                AtomicInteger stackCounter) throws IOException {
         List<AllocEvent> sorted = events.stream()
-                .sorted(Comparator.comparingLong(AllocEvent::tEpochMillis))
+                .sorted(Comparator.comparing(AllocEvent::t))
                 .toList();
         java.io.File outFile = moduleOutDir.resolve("timeline.json").toFile();
         try (JsonGenerator gen = mapper.getFactory().createGenerator(outFile, JsonEncoding.UTF8)) {
@@ -463,7 +463,8 @@ final class ReportGenerator {
             for (AllocEvent e : sorted) {
                 String stackId = resolveStackId(e.stackFrames(), stacksMap, stackIdCache, stackCounter);
                 gen.writeStartObject();
-                gen.writeNumberField("t", e.tEpochMillis());
+                // The JSON stays on milliseconds: it is an output format, not the predicate.
+                gen.writeNumberField("t", e.t().toEpochMilli());
                 gen.writeStringField("type", e.eventType());
                 gen.writeStringField(FIELD_CLASS, e.className());
                 gen.writeStringField("thread", e.threadName());

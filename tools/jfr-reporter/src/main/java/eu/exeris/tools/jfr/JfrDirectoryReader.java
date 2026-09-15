@@ -67,7 +67,7 @@ final class JfrDirectoryReader {
             if (w == null) {
                 return events;
             }
-            return events.stream().filter(e -> w.contains(e.tEpochMillis())).toList();
+            return events.stream().filter(e -> w.contains(e.t())).toList();
         }
 
         boolean tckShapedName() {
@@ -182,7 +182,7 @@ final class JfrDirectoryReader {
         List<Frame> frames = extractFrames(event);
         Frame owner = EventClassifier.ownerFrame(frames);
         return new AllocEvent(
-                event.getStartTime().toEpochMilli(),
+                event.getStartTime(),
                 typeName,
                 className,
                 threadName,

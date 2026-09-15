@@ -107,8 +107,17 @@ final class TckMarker {
                   long workloadThreadId, String contractMode, int budgetPerIteration,
                   long allocatedBytesDelta, long measurementId) {
 
-        boolean contains(long epochMillis) {
-            return epochMillis >= start.toEpochMilli() && epochMillis <= end.toEpochMilli();
+        /**
+         * Whether an event falls in this window, compared at JFR's own resolution.
+         *
+         * <p>Flooring both sides to milliseconds — which is what comparing
+         * {@code Instant.toEpochMilli()} does — never excluded an event genuinely inside the
+         * window, but admitted anything within a millisecond either side of it. That is precisely
+         * where the commit machinery and the sampler's own noise sit, and a TCK hot path measuring
+         * 10 000 iterations can finish inside that margin.
+         */
+        boolean contains(Instant t) {
+            return !t.isBefore(start) && !t.isAfter(end);
         }
     }
 
