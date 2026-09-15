@@ -24,7 +24,7 @@ class PartitionTest {
 
     private static TckMarker.Window window(Instant start, long measurementId) {
         return new TckMarker.Window(start, start.plusMillis(10), "EventBus", "CommunityEventBusZeroAllocTckTest",
-                100, 41L, "bounded", 4, 4096L, measurementId);
+                100, 41L, "bounded", 4, TckMarker.NO_BYTE_BUDGET, 4096L, measurementId);
     }
 
     private static RecordingData withWindows(String name, List<TckMarker.Window> windows, int events) {
@@ -59,7 +59,8 @@ class PartitionTest {
     private static TckMarker.Boundary boundary(String kind, Instant at, long measurementId,
                                                String subsystem, long bytesDelta) {
         return new TckMarker.Boundary(kind, at, 3L, measurementId, subsystem,
-                subsystem + "ZeroAllocTckTest", 1000, 3L, "bounded", 64, bytesDelta);
+                subsystem + "ZeroAllocTckTest", 1000, 3L, "bounded", 64,
+                TckMarker.NO_BYTE_BUDGET, bytesDelta);
     }
 
     @Test

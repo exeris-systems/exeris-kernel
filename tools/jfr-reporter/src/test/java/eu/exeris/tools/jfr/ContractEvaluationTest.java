@@ -37,8 +37,13 @@ class ContractEvaluationTest {
     }
 
     private static RecordingData recording(String mode, int budget, int iterations, long bytesDelta, List<AllocEvent> events) {
+        return recording(mode, budget, TckMarker.NO_BYTE_BUDGET, iterations, bytesDelta, events);
+    }
+
+    private static RecordingData recording(String mode, int budget, double budgetBytes, int iterations,
+                                           long bytesDelta, List<AllocEvent> events) {
         TckMarker.Window w = new TckMarker.Window(T0, T0.plusMillis(10), "Flow", "FakeTest",
-                iterations, WORKLOAD, mode, budget, bytesDelta, 7L);
+                iterations, WORKLOAD, mode, budget, budgetBytes, bytesDelta, 7L);
         return new RecordingData(Path.of("x.jfr"), RecordingIdentity.fromMarker("Flow", "FakeTest"),
                 TckMarker.Pairing.of(List.of(w)), events);
     }
@@ -83,6 +88,30 @@ class ContractEvaluationTest {
                 .isEqualTo(ReportGenerator.VERDICT_PASS);
         assertThat(ReportGenerator.evaluate(recording("zero", -1, 10, TckMarker.BYTES_UNAVAILABLE, List.of())).verdict())
                 .isEqualTo(ReportGenerator.VERDICT_PASS);
+    }
+
+    @Test
+    @DisplayName("bounded-bytes: under the byte budget passes, at it fails, and no delta is not a pass")
+    void boundedBytesBudget() {
+        // The graph churn TCK's bound expressed the way the marker can carry it: 23.0x over a
+        // 500-id, 16-byte payload is 184 000 bytes per iteration.
+        double budget = 23.0 * 500 * 16;
+
+        assertThat(ReportGenerator.evaluate(
+                recording("bounded-bytes", -1, budget, 10, (long) (budget * 10) - 10, List.of())).verdict())
+                .isEqualTo(ReportGenerator.VERDICT_PASS);
+
+        assertThat(ReportGenerator.evaluate(
+                recording("bounded-bytes", -1, budget, 10, (long) (budget * 10), List.of())).verdict())
+                .as("the TCK asserts isLessThan, so equal to the budget is a breach")
+                .isEqualTo(ReportGenerator.VERDICT_FAIL);
+
+        ReportGenerator.ContractResult noDelta = ReportGenerator.evaluate(
+                recording("bounded-bytes", -1, budget, 10, TckMarker.BYTES_UNAVAILABLE, List.of()));
+        assertThat(noDelta.verdict())
+                .as("a JVM that cannot report allocated bytes leaves nothing to certify")
+                .isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
+        assertThat(noDelta.notMeasuredReason()).isEqualTo(ReportGenerator.NOT_MEASURED_BYTES_UNAVAILABLE);
     }
 
     @Test

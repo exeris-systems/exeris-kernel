@@ -4,6 +4,8 @@
  */
 package eu.exeris.tools.jfr;
 
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
@@ -38,5 +40,21 @@ class RecordingIdentityTest {
         assertThat(id.source()).isEqualTo(RecordingIdentity.Source.NONE);
         assertThat(id.identified()).isFalse();
         assertThat(id.subsystem()).isNull();
+    }
+
+    @Test
+    @DisplayName("the sanitised name of a dashed subsystem is recognised, and pin files still are not")
+    void aSanitisedSubsystemTokenIsRecognised() {
+        // JfrAllocationMonitor writes Graph-ChurnRatio as Graph_ChurnRatio, because the dash is
+        // what tells these files apart from the pinning monitor's.
+        RecordingIdentity id = RecordingIdentity.fromFilename(
+                "GraphChurnRatioTckTest-Graph_ChurnRatio-20260911-100000.jfr");
+        assertThat(id.identified()).isTrue();
+        assertThat(id.subsystem()).isEqualTo("graph_churnratio");
+
+        assertThat(RecordingIdentity.fromFilename(
+                "GraphChurnRatioTckTest-Graph-ChurnRatio-20260911-100000.jfr").identified())
+                .as("widening the regex to admit a dash would swallow pin-<label>-<ts>.jfr too")
+                .isFalse();
     }
 }

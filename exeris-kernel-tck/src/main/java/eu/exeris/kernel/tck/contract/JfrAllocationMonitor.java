@@ -128,6 +128,20 @@ public final class JfrAllocationMonitor {
     /** Low half: monotonic within the JVM. {@code incrementAndGet} returns a primitive — no allocation. */
     private static final AtomicLong MEASUREMENT_SEQ = new AtomicLong();
 
+    /**
+     * Characters the recording's file name may not contain. The counterpart is
+     * {@code RecordingIdentity.TCK_FILE} in {@code tools/jfr-reporter}, which parses
+     * {@code <testClass>-<subsystem>-<yyyyMMdd>-<HHmmss>.jfr} and admits no dash inside either
+     * token — deliberately, because that is what distinguishes these files from the pinning
+     * monitor's {@code pin-<label>-<ts>.jfr}. The two builds have no dependency on each other, so
+     * the classes are stated twice and checked against each other rather than shared.
+     *
+     * <p>Sanitising here and not in the marker is the point: the subsystem keeps its published
+     * spelling ({@code Graph-ChurnRatio}) in the event, and only the file name is made parseable.
+     */
+    private static final String SUBSYSTEM_TOKEN_BAN = "[^A-Za-z0-9_]";
+    private static final String TEST_CLASS_TOKEN_BAN = "[^A-Za-z0-9_$]";
+
     private JfrAllocationMonitor() {
         // utility class — no instances
     }
@@ -215,6 +229,7 @@ public final class JfrAllocationMonitor {
          * @param testClassName simple class name of the calling test (for file naming)
          * @param contract      the contract the caller will assert
          * @return a config with 1 000 warm-up and 10 000 steady-state iterations
+         * @since 0.12
          */
         public static Config ofDefaults(String subsystemName, String testClassName, Contract contract) {
             return new Config(subsystemName, testClassName, 1_000, 10_000, contract);
@@ -238,6 +253,7 @@ public final class JfrAllocationMonitor {
          * @param testClassName simple class name of the calling test (for file naming)
          * @param contract      the contract the caller will assert
          * @return a config with 1 000 warm-up and 1 000 000 steady-state iterations
+         * @since 0.12
          */
         public static Config ofHighDensity(String subsystemName, String testClassName, Contract contract) {
             return new Config(subsystemName, testClassName, 1_000, 1_000_000, contract);
@@ -248,25 +264,37 @@ public final class JfrAllocationMonitor {
      * The contract a measurement is asserted against, written into the recording's
      * {@link AllocationWindowEvent} so a reader can reproduce the verdict.
      *
-     * @param mode               zero, bounded, or unspecified
-     * @param budgetPerIteration the bounded budget of {@code eu.exeris.*} allocations per iteration;
-     *                           {@code -1} when the mode has none
-     * @since 0.13
+     * @param mode                    zero, bounded, bounded-bytes, or unspecified
+     * @param budgetPerIteration      the bounded budget of {@code eu.exeris.*} allocations per
+     *                                iteration; {@code -1} when the mode has none
+     * @param budgetBytesPerIteration the bounded byte budget per iteration; {@code -1} when the mode
+     *                                has none
+     * @since 0.12
      */
-    public record Contract(Mode mode, int budgetPerIteration) {
+    public record Contract(Mode mode, int budgetPerIteration, double budgetBytesPerIteration) {
 
-        /** How a measurement is judged. */
+        /**
+         * How a measurement is judged.
+         *
+         * @since 0.12
+         */
         public enum Mode {
             /** Zero {@code eu.exeris.*} events and fewer bytes than iterations — {@link #assertZeroExerisAllocations}. */
             ZERO,
             /** At most {@code iterations × budget} events — {@link #assertBoundedExerisAllocations}. */
             BOUNDED,
+            /**
+             * Fewer than {@code budgetBytesPerIteration} allocated bytes per iteration —
+             * {@link #assertBoundedBytesPerIteration}. The one mode that binds bytes rather than
+             * typed events, for hot paths whose cost is measured by volume.
+             */
+            BOUNDED_BYTES,
             /** The caller asserts something of its own; a reader reports the window as not measured. */
             UNSPECIFIED;
 
             /** The lower-case spelling written into the marker. */
             String marker() {
-                return name().toLowerCase(java.util.Locale.ROOT);
+                return name().toLowerCase(java.util.Locale.ROOT).replace('_', '-');
             }
         }
 
@@ -284,15 +312,23 @@ public final class JfrAllocationMonitor {
             if (mode == Mode.BOUNDED && budgetPerIteration < 0) {
                 throw new IllegalArgumentException("budgetPerIteration must be >= 0 for a bounded contract");
             }
+            // NaN spelled out: it is neither > 0 nor <= 0, and a NaN budget would make every
+            // comparison against it false, so the contract would be unfailable.
+            if (mode == Mode.BOUNDED_BYTES
+                    && (Double.isNaN(budgetBytesPerIteration) || budgetBytesPerIteration <= 0)) {
+                throw new IllegalArgumentException(
+                        "budgetBytesPerIteration must be > 0 for a bounded-bytes contract");
+            }
         }
 
         /**
          * The zero-allocation contract.
          *
          * @return a contract of mode {@link Mode#ZERO}
+         * @since 0.12
          */
         public static Contract zero() {
-            return new Contract(Mode.ZERO, -1);
+            return new Contract(Mode.ZERO, -1, -1.0);
         }
 
         /**
@@ -300,18 +336,36 @@ public final class JfrAllocationMonitor {
          *
          * @param budgetPerIteration maximum {@code eu.exeris.*} allocations per iteration
          * @return a contract of mode {@link Mode#BOUNDED}
+         * @since 0.12
          */
         public static Contract bounded(int budgetPerIteration) {
-            return new Contract(Mode.BOUNDED, budgetPerIteration);
+            return new Contract(Mode.BOUNDED, budgetPerIteration, -1.0);
+        }
+
+        /**
+         * The bounded-bytes contract: fewer than this many allocated bytes per iteration.
+         *
+         * <p>A ratio against a fixed quantity of work is the same statement. A churn bound of
+         * {@code r} times a payload of {@code p} bytes per iteration is a byte budget of
+         * {@code r × p}, and expressing it that way lets a reader reproduce the verdict from the
+         * marker alone — it has the bytes delta and the iteration count, but not the payload.
+         *
+         * @param budgetBytesPerIteration the exclusive upper bound, in bytes per iteration
+         * @return a contract of mode {@link Mode#BOUNDED_BYTES}
+         * @since 0.12
+         */
+        public static Contract bytesPerIteration(double budgetBytesPerIteration) {
+            return new Contract(Mode.BOUNDED_BYTES, -1, budgetBytesPerIteration);
         }
 
         /**
          * No contract stated to the recording.
          *
          * @return a contract of mode {@link Mode#UNSPECIFIED}
+         * @since 0.12
          */
         public static Contract unspecified() {
-            return new Contract(Mode.UNSPECIFIED, -1);
+            return new Contract(Mode.UNSPECIFIED, -1, -1.0);
         }
     }
 
@@ -388,7 +442,8 @@ public final class JfrAllocationMonitor {
         Path reportsDir = Path.of("target", "jfr-reports");
         Files.createDirectories(reportsDir);
         String timestamp = LocalDateTime.now().format(JFR_TS);
-        String fileName = config.testClassName() + "-" + config.subsystemName() + "-" + timestamp + ".jfr";
+        String fileName = nameToken(config.testClassName(), TEST_CLASS_TOKEN_BAN) + "-"
+                + nameToken(config.subsystemName(), SUBSYSTEM_TOKEN_BAN) + "-" + timestamp + ".jfr";
         Path recordingFile = reportsDir.resolve(fileName);
 
         // The workload runs synchronously on THIS thread; scope the allocation accounting to it so a
@@ -468,6 +523,11 @@ public final class JfrAllocationMonitor {
         return new Result(exerisAllocs, allocatedBytesDelta, config.hotPathIterations(), recordingFile);
     }
 
+    private static String nameToken(String raw, String banned) {
+        String token = raw == null ? "" : raw.replaceAll(banned, "_");
+        return token.isEmpty() ? "unnamed" : token;
+    }
+
     private static AllocationWindowEvent newMarker(String boundary, Config config,
                                                    long workloadThreadId, long measurementId) {
         AllocationWindowEvent marker = new AllocationWindowEvent();
@@ -479,6 +539,7 @@ public final class JfrAllocationMonitor {
         marker.workloadThreadId = workloadThreadId;
         marker.contractMode = config.contract().mode().marker();
         marker.budgetPerIteration = config.contract().budgetPerIteration();
+        marker.budgetBytesPerIteration = config.contract().budgetBytesPerIteration();
         marker.allocatedBytesDelta = ALLOCATED_BYTES_UNAVAILABLE;
         return marker;
     }
@@ -538,6 +599,63 @@ public final class JfrAllocationMonitor {
                                     + "temporaries) the event stream under-reported.\nDetected: %s",
                             hotPathDescription, result.summary())
                     .isLessThan(result.hotPathIterations());
+        }
+    }
+
+    /**
+     * Asserts the bytes-per-iteration contract: fewer than {@code budgetBytesPerIteration} bytes
+     * of thread-allocated memory per iteration.
+     *
+     * <p>Fails, rather than skips, when the JVM cannot report per-thread allocated bytes: a silent
+     * pass would read as compliance with a contract nothing measured.
+     *
+     * @param result                  result from {@link #measure}
+     * @param budgetBytesPerIteration the exclusive upper bound, in bytes per iteration
+     * @param hotPathDescription      what was measured, for the failure message
+     * @since 0.12
+     */
+    public static void assertBoundedBytesPerIteration(Result result, double budgetBytesPerIteration,
+                                                      String hotPathDescription) {
+        assertThat(result.allocatedBytesDelta())
+                .as("This JVM does not report per-thread allocated bytes, so the byte budget for "
+                    + "%s cannot be certified. Failing rather than skipping: a silent pass would "
+                    + "read as compliance.", hotPathDescription)
+                .isNotEqualTo(ALLOCATED_BYTES_UNAVAILABLE);
+        double perIteration = (double) result.allocatedBytesDelta() / result.hotPathIterations();
+        assertThat(perIteration)
+                .as("Hot path (%s) allocated %.0f bytes per iteration, budget is %.0f "
+                    + "(%d bytes over %d iterations). %s",
+                        hotPathDescription, perIteration, budgetBytesPerIteration,
+                        result.allocatedBytesDelta(), result.hotPathIterations(), result.summary())
+                .isLessThan(budgetBytesPerIteration);
+    }
+
+    /**
+     * Asserts whatever contract the {@link Config} states, so the asserted bound and the bound
+     * written into the recording cannot be two different numbers.
+     *
+     * <p>Passing the budget as an argument to {@link #assertBoundedExerisAllocations} while the
+     * config states another is a divergence a compiler cannot see; this method removes the
+     * argument, and with it the divergence.
+     *
+     * @param config             the config the measurement ran under
+     * @param result             result from {@link #measure}
+     * @param hotPathDescription what was measured, for the failure message
+     * @throws IllegalArgumentException if the config states no contract — such a caller must assert
+     *                                  its own property, and say so by not calling this
+     * @since 0.12
+     */
+    public static void assertContract(Config config, Result result, String hotPathDescription) {
+        Contract contract = config.contract();
+        switch (contract.mode()) {
+            case ZERO -> assertZeroExerisAllocations(result, hotPathDescription);
+            case BOUNDED -> assertBoundedExerisAllocations(result, config.hotPathIterations(),
+                    contract.budgetPerIteration(), hotPathDescription);
+            case BOUNDED_BYTES -> assertBoundedBytesPerIteration(result,
+                    contract.budgetBytesPerIteration(), hotPathDescription);
+            case UNSPECIFIED -> throw new IllegalArgumentException(
+                    "Config states no contract, so there is nothing for assertContract to assert: "
+                    + hotPathDescription);
         }
     }
 

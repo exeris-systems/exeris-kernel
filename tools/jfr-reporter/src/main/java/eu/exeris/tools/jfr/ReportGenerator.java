@@ -67,6 +67,7 @@ final class ReportGenerator {
     static final String NOT_MEASURED_INVALID_BUDGET = "invalid_budget";
     static final String NOT_MEASURED_INVALID_ITERATIONS = "invalid_iterations";
     static final String NOT_MEASURED_UNKNOWN_MODE = "unknown_mode:";
+    static final String NOT_MEASURED_BYTES_UNAVAILABLE = "bytes_unavailable";
     private static final int TOP_FRAMES          = 20;
 
     private final Map<String, Path> moduleDirs;
@@ -95,11 +96,12 @@ final class ReportGenerator {
      * @param bytesPerIteration {@code bytesDelta / iterations}, or {@code null}
      * @param verdict           {@code PASS}, {@code FAIL} or {@code NOT_MEASURED}
      */
-    record ContractResult(String mode, int budget, int iterations, long exerisEvents, long bytesDelta,
-                          Double bytesPerIteration, String verdict, String notMeasuredReason) {
+    record ContractResult(String mode, int budget, double budgetBytes, int iterations, long exerisEvents,
+                          long bytesDelta, Double bytesPerIteration, String verdict,
+                          String notMeasuredReason) {
 
         static ContractResult notMeasured(String reason) {
-            return new ContractResult(TckMarker.MODE_UNSPECIFIED, -1, 0, 0L,
+            return new ContractResult(TckMarker.MODE_UNSPECIFIED, -1, TckMarker.NO_BYTE_BUDGET, 0, 0L,
                     TckMarker.BYTES_UNAVAILABLE, null, VERDICT_NOT_MEASURED, reason);
         }
     }
@@ -136,6 +138,19 @@ final class ReportGenerator {
                 verdict = count <= (long) w.iterations() * w.budgetPerIteration()
                         ? VERDICT_PASS : VERDICT_FAIL;
             }
+        } else if (TckMarker.MODE_BOUNDED_BYTES.equals(mode)) {
+            if (Double.isNaN(w.budgetBytes()) || w.budgetBytes() <= 0) {
+                warnUntrusted(recording, "budgetBytesPerIteration=" + w.budgetBytes());
+                verdict = VERDICT_NOT_MEASURED;
+                reason = NOT_MEASURED_INVALID_BUDGET;
+            } else if (perIteration == null) {
+                // The TCK fails outright here; the reporter has nothing to certify against.
+                verdict = VERDICT_NOT_MEASURED;
+                reason = NOT_MEASURED_BYTES_UNAVAILABLE;
+            } else {
+                // Strictly less than, matching the TCK's own isLessThan.
+                verdict = perIteration < w.budgetBytes() ? VERDICT_PASS : VERDICT_FAIL;
+            }
         } else if (TckMarker.MODE_UNSPECIFIED.equals(mode)) {
             verdict = VERDICT_NOT_MEASURED;
             reason = NOT_MEASURED_UNSPECIFIED;
@@ -147,7 +162,7 @@ final class ReportGenerator {
             verdict = VERDICT_NOT_MEASURED;
             reason = NOT_MEASURED_UNKNOWN_MODE + mode;
         }
-        return new ContractResult(mode, w.budgetPerIteration(), w.iterations(), count,
+        return new ContractResult(mode, w.budgetPerIteration(), w.budgetBytes(), w.iterations(), count,
                 delta, perIteration, verdict, reason);
     }
 
@@ -348,6 +363,7 @@ final class ReportGenerator {
             ObjectNode cn = rn.putObject("contract");
             cn.put("mode", c.mode());
             cn.put("budget_per_iteration", c.budget());
+            cn.put("budget_bytes_per_iteration", c.budgetBytes());
             cn.put("iterations", c.iterations());
             cn.put("exeris_events_on_workload_thread", c.exerisEvents());
             cn.put("allocated_bytes_delta", c.bytesDelta());

@@ -23,7 +23,7 @@ class MarkerPairingTest {
     private static TckMarker.Boundary boundary(String kind, long measurementId, long millisFromT0,
                                                String subsystem, String testClass, long bytesDelta) {
         return new TckMarker.Boundary(kind, T0.plusMillis(millisFromT0), 3L, measurementId, subsystem,
-                testClass, 1000, 3L, "zero", -1, bytesDelta);
+                testClass, 1000, 3L, "zero", -1, TckMarker.NO_BYTE_BUDGET, bytesDelta);
     }
 
     @Test

@@ -18,7 +18,8 @@ class WindowBoundaryTest {
     private static final Instant END = Instant.parse("2026-09-11T10:00:00.009500000Z");
 
     private static final TckMarker.Window WINDOW = new TckMarker.Window(
-            START, END, "EventBus", "EventBusTck", 10_000, 41L, "zero", -1, 0L, 1L);
+            START, END, "EventBus", "EventBusTck", 10_000, 41L, "zero", -1,
+            TckMarker.NO_BYTE_BUDGET, 0L, 1L);
 
     @Test
     @DisplayName("an event a fraction of a millisecond outside the window is outside it")

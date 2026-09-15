@@ -43,6 +43,7 @@ final class TckMarker {
     static final String F_BUDGET = "budgetPerIteration";
     static final String F_BYTES_DELTA = "allocatedBytesDelta";
     static final String F_MEASUREMENT_ID = "measurementId";
+    static final String F_BUDGET_BYTES = "budgetBytesPerIteration";
 
     static final String START = "start";
     static final String END = "end";
@@ -62,7 +63,11 @@ final class TckMarker {
 
     static final String MODE_ZERO = "zero";
     static final String MODE_BOUNDED = "bounded";
+    static final String MODE_BOUNDED_BYTES = "bounded-bytes";
     static final String MODE_UNSPECIFIED = "unspecified";
+
+    /** {@link #F_BUDGET_BYTES} absent, or a mode that has no byte budget. */
+    static final double NO_BYTE_BUDGET = -1.0;
 
     /** The sentinel {@code JfrAllocationMonitor.ALLOCATED_BYTES_UNAVAILABLE}. */
     static final long BYTES_UNAVAILABLE = -1L;
@@ -83,11 +88,12 @@ final class TckMarker {
      * @param workloadThreadId    the thread that ran the workload
      * @param contractMode        {@code zero}, {@code bounded} or {@code unspecified}
      * @param budgetPerIteration  the bounded budget, or -1
+     * @param budgetBytes         the bounded-bytes budget per iteration, or -1
      * @param allocatedBytesDelta the {@code ThreadMXBean} delta (end only), or -1
      */
     record Boundary(String boundary, Instant at, long eventThreadId, long measurementId, String subsystem,
                     String testClass, int iterations, long workloadThreadId, String contractMode,
-                    int budgetPerIteration, long allocatedBytesDelta) {}
+                    int budgetPerIteration, double budgetBytes, long allocatedBytesDelta) {}
 
     /**
      * A start/end pair.
@@ -100,12 +106,13 @@ final class TckMarker {
      * @param workloadThreadId    the thread that ran the workload
      * @param contractMode        {@code zero}, {@code bounded} or {@code unspecified}
      * @param budgetPerIteration  the bounded budget, or -1
+     * @param budgetBytes         the bounded-bytes budget per iteration, or -1
      * @param allocatedBytesDelta the {@code ThreadMXBean} delta, or -1 when the JVM could not report it
      * @param measurementId       the measurement the pair belongs to, or {@link #NO_MEASUREMENT_ID}
      */
     record Window(Instant start, Instant end, String subsystem, String testClass, int iterations,
                   long workloadThreadId, String contractMode, int budgetPerIteration,
-                  long allocatedBytesDelta, long measurementId) {
+                  double budgetBytes, long allocatedBytesDelta, long measurementId) {
 
         /**
          * Whether an event falls in this window, compared at JFR's own resolution.
@@ -168,6 +175,7 @@ final class TckMarker {
                 e.getLong(F_WORKLOAD_THREAD_ID),
                 e.getString(F_CONTRACT_MODE),
                 e.getInt(F_BUDGET),
+                e.hasField(F_BUDGET_BYTES) ? e.getDouble(F_BUDGET_BYTES) : NO_BYTE_BUDGET,
                 e.getLong(F_BYTES_DELTA));
     }
 
@@ -238,7 +246,8 @@ final class TckMarker {
                 } else if (END.equals(b.boundary()) && start != null) {
                     windows.add(new Window(start.at(), b.at(), start.subsystem(), start.testClass(),
                             start.iterations(), start.workloadThreadId(), start.contractMode(),
-                            start.budgetPerIteration(), b.allocatedBytesDelta(), start.measurementId()));
+                            start.budgetPerIteration(), start.budgetBytes(),
+                            b.allocatedBytesDelta(), start.measurementId()));
                     start = null;
                 } else {
                     unpaired.add(b);

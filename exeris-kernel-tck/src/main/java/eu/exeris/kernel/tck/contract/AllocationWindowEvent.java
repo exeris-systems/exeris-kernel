@@ -38,7 +38,11 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 public final class AllocationWindowEvent extends Event {
 
-    /** Creates an unset marker; {@link JfrAllocationMonitor} fills every field before committing. */
+    /**
+     * Creates an unset marker; {@link JfrAllocationMonitor} fills every field before committing.
+     *
+     * @since 0.12
+     */
     public AllocationWindowEvent() {
         super();
     }
@@ -66,11 +70,19 @@ public final class AllocationWindowEvent extends Event {
     @Label("Measurement id")
     public long measurementId;
 
-    /** Subsystem name as the TCK spells it, e.g. {@code EventBus}. */
+    /**
+     * Subsystem name as the TCK spells it, e.g. {@code EventBus}.
+     *
+     * @since 0.12
+     */
     @Label("Subsystem")
     public String subsystem;
 
-    /** Simple name of the test class that ran the measurement. */
+    /**
+     * Simple name of the test class that ran the measurement.
+     *
+     * @since 0.12
+     */
     @Label("Test class")
     public String testClass;
 
@@ -89,6 +101,14 @@ public final class AllocationWindowEvent extends Event {
     /** The bounded budget per iteration, or {@code -1} when the mode has none. */
     @Label("Budget per iteration")
     public int budgetPerIteration;
+
+    /**
+     * The bounded-bytes budget per iteration, or {@code -1} when the mode has none.
+     *
+     * @since 0.12
+     */
+    @Label("Budget bytes per iteration")
+    public double budgetBytesPerIteration;
 
     /**
      * On the {@code end} marker, the {@code ThreadMXBean} allocated-bytes delta across the workload;

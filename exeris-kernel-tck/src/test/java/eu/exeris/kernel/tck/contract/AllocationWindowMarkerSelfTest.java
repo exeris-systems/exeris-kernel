@@ -178,6 +178,52 @@ class AllocationWindowMarkerSelfTest {
     }
 
 
+    @Test
+    @DisplayName("assertContract asserts what the config states, so the two cannot be different numbers")
+    void theAssertedBoundIsTheRecordedBound() throws IOException {
+        Config bounded = new Config("MarkerContract", getClass().getSimpleName(), 0, ITERATIONS,
+                Contract.bounded(3));
+        Result result = JfrAllocationMonitor.measure(bounded, iterations -> { });
+
+        JfrAllocationMonitor.assertContract(bounded, result, "an empty workload");
+        assertThat(boundary(readMarkers(result), JfrAllocationMonitor.BOUNDARY_END)
+                .getInt("budgetPerIteration"))
+                .as("the budget is no longer an argument at the assertion site, so it cannot drift")
+                .isEqualTo(3);
+
+        Config bytes = new Config("MarkerContract", getClass().getSimpleName(), 0, ITERATIONS,
+                Contract.bytesPerIteration(1024.0));
+        Result byteResult = JfrAllocationMonitor.measure(bytes, iterations -> { });
+        assertThatCode(() -> JfrAllocationMonitor.assertContract(bytes, byteResult, "an empty workload"))
+                .doesNotThrowAnyException();
+        assertThat(boundary(readMarkers(byteResult), JfrAllocationMonitor.BOUNDARY_END)
+                .getDouble("budgetBytesPerIteration"))
+                .isEqualTo(1024.0);
+
+        Config none = new Config("MarkerContract", getClass().getSimpleName(), 0, ITERATIONS);
+        Result noneResult = JfrAllocationMonitor.measure(none, iterations -> { });
+        assertThatThrownBy(() -> JfrAllocationMonitor.assertContract(none, noneResult, "nothing stated"))
+                .as("a caller that states no contract must assert its own property, not this one")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("a subsystem spelled with a dash still writes a file name the reporter can parse")
+    void aDashedSubsystemStillProducesATckShapedFileName() throws IOException {
+        // GraphChurnRatioTck publishes "Graph-ChurnRatio". Unsanitised, its recordings fell out of
+        // the report entirely whenever the file name was the only identification left.
+        Config config = new Config("Graph-ChurnRatio", getClass().getSimpleName(), 0, ITERATIONS,
+                Contract.zero());
+
+        Result result = JfrAllocationMonitor.measure(config, iterations -> { });
+
+        assertThat(result.recordingFile().getFileName().toString())
+                .matches("^[A-Za-z0-9_$]+-[A-Za-z0-9_]+-\\d{8}-\\d{6}\\.jfr$");
+        assertThat(boundary(readMarkers(result), JfrAllocationMonitor.BOUNDARY_START).getString("subsystem"))
+                .as("only the file name is sanitised; the published spelling survives in the marker")
+                .isEqualTo("Graph-ChurnRatio");
+    }
+
     private static List<Path> warmupTempFiles(String subsystem) throws IOException {
         String prefix = "tck-jfr-warmup-" + subsystem + "-";
         try (Stream<Path> files = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
