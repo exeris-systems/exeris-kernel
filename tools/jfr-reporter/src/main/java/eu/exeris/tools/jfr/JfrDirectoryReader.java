@@ -226,7 +226,6 @@ final class JfrDirectoryReader {
                 threadId,
                 size.bytes(),
                 size.kind(),
-                allocationSize,
                 frames,
                 owner,
                 EventClassifier.classifyOwner(owner),

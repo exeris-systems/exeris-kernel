@@ -96,9 +96,13 @@ class ReporterRoundTripTest {
         assertThat(rec0.path("contract").path("allocated_bytes_delta").asLong())
                 .isEqualTo((long) ITERATIONS * eu.exeris.kernel.core.fake.FakeHotPath.ARRAY_BYTES);
 
-        assertThat(fake.path("exeris_production_alloc_count").asLong())
+        assertThat(fake.path("owned").path("production").path("events").asLong())
                 .as("the array the fake hot path allocated is owned by production, whatever its type")
                 .isGreaterThanOrEqualTo(1L);
+        assertThat(fake.has("exeris_production_alloc_count"))
+                .as("the flat counters are gone: owned is the one source, and two of the three "
+                    + "named the module while filtering on the owner axis")
+                .isFalse();
         assertThat(fake.path("owned").path("production").path("by_kind").path("array").asLong())
                 .isGreaterThanOrEqualTo(1L);
         assertThat(fake.path("top_production_frames").get(0).path("frame").asText())

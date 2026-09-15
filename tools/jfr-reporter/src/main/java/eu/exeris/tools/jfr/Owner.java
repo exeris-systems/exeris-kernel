@@ -22,7 +22,7 @@ public enum Owner {
     NO_OWNER;
 
     /**
-     * The JSON spelling: lower-case, as the landing page's type union has always read it.
+     * The JSON spelling: lower-case.
      *
      * @return the lower-cased enum name
      */

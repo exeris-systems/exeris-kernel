@@ -26,14 +26,14 @@ class ContractEvaluationTest {
         Frame owner = new Frame("eu.exeris.kernel.core.flow.CoreFlowRuntime", "launch", 1);
         return new AllocEvent(T0.plusMillis(offsetMillis), SizePolicy.SAMPLE,
                 "eu.exeris.kernel.core.flow.FlowKey", "main", threadId, 100L,
-                SizePolicy.SizeKind.SAMPLE_WEIGHT, 0L, List.of(owner), owner, Owner.PRODUCTION, ObjectKind.EXERIS);
+                SizePolicy.SizeKind.SAMPLE_WEIGHT, List.of(owner), owner, Owner.PRODUCTION, ObjectKind.EXERIS);
     }
 
     private static AllocEvent loom(long threadId) {
         Frame owner = new Frame("eu.exeris.kernel.core.events.InMemoryEventBus", "publish", 1);
         return new AllocEvent(T0.plusMillis(5), SizePolicy.SAMPLE,
                 "java.lang.VirtualThread", "main", threadId, 100L,
-                SizePolicy.SizeKind.SAMPLE_WEIGHT, 0L, List.of(owner), owner, Owner.PRODUCTION, ObjectKind.LOOM);
+                SizePolicy.SizeKind.SAMPLE_WEIGHT, List.of(owner), owner, Owner.PRODUCTION, ObjectKind.LOOM);
     }
 
     private static RecordingData recording(String mode, int budget, int iterations, long bytesDelta, List<AllocEvent> events) {

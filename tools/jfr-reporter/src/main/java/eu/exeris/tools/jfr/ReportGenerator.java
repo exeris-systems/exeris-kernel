@@ -9,6 +9,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import eu.exeris.tools.jfr.JfrDirectoryReader.RecordingData;
@@ -69,6 +70,8 @@ final class ReportGenerator {
     static final String NOT_MEASURED_UNKNOWN_MODE = "unknown_mode:";
     static final String NOT_MEASURED_BYTES_UNAVAILABLE = "bytes_unavailable";
     private static final int TOP_FRAMES          = 20;
+    /** {@code alloc-top-classes.json} is served by GitHub Pages; unbounded it is a whole histogram. */
+    private static final int TOP_CLASSES         = 50;
 
     private final Map<String, Path> moduleDirs;
     private final String commit;
@@ -351,7 +354,7 @@ final class ReportGenerator {
 
     private static void writeSubsystemEvidence(ObjectNode node, List<RecordingData> recordings) {
         List<ContractResult> results = new ArrayList<>();
-        ArrayNode recordingsNode = JsonNodeFactoryHolder.array();
+        ArrayNode recordingsNode = JsonNodeFactory.instance.arrayNode();
         for (RecordingData r : recordings) {
             ContractResult c = evaluate(r);
             results.add(c);
@@ -385,9 +388,12 @@ final class ReportGenerator {
         node.put("measured_recordings", results.stream().filter(r -> !VERDICT_NOT_MEASURED.equals(r.verdict())).count());
         node.set("recordings", recordingsNode);
         node.put("total_events", events.size());
-        node.put("exeris_alloc_count", events.stream().filter(e -> e.objectKind() == ObjectKind.EXERIS).count());
-        node.put("exeris_production_alloc_count", events.stream().filter(e -> e.ownerCategory() == Owner.PRODUCTION).count());
-        node.put("exeris_test_harness_count", events.stream().filter(e -> e.ownerCategory() == Owner.TEST_HARNESS).count());
+        // No flat exeris_* counters. They were three more passes over the same list for numbers the
+        // owned node below already carries (owned.production.events, owned.test_harness.events,
+        // and the exeris entry of each by_kind), and two of the three were misnamed: the exeris_
+        // prefix named the module while the filter was on the owner axis, so
+        // exeris_production_alloc_count counted arrays, JDK objects and virtual threads. They also
+        // covered two of the four Owner values, so total_events could not be reconciled from them.
 
         ObjectNode owned = node.putObject("owned");
         EnumMap<Owner, Stats> byOwner = new EnumMap<>(Owner.class);
@@ -509,24 +515,50 @@ final class ReportGenerator {
 
     // ── alloc-top-classes.json ───────────────────────────────────────────────
 
+    /**
+     * What a row of {@code alloc-top-classes.json} is keyed by. A record rather than the three
+     * strings concatenated, which needed a second map holding a whole event per key just to recover
+     * the parts afterwards.
+     *
+     * @param className the allocated class
+     * @param owner     who allocated it
+     * @param kind      what kind of object it is
+     */
+    private record ClassKey(String className, Owner owner, ObjectKind kind) {}
+
+    /**
+     * The busiest entries first, capped.
+     *
+     * <p>The cap is the point: this file is served by GitHub Pages, and without one
+     * {@code alloc-top-classes.json} is not a top list at all but the complete class histogram of
+     * whatever the recording saw.
+     *
+     * @param byKey the counted entries
+     * @param limit how many to keep
+     * @param <K>   the key type
+     * @return at most {@code limit} entries, highest event count first
+     */
+    static <K> List<Map.Entry<K, Stats>> rankTop(Map<K, Stats> byKey, int limit) {
+        return byKey.entrySet().stream()
+                .sorted(Comparator.comparingLong((Map.Entry<K, Stats> en) -> en.getValue().events).reversed())
+                .limit(limit)
+                .toList();
+    }
+
     private void writeAllocTopClasses(String module, Path moduleOutDir, List<AllocEvent> events) throws IOException {
-        Map<String, Stats> byKey = new LinkedHashMap<>();
-        Map<String, AllocEvent> sample = new HashMap<>();
+        Map<ClassKey, Stats> byKey = new LinkedHashMap<>();
         for (AllocEvent e : events) {
-            String key = e.className() + "|" + e.ownerCategory().json() + "|" + e.objectKind().json();
-            byKey.computeIfAbsent(key, k -> new Stats()).add(e);
-            sample.putIfAbsent(key, e);
+            byKey.computeIfAbsent(new ClassKey(e.className(), e.ownerCategory(), e.objectKind()),
+                    k -> new Stats()).add(e);
         }
 
-        ArrayNode top = JsonNodeFactoryHolder.array();
-        byKey.entrySet().stream()
-                .sorted(Comparator.comparingLong((Map.Entry<String, Stats> en) -> en.getValue().events).reversed())
+        ArrayNode top = mapper.createArrayNode();
+        rankTop(byKey, TOP_CLASSES)
                 .forEach(en -> {
-                    AllocEvent e = sample.get(en.getKey());
                     ObjectNode item = top.addObject();
-                    item.put(FIELD_CLASS, e.className());
-                    item.put("kind", e.objectKind().json());
-                    item.put("category", e.ownerCategory().json());
+                    item.put(FIELD_CLASS, en.getKey().className());
+                    item.put("kind", en.getKey().kind().json());
+                    item.put("category", en.getKey().owner().json());
                     item.put(FIELD_COUNT, en.getValue().events);
                     en.getValue().write(item);
                 });
@@ -627,14 +659,4 @@ final class ReportGenerator {
         });
     }
 
-    /** One place to mint detached array nodes. */
-    private static final class JsonNodeFactoryHolder {
-        private static final ObjectMapper MAPPER = new ObjectMapper();
-
-        private JsonNodeFactoryHolder() {}
-
-        static ArrayNode array() {
-            return MAPPER.createArrayNode();
-        }
-    }
 }

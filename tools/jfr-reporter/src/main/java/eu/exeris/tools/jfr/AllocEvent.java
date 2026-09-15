@@ -17,7 +17,6 @@ import java.util.List;
  * @param threadId      the allocating thread's Java thread id, or -1
  * @param sizeBytes     the byte figure {@link SizePolicy} chose for this event type
  * @param sizeKind      what that figure means
- * @param objectSize    the {@code allocationSize} field where the event has one, else 0
  * @param stackFrames   the recorded stack, top-most first
  * @param owner         the owner frame, or {@code null}
  * @param ownerCategory who allocated
@@ -31,7 +30,6 @@ public record AllocEvent(
         long threadId,
         long sizeBytes,
         SizePolicy.SizeKind sizeKind,
-        long objectSize,
         List<Frame> stackFrames,
         Frame owner,
         Owner ownerCategory,
