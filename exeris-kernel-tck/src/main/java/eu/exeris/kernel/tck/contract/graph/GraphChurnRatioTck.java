@@ -234,8 +234,15 @@ public abstract class GraphChurnRatioTck {
                     + "would make the churn denominator fictional")
                 .isEqualTo(traversalFanOut());
 
+        // The churn bound is a byte budget in disguise. A ratio of r against a payload of
+        // (returnedIds x bytesPerResultId) bytes per traversal is r x that many bytes per
+        // iteration, and stating it that way lets the recording carry the contract: a reader has
+        // the bytes delta and the iteration count, but no idea what the payload was.
+        double budgetBytesPerIteration = churnBound() * returnedIds * bytesPerResultId();
+        var contract = JfrAllocationMonitor.Contract.bytesPerIteration(budgetBytesPerIteration);
         var config = new JfrAllocationMonitor.Config(
-                "Graph-ChurnRatio", getClass().getSimpleName(), warmupIterations(), iterations);
+                "Graph-ChurnRatio", getClass().getSimpleName(), warmupIterations(), iterations,
+                contract);
         JfrAllocationMonitor.Result result =
                 JfrAllocationMonitor.measure(config, this::runTraversals);
 
@@ -245,10 +252,12 @@ public abstract class GraphChurnRatioTck {
                     + "would read as compliance with graph.md.")
                 .isNotEqualTo(JfrAllocationMonitor.ALLOCATED_BYTES_UNAVAILABLE);
 
-        long   dataBytes   = (long) iterations * returnedIds * bytesPerResultId();
-        double actualRatio = (double) result.allocatedBytesDelta() / dataBytes;
+        // Asserted through the contract, so the bound in the failure message and the bound written
+        // into the recording cannot drift apart. The ratio survives as the unit the docs publish.
+        double actualBytesPerIteration = (double) result.allocatedBytesDelta() / iterations;
+        double actualRatio = actualBytesPerIteration / (returnedIds * bytesPerResultId());
 
-        assertThat(actualRatio)
+        assertThat(actualBytesPerIteration)
                 .as("Graph churn-to-data ratio MUST be < %.1fx. Actual: %.2fx — allocatedBytes=%d "
                     + "over %d traversals × %d ids × %d bytes (%.0f bytes/traversal). %s tier; "
                     + "graph.md publishes %.1fx.%n%s%n"
@@ -259,7 +268,7 @@ public abstract class GraphChurnRatioTck {
                     (double) result.allocatedBytesDelta() / iterations,
                     isEnterpriseTier() ? "Enterprise" : "Community",
                     documentedContract(), regimeNote(), result.summary())
-                .isLessThan(churnBound());
+                .isLessThan(contract.budgetBytesPerIteration());
     }
 
     /** Tier-specific context for a breach: what a value above the bound does and does not mean. */

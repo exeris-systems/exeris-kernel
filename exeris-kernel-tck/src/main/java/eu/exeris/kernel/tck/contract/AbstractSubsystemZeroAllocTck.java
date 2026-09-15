@@ -197,11 +197,15 @@ public abstract class AbstractSubsystemZeroAllocTck {
     @Test
     @DisplayName("Hot path JFR allocation profile matches tier contract")
     public final void allocationProfileMatchesTierContract() throws IOException {
+        JfrAllocationMonitor.Contract contract = supportsZeroGcHotPath()
+                ? JfrAllocationMonitor.Contract.zero()
+                : JfrAllocationMonitor.Contract.bounded(maxExerisAllocationsPerIteration());
         Config config = new Config(
                 subsystemName(),
                 getClass().getSimpleName(),
                 warmupIterations(),
-                hotPathIterations()
+                hotPathIterations(),
+                contract
         );
 
         Result result = JfrAllocationMonitor.measure(config, iterations -> {
@@ -210,15 +214,9 @@ public abstract class AbstractSubsystemZeroAllocTck {
             }
         });
 
-        if (supportsZeroGcHotPath()) {
-            JfrAllocationMonitor.assertZeroExerisAllocations(result, hotPathDescription());
-        } else {
-            JfrAllocationMonitor.assertBoundedExerisAllocations(
-                    result,
-                    hotPathIterations(),
-                    maxExerisAllocationsPerIteration(),
-                    hotPathDescription()
-            );
-        }
+        // Asserted through the config, not through a second reading of supportsZeroGcHotPath():
+        // the if/else that used to stand here chose its assertion independently of the contract
+        // written into the recording, so the two could disagree and nothing would say so.
+        JfrAllocationMonitor.assertContract(config, result, hotPathDescription());
     }
 }

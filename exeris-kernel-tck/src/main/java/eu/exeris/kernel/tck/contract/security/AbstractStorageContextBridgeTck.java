@@ -176,8 +176,9 @@ public abstract class AbstractStorageContextBridgeTck {
         @DisplayName("GLOBAL derivation path remains bounded under JFR-assisted telemetry")
         void globalDerivationIsAllocationDisciplined() throws IOException {
             PrincipalContext principal = createSystemPrincipal();
-            JfrAllocationMonitor.Config config =
-                    JfrAllocationMonitor.Config.ofDefaults("Security", getClass().getSimpleName());
+            JfrAllocationMonitor.Config config = JfrAllocationMonitor.Config.ofDefaults(
+                    "Security", AbstractStorageContextBridgeTck.this.getClass().getSimpleName(),
+                    JfrAllocationMonitor.Contract.bounded(1));
             JfrAllocationMonitor.Result result = JfrAllocationMonitor.measure(config,
                     iterations -> {
                         for (int i = 0; i < iterations; i++) {
@@ -188,10 +189,7 @@ public abstract class AbstractStorageContextBridgeTck {
                         }
                     });
 
-            JfrAllocationMonitor.assertBoundedExerisAllocations(
-                    result,
-                    config.hotPathIterations(),
-                    1,
+            JfrAllocationMonitor.assertContract(config, result,
                     "StorageContextBridge GLOBAL path must stay allocation-disciplined under telemetry");
         }
     }

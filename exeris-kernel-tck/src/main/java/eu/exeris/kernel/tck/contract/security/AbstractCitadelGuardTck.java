@@ -245,8 +245,14 @@ public abstract class AbstractCitadelGuardTck<G> {
         @DisplayName("steady-state allow path performs zero eu.exeris allocations")
         void allowPathIsAllocationFree() throws IOException {
             PrincipalContext principal = createAdminPrincipal();
+            // The enclosing TCK's own class, not this @Nested one: every binding of every
+            // AllocationContract reports the same simple name, which is neither a file name nor a
+            // correlation key.
+            JfrAllocationMonitor.Config config = JfrAllocationMonitor.Config.ofDefaults(
+                    "Security", AbstractCitadelGuardTck.this.getClass().getSimpleName(),
+                    JfrAllocationMonitor.Contract.zero());
             JfrAllocationMonitor.Result result = JfrAllocationMonitor.measure(
-                    JfrAllocationMonitor.Config.ofDefaults("Security", getClass().getSimpleName()),
+                    config,
                     iterations -> ScopedValue.where(KernelProviders.PRINCIPAL_CONTEXT, principal)
                             .where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL)
                             .run(() -> {
@@ -255,7 +261,7 @@ public abstract class AbstractCitadelGuardTck<G> {
                                 }
                             }));
 
-            JfrAllocationMonitor.assertZeroExerisAllocations(result,
+            JfrAllocationMonitor.assertContract(config, result,
                     "CitadelGuard allow path must not allocate eu.exeris.* objects");
         }
     }

@@ -246,7 +246,9 @@ public abstract class AbstractStorageContextTck {
         @Test
         @DisplayName("1M calls to createGlobal(): zero eu.exeris.* heap allocations")
         void globalPathIsAllocationFree() throws IOException {
-            Config config = Config.ofHighDensity("StorageContext", getClass().getSimpleName());
+            Config config = Config.ofHighDensity("StorageContext",
+                    AbstractStorageContextTck.this.getClass().getSimpleName(),
+                    JfrAllocationMonitor.Contract.zero());
 
             Result result = JfrAllocationMonitor.measure(config, iterations -> {
                 for (int i = 0; i < iterations; i++) {
@@ -258,7 +260,7 @@ public abstract class AbstractStorageContextTck {
                 }
             });
 
-            JfrAllocationMonitor.assertZeroExerisAllocations(result,
+            JfrAllocationMonitor.assertContract(config, result,
                     "StorageContext.global() — GLOBAL singleton must be allocation-free");
         }
     }
