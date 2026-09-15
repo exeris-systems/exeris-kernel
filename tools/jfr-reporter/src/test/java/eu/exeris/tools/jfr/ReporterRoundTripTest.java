@@ -46,8 +46,8 @@ class ReporterRoundTripTest {
             jvmWide.start();
 
             // Marker objects are allocated before the recording starts, exactly as JfrAllocationMonitor does.
-            AllocationWindowFixtureEvent start = marker("start");
-            AllocationWindowFixtureEvent end = marker("end");
+            AllocationWindowFixtureEvent start = marker("start", 1L);
+            AllocationWindowFixtureEvent end = marker("end", 1L);
             try (Recording rec = new Recording()) {
                 rec.enable("jdk.ObjectAllocationInNewTLAB");
                 rec.enable("jdk.ObjectAllocationOutsideTLAB");
@@ -62,9 +62,9 @@ class ReporterRoundTripTest {
             }
 
             // A second measurement the JVM-wide recording sees but no TCK file was written for.
-            marker("start").commit();
+            marker("start", 2L).commit();
             FakeZeroAllocTck.runWorkload(1);
-            marker("end").commit();
+            marker("end", 2L).commit();
             jvmWide.stop();
         }
 
@@ -109,9 +109,10 @@ class ReporterRoundTripTest {
         assertThat(out.resolve("core").resolve("alloc-top-classes.json")).exists();
     }
 
-    private static AllocationWindowFixtureEvent marker(String boundary) {
+    private static AllocationWindowFixtureEvent marker(String boundary, long measurementId) {
         AllocationWindowFixtureEvent e = new AllocationWindowFixtureEvent();
         e.boundary = boundary;
+        e.measurementId = measurementId;
         e.subsystem = "Fake";
         e.testClass = "FakeZeroAllocTckTest";
         e.iterations = ITERATIONS;

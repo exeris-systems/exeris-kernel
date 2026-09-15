@@ -38,8 +38,9 @@ class ContractEvaluationTest {
 
     private static RecordingData recording(String mode, int budget, int iterations, long bytesDelta, List<AllocEvent> events) {
         TckMarker.Window w = new TckMarker.Window(T0, T0.plusMillis(10), "Flow", "FakeTest",
-                iterations, WORKLOAD, mode, budget, bytesDelta);
-        return new RecordingData(Path.of("x.jfr"), RecordingIdentity.fromMarker("Flow", "FakeTest"), List.of(w), events);
+                iterations, WORKLOAD, mode, budget, bytesDelta, 7L);
+        return new RecordingData(Path.of("x.jfr"), RecordingIdentity.fromMarker("Flow", "FakeTest"),
+                TckMarker.Pairing.of(List.of(w)), events);
     }
 
     @Test
@@ -88,7 +89,8 @@ class ContractEvaluationTest {
     @DisplayName("no marker, or an unspecified mode, is NOT_MEASURED - never a pass")
     void notMeasured() {
         RecordingData noMarker = new RecordingData(Path.of("CoreFlowZeroAllocTckTest-FlowEngine-20260805-120000.jfr"),
-                RecordingIdentity.fromFilename("CoreFlowZeroAllocTckTest-FlowEngine-20260805-120000.jfr"), List.of(), List.of());
+                RecordingIdentity.fromFilename("CoreFlowZeroAllocTckTest-FlowEngine-20260805-120000.jfr"),
+                TckMarker.Pairing.of(List.of()), List.of());
         assertThat(ReportGenerator.evaluate(noMarker).verdict()).isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
         assertThat(ReportGenerator.evaluate(recording("unspecified", -1, 10, 0L, List.of())).verdict())
                 .isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);

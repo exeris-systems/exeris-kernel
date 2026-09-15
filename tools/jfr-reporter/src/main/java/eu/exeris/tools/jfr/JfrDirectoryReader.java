@@ -40,16 +40,21 @@ final class JfrDirectoryReader {
      * One recording as read.
      *
      * @param file     the recording
-     * @param identity where it belongs: from the marker when the file holds exactly one window,
-     *                 from the file name when it holds none, {@code NONE} when it holds several
-     * @param windows  every marker pair in the file
+     * @param identity where it belongs: from the marker when the file holds exactly one clean
+     *                 window, from the file name when it holds no boundary at all, {@code NONE}
+     *                 otherwise
+     * @param pairing  the marker pairs in the file, and whatever could not be paired
      * @param events   the allocation events, in file order
      */
-    record RecordingData(Path file, RecordingIdentity identity, List<TckMarker.Window> windows, List<AllocEvent> events) {
+    record RecordingData(Path file, RecordingIdentity identity, TckMarker.Pairing pairing, List<AllocEvent> events) {
+
+        List<TckMarker.Window> windows() {
+            return pairing.windows();
+        }
 
         /** The measured window, or {@code null} unless the file holds exactly one. */
         TckMarker.Window window() {
-            return windows.size() == 1 ? windows.get(0) : null;
+            return windows().size() == 1 ? windows().get(0) : null;
         }
 
         boolean windowed() {
@@ -117,17 +122,32 @@ final class JfrDirectoryReader {
         } catch (IOException ex) {
             LOGGER.log(Level.WARNING, ex, () -> LOG_PREFIX + "WARN: failed to read " + jfrFile);
         }
-        List<TckMarker.Window> windows = TckMarker.pairAll(boundaries);
-        String fileName = jfrFile.getFileName().toString();
-        RecordingIdentity identity;
-        if (windows.size() == 1) {
-            identity = RecordingIdentity.fromMarker(windows.get(0).subsystem(), windows.get(0).testClass());
-        } else if (windows.isEmpty()) {
-            identity = RecordingIdentity.fromFilename(fileName);
-        } else {
-            identity = RecordingIdentity.none();
+        TckMarker.Pairing pairing = TckMarker.pairAll(boundaries);
+        return new RecordingData(jfrFile, identify(pairing, jfrFile.getFileName().toString()), pairing, events);
+    }
+
+    /**
+     * Where a recording belongs.
+     *
+     * <p>The file name is a fallback for recordings written before the marker existed, so it is
+     * consulted only when the file holds no boundary at all. A file that wrote boundaries and could
+     * not close them is not a measurement whatever its name says — without that rule a recording
+     * left by a crashed workload passes the TCK file-name pattern, is admitted as its subsystem,
+     * and contributes every event it holds to that subsystem's aggregates with no window to scope
+     * them.
+     */
+    private static RecordingIdentity identify(TckMarker.Pairing pairing, String fileName) {
+        if (!pairing.clean()) {
+            return RecordingIdentity.none();
         }
-        return new RecordingData(jfrFile, identity, windows, events);
+        List<TckMarker.Window> windows = pairing.windows();
+        if (windows.size() == 1) {
+            return RecordingIdentity.fromMarker(windows.get(0).subsystem(), windows.get(0).testClass());
+        }
+        if (windows.isEmpty()) {
+            return RecordingIdentity.fromFilename(fileName);
+        }
+        return RecordingIdentity.none();
     }
 
     private static AllocEvent toAllocEvent(RecordedEvent event) {

@@ -25,6 +25,9 @@ public final class AllocationWindowFixtureEvent extends Event {
     @Label("Boundary")
     public String boundary;
 
+    @Label("Measurement id")
+    public long measurementId;
+
     @Label("Subsystem")
     public String subsystem;
 

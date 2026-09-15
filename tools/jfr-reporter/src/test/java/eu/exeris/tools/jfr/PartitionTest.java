@@ -19,34 +19,47 @@ class PartitionTest {
     private static final Instant T0 = Instant.parse("2026-09-11T10:00:00Z");
 
     private static TckMarker.Window window(Instant start) {
+        return window(start, TckMarker.NO_MEASUREMENT_ID);
+    }
+
+    private static TckMarker.Window window(Instant start, long measurementId) {
         return new TckMarker.Window(start, start.plusMillis(10), "EventBus", "CommunityEventBusZeroAllocTckTest",
-                100, 41L, "bounded", 4, 4096L);
+                100, 41L, "bounded", 4, 4096L, measurementId);
     }
 
     private static RecordingData withWindows(String name, List<TckMarker.Window> windows, int events) {
         RecordingIdentity id = windows.size() == 1
                 ? RecordingIdentity.fromMarker(windows.get(0).subsystem(), windows.get(0).testClass())
                 : (windows.isEmpty() ? RecordingIdentity.fromFilename(name) : RecordingIdentity.none());
+        // A list of nulls: partition() reads only its size, and must keep doing so. The moment it
+        // dereferences an element every case here fails with a NullPointerException.
         List<AllocEvent> list = java.util.Collections.nCopies(events, null);
-        return new RecordingData(Path.of(name), id, windows, list);
+        return new RecordingData(Path.of(name), id, TckMarker.Pairing.of(windows), list);
     }
 
     @Test
     @DisplayName("a pair is found by time, not by file order - JFR flushes the end marker first when it likes")
     void pairingIsByTimeNotFileOrder() {
-        TckMarker.Boundary start = new TckMarker.Boundary("start", T0, 3L, "Persistence",
-                "CommunityPersistenceZeroAllocTckTest", 1000, 3L, "bounded", 64, -1L);
-        TckMarker.Boundary end = new TckMarker.Boundary("end", T0.plusMillis(28), 3L, "Persistence",
-                "CommunityPersistenceZeroAllocTckTest", 1000, 3L, "bounded", 64, 7_752_024L);
+        TckMarker.Boundary start = boundary("start", T0, 11L, "Persistence", -1L);
+        TckMarker.Boundary end = boundary("end", T0.plusMillis(28), 11L, "Persistence", 7_752_024L);
 
-        List<TckMarker.Window> windows = TckMarker.pairAll(List.of(end, start));
+        TckMarker.Pairing pairing = TckMarker.pairAll(List.of(end, start));
 
-        assertThat(windows).hasSize(1);
-        assertThat(windows.get(0).start()).isEqualTo(T0);
-        assertThat(windows.get(0).end()).isEqualTo(T0.plusMillis(28));
-        assertThat(windows.get(0).allocatedBytesDelta()).isEqualTo(7_752_024L);
-        assertThat(TckMarker.pairAll(List.of(end))).isEmpty();
-        assertThat(TckMarker.pairAll(List.of(start))).isEmpty();
+        assertThat(pairing.windows()).hasSize(1);
+        assertThat(pairing.clean()).isTrue();
+        assertThat(pairing.windows().get(0).start()).isEqualTo(T0);
+        assertThat(pairing.windows().get(0).end()).isEqualTo(T0.plusMillis(28));
+        assertThat(pairing.windows().get(0).allocatedBytesDelta()).isEqualTo(7_752_024L);
+        assertThat(TckMarker.pairAll(List.of(end)).windows()).isEmpty();
+        assertThat(TckMarker.pairAll(List.of(end)).unpaired()).containsExactly(end);
+        assertThat(TckMarker.pairAll(List.of(start)).windows()).isEmpty();
+        assertThat(TckMarker.pairAll(List.of(start)).unpaired()).containsExactly(start);
+    }
+
+    private static TckMarker.Boundary boundary(String kind, Instant at, long measurementId,
+                                               String subsystem, long bytesDelta) {
+        return new TckMarker.Boundary(kind, at, 3L, measurementId, subsystem,
+                subsystem + "ZeroAllocTckTest", 1000, 3L, "bounded", 64, bytesDelta);
     }
 
     @Test

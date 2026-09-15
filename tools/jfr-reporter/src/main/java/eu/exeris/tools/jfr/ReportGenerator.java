@@ -58,6 +58,8 @@ final class ReportGenerator {
     static final String REASON_NOT_A_MEASUREMENT = "no_marker_and_no_tck_filename";
     static final String REASON_MULTIPLE_WINDOWS  = "multiple_windows";
     static final String REASON_DUPLICATE_WINDOW  = "duplicate_window";
+    static final String REASON_UNPAIRED_BOUNDARY = "unpaired_boundary";
+    static final String REASON_ABORTED_WINDOW    = "aborted_window";
     private static final int TOP_FRAMES          = 20;
 
     private final Map<String, Path> moduleDirs;
@@ -212,8 +214,7 @@ final class ReportGenerator {
         List<RecordingData> identified = new ArrayList<>();
         for (RecordingData r : recordings) {
             if (!r.identity().identified()) {
-                unattributed.add(new Unattributed(r,
-                        r.windows().size() > 1 ? REASON_MULTIPLE_WINDOWS : REASON_NOT_A_MEASUREMENT));
+                unattributed.add(new Unattributed(r, unattributedReason(r)));
                 continue;
             }
             TckMarker.Window w = r.window();
@@ -221,7 +222,9 @@ final class ReportGenerator {
                 identified.add(r);
                 continue;
             }
-            String key = r.identity().subsystem() + "|" + w.testClass() + "|" + w.start().toEpochMilli();
+            String key = w.measurementId() != TckMarker.NO_MEASUREMENT_ID
+                    ? "id:" + w.measurementId()
+                    : r.identity().subsystem() + "|" + w.testClass() + "|" + w.start().toEpochMilli();
             RecordingData incumbent = winners.get(key);
             if (incumbent == null) {
                 winners.put(key, r);
@@ -238,6 +241,20 @@ final class ReportGenerator {
             bySubsystem.computeIfAbsent(r.identity().subsystem(), k -> new ArrayList<>()).add(r);
         }
         return new Partition(bySubsystem, unattributed);
+    }
+
+    /** Why a recording is not a subsystem measurement; the reasons are mutually exclusive by order. */
+    private static String unattributedReason(RecordingData r) {
+        if (!r.pairing().aborted().isEmpty()) {
+            return REASON_ABORTED_WINDOW;
+        }
+        if (!r.pairing().unpaired().isEmpty()) {
+            return REASON_UNPAIRED_BOUNDARY;
+        }
+        if (r.windows().size() > 1) {
+            return REASON_MULTIPLE_WINDOWS;
+        }
+        return REASON_NOT_A_MEASUREMENT;
     }
 
     private static boolean prefer(RecordingData candidate, RecordingData incumbent) {
