@@ -5,8 +5,6 @@
 package eu.exeris.kernel.core.http.http1;
 
 import eu.exeris.kernel.core.http.CanonicalHeaderNames;
-import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
-import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -197,33 +195,29 @@ public final class Http1RequestParser {
      *
      * @since 0.5
      */
-    public static final class Http1ParseException extends ExerisKernelException {
+    public static final class Http1ParseException extends eu.exeris.kernel.core.http.http1.Http1ParseException {
 
-        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4004;
+        private static final long serialVersionUID = 1L;
 
         /**
          * Constructs the exception with {@code EX-HTTP-4004} and no chained cause.
          *
          * @param messageTemplate static message template describing the violation
-         * @param rawArgs         domain-specific detail (e.g. the offending size and the
-         *                        configured limit) carried as-is for telemetry, never used to
-         *                        build {@code messageTemplate}
+         * @param rawArgs         domain-specific detail carried as-is for telemetry
          */
         public Http1ParseException(String messageTemplate, Object... rawArgs) {
-            super(ERROR_CODE, messageTemplate, rawArgs);
+            super(eu.exeris.kernel.spi.exceptions.FaultOrigin.CALLER, messageTemplate, rawArgs);
         }
 
         /**
          * Constructs the exception with {@code EX-HTTP-4004}, chaining {@code cause}.
          *
          * @param messageTemplate static message template describing the violation
-         * @param cause           the exception that caused the parse failure (e.g. a
-         *                        {@code Content-Length} value that is not a valid number)
-         * @param rawArgs         domain-specific detail carried as-is for telemetry, never used
-         *                        to build {@code messageTemplate}
+         * @param cause           the exception that caused the parse failure
+         * @param rawArgs         domain-specific detail carried as-is for telemetry
          */
         public Http1ParseException(String messageTemplate, Throwable cause, Object... rawArgs) {
-            super(ERROR_CODE, messageTemplate, cause, rawArgs);
+            super(eu.exeris.kernel.spi.exceptions.FaultOrigin.CALLER, messageTemplate, cause, rawArgs);
         }
     }
 

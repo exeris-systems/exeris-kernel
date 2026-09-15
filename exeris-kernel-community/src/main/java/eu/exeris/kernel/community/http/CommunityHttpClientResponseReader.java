@@ -4,11 +4,13 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
+
+import java.io.IOException;
 
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
@@ -29,12 +31,15 @@ import java.util.Objects;
  * <p><b>Thread confinement:</b> owner thread — one instance reads one response on the thread that
  * constructed it; not safe for concurrent use.
  * <p><b>Ownership:</b> owns the aggregate buffer for the reader's life; {@link #close()} releases
- * it. {@link #decode(HttpVersion)} copies any body into a separate buffer owned by the returned
+ * it. {@link #decode()} copies any body into a separate buffer owned by the returned
  * {@link HttpResponse}, so the reader may be closed immediately after decoding.
  *
  * @since 0.12
  */
 final class CommunityHttpClientResponseReader implements AutoCloseable {
+
+    private static final String MSG_EMPTY_RESPONSE =
+            "HTTP/1.1: remote peer closed connection without returning HTTP response";
 
     private static final int READ_CHUNK_BYTES = 8 * 1024;
 
@@ -69,7 +74,7 @@ final class CommunityHttpClientResponseReader implements AutoCloseable {
      * Reads until the response is complete, the peer stops sending, or the ceiling is reached.
      *
      * @param stream the stream to read from
-     * @throws IllegalStateException if the peer sent nothing at all
+     * @throws TransportException if the peer sent nothing at all
      */
     /* default */ void readFrom(TransportStream stream) {
         boolean reading = true;
@@ -77,7 +82,9 @@ final class CommunityHttpClientResponseReader implements AutoCloseable {
             reading = ensureRoom() && readOnce(stream);
         }
         if (total == 0) {
-            throw new IllegalStateException("Remote peer returned an empty HTTP response");
+            throw TransportException.sendFailure(
+                    CommunityHttpClientEngine.ENGINE_NAME, 0L,
+                    new IOException(MSG_EMPTY_RESPONSE));
         }
     }
 
@@ -85,12 +92,11 @@ final class CommunityHttpClientResponseReader implements AutoCloseable {
      * Decodes what was read. Any body is copied into its own buffer owned by the response, so this
      * reader may be closed immediately afterwards.
      *
-     * @param requestVersion the version the request was sent as
      * @return the decoded response
      */
-    /* default */ HttpResponse decode(HttpVersion requestVersion) {
+    /* default */ HttpResponse decode() {
         return CommunityHttpClientResponseDecoder.decodeResponse(
-                allocator, aggregate, total, requestVersion, bodyless);
+                allocator, aggregate, total, bodyless);
     }
 
     @Override
@@ -176,7 +182,35 @@ final class CommunityHttpClientResponseReader implements AutoCloseable {
                     headerTerminator, aggregate.segment(), total);
             expectedTotal = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
                     expectedTotal, aggregate.segment(), total, headerTerminator, bodyless);
+            discardInformationalResponses();
         }
         return !CommunityHttpClientResponseDecoder.isResponseComplete(total, expectedTotal);
+    }
+
+    private void discardInformationalResponses() {
+        while (CommunityHttpClientResponseDecoder.isResponseComplete(total, expectedTotal)) {
+            long statusLineEnd = CommunityHttpBufferOps.findCrLf(aggregate.segment(), 0, total);
+            if (statusLineEnd < 0) {
+                break;
+            }
+            int statusCode = CommunityHttpBufferOps.parseStatusCode(aggregate.segment(), 0, statusLineEnd);
+            if (statusCode < 100 || statusCode >= 200 || statusCode == 101) {
+                break;
+            }
+            long remaining = total - expectedTotal;
+            if (remaining > 0) {
+                MemorySegment.copy(aggregate.segment(), expectedTotal, aggregate.segment(), 0, remaining);
+            }
+            total = remaining;
+            aggregate.setSize(total);
+            headerTerminator = -1;
+            expectedTotal = -1;
+            if (total > 0) {
+                headerTerminator = CommunityHttpClientResponseDecoder.resolveHeaderTerminator(
+                        headerTerminator, aggregate.segment(), total);
+                expectedTotal = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
+                        expectedTotal, aggregate.segment(), total, headerTerminator, bodyless);
+            }
+        }
     }
 }

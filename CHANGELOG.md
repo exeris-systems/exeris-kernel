@@ -25,6 +25,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   registered silently owned the whole URL space. Two authors can now share it without coordinating
   through absence.
 
+- **HTTP client connection pooling, keep-alive framing, and stream unparking.** Outbound HTTP/1.1
+  requests via `CommunityHttpClientEngine` reuse persistent TCP connections through
+  `CommunityHttpClientConnectionPool`. Connections are organized per authority in a zero-allocation,
+  synchronized LIFO queue with atomic retirement protection, bounded by `HttpConfig.maxConnections()`
+  and per-authority idle capacity. Reused connections qualify on strict RFC 9110/RFC 9112 framing
+  (explicit `Content-Length` or bodyless responses such as `HEAD`, `204`, `304`, or `1xx` informational
+  responses). Transport unparking eliminates virtual thread spin-wait on write drains, and zero implicit
+  retries occur on connection failures (preserving ADR-045 / ADR-026 retry boundaries). Observability is
+  provided via JFR event `eu.exeris.kernel.community.http.HttpClientPool`.
+
 ### Changed
 
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is

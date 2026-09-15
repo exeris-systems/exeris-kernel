@@ -121,7 +121,7 @@ formatting. It implements:
 | `EX-HTTP-4001` | Huffman Decode/Encode Violation              | `[0] String detail`                    |
 | `EX-HTTP-4002` | HPACK Decode Violation                       | `[0] String detail`                    |
 | `EX-HTTP-4003` | HTTP/2 SETTINGS Validation                   | `[0] String settingName, [1] long actualValue, ...` |
-| `EX-HTTP-4004` | HTTP/1.1 Parse Violation (malformed/DoS)     | `[0] String detail`                    |
+| `EX-HTTP-4004` | HTTP/1.1 Parse Violation (malformed/DoS)     | empty (0 elements), `[0]` offending domain value (e.g. length, status code), pairs (e.g. `[0] foundLength, [1] parsedLength` or `[0] expected, [1] limit`), or triples (`[0] offset, [1] requestedEnd, [2] bufferSize`) |
 | `EX-HTTP-4005` | HTTP/2 CONTINUATION Sequence Violation       | `[0] String detail`                    |
 | `EX-HTTP-4006` | HTTP/2 Frame Encoding Violation              | `[0] String detail`                    |
 | `EX-HTTP-4007` | HTTP Provider Bootstrap Failure              | `rawArgs[0]: String providerName`       |
@@ -285,11 +285,14 @@ The origin is **not** a status code. HTTP reads `CALLER` as `4xx` but picks betw
 `403` and `409` from the exception itself; a non-HTTP binding maps it elsewhere. Keeping status out
 of the SPI is the same constraint that put status mapping on the handler in ADR-036.
 
-Five subclasses declare `CALLER` today — `RequestBodyDecodeException`,
+Five subclasses declare `CALLER` unconditionally today — `RequestBodyDecodeException`,
 `SecurityAuthenticationException`, `InsufficientPrivilegesException`,
 `EventStreamAppendConflictException` (all four in `exeris-kernel-spi`), and
 `eu.exeris.kernel.core.websocket.WebSocketProtocolException` in `exeris-kernel-core` — a Core-only
 type (it never reaches a handler; the engine catches it itself), carrying `EX-HTTP-4015`.
+`eu.exeris.kernel.core.http.http1.Http1ParseException` carries `CALLER` for inbound server request
+parse violations (the remote client sent malformed framing) and `SYSTEM` for outbound client
+response parse violations (the upstream server dependency returned malformed framing, per ADR-083).
 **A new subclass should state its origin when the answer is clear from its own contract, and leave
 the default when it is not**; a wrong `CALLER` is worse than an unclassified `SYSTEM`.
 

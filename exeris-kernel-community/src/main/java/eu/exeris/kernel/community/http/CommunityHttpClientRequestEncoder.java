@@ -31,14 +31,14 @@ import java.lang.foreign.ValueLayout;
  *
  * <p>Default headers added when absent from {@link HttpRequest#headers()}:
  * {@code Host: host:port} (the request's effective authority, ADR-074), {@code Content-Length: N},
- * {@code Connection: close}.
+ * {@code Connection: keep-alive}.
  */
 final class CommunityHttpClientRequestEncoder {
 
     private static final String HEADER_HOST = "Host";
     private static final String HEADER_CONTENT_LENGTH = "Content-Length";
     private static final String HEADER_CONNECTION = "Connection";
-    private static final String HEADER_CLOSE = "close";
+    private static final String HEADER_KEEP_ALIVE = "keep-alive";
 
     private CommunityHttpClientRequestEncoder() {
         // package-private static utility — never instantiated.
@@ -115,7 +115,7 @@ final class CommunityHttpClientRequestEncoder {
                     Integer.toString(bodyBytes));
         }
         if (!presence.hasConnection()) {
-            pos = Http1ResponseEncoder.writeHeader(seg, pos, HEADER_CONNECTION, HEADER_CLOSE);
+            pos = Http1ResponseEncoder.writeHeader(seg, pos, HEADER_CONNECTION, HEADER_KEEP_ALIVE);
         }
         return Http1ResponseEncoder.writeHeaderEnd(seg, pos);
     }

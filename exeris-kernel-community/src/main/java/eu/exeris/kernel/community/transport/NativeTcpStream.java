@@ -276,7 +276,7 @@ final class NativeTcpStream implements TransportStream {
             }
             ensureTlsReady(true);
 
-            runtime.streamVt().compareAndSet(null, currentThread);
+            runtime.streamVt().set(currentThread);
 
             while (true) {
                 if (closed.get()) {
@@ -292,6 +292,7 @@ final class NativeTcpStream implements TransportStream {
                 return copyFromInbound(target, maxBytes);
             }
         } finally {
+            runtime.streamVt().compareAndSet(currentThread, null);
             NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.inboundConsumer(), currentThread);
         }
     }
@@ -649,6 +650,7 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ void markRemoteClosed() {
         remoteClosed.set(true);
+        connection.markClosedByCarrier();
         signalReadableIngress();
     }
 
@@ -700,6 +702,10 @@ final class NativeTcpStream implements TransportStream {
 
     /* default */ boolean isClosed() {
         return closeRequested.get() || closed.get();
+    }
+
+    /* default */ boolean isRemoteClosed() {
+        return remoteClosed.get();
     }
 
     /* default */ TlsEngine tlsEngine() {
