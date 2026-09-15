@@ -44,11 +44,11 @@ import java.util.Map;
  * @since 0.11.0
  */
 @Tag("integration")
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 @DisplayName("TCK: Community S3 blob store (MinIO)")
 class CommunityS3BlobStorageTckIT extends AbstractBlobStorageTck {
 
-    private static final String IMAGE = "minio/minio:RELEASE.2025-04-22T22-12-26Z";
+    private static final String IMAGE = "quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z";
     private static final String BUCKET = "exeris-blobs";
     private static final String ACCESS_KEY = "exeris-test-access";
     private static final String SECRET_KEY = "exeris-test-secret";

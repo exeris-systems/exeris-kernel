@@ -341,12 +341,17 @@ public final class KernelErrorCodes {
     /**
      * HTTP/1.1 parse violation (malformed framing or DoS guard breach).
      *
+     * <p>Fault origin is contextual: {@link FaultOrigin#CALLER} for inbound server request parsing
+     * (the peer sent malformed framing) and {@link FaultOrigin#SYSTEM} for outbound client response
+     * decoding (the upstream server dependency violated protocol framing, per ADR-083).
+     *
      * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
      * a domain value of the violation that fired, in the order its message names them; the detail
-     * message is never among them — it is the exception's own message. The shapes in use are a
-     * single offending value (a malformed field's size, or the rejected header name as a
-     * {@code String}), an offending value with the limit it breached (a field size and the maximum
-     * header size, a header count and the maximum), and a triple for an out-of-bounds range
+     * message is never among them — it is the exception's own message. The shapes in use are empty
+     * (0 elements for structural framing terminators), a single offending value (a malformed field's size,
+     * an invalid byte value or status code, or the rejected header name as a {@code String}), an offending
+     * value with the limit it breached (a field size and the maximum header size, a header count and
+     * the maximum, or expected vs actual length), and a triple for an out-of-bounds range
      * (start, end, and the size that bounds them).
      */
     public static final String EX_HTTP_4004 = "EX-HTTP-4004";

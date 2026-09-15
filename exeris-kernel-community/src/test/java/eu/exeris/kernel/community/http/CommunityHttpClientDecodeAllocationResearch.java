@@ -7,7 +7,6 @@ package eu.exeris.kernel.community.http;
 import com.sun.management.ThreadMXBean;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
@@ -106,7 +105,7 @@ class CommunityHttpClientDecodeAllocationResearch {
             throw new IllegalStateException("fixture did not frame - expected total unresolved");
         }
         HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                allocator, buffer, total, HttpVersion.HTTP_1_1, false);
+                allocator, buffer, total, false);
         if (response.body() != null) {
             response.body().close();
         }

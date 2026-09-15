@@ -107,4 +107,72 @@ class NativeTcpStreamIngressArrivalWakeupTest {
             }
         }
     }
+
+    @Test
+    void sequentialVtsReadingSameStreamAreBothUnparked() throws Exception {
+        try (ServerSocketChannel listener = ServerSocketChannel.open()) {
+            listener.bind(new InetSocketAddress("127.0.0.1", 0));
+            int port = ((InetSocketAddress) listener.getLocalAddress()).getPort();
+
+            try (SocketChannel clientChannel = SocketChannel.open(new InetSocketAddress("127.0.0.1", port));
+                 SocketChannel serverChannel = listener.accept()) {
+
+                clientChannel.configureBlocking(false);
+
+                NativeTcpConnection connection = new NativeTcpConnection(3L, "127.0.0.1", port);
+                NativeTcpStream stream = new NativeTcpStream(
+                        "test-engine",
+                        3L,
+                        clientChannel,
+                        connection,
+                        ALLOCATOR,
+                        null,
+                        () -> {},
+                        () -> {}
+                );
+                connection.bindSingleStream(stream);
+
+                try {
+                    // First VT
+                    AtomicLong vt1Returned = new AtomicLong(-1L);
+                    try (LoanedBuffer sink1 = ALLOCATOR.allocateNetwork(64)) {
+                        Thread vt1 = Thread.ofVirtual().start(() -> {
+                            stream.read(sink1.segment(), 64);
+                            vt1Returned.set(System.nanoTime());
+                        });
+                        while (vt1.getState() != Thread.State.TIMED_WAITING
+                                && vt1.getState() != Thread.State.WAITING) {
+                            Thread.onSpinWait();
+                        }
+                        LoanedBuffer ingress1 = ALLOCATOR.allocateNetwork(4);
+                        ingress1.setSize(4);
+                        stream.offerIngress(ingress1);
+                        vt1.join(1_000);
+                        assertTrue(vt1Returned.get() > 0, "VT1 did not complete read");
+                    }
+
+                    // Second VT reading same stream (simulating pooled connection reuse)
+                    AtomicLong vt2Returned = new AtomicLong(-1L);
+                    try (LoanedBuffer sink2 = ALLOCATOR.allocateNetwork(64)) {
+                        Thread vt2 = Thread.ofVirtual().start(() -> {
+                            stream.read(sink2.segment(), 64);
+                            vt2Returned.set(System.nanoTime());
+                        });
+                        while (vt2.getState() != Thread.State.TIMED_WAITING
+                                && vt2.getState() != Thread.State.WAITING) {
+                            Thread.onSpinWait();
+                        }
+                        LoanedBuffer ingress2 = ALLOCATOR.allocateNetwork(4);
+                        ingress2.setSize(4);
+                        stream.offerIngress(ingress2);
+                        vt2.join(1_000);
+                        assertTrue(vt2Returned.get() > 0, "VT2 on reused stream did not complete read");
+                    }
+                } finally {
+                    stream.close();
+                    serverChannel.close();
+                }
+            }
+        }
+    }
 }
