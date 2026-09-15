@@ -5,7 +5,12 @@
 package eu.exeris.tools.jfr;
 
 import eu.exeris.kernel.tck.fake.AllocationWindowFixtureEvent;
+import jdk.jfr.AnnotationElement;
+import jdk.jfr.Event;
+import jdk.jfr.EventFactory;
+import jdk.jfr.Name;
 import jdk.jfr.Recording;
+import jdk.jfr.ValueDescriptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -72,6 +77,37 @@ class JfrDirectoryReaderTest {
         assertThat(data.identity().identified()).isTrue();
         assertThat(data.identity().subsystem()).isEqualTo("eventbus");
         assertThat(data.pairing().clean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a marker from a differently-versioned TCK is skipped, and does not end the run")
+    void aMarkerWithASkewedSchemaDoesNotEndTheRun() throws IOException {
+        // The field set is the contract between two Maven builds with no dependency between them,
+        // so a recording written by another exeris-kernel-tck is the expected skew, not an exotic
+        // one: parse-jfr-to-json reads recordings that arrive as downloaded artefacts.
+        EventFactory factory = EventFactory.create(
+                List.of(new AnnotationElement(Name.class, TckMarker.EVENT_NAME)),
+                List.of(new ValueDescriptor(String.class, TckMarker.F_BOUNDARY),
+                        new ValueDescriptor(String.class, TckMarker.F_SUBSYSTEM)));
+        factory.register();
+
+        Path file = tmp.resolve(TCK_NAME);
+        try (Recording rec = new Recording()) {
+            rec.setDestination(file);
+            rec.start();
+            Event skewed = factory.newEvent();
+            skewed.set(0, "start");
+            skewed.set(1, "EventBus");
+            skewed.commit();
+            rec.stop();
+        }
+
+        JfrDirectoryReader.RecordingData data = JfrDirectoryReader.readFile(file);
+
+        assertThat(data.identity().identified())
+                .as("an unreadable marker must not leave the file to be identified by its name")
+                .isFalse();
+        assertThat(data.pairing().windows()).isEmpty();
     }
 
     private Path write(List<AllocationWindowFixtureEvent> markers) throws IOException {

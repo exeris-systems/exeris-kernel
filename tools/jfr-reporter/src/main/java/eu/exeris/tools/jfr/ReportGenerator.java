@@ -60,6 +60,13 @@ final class ReportGenerator {
     static final String REASON_DUPLICATE_WINDOW  = "duplicate_window";
     static final String REASON_UNPAIRED_BOUNDARY = "unpaired_boundary";
     static final String REASON_ABORTED_WINDOW    = "aborted_window";
+
+    /** Why a recording was not measured; {@code null} on a recording that was. */
+    static final String NOT_MEASURED_NO_WINDOW = "no_window";
+    static final String NOT_MEASURED_UNSPECIFIED = "unspecified";
+    static final String NOT_MEASURED_INVALID_BUDGET = "invalid_budget";
+    static final String NOT_MEASURED_INVALID_ITERATIONS = "invalid_iterations";
+    static final String NOT_MEASURED_UNKNOWN_MODE = "unknown_mode:";
     private static final int TOP_FRAMES          = 20;
 
     private final Map<String, Path> moduleDirs;
@@ -89,19 +96,20 @@ final class ReportGenerator {
      * @param verdict           {@code PASS}, {@code FAIL} or {@code NOT_MEASURED}
      */
     record ContractResult(String mode, int budget, int iterations, long exerisEvents, long bytesDelta,
-                          Double bytesPerIteration, String verdict) {
+                          Double bytesPerIteration, String verdict, String notMeasuredReason) {
 
-        static ContractResult notMeasured() {
+        static ContractResult notMeasured(String reason) {
             return new ContractResult(TckMarker.MODE_UNSPECIFIED, -1, 0, 0L,
-                    TckMarker.BYTES_UNAVAILABLE, null, VERDICT_NOT_MEASURED);
+                    TckMarker.BYTES_UNAVAILABLE, null, VERDICT_NOT_MEASURED, reason);
         }
     }
 
     static ContractResult evaluate(RecordingData recording) {
         TckMarker.Window w = recording.window();
         if (w == null) {
-            return ContractResult.notMeasured();
+            return ContractResult.notMeasured(NOT_MEASURED_NO_WINDOW);
         }
+        String mode = w.contractMode();
         long count = recording.events().stream()
                 .filter(e -> w.contains(e.tEpochMillis()))
                 .filter(e -> e.objectKind() == ObjectKind.EXERIS)
@@ -110,17 +118,48 @@ final class ReportGenerator {
                 .count();
         long delta = w.allocatedBytesDelta();
         Double perIteration = delta >= 0 && w.iterations() > 0 ? (double) delta / w.iterations() : null;
-        String verdict = switch (w.contractMode()) {
-            case TckMarker.MODE_ZERO -> {
-                boolean bytesOk = delta == TckMarker.BYTES_UNAVAILABLE || delta < w.iterations();
-                yield count == 0 && bytesOk ? VERDICT_PASS : VERDICT_FAIL;
+
+        String verdict;
+        String reason = null;
+        // Everything below the marker is untrusted input: the numbers were read from a file this
+        // tool did not write. A value out of range renders as NOT_MEASURED with a reason, never as
+        // FAIL — subsystemVerdict propagates any FAIL to the whole subsystem, and a published
+        // accusation sourced from a malformed file is worse than a gap.
+        if (w.iterations() <= 0) {
+            warnUntrusted(recording, "iterations=" + w.iterations());
+            verdict = VERDICT_NOT_MEASURED;
+            reason = NOT_MEASURED_INVALID_ITERATIONS;
+        } else if (TckMarker.MODE_ZERO.equals(mode)) {
+            boolean bytesOk = delta == TckMarker.BYTES_UNAVAILABLE || delta < w.iterations();
+            verdict = count == 0 && bytesOk ? VERDICT_PASS : VERDICT_FAIL;
+        } else if (TckMarker.MODE_BOUNDED.equals(mode)) {
+            if (w.budgetPerIteration() < 0) {
+                warnUntrusted(recording, "budgetPerIteration=" + w.budgetPerIteration());
+                verdict = VERDICT_NOT_MEASURED;
+                reason = NOT_MEASURED_INVALID_BUDGET;
+            } else {
+                verdict = count <= (long) w.iterations() * w.budgetPerIteration()
+                        ? VERDICT_PASS : VERDICT_FAIL;
             }
-            case TckMarker.MODE_BOUNDED ->
-                    count <= (long) w.iterations() * w.budgetPerIteration() ? VERDICT_PASS : VERDICT_FAIL;
-            default -> VERDICT_NOT_MEASURED;
-        };
-        return new ContractResult(w.contractMode(), w.budgetPerIteration(), w.iterations(), count,
-                delta, perIteration, verdict);
+        } else if (TckMarker.MODE_UNSPECIFIED.equals(mode)) {
+            verdict = VERDICT_NOT_MEASURED;
+            reason = NOT_MEASURED_UNSPECIFIED;
+        } else {
+            // Silent before: a mode this reader does not know produced the same NOT_MEASURED as a
+            // TCK that honestly stated none, and nothing said which had happened.
+            LOGGER.warning(() -> LOG_PREFIX + "WARN: " + recording.file().getFileName()
+                    + " states contract mode '" + mode + "', which this reporter does not know");
+            verdict = VERDICT_NOT_MEASURED;
+            reason = NOT_MEASURED_UNKNOWN_MODE + mode;
+        }
+        return new ContractResult(mode, w.budgetPerIteration(), w.iterations(), count,
+                delta, perIteration, verdict, reason);
+    }
+
+    private static void warnUntrusted(RecordingData recording, String what) {
+        LOGGER.warning(() -> LOG_PREFIX + "WARN: " + recording.file().getFileName()
+                + " carries " + what + ", which is out of range; reporting NOT_MEASURED rather "
+                + "than judging a contract against it");
     }
 
     /** Worst-of over recordings: any FAIL fails; else any PASS passes; else nothing was measured. */
@@ -317,6 +356,11 @@ final class ReportGenerator {
                 cn.put("bytes_per_iteration", c.bytesPerIteration());
             }
             cn.put("satisfied", VERDICT_PASS.equals(c.verdict()));
+            if (c.notMeasuredReason() == null) {
+                cn.putNull("not_measured_reason");
+            } else {
+                cn.put("not_measured_reason", c.notMeasuredReason());
+            }
         }
 
         List<AllocEvent> events = flatten(recordings);

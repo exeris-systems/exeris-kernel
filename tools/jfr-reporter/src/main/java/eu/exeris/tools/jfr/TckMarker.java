@@ -11,6 +11,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordedThread;
 
@@ -24,6 +27,8 @@ import jdk.jfr.consumer.RecordedThread;
  * TCK jar and reads the event by name.
  */
 final class TckMarker {
+
+    private static final Logger LOGGER = Logger.getLogger(TckMarker.class.getName());
 
     static final String EVENT_NAME = "eu.exeris.tck.AllocationWindow";
     /** The event's own class, excluded from the contract count exactly as the TCK excludes it. */
@@ -46,6 +51,14 @@ final class TckMarker {
 
     /** {@link #F_MEASUREMENT_ID} absent — a recording written before the field existed. */
     static final long NO_MEASUREMENT_ID = Long.MIN_VALUE;
+
+    /**
+     * The fields a boundary cannot be read without. {@link #F_MEASUREMENT_ID} is deliberately not
+     * among them: it has a documented fallback, the rest do not.
+     */
+    private static final List<String> REQUIRED_FIELDS = List.of(
+            F_BOUNDARY, F_SUBSYSTEM, F_TEST_CLASS, F_ITERATIONS,
+            F_WORKLOAD_THREAD_ID, F_CONTRACT_MODE, F_BUDGET, F_BYTES_DELTA);
 
     static final String MODE_ZERO = "zero";
     static final String MODE_BOUNDED = "bounded";
@@ -103,11 +116,40 @@ final class TckMarker {
         return EVENT_NAME.equals(event.getEventType().getName());
     }
 
+    /**
+     * Reads one marker, or {@code null} when the event does not carry the fields this reader needs.
+     *
+     * <p>Every read is guarded. {@code RecordedObject.getString/getInt/getLong} throw
+     * {@link IllegalArgumentException} for a field that is not there, nothing up the call chain
+     * catches it, and {@code Main} declares {@code throws Exception} — so one event from a
+     * differently-versioned TCK jar would end the whole run and fail the publish job. Recordings
+     * reach that job as downloaded artefacts, so version skew is the expected case, not an exotic
+     * one.
+     *
+     * <p>A marker missing a field is dropped rather than filled with nulls: a {@code null}
+     * contract mode reaches a {@code switch} on a {@code String} and throws, and a {@code null}
+     * boundary pairs with nothing.
+     *
+     * @param e a marker event
+     * @return the boundary, or {@code null} if the event cannot be read as one
+     */
     static Boundary read(RecordedEvent e) {
+        for (String required : REQUIRED_FIELDS) {
+            if (!e.hasField(required)) {
+                LOGGER.log(Level.WARNING, () -> "[jfr-reporter] WARN: marker without field '"
+                        + required + "' ignored — the recording predates it, or was written by a "
+                        + "different exeris-kernel-tck");
+                return null;
+            }
+        }
+        String boundary = e.getString(F_BOUNDARY);
+        if (boundary == null) {
+            return null;
+        }
         RecordedThread thread = e.getThread();
         long eventThreadId = thread != null ? thread.getJavaThreadId() : -1L;
         return new Boundary(
-                e.getString(F_BOUNDARY),
+                boundary,
                 e.getStartTime(),
                 eventThreadId,
                 e.hasField(F_MEASUREMENT_ID) ? e.getLong(F_MEASUREMENT_ID) : NO_MEASUREMENT_ID,

@@ -107,11 +107,17 @@ final class JfrDirectoryReader {
     static RecordingData readFile(Path jfrFile) {
         List<AllocEvent> events = new ArrayList<>();
         List<TckMarker.Boundary> boundaries = new ArrayList<>();
+        int malformedMarkers = 0;
         try (RecordingFile rf = new RecordingFile(jfrFile)) {
             while (rf.hasMoreEvents()) {
                 RecordedEvent event = rf.readEvent();
                 if (TckMarker.isMarker(event)) {
-                    boundaries.add(TckMarker.read(event));
+                    TckMarker.Boundary boundary = TckMarker.read(event);
+                    if (boundary == null) {
+                        malformedMarkers++;
+                    } else {
+                        boundaries.add(boundary);
+                    }
                     continue;
                 }
                 AllocEvent alloc = toAllocEvent(event);
@@ -119,11 +125,19 @@ final class JfrDirectoryReader {
                     events.add(alloc);
                 }
             }
-        } catch (IOException ex) {
+        } catch (IOException | RuntimeException ex) {
+            // One unreadable file degrades to "not a measurement"; it does not end the run. Before
+            // this catch, an unchecked exception here propagated out of Main and failed the job,
+            // leaving no evidence.json at all for the modules that were readable.
             LOGGER.log(Level.WARNING, ex, () -> LOG_PREFIX + "WARN: failed to read " + jfrFile);
+            return new RecordingData(jfrFile, RecordingIdentity.none(), TckMarker.Pairing.of(List.of()), events);
         }
         TckMarker.Pairing pairing = TckMarker.pairAll(boundaries);
-        return new RecordingData(jfrFile, identify(pairing, jfrFile.getFileName().toString()), pairing, events);
+        String fileName = jfrFile.getFileName().toString();
+        RecordingIdentity identity = malformedMarkers > 0
+                ? RecordingIdentity.none()
+                : identify(pairing, fileName);
+        return new RecordingData(jfrFile, identity, pairing, events);
     }
 
     /**

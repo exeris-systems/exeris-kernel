@@ -86,19 +86,54 @@ class ContractEvaluationTest {
     }
 
     @Test
+    @DisplayName("a value out of range in the marker is NOT_MEASURED with a reason - never a FAIL")
+    void untrustedMarkerValuesAreNotAVerdict() {
+        // The writer validates these, so the only way to see them is a file written by something
+        // else: a different exeris-kernel-tck, or a corrupt recording. subsystemVerdict propagates
+        // any FAIL to the whole subsystem, so rendering one here would publish an accusation
+        // sourced from an unreadable file.
+        ReportGenerator.ContractResult negativeBudget =
+                ReportGenerator.evaluate(recording("bounded", -4, 10, 0L, List.of()));
+        assertThat(negativeBudget.verdict()).isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
+        assertThat(negativeBudget.notMeasuredReason()).isEqualTo(ReportGenerator.NOT_MEASURED_INVALID_BUDGET);
+
+        ReportGenerator.ContractResult noIterations =
+                ReportGenerator.evaluate(recording("zero", -1, 0, 0L, List.of()));
+        assertThat(noIterations.verdict()).isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
+        assertThat(noIterations.notMeasuredReason()).isEqualTo(ReportGenerator.NOT_MEASURED_INVALID_ITERATIONS);
+
+        ReportGenerator.ContractResult unknownMode =
+                ReportGenerator.evaluate(recording("Bounded", 1, 10, 0L, List.of()));
+        assertThat(unknownMode.verdict()).isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
+        assertThat(unknownMode.notMeasuredReason())
+                .isEqualTo(ReportGenerator.NOT_MEASURED_UNKNOWN_MODE + "Bounded");
+
+        ReportGenerator.ContractResult nullMode =
+                ReportGenerator.evaluate(recording(null, 1, 10, 0L, List.of()));
+        assertThat(nullMode.verdict())
+                .as("a String switch on a null mode threw, and nothing up the chain caught it")
+                .isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
+    }
+
+    @Test
     @DisplayName("no marker, or an unspecified mode, is NOT_MEASURED - never a pass")
     void notMeasured() {
         RecordingData noMarker = new RecordingData(Path.of("CoreFlowZeroAllocTckTest-FlowEngine-20260805-120000.jfr"),
                 RecordingIdentity.fromFilename("CoreFlowZeroAllocTckTest-FlowEngine-20260805-120000.jfr"),
                 TckMarker.Pairing.of(List.of()), List.of());
         assertThat(ReportGenerator.evaluate(noMarker).verdict()).isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
+        assertThat(ReportGenerator.evaluate(noMarker).notMeasuredReason())
+                .isEqualTo(ReportGenerator.NOT_MEASURED_NO_WINDOW);
         assertThat(ReportGenerator.evaluate(recording("unspecified", -1, 10, 0L, List.of())).verdict())
                 .isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
+        assertThat(ReportGenerator.evaluate(recording("unspecified", -1, 10, 0L, List.of())).notMeasuredReason())
+                .as("a TCK that stated no contract must be distinguishable from a file this reader could not read")
+                .isEqualTo(ReportGenerator.NOT_MEASURED_UNSPECIFIED);
 
-        assertThat(ReportGenerator.subsystemVerdict(List.of(ReportGenerator.ContractResult.notMeasured())))
+        assertThat(ReportGenerator.subsystemVerdict(List.of(ReportGenerator.ContractResult.notMeasured(ReportGenerator.NOT_MEASURED_NO_WINDOW))))
                 .isEqualTo(ReportGenerator.VERDICT_NOT_MEASURED);
         assertThat(ReportGenerator.subsystemVerdict(List.of(
-                ReportGenerator.ContractResult.notMeasured(),
+                ReportGenerator.ContractResult.notMeasured(ReportGenerator.NOT_MEASURED_NO_WINDOW),
                 ReportGenerator.evaluate(recording("bounded", 1, 10, 0L, List.of())))))
                 .isEqualTo(ReportGenerator.VERDICT_PASS);
         assertThat(ReportGenerator.subsystemVerdict(List.of(
