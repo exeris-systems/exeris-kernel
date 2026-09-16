@@ -5,9 +5,10 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.memory.ResourceArbiter;
 import eu.exeris.kernel.core.memory.WatermarkManager;
-import eu.exeris.kernel.core.transport.jfr.TransportJfrWarmup;
+import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
 import eu.exeris.kernel.core.transport.scheduler.PaqsScheduler;
 import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
@@ -26,7 +27,6 @@ import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
 import java.io.IOException;
-import java.lang.invoke.MethodHandles;
 import java.net.InetSocketAddress;
 import java.nio.channels.AsynchronousCloseException;
 import java.nio.channels.SelectionKey;
@@ -118,19 +118,6 @@ public final class NativeTcpCarrier implements TransportEngine {
     // exeris.transport.* knobs.
     private static final int ACCEPTED_SEND_BUFFER_BYTES =
             Integer.getInteger("exeris.transport.acceptedSendBufferBytes", 0);
-    // This driver's own JFR event classes, initialised at start() by TransportJfrWarmup. A JFR
-    // event class initialised later, on a stream's or a caller's virtual thread, pins that carrier
-    // for the whole of its <clinit> — the reason the warm-up exists is stated there.
-    private static final Class<?>[] COMMUNITY_TRANSPORT_EVENTS = {
-            CommunityAcceptFaultEvent.class,
-            CommunityAcceptRetryEvent.class,
-            CommunityConnectionIdleTimeoutEvent.class,
-            CommunityConnectionRefusedEvent.class,
-            CommunityReactorDispatchFaultEvent.class,
-            CommunityTransportDrainEvent.class,
-            TransportTlsDeclinedEvent.class,
-    };
-
     private final TransportConfig config;
     private final MemoryAllocator allocator;
     private final KernelCryptoProvider cryptoProvider;
@@ -235,10 +222,11 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
 
         // Before the first stream exists, on the starting thread: a JFR event class that first
-        // initialises on a virtual thread pins its carrier for the whole <clinit>, and CLIENT mode
-        // stands up no PAQS, so it would otherwise reach connect() and read() cold.
-        TransportJfrWarmup.ensureRegistered();
-        TransportJfrWarmup.ensureRegistered(MethodHandles.lookup(), COMMUNITY_TRANSPORT_EVENTS);
+        // initialises on a virtual thread pins its carrier for the whole <clinit>. The orchestrator
+        // does this too when it starts the transport subsystem; this covers an engine built without
+        // one, and CLIENT mode, which stands up no PAQS and would reach connect() and read() cold.
+        CoreJfrEventCatalogue.warmHotPath("transport");
+        CommunityJfrEventCatalogue.warmHotPath("transport");
 
         try {
             if (mode() == TransportMode.SERVER || mode() == TransportMode.DUAL) {

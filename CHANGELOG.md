@@ -97,6 +97,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `PaqsScheduler` construction and from `NativeTcpCarrier.start()` — client mode stands up no PAQS —
   initialises the transport event classes on the thread that starts the engine instead.
 
+- **Every JFR event class in the kernel is now classified, and the hot-path ones are initialised
+  when their subsystem starts.** A `jdk.jfr.Event` subclass registers itself from its own static
+  initialiser, so the first emit of a cold class pins a carrier for as long as the class takes to
+  load — and turning JFR off does not help, because every emit site is a static method on the event
+  class itself, so the `FlightRecorder.isInitialized()` guard runs after the class has initialised.
+  `CoreJfrEventCatalogue` and `CommunityJfrEventCatalogue` split all 125 event classes of the two
+  main modules into warmed (83) and deliberately cold (42); the warm-up runs on the starting thread
+  from `SubsystemOrchestrator.doStart` and `AbstractCommunitySubsystem.markRunning`, and the Kafka
+  driver warms its three at its own engine start. Warming everything would cost upwards of 100 ms of
+  start-up (measured: ~1 ms per class) for failure-path events a process may never emit, which is why
+  cold is a decision rather than an omission. `JfrEventCatalogueCoverageTest` fails the build on an
+  event class in neither bucket and on a catalogue name that no longer resolves.
+
 - **Every carrier-pinning fence stops counting a cold JVM, not just the client-ingress one.**
   `JfrPinningMonitor` — the instrument behind every subsystem's carrier-pinning binding — counted
   each `jdk.VirtualThreadPinned` event alike, so a class initialising on a virtual thread read as a

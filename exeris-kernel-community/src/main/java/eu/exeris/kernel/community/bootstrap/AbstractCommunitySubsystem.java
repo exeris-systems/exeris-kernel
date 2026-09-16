@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 
 import java.util.function.UnaryOperator;
@@ -32,13 +33,24 @@ import java.util.function.UnaryOperator;
     }
 
     /**
-     * Records this subsystem's running state for {@link #isRunning()} to report.
+     * Records this subsystem's running state for {@link #isRunning()} to report, and on the way to
+     * {@code true} warms this driver's hot-path JFR event classes.
+     *
+     * <p>The warm-up sits here rather than in twelve {@code start()} methods because this is the one
+     * point every Community subsystem passes through when it becomes live, and because a subsystem
+     * that found no provider never reaches it — so nothing is warmed for a subsystem that will not
+     * run. It initialises those classes on the booting thread: a virtual thread that runs a
+     * {@code <clinit>} cannot unmount and pins its carrier for the whole of it, which is what the
+     * first emit of a cold event class would otherwise do on a request path.
      *
      * @param value {@code true} once the subsystem has started successfully, {@code false} once it
      *              has stopped or failed to find a provider to run
      */
     protected final void markRunning(boolean value) {
         this.running = value;
+        if (value) {
+            CommunityJfrEventCatalogue.warmHotPath(name());
+        }
     }
 
     /**

@@ -294,6 +294,51 @@ static void emitExhaustion(long requested, long available, String name) {
 **Rule:** JFR `Event` subclasses must set `@StackTrace(false)` on all hot-path events.
 Stack trace capture is O(depth) allocation — it is reserved for `LeakTracker` and `CarrierPinnedEvent` only.
 
+### Hot-path event classes are initialised when their subsystem starts
+
+A `jdk.jfr.Event` subclass registers itself with the JFR metadata repository from its own static
+initialiser, and has to be loaded from the jar first. A virtual thread running a `<clinit>`
+**cannot unmount** — the JVM reports `VM call to <class>.<clinit> on stack` — and every other virtual
+thread that reaches the same class in that window blocks in `Object.wait` inside class
+initialisation, pinned as well (`Waited for initialization of <class> by another thread`). JEP 491
+unpinned `synchronized` and `Object.wait`; it did not unpin class initialisation. So the first emit
+of a cold event class stalls a carrier, and where carriers are scarce the waiters hold the carriers
+the initialiser needs.
+
+**Turning JFR off does not avoid it.** Every emit site here is a static method *on the event class*
+(`SomeEvent.emit(...)`), so the `FlightRecorder.isInitialized()` guard inside that method runs after
+the class has already initialised. Measured over 103 event classes: 79 ms with a recording running,
+108 ms without — what dominates is the class load, not the JFR registration.
+
+Two catalogues carry the answer, and every event class in the kernel is in exactly one of their
+buckets:
+
+| | |
+|:--|:--|
+| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 53 warmed, 38 deliberately cold |
+| `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 34 event classes — 30 warmed, 4 deliberately cold |
+
+A class is **warmed** when a virtual thread can reach it on a path that produces it concurrently —
+per request, per stream, per step, per allocation. It is left **cold** when it is emitted once per
+process, from a bootstrap or maintenance thread, or only by a path whose own cost dwarfs a
+millisecond. Cold is a decision, not an omission: a cold event is fully supported and exactly as
+observable, it simply pays its own initialisation the first time it fires. Warming everything
+instead would cost upwards of 100 ms of start-up for classes a given process may never emit.
+
+The warm-up runs on the thread that starts the subsystem, from two places and no others:
+`SubsystemOrchestrator.doStart` (Core's set, keyed by `Subsystem.name()`) and
+`AbstractCommunitySubsystem.markRunning(true)` (the driver's set). An engine built without a kernel
+bootstrap warms its own — `NativeTcpCarrier.start()` and `PaqsScheduler`'s constructor do, because
+CLIENT mode stands up no PAQS and an embedded engine has no orchestrator. The Kafka driver ships in
+its own module and warms its three events at `KafkaEventEngine.start()`.
+
+The catalogues hold fully-qualified **names**, not class literals: two thirds of the kernel's event
+classes are package-private, so no single class can name them otherwise, and widening 66 classes to
+`public` to hold a warm-up list would be the worse change. `JfrEventCatalogueCoverageTest` is what
+makes names safe — it resolves every one and matches the union of both buckets against the event
+classes each module actually declares, so a new event class that nobody classified fails the build,
+and so does a name left behind by a rename.
+
 ---
 
 ## SPI Architecture

@@ -681,12 +681,17 @@ path before recording and sets class-initialisation pins aside from its fence �
 `CarrierPinClassification`, the same classifier `JfrPinningMonitor` applies to every subsystem's
 carrier-pinning binding.
 
-Warming is per engine, not per kernel, and the reason is a measurement: initialising one JFR event
-class costs about 1 ms cold (103 classes in 79 ms with a recording running, 108 ms without — it is
-the class load, not the JFR registration). The transport set is 14 classes, so `start()` pays about
-16 ms for classes that engine will use. Warming all 128 event classes in the kernel at boot would
-cost 100 ms or more, much of it for failure-path events a given process may never emit — which is
-why nothing does that, and why a subsystem that wants the same protection declares its own set.
+Warming is per subsystem, not per kernel, and the reason is a measurement: initialising one JFR
+event class costs about 1 ms cold (103 classes in 79 ms with a recording running, 108 ms without —
+it is the class load, not the JFR registration). Warming all 128 event classes in the kernel would
+cost 100 ms or more, much of it for failure-path events a given process may never emit.
+
+Which transport classes are warmed is declared in `CoreJfrEventCatalogue` and
+`CommunityJfrEventCatalogue`, and the rule that governs both — plus the guard test that keeps them
+complete — is in [`telemetry.md`](telemetry.md). The transport subsystem warms all fourteen of its
+event classes. `NativeTcpCarrier.start()` and `PaqsScheduler`'s constructor ask for them directly as
+well as through the orchestrator, because CLIENT mode stands up no PAQS and an embedded engine has
+no orchestrator to start it.
 
 ---
 

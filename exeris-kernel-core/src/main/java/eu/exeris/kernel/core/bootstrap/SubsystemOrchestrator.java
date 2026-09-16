@@ -6,6 +6,7 @@ package eu.exeris.kernel.core.bootstrap;
 
 import eu.exeris.kernel.core.bootstrap.health.KernelHealthMonitor;
 import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
+import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
@@ -623,6 +624,12 @@ public final class SubsystemOrchestrator {
         long startNanos = System.nanoTime();
         LOG.log(System.Logger.Level.INFO,
                 "  start [{0}] (profile={1})", subsystem.name(), profile);
+        // This subsystem's hot-path JFR event classes initialise here, on the booting thread, and
+        // not later on the first virtual thread to emit one: a virtual thread inside a <clinit>
+        // cannot unmount, so it pins its carrier for the whole of it. The catalogue states which
+        // classes are warmed and which are deliberately left cold; the cost is counted into this
+        // subsystem's start time below, because it is part of starting it.
+        CoreJfrEventCatalogue.warmHotPath(subsystem.name());
         try {
             subsystem.start();
             LOG.log(System.Logger.Level.INFO,
