@@ -653,6 +653,32 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
 | `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |
 
+### Event classes are initialised at start-up, not at the first emit
+
+A `jdk.jfr.Event` subclass registers itself with the JFR metadata repository from its own static
+initialiser. A virtual thread that runs a `<clinit>` **cannot unmount** — the JVM reports the pin as
+`VM call to <class>.<clinit> on stack` — and every virtual thread that reaches the same class in
+that window blocks in `Object.wait` inside class initialisation, which is pinned as well
+(`Waited for initialization of <class> by another thread`). JEP 491 unpinned `synchronized` and
+`Object.wait`; it did not unpin class initialisation.
+
+Left alone, the first emit site is the worst place for that work to happen: `StreamLifecycleEvent`
+is emitted from the PAQS scheduler's `finally` block, so the first stream to complete pays for it,
+on a virtual thread, while the engine is at its busiest. Measured under the two-carrier model
+(`-Djdk.virtualThreadScheduler.parallelism=2 -Djdk.virtualThreadScheduler.maxPoolSize=2`) with a
+recording at `jdk.VirtualThreadPinned#threshold=0ms`: 0.4–1 ms per pin on an idle 12-core host,
+15–16 ms on the same host under CPU pressure.
+
+`TransportJfrWarmup` (Core) initialises the transport event classes on the thread that starts the
+engine. It is called from `PaqsScheduler` construction, and from `NativeTcpCarrier.start()` for both
+roles — **client mode stands up no PAQS**, so its `connect()` and `read()` paths would otherwise
+reach those classes cold. Adding a JFR event class to this subsystem means adding it to that set;
+one that is left out still works, it simply initialises wherever its first emit lands.
+
+The JDK's own cold classes (`sun.nio.ch.Poller`, the FFM segment internals) pin the same way and no
+runtime warm-up can reach them, which is why `CommunityClientIngressCarrierPinningTest` warms its
+path before recording and sets class-initialisation pins aside from its fence.
+
 ---
 
 ## Testing Strategy

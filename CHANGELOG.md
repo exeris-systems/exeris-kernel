@@ -87,6 +87,23 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A transport engine no longer initialises its JFR event classes on a stream's virtual thread.**
+  `StreamLifecycleEvent` is emitted from the PAQS scheduler's `finally` block, so whichever stream
+  finished first ran its `<clinit>` — and a virtual thread inside a `<clinit>` cannot unmount, while
+  every other virtual thread waiting on that initialisation blocks pinned as well. JEP 491 unpinned
+  `synchronized` and `Object.wait`; it did not unpin class initialisation. The cost is a one-time
+  carrier stall at the first stream completion, invisible where carriers are plentiful and measured
+  at 15–16 ms on a loaded host and past 20 ms on a constrained one. `TransportJfrWarmup`, called from
+  `PaqsScheduler` construction and from `NativeTcpCarrier.start()` — client mode stands up no PAQS —
+  initialises the transport event classes on the thread that starts the engine instead.
+
+- **The client-ingress carrier-pinning regression test counts blocked carriers, not a cold JVM.**
+  It warms the measured path before the recording opens, sets class-loading and class-initialisation
+  pins aside from the fence while still reporting them, and keeps its recording when it fails —
+  previously it deleted the evidence and reported a thread name, which is not a diagnosis. The
+  classifier is pinned in both directions by `CarrierPinEvidenceTest`: a native frame on the stack
+  still fails the fence.
+
 - **The embedded path ADR-084 exists for threw on its first call.** `CommunityWebSocketServerEngine`
   resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and refused when nothing had bound one
   — precisely the state a tool embedding an endpoint is in. The transport factory's own javadoc

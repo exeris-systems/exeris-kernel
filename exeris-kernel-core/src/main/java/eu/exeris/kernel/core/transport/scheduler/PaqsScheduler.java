@@ -8,6 +8,7 @@ import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.transport.jfr.PaqsHandlerFailureEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamAcceptedEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent;
+import eu.exeris.kernel.core.transport.jfr.TransportJfrWarmup;
 import eu.exeris.kernel.spi.transport.StreamHandler;
 import eu.exeris.kernel.spi.transport.StreamPriority;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -186,6 +187,9 @@ public final class PaqsScheduler implements AutoCloseable {
         this.priorityExtractor = priorityExtractor;
         this.engineName = engineName;
         this.executionBackend = executionBackend;
+        // Construction runs on the thread that builds the engine; a stream's virtual thread must
+        // never be the one to initialise a JFR event class, because a <clinit> pins its carrier.
+        TransportJfrWarmup.ensureRegistered();
     }
 
     // =========================================================================
