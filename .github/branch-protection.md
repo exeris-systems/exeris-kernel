@@ -54,6 +54,13 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   Requiring it by name pins the ruleset to a version string and a matrix edit silently drops the
   requirement. It becomes requirable when a summary job with a fixed name gathers the matrix with
   `needs:`.
+- **`JMH Benchmarks (Community + Core)`** — runs on a pull request into `main` as well as on `main`,
+  so a release integration is measured before it lands rather than after. It does not block, and
+  should not: JMH on a shared `ubuntu-latest` runner carries run-to-run variance far larger than the
+  regressions worth catching, so requiring it would fail merges on noise. It reports nothing either
+  — `publish-gh-pages-data` is gated on `push`/`schedule` and `refs/heads/main`, so no figure
+  reaches `data/jmh` from a pull-request run. Read the run artifacts when a release PR looks slow.
+
 - **`javadoc-gate`** — written to arrive red, arriving green, and the second of those is the more
   useful state.
   Gated modules are `exeris-kernel-spi` and `exeris-kernel-tck` — the two published surfaces that
@@ -102,8 +109,10 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   block an unrelated merge on its own. The CodeQL context is `Analyze (java-kotlin)` — read from
   `/repos/.../commits/<sha>/check-runs`, not from `codeql.yml`, whose job is named `Analyze Java`.
   The action renames its own check run, which is exactly why this table is derived from the API.
-- **`JMH Benchmarks (Community + Core)`**, **`Parse JFR → Lab JSON`**, **`Publish JFR Data → GH
-  Pages`** — run on push and schedule against `main` only, and report `skipping` on a pull request.
+- **`Parse JFR → Lab JSON`**, **`Publish JFR Data → GH Pages`** — run on push and schedule against
+  `main` only, and report `skipping` on a pull request. `JMH Benchmarks (Community + Core)` used to
+  belong to this group and no longer does: it also runs on a pull request into `main`, and has its
+  own entry above.
 
 ## Ruleset hygiene
 
