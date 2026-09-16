@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.tck;
 
@@ -122,6 +118,24 @@ public final class CoreHttpProviderFixture implements HttpProvider {
             Objects.requireNonNull(request, "request must not be null");
             if (!running || closed) {
                 throw new IllegalStateException("Engine is not running");
+            }
+            // ADR-074: refusing an unaddressed request is a PROVIDER contract, not a driver choice,
+            // so this fixture honours it too — a TCK case only one binding can satisfy is not a
+            // contract. The rule is deliberately narrow: resolve the peer, refuse when there is
+            // none, refuse an authority carrying no port (HttpRequest has no scheme, so there is no
+            // basis for defaulting to 80 or 443, and defaulting to the listener port is exactly what
+            // this ADR removed).
+            String authority = request.authority() != null ? request.authority() : config.defaultAuthority();
+            if (authority == null || authority.isBlank()) {
+                throw new IllegalStateException("Request carries no authority and no default is configured");
+            }
+            int close = authority.startsWith("[") ? authority.indexOf(']') : -1;
+            int separator = close >= 0 ? authority.indexOf(':', close) : authority.lastIndexOf(':');
+            if (separator <= 0 || separator == authority.length() - 1) {
+                throw new IllegalStateException("Authority must carry an explicit port (host:port), got: " + authority);
+            }
+            if (close < 0 && authority.lastIndexOf(':', separator - 1) >= 0) {
+                throw new IllegalStateException("IPv6 authority must be bracketed as [address]:port, got: " + authority);
             }
             return HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1);
         }

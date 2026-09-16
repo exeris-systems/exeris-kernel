@@ -5,8 +5,9 @@ on:
     # `development/**` as well as main, deliberately. Scanning only PRs into main meant a
     # dependency or action introduced during a milestone stayed unscanned until the release cut,
     # where it surfaces as a red gate on an 87-commit PR that nobody wants to reopen — which is
-    # exactly how the vulnerable `sonarqube-scan-action` pin reached the v0.11 cut. The scan
-    # belongs where the dependency actually enters the tree.
+    # exactly how the vulnerable `sonarqube-scan-action` pin reached the v0.11 cut (that action is
+    # no longer used — the history is why this trigger is shaped as it is). The scan belongs where
+    # the dependency actually enters the tree.
     branches: [ "main", "development/**" ]
 
 permissions:
@@ -44,18 +45,30 @@ jobs:
           # POMs declare as dependencies of each other. They report an unknown licence because the
           # dependency graph reads each module POM on its own and does not resolve the parent that
           # carries the `<licenses>` block — so the warning is about POM inheritance, not about an
-          # unlicensed artifact. The licence is Apache-2.0 with Commons Clause, declared once in
-          # `exeris-kernel-parent/pom.xml` and shipped as LICENSE-COMMUNITY.
+          # unlicensed artifact. The licence is Apache-2.0, declared once in the ROOT `pom.xml`
+          # and shipped as LICENSE.
           #
-          # `sonarqube-scan-action` is LGPL-3.0, which the deny list above rejects — correctly for a
-          # dependency, wrongly for this one. The deny list exists to keep copyleft out of the
-          # DISTRIBUTED kernel; a GitHub Action is build infrastructure that runs on a runner,
-          # links against nothing we ship, and is never redistributed. (It only became visible once
-          # the SHA pin made the licence resolvable at all — under the `@v5` tag it reported as
-          # unknown and slipped through as a warning.) Excluding the whole action rather than the
-          # pin, so a Dependabot bump does not re-trip the gate.
+          # It moved there from `exeris-kernel-parent/pom.xml` in v0.12: two published coordinates
+          # (`exeris-kernel-bom`, `exeris-kernel-build-config`) parent to the root rather than to
+          # that module, so they inherited no licence at all. Note what did NOT change — the reason
+          # this scanner reports unknown is still parent resolution, not the location of the block,
+          # so moving it fixes the effective POMs and leaves this warning exactly as it was.
+          #
+          # `sonar-maven-plugin` is LGPL-3.0 (inherited from `org.sonarsource.parent:parent`),
+          # which the deny list above rejects — correctly for a dependency, wrongly for this one.
+          # The deny list exists to keep copyleft out of the DISTRIBUTED kernel; an analyser invoked
+          # after `verify` is build infrastructure that links against nothing we ship and is never
+          # redistributed.
+          #
+          # It inherits the exception `sonarqube-scan-action` used to hold, for the same reason and
+          # by the same argument: v0.12 replaced that action with this plugin, so the action is gone
+          # from every workflow. What is NOT established is whether this scanner surfaces Maven
+          # PLUGINS at all, as opposed to dependencies — so this entry may well be inert. It is left
+          # in because an inert line costs nothing and the alternative is discovering the answer as
+          # a red supply-chain gate on a release PR, which is precisely how the action's own licence
+          # first surfaced.
           allow-dependencies-licenses: >
-            pkg:githubactions/SonarSource/sonarqube-scan-action,
+            pkg:maven/org.sonarsource.scanner.maven/sonar-maven-plugin,
             pkg:maven/com.puppycrawl.tools/checkstyle,
             pkg:maven/org.jacoco/jacoco-maven-plugin,
             pkg:maven/eu.exeris/exeris-kernel-bom,

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.telemetry;
 
@@ -43,7 +39,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>Safe for concurrent invocation from any number of Virtual Threads.
  * {@link #close()} is idempotent.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.CyclomaticComplexity") // writeLoop/close() sequential complexity; no clean decomposition
 public final class FileSink implements TelemetrySink {
@@ -64,8 +60,13 @@ public final class FileSink implements TelemetrySink {
     private volatile boolean running = true;
 
     /**
+     * Opens {@code logPath} for append (probing it eagerly so a bad path fails the
+     * constructor rather than surfacing later on the writer thread) and starts the
+     * dedicated writer virtual thread.
+     *
      * @param logPath       target file; created if absent, appended to if present
      * @param maxQueueDepth maximum number of events buffered before drops start
+     * @throws UncheckedIOException if {@code logPath} cannot be opened for writing
      */
     public FileSink(Path logPath, int maxQueueDepth) {
         // Fail-fast: validate path is writable before starting the writer thread.
@@ -87,6 +88,15 @@ public final class FileSink implements TelemetrySink {
     // TelemetrySink
     // =========================================================================
 
+    /**
+     * Enqueues {@code event} for the writer thread, or does nothing once this sink
+     * is closed.
+     *
+     * <p>Never blocks the caller: if the bounded queue is full the event is dropped
+     * and {@link #droppedCount()} is incremented instead.
+     *
+     * @param event the kernel event to record; never {@code null}
+     */
     @Override
     public void emit(KernelEvent event) {
         if (!running) {
@@ -104,21 +114,34 @@ public final class FileSink implements TelemetrySink {
         // Use JfrTelemetrySink for structured metric capture.
     }
 
+    /** Gauge updates are not persisted to file (too noisy). Use {@link JfrTelemetrySink} for metrics. */
     @Override
     public void gauge(String name, long value) {
         // Intentionally empty: gauge values are not written to the file log.
     }
 
+    /** Latency samples are not persisted to file (too noisy). Use {@link JfrTelemetrySink} for metrics. */
     @Override
     public void latency(String name, long nanoseconds) {
         // Intentionally empty: latency samples are not written to the file log.
     }
 
+    /**
+     * Returns a name that embeds the target file path, so distinct instances
+     * writing to different files are individually identifiable in diagnostics.
+     */
     @Override
     public String sinkName() {
         return "ExerisCommunity/FileSink[" + logPath + "]";
     }
 
+    /**
+     * Stops accepting new events, signals the writer thread to drain the queue and
+     * exit, and waits up to five seconds for it before interrupting it.
+     *
+     * <p>Idempotent: a call after the sink is already closed re-enters this method
+     * but performs no further action once the writer thread has already exited.
+     */
     @Override
     public void close() {
         if (running) {
@@ -162,7 +185,7 @@ public final class FileSink implements TelemetrySink {
     // Diagnostics
     // =========================================================================
 
-    /** Returns events dropped due to queue saturation since startup. Accessible via JFR or stats API. */
+    /** Returns the number of events dropped since startup due to queue saturation. */
     /* default */ long droppedCount() {
         return droppedCount.get();
     }

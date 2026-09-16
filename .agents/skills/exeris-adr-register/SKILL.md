@@ -13,7 +13,7 @@ Prevent ADR-number collisions and wrong-shape decision docs. ADR numbering is a 
 - A change's architectural intent or boundary meaning is changing and needs a decision record.
 
 ## Step 0 — Pick the document shape FIRST
-Three shapes for three question kinds (templates in `~/exeris-systems/exeris-docs/templates/`); they are NOT interchangeable:
+Three shapes for three question kinds (templates in `templates/` in the `exeris-systems/exeris-docs` repository); they are NOT interchangeable:
 - **Research** (`RESEARCH-TEMPLATE.md`) — falsifiable hypothesis, lab-notebook, JMH/JFR-driven. Branch-scoped (`research/<slug>`). **No central registry.**
 - **RFC** (`RFC-TEMPLATE.md`) — multi-option strategic question. File: `RFC-YYYY-MM-DD <Short Title>.md`. **No central registry.**
 - **ADR** (`ADR-TEMPLATE.md`) — decision ALREADY made. File: `ADR-NNN <Short Title>.md`. **Enters the registry.**
@@ -21,7 +21,9 @@ Three shapes for three question kinds (templates in `~/exeris-systems/exeris-doc
 If upstream measurement or option comparison is missing, propose Research or RFC before going straight to ADR.
 
 ## Step 1 — Reserve the number BEFORE writing content (ADR only)
-- Open `adr-index.md` in the separate `exeris-docs` repo (locally `~/exeris-systems/exeris-docs/adr-index.md`; requires that repo checked out alongside the kernel) and find the next free slot (numbering is chronological by decision date with reserved gap-fillers).
+- Open `adr-index.md` in the separate `exeris-systems/exeris-docs` repository — checked out as a
+  sibling of this one on the founder's workstation, which is a convenience and not something to
+  rely on: if it is not there, clone it or read the file on github.com — and find the next free slot (numbering is chronological by decision date with reserved gap-fillers).
 - Reserve the row there FIRST. Only then write the ADR body. NEVER write content first.
 - Scope of the registry: `exeris-*` repos plus `Corelio/` stack-level decisions. `budgetHQ/` and `pbm/` have their own internal namespaces — they do NOT enter `adr-index.md`.
 - Out of scope: refactor-only ADRs (those live in PR descriptions / commit history), and Polish-language kernel-enterprise refactor notes — never promote them.
@@ -37,7 +39,7 @@ If upstream measurement or option comparison is missing, propose Research or RFC
 - This step requires `exeris-docs` access. If it is not available in the current session, do NOT skip it silently — open a follow-up issue/note to register (or reserve) the number so the global namespace stays collision-safe.
 
 ## Business decisions are separate
-Legal / IP / financial / procurement decisions go in the private decision registry in `~/exeris-systems/exeris-business/`, NOT the public tech registry. Public ADRs invoke a business policy descriptively (e.g. "the IP detachment commercial policy"), never by an internal id.
+Legal / IP / financial / procurement decisions go in the private decision registry in the `exeris-business` repository, NOT the public tech registry. Public ADRs invoke a business policy descriptively (e.g. "the IP detachment commercial policy"), never by an internal id.
 
 ## Terminology guard
 Exeris is pre-1.0 / TRL-3 with no external SPI consumers — do NOT use "breaking change" framing. Reserve that vocabulary for 1.0.0 GA / TRL-5+.

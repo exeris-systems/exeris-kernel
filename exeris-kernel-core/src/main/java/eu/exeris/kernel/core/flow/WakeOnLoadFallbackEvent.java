@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -16,10 +12,14 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when {@code lookupParked} falls back to the durable
+ * JFR event emitted when a wake falls back to the durable
  * {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore} because the saga
  * was not present in the in-memory {@code parkedInstances} or {@code liveInstances}
  * indices on this engine instance.
+ *
+ * <p>Emitted at the store read itself, so every path that consults the store reports it -
+ * {@code lookupParked}, the key-addressed {@code wake(long, long)}, and
+ * {@code wake(FlowContext)}.
  *
  * <p>This is the observability primitive operators use to monitor distributed
  * choreography wake patterns: a non-zero rate of fallback events indicates that
@@ -31,7 +31,7 @@ import jdk.jfr.StackTrace;
  * that the {@code restored} flag distinguishes "saga genuinely cross-engine"
  * from "stale wake event for an unknown instance".
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @Name("eu.exeris.kernel.flow.WakeOnLoadFallback")
 @Label("Distributed Saga — Wake-on-Load Fallback")

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.sse;
 
@@ -27,9 +23,9 @@ import java.lang.foreign.ValueLayout;
  * ({@link #traverse}): {@link #encodedLength(StreamEvent)} measures the UTF-8 byte block and
  * {@link #encodeInto(StreamEvent, MemorySegment, long)} writes it straight into the egress
  * {@link eu.exeris.kernel.spi.memory.LoanedBuffer} — no intermediate {@code StringBuilder},
- * {@code String}, or {@code byte[]}, and no array→segment copy on the streaming hot path (the earlier
- * {@code StringBuilder → getBytes → copy} shape deviated from the {@code docs/performance-contract.md}
- * §2.2.1 0 B/req target). Because both passes drive the same {@link ByteSink} traversal, the measured
+ * {@code String}, or {@code byte[]}, and no array→segment copy on the streaming hot path: the
+ * copies {@code docs/performance-contract.md} §2.2's 0 B/req allocation target is aimed at.
+ * Because both passes drive the same {@link ByteSink} traversal, the measured
  * length and the written bytes are byte-exact by construction. Unpaired UTF-16 surrogates are emitted
  * as {@code '?'} — identical to {@link String#getBytes(java.nio.charset.Charset)} with UTF-8. The heap
  * {@link #encode(StreamEvent)} wrapper is retained for tests and non-hot-path callers.
@@ -54,7 +50,7 @@ import java.lang.foreign.ValueLayout;
  * field makes the client ignore it — WHATWG HTML §9.2). The {@code data} payload is split on CR, LF, or
  * CRLF into one {@code data:} line each, faithfully reproducing multi-line payloads on the client.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 // The class-level cyclomatic sum reflects a UTF-8 encoder split into small, single-purpose methods
 // (1/2/3/4-byte code-point branches + the field structure); it is inherent to correct encoding, not

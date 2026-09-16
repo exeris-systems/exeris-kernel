@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.transport;
 
@@ -17,19 +13,13 @@ import java.util.Objects;
  * Thrown when a transport-level operation fails (bind, start, send, receive, shutdown).
  *
  * <h2>Zero-Allocation Contract (The Wall)</h2>
- * <p>The legacy implementation was a thin checked {@code Exception} wrapper with no
- * structured context. This version is a full {@link ExerisKernelException} that:
- * <ul>
- *   <li>carries a typed {@code EX-NET-*} error code</li>
- *   <li>stores transport name and port (or byte count) in {@link #rawArgs()} for
- *       binary Glass-Box serialization</li>
- *   <li>extends {@code RuntimeException} – transport failures are fatal in kernel context</li>
- * </ul>
+ * <p>A full {@link ExerisKernelException}: every instance carries a typed {@code EX-NET-*} error
+ * code and stores the transport name and port (or byte count) in {@link #rawArgs()} for binary
+ * Glass-Box serialization.
  *
- * <h2>Checked → Unchecked Migration</h2>
- * <p>The legacy class extended {@code Exception} (checked). Transport operations at
- * kernel level are unrecoverable in place – the caller is always a {@code StructuredTaskScope}
- * or a top-level bootstrap handler. Checked exceptions here only force boilerplate.
+ * <p>Unchecked, because transport operations at kernel level are unrecoverable in place — the
+ * caller is always a {@code StructuredTaskScope} or a top-level bootstrap handler, for which a
+ * checked exception would only force boilerplate.
  *
  * <h2>Error Code Variants</h2>
  * <p>Use the appropriate factory method to ensure the correct {@code EX-NET-*} code is recorded:
@@ -67,7 +57,7 @@ import java.util.Objects;
  *   index 1 → int    port   (-1 if not applicable)
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class TransportException extends ExerisKernelException {
 

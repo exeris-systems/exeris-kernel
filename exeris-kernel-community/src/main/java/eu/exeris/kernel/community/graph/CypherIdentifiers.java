@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.graph;
 
@@ -19,7 +15,7 @@ import java.util.regex.Pattern;
  * splice into a query string must match {@code [A-Za-z][A-Za-z0-9_]*} — the rule both
  * Neo4j and Cypher admit for valid identifiers.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class CypherIdentifiers {
 
@@ -34,8 +30,9 @@ final class CypherIdentifiers {
      *
      * @param identifier candidate string
      * @return {@code identifier} unchanged when valid
-     * @throws GraphQueryException when {@code identifier} is null or contains characters
-     *                             other than ASCII letters, digits, or underscores
+     * @throws GraphQueryException ({@code EX-GRPH-5002}) when {@code identifier} is null or
+     *                             contains characters other than ASCII letters, digits, or
+     *                             underscores
      */
     /* default */ static String requireIdentifier(String identifier) {
         if (identifier == null || !PATTERN.matcher(identifier).matches()) {

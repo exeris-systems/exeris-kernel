@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -15,7 +11,7 @@ package eu.exeris.kernel.community.security;
  * (rotation), never on the hot verification path. The reason string is a short, opaque
  * label and must never carry key material or token bytes (secret-safe).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 /* default */ class KeySetRefreshException extends Exception {
 

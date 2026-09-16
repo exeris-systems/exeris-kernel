@@ -1,0 +1,92 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package eu.exeris.kernel.community.transport;
+
+import eu.exeris.kernel.spi.config.ConfigProvider;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+
+/**
+ * Test support: a {@link ConfigProvider} backed by two literal maps.
+ *
+ * <p>Public only so the memory-subsystem tests can reach it too; still test scope, and still
+ * not the published testkit.
+ *
+ * <p>Bootstrap resolution is read-once and typed per key, so the tests that assert which keys a
+ * boot path honours need nothing more than this. Test scope only — the testkit module is published,
+ * and a stub this narrow does not belong on a consumer-facing surface.
+ *
+ * @since 0.12.0
+ */
+public final class MapConfigProvider implements ConfigProvider {
+
+    private final Map<String, String> strings;
+    private final Map<String, Integer> ints;
+    private final Map<String, Long> longs;
+
+    public MapConfigProvider(Map<String, String> strings, Map<String, Integer> ints) {
+        this(strings, ints, Map.of());
+    }
+
+    /**
+     * @param strings string-typed keys
+     * @param ints    int-typed keys
+     * @param longs   long-typed keys — {@code getLong} returned empty unconditionally until 0.12,
+     *                so no test could assert that a boot path honours a long key at all, and every
+     *                body-size and timeout limit is one
+     */
+    public MapConfigProvider(Map<String, String> strings, Map<String, Integer> ints,
+                             Map<String, Long> longs) {
+        this.strings = Map.copyOf(strings);
+        this.ints = Map.copyOf(ints);
+        this.longs = Map.copyOf(longs);
+    }
+
+    public static MapConfigProvider ofInts(Map<String, Integer> ints) {
+        return new MapConfigProvider(Map.of(), ints, Map.of());
+    }
+
+    public static MapConfigProvider ofLongs(Map<String, Long> longs) {
+        return new MapConfigProvider(Map.of(), Map.of(), longs);
+    }
+
+    @Override
+    public Supplier<KernelSettings> kernelSettings() {
+        return KernelSettings::defaults;
+    }
+
+    @Override
+    public Optional<String> getString(String key) {
+        return Optional.ofNullable(strings.get(key));
+    }
+
+    @Override
+    public Optional<Integer> getInt(String key) {
+        return Optional.ofNullable(ints.get(key));
+    }
+
+    @Override
+    public Optional<Long> getLong(String key) {
+        return Optional.ofNullable(longs.get(key));
+    }
+
+    @Override
+    public Optional<Boolean> getBoolean(String key) {
+        return Optional.empty();
+    }
+
+    @Override
+    public <T> Optional<T> get(String key, Class<T> type) {
+        return Optional.empty();
+    }
+
+    @Override
+    public void watch(String file, String key, Consumer<Object> callback) {
+        // no-op — every key these tests cover is read once at bootstrap
+    }
+}

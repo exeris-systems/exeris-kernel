@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -21,9 +17,11 @@ import java.util.Base64;
  * Community {@link KernelPasswordEncoder} using Argon2id via Bouncy Castle.
  *
  * <p>Produces PHC-format output: {@code $argon2id$v=19$m=...,t=...,p=...$<salt>$<hash>}.
- * Salt is 16 bytes from {@link SecureRandom}. All internal byte array copies are zeroed on exit.
+ * Salt is 16 bytes from {@link SecureRandom}. The raw password bytes and the freshly computed
+ * hash are zeroed before {@link #encode(char[])} or {@link #matches(char[], String)} returns;
+ * the salt and a hash decoded from an already-encoded PHC string are not.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class Argon2idPasswordEncoder implements KernelPasswordEncoder {
 
@@ -32,6 +30,13 @@ public final class Argon2idPasswordEncoder implements KernelPasswordEncoder {
 
 	private final PasswordEncoderConfig config;
 
+	/**
+	 * Configures Argon2id hashing and verification with the given tuning parameters.
+	 *
+	 * @param config the memory cost, iteration count, parallelism and hash length applied to
+	 *               every {@link #encode(char[])} call
+	 * @throws IllegalArgumentException if {@code config} is {@code null}
+	 */
 	public Argon2idPasswordEncoder(PasswordEncoderConfig config) {
 		if (config == null) {
 			throw new IllegalArgumentException("config must not be null");
@@ -39,6 +44,14 @@ public final class Argon2idPasswordEncoder implements KernelPasswordEncoder {
 		this.config = config;
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @implNote Generates a fresh 16-byte {@link SecureRandom} salt for every call and hashes
+	 *           with Bouncy Castle's Argon2id generator using this encoder's configured cost
+	 *           parameters, encoding the result in the PHC form described in the type comment.
+	 *           The raw password bytes and the computed hash are zeroed before returning.
+	 */
 	@Override
 	public String encode(char[] raw) {
 		if (raw == null || raw.length == 0) {
@@ -60,6 +73,17 @@ public final class Argon2idPasswordEncoder implements KernelPasswordEncoder {
 		}
 	}
 
+	/**
+	 * {@inheritDoc}
+	 *
+	 * @throws IllegalArgumentException if {@code raw} or {@code encoded} is {@code null} or
+	 *         empty, or if {@code encoded} is not a well-formed {@code $argon2id$v=19$...} PHC
+	 *         string
+	 * @implNote Parses {@code encoded}, re-derives a candidate hash with the parsed salt and
+	 *           cost parameters using Bouncy Castle's Argon2id generator, and compares it to the
+	 *           stored hash in constant time. The raw password bytes and the candidate hash are
+	 *           zeroed before returning.
+	 */
 	@Override
 	public boolean matches(char[] raw, String encoded) {
 		if (raw == null || raw.length == 0) {

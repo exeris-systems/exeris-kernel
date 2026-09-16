@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.memory;
 
@@ -17,15 +13,19 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted for sampled Community-tier buffer release.
+ * JFR event recording one sampled Community-tier off-heap buffer release.
  *
  * <h2>JFR-First Contract</h2>
  * <p>Every allocation lifecycle event MUST be observable via Java Flight Recorder
- * without any external agent. This event is the release-side counterpart of
- * {@link CommunityAllocationEvent} and is emitted when a buffer's reference count
- * drops to zero and the buffer is released.
+ * without any external agent. {@link CommunityReleaseAccounting#release(long)} calls
+ * {@link #emit(long, long)} only when the allocator's {@code jfrEnabled} flag is
+ * {@code true} and {@link CommunityMemoryJfrSampling#shouldEmit(long)} also returns
+ * {@code true} for the release's running count; {@link #emit(long, long)} itself
+ * commits only when the Flight Recorder is initialized and this event type is enabled.
+ * This is the release-side counterpart of {@link CommunityAllocationEvent}, reached on the
+ * 1-to-0 reference-count transition (see {@link CommunityLoanedBuffer#onRelease()}).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see CommunityAllocationEvent
  */
 @Name("eu.exeris.kernel.memory.CommunityRelease")

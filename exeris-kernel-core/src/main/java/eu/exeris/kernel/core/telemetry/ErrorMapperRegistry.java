@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.telemetry;
 
@@ -25,12 +21,12 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * io_uring, or any transport driver class.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * TransportErrorCode code = ErrorMapperRegistry.map(exception);
  * int wireCode = code.wireCode(); // send as H3 / QUIC error frame
- * }</pre>
+ * }
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // CyclomaticComplexity: mapCode() dispatches across all known EX-[DOMAIN] prefixes.
 // A switch on 10 domain prefixes is the minimal O(1) structure — any factoring would

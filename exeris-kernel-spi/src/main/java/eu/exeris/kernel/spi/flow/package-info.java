@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * SPI: Flow Engine subsystem — pluggable saga/flow orchestration layer.
@@ -43,7 +39,7 @@
  * {@link eu.exeris.kernel.spi.context.KernelProviders#FLOW_ENGINE} once during bootstrap.
  * All subsystems read it via the scoped slot — zero static singletons.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.flow;
 

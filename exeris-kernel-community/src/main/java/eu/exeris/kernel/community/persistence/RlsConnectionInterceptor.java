@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -26,14 +22,17 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * <h2>Isolation Strategy Routing</h2>
  * <table>
+ *   <caption>SQL issued per isolation strategy</caption>
  *   <tr><th>Strategy</th><th>SQL issued</th></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SHARED}</td>
  *       <td>{@code set_config('exeris.tenant_id', $1, false)} and
- *           {@code set_config('exeris.shared_scope', $2, false)} in one statement</td></tr>
+ *           {@code set_config('exeris.shared_scope', $2, false)} in one statement,
+ *           then {@code RESET search_path}</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA}</td>
  *       <td>{@code SET search_path TO &lt;schemaName&gt;, public}, then the same session-key statement</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#DEDICATED}</td>
- *       <td>Routing is handled at the pool level by the engine; the session-key statement is issued anyway</td></tr>
+ *       <td>Routing is handled at the pool level by the engine; the session-key statement
+ *           is issued anyway, then {@code RESET search_path}</td></tr>
  * </table>
  *
  * <p><b>Every strategy publishes both session keys.</b> Physical placement decides which connection a
@@ -48,13 +47,35 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * does not ship and cannot introspect. A conforming policy widens the read predicate and leaves the write
  * predicate pinned to the owner:
  *
- * <pre>{@code
- * CREATE POLICY tenant_isolation ON <table>
+ * {@snippet lang="sql" :
+ * ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ * ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
+ *
+ * CREATE POLICY tenant_isolation ON table_name
  *   USING (tenant_id = current_setting('exeris.tenant_id', true)
  *          OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL
  *              AND shared_scope = current_setting('exeris.shared_scope', true)))
  *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true));
- * }</pre>
+ * }
+ *
+ * <p><b>{@code FORCE} is not optional, and leaving it out fails open.</b> PostgreSQL exempts a table's
+ * owner from that table's own policies unless the table is forced. A deployment whose application
+ * connects as the role owning its tables — the default in every quick-start — therefore gets a policy
+ * that is enabled, listed in {@code pg_policies}, and never applied: no error, no warning, other
+ * tenants' rows in every read. The three integration tests that hold this contract
+ * ({@code CommunityPersistenceTenantIsolationIT}, {@code CommunityPersistenceSharedScopeIT},
+ * {@code CommunityPersistenceIsolationLeakTckIT}) all issue both statements <em>and</em> connect as a
+ * non-owner role, so what they verify is the property a forced table has.
+ *
+ * <p><b>The comparison above is text-to-text, and that assumption is load-bearing.</b>
+ * {@code current_setting} returns {@code text} and the tested schema declares {@code tenant_id TEXT},
+ * so an unset key arrives as {@code ''}, matches no row, and fails closed. A deployment whose
+ * {@code tenant_id} column is {@code uuid} must cast — and the cast turns that same {@code ''} into
+ * {@code invalid input syntax for type uuid: ""} on every query against every scoped table, because
+ * {@link #publishSessionKeys} publishes the key unconditionally (as {@code ''} when the context
+ * declares no tenant) and a session-scoped setting survives connection reuse. Such a policy needs the
+ * empty-string guard on the tenant arm too, the way the shared-scope arm already carries it:
+ * {@code tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid}.
  *
  * <p>Note that {@code WITH CHECK} is unchanged from the tenant-private policy — owner-scoped write is
  * what the existing clause already expresses, so widening reads does not require relaxing writes. A
@@ -75,7 +96,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <p>Uses {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} (ScopedValue, JEP 506) —
  * zero {@code ThreadLocal}, zero VT pinning risk.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see ConnectionInterceptor
  * @see StorageContext
  * @see eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT
@@ -95,7 +116,8 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
      * <p>Uses parameterised bind to prevent SQL injection (isolationKey is untrusted data).
      */
     private static final String SQL_SET_SESSION_KEYS =
-            "SELECT set_config('exeris.tenant_id', ?, false), set_config('exeris.shared_scope', ?, false)";
+            "SELECT set_config('" + SESSION_KEY_TENANT_ID + "', ?, false), "
+                    + "set_config('" + SESSION_KEY_SHARED_SCOPE + "', ?, false)";
 
     private static final String SQL_SET_SCHEMA_PREFIX = "SET search_path TO ";
     private static final String SQL_SET_SCHEMA_SUFFIX = ", public";
@@ -248,6 +270,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         }
     }
 
+    /**
+     * Points {@code search_path} at the request's declared schema (SEPARATED_SCHEMA only).
+     *
+     * <p>Requires a non-blank schema name and refuses anything {@link PostgresIdentifier#isSafe}
+     * does not accept — {@code SET search_path} takes an identifier, not a bind parameter, so an
+     * unvalidated value would itself be the injection vector.
+     */
     private static void injectSchemaPath(PersistenceConnection connection,
                                          StorageContext storageContext) {
         String schemaName = storageContext.schemaName().orElse(null);

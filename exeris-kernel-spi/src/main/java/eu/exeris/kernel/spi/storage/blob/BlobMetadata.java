@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.storage.blob;
 
@@ -20,7 +16,7 @@ import java.util.Objects;
  * @param ref         the object this describes
  * @param sizeBytes   object size in bytes; never negative
  * @param contentType the declared media type, or {@code "application/octet-stream"} when none was given
- * @since 0.11.0
+ * @since 0.11
  */
 public record BlobMetadata(BlobRef ref, long sizeBytes, String contentType) {
 

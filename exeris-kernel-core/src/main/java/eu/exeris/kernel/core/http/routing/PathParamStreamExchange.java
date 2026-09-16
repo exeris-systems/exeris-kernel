@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.routing;
 
@@ -26,7 +22,7 @@ import java.util.Objects;
  * <p>Only wrapped when a template actually captured something — an exact stream route gets the engine
  * itself, so the common path pays nothing.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class PathParamStreamExchange implements HttpStreamExchange {
 

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.telemetry;
 
@@ -59,7 +55,7 @@ import java.util.concurrent.locks.LockSupport;
  * The single internal consumer is the only thread that calls {@code emit} on
  * wrapped sinks, simplifying their thread-safety story.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @SuppressWarnings({
     "PMD.CloseResource",                  // wrapped sinks are owned externally; close() closes them once
@@ -137,12 +133,20 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         return sink;
     }
 
-    /** Returns the configured ring capacity (informational; useful for diagnostics). */
+    /**
+     * Returns the configured ring capacity (informational; useful for diagnostics).
+     *
+     * @return the ring capacity in events, as passed to {@link #start(List, int, Duration)}
+     */
     public int capacity() {
         return capacity;
     }
 
-    /** Returns the running total of dropped events since construction. */
+    /**
+     * Returns the running total of dropped events since construction.
+     *
+     * @return the number of events discarded because the ring was full when {@link #emit} was called
+     */
     public long droppedCount() {
         return droppedCount.sum();
     }

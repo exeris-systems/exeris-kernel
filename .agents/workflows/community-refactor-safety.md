@@ -1,6 +1,14 @@
 ---
+name: community-refactor-safety
 description: Review Exeris Community refactor safety for hidden contract drift, boundary/dependency impact, and proportional test/doc implications.
 argument-hint: Refactor diff or scope to validate
+steps:
+  - {skill: exeris-triage}
+  - {agent: exeris-tck}
+  - {skill: exeris-tck-first, when: "the refactor moved anything observable through the SPI"}
+gates:
+  - ci:maven / build-and-verify
+  - ci:maven / spi-compatibility-gate
 ---
 
 Review this refactor for Exeris Community/Open-Core safety.

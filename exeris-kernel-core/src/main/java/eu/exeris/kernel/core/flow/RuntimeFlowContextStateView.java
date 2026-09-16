@@ -1,15 +1,20 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
 import eu.exeris.kernel.spi.flow.model.FlowState;
 
+/**
+ * Core: the mutable, engine-owned state a {@link RuntimeFlowContext} reads to answer
+ * {@link eu.exeris.kernel.spi.flow.model.FlowContext#currentStep()},
+ * {@link eu.exeris.kernel.spi.flow.model.FlowContext#state()} and
+ * {@link eu.exeris.kernel.spi.flow.model.FlowContext#timeoutNanos()}.
+ *
+ * <p>Implemented by {@link RuntimeFlowInstance} and kept as a narrow seam so
+ * {@link RuntimeFlowContext} depends on these three accessors rather than the whole instance.
+ */
 /* default */ interface RuntimeFlowContextStateView {
 
     int currentStep();

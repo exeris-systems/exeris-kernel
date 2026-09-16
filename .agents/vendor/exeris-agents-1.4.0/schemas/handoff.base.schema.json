@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Handoff (base)",
+  "description": "One agent passing work to another. Referenced by triage-result and verdict rather than emitted alone. agents-md-schema.md rule 13.\n\nThis is the BASE: it fixes the shape and leaves the role vocabulary to the repository, because role names are per-repository by design (agents-md-schema.md rule 10 keeps the repository prefix). A consuming repository composes it with `allOf` and narrows `from` and `to` to its own enum. It may only narrow: `additionalProperties` is false here and every property is declared, so a repository cannot add a field to a shape the bundle owns.\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "from",
+    "to",
+    "reason",
+    "blocking"
+  ],
+  "properties": {
+    "from": {
+      "$ref": "#/$defs/agentRef"
+    },
+    "to": {
+      "$ref": "#/$defs/agentRef"
+    },
+    "reason": {
+      "description": "Why this role and not the current one. Names the constraint the receiving role owns.",
+      "type": "string",
+      "minLength": 10
+    },
+    "blocking": {
+      "description": "true when the sender may not proceed until the receiver has answered. A role that owns something expensive to correct later \u2014 a reserved number, a chosen template \u2014 is blocking by design.",
+      "type": "boolean"
+    },
+    "context_refs": {
+      "description": "Paths or record ids the receiver needs. Repository-relative: a path under a home directory is not portable and the agent-file check reports it.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "agentRef": {
+      "description": "A role name, or `human`. Narrowed to the repository's own enum by the composing schema.",
+      "type": "string",
+      "pattern": "^(human|[a-z0-9]+(-[a-z0-9]+)*)$",
+      "maxLength": 64
+    }
+  }
+}

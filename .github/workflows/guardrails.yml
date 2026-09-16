@@ -1,0 +1,136 @@
+# The per-repo footprint of ADR-085 §C.11. Everything it runs lives in exeris-systems/.github;
+# this file only says which gates apply here and how strictly.
+#
+# Nothing in the repository ran these before: the documentation standards were binding but
+# unenforced, and the L2 documentation review existed only inside a Cowork session, so a standard
+# could be contradicted with nothing to say so.
+#
+# What this file does NOT do is block a merge. None of the five jobs below is a required status
+# check -- the required contexts are Build & TCK Verification, SPI Compatibility Gate and SonarCloud
+# Code Analysis -- so a red gate here annotates the pull request and a green merge is still
+# permitted. Making one required is a branch-protection change, not a change to this file. Say
+# "runs" rather than "enforces" anywhere this file is described.
+name: guardrails
+on:
+  pull_request:
+    # labeled/unlabeled matter: adr-conventions rule 9 requires the `adr` label on a PR that
+    # amends an ADR, so adding the label after a red run has to re-run the gate.
+    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled]
+concurrency:
+  group: guardrails-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+# A called workflow can only NARROW what the caller grants, never raise it, so this block is the
+# union of what every called workflow declares — not a wish list. Omitting the last two is what
+# made the first push of this file an invalid workflow: "requesting 'issues: read, id-token: write',
+# but is only allowed 'issues: none, id-token: none'".
+#
+# Granting them here does not widen docs-lint, commit-lint or pr-body-check: a called workflow's
+# jobs receive what its OWN permissions block declares, capped by this one. `id-token: write` is
+# docs-review's, for the OIDC exchange claude-code-action performs; `issues: read` lets the routine
+# read the debt issues that issue-conventions.md rule 6 says a review finding becomes.
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  id-token: write
+
+# Bumped 2026-09-09 from 1d9a445a, eight commits back, for a reason worth writing down: a pinned
+# `uses:` did NOT pin the scripts the workflow calls. That repository checked itself out with no
+# `ref`, so the scripts always came from its default branch — harmless while scripts are only added,
+# and a hard failure the moment one is removed. #23 there removed `scripts/agents_file_check.py`,
+# and this repository's `docs / docs-lint` went to exit code 2 within minutes and stayed there.
+# `docs-lint.yml` now takes `ref: ${{ github.job_workflow_sha }}`; the other six shared workflows
+# still do not, so they read that repository's default branch whatever this file says.
+#
+# Measured before bumping: `commit-lint.yml`, `pr-body-check.yml` and `docs-review.yml` are
+# byte-identical across those eight commits, so three of the five are no-ops. `javadoc-gate.yml`
+# grew 197 lines but its one required input became optional and every new input defaults to the
+# previous behaviour, so the call below still means what it meant.
+#
+# Bumped again 2026-09-10, one commit, for a reason this file can state exactly: .github#28 stops
+# `frontmatter_check.py` requiring `last-verified` of a record type and stops
+# `frontmatter_backfill.py` writing it. Because `docs-lint.yml` is the one shared workflow that
+# takes `ref: ${{ github.job_workflow_sha }}`, its scripts follow this pin — so the bump is what
+# lets the same pull request delete the key from 26 records rather than needing two. Measured both
+# ways rather than assumed: those 26 files report 26 errors under 0509e289 and 0 under this pin.
+# The other four move with it and change nothing — the compare is one commit touching only
+# `scripts/_common.py`, `frontmatter_check.py` and `frontmatter_backfill.py`, no workflow file.
+#
+# Pinned by commit SHA, like every other `uses:` in this repository — `dependabot.yml` explains
+# why: a SHA is immune to a moved tag but invisible to a reader, and Dependabot is what keeps it
+# current, rewriting the SHA and the trailing comment together. SonarCloud enforces the same rule
+# and it is a required check here.
+#
+# The trailing comment names the ref the SHA came from, not a version and not a date. That
+# repository publishes no tags and no releases, so there is no version to name; and a date would
+# rot, because Dependabot updates a version comment by finding the PREVIOUS VERSION STRING in it
+# and replacing that (dependabot-core#5951) — it has no rule for a date, so the SHA would move and
+# the date would not. `@main` stays true whichever commit the SHA is.
+#
+# Whether Dependabot bumps these at all is worth watching on the first weekly run: it does cover
+# reusable-workflow `uses:` (GitHub docs), and for a SHA with no tag behind it, it moves the pin to
+# the branch HEAD (dependabot-core#13466, #14716) — which is the behaviour wanted here. Both are
+# reports about other people's repositories, not something observed in this one.
+
+jobs:
+  docs:
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+    with:
+      # ramp, not strict, and deliberately: of the 120 files the gate reads, 54 carry no frontmatter
+      # at all. In ramp the gate fails only on files the pull request touches, so a PR is answerable
+      # for what it edits and not for a backlog it did not create. Flip to strict when the backfill
+      # has landed. The count moves with the backfill; 113 was the figure before the 0.12 pass, and
+      # a stale number here contradicts the release notes rather than merely aging.
+      mode: ramp
+      # Off until docs/subsystems/*.md carry Contract / Hot path / Failure modes / Owning ADRs.
+      # Seventeen subsystem pages exist; the two added for websocket and diagnostics carry the set
+      # and the other fifteen do not, so this stays off until that retrofit lands.
+      section-check: false
+  commits:
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+  pr-body:
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+  # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
+  # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
+  # against the documentation standards. They are different questions and both are wanted.
+  # Skips itself when no Markdown or Java changed.
+  docs-review:
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+    # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
+    # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
+    # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
+    secrets:
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  # ADR-085 §F.21. This was written to land RED — 62 doclint errors and 100 warnings on
+  # exeris-kernel-spi, 13 and 100 on the TCK, measured 2026-09-05 — on the argument that a gate is
+  # a worklist and a worklist nobody can see is one nobody clears. The list was cleared before the
+  # gate landed, by the javadoc sweep in #456, #464 and #465: both gated modules now report zero
+  # doclint errors, zero warnings under failOnWarnings, and zero Checkstyle violations against the
+  # bundle ruleset. So it arrives green, and its job is the second one — keeping the list empty
+  # rather than showing it. It stays a reported check; making it required is a branch-protection
+  # change, not a workflow one.
+  #
+  # `-Pjavadoc-gate` selects a profile that exists only for this job. The `release` profile keeps
+  # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
+  # the strict settings there instead would have made a red gate block a release.
+  javadoc:
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+    with:
+      # The two published surfaces that are neither Core, Community nor tooling — the set
+      # javadoc-conventions.md rule 11 sends to diff-aware checking instead of a hard gate. Every
+      # jar module here reaches Maven Central, so "published" alone does not narrow anything; what
+      # narrows it is rule 11, and what is left after it is the SPI and the TCK.
+      #
+      # The set is still SPI + TCK, but the reason rule 11 exempted the rest has expired. Those
+      # pre-sweep counts were core 31 errors, community 6/91, community-testkit 0/24,
+      # community-kafka 0/11; core's warning figure sat at javadoc's -Xmaxwarns 100 ceiling, so it
+      # is a cap and not a measurement. diagnostics-cli counted as clean and was not: #469 found a
+      # class comment advertising three protocol methods where handle dispatches four, which no
+      # doclint run can see. After #464, #465 and #469 every one of them is 0/0 -- measured, and
+      # held there by nothing, because only the two modules named below carry the profile.
+      # Adding them here is a decision rather than an oversight: it costs each pom a javadoc-gate
+      # profile block, and it holds those modules to a whole-module bar where rule 11 asks only
+      # for diff-aware checking. Gating a module whose backfill is already done mandates no
+      # backfill, so it does not conflict with rule 11 — it is simply stricter than rule 11 needs.
+      modules: exeris-kernel-spi,exeris-kernel-tck
+      extra-maven-args: "-Pjavadoc-gate"

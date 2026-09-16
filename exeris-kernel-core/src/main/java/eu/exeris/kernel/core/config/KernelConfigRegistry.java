@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.config;
 
@@ -58,7 +54,7 @@ import java.util.function.Consumer;
  * <p>{@link Registration} is a {@code record} — no identity operations,
  * scalarization-eligible via C2 JIT Escape Analysis.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see DynamicConfigFileWatcher
  */
 // UnusedPrivateField: 'sealed' is managed exclusively by VarHandle.setRelease/getAcquire —
@@ -103,6 +99,17 @@ public final class KernelConfigRegistry {
     // =========================================================================
 
     /**
+     * Creates an empty, unsealed registry with no callback registered for any key.
+     *
+     * <p>Registration is refused once the registry is sealed, which is what makes the immutable
+     * key set immutable in practice rather than by convention.
+     */
+    public KernelConfigRegistry() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
      * Valhalla-ready data carrier for a single (file, key, callback) registration.
      *
      * @param file     config file name (relative to config dir), or {@code null} = any file
@@ -111,6 +118,14 @@ public final class KernelConfigRegistry {
      */
     public record Registration(String file, String key, Consumer<String> callback) {
 
+        /**
+         * Rejects a registration missing its key or callback.
+         *
+         * @param file     config file name (relative to config dir), or {@code null} for any file
+         * @param key      dot-path key this registration fires on
+         * @param callback invoked with the new raw string value; must be non-null
+         * @throws NullPointerException if {@code key} or {@code callback} is {@code null}
+         */
         public Registration {
             Objects.requireNonNull(key,      "key must not be null");
             Objects.requireNonNull(callback, "callback must not be null");
@@ -137,6 +152,13 @@ public final class KernelConfigRegistry {
      */
     public record ImmutableRegistration(String file, String key) {
 
+        /**
+         * Rejects a guard missing its key.
+         *
+         * @param file config file name (relative to config dir), or {@code null} for any file
+         * @param key  dot-path key sealed against hot-reload; must be non-null
+         * @throws NullPointerException if {@code key} is {@code null}
+         */
         public ImmutableRegistration {
             Objects.requireNonNull(key, "key must not be null");
         }

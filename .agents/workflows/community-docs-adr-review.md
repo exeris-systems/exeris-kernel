@@ -1,6 +1,14 @@
 ---
+name: community-docs-adr-review
 description: Review Exeris Community/Open-Core changes for docs/ADR drift and produce a minimal required doc patch list.
 argument-hint: Change scope with potential docs/ADR impact
+steps:
+  - {skill: exeris-doc-impact-triage}
+  - {agent: exeris-docs-adr}
+  - {skill: exeris-docs-adr-check, when: "triage returned anything above MINOR_DOC_UPDATE"}
+gates:
+  - ci:guardrails / docs
+  - hook:guardrails-gate-on-stop
 ---
 
 Review this Exeris Community/Open-Core change for documentation and ADR consistency.

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -25,6 +21,25 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
+/**
+ * Bootstraps the Community event bus and, when persistence is present, the durable JDBC-backed event
+ * log alongside it.
+ *
+ * <p>Depends on {@code memory} and {@code persistence}: the engine itself needs the kernel's
+ * allocator, and whether a {@link JdbcEventStreamAppender}/{@link JdbcEventStreamReader} pair can be
+ * built at all depends on {@link CommunityPersistenceSubsystem} having already set the shared
+ * {@link PersistenceEngine} in {@link CommunityBootstrapServices} — the same Community-internal
+ * handoff {@link CommunityFlowSubsystem} uses, needed because {@code providerBindings()} composition
+ * runs after every subsystem's {@code initialize()} (ADR-022 §4).
+ *
+ * <p>The durable log is optional twice over: with no persistence engine bound, {@code initialize()}
+ * leaves both the appender and the reader {@code null} and the corresponding
+ * {@code EVENT_STREAM_APPENDER}/{@code EVENT_STREAM_READER} slots stay unbound (ADR-049); with no
+ * event payload codec registry offered by the discovered {@link EventProvider}, the
+ * {@code EVENT_PAYLOAD_CODEC_REGISTRY} slot likewise stays unbound and the generated event publisher
+ * falls back to an empty payload (ADR-046). Callers read absence from the unbound slot rather than
+ * from a placeholder that answers every question the same way.
+ */
 final class CommunityEventsSubsystem extends AbstractCommunitySubsystem {
 
     private EventProvider eventProvider;

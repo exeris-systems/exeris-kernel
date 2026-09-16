@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review verdict (base)",
+  "description": "One schema for every reviewing role in every repository. Roles use different words for the same three states \u2014 ALLOW / ALLOW WITH CONDITIONS / REFUSE, APPROVE / CONDITIONAL / REJECT, PASS / CONDITIONAL / BLOCKED. `decision` is the canonical triple a grader reads; `decision_label` carries the role's own word so the Markdown and the JSON can be shown to agree. agents-md-schema.md rule 13.\n\nBASE: `agent` and `scope_class` are left open and narrowed by the composing repository.\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "agent",
+    "decision",
+    "scope_class",
+    "findings",
+    "checks_run"
+  ],
+  "properties": {
+    "agent": {
+      "description": "The reviewing role. Narrowed to the repository's own enum by the composing schema.",
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "maxLength": 64
+    },
+    "decision": {
+      "description": "PASS: nothing blocks a merge. CONDITIONAL: merges once the listed findings are addressed. BLOCKED: a hard rule or a scoped ban is violated.",
+      "enum": [
+        "PASS",
+        "CONDITIONAL",
+        "BLOCKED"
+      ]
+    },
+    "decision_label": {
+      "description": "The word the role's Markdown response used, mapped onto `decision`.",
+      "enum": [
+        "PASS",
+        "CONDITIONAL",
+        "BLOCKED",
+        "ALLOW",
+        "ALLOW WITH CONDITIONS",
+        "REFUSE",
+        "APPROVE",
+        "REJECT"
+      ]
+    },
+    "scope_class": {
+      "description": "What kind of surface the change touches. The vocabulary is the repository's; ADR-085 \u00a7E.16 fixes it for pull requests, and a review may use a finer one.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64
+    },
+    "findings": {
+      "description": "Empty for PASS. A finding that cannot name the clause it violates is a suggestion, and belongs in `suggestions`.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "what",
+          "why",
+          "fix"
+        ],
+        "properties": {
+          "what": {
+            "type": "string",
+            "minLength": 10
+          },
+          "why": {
+            "description": "The clause violated, as `<file>#<rule>` \u2014 for example `adr-conventions.md#7` or `.agents/policies/the-wall.md#2`.",
+            "type": "string",
+            "pattern": "^[^\\s#]+#[A-Za-z0-9.\u00a7-]+$"
+          },
+          "fix": {
+            "type": "string",
+            "minLength": 5
+          },
+          "location": {
+            "description": "`<path>:<line>` where the finding is anchored, when it has one site.",
+            "type": "string"
+          },
+          "blocking": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "suggestions": {
+      "description": "Improvements with no clause behind them. Never a reason to withhold PASS.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "checks_run": {
+      "description": "Every mechanical check the role was supposed to run, including the ones that did not. A check reported as `not-run` is the point of this field: a verdict resting on an unrun check must say so (error-handling-and-fallback.md rule 1).",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "check",
+          "result"
+        ],
+        "properties": {
+          "check": {
+            "type": "string",
+            "minLength": 3
+          },
+          "result": {
+            "enum": [
+              "pass",
+              "fail",
+              "not-run"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "required_validation": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "handoffs": {
+      "type": "array",
+      "items": {
+        "$ref": "handoff.base.schema.json"
+      },
+      "default": []
+    }
+  },
+  "allOf": [
+    {
+      "description": "BLOCKED and CONDITIONAL both require at least one finding; a verdict short of PASS with an empty findings list is unactionable.",
+      "if": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "BLOCKED",
+              "CONDITIONAL"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "description": "BLOCKED means at least one finding is itself blocking.",
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "BLOCKED"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "contains": {
+              "properties": {
+                "blocking": {
+                  "const": true
+                }
+              },
+              "required": [
+                "blocking"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

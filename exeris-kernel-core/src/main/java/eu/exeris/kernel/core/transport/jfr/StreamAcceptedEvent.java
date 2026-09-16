@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.transport.jfr;
 
@@ -26,7 +22,7 @@ import jdk.jfr.StackTrace;
  * business events via {@code streamId}. The {@link jdk.jfr.FlightRecorder} guard
  * ensures zero overhead when recording is disabled.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.transport.StreamAccepted")
 @Label("Stream Accepted")
@@ -35,17 +31,38 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 public final class StreamAcceptedEvent extends Event {
 
+    /** SPI stream identifier of the admitted stream. */
     @Label("Stream ID")
     public long streamId;
 
+        /**
+         * {@link eu.exeris.kernel.spi.transport.StreamPriority} enum constant name resolved for
+         * this stream at admission.
+         */
     @Label("Priority")
     public String priority;
 
+    /** Name of the transport engine that admitted the stream. */
     @Label("Engine Name")
     public String engineName;
 
+        /**
+         * Name of the virtual thread spawned to run the stream handler; format
+         * {@code paqs/<engineName>/<priority>/<streamId>}.
+         */
     @Label("Virtual Thread Name")
     public String virtualThreadName;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public StreamAcceptedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Factory: emits a stream accepted event.

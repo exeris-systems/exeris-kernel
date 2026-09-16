@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * Exeris Kernel Events SPI — The "Invisible Wall" for event-driven subsystems.
@@ -36,7 +32,13 @@
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_ENGINE} during bootstrap
  * and inherited by all virtual threads via {@link java.lang.ScopedValue} semantics.
  *
- * @since 0.5.0
+ * <h2>Where ordering lives</h2>
+ * <p>{@link eu.exeris.kernel.spi.events.EventBus} is unordered by design; per-stream total
+ * ordering and append-with-expected-version optimistic concurrency belong to the durable-log
+ * surface, {@link eu.exeris.kernel.spi.events.EventStreamAppender} and
+ * {@link eu.exeris.kernel.spi.events.EventStreamReader}. Persistence owns neither.
+ *
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.events;
 

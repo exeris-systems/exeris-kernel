@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.http2;
 
@@ -15,9 +11,6 @@ package eu.exeris.kernel.core.http.http2;
  * <p>Tracks the flow-control window for a single direction (either connection-level
  * or per-stream). The initial window size is 65535 bytes (RFC 7540 §6.9.2).
  *
- * <h2>Thread Safety</h2>
- * <p>Not thread-safe. Each HTTP/2 connection manages its own flow controller instances.
- *
  * <h2>Scope</h2>
  * <p><strong>RFC 7540 (HTTP/2 over TCP) only.</strong> This class implements the
  * credit-based window model of RFC 7540 §5.2 exclusively. It MUST NOT be reused
@@ -26,7 +19,16 @@ package eu.exeris.kernel.core.http.http2;
  * MUST use QUIC-native flow control; reaching for this class from an H3 code path
  * is a contract violation.
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> zero-alloc on the success path — every operation is primitive arithmetic
+ * on the controller's own window-size field. The two rejection paths allocate: each builds a
+ * message by concatenation before throwing.
+ * <p><b>Thread confinement:</b> owner thread — not thread-safe; each HTTP/2 connection
+ * owns its own controller instances, one per direction, and must not share them across
+ * threads without external synchronization.
+ * <p><b>Ownership:</b> the controller holds no buffers or native resources; there is
+ * nothing to release.
+ *
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7540#section-5.2">RFC 7540 §5.2</a>
  */
 public final class Http2FlowController {
@@ -61,9 +63,11 @@ public final class Http2FlowController {
     }
 
     /**
-     * Returns the current window size.
+     * Returns the number of bytes this direction is currently permitted to send (or receive)
+     * before the peer must grant more credit via WINDOW_UPDATE.
      *
-     * @return available window bytes (may be negative after settings change)
+     * @return available window bytes; can be negative immediately after a SETTINGS change that
+     *         shrinks the initial window below what was already in flight
      */
     public long windowSize() {
         return windowSize;
@@ -114,6 +118,8 @@ public final class Http2FlowController {
      *
      * @param oldInitial previous initial window size
      * @param newInitial new initial window size
+     * @throws IllegalStateException if applying the delta would push the window size past
+     *         {@link #MAX_WINDOW_SIZE}
      */
     public void updateInitialWindowSize(int oldInitial, int newInitial) {
         final long delta = (long) newInitial - (long) oldInitial;

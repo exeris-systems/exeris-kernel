@@ -1,14 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow; // NOPMD
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.FlowEngineStats;
@@ -25,8 +22,6 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
 import eu.exeris.kernel.spi.flow.model.FlowStepAction;
 import eu.exeris.kernel.spi.flow.model.FlowStepDescriptor;
 
-import java.util.ArrayDeque;
-import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -38,13 +33,42 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 
+/**
+ * Executes and tracks every {@link RuntimeFlowInstance} a {@link CoreFlowEngine} schedules — plan
+ * compilation lives in {@link CoreFlowPlanFactory}; this class owns submission, park, wake,
+ * compensation and terminal-state accounting.
+ *
+ * <p>Each launched instance runs its steps on its own bare virtual thread (see {@link #launch}),
+ * tracked in {@code runningThreads} so {@link #close()} can interrupt and join every one of them
+ * within a bounded per-thread deadline. A {@code lifecycleGeneration} counter distinguishes threads
+ * belonging to the current {@link #start()}/{@link #close()} cycle from stragglers left behind by a
+ * prior cycle that outlived that join — see {@link #isActiveLifecycle} and its callers.
+ *
+ * <p>The snapshot store, idempotency guard and time source are provider seams captured once in
+ * {@link #start()} from {@link KernelProviders} rather than read per call: a flow's virtual thread
+ * inherits no {@code ScopedValue} binding, so a read on that thread would silently resolve to a
+ * default instead of whatever the caller bound around {@code start()} (ADR-082).
+ *
+ * <p><b>Allocation:</b> allocates one virtual thread per launched flow instance, and one
+ * {@code StepPlan} record per step dispatch. Whether the JIT scalarizes that record away is not
+ * established here — no benchmark in this repository measures it.
+ * <p><b>Thread confinement:</b> any thread — {@link #schedule}, {@link #park} and {@link #wake} may
+ * be called from whichever thread submission or a choreography bridge runs on. A given instance's
+ * state transitions are serialized under that instance's own {@code monitor()}, never a
+ * runtime-wide lock.
+ * <p><b>Ownership:</b> one runtime belongs to the {@link CoreFlowEngine} that constructed it, which
+ * drives {@link #start()} and {@link #close()}. {@code close()} interrupts every virtual thread the
+ * runtime launched and then waits up to five seconds for each one; a thread still running when that
+ * budget expires is left behind rather than waited on, so {@code close()} returning is not proof
+ * that every flow has stopped.
+ */
 @SuppressWarnings("PMD.PublicMemberInNonPublicType")
 final class CoreFlowRuntime { // NOPMD
 
     /** Blast-radius bound only: adjacency enforced at registration is what terminates the chain. */
     private static final int MAX_MIGRATION_HOPS = 32;
 
-    private static final int  MAX_PARKED_LOOKUP_MISSES = 256;
+
     private static final long NO_TIMEOUT_OVERRUN       = 0L;
     private static final int  STEP_PROCEED             = Integer.MIN_VALUE;
     private static final int  EXIT_RUN_LOOP            = -1;
@@ -56,10 +80,9 @@ final class CoreFlowRuntime { // NOPMD
     private final ConcurrentMap<FlowKey, RuntimeFlowInstance> parkedInstances = new ConcurrentHashMap<>();
     private final ConcurrentMap<PlanKey, CoreFlowExecutionPlan> planCatalog = new ConcurrentHashMap<>();
     private final ConcurrentMap<MigrationKey, FlowDefinitionMigration> migrations = new ConcurrentHashMap<>();
+    private final FlowSnapshotValidator validator;
     private final TerminalStateCatalog terminalStateCatalog;
-    private final Set<FlowKey> parkedLookupMisses = ConcurrentHashMap.newKeySet();
-    private final Deque<FlowKey> parkedLookupMissOrder = new ArrayDeque<>();
-    private final Object parkedLookupMissLock = new Object();
+    private final ParkedLookupMissCache parkedLookupMisses = new ParkedLookupMissCache();
     private final Set<Thread> runningThreads = ConcurrentHashMap.newKeySet();
     private final AtomicLong lifecycleGeneration = new AtomicLong();
     private final AtomicInteger activeFlows = new AtomicInteger();
@@ -73,24 +96,39 @@ final class CoreFlowRuntime { // NOPMD
     // (totalSinceForever - baselineAtLifecycleTransition); baseline writes are atomic volatile
     // longs, so a stale worker that survives interruptAndJoinRunningThreads' 5s join timeout
     // cannot leave the next generation with a non-zero residual.
+    private volatile long nonDurableParkedAtClose;
+    private final FlowParkCheckpoint.Attempt parkAttempt = this::persistParkSnapshot;
     private volatile long parkedFlowsBaseline;
     private volatile long completedFlowsBaseline;
     private volatile long failedFlowsBaseline;
     private volatile long compensationsRunBaseline;
     private volatile long stepExecutionsBaseline;
     private final AtomicInteger queueDepth = new AtomicInteger();
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile FlowSnapshotStore snapshotStore;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile IdempotencyGuard guard;
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile TimeSource timeSource = TimeSource.SYSTEM;
     private volatile boolean started;
     private volatile boolean closed;
     private volatile boolean shutdownFinalized;
 
     /* default */ CoreFlowRuntime(FlowEngineConfig config, FlowProgressPublisher progressPublisher) {
         this.config = Objects.requireNonNull(config, "config");
+        this.validator = new FlowSnapshotValidator(config.engineName());
         this.progressPublisher = Objects.requireNonNull(progressPublisher, "progressPublisher");
         this.terminalStateCatalog = new TerminalStateCatalog(config.terminalCatalogMaxSize());
     }
 
+    /**
+     * Returns the {@link FlowScheduler} through which flows are submitted, parked and woken.
+     *
+     * @return the same {@link Scheduler} instance for the life of this runtime; never {@code null}
+     * @implNote Does not itself check that {@link #start()} has run — the calling
+     *           {@link CoreFlowEngine#scheduler()} performs that check before returning this value
+     *           to a caller.
+     */
     public FlowScheduler scheduler() {
         return scheduler;
     }
@@ -104,9 +142,26 @@ final class CoreFlowRuntime { // NOPMD
     }
 
     /* default */ void clearLookupSuppressionAfterPlanCompile() {
-        clearParkedLookupMissTracking();
+        parkedLookupMisses.clearAll();
     }
 
+    /**
+     * Reads the runtime's counters as one point-in-time snapshot.
+     *
+     * @return active, parked, completed and failed flow counts, compensations run and step
+     *         executions for the current lifecycle generation; never {@code null}
+     * @implNote {@code completedFlows}, {@code failedFlows}, {@code compensationsRun} and
+     *           {@code stepExecutions} are each {@code totalSinceForever -
+     *           baselineAtLifecycleTransition} (PERF-064): the underlying {@link LongAdder}s
+     *           accumulate for the process lifetime, and {@link #start()}/{@link #close()} snapshot
+     *           the baseline atomically instead of resetting the adder, which would race under
+     *           concurrent updates. {@code activeFlows} is read directly, since
+     *           {@link #resetLifecycleTotals} sets it to zero outright rather than baselining it.
+     *           {@code schedulerQueueDepth} is always reported as {@code 0} — this binding does not
+     *           surface the internal {@code queueDepth} counter here — and
+     *           {@code slabUtilizationPct} is always {@code -1}, matching the heap-only Community
+     *           tier {@link FlowEngineStats} documents that value for.
+     */
     public FlowEngineStats stats() {
         return new FlowEngineStats(
                 activeFlows.get(),
@@ -120,6 +175,20 @@ final class CoreFlowRuntime { // NOPMD
         );
     }
 
+    /**
+     * Opens this runtime for a new lifecycle generation: captures the snapshot store, idempotency
+     * guard and time source from {@link KernelProviders}, advances {@code lifecycleGeneration}, and
+     * resets the counters {@link #stats()} reports to zero.
+     *
+     * @throws FlowEngineException {@code EX-FLOW-7002} with {@code phase="START"} and
+     *         {@code reasonCode="STARTUP_FAILED"} if {@link FlowEngineConfig#persistenceEnabled()}
+     *         is {@code true} but no {@link FlowSnapshotStore} is bound to
+     *         {@link KernelProviders#flowSnapshotStore()}
+     * @implNote A no-op if already started and not yet closed. Reads every provider seam here rather
+     *           than at first use (ADR-082): each launched flow runs on a bare virtual thread, which
+     *           inherits no {@code ScopedValue} binding, so a seam read from inside a running flow
+     *           would silently resolve to a default instead of whatever was bound around this call.
+     */
     public void start() {
         if (started && !closed) {
             return;
@@ -135,6 +204,11 @@ final class CoreFlowRuntime { // NOPMD
             snapshotStore = store.get();
         }
         guard = KernelProviders.idempotencyGuard().orElseGet(CoreIdempotencyGuard::new);
+        // Captured here, not read at use (ADR-082). A flow runs on a bare virtual thread, which
+        // inherits no ScopedValue binding — so a slot read on that thread always finds the system
+        // clock, and the seam would look applied while remaining undrivable. start() is inside the
+        // carrier scope, which is exactly why snapshotStore and guard are captured here too.
+        timeSource = KernelProviders.timeSource();
         lifecycleGeneration.incrementAndGet();
         resetLifecycleTotals();
         closed = false;
@@ -142,6 +216,24 @@ final class CoreFlowRuntime { // NOPMD
         started = true;
     }
 
+    /**
+     * Interrupts every running flow's virtual thread and joins each within a bounded per-thread
+     * deadline, then clears the in-memory live, parked, terminal-state and lookup-miss indices.
+     *
+     * @implNote A no-op if already closed. Rebaselines {@code parkedFlows}, and sets
+     *           {@code activeFlows} and the internal {@code queueDepth} counter to zero outright, but
+     *           does <b>not</b> rebaseline {@code completedFlows}, {@code failedFlows},
+     *           {@code compensationsRun} or {@code stepExecutions} — those four remain at whatever
+     *           {@link #stats()} would have reported the instant before this call, and only reset
+     *           when {@link #start()} next runs {@link #resetLifecycleTotals}. Setting
+     *           {@code shutdownFinalized} before this method returns keeps any straggler thread that
+     *           outlives the join from changing these counters or the terminal-state catalog
+     *           afterward, but a terminal finalization (a late {@code FAILED_ROLLEDBACK}, or a
+     *           {@code COMPLETED} snapshot delete) is deliberately exempt and may still be persisted
+     *           through the {@link eu.exeris.kernel.spi.flow.model.FlowSnapshotStore} after this
+     *           method returns — which is why {@link #nonDurableParkedFlows()} freezes its own count
+     *           as of this call rather than recomputing it afterward.
+     */
     public void close() {
         if (closed) {
             return;
@@ -151,10 +243,11 @@ final class CoreFlowRuntime { // NOPMD
         interruptAndJoinRunningThreads();
         shutdownFinalized = true;
         runningThreads.removeIf(thread -> !thread.isAlive());
+        nonDurableParkedAtClose = FlowParkCheckpoint.countNonDurable(parkedInstances.values());
         liveInstances.clear();
         parkedInstances.clear();
         terminalStateCatalog.clear();
-        clearParkedLookupMissTracking();
+        parkedLookupMisses.clearAll();
         activeFlows.set(0);
         queueDepth.set(0);
         parkedFlowsBaseline = parkedFlows.sum();
@@ -182,6 +275,17 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    /**
+     * Confirms this runtime is started and not closed, for a caller — such as
+     * {@link CoreFlowEngine#scheduler()} — that must reject a call made outside that window.
+     *
+     * @throws FlowEngineException {@code EX-FLOW-7002} with {@code phase="START"} and
+     *         {@code reasonCode="STARTUP_FAILED"} if {@link #start()} has not run since
+     *         construction or the most recent {@link #close()}, or if {@link #close()} has run since
+     *         the most recent {@link #start()}
+     * @implNote Reuses {@code STARTUP_FAILED} for both cases above; the reason code does not
+     *           distinguish "never started" from "already closed".
+     */
     public void assertStarted() {
         ensureStarted();
     }
@@ -241,15 +345,16 @@ final class CoreFlowRuntime { // NOPMD
                 new IllegalStateException("Flow engine is not started"));
     }
 
+    /** Structured, not concatenated — the reason is what lets a caller tell a race from a fault. */
     private FlowEngineException notParked(FlowKey key) {
-        return new FlowEngineException(
-                "Cannot wake flow that is not currently parked: " + key);
+        return FlowEngineException.notParked(
+                config.engineName(), key.instanceIdMost(), key.instanceIdLeast());
     }
 
     private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
@@ -262,7 +367,7 @@ final class CoreFlowRuntime { // NOPMD
             RuntimeFlowInstance restored = restoreFromSnapshot(flowKey, plan, null, false);
             return restored != null
                     ? restored
-                    : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get());
+                    : RuntimeFlowInstance.fromContext(plan, context, lifecycleGeneration.get(), timeSource);
         });
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
@@ -301,7 +406,7 @@ final class CoreFlowRuntime { // NOPMD
     private void park(FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         RuntimeFlowInstance instance = liveInstances.get(key);
         if (instance == null || instance.state() == FlowState.PARKED || instance.isTerminal()) {
             return;
@@ -312,19 +417,30 @@ final class CoreFlowRuntime { // NOPMD
             }
             instance.state(FlowState.PARKED);
             ensureParkedRegistration(instance);
-            persistSnapshot(instance, FlowState.PARKED, instance.currentStep());
+            FlowParkCheckpoint.persist(instance, instance.currentStep(), parkAttempt);
         }
     }
 
     private void wake(FlowContext context) {
         ensureStarted();
-        FlowKey key = FlowKey.from(context);
-        clearParkedLookupMiss(key);
+        wake(FlowKey.from(context), context.state());
+    }
+
+    /**
+     * Key-addressed wake (SPI {@code FlowScheduler.wake(long, long)}).
+     *
+     * <p>Resolves the instance — parked, still live and already {@code PARKED}, or recoverable from
+     * the durable store — through the single call to {@link #resolveParkedInstance}, so the fallback
+     * event a durable-store read emits is recorded exactly once per wake regardless of which branch
+     * resolves it.
+     */
+    private void wake(FlowKey key, FlowState requestedState) {
+        parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
             return;
         }
 
-        RuntimeFlowInstance instance = resolveParkedInstance(key, context.state());
+        RuntimeFlowInstance instance = resolveParkedInstance(key, requestedState);
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
             liveInstances.remove(key, instance);
@@ -356,7 +472,15 @@ final class CoreFlowRuntime { // NOPMD
             }
             throw notParked(key);
         }
+        // In-memory miss → durable store, the one probe this path pays. ADR-013 §8 telemetry
+        // contract: emit whichever way the read goes, because `restored` is the flag that
+        // separates a genuine cross-engine restore from a stale wake for a key this engine
+        // will never know. Emitting only on the hit would leave the miss - the case an
+        // operator most needs to see - dark on the key-addressed path.
+        long fallbackStartNanos = System.nanoTime();
         RuntimeFlowInstance restored = restoreParkedFromSnapshot(key, false);
+        WakeOnLoadFallbackEvent.emit(config.engineName(), key.instanceIdMost(),
+                key.instanceIdLeast(), restored != null, System.nanoTime() - fallbackStartNanos);
         if (restored == null) {
             throw notParked(key);
         }
@@ -399,11 +523,11 @@ final class CoreFlowRuntime { // NOPMD
         CoreFlowExecutionPlan resolvedPlan = resolvePlanForSnapshot(directPlan, resumable);
         if (resolvedPlan == null) {
             if (suppressRepeatedMisses) {
-                recordParkedLookupMiss(key);
+                parkedLookupMisses.recordMiss(key);
             }
             return null;
         }
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         boolean migrationPersisted = false;
         if (migrated != null) {
             // ADR-064 A3. Not persisting would leave the row naming a version the saga no longer
@@ -416,7 +540,7 @@ final class CoreFlowRuntime { // NOPMD
                     persisted.definitionVersion(), migrated.definitionVersion());
         }
         RuntimeFlowInstance instance =
-                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get());
+                RuntimeFlowInstance.fromSnapshot(resolvedPlan, resumable, lifecycleGeneration.get(), timeSource);
         if (migrationPersisted) {
             // ADR-013 §5, as on every other save. The migrated snapshot is built from the loaded one
             // and carries ITS schemaVersion, so the instance seeds the version the row held BEFORE
@@ -433,65 +557,23 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return null;
         }
-        if (suppressRepeatedMisses && hasParkedLookupMiss(key)) {
+        if (suppressRepeatedMisses && parkedLookupMisses.hasMiss(key)) {
             return null;
         }
         FlowSnapshot snapshot = snapshotStore.load(key.instanceIdMost(), key.instanceIdLeast()).orElse(null);
         if (snapshot == null || !matchesRequiredState(snapshot, requiredState)) {
             if (suppressRepeatedMisses) {
-                recordParkedLookupMiss(key);
+                parkedLookupMisses.recordMiss(key);
             }
             return null;
         }
-        clearParkedLookupMiss(key);
+        parkedLookupMisses.clearMiss(key);
         return snapshot;
     }
 
-    private boolean hasParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            return parkedLookupMisses.contains(key);
-        }
-    }
-
-    private void recordParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            if (parkedLookupMisses.add(key)) {
-                parkedLookupMissOrder.offerLast(key);
-            }
-            trimParkedLookupMissOrderLocked();
-        }
-    }
-
-    private void clearParkedLookupMiss(FlowKey key) {
-        synchronized (parkedLookupMissLock) {
-            if (parkedLookupMisses.remove(key)) {
-                boolean removed;
-                do {
-                    removed = parkedLookupMissOrder.removeFirstOccurrence(key);
-                } while (removed);
-            }
-        }
-    }
-
-    private void clearParkedLookupMissTracking() {
-        synchronized (parkedLookupMissLock) {
-            parkedLookupMisses.clear();
-            parkedLookupMissOrder.clear();
-        }
-    }
-
-    private void trimParkedLookupMissOrderLocked() {
-        while (parkedLookupMissOrder.size() > MAX_PARKED_LOOKUP_MISSES) {
-            FlowKey oldest = parkedLookupMissOrder.pollFirst();
-            if (oldest == null) {
-                break;
-            }
-            parkedLookupMisses.remove(oldest);
-        }
-    }
 
     private void ensureParkedRegistration(RuntimeFlowInstance instance) {
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (parkedInstances.putIfAbsent(instance.key(), instance) == null) {
             parkedFlows.increment();
         }
@@ -507,7 +589,7 @@ final class CoreFlowRuntime { // NOPMD
             if (catalogPlan == null) {
                 return null;
             }
-            validateSnapshotStepBounds(catalogPlan, persisted);
+            validator.validateSnapshotStepBounds(catalogPlan, persisted);
             return catalogPlan;
         }
         if (!directPlan.definitionName().equals(persisted.definitionName())) {
@@ -517,32 +599,9 @@ final class CoreFlowRuntime { // NOPMD
                     + "' but snapshot belongs to '"
                     + persisted.definitionName() + "'");
         }
-        validateSnapshotVersion(directPlan, persisted);
-        validateSnapshotStepBounds(directPlan, persisted);
+        validator.validateSnapshotVersion(directPlan, persisted);
+        validator.validateSnapshotStepBounds(directPlan, persisted);
         return directPlan;
-    }
-
-    /**
-     * Applies the version guard to a caller-supplied plan (ADR-064 obligation 4).
-     *
-     * <p>{@code schedule()} resubmits against a plan the application already holds — plausibly the
-     * newest it compiled — for an instance that may be parked under an older one. Without this the
-     * guarantee held only on {@code wake()}: where the two versions happen to line up at the parked
-     * index, the saga resumes on the wrong definition exactly as it did before this epic, reached
-     * through a different entry point rather than fixed.
-     */
-    private void validateSnapshotVersion(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
-        if (persisted.state().isTerminal()) {
-            return;
-        }
-        if (persisted.definitionVersion() == FlowSnapshot.VERSION_ABSENT) {
-            throw FlowEngineException.schemaMismatchDefinitionVersionAbsent(
-                    config.engineName(), persisted.currentStep());
-        }
-        if (plan.definitionVersion() != persisted.definitionVersion()) {
-            throw FlowEngineException.schemaMismatchDefinitionVersionUnresolved(
-                    config.engineName(), persisted.definitionVersion());
-        }
     }
 
     /**
@@ -569,7 +628,7 @@ final class CoreFlowRuntime { // NOPMD
         if (!needsMigration(persisted)) {
             return null;
         }
-        refuseRowThatCannotBeWalked(persisted);
+        validator.refuseRowThatCannotBeWalked(persisted);
         FlowSnapshot current = persisted;
         for (int hop = 0; hop < MAX_MIGRATION_HOPS; hop++) {
             FlowDefinitionMigration migration =
@@ -610,42 +669,6 @@ final class CoreFlowRuntime { // NOPMD
                         new PlanKey(persisted.definitionName(), persisted.definitionVersion()));
     }
 
-    /**
-     * Refuses a row that needs a walk but records no step identity, naming the reason that is true.
-     *
-     * <p>{@code applyHop} builds the transform's input from the parked step's name, so without this
-     * the row would reach {@code orElseThrow} as a bare {@code NoSuchElementException} on a path where
-     * every other refusal carries a reason.
-     *
-     * <p>Declining silently is not enough either, and that is the subtler half. Falling through leaves
-     * the row to {@code resolveVersionedPlan}, which refuses first — before
-     * {@link #validateSnapshotStepIdentity} ever runs — with {@code DEFINITION_VERSION_UNRESOLVED}.
-     * That reason's documented remedy is "deploy the missing version, or register the missing
-     * transform", and here a transform may well already be registered: the row is unresumable because
-     * it records no step identity, which no deployment fixes. A refusal that steers an operator to the
-     * wrong runbook is worse than a raw exception, because it looks actionable.
-     */
-    private void refuseRowThatCannotBeWalked(FlowSnapshot persisted) {
-        if (persisted.currentStepName().isEmpty()) {
-            emitSchemaMismatch(persisted, persisted.currentStep(), -1,
-                    FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, null);
-            throw FlowEngineException.schemaMismatchStepIdentityAbsent(
-                    config.engineName(), persisted.currentStep());
-        }
-        // Second input the transform cannot be handed: FlowMigrationState requires identities for the
-        // live stack, so a row without them reaches its compact constructor as a bare
-        // IllegalArgumentException — the same shape of unreasoned failure the cursor half above exists
-        // to prevent, on the same path, one component over. Refused here rather than left to the
-        // post-transform guard because there is no transform to run.
-        int live = persisted.stackPointer();
-        if (live > 0 && persisted.compensationStepNames().length == 0) {
-            emitSchemaMismatch(persisted, live, -1,
-                    FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_ABSENT, null, null);
-            throw FlowEngineException.schemaMismatchCompensationStackIdentityAbsent(
-                    config.engineName(), live);
-        }
-    }
-
     /** Applies one adjacent hop, rebuilding the snapshot at {@code version + 1}. */
     private static FlowSnapshot applyHop(FlowDefinitionMigration migration, FlowSnapshot from) {
         FlowMigrationState before = new FlowMigrationState(
@@ -670,7 +693,7 @@ final class CoreFlowRuntime { // NOPMD
         if (snapshotStore == null) {
             return false;
         }
-        snapshotStore.save(migrated);
+        FlowSnapshotWriter.save(snapshotStore, migrated);
         return true;
     }
 
@@ -701,179 +724,6 @@ final class CoreFlowRuntime { // NOPMD
             }
         }
         return false;
-    }
-
-    /**
-     * Fail-closed guard against resuming a persisted saga against an incompatible (changed) plan.
-     *
-     * <p>A snapshot persists {@code currentStep} as a bare zero-based index into the plan it was
-     * parked under. If a later deployment removes (or reorders away) steps, that index can point past
-     * the end of the currently-registered plan; replaying it blindly would resume at the wrong step —
-     * a data-corruption-class outcome — so resume must reject the mismatch rather than proceed.
-     *
-     * <p>Per {@code docs/subsystems/flow.md}, waking a non-terminal saga whose persisted
-     * {@code currentStep} no longer indexes a step in the active definition raises
-     * {@code EX-FLOW-7002 / phase=SCHEMA_MISMATCH} (Glass-Box rawArgs via
-     * {@link FlowEngineException#schemaMismatch(String, int)}) and requires manual intervention.
-     *
-     * <p>This method is the <b>bounds/arity</b> half. Since 0.11 it delegates to
-     * {@link #validateSnapshotStepIdentity} for the half it structurally cannot cover: a same-arity
-     * reorder leaves the index in range, so only comparing step identities detects it (ADR-062).
-     * Terminal snapshots ({@link FlowState#isTerminal()}) are exempt — they are never resumed.
-     */
-    private void validateSnapshotStepBounds(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
-        if (persisted.state().isTerminal()) {
-            return;
-        }
-        int step = persisted.currentStep();
-        int stepCount = plan.stepCount();
-        // step < 0 makes the invariant explicit (a corrupted snapshot writing a sentinel index also
-        // fails closed, not just the redeploy-removed-step case).
-        if (step < 0 || step >= stepCount) {
-            emitSchemaMismatch(persisted, step, stepCount, FlowEngineException.REASON_STEP_OUT_OF_RANGE, null, null);
-            throw FlowEngineException.schemaMismatch(config.engineName(), step);
-        }
-        validateSnapshotStepIdentity(plan, persisted, step, stepCount);
-        validateCompensationStackBounds(persisted, stepCount);
-        validateCompensationStackIdentity(plan, persisted);
-    }
-
-    /**
-     * Rejects a resume whose compensation stack no longer indexes the plan.
-     *
-     * <p>The two guards above validate where the saga <em>resumes</em>. They say nothing about the
-     * steps it has already completed, and those are exactly what a rollback walks — so a saga can pass
-     * both and still hold a stack that is meaningless in the plan it just bound to. A migration makes
-     * this ordinary rather than exceptional: a transform may rewrite the stack, and
-     * {@code FlowMigrationState} documents that carrying it across a version boundary unchanged is
-     * wrong, but documenting an obligation is not enforcing it.
-     *
-     * <p>Checked here rather than at compensation time because {@code runCompensationStep} reads the
-     * plan by bare index <em>outside</em> its own catch, so a stale entry there aborts the remaining
-     * unwind and skips {@code finalizeFailedInstance} — leaving the saga mid-compensation with its
-     * idempotency guard still held. Refusing the resume leaves the row intact instead.
-     *
-     * <p>This is the bounds half only. An entry that indexes the plan but addresses a different step
-     * than it did when it was pushed is not detectable from indices alone; that is
-     * {@link #validateCompensationStackIdentity}, which runs after this one so that a structurally
-     * broken stack is diagnosed as broken rather than as a mismatch.
-     *
-     * @param persisted the snapshot being resumed
-     * @param stepCount the step count of the plan the resume would bind to
-     */
-    private void validateCompensationStackBounds(FlowSnapshot persisted, int stepCount) {
-        int live = persisted.stackPointer();
-        if (live == 0) {
-            return;
-        }
-        // One defensive copy on the resume path. Cold — a resume already cost a snapshot-store read —
-        // and FlowSnapshot exposes no per-entry accessor to borrow instead.
-        int[] stack = persisted.compensationStack();
-        for (int index = 0; index < live; index++) {
-            int entry = stack[index];
-            if (entry < 0 || entry >= stepCount) {
-                // Both step-name fields stay absent: the offending value is a stack entry, so neither
-                // "the step the snapshot names" nor "the step the plan has there" is a truthful answer.
-                emitSchemaMismatch(persisted, entry, stepCount,
-                        FlowEngineException.REASON_COMPENSATION_STACK_OUT_OF_RANGE, null, null);
-                throw FlowEngineException.schemaMismatchCompensationStack(config.engineName(), entry);
-            }
-        }
-    }
-
-    /**
-     * Rejects a resume whose compensation stack indexes the plan but no longer addresses the same steps
-     * (ADR-064 A5).
-     *
-     * <p>ADR-062's argument for the cursor, applied to the stack: a same-arity reorder leaves every
-     * entry in range, so bounds cannot see it. What makes this the more dangerous of the two halves is
-     * that nothing throws. An out-of-range entry raises at {@code plan.stepAt} inside failure handling —
-     * loud, and the parked row survives to be fixed. An in-range entry that now addresses a different
-     * step resolves to a perfectly valid descriptor, and the unwind either skips a compensation that was
-     * owed (the addressed step happens to declare none) or runs a <em>different</em> step's
-     * compensation. Both are silent, and a compensation is a side effect: by the time anything can
-     * observe the mistake it has already been made.
-     *
-     * <p>A live stack with no identities at all is refused rather than admitted, on ADR-062 obligation
-     * 6's reasoning — admitting it would leave a permanent branch where the stack is still trusted by
-     * position. That case is reachable independently of the cursor guards: a row carrying a definition
-     * version and a cursor identity but no stack identities is what an application
-     * {@code FlowSnapshotStore} produces when its schema does not carry the column.
-     *
-     * <p>One further defensive copy on the cold resume path, over the one the bounds guard already
-     * makes. Kept separate rather than threaded through a shared array, because each guard owning its
-     * own contract is the shape the cursor pair already established in this class.
-     *
-     * @param plan      the resolved plan the resume would bind to
-     * @param persisted the snapshot being resumed, whose stack is already known to index that plan
-     */
-    private void validateCompensationStackIdentity(CoreFlowExecutionPlan plan, FlowSnapshot persisted) {
-        int live = persisted.stackPointer();
-        if (live == 0) {
-            return;
-        }
-        String[] names = persisted.compensationStepNames();
-        if (names.length == 0) {
-            // No offending entry to name when none of them is named, so the live depth is the
-            // diagnostic — it says how much rollback the refusal is protecting.
-            emitSchemaMismatch(persisted, live, plan.stepCount(),
-                    FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_ABSENT, null, null);
-            throw FlowEngineException.schemaMismatchCompensationStackIdentityAbsent(
-                    config.engineName(), live);
-        }
-        int[] stack = persisted.compensationStack();
-        for (int index = 0; index < live; index++) {
-            int entry = stack[index];
-            String planStepName = plan.stepAt(entry).name();
-            if (!names[index].equals(planStepName)) {
-                emitSchemaMismatch(persisted, entry, plan.stepCount(),
-                        FlowEngineException.REASON_COMPENSATION_STACK_IDENTITY_MISMATCH,
-                        names[index], planStepName);
-                throw FlowEngineException.schemaMismatchCompensationStackIdentity(
-                        config.engineName(), entry);
-            }
-        }
-    }
-
-    /**
-     * Rejects a resume whose persisted step index is in range but no longer names the same step
-     * (ADR-062).
-     *
-     * <p>This is the case the bounds check cannot reach. A same-arity reorder leaves the index valid,
-     * so without comparing identities the saga would resume on a different step than it parked at —
-     * silently, and with the wrong compensation stack semantics behind it.
-     *
-     * @param plan      the resolved plan the resume would bind to
-     * @param persisted the snapshot being resumed
-     * @param step      the persisted step index, already known to be in range
-     * @param stepCount the plan's step count, for the diagnostic event
-     */
-    private void validateSnapshotStepIdentity(CoreFlowExecutionPlan plan,
-                                              FlowSnapshot persisted,
-                                              int step,
-                                              int stepCount) {
-        String planStepName = plan.stepAt(step).name();
-        Optional<String> persistedName = persisted.currentStepName();
-        if (persistedName.isEmpty()) {
-            // Written before 0.11. Resuming it would mean trusting the index again, which is the
-            // behaviour this guard exists to remove — so it is refused rather than assumed safe.
-            emitSchemaMismatch(persisted, step, stepCount,
-                    FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, planStepName);
-            throw FlowEngineException.schemaMismatchStepIdentityAbsent(config.engineName(), step);
-        }
-        if (!persistedName.get().equals(planStepName)) {
-            emitSchemaMismatch(persisted, step, stepCount, FlowEngineException.REASON_STEP_IDENTITY_MISMATCH,
-                    persistedName.get(), planStepName);
-            throw FlowEngineException.schemaMismatchStepIdentity(config.engineName(), step);
-        }
-    }
-
-    private void emitSchemaMismatch(FlowSnapshot persisted, int step, int stepCount,
-                                    String reason, String persistedStepName, String planStepName) {
-        FlowSchemaMismatchEvent.emit(
-                config.engineName(), persisted.definitionName(),
-                persisted.instanceIdMost(), persisted.instanceIdLeast(), step, stepCount,
-                reason, persistedStepName, planStepName);
     }
 
     private void launch(RuntimeFlowInstance instance, int startStep) {
@@ -1029,7 +879,8 @@ final class CoreFlowRuntime { // NOPMD
             FlowStepDescriptor step = instance.plan().stepAt(stepIndex);
 
             // DIST-303: timeoutNanos == Long.MAX_VALUE encodes Instant.MAX (no timeout).
-            long now = System.nanoTime();
+            // The deciding read (ADR-082): this comparison chooses timedOut, so it must be drivable.
+            long now = timeSource.nanoTime();
             long deadline = instance.timeoutNanos();
             if (deadline != Long.MAX_VALUE && deadline < now) {
                 return StepPlan.timedOut(step, now - deadline);
@@ -1178,7 +1029,7 @@ final class CoreFlowRuntime { // NOPMD
     private void applyParkOutcome(RuntimeFlowInstance instance, int stepIndex) {
         instance.state(FlowState.PARKED);
         ensureParkedRegistration(instance);
-        persistSnapshot(instance, FlowState.PARKED, stepIndex);
+        FlowParkCheckpoint.persist(instance, stepIndex, parkAttempt);
     }
 
     // step action is a user-supplied SPI callback; any Exception is a step failure (Errors propagate)
@@ -1260,7 +1111,7 @@ final class CoreFlowRuntime { // NOPMD
         if (!staleLifecycle && guard != null) {
             guard.releaseInstance(instance.key().instanceIdMost(), instance.key().instanceIdLeast());
         }
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (!cleanupOnly) {
             failedFlows.increment();
             terminalStateCatalog.recordTerminal(instance.key(), FlowState.FAILED_ROLLEDBACK);
@@ -1281,7 +1132,7 @@ final class CoreFlowRuntime { // NOPMD
         boolean staleLifecycle = isStaleLifecycle(instance);
         boolean cleanupOnly = cleanupOnly(instance);
         instance.state(FlowState.COMPLETED);
-        clearParkedLookupMiss(instance.key());
+        parkedLookupMisses.clearMiss(instance.key());
         if (!cleanupOnly) {
             terminalStateCatalog.recordTerminal(instance.key(), FlowState.COMPLETED);
         }
@@ -1321,6 +1172,16 @@ final class CoreFlowRuntime { // NOPMD
         }
     }
 
+    /** Parked sagas the store refused: wakeable now, gone after a restart. */
+    /* default */ long nonDurableParkedFlows() {
+        return closed ? nonDurableParkedAtClose
+                      : FlowParkCheckpoint.countNonDurable(parkedInstances.values());
+    }
+
+    private void persistParkSnapshot(RuntimeFlowInstance instance, int stepIndex) {
+        persistSnapshot(instance, FlowState.PARKED, stepIndex);
+    }
+
     private void persistSnapshot(RuntimeFlowInstance instance, FlowState state, int stepIndex) {
         if (snapshotStore == null) {
             return;
@@ -1345,8 +1206,8 @@ final class CoreFlowRuntime { // NOPMD
         if (!isActiveLifecycle(instance) && !state.isTerminal()) {
             return;
         }
-        clearParkedLookupMiss(instance.key());
-        snapshotStore.save(instance.toSnapshot(state, stepIndex));
+        parkedLookupMisses.clearMiss(instance.key());
+        FlowSnapshotWriter.save(snapshotStore, instance, state, stepIndex);
         // ADR-013 §5: durable stores advance schema_version by one on every accepted write.
         // Mirror that increment locally so the next save carries the now-current expected
         // version. In-memory bindings ignore schemaVersion, so the bump is harmless there.
@@ -1380,6 +1241,13 @@ final class CoreFlowRuntime { // NOPMD
         }
 
         @Override
+        public void wake(long instanceIdMost, long instanceIdLeast) {
+            ensureStarted();
+            CoreFlowRuntime.this.wake(new FlowKey(instanceIdMost, instanceIdLeast),
+                    FlowState.PARKED);
+        }
+
+        @Override
         public Optional<FlowContext> lookupParked(long instanceIdMost, long instanceIdLeast) {
             FlowKey key = new FlowKey(instanceIdMost, instanceIdLeast);
             if (terminalStateCatalog.isTerminal(key)) {
@@ -1387,12 +1255,12 @@ final class CoreFlowRuntime { // NOPMD
             }
             RuntimeFlowInstance parked = parkedInstances.get(key);
             if (parked != null) {
-                clearParkedLookupMiss(key);
+                parkedLookupMisses.clearMiss(key);
                 return Optional.of(parked.contextView());
             }
             RuntimeFlowInstance live = liveInstances.get(key);
             if (live != null && live.state() == FlowState.PARKED) {
-                clearParkedLookupMiss(key);
+                parkedLookupMisses.clearMiss(key);
                 return Optional.of(live.contextView());
             }
             // In-memory miss → fall back to durable snapshot store. Distributed-saga JFR

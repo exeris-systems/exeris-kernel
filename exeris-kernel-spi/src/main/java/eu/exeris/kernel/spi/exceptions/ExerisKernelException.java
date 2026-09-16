@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions;
 
@@ -15,15 +11,12 @@ import java.util.UUID;
 /**
  * Abstract base exception for the Exeris Kernel – the "Glass Box" foundation.
  *
- * <h2>Zero-Allocation Telemetry Contract</h2>
- * <p>This class is the cornerstone of the <em>Zero-Allocation Telemetry</em> pattern. It enforces
- * that <strong>no String formatting occurs on the hot-path</strong>. Domain context is captured
- * as a raw {@code Object[]} array ({@link #rawArgs}), which the Enterprise Glass-Box tier can
- * serialize directly to a binary crash-log struct without ever invoking {@code toString()} or
- * triggering GC pressure.
+ * <p>This class is the cornerstone of the <em>Zero-Allocation Telemetry</em> pattern: domain
+ * context is captured as a raw {@code Object[]} array ({@link #rawArgs}), which the Enterprise
+ * Glass-Box tier serializes directly to a binary crash-log struct without ever invoking
+ * {@code toString()} or triggering GC pressure.
  *
- * <h2>Error Code Format</h2>
- * <p>Every exception MUST supply an {@code EX-[DOMAIN]-[ID]} code:
+ * <h2>Error code domains</h2>
  * <ul>
  *   <li>{@code EX-MEM-*} – Memory / Off-Heap subsystem</li>
  *   <li>{@code EX-BOOT-*} – Bootstrap / Subsystem lifecycle</li>
@@ -32,24 +25,27 @@ import java.util.UUID;
  *   <li>{@code EX-RUN-*} – Runtime / Scheduler</li>
  * </ul>
  *
- * <h2>Usage – subclass pattern</h2>
- * <pre>{@code
- * // CORRECT – raw args, zero String allocation on hot-path:
+ * {@snippet lang="java" :
+ * // Correct — raw args, zero String allocation on the hot path:
  * public MemoryExhaustedException(long requestedBytes, long availableBytes) {
  *     super("EX-MEM-1001", "Off-heap allocator exhausted", null,
  *           requestedBytes, availableBytes);
  * }
  *
- * // WRONG – do NOT do this in any subclass constructor:
+ * // Wrong — do not do this in any subclass constructor:
  * super("Memory exhausted: requested %d bytes".formatted(requestedBytes));
- * }</pre>
+ * }
  *
  * <h2>The Wall (SPI Compliance)</h2>
  * <p>This class lives in {@code exeris-kernel-spi} and has <strong>zero knowledge</strong> of
  * io_uring, Netty, JDBC, or any protocol-specific concept. It is a pure contract.
  *
+ * @implSpec A subclass must supply a non-null {@code EX-[DOMAIN]-[ID]} code (see the domains
+ *           above) and must never build {@code message} with string concatenation or
+ *           {@code String.formatted()} — domain context belongs in {@code rawArgs}, formatted
+ *           only at the reporting end, never at the throw site.
+ * @since 0.5
  * @see <a href="../../../../../../docs/subsystems/exceptions.md">exceptions.md – Exceptions Subsystem</a>
- * @since 0.5.0
  */
 public abstract class ExerisKernelException extends RuntimeException {
 
@@ -114,13 +110,17 @@ public abstract class ExerisKernelException extends RuntimeException {
     // -----------------------------------------------------------------------
 
     /**
-     * Primary constructor – all subclasses MUST delegate here.
+     * Primary constructor that every subclass must delegate to, directly or through one of the
+     * convenience overloads below.
      *
      * @param errorCode a non-null {@code EX-[DOMAIN]-[ID]} code  (e.g. {@code "EX-MEM-1001"})
-     * @param message   a static, pre-defined message template – <strong>no runtime formatting</strong>
+     * @param message   a static, pre-defined message template
      * @param cause     optional chained throwable; may be {@code null}
      * @param rawArgs   zero or more domain-specific raw arguments stored as-is for binary telemetry
      * @throws NullPointerException if {@code errorCode} is {@code null}
+     * @implSpec {@code message} must carry no runtime formatting — no {@code String.format},
+     *           {@code String.formatted()} or concatenation at the call site. Numeric or
+     *           contextual detail belongs in {@code rawArgs}.
      */
     protected ExerisKernelException(
             String errorCode,
@@ -238,19 +238,39 @@ public abstract class ExerisKernelException extends RuntimeException {
     /**
      * Returns the raw domain arguments stored for binary telemetry.
      *
-     * <h3>Enterprise Glass-Box Contract</h3>
-     * <p>The caller <strong>MUST NOT</strong> invoke {@code toString()} on any element
-     * on the hot-path. The Enterprise tier maps element types to fixed-size binary
-     * records (e.g., index 0 is {@code long requestedBytes}, index 1 is {@code long availableBytes}).
-     * This mapping is documented in each concrete subclass Javadoc.
-     *
      * <p>The array is returned by reference – <em>no defensive copy</em> – to preserve
      * zero-allocation semantics. Callers must treat it as read-only.
      *
      * @return a non-null, possibly empty {@code Object[]} of raw domain arguments
+     * @apiNote Do not invoke {@code toString()} on any element on the hot path — that is exactly
+     *          the allocation this contract exists to avoid. Read the array directly for
+     *          zero-copy access.
+     * @implNote The Enterprise tier maps elements to fixed-size binary records (for example,
+     *           index 0 as {@code long requestedBytes}, index 1 as {@code long availableBytes});
+     *           the layout is documented on each concrete subclass, not here.
      */
     public final Object[] rawArgs() {
         return rawArgs;
+    }
+
+    /**
+     * Returns who has to change something for the failed operation to succeed.
+     *
+     * <p>Not {@code final}, and that is the point: a subclass whose failure is the caller's doing
+     * overrides this to {@link FaultOrigin#CALLER}, and everything else inherits
+     * {@link FaultOrigin#SYSTEM}. The default is the conservative direction — an unclassified
+     * failure keeps reporting exactly what it reported before this method existed, so classifying
+     * further subclasses later adds information rather than changing behaviour.
+     *
+     * <p>Prefer {@link FaultOrigin#classify(Throwable)} at a catch site: it applies the same default to a
+     * throwable that is not a kernel exception, which is a case every handler has and every handler
+     * would otherwise have to remember.
+     *
+     * @return the fault origin; never {@code null}
+     * @since 0.12
+     */
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.SYSTEM;
     }
 
 }

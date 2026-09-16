@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -27,6 +23,20 @@ import java.lang.foreign.MemorySegment;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
+/**
+ * Community: the HTTP/2 connection frame loop — reads and validates frames off the connection's
+ * aggregate buffer, decodes completed HEADERS(+CONTINUATION) blocks via {@link Http2SessionContext},
+ * accumulates DATA into the matching {@link Http2RequestStreamState}, and on a complete request
+ * dispatches it through {@link CommunityHttpRequestDispatcher} before framing and coalescing the
+ * response into one write.
+ *
+ * <p>Entered from either upgrade path — {@link #handlePriorKnowledge} (the 24-byte connection
+ * preface) or {@link #handleUpgrade} (an HTTP/1.1 {@code Upgrade: h2c} request already answered with
+ * {@code 101}) — both open one {@link Http2SessionContext} per connection and run the frame loop
+ * until a connection-fatal condition — a protocol error, a peer GOAWAY, a Rapid Reset budget trip,
+ * the buffered-frame aggregate exceeding its configured capacity, or a read returning end-of-stream —
+ * ends it.
+ */
 // QA-018a extracted 4 seams: Http2SessionContext (HPACK + assembler + per-stream state),
 // PendingRequestHeaders (HPACK-decode accumulator), CommunityHttp2ControlFrames (SETTINGS/PING/
 // RST_STREAM/GOAWAY writers), and CommunityHttp2FrameFragments (pad/priority extraction).
@@ -94,8 +104,8 @@ final class CommunityHttp2SessionProcessor {
             LOG.log(System.Logger.Level.INFO,
                     "HTTP/2 prior-knowledge preface detected; entering h2c request frame-loop mode");
         }
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
-        try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderListSize());
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config)) {
             processBufferedHttp2Frames(stream, handler, session, state, totalBytes, initialFrameOffset);
         }
     }
@@ -107,8 +117,8 @@ final class CommunityHttp2SessionProcessor {
         LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
         long bufferedHttp2Bytes = CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
-        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream);
-        try (Http2SessionContext session = Http2SessionContext.create(allocator)) {
+        CommunityHttp2ControlFrames.sendServerSettings(allocator, stream, config.maxHeaderListSize());
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config)) {
             processBufferedHttp2Frames(stream, handler, session, state, bufferedHttp2Bytes, 0);
         }
     }

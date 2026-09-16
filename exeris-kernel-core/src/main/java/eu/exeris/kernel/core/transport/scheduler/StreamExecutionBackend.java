@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.transport.scheduler;
 
@@ -13,9 +9,8 @@ package eu.exeris.kernel.core.transport.scheduler;
  * is started.
  *
  * <p>The default backend used by {@link PaqsScheduler} spawns one Virtual Thread per stream
- * using {@link Thread#ofVirtual()}, preserving the VT root-per-stream guarantee. It is
- * behaviourally identical to the prior inline spawn and changes no admission, load-shed, or
- * JFR behaviour — extracting the spawn behind this seam is refactor-neutral.
+ * using {@link Thread#ofVirtual()}, preserving the VT root-per-stream guarantee, without altering
+ * admission, load-shedding, or JFR behaviour.
  *
  * <p>The seam lets an alternative execution strategy be injected <em>without</em> touching the
  * scheduler's admission or load-shedding path. Two intended (non-default) consumers:
@@ -40,7 +35,7 @@ package eu.exeris.kernel.core.transport.scheduler;
  * implementation. The seam is Core-internal (not SPI) — it carries no driver or native detail
  * across The Wall.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @FunctionalInterface
 public interface StreamExecutionBackend {

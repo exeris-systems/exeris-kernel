@@ -1,3 +1,12 @@
+---
+title: "Kernel Subsystem: Transport (L2 Native I/O)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Kernel Subsystem: Transport (L2 Native I/O)
 
 **Physical Layout:**
@@ -21,7 +30,9 @@ off-heap `LoanedBuffer` slabs via Panama FFM — no JVM heap contact on the ingr
 
 - **PAQS Scheduler:** The **Priority-Aware Queue Scheduler** injects business context at the network edge.
   Low-priority traffic (e.g., telemetry) is shed before any heap state is allocated, preserving resources
-  for critical flows (e.g., payments).
+  for critical flows (e.g., payments) — the design target. **The shipped Community carrier does not yet
+  resolve a per-stream priority**, so this differential shedding cannot occur today; see
+  "`StreamPriority` — Origin and Assignment" below.
 - **Native Everywhere:** The Community tier rejects Netty and Tomcat entirely. It uses a custom off-heap
   TCP carrier with Panama FFM and OpenSSL, delivering zero object churn on the network hot-path.
 - **Protocol Blindness:** Business logic operates on abstract `Stream` objects — oblivious to whether data
@@ -31,12 +42,32 @@ off-heap `LoanedBuffer` slabs via Panama FFM — no JVM heap contact on the ingr
 
 ## Connection ceiling
 
-`TransportConfig.maxConnections()` (`http.maxConnections`, default `HttpConfig.DEFAULT_MAX_CONNECTIONS`
-= 1000) is a hard cap on **concurrent connections across all reactors**, enforced at accept time. When
-it is reached, `NativeTcpCarrier` accepts the connection at TCP level and immediately closes it.
+`TransportConfig.maxConnections()` is a hard cap on **concurrent connections across all reactors**,
+enforced at accept time in one place, `NativeTcpCarrier.tryReserveConnectionSlot`. When it is reached,
+the carrier accepts the connection at TCP level and immediately closes it.
+
+**Which key sets it depends on which carrier you are running, and setting the wrong one is silent**
+(ADR-081):
+
+| Carrier | Key | Default | When it exists |
+|---|---|---|---|
+| HTTP listener | `http.maxConnections` | 4096 | whenever the HTTP subsystem is enabled — the carrier almost every deployment runs |
+| Standalone transport | `transport.maxConnections` | 4096 | only when `transport.mode` is set; the subsystem resolves to `DISABLED` otherwise |
+
+The two defaults were 1000 and 4096 until v0.12 — one field, one enforcement point, two numbers, no
+stated reason. ADR-081 unified them at 4096, the value the project's own benchmark runs had to raise
+the HTTP side to.
+
+**Check `ulimit -n` against this number.** The cap can only refuse cleanly while it is the ceiling
+reached *first*. Above the process file-descriptor limit — commonly 1024, below this default — the
+operating system's limit is reached first, and its failure mode is worse: see §"Accept-path failure
+modes".
 
 What a client observes: the socket opens and then dies, with no HTTP response — a transport-level
-failure, not a status code. There is no way for the client to distinguish this from a network fault.
+failure, not a status code, and indistinguishable from a network fault. **The stream admission
+ceiling below behaves the same way**: a shed stream is closed (FIN/RST on TCP, `STOP_SENDING` on
+QUIC), not answered. No server path in the kernel refuses with a status; if that is ever wanted it is
+a third mechanism above the connection layer, not a replacement for either of these (ADR-081 §2).
 
 Two properties make the ceiling easy to reach at a request rate that feels comfortable. It counts
 **concurrent connections, not rate**, so a client whose connection pool overlaps with a draining
@@ -51,9 +82,102 @@ Refusals are visible in two places, and were visible in neither before v0.11:
 - `eu.exeris.kernel.transport.CommunityConnectionRefused` is emitted per refusal, carrying the active
   count, the configured ceiling, and a cumulative total whose slope distinguishes a blip from a wall.
 
-Whether an accept-time cap is the right mechanism — as opposed to admitting and shedding at request
-level, where the response can carry a status — and whether 1000 is the right default, are open
-questions tracked in `docs/ROADMAP.md`. The behaviour above is unchanged; only its visibility is new.
+## Stream admission ceiling
+
+`TransportConfig.maxActiveStreams()` (`transport.paqs.maxActiveStreams`, default
+`TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS` = 5000) is a hard cap on **concurrently admitted
+streams per engine**, enforced by `AdmissionController.admit` after the memory-pressure decision and
+before a virtual thread is spawned. Over the cap the decision becomes `SHED_CAPACITY` whatever the
+priority and whatever the watermark says.
+
+This is a different bound from the connection ceiling above, and one is not derivable from the
+other: an HTTP/1 connection carries one stream, an HTTP/2 connection carries many.
+
+What a client observes: `StreamLoadShedder` closes the stream and emits
+`eu.exeris.kernel.transport.StreamShed` carrying the priority, the decision (`SHED_CAPACITY` rather
+than `SHED_MEMORY`) and the active count — so a capacity shed is distinguishable in JFR from a
+memory-pressure shed, which is the distinction that says whether raising the ceiling is the right
+response.
+
+**What the values mean** (the classification is ADR-071's):
+
+| Value | Meaning |
+|:--|:--|
+| `> 0` | the ceiling, as given |
+| `-1` (`TransportConfig.UNBOUNDED_ACTIVE_STREAMS`) | no stream-count ceiling |
+| `0`, other negatives | **refused at startup**, by `TransportConfig` and again by `AdmissionController` |
+
+`-1` removes the count cap, not admission control: the memory-pressure arbiter still decides every
+stream first, so an engine configured this way still sheds under watermark pressure. What it gives
+up is the ceiling that sheds *regardless* of memory pressure — the point for a JVM-controlled
+deployment measuring where saturation actually falls, and a foot-gun for a shared one. `0` is
+refused rather than read as "off" because an engine that admits nothing serves nothing.
+
+Both construction sites read the key: the transport subsystem and the HTTP listener, which builds
+its own `TransportConfig`. A key honoured on only one of them would apply to a standalone carrier
+and not to the server most deployments run.
+
+**Not a knob:** `PaqsScheduler.SPIN_THRESHOLD` has twice been catalogued as a PAQS operational
+limit. It is reachable only from `close()`, decides nothing about which streams are served, and
+bounds only how the drain spends CPU while it waits — under a drain deadline that is itself
+deliberately fixed. It stays a constant.
+
+## Idle connection reclamation
+
+`TransportConfig.idleTimeoutMillis()` (`transport.idleTimeoutMillis`, and `http.idleTimeoutMillis`
+reaching the same carrier through `HttpConfig`, default `HttpConfig.DEFAULT_IDLE_TIMEOUT_MS` =
+30 000) closes a connection that has moved no bytes for that long.
+
+**What the values mean** (ADR-071's capacity/timeout class):
+
+| Value | Meaning |
+|:--|:--|
+| `> 0` | reclaim after this many milliseconds without activity |
+| `0` | reclamation disabled — connections are held until the peer or the application closes them |
+| negatives | **refused at startup** by `HttpConfig` validation |
+
+**What counts as activity is deliberately asymmetric between the two directions**, and the
+asymmetry is the point rather than an oversight:
+
+| Direction | Refreshes the stamp | Does not |
+|:--|:--|:--|
+| ingress | the application calling `read()` | bytes merely *arriving* in the inbound queue |
+| egress | `write()` / `queueWrite()`, **and** bytes actually leaving the socket — the direct write, the reactor's deferred drain, and the TLS drain | — |
+
+On ingress, only an attempted read counts. A peer that opens a connection and sends nothing never
+causes one, so the same stamp that expires an idle keep-alive also bounds a slow-loris hold: a
+handler parked in `read()` for a body that never arrives has not refreshed its stamp since the read
+began. **Stamping on arrival would defeat exactly that** — dribbling one byte per second is what a
+slow-loris does, and a connection nobody is reading is not doing work.
+
+On egress the opposite is required: bytes leaving *are* the server doing work for this connection,
+so a large response draining to a slow client keeps its own connection alive rather than being cut
+off mid-transfer. `write()` reaching `queueWrite` only on the TLS branch is what made this wrong in
+the first cut — plaintext responses, which is `CommunityHttpExchange`'s path and the default one,
+moved bytes without counting, and idle reclamation became a property of whether TLS was configured.
+
+**The sweep is per reactor and rides a wake-up that was going to happen anyway.**
+`NativeTcpIdleReaper` runs inside the reactor's select loop after the selected keys are dispatched
+— no timer thread, no scheduled task, and no state shared between reactors. It is gated to
+`idleTimeout / 4` clamped to [250 ms, 5 s], because a reactor returns from `select` thousands of
+times a second under load and an ungated O(keys) walk would put a scan of the whole connection set
+on the hot path to enforce a limit measured in seconds. The same cadence shape, for the same
+reason, governs `CommunityTenantPoolRegistry`'s pool reclaim.
+
+**Teardown is abortive**, through the same `closeKeyStream` path as a dispatch fault. A graceful
+close waits for queued egress to drain, and a peer quiet enough to be reclaimed is exactly the peer
+that may never drain it.
+
+What an operator observes: `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout`, carrying
+the stream id, the reactor index, the observed idle span and the configured timeout. Both spans are
+on the event because the ratio is the interesting quantity — idle spans clustered just past the
+limit mean a fleet being trimmed on a threshold, spans minutes past it mean genuinely dead peers.
+
+> **This limit did nothing before 0.12.0.** It was read from configuration, validated, carried
+> through `HttpConfig` into `TransportConfig` and rendered by `toString()`, and never compared to
+> anything: no code read `idleTimeoutMillis()` outside construction. A knob that is carried but
+> unconsumed is worse than a missing one, because the missing one is discoverable — the operator
+> who sets it sees it echoed back and concludes it works.
 
 ## Accept-path failure modes
 
@@ -66,15 +190,52 @@ client: the socket opens and dies. They are different in kind, and the kernel no
 | Cause | the connection ceiling was reached | something threw while configuring the channel, resolving the peer, building the stream, or registering it |
 | Nature | a **policy** decision at a known limit | a **defect** — allocator failure, TLS engine that would not initialise, registry inconsistency |
 | In `totalRejected` | yes | **no** |
+| Counted on `TransportStats` | `totalRejected` | `acceptFaults` (since 0.12.0) |
 
 A setup fault is deliberately **not** counted as a refusal. `totalRejected` means work the engine
 *declined*, and a setup that broke declined nothing. Folding the two together would leave an operator
 reading a spike unable to tell a capacity problem from a bug — the one distinction that changes what
-they do next.
+they do next. Until 0.12.0 the fault count reached an operator only inside the JFR payload, so the two
+modes were documented together but not *observable* together; `TransportStats.acceptFaults` closes
+that (ADR-081 §5). A driver with no accept-setup path reports `0`.
 
 Both paths recover: the accept loop continues. That is correct for a per-connection failure, and
 making a setup fault fatal would trade a silent drop for an outage. What changed is only that neither
 is silent.
+
+**A third mode is neither of these, and since 0.12.0 it recovers.** An `IOException` from `accept()`
+itself — how file-descriptor exhaustion (`EMFILE`) surfaces — is the *listener* failing to produce a
+connection, not one connection failing to be set up. Until 0.12.0 it was fatal: `runAcceptorLoop`
+called `handleAsyncFailure` and returned, so a process that touched its `ulimit -n` once needed a
+restart to serve again, from a condition that clears on its own as connections close.
+
+| | Accept retry |
+|---|---|
+| Event | `CommunityAcceptRetry` |
+| Cause | `accept()` itself threw — descriptor exhaustion, an aborted connection |
+| Nature | a **transient** condition affecting the listener rather than a connection |
+| Response | pause and try again; `25ms × streak`, capped at 1s |
+| Bound | 64 consecutive failures are retried; the 65th takes the fatal path |
+
+**Every `IOException` is retried rather than a list of transient ones**, and that is deliberate. Java
+offers no typed signal — `EMFILE` arrives as a plain `IOException` — so classifying means matching on
+a message, and a message that does not match on some JDK, OS or locale reinstates the defect. The two
+mistakes are not symmetric: retrying a fatal condition costs a bounded delay before the same outcome,
+while declining to retry a transient one loses the listener. The ceiling does the work classification
+would have done, and the event's streak is what separates one retry from a process that is not
+recovering.
+
+**What ends a streak is an accept that returned a socket**, counted at the accept itself rather than
+inferred from how a pass finished. The distinction is the one descriptor pressure actually produces:
+descriptors free one at a time, so a pass accepts a connection and then throws probing for the next.
+It leaves by the throw, so a streak built from what the pass *returned* would climb to the ceiling
+while the listener was demonstrably still serving. An accept the connection cap then refuses counts
+too — what it witnesses is the listener working, which is a different question from whether the
+connection was served.
+
+The connection ceiling above still asks you to check `ulimit -n`. The cap refusing is the good
+outcome, and the OS limit winning the race is now survivable rather than terminal — but it is still
+the worse of the two.
 
 The fault event carries the exception **class** and never its message, matching
 `CommunityReactorDispatchFault` — a message can carry request-derived text.
@@ -84,7 +245,8 @@ The fault event carries the exception **class** and never its message, matching
 ### 1. Carrier Loop Architecture
 
 Transport logic centers around dedicated **Carrier Loops**. Each loop manages native sockets, task queues
-(`MpscArrayQueue`), and local memory pools (`SlabPool`) in a tight, non-blocking execution cycle.
+(JCTools `MpscUnboundedArrayQueue` — see "Load Tests" below), and off-heap memory pools reached
+through `MemoryAllocator`, in a tight, non-blocking execution cycle.
 
 The relationship between Carrier Loops and Virtual Threads is deliberate:
 
@@ -121,14 +283,40 @@ The Community carrier transfers bytes from the network socket directly into off-
 
 1. Implement the **PAQS Scheduler** and global Load Shedding logic.
 2. Coordinate with `ResourceArbiter` to monitor `SlabPool` exhaustion and trigger backpressure.
-3. Manage Virtual Thread lifecycle (one per incoming stream). The PAQS spawns per-stream virtual threads
-   via `Thread.ofVirtual().start()` — the sole deliberate exception to the `StructuredTaskScope` mandate.
-   `StructuredTaskScope.fork()` enforces `WrongThreadException` for any caller that did not open the scope;
-   since `schedule()` is called concurrently by multiple carrier threads (NIO selectors, io_uring rings),
-   a shared long-lived STS is architecturally incompatible with the multi-carrier ingress model. These
-   unstructured VTs act as roots of the Request Tree. All subsequent concurrent operations within
-   the stream handler MUST use `StructuredTaskScope`.
-4. Expose cross-platform POSIX / Winsock socket symbol loading via `CoreSyscallLoader` (Panama FFM). The POSIX half of that seam is exercised end-to-end since 0.11 (`SyscallLoopbackRoundTripIT`, below); the Winsock half has never run, because CI carries no Windows runner. Migration of the active Community carrier onto this shared socket path is planned but gated on that coverage; the current in-repo carrier remains NIO-backed, and NIO is retained as the explicit fallback path for portability and degraded-operation scenarios.
+3. Manage Virtual Thread lifecycle (one per incoming stream), through the injected
+   `StreamExecutionBackend` seam (`@since 0.11`) rather than a direct call in `PaqsScheduler` — the
+   default backend spawns via `Thread.ofVirtual().start()`, the sole deliberate exception to the
+   structured-concurrency mandate. `StructuredTaskScope.fork()` enforces `WrongThreadException` for
+   any caller that did not open the scope; since `schedule()` is called concurrently by multiple
+   carrier threads (NIO selectors, io_uring rings), a shared long-lived STS is architecturally
+   incompatible with the multi-carrier ingress model. These unstructured VTs act as roots of the
+   Request Tree. Concurrency *within* the stream handler must still be structured, but the mechanism
+   is track-dependent (ADR-066), and this is not the `StructuredTaskScope` mandate stated generically
+   elsewhere: the default distribution line uses `core.concurrent.StructuredScope` (GA APIs only,
+   no `--enable-preview`); `StructuredTaskScope` itself is reserved for the `preview` branch, per
+   `PaqsScheduler`'s own class-level contract.
+4. Expose cross-platform POSIX / Winsock socket symbol loading via `CoreSyscallLoader` (Panama FFM).
+   The POSIX half of that seam is exercised end-to-end since 0.11 (`SyscallLoopbackRoundTripIT`,
+   below); the Winsock half has never run, because CI carries no Windows runner.
+
+   **The Community carrier is not simply "NIO-backed": which of the two paths carries plain-TCP
+   data is decided at runtime.** `NativeTcpStream`'s read and write paths each choose between
+   `NativeTcpStreamPlainSocketIo.seamRead` / `seamWriteWithNioFallback` — POSIX `recv` / `send`
+   invoked through Panama FFM on the file descriptor lifted out of the `SocketChannel` — and
+   `nioFallbackRead` / `nioFallbackWrite`, which use the channel directly. `NativeTcpSocketBackend`
+   arms the first only when all three of `SyscallHandles.supportsPlainSocketIo()`,
+   `SocketChannelFdAccess.isRuntimeFdAccessAvailable()` and *not* `hasIoctlsocket()` (the Winsock
+   model) hold. NIO always owns the selector and the accept path; only the data path moves.
+
+   The middle condition is the one an operator controls, and it is off by default. Measured on
+   JDK 25.0.3-tem, `isRuntimeFdAccessAvailable()` returns `false` on a plain JVM and `true` under
+   `--add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED`.
+   Those are the same two flags `docs/subsystems/crypto.md` recommends so that the Community TLS
+   pipeline can bind an OpenSSL BIO to the socket descriptor — so **an operator who follows that
+   TLS guidance also moves plain-TCP data I/O from NIO onto the POSIX path**, and nothing in either
+   document previously said so. This module's own test suite runs with those flags in its surefire
+   `argLine`, which means the POSIX path is the one the tests exercise and the NIO fallback is the
+   one a default run takes.
 
 ---
 
@@ -165,8 +353,8 @@ is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through
 | `EX-NET-4002` | Send Failure             | `[0] String transportName, [1] long bytesSent`                              |
 | `EX-NET-4003` | Receive Timeout          | `[0] String transportName, [1] long timeoutMs`                              |
 | `EX-NET-4004` | Engine Bootstrap Failure | `[0] String transportName, [1] String reason`                               |
-| `EX-NET-4005` | Port Already in Use      | `[0] String transportName, [1] int port` — **Fatal:** check OS process list |
-| `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] int streamPriority, [2] int thresholdPriority`|
+| `EX-NET-4005` | Engine Start Failure     | `[0] String transportName, [1] int port` — thrown by `TransportException.engineStartFailure`; port-in-use is one cause among several (e.g. carrier loop thread creation failure) — **Fatal:** check OS process list when the port is the cause |
+| `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`); the JFR `StreamShedEvent` this code names on the PAQS path carries typed fields (`priority`, `shedReason`, `activeStreamCount`) instead, read by name, not by this `rawArgs` layout |
 | `EX-NET-4007` | Buffer Exhaustion        | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs`       |
 
 **Operational note for `EX-NET-4006`:** This is a deliberate, non-fatal policy decision — not a hardware
@@ -179,29 +367,32 @@ failure. No connection state or heap object is allocated for the shed stream. It
 
 ## Code Examples
 
-### 2. PAQS Priority Gate (Core)
+### 1. PAQS Priority Gate (Core) — shape of `PaqsScheduler.schedule`
 
 ```java
-public void onStreamArrival(TransportStream stream, StreamPriority priority) {
-    if (resourceArbiter.currentThreshold().isAbove(priority)) {
-        stream.close();
+public void schedule(TransportStream stream) {
+    StreamPriority priority = priorityExtractor.apply(stream);
+    AdmissionController.Decision decision = admissionController.admit(priority);
+    if (!decision.isAdmit()) {
+        loadShedder.shed(stream, priority, decision, admissionController.activeStreamCount());
         // stream is closed and StreamShedEvent is emitted — no exception propagated
         return;
     }
-    Thread.ofVirtual().start(() -> streamHandler.handle(stream));
+    executionBackend.start(threadName, () -> streamHandler.handle(stream));
 }
 ```
 
-> The priority check is O(1) — a single `int` comparison against the `WatermarkManager` threshold.
-> No heap allocation occurs for shed streams. The Virtual Thread is never created.
+> `admit(priority)` is O(1) — one `ResourceArbiter.decide` call plus a CAS loop against the active-stream
+> ceiling. No heap allocation occurs for shed streams. `executionBackend` defaults to
+> `Thread.ofVirtual().start(...)`; no Virtual Thread is created on the shed path.
 
-### 3. Protocol-Blind Stream Handler (SPI)
+### 2. Protocol-Blind Stream Handler (SPI)
 
 ```java
 package eu.exeris.kernel.spi.transport;
 
 public interface StreamHandler {
-    void handle(Stream stream);
+    void handle(TransportStream stream);
 }
 ```
 
@@ -224,18 +415,18 @@ sequenceDiagram
     NIC->>PAQS: onStreamArrival(stream, rawHeaders)
     PAQS->>PAQS: extractStreamPriority(stream)<br/>HTTP header / JWT claim / config default
 
-    PAQS->>WM: currentWatermarkLevel()
+    PAQS->>WM: currentLevel()
     WM-->>PAQS: NORMAL | WARNING | CRITICAL | SHEDDING
 
     alt NORMAL watermark
-        PAQS->>RA: reserveSlabSlot()
+        PAQS->>RA: decide(Context.TRANSPORT_IO)
         RA-->>PAQS: ResourceArbiter.Action (ALLOW — slot granted)
         PAQS->>VT: Thread.ofVirtual().start(streamHandler)
         Note over VT: Request processed imperatively.<br/>ScopedValues bound. StructuredTaskScope used downstream.
     else WARNING watermark — priority gate active
         PAQS->>PAQS: streamPriority.ordinal() <= threshold?
         alt priority sufficient
-            PAQS->>RA: reserveSlabSlot()
+            PAQS->>RA: decide(Context.TRANSPORT_IO)
             RA-->>PAQS: ResourceArbiter.Action (THROTTLE — slot granted)
             PAQS->>VT: Thread.ofVirtual().start(streamHandler)
         else priority insufficient
@@ -250,12 +441,25 @@ sequenceDiagram
     end
 ```
 
+> The `extractStreamPriority` step above is illustrative of the target design (see the caveat under
+> "`StreamPriority` — Origin and Assignment" below): the shipped Community carrier's extractor ignores
+> `rawHeaders` and always returns `NORMAL`, so the WARNING-watermark priority gate currently admits or
+> sheds every stream on an engine uniformly rather than differentiating by priority.
+
 ---
 
 ## `StreamPriority` — Origin and Assignment
 
 `StreamPriority` is not self-declared by the client. It is **assigned by the Kernel** at the transport
-edge based on verifiable attributes. The priority assignment chain:
+edge based on verifiable attributes — that is the target design. The priority assignment chain:
+
+> **Not implemented in the shipped Community carrier.** `NativeTcpCarrier.initPaqs()` wires the
+> `PaqsScheduler` with a constant extractor, `stream -> StreamPriority.NORMAL`, ignoring the stream
+> entirely — none of the four sources in the table below is read. `network.paqs.endpointPriority.<path>`,
+> the config key the third row depends on, is itself listed 🔲 planned (not wired) in
+> [config.md](config.md). Every stream a Community engine admits today carries `NORMAL`, so the
+> differential shedding this table and the Overview describe cannot happen against this build; the
+> table states the intended resolution chain, not current behavior.
 
 | Source                             | Mechanism                                                                                         | Trust Level        |
 |:-----------------------------------|:--------------------------------------------------------------------------------------------------|:-------------------|
@@ -289,14 +493,16 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
 |:-----------------------|:----------------------------------------------------|
 | **PAQS load shed**     | `FIN` (graceful close) — client receives `HTTP 503` |
 | **Graceful shutdown**  | `FIN` after drain timeout — no forced `RST`         |
-| **Hard shutdown timeout** | `RST` after 60 s hard timeout                   |
+| **Hard shutdown timeout** | `FIN` — the coordinator seals unconditionally at 60 s and remaining streams close through the same `stream.close()` teardown as any other close, best-effort flush and all; no `reset()`/`RST` call sites exist on this path |
 | **`TransportStream.reset(long)`** | `RST` (abortive) — `SO_LINGER 0` then close; queued writes abandoned (no drain wait) |
 | **Unrecoverable outbound-write failure** | `RST` (abortive) — queued writes abandoned so teardown cannot hang |
 
 > **Why `FIN` not `RST` for load shedding?** `RST` causes immediate connection teardown on the client
 > side, which may interrupt in-flight retries and force the client to reconnect. `FIN` allows the client
 > to receive the `HTTP 503` response body, which is machine-readable and enables intelligent backoff.
-> `RST` is reserved for hard timeout scenarios only.
+> `RST` is reserved for the two abortive primitives above — `reset(long)` and a failed outbound write —
+> never for the drain deadline itself: `NativeTcpCarrier.closeSelectorAndChannels()`, run whether the
+> drain finished cleanly or hit its 60 s deadline, calls every remaining stream's ordinary `close()`.
 >
 > **`reset(long)` vs `close()`:** `close()` is a graceful end-of-stream (`FIN`, drains queued writes);
 > `reset(long)` is the deliberate abortive primitive (`RST`, abandons queued writes) — the SPI's
@@ -382,9 +588,11 @@ whatever the request asked for. Without it a well-behaved peer has no way to lea
 pooled connection, and the next shutdown waits on the same idle connection again.
 
 The question is asked when the response is written, not when the request was parsed — and the
-distinction is the whole point. The request that most needs to tell its peer to let go is the one
-already in flight when shutdown began; answered at parse time it always gets the pre-shutdown answer,
-so the peer keeps a connection it will never be asked about again.
+distinction is the whole point. On the default plaintext path, `CommunityHttpExchange`'s private
+`resolveKeepAlive()` runs from `respond()` / `respondInternalClaimed()` and checks
+`drainCoordinator.isDraining()` there, at write time. The request that most needs to tell its peer to
+let go is the one already in flight when shutdown began; answered at parse time it always gets the
+pre-shutdown answer, so the peer keeps a connection it will never be asked about again.
 
 **Telemetry.** `CommunityTransportDrainEvent` (JFR `eu.exeris.kernel.transport.CommunityTransportDrain`)
 records `busyAtStart`, `busyRemaining`, `openAtStart` and duration. A non-zero `busyRemaining` means
@@ -397,18 +605,19 @@ idle connections that used to hold shutdown open.
 
 ## WebSocket / SSE — Design Stance
 
-**Server-Sent Events (SSE) is the kernel's first server-push primitive — decided in [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED), implemented in v0.10.** WebSocket remains unsupported and is a separately-justified follow-up. No server-push existed at TRL-3; this was a deliberate scope constraint, now being lifted SSE-first.
+**Server-Sent Events (SSE) is the kernel's first server-push primitive — decided in [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED), implemented in v0.10.** No server-push existed at TRL-3; this was a deliberate scope constraint, lifted SSE-first and then extended to full duplex by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) in v0.12.
 
 | Protocol     | Status      | Rationale                                                                                              |
 |:-------------|:------------|:-------------------------------------------------------------------------------------------------------|
 | **SSE**       | ✅ Shipped v0.10 — ratified by [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) (ACCEPTED) | One-directional server push, surfaced as the sibling `HttpStreamExchange` SPI (respond-once `HttpExchange` untouched). **SSE-first** — the minimal server-push primitive. The delivered wire framing is a close-delimited HTTP/1.1 response, not chunked transfer as sketched here before it landed; per-event chunked framing and an HTTP/2 `DATA` path are follow-ups. See [http.md](http.md) for the SPI surface and the per-item delivery status. |
-| **WebSocket** | Deferred — separately-justified follow-up (not milestone-pinned) | Full duplex; requires an HTTP Upgrade (H1) / Extended CONNECT (H2 RFC 8441) handshake + frame protocol. Decided separately once a bidirectional/low-latency client-streaming use case is proven; may precede 1.0 but is not pinned to a release milestone (see ADR-043 §What is NOT in scope). |
+| **WebSocket** | ✅ Shipped v0.12 — ratified by [ADR-084](../adr/ADR-084-websocket-provider-spi.md) (ACCEPTED) | Full duplex over the RFC 6455 HTTP/1.1 Upgrade handshake, surfaced as the sibling `WebSocketExchange` SPI. `preview` surface; text frames only on the application side; one virtual thread per connection with no queue in either direction, so backpressure is the socket's. **Extended CONNECT (H2, RFC 8441) is not implemented** — the upgrade is HTTP/1.1 only. The engine is embeddable **and**, since v0.12, bootstrappable: a `websocket` subsystem starts one when `websocket.enabled` is set, which it is not by default (ADR-084 A2). |
 | **gRPC streaming** | 🚧 Planned TRL-5 | Modelled as HTTP/2 streams — follows transport carrier maturity. |
 
-Full-duplex traffic still has no kernel primitive: until WebSocket is decided, a bidirectional
-use case pairs SSE downstream with ordinary requests upstream, or falls back to the **Events
-subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler handles
-priority-based delivery.
+Full-duplex traffic has a kernel primitive since v0.12, on HTTP/1.1 only. A deployment behind a
+proxy that speaks h2 to the kernel has no upgrade path until Extended CONNECT lands, and for that
+case the pre-0.12 shape still applies: SSE downstream with ordinary requests upstream, or the
+**Events subsystem (L3)** with a Kafka/Redpanda backend and a polling client. The PAQS scheduler
+handles priority-based delivery.
 
 ---
 
@@ -442,6 +651,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | `StreamLifecycleEvent` | `eu.exeris.kernel.transport.StreamLifecycle` | State transitions within a stream lifetime |
 | `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.transport.IngressQueueDepth` | Current queue depth metric |
 | `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
+| `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |
 
 ---
 
@@ -449,14 +659,23 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 
 ### Unit Tests
 
-- PAQS shedding logic: verify streams below threshold are rejected before `scope.fork()`.
+- PAQS shedding logic: verify streams below threshold are rejected before a Virtual Thread is spawned
+  (`AdmissionController.admit`, `PaqsSchedulerTest`).
 - `SlabPool` exhaustion: `EX-NET-4007` thrown with correct `rawArgs` when all slots are active.
 - Priority ordering: `StreamPriority` enum ordinals enforce correct relative ordering.
 
 ### Integration Tests (TCK)
 
-- **`io_uring` Validation (Linux):** SQ/CQ ring submission integrity under concurrent streams.
-- **Zero-Allocation Hot-Path:** JFR baseline shows zero heap allocations during `processIngress()`.
+- **`io_uring`:** 🚧 Not present in this tree. No `io_uring`-backed `TransportProvider` ships in
+  `exeris-kernel-community`; the shipped Community carrier uses NIO for the selector and accept
+  path, and either NIO or POSIX-over-FFM for plain-TCP data depending on whether the fd-access seam
+  arms (see "What Transport Core DOES" above). `io_uring` is an enterprise-tier concern per the
+  ecosystem's module map.
+- **Zero-Allocation Hot-Path:** `TransportZeroAllocTck` measures the *write* (egress) path —
+  `allocate(MICRO) → write sentinel → queueWrite(buf) → close` — not an ingress method (no
+  `processIngress()` exists in this tree). Enterprise tier is asserted at zero `eu.exeris.*` heap
+  allocations; **Community tier is bounded**, not zero (`AbstractSubsystemZeroAllocTck` default
+  budget: 5 allocations/iteration).
 - **PAQS Integration:** `WatermarkManager` pressure increase correctly raises PAQS threshold and
   triggers `EX-NET-4006` for low-priority streams. 🚧 Planned — not yet implemented. `AbstractPaqsIntegrationTck` covering WatermarkManager→PAQS→EX-NET-4006 chain does not yet exist.
 - **Berkeley socket seam round-trip (since 0.11):** `SyscallLoopbackRoundTripIT` (Core) drives the handles resolved by `CoreSyscallLoader` through a real loopback connection — bind, listen, connect, accept, send, recv, byte-exact comparison — plus a refusal case that pairs a successful connect with a refused one so neither can pass alone. Runs in the default build via Failsafe; Linux and Windows only, since BSD `sockaddr_in` carries a leading `sin_len` byte that the shared 16-byte layout does not model. Integer-width entries in the C-type→`ValueLayout` table stay reviewed-not-tested: the x86-64 SysV ABI zero-extends, so a `size_t` mis-declared as `JAVA_INT` passes this gate.
@@ -474,42 +693,67 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 
 ## Implementation Notes — Class Decomposition Assessment (HEUR-061)
 
-`NativeTcpCarrier` (~1.4k LOC, 146 declared members) and `NativeTcpStream` (~1.2k LOC, 133 declared members) cross the "≈5 collaborators" heuristic threshold. A v0.6 PR-review carry-over (HEUR-061) asked whether they should be decomposed along reactor / FD-owner / PAQS-dispatch responsibility lines.
+At the time of the original assessment (v0.7 Sprint 2), `NativeTcpCarrier` (~1.4k LOC) and
+`NativeTcpStream` (~1.2k LOC) crossed the "≈5 collaborators" heuristic threshold as single files, and
+a v0.6 PR-review carry-over (HEUR-061) asked whether they should be decomposed along reactor /
+FD-owner / PAQS-dispatch responsibility lines. **Assessment outcome at the time: keep the single-file
+shape; do not refactor in that sprint** (reasoning below, kept for the record).
 
-**Assessment outcome (v0.7 Sprint 2): keep current single-file shape; do not refactor in this sprint.**
+**Current state (v0.12): partial decomposition has since happened, in the direction the v0.7
+assessment argued against.** `NativeTcpCarrier` is now ~1.1k LOC and `NativeTcpStream` ~1.4k LOC — the
+two have roughly swapped size rank since v0.7, so the LOC figures above no longer describe which file
+is larger. Declared-member counts are not re-verified here (unlike LOC, they were not mechanically
+recounted for this pass) and should be treated as unconfirmed for both classes at both dates. The
+reactor loop that Sprint 2 argued should stay an inner class — `ReactorLoop` — is now the top-level
+package-private class `NativeTcpReactor`, holding a `NativeTcpCarrier host` reference and calling back
+into it for `closeKeyStream`, `readIngress`, `flushStream` and stream resolution: exactly the
+"callback-heavy delegate" shape point 1 below predicted as the cost of extraction, taken on anyway.
+Alongside it, `NativeTcpSocketBackend` / `NativeTcpSocketProbe` now hold the FFM socket-backend
+selection and validation responsibility line, `ChannelRuntimeRegistry` holds channel/stream/owner
+bookkeeping, and on the stream side `NativeTcpStreamPendingWrite`, `NativeTcpStreamConsumerGate` and
+`NativeTcpStreamPlainSocketIo` have been split out of what was one file. `registerAndHandshakeConnection`
+below is `registerConnection` in the current source. Whether this extraction was driven by the
+per-reactor idle-reaper state introduced in 0.12 (`NativeTcpIdleReaper`, which needed a natural
+per-reactor owner) or by the general pressure below has not been confirmed against a PR history for
+this pass — the fact of the extraction is verified; the motivating trigger is not.
 
-**Responsibility lines (informational map, not extraction targets):**
+**Responsibility lines, as assessed at v0.7 Sprint 2 (informational map, not extraction targets at
+the time; largely superseded by the extraction above for `NativeTcpCarrier`'s reactor and
+socket-backend lines):**
 
 `NativeTcpCarrier`:
 
 - **Engine lifecycle + config** — `TransportConfig` / `MemoryAllocator` / `KernelCryptoProvider` injection, `running` / `closed` AtomicBooleans, acceptor thread, stream/connection counters.
-- **FFM socket backend selection + validation** — `SocketBackendMode` enum, `SocketBackendSelection` record, PosixHybrid / NIO fallback, `validateServerSocketBootstrap*` / `validateClientSocketBackend*` probes, Windows `bestEffortWsaCleanup`.
-- **Reactor loop** — `ReactorLoop` inner class: `Selector`, `pendingRequests` MPSC queue (PERF-063 — `MpscUnboundedArrayQueue`), `drainPendingRequests`, key dispatch.
-- **Acceptor / connection bootstrap** — `runAcceptorLoop`, `acceptPendingConnections`, `tryReserveConnectionSlot`, `buildAcceptedStream`, `registerAndHandshakeConnection`.
+- **FFM socket backend selection + validation** — `SocketBackendMode` enum, `SocketBackendSelection` record, PosixHybrid / NIO fallback, `validateServerSocketBootstrap*` / `validateClientSocketBackend*` probes, Windows `bestEffortWsaCleanup` — now `NativeTcpSocketBackend` / `NativeTcpSocketProbe`, not carrier-internal.
+- **Reactor loop** — now the top-level `NativeTcpReactor`, not an inner class: `Selector`, `pendingRequests` MPSC queue (PERF-063 — `MpscUnboundedArrayQueue`), `drainPendingRequests`, key dispatch.
+- **Acceptor / connection bootstrap** — `runAcceptorLoop`, `acceptPendingConnections`, `tryReserveConnectionSlot`, `buildAcceptedStream`, `registerConnection`.
 - **Client-side connection bootstrap** — `connect` flips the connected channel to non-blocking and `registerClientChannel` registers it on a single client-side reactor (SERVER/DUAL keep `config.reactorCount()` reactors; CLIENT/DUAL outbound uses one). Client ingress and egress are reactor-driven exactly like accepted server channels — there is no separate client ingress/writer Virtual-Thread pump (removed in v0.8 Sprint 7 / TCK-064, which eliminated the blocking-`recv()` carrier-pinning stall).
-- **PAQS-dispatch read/flush path** — `readIngress`, `flushStream`, `adaptTlsIfNeeded`, `closeKeyStream`.
+- **PAQS-dispatch read/flush path** — `readIngress`, `flushStream`, `adaptTlsIfNeeded`, `closeKeyStream` remain carrier methods, called back into from `NativeTcpReactor`.
 
 `NativeTcpStream`:
 
 - Stream open/close state machine and FD-owner integration.
-- Outbound queue (`MpscUnboundedArrayQueue`) and write loop with TLS layering.
+- Outbound queue (`MpscUnboundedArrayQueue`) and write loop with TLS layering — pending-write bookkeeping and plain-socket I/O now split into `NativeTcpStreamPendingWrite` and `NativeTcpStreamPlainSocketIo`.
 - Inbound queue (`SpscArrayQueue` / `SpscUnboundedArrayQueue`) and read loop with TLS layering.
-- Backpressure / queue-depth bookkeeping for PAQS interaction.
+- Backpressure / queue-depth bookkeeping for PAQS interaction — the outbound-consumer handoff now via `NativeTcpStreamConsumerGate`.
+- Two inner classes remain: `RegistrationGate` and `StreamRuntimeState`.
 
-**Why not extract now:**
+**Why not extract, as reasoned at v0.7 Sprint 2 (superseded for points 1 and 2 by the extraction that
+has since happened):**
 
-1. **Tight coupling cost**: `ReactorLoop` is an inner class deliberately — its operational surface (`channelRuntimeRegistry`, `streamByChannel`, `closeKeyStream`, `readIngress`, `flushStream`) is intimate with carrier state. Promoting it to a top-level class requires ~10 callback / port references injected through the constructor, which trades an inner class for a callback-heavy delegate without measurable readability gain. Same risk applies to FD-owner / PAQS-dispatch extraction.
-2. **Active development collision risk**: v0.7 Sprint 5 (Kafka EventEngine), Sprint 6 (distributed integration), and PERF-061 / PERF-062 (HTTP/2 frame writer + TLS ingress slab) all touch transport hot paths. Decomposition during this window adds merge surface to every concurrent PR.
-3. **Sibling precedent**: SQ-006 raised the analogous question for `CoreFlowRuntime` and was deferred with a design note rather than a refactor PR. The same disposition applies here.
+1. **Tight coupling cost**: `ReactorLoop` is an inner class deliberately — its operational surface (`channelRuntimeRegistry`, `streamByChannel`, `closeKeyStream`, `readIngress`, `flushStream`) is intimate with carrier state. Promoting it to a top-level class requires ~10 callback / port references injected through the constructor, which trades an inner class for a callback-heavy delegate without measurable readability gain. Same risk applies to FD-owner / PAQS-dispatch extraction. *(This is the shape `NativeTcpReactor` now has — the predicted cost, taken on.)*
+2. **Active development collision risk**: v0.7 Sprint 5 (Kafka EventEngine), Sprint 6 (distributed integration), and PERF-061 / PERF-062 (HTTP/2 frame writer + TLS ingress slab) all touch transport hot paths. Decomposition during this window adds merge surface to every concurrent PR. *(A window-specific argument, not evidence against decomposition once that window closed.)*
+3. **Sibling precedent**: SQ-006 raised the analogous question for `CoreFlowRuntime` and was deferred with a design note rather than a refactor PR. The same disposition applied at the time.
 4. **Heuristic vs hard rule**: the ">5 collaborators" rule is a signal, not a hard gate (`.agents/policies/operating-standards.md` §Heuristics). Class size alone does not justify forced decomposition when the cost outweighs the benefit.
 
-**When to revisit:**
+**When to revisit, as stated at v0.7 Sprint 2:**
 
-- If a future sprint introduces a second carrier (e.g., io_uring) that needs to share reactor/FD-owner code — at that point extraction yields a real reuse benefit.
+- If a future sprint introduces a second carrier (e.g., io_uring) that needs to share reactor/FD-owner code — at that point extraction yields a real reuse benefit. *(Not the trigger that occurred: no `io_uring` provider exists in this tree as of 0.12 — see "Testing Strategy" above.)*
 - If profiling data shows that the current class layout regresses inlining or escape analysis on the hot path (no current evidence).
-- If the file size exceeds ~2k LOC after Sprint 5/6 changes — at that scale revisit with profiling data and a measured refactor PR.
+- If the file size exceeds ~2k LOC after Sprint 5/6 changes — at that scale revisit with profiling data and a measured refactor PR. *(Neither file has crossed this; the extraction happened well below it.)*
 
-Tracking: revisit alongside any io_uring / FFM-native carrier work (currently planned post-v0.7).
+Tracking note as originally written: "revisit alongside any io_uring / FFM-native carrier work
+(currently planned post-v0.7)" — not the path the extraction above actually took.
 
 ---
 
@@ -520,6 +764,11 @@ are made at the network edge in O(1) time, before a single byte of unauthorized 
 consumes heap, CPU, or a Virtual Thread.
 
 ---
+
+## Owning ADRs
+
+- [ADR-071](../adr/ADR-071-operational-limit-configuration-path.md) — Give operational limits a configuration path, and rule what a zero means
+- [ADR-081](../adr/ADR-081-accept-time-connection-cap.md) — The connection cap and stream shedding are layers, and neither answers with a status
 
 ## Stability
 

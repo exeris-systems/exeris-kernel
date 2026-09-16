@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.graph;
 
@@ -19,7 +15,7 @@ import jdk.jfr.StackTrace;
 /**
  * JFR event emitted by {@link GraphMetadataEngine} after each discovery pass.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.graph.MetadataDiscovery")
 @Label("Graph Metadata Discovery")
@@ -40,6 +36,13 @@ final class GraphMetadataDiscoveryEvent extends Event {
     @Description("Total number of classes scanned")
     /* default */ int scannedCount;
 
+    /**
+     * Emits the metadata-discovery event if JFR recording is active; a no-op otherwise.
+     *
+     * @param descriptorType  {@code "NODE"} or {@code "EDGE"} — which discovery pass ran
+     * @param discoveredCount number of annotated classes that produced a descriptor
+     * @param scannedCount    total number of candidate classes scanned
+     */
     /* default */ static void emit(String descriptorType, int discoveredCount, int scannedCount) {
         if (!FlightRecorder.isInitialized()) {
             return;
