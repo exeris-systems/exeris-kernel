@@ -97,6 +97,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `PaqsScheduler` construction and from `NativeTcpCarrier.start()` — client mode stands up no PAQS —
   initialises the transport event classes on the thread that starts the engine instead.
 
+- **Every carrier-pinning fence stops counting a cold JVM, not just the client-ingress one.**
+  `JfrPinningMonitor` — the instrument behind every subsystem's carrier-pinning binding — counted
+  each `jdk.VirtualThreadPinned` event alike, so a class initialising on a virtual thread read as a
+  blocked carrier on any of them. It now classifies through `CarrierPinClassification`: class
+  loading and class initialisation land in `Result.classInitEvents()`, reported in the failure
+  banner but not counted, and everything else still fails, a pin the JVM declines to explain
+  included. `PinnedEvent` carries the JVM's `pinnedReason` and its verdict, so a report says why a
+  carrier was pinned rather than only which thread was.
+
 - **The client-ingress carrier-pinning regression test counts blocked carriers, not a cold JVM.**
   It warms the measured path before the recording opens, sets class-loading and class-initialisation
   pins aside from the fence while still reporting them, and keeps its recording when it fails —

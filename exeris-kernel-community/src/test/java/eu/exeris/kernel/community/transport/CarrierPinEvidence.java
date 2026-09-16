@@ -4,9 +4,8 @@
  */
 package eu.exeris.kernel.community.transport;
 
+import eu.exeris.kernel.tck.contract.CarrierPinClassification;
 import jdk.jfr.consumer.RecordedEvent;
-import jdk.jfr.consumer.RecordedFrame;
-import jdk.jfr.consumer.RecordedStackTrace;
 import jdk.jfr.consumer.RecordingFile;
 
 import java.io.IOException;
@@ -17,28 +16,22 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Reads {@code jdk.VirtualThreadPinned} events out of a recording and says, for each one, whether
- * the JVM was loading or initialising a class rather than the code under test blocking a carrier.
+ * Reads {@code jdk.VirtualThreadPinned} events out of a recording this test owns, and renders them
+ * for a failure message.
  *
- * <h2>Why the distinction is load-bearing</h2>
- * <p>A virtual thread that runs a {@code <clinit>} cannot unmount — the JVM reports the pin as
- * {@code "VM call to <class>.<clinit> on stack"} — and every virtual thread waiting on another
- * thread's initialisation of the same class blocks pinned too
- * ({@code "Waited for initialization of <class> by another thread"}). JEP 491 unpinned
- * {@code synchronized} and {@code Object.wait}; it did not unpin class initialisation. Those pins
- * say the JVM was cold, not that a carrier was blocked by the code under test, and their duration
- * scales with how contended the host is — which is how they cross a fixed millisecond fence on a
- * constrained runner and nowhere else.
- *
- * <p>Nothing here widens to "pins we would rather not see". A blocking syscall on a carrier pins
- * with a native frame on the stack and a different reason, and stays counted.
+ * <p>The verdict on each event — blocked carrier, or the JVM loading and initialising a class —
+ * comes from {@link CarrierPinClassification}, the same classifier
+ * {@link eu.exeris.kernel.tck.contract.JfrPinningMonitor} uses, which states why the distinction
+ * exists. What lives here is only what this test does differently: it drives its own
+ * {@link jdk.jfr.Recording} around a window it controls, and it reports the reason and the top
+ * frames rather than a thread name.
  *
  * @since 0.12
  */
 final class CarrierPinEvidence {
 
     /** The JFR event this reads; the JVM emits it when a virtual thread blocks while pinned. */
-    static final String VT_PINNED_EVENT = "jdk.VirtualThreadPinned";
+    static final String VT_PINNED_EVENT = CarrierPinClassification.VT_PINNED_EVENT;
 
     private static final int MAX_REPORTED_FRAMES = 4;
 
@@ -97,34 +90,14 @@ final class CarrierPinEvidence {
                     continue;
                 }
                 String thread = event.getThread() != null ? event.getThread().getJavaName() : "<unknown>";
-                String reason = pinnedReason(event);
-                List<String> frames = frames(event.getStackTrace());
+                String reason = CarrierPinClassification.pinnedReason(event);
+                List<String> frames = CarrierPinClassification.frames(event.getStackTrace());
                 List<String> top = frames.subList(0, Math.min(MAX_REPORTED_FRAMES, frames.size()));
-                pins.add(new Pin(thread, millis, reason, top, isClassLoadingOrInit(reason, frames)));
+                pins.add(new Pin(thread, millis, reason, top,
+                        CarrierPinClassification.isClassLoadingOrInit(reason, frames)));
             }
         }
         return pins;
-    }
-
-    /**
-     * Whether a pin is the JVM loading or initialising a class.
-     *
-     * @param reason the JVM's {@code pinnedReason}; never {@code null}
-     * @param frames the stack, as {@code Type.method} strings, outermost first
-     * @return {@code true} if this pin is cold-start class work rather than a blocked carrier
-     */
-    static boolean isClassLoadingOrInit(String reason, List<String> frames) {
-        if (reason.contains("Waited for initialization of") || reason.contains("<clinit>")) {
-            return true;
-        }
-        for (String frame : frames) {
-            if (frame.endsWith(".<clinit>")
-                    || frame.startsWith("jdk.internal.loader.")
-                    || frame.startsWith("java.lang.ClassLoader.loadClass")) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**
@@ -157,25 +130,5 @@ final class CarrierPinEvidence {
         }
         return classInit.size() + " class-loading/initialisation pin(s), not counted against the fence:"
                 + System.lineSeparator() + render(classInit);
-    }
-
-    /** {@code pinnedReason} carries the JVM's own account of the pin; the field exists from JDK 24. */
-    private static String pinnedReason(RecordedEvent event) {
-        if (!event.hasField("pinnedReason")) {
-            return "<no pinnedReason field on this JDK>";
-        }
-        String reason = event.getString("pinnedReason");
-        return reason == null ? "<unknown>" : reason;
-    }
-
-    private static List<String> frames(RecordedStackTrace stack) {
-        if (stack == null) {
-            return List.of();
-        }
-        List<String> frames = new ArrayList<>(stack.getFrames().size());
-        for (RecordedFrame frame : stack.getFrames()) {
-            frames.add(frame.getMethod().getType().getName() + "." + frame.getMethod().getName());
-        }
-        return frames;
     }
 }

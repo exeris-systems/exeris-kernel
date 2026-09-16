@@ -677,7 +677,16 @@ one that is left out still works, it simply initialises wherever its first emit 
 
 The JDK's own cold classes (`sun.nio.ch.Poller`, the FFM segment internals) pin the same way and no
 runtime warm-up can reach them, which is why `CommunityClientIngressCarrierPinningTest` warms its
-path before recording and sets class-initialisation pins aside from its fence.
+path before recording and sets class-initialisation pins aside from its fence — through
+`CarrierPinClassification`, the same classifier `JfrPinningMonitor` applies to every subsystem's
+carrier-pinning binding.
+
+Warming is per engine, not per kernel, and the reason is a measurement: initialising one JFR event
+class costs about 1 ms cold (103 classes in 79 ms with a recording running, 108 ms without — it is
+the class load, not the JFR registration). The transport set is 14 classes, so `start()` pays about
+16 ms for classes that engine will use. Warming all 128 event classes in the kernel at boot would
+cost 100 ms or more, much of it for failure-path events a given process may never emit — which is
+why nothing does that, and why a subsystem that wants the same protection declares its own set.
 
 ---
 

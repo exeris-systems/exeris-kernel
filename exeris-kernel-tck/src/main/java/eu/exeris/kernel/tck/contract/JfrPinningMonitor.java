@@ -30,13 +30,20 @@ import java.util.Locale;
  * <p>Threshold default: {@value #DEFAULT_THRESHOLD_MS} ms — tighter than the
  * performance contract kill threshold (50 ms), acting as an early-warning fence.
  *
+ * <p><b>Not every pin over the fence is a blocked carrier.</b> Class loading and class
+ * initialisation pin one too, for a reason no subsystem under test controls and for a duration set
+ * by how busy the host is — {@link CarrierPinClassification} states the mechanism and the
+ * measurement. Those events are captured and reported in {@link Result#classInitEvents()} but are
+ * not counted by {@link Result#hasPinning()} or {@link #assertNoPinning}; everything else is,
+ * including a pin the JVM declines to explain.
+ *
  * @since 0.5
  * @see JfrAllocationMonitor
  * @see AbstractSubsystemZeroAllocTck
  */
 public final class JfrPinningMonitor {
 
-    private static final String VT_PINNED_EVENT = "jdk.VirtualThreadPinned";
+    private static final String VT_PINNED_EVENT = CarrierPinClassification.VT_PINNED_EVENT;
 
     /** Default carrier-pinning threshold, in milliseconds; see the class-level contract note. */
     public static final long DEFAULT_THRESHOLD_MS = 20L;
@@ -71,21 +78,30 @@ public final class JfrPinningMonitor {
     /**
      * One captured {@code jdk.VirtualThreadPinned} event that met the capture threshold.
      *
-     * @param durationMs how long the carrier was pinned
-     * @param threadName virtual thread that caused the pin
-     * @param stackTrace top-10 frames formatted as {@code "Class.method() | ..."}
+     * @param durationMs   how long the carrier was pinned
+     * @param threadName   virtual thread that caused the pin
+     * @param stackTrace   top-10 frames formatted as {@code "Class.method() | ..."}
+     * @param pinnedReason the JVM's own account of the pin, from the event's {@code pinnedReason}
+     *                     field; a JDK without that field says so rather than inventing one
+     * @param classInit    whether this pin is class loading or class initialisation rather than a
+     *                     blocked carrier — see {@link CarrierPinClassification}
      */
-    public record PinnedEvent(double durationMs, String threadName, String stackTrace) {
+    public record PinnedEvent(double durationMs, String threadName, String stackTrace,
+                              String pinnedReason, boolean classInit) {
     }
 
     /**
      * Outcome of one {@link #measure} run.
      *
-     * @param pinnedEvents events exceeding the threshold
-     * @param jfrPath      path to the raw JFR file for post-mortem analysis
-     * @param thresholdMs  threshold used during capture
+     * @param pinnedEvents    events exceeding the threshold that are counted against it — every pin
+     *                        that is not class loading or class initialisation
+     * @param classInitEvents events exceeding the threshold that are class loading or class
+     *                        initialisation: reported, never counted
+     * @param jfrPath         path to the raw JFR file for post-mortem analysis
+     * @param thresholdMs     threshold used during capture
      */
-    public record Result(List<PinnedEvent> pinnedEvents, Path jfrPath, long thresholdMs) {
+    public record Result(List<PinnedEvent> pinnedEvents, List<PinnedEvent> classInitEvents,
+                         Path jfrPath, long thresholdMs) {
         /**
          * Whether any event met the capture threshold.
          *
@@ -153,7 +169,9 @@ public final class JfrPinningMonitor {
      */
     public static void assertNoPinning(Result result, String label) {
         if (!result.hasPinning()) return;
-        StringBuilder sb = new StringBuilder(512);
+        // 1024, not 512: the report now carries each pin's reason and a set-aside block, and the
+        // fixed frame alone is past 587 characters — PMD measured it.
+        StringBuilder sb = new StringBuilder(1024);
         sb.append("\n╔══════════════════════════════════════════════════════╗\n");
         sb.append("║  CARRIER PINNING TCK — VERDICT: GUILTY               ║\n");
         sb.append("╠══════════════════════════════════════════════════════╣\n");
@@ -164,10 +182,23 @@ public final class JfrPinningMonitor {
         sb.append("╠══════════════════════════════════════════════════════╣\n");
         result.pinnedEvents().stream().limit(5).forEach(e ->
                 sb.append("  ▸ ").append(e.threadName())
-                        .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs())).append(" ms\n")
+                        .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs())).append(" ms")
+                        .append(" | ").append(e.pinnedReason()).append("\n")
                         .append("    ").append(e.stackTrace()).append("\n")
         );
         sb.append("╚══════════════════════════════════════════════════════╝\n");
+        if (!result.classInitEvents().isEmpty()) {
+            // Reported, not counted: these say the JVM was cold, not that a carrier was blocked.
+            // They are printed because a fence that silently discards evidence is worse than one
+            // that counts the wrong thing — the reader decides whether the set-aside is right.
+            sb.append(result.classInitEvents().size())
+                    .append(" further pin(s) were class loading or class initialisation and are not counted:\n");
+            result.classInitEvents().stream().limit(5).forEach(e ->
+                    sb.append("  · ").append(e.threadName())
+                            .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs()))
+                            .append(" ms | ").append(e.pinnedReason()).append("\n")
+            );
+        }
         sb.append("Per performance-contract.md: carrier blocked > ")
                 .append(result.thresholdMs())
                 .append(" ms is BANNED. Avoid synchronized, blocking I/O, non-VT-safe executors.");
@@ -176,7 +207,8 @@ public final class JfrPinningMonitor {
 
 
     private static Result parseResult(Path jfrFile, long thresholdMs) throws IOException {
-        List<PinnedEvent> events = new ArrayList<>();
+        List<PinnedEvent> counted = new ArrayList<>();
+        List<PinnedEvent> classInit = new ArrayList<>();
         if (Files.exists(jfrFile)) {
             try (RecordingFile rf = new RecordingFile(jfrFile)) {
                 while (rf.hasMoreEvents()) {
@@ -185,11 +217,15 @@ public final class JfrPinningMonitor {
                     double ms = ev.getDuration().toNanos() / 1_000_000.0;
                     if (ms < thresholdMs) continue;
                     String thread = ev.getThread() != null ? ev.getThread().getJavaName() : "<unknown>";
-                    events.add(new PinnedEvent(ms, thread, formatStack(ev)));
+                    String reason = CarrierPinClassification.pinnedReason(ev);
+                    boolean cold = CarrierPinClassification.isClassLoadingOrInit(
+                            reason, CarrierPinClassification.frames(ev.getStackTrace()));
+                    PinnedEvent event = new PinnedEvent(ms, thread, formatStack(ev), reason, cold);
+                    (cold ? classInit : counted).add(event);
                 }
             }
         }
-        return new Result(List.copyOf(events), jfrFile, thresholdMs);
+        return new Result(List.copyOf(counted), List.copyOf(classInit), jfrFile, thresholdMs);
     }
 
     private static String formatStack(RecordedEvent ev) {
