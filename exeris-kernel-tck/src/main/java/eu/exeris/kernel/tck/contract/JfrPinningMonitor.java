@@ -6,6 +6,7 @@ package eu.exeris.kernel.tck.contract;
 
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordedStackTrace;
 import jdk.jfr.consumer.RecordingFile;
 
 import java.io.IOException;
@@ -52,6 +53,9 @@ public final class JfrPinningMonitor {
 
     /** How many pins a report prints before deferring to the recording. */
     private static final int REPORTED_PINS = 5;
+
+    /** How many frames of one pin's stack a report prints. */
+    private static final int REPORTED_FRAMES = 10;
     private static final DateTimeFormatter TS_FMT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
@@ -271,12 +275,32 @@ public final class JfrPinningMonitor {
      * @param label  human-readable label for the diagnostic
      */
     private static void reportSetAside(Result result, String label) {
-        if (result.classInitEvents().isEmpty() || !LOG.isLoggable(System.Logger.Level.INFO)) {
+        String report = setAsideReport(result, label);
+        if (report.isEmpty() || !LOG.isLoggable(System.Logger.Level.INFO)) {
             return;
+        }
+        LOG.log(System.Logger.Level.INFO, report);
+    }
+
+    /**
+     * The text {@link #reportSetAside} logs, or empty when the run set nothing aside.
+     *
+     * <p>Package-private so that {@code JfrPinningMonitorClassInitSelfTest} can assert on the
+     * report's content without depending on which logging backend a test JVM resolved
+     * {@link System.Logger} to. The log itself is asserted separately, and this is what says the
+     * line would carry the pins if one were emitted.
+     *
+     * @param result the outcome of a {@link #measure} run
+     * @param label  human-readable label for the diagnostic
+     * @return the report, or an empty string
+     */
+    static String setAsideReport(Result result, String label) {
+        if (result.classInitEvents().isEmpty()) {
+            return "";
         }
         StringBuilder sb = new StringBuilder(256).append("[").append(label).append("] ");
         appendSetAside(sb, result);
-        LOG.log(System.Logger.Level.INFO, sb.toString().stripTrailing());
+        return sb.toString().stripTrailing();
     }
 
     /**
@@ -346,14 +370,22 @@ public final class JfrPinningMonitor {
         return new Result(List.copyOf(counted), List.copyOf(classInit), jfrFile, thresholdMs);
     }
 
+    /**
+     * The top of a pin's stack, for a report.
+     *
+     * <p>Built from {@link CarrierPinClassification#frames(RecordedStackTrace, int)} rather than
+     * from the recording again: this method derived {@code Type.method} a second way, which is how
+     * one of them came to null-guard a frame the JDK left without a method and the other did not.
+     *
+     * @param ev a recorded pin event; must not be {@code null}
+     * @return the innermost {@value #REPORTED_FRAMES} frames, or a note that there were none
+     */
     private static String formatStack(RecordedEvent ev) {
-        if (ev.getStackTrace() == null) return "<no stack>";
-        StringBuilder sb = new StringBuilder();
-        ev.getStackTrace().getFrames().stream().limit(10).forEach(f ->
-                sb.append(f.getMethod().getType().getName())
-                        .append(".").append(f.getMethod().getName()).append("() | ")
-        );
-        return sb.length() > 3 ? sb.substring(0, sb.length() - 3) : "<empty>";
+        if (ev.getStackTrace() == null) {
+            return "<no stack>";
+        }
+        List<String> frames = CarrierPinClassification.frames(ev.getStackTrace(), REPORTED_FRAMES);
+        return frames.isEmpty() ? "<empty>" : String.join("() | ", frames) + "()";
     }
 
     /**

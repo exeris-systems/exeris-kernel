@@ -59,10 +59,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * is deliberately far larger than the carrier pool so the scarce-carrier deadlock would re-manifest
  * if any client RECV ever blocked a carrier again. The test fails if:
  * <ol>
- *   <li>any {@code jdk.VirtualThreadPinned} event &gt; {@value #PIN_THRESHOLD_MS} ms is recorded that
- *       is not class loading or class initialisation — the fence value is the one
- *       {@link eu.exeris.kernel.tck.contract.JfrPinningMonitor} uses, what is counted against it is
- *       narrower (see below), <em>or</em></li>
+ *   <li>any {@code jdk.VirtualThreadPinned} event over the fence
+ *       ({@value JfrPinningMonitor#DEFAULT_THRESHOLD_MS} ms) is recorded that is not class loading
+ *       or class initialisation — the fence value is
+ *       {@link eu.exeris.kernel.tck.contract.JfrPinningMonitor}'s own, and what is counted against
+ *       it is narrower (see below), <em>or</em></li>
  *   <li>the client VTs do not all complete the round-trip within {@value #COMPLETION_TIMEOUT_SECONDS} s
  *       — i.e. the carrier-starvation deadlock returned.</li>
  * </ol>
@@ -75,7 +76,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code synchronized} and {@code Object.wait}, but not class-initialisation waits. On this test's
  * two-carrier model the waiters hold the carriers the initialiser needs, so a cold-start class
  * initialisation stretches with CPU pressure: measured at 0.4–1 ms per pin on an idle 12-core host,
- * 15–16 ms on the same host under load, and past {@value #PIN_THRESHOLD_MS} ms on a constrained
+ * 15–16 ms on the same host under load, and past {@value JfrPinningMonitor#DEFAULT_THRESHOLD_MS} ms on a constrained
  * runner. That is what made this test fail on
  * {@code eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent} — the JFR event class the PAQS
  * scheduler emits from its {@code finally} block, initialised by whichever stream finished first.
@@ -116,9 +117,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Tag("transport-pinning-recv")
 @DisplayName("TCK-064: client RECV round-trip never pins a carrier (scarce-carrier model)")
 class CommunityClientIngressCarrierPinningTest {
-
-    /** The fence the run actually uses; naming it twice is how the message and the run drift. */
-    private static final long PIN_THRESHOLD_MS = JfrPinningMonitor.DEFAULT_THRESHOLD_MS;
 
     /** Far larger than the 2-carrier model so the scarce-carrier deadlock would re-surface. */
     private static final int CLIENT_COUNT = 32;
@@ -195,13 +193,12 @@ class CommunityClientIngressCarrierPinningTest {
             allocator.close();
         }
 
-        // The report comes from JfrPinningMonitor, not from a formatter of this test's own: this
-        // assertion deliberately reads pinnedEvents() rather than calling assertNoPinning, and the
-        // report is the same either way — including the block naming what the fence set aside.
-        assertThat(result.pinnedEvents())
-                .withFailMessage(() -> "TCK-064 REGRESSION during client RECV — none of these is class loading or "
-                        + "class initialisation:" + JfrPinningMonitor.describe(result, "client-ingress-recv"))
-                .isEmpty();
+        // assertNoPinning, not a hand-rolled assertion on pinnedEvents(): it logs what the fence set
+        // aside BEFORE it decides, which is the only trace that the classification did anything at
+        // all. The version here read pinnedEvents() with a lazy withFailMessage, so on a green run
+        // — the run where a set-aside pin is most interesting — nothing was ever printed, while the
+        // javadoc above, the CHANGELOG and assertNoPinning's own comment all said it was.
+        JfrPinningMonitor.assertNoPinning(result, "client-ingress-recv");
     }
 
     /**
