@@ -41,6 +41,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link Event} subclass in the module it claims, and every {@link Event} subclass the module
  * actually declares must appear in one of the two buckets.
  *
+ * <p>Two seams carry the warm-up and each has a guard here: every Community subsystem warms its own
+ * group from its {@code start()}, and {@code SubsystemOrchestrator.doStart} warms the Core group of
+ * a subsystem that reports {@code isRunning()}. The second was added after the first shipped
+ * without it — the Core half ran above every subsystem's guard, so the rule this file enforces held
+ * for one half of the warm-up and not the other.
+ *
  * <p>This module is the first point in the reactor where Core and Community are both on one
  * classpath, which is why the guard lives here — the same reasoning, and the same placement, as
  * {@code KernelTierDirectionArchitectureTest}. Test classes are excluded: a fixture subsystem in a
@@ -108,6 +114,66 @@ class JfrEventCatalogueCoverageTest {
         }
     }
 
+    @ArchTest
+    static void theOrchestratorWarmsACoreGroupOnlyForASubsystemThatIsRunning(JavaClasses classes) {
+        // The Core half of the warm-up, which had no check of its own: it ran above every
+        // subsystem's guard, so the rule the other three tests here enforce — a subsystem that
+        // found no provider warms nothing — held only for the Community half, and a kernel with
+        // http.mode=DISABLED still loaded the Core HTTP event group on its way to returning.
+        //
+        // What this proves, and what it does not: the warm-up call and the check it sits behind
+        // both live in doStart. ArchUnit reads the call graph, not the control flow, so it cannot
+        // say the call is inside the if. Observing the initialisation itself would mean reading
+        // FlightRecorder.getEventTypes(), which answers vacuously in a shared surefire JVM where
+        // another test may already have initialised the group — so the two halves are guarded
+        // structurally and the limit is written down rather than implied.
+        JavaMethod doStart = orchestratorDoStart(classes);
+
+        assertThat(callsFrom(doStart, CoreJfrEventCatalogue.class.getName(), "warmHotPath"))
+                .withFailMessage("SubsystemOrchestrator.doStart never calls CoreJfrEventCatalogue.warmHotPath, so a "
+                        + "subsystem's Core event classes initialise on whichever virtual thread emits one first")
+                .isTrue();
+
+        assertThat(callsFrom(doStart, Subsystem.class.getName(), "isRunning"))
+                .withFailMessage("SubsystemOrchestrator.doStart never calls Subsystem.isRunning, so the Core warm-up "
+                        + "is not behind the check that says this subsystem found a provider — a disabled one pays "
+                        + "the class loads of events it cannot emit")
+                .isTrue();
+    }
+
+    /**
+     * The {@code doStart} the orchestrator actually runs a subsystem through.
+     *
+     * @param classes the analysed classpath
+     * @return that method
+     */
+    private static JavaMethod orchestratorDoStart(JavaClasses classes) {
+        JavaClass orchestrator = classes.stream()
+                .filter(c -> "eu.exeris.kernel.core.bootstrap.SubsystemOrchestrator".equals(c.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("SubsystemOrchestrator is not on the analysed classpath, so "
+                        + "the assertions that read it would pass vacuously"));
+        return orchestrator.getMethods().stream()
+                .filter(m -> "doStart".equals(m.getName()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("SubsystemOrchestrator declares no doStart — the Core warm-up "
+                        + "seam moved and this guard no longer looks at it"));
+    }
+
+    /**
+     * Whether {@code method}'s own body calls {@code target} on {@code ownerName}.
+     *
+     * @param method    the method whose body is read
+     * @param ownerName the binary name of the call's target owner
+     * @param target    the called method's name
+     * @return whether that call originates in this method
+     */
+    private static boolean callsFrom(JavaMethod method, String ownerName, String target) {
+        return method.getMethodCallsFromSelf().stream()
+                .anyMatch(call -> target.equals(call.getTarget().getName())
+                        && call.getTargetOwner().getName().equals(ownerName));
+    }
+
     /**
      * Whether this class, or one it inherits {@code start()} from, warms its group <em>from
      * {@code start()}</em>.
@@ -133,10 +199,7 @@ class JfrEventCatalogueCoverageTest {
             }
             // The first start() up the chain is the one that runs; if it does not warm, an
             // inherited one further up is not what a caller of this subsystem would execute.
-            return start.get().getMethodCallsFromSelf().stream()
-                    .anyMatch(call -> "warmHotPath".equals(call.getTarget().getName())
-                            && call.getTargetOwner().getName()
-                                    .equals(CommunityJfrEventCatalogue.class.getName()));
+            return callsFrom(start.get(), CommunityJfrEventCatalogue.class.getName(), "warmHotPath");
         }
         return false;
     }

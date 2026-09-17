@@ -625,16 +625,29 @@ public final class SubsystemOrchestrator {
         LOG.log(System.Logger.Level.INFO,
                 "  start [{0}] (profile={1})", subsystem.name(), profile);
         try {
+            subsystem.start();
             // This subsystem's hot-path JFR event classes initialise here, on the booting thread,
             // and not later on the first virtual thread to emit one: a virtual thread inside a
             // <clinit> cannot unmount, so it pins its carrier for the whole of it. The catalogue
             // states which classes are warmed and which are deliberately left cold; the cost is
             // counted into this subsystem's start time below, because it is part of starting it.
+            //
+            // Behind isRunning(), which is the check stopAll already trusts to decide what it has
+            // to stop: a subsystem that found no provider, or that was configured off, reports
+            // false and emits none of these events, so it should not pay their class load at boot.
+            // That is only readable once start() has run, which is why the warm-up follows it.
+            //
+            // The limit of warming here, stated rather than hidden: a subsystem that emits one of
+            // its own Core events from inside start() still initialises that class wherever that
+            // emit lands. Transport is the one place that happens, and NativeTcpCarrier.start()
+            // warms both of its groups itself, before it stands anything up, for exactly that.
+            //
             // Inside the try, so that a warm-up that does fail takes the same route to
             // handleFailure as a start() that does — and an optional subsystem can still be
             // dropped under DEGRADE instead of taking the boot down with it.
-            CoreJfrEventCatalogue.warmHotPath(subsystem.name());
-            subsystem.start();
+            if (subsystem.isRunning()) {
+                CoreJfrEventCatalogue.warmHotPath(subsystem.name());
+            }
             LOG.log(System.Logger.Level.INFO,
                     "  [{0}] started ({1} ms)", subsystem.name(), elapsedMs(startNanos));
             healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.RUNNING);
