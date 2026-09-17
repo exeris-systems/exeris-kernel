@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.telemetry.jfr;
 
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,8 +56,11 @@ public final class JfrEventCatalogue {
         Objects.requireNonNull(hotPath, "hotPath of the catalogue owned by " + owner.getName());
         Objects.requireNonNull(deliberatelyCold,
                 "deliberatelyCold of the catalogue owned by " + owner.getName());
-        // Deep, not Map.copyOf: that copies the map and shares its value lists, so a caller holding
-        // the list it passed could still empty a group after the catalogue was built.
+        // Deep, and order-preserving. Map.copyOf alone would share the value lists, so a caller
+        // holding the list it passed could still empty a group after the catalogue was built; and
+        // Map.copyOf OVER this LinkedHashMap — which is what this constructor did — throws the
+        // insertion order away again, because an immutable map's iteration order is salted per JVM
+        // run. Two of the three readers below then answered in a different order every run.
         Map<String, List<String>> copied = new LinkedHashMap<>();
         hotPath.forEach((subsystem, classes) -> {
             Objects.requireNonNull(subsystem, "subsystem name in the catalogue owned by " + owner.getName());
@@ -65,7 +69,7 @@ public final class JfrEventCatalogue {
             copied.put(subsystem, List.copyOf(classes));
         });
         deliberatelyCold.forEach(name -> requireName(name, "the cold list", owner));
-        this.hotPath = Map.copyOf(copied);
+        this.hotPath = Collections.unmodifiableMap(copied);
         this.deliberatelyCold = List.copyOf(deliberatelyCold);
         // A name in both buckets is a contradiction the coverage guard cannot see: it matches the
         // union of the two against the module's declared event classes, and a name counted twice
@@ -129,6 +133,11 @@ public final class JfrEventCatalogue {
 
     /**
      * Every hot-path event class in this catalogue, across all subsystems.
+     *
+     * <p>In the order the catalogue was declared in: groups in declaration order, and each group's
+     * entries in theirs. That is what makes a report or a diff of this list readable — it answered
+     * in a different order on every JVM run for as long as the constructor ended in
+     * {@code Map.copyOf}.
      *
      * @return their fully-qualified names; never {@code null}
      */

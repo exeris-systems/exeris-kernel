@@ -14,6 +14,7 @@ import com.tngtech.archunit.junit.ArchTest;
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
+import eu.exeris.kernel.tck.contract.JfrEventCatalogueCoverage;
 import jdk.jfr.Event;
 
 import java.util.List;
@@ -236,6 +237,19 @@ class JfrEventCatalogueCoverageTest {
                 .toList();
     }
 
+    /**
+     * Enumerates one module's event classes off the analysed classpath and hands the judgement to
+     * the shared instrument.
+     *
+     * <p>The enumeration is this module's own — ArchUnit, by name prefix — because the Kafka driver
+     * cannot use it: that module has no ArchUnit dependency and walks its own {@code CodeSource}
+     * instead. What the two shared, verbatim, was everything after the enumeration.
+     *
+     * @param classes      the analysed classpath
+     * @param modulePrefix the package prefix identifying the module
+     * @param hotPath      the names its catalogue warms
+     * @param cold         the names its catalogue deliberately leaves cold
+     */
     private static void assertClassified(JavaClasses classes, String modulePrefix,
                                          List<String> hotPath, List<String> cold) {
         Set<String> declared = classes.stream()
@@ -245,58 +259,12 @@ class JfrEventCatalogueCoverageTest {
                 .map(JavaClass::getName)
                 .collect(Collectors.toCollection(TreeSet::new));
 
-        assertThat(declared)
-                .withFailMessage("no JFR event classes were found under %s — the classpath changed and every "
-                        + "assertion below would pass on the empty set", modulePrefix)
-                .isNotEmpty();
-
-        Set<String> classified = new TreeSet<>(hotPath);
-        classified.addAll(cold);
-
-        assertThat(intersection(hotPath, cold))
-                .withFailMessage("class(es) in both catalogue buckets at once: %s", intersection(hotPath, cold))
-                .isEmpty();
-
-        assertThat(duplicatesWithin(hotPath))
-                .withFailMessage("name(s) listed twice in the hot-path map: %s", duplicatesWithin(hotPath))
-                .isEmpty();
-
-        assertThat(duplicatesWithin(cold))
-                .withFailMessage("name(s) listed twice in deliberatelyCold(): %s", duplicatesWithin(cold))
-                .isEmpty();
-
-        assertThat(difference(declared, classified))
-                .withFailMessage("JFR event class(es) under %s are in neither catalogue bucket. Add each to its "
-                        + "subsystem's hot-path group, or to deliberatelyCold() with the reason it can wait: %s",
-                        modulePrefix, difference(declared, classified))
-                .isEmpty();
-
-        assertThat(difference(classified, declared))
-                .withFailMessage("catalogue name(s) under %s do not resolve to a JFR event class in this module — "
-                        + "renamed, moved, or deleted: %s", modulePrefix, difference(classified, declared))
-                .isEmpty();
+        JfrEventCatalogueCoverage.assertBucketsMatchDeclared(modulePrefix, declared, hotPath, cold);
     }
 
     private static Set<String> difference(Set<String> from, Set<String> remove) {
         Set<String> out = new TreeSet<>(from);
         out.removeAll(remove);
-        return out;
-    }
-
-    private static Set<String> duplicatesWithin(List<String> names) {
-        Set<String> seen = new TreeSet<>();
-        Set<String> twice = new TreeSet<>();
-        for (String name : names) {
-            if (!seen.add(name)) {
-                twice.add(name);
-            }
-        }
-        return twice;
-    }
-
-    private static Set<String> intersection(List<String> left, List<String> right) {
-        Set<String> out = new TreeSet<>(left);
-        out.retainAll(right);
         return out;
     }
 }

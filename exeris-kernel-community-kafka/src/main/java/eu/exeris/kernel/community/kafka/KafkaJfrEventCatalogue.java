@@ -19,10 +19,12 @@ import java.util.Map;
  * Community, not the other way round. {@code KafkaJfrEventCatalogueTest} is the guard that keeps
  * this list complete, and it lives here for the same reason.
  *
- * <p>It builds a {@link JfrEventCatalogue} directly, as the other two do. An earlier version reached
- * the warm-up through a seam on the Community catalogue, on the stated ground that the Wall does not
- * grant this module Core — which is not so: this module's POM declares {@code exeris-kernel-core} and
- * its sources already import from it.
+ * <p>It builds a {@link JfrEventCatalogue} directly, as the other two do, and reads its buckets back
+ * through it rather than through accessors of its own — a third shape of the same class was one more
+ * place for the two to drift apart. An earlier version reached the warm-up through a seam on the
+ * Community catalogue, on the stated ground that the Wall does not grant this module Core — which is
+ * not so: this module's POM declares {@code exeris-kernel-core} and its sources already import from
+ * it.
  *
  * @since 0.12
  */
@@ -43,37 +45,37 @@ final class KafkaJfrEventCatalogue {
     /** Empty, and the guard is what keeps that honest rather than a claim in this sentence. */
     private static final List<String> DELIBERATELY_COLD = List.of();
 
+    /** The one group key, named once so the warm-up and the catalogue cannot disagree about it. */
+    private static final String ENGINE_KEY = "kafka";
+
     /**
      * Keyed by the engine rather than by a subsystem name: this driver has no {@code Subsystem} of
      * its own, and {@code KafkaEventEngine.start()} is what warms it.
      */
     private static final JfrEventCatalogue CATALOGUE = new JfrEventCatalogue(
-            KafkaJfrEventCatalogue.class, Map.of("kafka", HOT_PATH), DELIBERATELY_COLD);
+            KafkaJfrEventCatalogue.class, Map.of(ENGINE_KEY, HOT_PATH), DELIBERATELY_COLD);
 
     private KafkaJfrEventCatalogue() {
         // Static catalogue — no instances.
     }
 
-    /** Warms this driver's event classes on the calling thread, at engine start. */
+    /**
+     * This module's catalogue: both buckets, and the behaviour they share with every other module's.
+     *
+     * @return the catalogue; never {@code null}
+     */
+    /* default */ static JfrEventCatalogue catalogue() {
+        return CATALOGUE;
+    }
+
+    /**
+     * Warms this driver's event classes on the calling thread, at engine start.
+     *
+     * <p>No-arg, unlike the other two holders' {@code warmHotPath(String)}: they are keyed by
+     * {@code Subsystem.name()} and dispatch on it, and this driver has one group keyed by an engine.
+     * A parameter here would be a key the caller could only ever get wrong.
+     */
     /* default */ static void warmHotPath() {
-        CATALOGUE.warmHotPath("kafka");
-    }
-
-    /**
-     * The warmed event classes.
-     *
-     * @return their fully-qualified names; never {@code null}
-     */
-    /* default */ static List<String> hotPath() {
-        return HOT_PATH;
-    }
-
-    /**
-     * The event classes deliberately left cold.
-     *
-     * @return their fully-qualified names; never {@code null}
-     */
-    /* default */ static List<String> deliberatelyCold() {
-        return DELIBERATELY_COLD;
+        CATALOGUE.warmHotPath(ENGINE_KEY);
     }
 }

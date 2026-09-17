@@ -144,6 +144,32 @@ class JfrEventCatalogueTest {
         }
 
         @Test
+        @DisplayName("allHotPath() answers in declaration order, groups and entries alike")
+        void allHotPathKeepsDeclarationOrder() {
+            // The constructor builds a LinkedHashMap and used to hand it to Map.copyOf, whose
+            // iteration order is salted per JVM run — so the order the catalogue is written in
+            // survived into hotPathFor() and died between groups. Nine groups, because three would
+            // let a randomised order agree by chance once in six runs and nine makes it one in
+            // 362 880; and deliberately not in alphabetical order, so sorting cannot fake a pass.
+            java.util.LinkedHashMap<String, List<String>> declared = new java.util.LinkedHashMap<>();
+            declared.put("transport", List.of("t.One", "t.Two"));
+            declared.put("http", List.of("h.One"));
+            declared.put("events", List.of("e.One"));
+            declared.put("flow", List.of("f.One"));
+            declared.put("memory", List.of("m.One"));
+            declared.put("persistence", List.of("p.One"));
+            declared.put("security", List.of("s.One"));
+            declared.put("crypto", List.of("c.One"));
+            declared.put("graph", List.of("g.One"));
+
+            JfrEventCatalogue catalogue =
+                    new JfrEventCatalogue(JfrEventCatalogueTest.class, declared, List.of());
+
+            assertThat(catalogue.allHotPath()).containsExactly(
+                    "t.One", "t.Two", "h.One", "e.One", "f.One", "m.One", "p.One", "s.One", "c.One", "g.One");
+        }
+
+        @Test
         @DisplayName("the cold bucket is readable — it is what the guard test matches against")
         void coldBucketIsReadable() {
             assertThat(catalogue.deliberatelyCold()).containsExactly("c.Cold");

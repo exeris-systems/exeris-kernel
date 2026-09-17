@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.kafka;
 
+import eu.exeris.kernel.tck.contract.JfrEventCatalogueCoverage;
 import jdk.jfr.Event;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -46,26 +47,14 @@ class KafkaJfrEventCatalogueTest {
     @Test
     @DisplayName("declared event classes and catalogue entries are the same set")
     void everyEventClassIsClassified() throws IOException {
-        Set<String> declared = declaredEventClasses();
-
-        assertThat(declared)
-                .withFailMessage("no JFR event classes were found under %s — the module layout changed and this "
-                        + "check would pass on the empty set", CLASSES.toAbsolutePath())
-                .isNotEmpty();
-
-        Set<String> classified = new TreeSet<>(KafkaJfrEventCatalogue.hotPath());
-        classified.addAll(KafkaJfrEventCatalogue.deliberatelyCold());
-
-        assertThat(difference(declared, classified))
-                .withFailMessage("JFR event class(es) in this module are in neither catalogue bucket — add each to "
-                        + "hotPath(), or to deliberatelyCold() with the reason it can wait: %s",
-                        difference(declared, classified))
-                .isEmpty();
-
-        assertThat(difference(classified, declared))
-                .withFailMessage("catalogue name(s) do not resolve to a JFR event class in this module — renamed, "
-                        + "moved, or deleted: %s", difference(classified, declared))
-                .isEmpty();
+        // The enumeration below is this module's own — it has no ArchUnit dependency, so it walks
+        // its CodeSource — and the judgement is the shared one, which is the half the Community
+        // guard and this test carried in two copies.
+        JfrEventCatalogueCoverage.assertBucketsMatchDeclared(
+                "this module, under " + CLASSES.toAbsolutePath(),
+                declaredEventClasses(),
+                KafkaJfrEventCatalogue.catalogue().allHotPath(),
+                KafkaJfrEventCatalogue.catalogue().deliberatelyCold());
     }
 
     @Test
@@ -73,7 +62,7 @@ class KafkaJfrEventCatalogueTest {
     void warmingIsSurvivable() throws ClassNotFoundException {
         KafkaJfrEventCatalogue.warmHotPath();
 
-        for (String name : KafkaJfrEventCatalogue.hotPath()) {
+        for (String name : KafkaJfrEventCatalogue.catalogue().allHotPath()) {
             // Loaded with initialize=false: if the warm-up did its work this only confirms the name
             // resolves, and the assertion below is what says it is an event class at all.
             Class<?> type = Class.forName(name, false, getClass().getClassLoader());
@@ -137,11 +126,5 @@ class KafkaJfrEventCatalogueTest {
             }
         }
         return found;
-    }
-
-    private static Set<String> difference(Set<String> from, Set<String> remove) {
-        Set<String> out = new TreeSet<>(from);
-        out.removeAll(remove);
-        return out;
     }
 }

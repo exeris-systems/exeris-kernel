@@ -106,8 +106,13 @@ public final class CommunityJfrEventCatalogue {
     /**
      * Warms the hot-path event classes of one subsystem, on the calling thread.
      *
-     * <p>Shorthand for {@code catalogue().warmHotPath(name)}, kept because it is what the two
-     * start seams call and reads as what it does at those call sites.
+     * <p>Shorthand for {@code catalogue().warmHotPath(name)}. Every concrete Community subsystem
+     * calls it from its own {@code start()}, behind the check that subsystem already had, and
+     * {@code NativeTcpCarrier.start()} calls it for an engine built without an orchestrator. It
+     * stays a shorthand rather than being inlined to {@code catalogue().warmHotPath(...)} because
+     * {@code JfrEventCatalogueCoverageTest} matches a warm-up call by its target owner, and through
+     * {@code catalogue()} that owner is {@link JfrEventCatalogue} for every module at once — the
+     * guard could no longer tell a subsystem that warms from one that does not.
      *
      * @param subsystemName the starting subsystem's {@code Subsystem.name()}; may be {@code null}
      */
