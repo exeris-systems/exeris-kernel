@@ -96,21 +96,28 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   at 15–16 ms on a loaded host and past 20 ms on a constrained one. The transport event classes are
   initialised on the thread that starts the engine instead — by the subsystem's own `start()`, and by
   `NativeTcpCarrier.start()` for an engine built without a kernel bootstrap, since client mode stands
-  up no PAQS. Which classes those are is declared in `CoreJfrEventCatalogue` and
+  up no PAQS. That call runs before `initPaqs()` constructs a scheduler, so the scheduler's own
+  constructor does not repeat it. Which classes those are is declared in `CoreJfrEventCatalogue` and
   `CommunityJfrEventCatalogue` (see the entry above).
 
 - **Every JFR event class in the kernel is now classified, and the hot-path ones are initialised
   when their subsystem starts.** A `jdk.jfr.Event` subclass registers itself from its own static
   initialiser, so the first emit of a cold class pins a carrier for as long as the class takes to
-  load — and turning JFR off does not help, because every emit site is a static method on the event
-  class itself, so the `FlightRecorder.isInitialized()` guard runs after the class has initialised.
+  load — and turning JFR off does not help, because every emit site is a static method that has
+  already initialised the class by the time the `FlightRecorder.isInitialized()` guard inside it
+  runs. Most of those helpers sit on an enclosing holder rather than on the event class, and JLS
+  12.4.1 means initialising `Outer$Inner` does not initialise `Outer`, so the warm-up initialises a
+  named class's declaring chain as well, outermost first.
   `CoreJfrEventCatalogue` and `CommunityJfrEventCatalogue` split all 125 event classes of the two
-  main modules into warmed (77) and deliberately cold (48); the warm-up runs on the starting thread
-  from `SubsystemOrchestrator.doStart` and from each Community subsystem's own `start()`, and the
-  Kafka driver carries its own catalogue and guard for its three. Warming everything would cost upwards of 100 ms of
-  start-up (measured: ~1 ms per class) for failure-path events a process may never emit, which is why
-  cold is a decision rather than an omission. `JfrEventCatalogueCoverageTest` fails the build on an
-  event class in neither bucket and on a catalogue name that no longer resolves.
+  main modules into warmed (78) and deliberately cold (47); the warm-up runs on the starting thread
+  from `SubsystemOrchestrator.doStart` and from each Community subsystem's own `start()`, behind the
+  check that subsystem already had — one with no provider warms nothing — and the Kafka driver
+  carries its own catalogue and guard for its three. Warming everything would cost upwards of 100 ms
+  of start-up (measured: ~1 ms per class) for failure-path events a process may never emit, which is
+  why cold is a decision rather than an omission; where a class is cold because the kernel never
+  stands up the component that emits it, the catalogue says so. `JfrEventCatalogueCoverageTest` fails
+  the build on an event class in neither bucket, on a catalogue name that no longer resolves, and on
+  a subsystem whose `start()` does not reach the warm-up.
 
 - **Every carrier-pinning fence stops counting a cold JVM, not just the client-ingress one.**
   `JfrPinningMonitor` — the instrument behind every subsystem's carrier-pinning binding — counted
@@ -118,8 +125,22 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   blocked carrier on any of them. It now classifies through `CarrierPinClassification`: class
   loading and class initialisation land in `Result.classInitEvents()`, reported in the failure
   banner but not counted, and everything else still fails, a pin the JVM declines to explain
-  included. `PinnedEvent` carries the JVM's `pinnedReason` and its verdict, so a report says why a
-  carrier was pinned rather than only which thread was.
+  included. A class initialiser is not a licence either — a frame that means the carrier is really
+  blocked, such as a native-library load or an FFM downcall, keeps the pin counted however many
+  `<clinit>` frames sit above it. `PinnedEvent` carries the JVM's `pinnedReason` and its verdict, so
+  a report says why a carrier was pinned rather than only which thread was.
+
+  **Narrowing, for anyone binding the TCK:** `Result.pinnedEvents()`, `pinnedCount()` and
+  `hasPinning()` answered for every recorded pin over the threshold through 0.11 and answer only for
+  the counted ones from 0.12. The earlier meaning is `pinnedEvents()` together with
+  `classInitEvents()`. The records keep their previous constructors, so a binding compiled against
+  the earlier artifact still compiles and links; what changed is what the answer means.
+
+- **One formatter for a pinning report, and it names what the fence set aside.**
+  `JfrPinningMonitor.describe(Result, String)` builds the banner, the set-aside block and the path to
+  the recording; `assertNoPinning` throws with it and a binding that asserts on `pinnedEvents()`
+  itself uses the same text. The client-ingress test carried a second formatter for want of one it
+  could reach, and it is deleted.
 
 - **The client-ingress carrier-pinning regression test counts blocked carriers, not a cold JVM.**
   It warms the measured path before the recording opens, sets class-loading and class-initialisation

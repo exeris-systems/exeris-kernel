@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-09-17
 ---
 
 # Policy — The Wall and the module boundary
@@ -24,7 +24,7 @@ the poms disagree, the poms win and this file is the defect.
 | `exeris-kernel-spi` | Contracts + carriers ("The Constitution") | **only `java.*` / `jdk.*`** |
 | `exeris-kernel-core` | Driver-agnostic orchestration, bootstrap; the HTTP codec and runtime currently live here | SPI. **Never** community or enterprise |
 | `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI, plus the Core packages it already reaches: `core.bootstrap`, `core.concurrent`, `core.crypto`, `core.events`, `core.flow`, `core.graph`, `core.http`, `core.memory`, `core.persistence`, `core.scheduling`, `core.security`, `core.storage`, `core.telemetry`, `core.transport`, `core.websocket`. A Core package outside that set is a boundary change and needs an ADR |
-| `exeris-kernel-community-kafka` | Kafka/Redpanda event and flow bindings | SPI, community |
+| `exeris-kernel-community-kafka` | Kafka/Redpanda event and flow bindings | SPI, community, plus the Core packages it already reaches: `core.events`, `core.events.outbox`, `core.telemetry.jfr`. This row read "SPI, community" until 2026-09-17, which the reactor has never matched — `exeris-kernel-community-kafka/pom.xml` declares `exeris-kernel-core` in compile scope. A warm-up seam was built in Community to spare this module an import it was already making |
 | `exeris-kernel-community-testkit` | Shared test fixtures | — |
 | `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) and `ExerisArchitectureTest`, the ArchUnit Wall guard — **SPI reach only**; the Core/Community half is `KernelTierBanArchitectureTest` in Community | SPI |
 | `exeris-kernel-diagnostics-cli` | Diagnostics tooling (thin, coverage-ungated) | — |

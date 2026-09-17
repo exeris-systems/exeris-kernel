@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-17
 ---
 
 # Kernel Subsystem: Telemetry (L1 Observability)
@@ -305,17 +305,27 @@ unpinned `synchronized` and `Object.wait`; it did not unpin class initialisation
 of a cold event class stalls a carrier, and where carriers are scarce the waiters hold the carriers
 the initialiser needs.
 
-**Turning JFR off does not avoid it.** Every emit site here is a static method *on the event class*
-(`SomeEvent.emit(...)`), so the `FlightRecorder.isInitialized()` guard inside that method runs after
-the class has already initialised. Measured over 103 event classes: 79 ms with a recording running,
-108 ms without — what dominates is the class load, not the JFR registration.
+**Turning JFR off does not avoid it.** Every emit site here is a static method — some on the event
+class itself (`SomeEvent.emit(...)`), most of the nested ones on an enclosing holder that declares
+several (`SecurityJfrEvents.emitPrincipalBound(...)`). Either way the `FlightRecorder.isInitialized()`
+or `isEnabled()` guard inside the method runs after the class has already initialised. Measured over
+103 event classes: 79 ms with a recording running, 108 ms without — what dominates is the class load,
+not the JFR registration.
+
+**A nested name warms its holder too.** JLS 12.4.1: initialising `Outer$Inner` does not initialise
+`Outer`. Where the emit helper sits on the holder — 33 of the kernel's 35 nested event classes — the
+first emit therefore still ran the holder's `<clinit>` on a virtual thread, including the
+`EventType.getEventType(...)` registration `AdmissionDecisionEvent` and
+`PersistenceAdmissionStageEvent` cache in a static field. `JfrEventWarmup` walks the declaring chain
+with `Class.getDeclaringClass()` and initialises it outermost-first, which is the order the first
+emit would have taken.
 
 Two catalogues carry the answer, and every event class in the kernel is in exactly one of their
 buckets:
 
 | | |
 |:--|:--|
-| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 47 warmed, 44 deliberately cold |
+| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 48 warmed, 43 deliberately cold |
 | `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 34 event classes — 30 warmed, 4 deliberately cold |
 | `KafkaJfrEventCatalogue` (`eu.exeris.kernel.community.kafka`) | 3 event classes — all warmed; the driver ships its own catalogue and its own guard, because the Community guard runs in the module it depends on and cannot see it |
 
@@ -326,6 +336,15 @@ millisecond. Cold is a decision, not an omission: a cold event is fully supporte
 observable, it simply pays its own initialisation the first time it fires. Warming everything
 instead would cost upwards of 100 ms of start-up for classes a given process may never emit.
 
+One group is cold for a second reason, and the catalogue says so where it sits: the event is on a
+hot path, but the kernel has no seam to warm it from because the kernel never constructs the
+component that emits it. `AsyncTelemetrySink` and the `TelemetryJfrEvents` set are that case — the
+host binds `TELEMETRY_SINKS` from a provider it owns, and a host that wants them warm initialises
+them where it builds its sinks. `JfrCommitDropEvent` was in this bucket and should not have been: it
+fires from `JfrEventCommitter.offer` when the ring overflows, on the same request virtual thread as
+the persistence events feeding that ring, so it is warmed with the subsystem that stands the
+committer up.
+
 The warm-up runs on the thread that starts the subsystem. `SubsystemOrchestrator.doStart` warms
 Core's set for the subsystem it is about to start, keyed by `Subsystem.name()`; each Community
 subsystem warms its driver's set at the top of its own `start()`. That call sits in each subsystem
@@ -335,14 +354,20 @@ feature: three subsystems implement `Subsystem` directly, so a single hook in
 path the catalogue names. `JfrEventCatalogueCoverageTest` now fails the build if a subsystem does not
 warm, in addition to failing on an unclassified event class.
 
-A subsystem that found no provider warms nothing: `AbstractSingleProviderSubsystem` puts the call
-behind that check, so a disabled subsystem does not pay class loads for events it will never emit.
+A subsystem that found no provider warms nothing: every subsystem puts the call behind the check it
+already had — an early return, or the condition `markRunning` takes — so a disabled subsystem does
+not pay class loads for events it will never emit. A kernel with `http.mode=DISABLED` was loading the
+whole HTTP event group on its way to returning; it no longer is. `JfrEventCatalogueCoverageTest`
+reads the call out of the `start()` that actually runs, not out of the class, so a call left behind
+in `stop()` or on a dead branch does not satisfy it.
 
-An engine built without a kernel bootstrap warms its own — `NativeTcpCarrier.start()` and
-`PaqsScheduler`'s constructor do, because CLIENT mode stands up no PAQS, and because the TCK binding
-and any carrier that is not `NativeTcpCarrier` construct a scheduler directly. The Kafka driver warms
-its three events at `KafkaEventEngine.start()`, through a seam on the Community catalogue rather than
-by importing Core, which the Wall does not grant that module.
+An engine built without a kernel bootstrap warms its own: `NativeTcpCarrier.start()` does, because
+CLIENT mode stands up no PAQS and an embedded engine has no subsystem starting it. It warms before
+`initPaqs()` constructs a scheduler, so the scheduler's constructor does not repeat it — a
+data-structure constructor is the wrong seam for a process-wide warm-up, and it fired on every
+construction in the PAQS unit tests. The Kafka driver warms its three events at
+`KafkaEventEngine.start()`, through a `JfrEventCatalogue` of its own, exactly as the other two
+catalogues are built.
 
 The catalogues hold fully-qualified **names**, not class literals: two thirds of the kernel's event
 classes are package-private, so no single class can name them otherwise, and widening 66 classes to

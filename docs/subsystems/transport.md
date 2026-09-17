@@ -691,10 +691,10 @@ Which transport classes are warmed is declared in `CoreJfrEventCatalogue` and
 `CommunityJfrEventCatalogue`, and the rule that governs both — plus the guard test that keeps them
 complete — is in [`telemetry.md`](telemetry.md). The transport subsystem warms all fourteen of its
 event classes: `SubsystemOrchestrator.doStart` warms the Core half and
-`CommunityTransportSubsystem.start()` the driver half. `NativeTcpCarrier.start()` and
-`PaqsScheduler`'s constructor ask for them directly as well, because CLIENT mode stands up no PAQS,
-an embedded engine has no orchestrator to start it, and the TCK binding constructs a scheduler with
-no carrier at all.
+`CommunityTransportSubsystem.start()` the driver half. `NativeTcpCarrier.start()` asks for them
+directly as well, because CLIENT mode stands up no PAQS and an embedded engine has no orchestrator
+to start it — and it asks before `initPaqs()` builds a scheduler, which is why the scheduler's own
+constructor does not need to.
 
 ---
 
