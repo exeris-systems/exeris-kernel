@@ -49,6 +49,9 @@ public final class JfrPinningMonitor {
 
     /** Default carrier-pinning threshold, in milliseconds; see the class-level contract note. */
     public static final long DEFAULT_THRESHOLD_MS = 20L;
+
+    /** How many pins a report prints before deferring to the recording. */
+    private static final int REPORTED_PINS = 5;
     private static final DateTimeFormatter TS_FMT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
@@ -111,6 +114,10 @@ public final class JfrPinningMonitor {
     /**
      * Outcome of one {@link #measure} run.
      *
+     * <p>{@code pinnedEvents} is narrower in 0.12 than it was in 0.11 — it no longer holds every
+     * recorded pin, only the counted ones. That is a change in meaning for an existing caller, not
+     * an addition beside it; the two accessors say so where a caller reads them.
+     *
      * @param pinnedEvents    events exceeding the threshold that are counted against it — every pin
      *                        that is not class loading or class initialisation
      * @param classInitEvents events exceeding the threshold that are class loading or class
@@ -143,6 +150,11 @@ public final class JfrPinningMonitor {
          * {@link #classInitEvents()} — so this can be {@code false} on a run that recorded pins.
          * {@link CarrierPinClassification} states why.
          *
+         * <p><strong>Narrowed in 0.12.</strong> Through 0.11 this answered for every
+         * {@code jdk.VirtualThreadPinned} event over the threshold. It now answers only for the
+         * counted ones. A binding that wants the earlier meaning asks for
+         * {@link #pinnedEvents()} together with {@link #classInitEvents()}.
+         *
          * @return {@code true} if {@link #pinnedEvents} is non-empty
          */
         public boolean hasPinning() {
@@ -151,6 +163,9 @@ public final class JfrPinningMonitor {
 
         /**
          * The number of pins counted against the threshold, set-aside ones excluded.
+         *
+         * <p><strong>Narrowed in 0.12</strong>, for the same reason and in the same way as
+         * {@link #hasPinning()}: through 0.11 this counted every recorded pin over the threshold.
          *
          * @return {@link #pinnedEvents}{@code .size()}
          */
@@ -211,8 +226,25 @@ public final class JfrPinningMonitor {
         // the only trace that the classification did anything at all.
         reportSetAside(result, label);
         if (!result.hasPinning()) return;
-        // 1024, not 512: the report now carries each pin's reason and a set-aside block, and the
-        // fixed frame alone is past 587 characters — PMD measured it.
+        throw new AssertionError(describe(result, label));
+    }
+
+    /**
+     * The full report on a measured run: the counted pins, what the classification set aside, and
+     * where the recording is.
+     *
+     * <p>Public because a binding that asserts on {@link Result#pinnedEvents()} itself — rather than
+     * through {@link #assertNoPinning} — needs the same report, and a second formatter is a second
+     * thing to keep true. What the fence declined to count is in here, not only in the log: a
+     * failure report that hides its own exclusions is asking to be disbelieved.
+     *
+     * @param result the outcome of a {@link #measure} run
+     * @param label  human-readable label for the diagnostic
+     * @return the formatted report, ready to be a failure message
+     */
+    public static String describe(Result result, String label) {
+        // 1024, not 512: the report carries each pin's reason and a set-aside block, and the fixed
+        // frame alone is past 587 characters — PMD measured it.
         StringBuilder sb = new StringBuilder(1024);
         sb.append("\n╔══════════════════════════════════════════════════════╗\n");
         sb.append("║  CARRIER PINNING TCK — VERDICT: GUILTY               ║\n");
@@ -222,20 +254,15 @@ public final class JfrPinningMonitor {
         sb.append("║  Pinned Count : ").append(pad(String.valueOf(result.pinnedCount()), 38)).append(" ║\n");
         sb.append("║  JFR File     : ").append(pad(result.jfrPath().getFileName().toString(), 38)).append(" ║\n");
         sb.append("╠══════════════════════════════════════════════════════╣\n");
-        result.pinnedEvents().stream().limit(5).forEach(e ->
-                sb.append("  ▸ ").append(e.threadName())
-                        .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs())).append(" ms")
-                        .append(" | ").append(e.pinnedReason()).append("\n")
-                        .append("    ").append(e.stackTrace()).append("\n")
-        );
+        appendPins(sb, result.pinnedEvents(), "  ▸ ", true);
         sb.append("╚══════════════════════════════════════════════════════╝\n");
-
+        appendSetAside(sb, result);
+        sb.append("Recording kept at ").append(result.jfrPath()).append('\n');
         sb.append("Per performance-contract.md: carrier blocked > ")
                 .append(result.thresholdMs())
                 .append(" ms is BANNED. Avoid synchronized, blocking I/O, non-VT-safe executors.");
-        throw new AssertionError(sb.toString());
+        return sb.toString();
     }
-
 
     /**
      * Names the pins the classification set aside, on every run rather than only a failing one.
@@ -247,17 +274,50 @@ public final class JfrPinningMonitor {
         if (result.classInitEvents().isEmpty() || !LOG.isLoggable(System.Logger.Level.INFO)) {
             return;
         }
-        StringBuilder sb = new StringBuilder(256)
-                .append("[").append(label).append("] ")
-                .append(result.classInitEvents().size())
+        StringBuilder sb = new StringBuilder(256).append("[").append(label).append("] ");
+        appendSetAside(sb, result);
+        LOG.log(System.Logger.Level.INFO, sb.toString().stripTrailing());
+    }
+
+    /**
+     * Appends the set-aside block, including the sentence that says there was nothing to set aside.
+     *
+     * @param sb     the report being built
+     * @param result the outcome of a {@link #measure} run
+     */
+    private static void appendSetAside(StringBuilder sb, Result result) {
+        if (result.classInitEvents().isEmpty()) {
+            sb.append("No class-loading or class-initialisation pins in this run.").append('\n');
+            return;
+        }
+        sb.append(result.classInitEvents().size())
                 .append(" carrier pin(s) over ").append(result.thresholdMs())
-                .append(" ms were class loading or class initialisation and are NOT counted against the fence");
-        result.classInitEvents().stream().limit(5).forEach(e ->
-                sb.append(System.lineSeparator())
-                        .append("  · ").append(e.threadName())
-                        .append(" | ").append(String.format(Locale.ROOT, "%.2f", e.durationMs()))
-                        .append(" ms | ").append(e.pinnedReason()));
-        LOG.log(System.Logger.Level.INFO, sb.toString());
+                .append(" ms were class loading or class initialisation and are NOT counted against the fence")
+                .append('\n');
+        appendPins(sb, result.classInitEvents(), "  · ", false);
+    }
+
+    /**
+     * Appends up to five pins, and says how many were left out.
+     *
+     * @param sb         the report being built
+     * @param pins       the pins to render
+     * @param bullet     the marker distinguishing counted pins from set-aside ones
+     * @param withStacks whether to print each pin's stack under it
+     */
+    private static void appendPins(StringBuilder sb, List<PinnedEvent> pins, String bullet, boolean withStacks) {
+        pins.stream().limit(REPORTED_PINS).forEach(e -> {
+            sb.append(bullet).append(e.threadName())
+                    .append(" | ").append(String.format(Locale.ROOT, "%.2f", e.durationMs())).append(" ms")
+                    .append(" | ").append(e.pinnedReason()).append('\n');
+            if (withStacks) {
+                sb.append("    ").append(e.stackTrace()).append('\n');
+            }
+        });
+        if (pins.size() > REPORTED_PINS) {
+            sb.append("  … ").append(pins.size() - REPORTED_PINS)
+                    .append(" more not shown; the recording has all of them").append('\n');
+        }
     }
 
     private static Result parseResult(Path jfrFile, long thresholdMs) throws IOException {

@@ -25,9 +25,7 @@ import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.time.Duration;
-import java.util.Locale;
 import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -197,12 +195,12 @@ class CommunityClientIngressCarrierPinningTest {
             allocator.close();
         }
 
+        // The report comes from JfrPinningMonitor, not from a formatter of this test's own: this
+        // assertion deliberately reads pinnedEvents() rather than calling assertNoPinning, and the
+        // report is the same either way — including the block naming what the fence set aside.
         assertThat(result.pinnedEvents())
-                .withFailMessage(
-                        "TCK-064 REGRESSION: %d carrier-pinning event(s) > %d ms during client RECV, none of them "
-                                + "class loading or class initialisation:%n%s%n%s%nRecording kept at %s",
-                        result.pinnedCount(), result.thresholdMs(), render(result.pinnedEvents()),
-                        renderSetAside(result.classInitEvents()), result.jfrPath())
+                .withFailMessage(() -> "TCK-064 REGRESSION during client RECV — none of these is class loading or "
+                        + "class initialisation:" + JfrPinningMonitor.describe(result, "client-ingress-recv"))
                 .isEmpty();
     }
 
@@ -233,28 +231,6 @@ class CommunityClientIngressCarrierPinningTest {
                     });
         }
         return done.await(COMPLETION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-    }
-
-    /** Renders the pins counted against the fence: thread, duration, the JVM's reason, the stack. */
-    private static String render(List<JfrPinningMonitor.PinnedEvent> pins) {
-        StringBuilder out = new StringBuilder(256);
-        for (JfrPinningMonitor.PinnedEvent pin : pins) {
-            if (out.length() > 0) {
-                out.append(System.lineSeparator());
-            }
-            out.append(String.format(Locale.ROOT, "  - %s pinned %.2f ms — %s%n      %s",
-                    pin.threadName(), pin.durationMs(), pin.pinnedReason(), pin.stackTrace()));
-        }
-        return out.toString();
-    }
-
-    /** Names what the fence set aside, so a failure report hides nothing it decided not to count. */
-    private static String renderSetAside(List<JfrPinningMonitor.PinnedEvent> classInit) {
-        if (classInit.isEmpty()) {
-            return "No class-loading or class-initialisation pins in this run.";
-        }
-        return classInit.size() + " class-loading/initialisation pin(s), not counted against the fence:"
-                + System.lineSeparator() + render(classInit);
     }
 
     /**
