@@ -221,18 +221,29 @@ public final class NativeTcpCarrier implements TransportEngine {
             return;
         }
 
-        // Before the first stream exists, on the starting thread: a JFR event class that first
-        // initialises on a virtual thread pins its carrier for the whole <clinit>. The orchestrator
-        // does this too when it starts the transport subsystem; this covers an engine built without
-        // one, and CLIENT mode, which stands up no PAQS and would reach connect() and read() cold.
-        CoreJfrEventCatalogue.warmHotPath("transport");
-        CommunityJfrEventCatalogue.warmHotPath("transport");
-
         try {
-            if (mode() == TransportMode.SERVER || mode() == TransportMode.DUAL) {
-                if (streamHandler == null) {
-                    throw new IllegalStateException("StreamHandler must be set before start() in SERVER/DUAL mode");
-                }
+            boolean serverRole = mode() == TransportMode.SERVER || mode() == TransportMode.DUAL;
+            if (serverRole && streamHandler == null) {
+                throw new IllegalStateException("StreamHandler must be set before start() in SERVER/DUAL mode");
+            }
+
+            // After the preconditions and inside the try, both of which this sat outside of: an
+            // engine started without a handler paid fourteen class loads on its way to throwing,
+            // and a warm-up that threw anything JfrEventWarmup does not swallow left running set
+            // and no way back. Still before the first stream exists, which is the whole point — a
+            // JFR event class that first initialises on a virtual thread pins its carrier for the
+            // whole <clinit>. The orchestrator warms the Core group too when it starts the
+            // transport subsystem; this covers an engine built without one, and it covers the
+            // window inside this method, since the orchestrator's call comes after start() returns.
+            //
+            // Both groups warm in both roles. Roughly half of the fourteen — the PAQS and acceptor
+            // events — are unreachable in CLIENT mode, and that is a cost this accepts rather than
+            // a property it wants: splitting the group by role needs a catalogue key that is not a
+            // Subsystem name, which is the v0.13 telemetry-bootstrap mechanism.
+            CoreJfrEventCatalogue.warmHotPath("transport");
+            CommunityJfrEventCatalogue.warmHotPath("transport");
+
+            if (serverRole) {
                 initPaqs();
                 startServerRuntime();
             } else {

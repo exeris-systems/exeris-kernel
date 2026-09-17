@@ -673,8 +673,11 @@ recording at `jdk.VirtualThreadPinned#threshold=0ms`: 0.4–1 ms per pin on an i
 warmed, and `CommunityTransportSubsystem.start()` warms them on the thread that starts it.
 `NativeTcpCarrier.start()` warms them as well, for both roles — **client mode stands up no PAQS**,
 and an embedded engine has no subsystem starting it, so its `connect()` and `read()` paths would
-otherwise reach those classes cold. Adding a JFR event class to this subsystem means adding it to
-one of the catalogue's two buckets; the coverage guard fails the build if it is in neither.
+otherwise reach those classes cold. It warms after its own preconditions and inside the `try` that
+resets `running`: before that ordering, a SERVER-mode engine started without a stream handler paid
+the whole warm-up on its way to throwing, and a warm-up that threw left the engine marked running
+with no way back. Adding a JFR event class to this subsystem means adding it to one of the
+catalogue's two buckets; the coverage guard fails the build if it is in neither.
 
 The JDK's own cold classes (`sun.nio.ch.Poller`, the FFM segment internals) pin the same way and no
 runtime warm-up can reach them, which is why `CommunityClientIngressCarrierPinningTest` warms its
@@ -690,11 +693,19 @@ cost 100 ms or more, much of it for failure-path events a given process may neve
 Which transport classes are warmed is declared in `CoreJfrEventCatalogue` and
 `CommunityJfrEventCatalogue`, and the rule that governs both — plus the guard test that keeps them
 complete — is in [`telemetry.md`](telemetry.md). The transport subsystem warms all fourteen of its
-event classes: `SubsystemOrchestrator.doStart` warms the Core half and
-`CommunityTransportSubsystem.start()` the driver half. `NativeTcpCarrier.start()` asks for them
-directly as well, because CLIENT mode stands up no PAQS and an embedded engine has no orchestrator
-to start it — and it asks before `initPaqs()` builds a scheduler, which is why the scheduler's own
-constructor does not need to.
+event classes: `SubsystemOrchestrator.doStart` warms the Core half, once the subsystem reports
+`isRunning()`, and `CommunityTransportSubsystem.start()` the driver half. `NativeTcpCarrier.start()`
+asks for them directly as well, because CLIENT mode stands up no PAQS, an embedded engine has no
+orchestrator to start it, and the orchestrator's own call lands only after `start()` has returned —
+and it asks before `initPaqs()` builds a scheduler, which is why the scheduler's own constructor
+does not need to.
+
+**All fourteen, in both roles, and that is a cost rather than a property.** Roughly half of them —
+the PAQS scheduler's stream events and the acceptor's connection events — cannot be emitted by a
+CLIENT-mode engine at all, so a client pays their class loads for nothing. Splitting the group by
+role would need a catalogue key that is not a `Subsystem` name, which is the same mechanism the
+v0.13 telemetry-bootstrap slice introduces; until then the group stays whole and this paragraph is
+the record of what it costs.
 
 ---
 
