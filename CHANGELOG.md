@@ -96,8 +96,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   at 15–16 ms on a loaded host and past 20 ms on a constrained one. The transport event classes are
   initialised on the thread that starts the engine instead — by the subsystem's own `start()`, and by
   `NativeTcpCarrier.start()` for an engine built without a kernel bootstrap, since client mode stands
-  up no PAQS. That call runs before `initPaqs()` constructs a scheduler, so the scheduler's own
-  constructor does not repeat it. Which classes those are is declared in `CoreJfrEventCatalogue` and
+  up no PAQS. That call runs after the engine's own preconditions and before `initPaqs()` constructs
+  a scheduler, so a SERVER-mode engine started without a stream handler no longer pays fourteen class
+  loads on its way to throwing, and the scheduler's own constructor does not repeat it. Which classes those are is declared in `CoreJfrEventCatalogue` and
   `CommunityJfrEventCatalogue` (see the entry above).
 
 - **Every JFR event class in the kernel is now classified, and the hot-path ones are initialised
@@ -110,14 +111,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   named class's declaring chain as well, outermost first.
   `CoreJfrEventCatalogue` and `CommunityJfrEventCatalogue` split all 125 event classes of the two
   main modules into warmed (78) and deliberately cold (47); the warm-up runs on the starting thread
-  from `SubsystemOrchestrator.doStart` and from each Community subsystem's own `start()`, behind the
-  check that subsystem already had — one with no provider warms nothing — and the Kafka driver
-  carries its own catalogue and guard for its three. Warming everything would cost upwards of 100 ms
+  from each Community subsystem's own `start()`, behind the check that subsystem already had, and
+  from `SubsystemOrchestrator.doStart` once the subsystem it started reports `isRunning()` — the same
+  check `stopAll` already trusts. A subsystem with no provider warms nothing, on either half. The
+  Kafka driver carries its own catalogue and guard for its three. Warming everything would cost upwards of 100 ms
   of start-up (measured: ~1 ms per class) for failure-path events a process may never emit, which is
   why cold is a decision rather than an omission; where a class is cold because the kernel never
   stands up the component that emits it, the catalogue says so. `JfrEventCatalogueCoverageTest` fails
-  the build on an event class in neither bucket, on a catalogue name that no longer resolves, and on
-  a subsystem whose `start()` does not reach the warm-up.
+  the build on an event class in neither bucket, on a catalogue name that no longer resolves, on a
+  subsystem whose `start()` does not reach the warm-up, and on a `doStart` that has lost either the
+  Core warm-up call or the check it sits behind.
 
 - **Every carrier-pinning fence stops counting a cold JVM, not just the client-ingress one.**
   `JfrPinningMonitor` — the instrument behind every subsystem's carrier-pinning binding — counted
@@ -147,10 +150,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   pins aside from the fence while still reporting them, and takes its recording through
   `JfrPinningMonitor` rather than reading JFR a second way — so the file survives the run and is named
   in the failure message. Previously it deleted the evidence and reported a thread name, which is not
-  a diagnosis. The
-  classifier is pinned in both directions by `CarrierPinClassificationTest`: a native frame on the
-  stack still fails the fence, and so does a native-library load, which shares a package with the
-  class loaders.
+  a diagnosis. It asserts through `JfrPinningMonitor.assertNoPinning`, which logs the set-aside block
+  before it decides, so a green run says what the fence set aside and not only that it passed. The
+  classifier is pinned in both directions by `CarrierPinClassificationTest`: a pin the JVM explains
+  as `Native or VM frame on stack` still fails the fence, and so does a native-library load, which
+  shares a package with the class loaders — including one whose blocking frame sits deeper than the
+  window the frame heuristic reads, because the veto that outranks a `<clinit>` scans the whole
+  stack.
 
 - **The embedded path ADR-084 exists for threw on its first call.** `CommunityWebSocketServerEngine`
   resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and refused when nothing had bound one
