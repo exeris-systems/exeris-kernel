@@ -55,15 +55,13 @@ public final class JfrEventWarmup {
      *
      * @param classNames fully-qualified names of {@link jdk.jfr.Event} subclasses; must not be
      *                   {@code null}
+     * @param loader     the loader to resolve them through — the one belonging to the module that
+     *                   declares them, not this one and not the thread context loader. A driver's
+     *                   events ship in the driver's artifact, so resolving them through Core's
+     *                   loader is a guess that happens to hold on a flat classpath and stops
+     *                   holding the moment anything layers them. Must not be {@code null}
      */
-    @SuppressWarnings("PMD.UseProperClassLoader") // see the comment on the loader below
-    public static void ensureInitialised(List<String> classNames) {
-        // This class's own loader, deliberately, and not the thread context loader PMD suggests:
-        // every class a catalogue names ships in the same artifacts as this one, while the context
-        // loader belongs to whatever called in — an application's, a build tool's, or on a virtual
-        // thread whatever it inherited. Resolving kernel classes through it would make a warm-up
-        // succeed or fail according to the caller's container conventions.
-        ClassLoader loader = JfrEventWarmup.class.getClassLoader();
+    public static void ensureInitialised(List<String> classNames, ClassLoader loader) {
         for (String className : classNames) {
             try {
                 Class.forName(className, true, loader);

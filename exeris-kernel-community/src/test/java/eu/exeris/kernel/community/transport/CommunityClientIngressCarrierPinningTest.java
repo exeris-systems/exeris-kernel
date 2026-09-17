@@ -30,6 +30,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
@@ -118,7 +119,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("TCK-064: client RECV round-trip never pins a carrier (scarce-carrier model)")
 class CommunityClientIngressCarrierPinningTest {
 
-    private static final long PIN_THRESHOLD_MS = 20L;
+    /** The fence the run actually uses; naming it twice is how the message and the run drift. */
+    private static final long PIN_THRESHOLD_MS = JfrPinningMonitor.DEFAULT_THRESHOLD_MS;
 
     /** Far larger than the 2-carrier model so the scarce-carrier deadlock would re-surface. */
     private static final int CLIENT_COUNT = 32;
@@ -157,29 +159,34 @@ class CommunityClientIngressCarrierPinningTest {
         CountDownLatch done = new CountDownLatch(CLIENT_COUNT);
         AtomicInteger failures = new AtomicInteger();
         AtomicInteger completed = new AtomicInteger();
-
-        server.start();
-        client.start();
-
-        // One full round-trip through the measured path before the recording opens. It loads and
-        // initialises what that path needs — sun.nio.ch.Poller on the first channel park, the FFM
-        // segment internals, the reactor and stream classes — on this warm-up's virtual thread
-        // rather than inside the window, where a <clinit> reads as a carrier pin.
-        warmUpRoundTrip(client, port, allocator, payload, serverHandlersCompleted);
+        AtomicBoolean allDone = new AtomicBoolean();
 
         JfrPinningMonitor.Result result;
         try {
+            server.start();
+            client.start();
+
+            // One full round-trip through the measured path before the recording opens. It loads and
+            // initialises what that path needs — sun.nio.ch.Poller on the first channel park, the FFM
+            // segment internals, the reactor and stream classes — on this warm-up's virtual thread
+            // rather than inside the window, where a <clinit> reads as a carrier pin.
+            warmUpRoundTrip(client, port, allocator, payload, serverHandlersCompleted);
+
             result = JfrPinningMonitor.measure(
                     JfrPinningMonitor.Config.defaults("tck064-client-recv"),
-                    () -> fanOutClients(client, port, allocator, payload, done, completed, failures));
+                    () -> allDone.set(
+                            fanOutClients(client, port, allocator, payload, done, completed, failures)));
 
-            assertThat(done.getCount())
+            // What await() returned, not what the latch reads now: the recording is stopped and the
+            // whole JFR file parsed between the two, and a straggler finishing in that window would
+            // turn a timed-out await into a pass.
+            assertThat(allDone.get())
                     .withFailMessage(
                             "TCK-064 REGRESSION: %d/%d client RECV round-trips did not complete within %d s — "
                                     + "the scarce-carrier deadlock has returned (a client recv path is blocking "
                                     + "a carrier).",
                             completed.get(), CLIENT_COUNT, COMPLETION_TIMEOUT_SECONDS)
-                    .isZero();
+                    .isTrue();
             assertThat(failures.get())
                     .withFailMessage("%d client round-trips threw during echo verification", failures.get())
                     .isZero();
@@ -194,19 +201,23 @@ class CommunityClientIngressCarrierPinningTest {
                 .withFailMessage(
                         "TCK-064 REGRESSION: %d carrier-pinning event(s) > %d ms during client RECV, none of them "
                                 + "class loading or class initialisation:%n%s%n%s%nRecording kept at %s",
-                        result.pinnedCount(), PIN_THRESHOLD_MS, render(result.pinnedEvents()),
+                        result.pinnedCount(), result.thresholdMs(), render(result.pinnedEvents()),
                         renderSetAside(result.classInitEvents()), result.jfrPath())
                 .isEmpty();
     }
 
-    /** Fans the client virtual threads and waits for them, inside the recording window. */
-    private static void fanOutClients(TransportEngine client,
-                                      int port,
-                                      MemoryAllocator allocator,
-                                      byte[] payload,
-                                      CountDownLatch done,
-                                      AtomicInteger completed,
-                                      AtomicInteger failures) throws InterruptedException {
+    /**
+     * Fans the client virtual threads and waits for them, inside the recording window.
+     *
+     * @return what {@code await} returned — whether every round-trip finished inside the timeout
+     */
+    private static boolean fanOutClients(TransportEngine client,
+                                         int port,
+                                         MemoryAllocator allocator,
+                                         byte[] payload,
+                                         CountDownLatch done,
+                                         AtomicInteger completed,
+                                         AtomicInteger failures) throws InterruptedException {
         for (int i = 0; i < CLIENT_COUNT; i++) {
             Thread.ofVirtual()
                     .name("tck064-client-recv-", i)
@@ -221,7 +232,7 @@ class CommunityClientIngressCarrierPinningTest {
                         }
                     });
         }
-        done.await(COMPLETION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        return done.await(COMPLETION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
     /** Renders the pins counted against the fence: thread, duration, the JVM's reason, the stack. */

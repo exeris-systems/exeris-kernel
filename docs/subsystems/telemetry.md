@@ -315,8 +315,9 @@ buckets:
 
 | | |
 |:--|:--|
-| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 53 warmed, 38 deliberately cold |
+| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 47 warmed, 44 deliberately cold |
 | `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 34 event classes — 30 warmed, 4 deliberately cold |
+| `KafkaJfrEventCatalogue` (`eu.exeris.kernel.community.kafka`) | 3 event classes — all warmed; the driver ships its own catalogue and its own guard, because the Community guard runs in the module it depends on and cannot see it |
 
 A class is **warmed** when a virtual thread can reach it on a path that produces it concurrently —
 per request, per stream, per step, per allocation. It is left **cold** when it is emitted once per
@@ -325,19 +326,32 @@ millisecond. Cold is a decision, not an omission: a cold event is fully supporte
 observable, it simply pays its own initialisation the first time it fires. Warming everything
 instead would cost upwards of 100 ms of start-up for classes a given process may never emit.
 
-The warm-up runs on the thread that starts the subsystem, from two places and no others:
-`SubsystemOrchestrator.doStart` (Core's set, keyed by `Subsystem.name()`) and
-`AbstractCommunitySubsystem.markRunning(true)` (the driver's set). An engine built without a kernel
-bootstrap warms its own — `NativeTcpCarrier.start()` and `PaqsScheduler`'s constructor do, because
-CLIENT mode stands up no PAQS and an embedded engine has no orchestrator. The Kafka driver ships in
-its own module and warms its three events at `KafkaEventEngine.start()`.
+The warm-up runs on the thread that starts the subsystem. `SubsystemOrchestrator.doStart` warms
+Core's set for the subsystem it is about to start, keyed by `Subsystem.name()`; each Community
+subsystem warms its driver's set at the top of its own `start()`. That call sits in each subsystem
+rather than in a shared base class, and the reason is a defect this page previously described as a
+feature: three subsystems implement `Subsystem` directly, so a single hook in
+`AbstractCommunitySubsystem` missed them — including memory, whose allocation events are the hottest
+path the catalogue names. `JfrEventCatalogueCoverageTest` now fails the build if a subsystem does not
+warm, in addition to failing on an unclassified event class.
+
+A subsystem that found no provider warms nothing: `AbstractSingleProviderSubsystem` puts the call
+behind that check, so a disabled subsystem does not pay class loads for events it will never emit.
+
+An engine built without a kernel bootstrap warms its own — `NativeTcpCarrier.start()` and
+`PaqsScheduler`'s constructor do, because CLIENT mode stands up no PAQS, and because the TCK binding
+and any carrier that is not `NativeTcpCarrier` construct a scheduler directly. The Kafka driver warms
+its three events at `KafkaEventEngine.start()`, through a seam on the Community catalogue rather than
+by importing Core, which the Wall does not grant that module.
 
 The catalogues hold fully-qualified **names**, not class literals: two thirds of the kernel's event
 classes are package-private, so no single class can name them otherwise, and widening 66 classes to
-`public` to hold a warm-up list would be the worse change. `JfrEventCatalogueCoverageTest` is what
-makes names safe — it resolves every one and matches the union of both buckets against the event
-classes each module actually declares, so a new event class that nobody classified fails the build,
-and so does a name left behind by a rename.
+`public` to hold a warm-up list would be the worse change. Each catalogue resolves its names through
+its own module's class loader, because a driver's events ship in the driver's artifact.
+`JfrEventCatalogueCoverageTest` is what makes names safe — it resolves every one and matches the
+union of both buckets against the event classes each module actually declares, so a new event class
+that nobody classified fails the build, and so does a name left behind by a rename, a group keyed on
+a subsystem name nothing reports, and a subsystem that never warms.
 
 ---
 

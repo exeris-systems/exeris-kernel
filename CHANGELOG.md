@@ -105,9 +105,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   load — and turning JFR off does not help, because every emit site is a static method on the event
   class itself, so the `FlightRecorder.isInitialized()` guard runs after the class has initialised.
   `CoreJfrEventCatalogue` and `CommunityJfrEventCatalogue` split all 125 event classes of the two
-  main modules into warmed (83) and deliberately cold (42); the warm-up runs on the starting thread
-  from `SubsystemOrchestrator.doStart` and `AbstractCommunitySubsystem.markRunning`, and the Kafka
-  driver warms its three at its own engine start. Warming everything would cost upwards of 100 ms of
+  main modules into warmed (77) and deliberately cold (48); the warm-up runs on the starting thread
+  from `SubsystemOrchestrator.doStart` and from each Community subsystem's own `start()`, and the
+  Kafka driver carries its own catalogue and guard for its three. Warming everything would cost upwards of 100 ms of
   start-up (measured: ~1 ms per class) for failure-path events a process may never emit, which is why
   cold is a decision rather than an omission. `JfrEventCatalogueCoverageTest` fails the build on an
   event class in neither bucket and on a catalogue name that no longer resolves.

@@ -91,11 +91,7 @@ class JfrEventCatalogueCoverageTest {
         // their groups — memory's allocation events among them — were never warmed by anything.
         // The call now sits in each start(); this is what keeps a thirteenth subsystem from
         // forgetting it.
-        List<JavaClass> subsystems = classes.stream()
-                .filter(c -> c.getPackageName().equals("eu.exeris.kernel.community.bootstrap"))
-                .filter(c -> c.isAssignableTo(Subsystem.class))
-                .filter(c -> !c.getModifiers().contains(JavaModifier.ABSTRACT))
-                .toList();
+        List<JavaClass> subsystems = concreteSubsystems(classes);
 
         assertThat(subsystems)
                 .withFailMessage("no concrete Community Subsystem classes were found; this check would pass vacuously")
@@ -124,14 +120,36 @@ class JfrEventCatalogueCoverageTest {
         return false;
     }
 
+    /**
+     * The names the subsystems actually report, read from {@code Subsystem.name()}.
+     *
+     * <p>Derived by instantiating each one and calling the method, not by lowercasing a class name:
+     * the catalogue is keyed on what {@code name()} returns, and a check that reconstructs the key
+     * from the class name instead never reads the property it claims to check. {@code name()} is a
+     * constant on every implementation and needs no kernel context to call.
+     */
     private static Set<String> communitySubsystemNames(JavaClasses classes) {
+        Set<String> names = new TreeSet<>();
+        for (JavaClass javaClass : concreteSubsystems(classes)) {
+            try {
+                Class<?> type = Class.forName(javaClass.getName());
+                var constructor = type.getDeclaredConstructor();
+                constructor.setAccessible(true);
+                names.add(((Subsystem) constructor.newInstance()).name());
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError("could not read Subsystem.name() from " + javaClass.getName()
+                        + " — the guard cannot check the catalogue's keys without it", e);
+            }
+        }
+        return names;
+    }
+
+    private static List<JavaClass> concreteSubsystems(JavaClasses classes) {
         return classes.stream()
                 .filter(c -> c.getPackageName().equals("eu.exeris.kernel.community.bootstrap"))
-                .map(JavaClass::getSimpleName)
-                .filter(n -> n.startsWith("Community") && n.endsWith("Subsystem"))
-                .map(n -> n.substring("Community".length(), n.length() - "Subsystem".length())
-                        .toLowerCase(java.util.Locale.ROOT))
-                .collect(Collectors.toCollection(TreeSet::new));
+                .filter(c -> c.isAssignableTo(Subsystem.class))
+                .filter(c -> !c.getModifiers().contains(JavaModifier.ABSTRACT))
+                .toList();
     }
 
     private static void assertClassified(JavaClasses classes, String modulePrefix,

@@ -46,6 +46,7 @@ public final class CoreJfrEventCatalogue {
      * class, and the dispatch is a lookup rather than a switch that grows a branch per subsystem.
      */
     private static final JfrEventCatalogue CATALOGUE = new JfrEventCatalogue(
+            CoreJfrEventCatalogue.class,
             Map.ofEntries(
             // transport — per connection, per stream and per ingress batch, on the virtual thread PAQS spawned.
             Map.entry("transport", List.of(

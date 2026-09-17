@@ -60,6 +60,17 @@ public final class CarrierPinClassification {
             "jdk.internal.loader.ClassLoaders",
             "jdk.internal.loader.URLClassPath");
 
+    /**
+     * How deep into the stack a class-loading frame still describes the pin.
+     *
+     * <p>The blocking site is at the top. Deeper frames are the caller's context, and a stack 256
+     * deep almost always has a {@code loadClass} or a {@code <clinit>} somewhere in it — scanning
+     * the whole of it let any such frame outrank a genuinely blocked carrier and set a real pin
+     * aside. Four covers what the JVM actually reports for class work: the loader frames sit
+     * innermost, above the application frame that touched the class.
+     */
+    private static final int CLASS_WORK_FRAME_DEPTH = 4;
+
     private static final String NO_REASON_FIELD = "<no pinnedReason field on this JDK>";
     private static final String UNKNOWN_REASON = "<unknown>";
 
@@ -122,7 +133,9 @@ public final class CarrierPinClassification {
         if (reason.contains("Waited for initialization of") || reason.contains("<clinit>")) {
             return true;
         }
-        for (String frame : frames) {
+        int depth = Math.min(CLASS_WORK_FRAME_DEPTH, frames.size());
+        for (int i = 0; i < depth; i++) {
+            String frame = frames.get(i);
             if (frame.endsWith(".<clinit>") || isClassLoadingFrame(frame)) {
                 return true;
             }

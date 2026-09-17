@@ -43,6 +43,8 @@ import java.util.Locale;
  */
 public final class JfrPinningMonitor {
 
+    private static final System.Logger LOG = System.getLogger(JfrPinningMonitor.class.getName());
+
     private static final String VT_PINNED_EVENT = CarrierPinClassification.VT_PINNED_EVENT;
 
     /** Default carrier-pinning threshold, in milliseconds; see the class-level contract note. */
@@ -204,6 +206,10 @@ public final class JfrPinningMonitor {
      * @param label  human-readable label for the diagnostic on failure
      */
     public static void assertNoPinning(Result result, String label) {
+        // Reported before the early return, and that ordering is the point: a fence that sets
+        // evidence aside and then says nothing on a green run is a fence nobody can audit. This is
+        // the only trace that the classification did anything at all.
+        reportSetAside(result, label);
         if (!result.hasPinning()) return;
         // 1024, not 512: the report now carries each pin's reason and a set-aside block, and the
         // fixed frame alone is past 587 characters — PMD measured it.
@@ -223,24 +229,36 @@ public final class JfrPinningMonitor {
                         .append("    ").append(e.stackTrace()).append("\n")
         );
         sb.append("╚══════════════════════════════════════════════════════╝\n");
-        if (!result.classInitEvents().isEmpty()) {
-            // Reported, not counted: these say the JVM was cold, not that a carrier was blocked.
-            // They are printed because a fence that silently discards evidence is worse than one
-            // that counts the wrong thing — the reader decides whether the set-aside is right.
-            sb.append(result.classInitEvents().size())
-                    .append(" further pin(s) were class loading or class initialisation and are not counted:\n");
-            result.classInitEvents().stream().limit(5).forEach(e ->
-                    sb.append("  · ").append(e.threadName())
-                            .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs()))
-                            .append(" ms | ").append(e.pinnedReason()).append("\n")
-            );
-        }
+
         sb.append("Per performance-contract.md: carrier blocked > ")
                 .append(result.thresholdMs())
                 .append(" ms is BANNED. Avoid synchronized, blocking I/O, non-VT-safe executors.");
         throw new AssertionError(sb.toString());
     }
 
+
+    /**
+     * Names the pins the classification set aside, on every run rather than only a failing one.
+     *
+     * @param result the outcome of a {@link #measure} run
+     * @param label  human-readable label for the diagnostic
+     */
+    private static void reportSetAside(Result result, String label) {
+        if (result.classInitEvents().isEmpty() || !LOG.isLoggable(System.Logger.Level.INFO)) {
+            return;
+        }
+        StringBuilder sb = new StringBuilder(256)
+                .append("[").append(label).append("] ")
+                .append(result.classInitEvents().size())
+                .append(" carrier pin(s) over ").append(result.thresholdMs())
+                .append(" ms were class loading or class initialisation and are NOT counted against the fence");
+        result.classInitEvents().stream().limit(5).forEach(e ->
+                sb.append(System.lineSeparator())
+                        .append("  · ").append(e.threadName())
+                        .append(" | ").append(String.format(Locale.ROOT, "%.2f", e.durationMs()))
+                        .append(" ms | ").append(e.pinnedReason()));
+        LOG.log(System.Logger.Level.INFO, sb.toString());
+    }
 
     private static Result parseResult(Path jfrFile, long thresholdMs) throws IOException {
         List<PinnedEvent> counted = new ArrayList<>();

@@ -40,7 +40,7 @@ class JfrEventCatalogueTest {
         @DisplayName("runs the static initialiser of a class the catalogue names")
         void warmingRunsTheStaticInitialiser() {
             JfrEventCatalogue catalogue =
-                    new JfrEventCatalogue(Map.of("probe", List.of(PROBE)), List.of());
+                    new JfrEventCatalogue(JfrEventCatalogueTest.class, Map.of("probe", List.of(PROBE)), List.of());
 
             assertThat(PROBE_INITIALISED)
                     .withFailMessage("Probe initialised before the warm-up ran; the assertion below would be vacuous")
@@ -55,7 +55,7 @@ class JfrEventCatalogueTest {
         @DisplayName("a name that does not resolve is survivable — a subsystem still starts")
         void anUnresolvableNameDoesNotFailTheCaller() {
             JfrEventCatalogue catalogue =
-                    new JfrEventCatalogue(Map.of("ghost", List.of(ABSENT)), List.of());
+                    new JfrEventCatalogue(JfrEventCatalogueTest.class, Map.of("ghost", List.of(ABSENT)), List.of());
 
             assertThatCode(() -> catalogue.warmHotPath("ghost")).doesNotThrowAnyException();
         }
@@ -64,7 +64,7 @@ class JfrEventCatalogueTest {
         @DisplayName("a subsystem the catalogue does not cover warms nothing, and does not throw")
         void anUnknownSubsystemWarmsNothing() {
             JfrEventCatalogue catalogue =
-                    new JfrEventCatalogue(Map.of("known", List.of(PROBE)), List.of());
+                    new JfrEventCatalogue(JfrEventCatalogueTest.class, Map.of("known", List.of(PROBE)), List.of());
 
             assertThat(catalogue.hotPathFor("unknown")).isEmpty();
             assertThatCode(() -> catalogue.warmHotPath("unknown")).doesNotThrowAnyException();
@@ -74,7 +74,7 @@ class JfrEventCatalogueTest {
         @DisplayName("a null subsystem name is a lookup miss, not a failure")
         void aNullSubsystemNameIsAMiss() {
             JfrEventCatalogue catalogue =
-                    new JfrEventCatalogue(Map.of("known", List.of(PROBE)), List.of());
+                    new JfrEventCatalogue(JfrEventCatalogueTest.class, Map.of("known", List.of(PROBE)), List.of());
 
             assertThat(catalogue.hotPathFor(null)).isEmpty();
             assertThatCode(() -> catalogue.warmHotPath(null)).doesNotThrowAnyException();
@@ -86,6 +86,7 @@ class JfrEventCatalogueTest {
     class Reading {
 
         private final JfrEventCatalogue catalogue = new JfrEventCatalogue(
+                JfrEventCatalogueTest.class,
                 Map.of("transport", List.of("a.Alpha", "a.Beta"), "http", List.of("b.Gamma")),
                 List.of("c.Cold"));
 
@@ -109,16 +110,21 @@ class JfrEventCatalogueTest {
         }
 
         @Test
-        @DisplayName("the catalogue copies what it was given, so a later edit cannot change it")
+        @DisplayName("the catalogue copies what it was given, down to the per-subsystem lists")
         void catalogueIsIndependentOfItsInputs() {
-            Map<String, List<String>> mutable = new java.util.HashMap<>(Map.of("x", List.of("a.Alpha")));
+            // Clearing the outer map is the easy half, and it was all the first version of this test
+            // did — Map.copyOf is shallow, so each group list was still the caller's to empty.
+            List<String> mutableGroup = new java.util.ArrayList<>(List.of("a.Alpha"));
+            Map<String, List<String>> mutable = new java.util.HashMap<>(Map.of("x", mutableGroup));
             List<String> mutableCold = new java.util.ArrayList<>(List.of("c.Cold"));
-            JfrEventCatalogue copied = new JfrEventCatalogue(mutable, mutableCold);
+            JfrEventCatalogue copied = new JfrEventCatalogue(JfrEventCatalogueTest.class, mutable, mutableCold);
 
+            mutableGroup.clear();
             mutable.clear();
             mutableCold.clear();
 
             assertThat(copied.hotPathFor("x")).containsExactly("a.Alpha");
+            assertThat(copied.allHotPath()).containsExactly("a.Alpha");
             assertThat(copied.deliberatelyCold()).containsExactly("c.Cold");
         }
     }

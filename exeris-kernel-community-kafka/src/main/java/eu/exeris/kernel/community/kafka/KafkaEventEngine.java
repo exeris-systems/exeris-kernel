@@ -5,7 +5,6 @@
 package eu.exeris.kernel.community.kafka;
 
 import eu.exeris.kernel.core.events.InMemoryEventBus;
-import eu.exeris.kernel.core.telemetry.jfr.JfrEventWarmup;
 import eu.exeris.kernel.spi.events.EventBatchProcessor;
 import eu.exeris.kernel.spi.events.EventBus;
 import eu.exeris.kernel.spi.events.EventDescriptor;
@@ -31,7 +30,6 @@ import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
 import java.util.HashSet;
-import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
@@ -152,14 +150,9 @@ public final class KafkaEventEngine implements EventEngine {
         if (!started.compareAndSet(false, true)) {
             return;
         }
-        // On this thread, before the loop runs: this driver's JFR event classes all fire from the
-        // publish and consume paths, which are virtual threads, and a virtual thread inside a
-        // <clinit> pins its carrier for the whole of it. A publish failure arrives for every
-        // in-flight message at once, which is the worst moment to be loading a class.
-        JfrEventWarmup.ensureInitialised(List.of(
-                "eu.exeris.kernel.community.kafka.KafkaPublishFailedEvent",
-                "eu.exeris.kernel.community.kafka.KafkaEventLogAppendFailedEvent",
-                "eu.exeris.kernel.community.kafka.KafkaConsumerLoopFailedEvent"));
+        // On this thread, before the loop runs: a virtual thread inside a <clinit> pins its carrier
+        // for the whole of it, and every one of this driver's events fires from a virtual thread.
+        KafkaJfrEventCatalogue.warmHotPath();
         loop.start();
     }
 

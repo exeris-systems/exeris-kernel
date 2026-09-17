@@ -81,9 +81,13 @@ import java.util.function.UnaryOperator;
      */
     @Override
     public void start() {
-        // Same reason as every other Community subsystem: the hot-path JFR event classes initialise
-        // on the starting thread, never later on a virtual thread where a <clinit> pins its carrier.
-        CommunityJfrEventCatalogue.warmHotPath(name());
+        if (provider != null) {
+            // Same reason as every other Community subsystem: the hot-path JFR event classes
+            // initialise on the starting thread, never later on a virtual thread where a <clinit>
+            // pins its carrier. Behind the guard, because a subsystem that found no provider will
+            // emit none of them and should not pay their class load at boot.
+            CommunityJfrEventCatalogue.warmHotPath(name());
+        }
         markRunning(provider != null);
     }
 

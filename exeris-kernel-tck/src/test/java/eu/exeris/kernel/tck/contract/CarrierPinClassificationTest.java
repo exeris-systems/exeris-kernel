@@ -130,6 +130,22 @@ class CarrierPinClassificationTest {
         }
 
         @Test
+        @DisplayName("a loader frame deep under a blocked carrier does not set the pin aside")
+        void aLoaderFrameBelowTheBlockingSiteIsCounted() {
+            // The blocking site is at the top. A stack 256 deep nearly always has a loadClass
+            // somewhere in it, and scanning all of it let that frame outrank the block above it.
+            assertThat(CarrierPinClassification.isClassLoadingOrInit(
+                    "Native frame on stack",
+                    List.of("eu.exeris.kernel.core.transport.syscall.CoreSyscalls.recv",
+                            "eu.exeris.kernel.community.transport.NativeTcpStream.read",
+                            "eu.exeris.kernel.core.transport.scheduler.PaqsScheduler.runStream",
+                            "java.lang.VirtualThread.run",
+                            "jdk.internal.loader.BuiltinClassLoader.loadClass",
+                            "java.lang.ClassLoader.loadClass")))
+                    .isFalse();
+        }
+
+        @Test
         @DisplayName("a class name containing a loader package does not make a pin class work")
         void applicationFrameNamedLikeALoaderIsCounted() {
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
