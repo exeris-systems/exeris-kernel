@@ -45,7 +45,8 @@ public final class CoreJfrEventCatalogue {
      * <p>A map rather than a method per subsystem: the entries are names, so nothing here loads a
      * class, and the dispatch is a lookup rather than a switch that grows a branch per subsystem.
      */
-    private static final Map<String, List<String>> HOT_PATH = Map.ofEntries(
+    private static final JfrEventCatalogue CATALOGUE = new JfrEventCatalogue(
+            Map.ofEntries(
             // transport — per connection, per stream and per ingress batch, on the virtual thread PAQS spawned.
             Map.entry("transport", List.of(
                     "eu.exeris.kernel.core.transport.jfr.ConnectionEstablishedEvent",
@@ -120,9 +121,8 @@ public final class CoreJfrEventCatalogue {
                     "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelMetricJfrEvent",
                     "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent",
                     "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent",
-                    "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$MemoryExhaustionJfrEvent")));
-
-    private static final List<String> DELIBERATELY_COLD = List.of(
+                    "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$MemoryExhaustionJfrEvent"))),
+            List.of(
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$CircularDependencyDetectedEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$ConfigSettingsResolvedEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$KernelBootReadyEvent",
@@ -160,68 +160,30 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$RoleRegistryLoadedEvent",
             "eu.exeris.kernel.core.storage.StorageBootstrapSelectedEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
-            "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$TransportBindJfrEvent");
+            "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$TransportBindJfrEvent"));
 
     private CoreJfrEventCatalogue() {
         // Static catalogue — no instances.
     }
 
     /**
+     * This module's catalogue: both buckets, and the behaviour they share with every other module's.
+     *
+     * @return the catalogue; never {@code null}
+     */
+    public static JfrEventCatalogue catalogue() {
+        return CATALOGUE;
+    }
+
+    /**
      * Warms the hot-path event classes of one subsystem, on the calling thread.
      *
-     * <p>Called once per subsystem start, before the subsystem serves anything. A name this module
-     * does not know is not an error: a kernel is free to run subsystems this catalogue says nothing
-     * about, and they simply have nothing to warm here.
+     * <p>Shorthand for {@code catalogue().warmHotPath(name)}, kept because it is what the two
+     * start seams call and reads as what it does at those call sites.
      *
      * @param subsystemName the starting subsystem's {@code Subsystem.name()}; may be {@code null}
      */
     public static void warmHotPath(String subsystemName) {
-        JfrEventWarmup.ensureInitialised(hotPathFor(subsystemName));
-    }
-
-    /**
-     * The hot-path event classes of one subsystem.
-     *
-     * @param subsystemName the subsystem's {@code Subsystem.name()}; may be {@code null}
-     * @return their fully-qualified names, empty for a subsystem this catalogue does not cover
-     */
-    public static List<String> hotPathFor(String subsystemName) {
-        if (subsystemName == null) {
-            return List.of();
-        }
-        return HOT_PATH.getOrDefault(subsystemName, List.of());
-    }
-
-    /**
-     * Every hot-path event class in this module, across all subsystems.
-     *
-     * @return their fully-qualified names; never {@code null}
-     */
-    public static List<String> allHotPath() {
-        return HOT_PATH.values().stream().flatMap(List::stream).toList();
-    }
-
-    /**
-     * The subsystem names this catalogue warms something for.
-     *
-     * @return the keys of the hot-path map; never {@code null}
-     */
-    public static List<String> warmedSubsystems() {
-        return HOT_PATH.keySet().stream().sorted().toList();
-    }
-
-    /**
-     * Event classes this module deliberately does not warm, each for one of the reasons the class
-     * documentation gives: emitted once per process, emitted from a bootstrap or maintenance thread
-     * rather than a request path, or emitted only where a millisecond cannot matter.
-     *
-     * <p>This is not a leftover list. It is the other half of the guarantee the guard test enforces:
-     * a new event class must be placed in one bucket or the other, and choosing this one is a
-     * decision rather than an omission.
-     *
-     * @return their fully-qualified names; never {@code null}
-     */
-    public static List<String> deliberatelyCold() {
-        return DELIBERATELY_COLD;
+        CATALOGUE.warmHotPath(subsystemName);
     }
 }

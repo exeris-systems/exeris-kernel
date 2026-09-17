@@ -46,13 +46,15 @@ class JfrEventCatalogueCoverageTest {
     @ArchTest
     static void coreEventClassesAreAllClassified(JavaClasses classes) {
         assertClassified(classes, "eu.exeris.kernel.core.",
-                CoreJfrEventCatalogue.allHotPath(), CoreJfrEventCatalogue.deliberatelyCold());
+                CoreJfrEventCatalogue.catalogue().allHotPath(),
+                CoreJfrEventCatalogue.catalogue().deliberatelyCold());
     }
 
     @ArchTest
     static void communityEventClassesAreAllClassified(JavaClasses classes) {
         assertClassified(classes, "eu.exeris.kernel.community.",
-                CommunityJfrEventCatalogue.allHotPath(), CommunityJfrEventCatalogue.deliberatelyCold());
+                CommunityJfrEventCatalogue.catalogue().allHotPath(),
+                CommunityJfrEventCatalogue.catalogue().deliberatelyCold());
     }
 
     @ArchTest
@@ -72,8 +74,8 @@ class JfrEventCatalogueCoverageTest {
                 .isNotEmpty();
 
         for (String name : subsystemNames) {
-            boolean covered = !CoreJfrEventCatalogue.hotPathFor(name).isEmpty()
-                    || !CommunityJfrEventCatalogue.hotPathFor(name).isEmpty();
+            boolean covered = !CoreJfrEventCatalogue.catalogue().hotPathFor(name).isEmpty()
+                    || !CommunityJfrEventCatalogue.catalogue().hotPathFor(name).isEmpty();
             assertThat(covered)
                     .withFailMessage("subsystem '%s' warms nothing in either catalogue — if that is deliberate "
                             + "its events belong in deliberatelyCold(), and if it is not, the group is missing",

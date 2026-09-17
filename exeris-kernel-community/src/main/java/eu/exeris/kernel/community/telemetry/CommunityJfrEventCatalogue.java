@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.telemetry;
 
+import eu.exeris.kernel.core.telemetry.jfr.JfrEventCatalogue;
 import eu.exeris.kernel.core.telemetry.jfr.JfrEventWarmup;
 
 import java.util.List;
@@ -28,7 +29,8 @@ import java.util.Map;
 public final class CommunityJfrEventCatalogue {
 
     /** Hot-path event classes, keyed by the {@code Subsystem.name()} that warms them. */
-    private static final Map<String, List<String>> HOT_PATH = Map.ofEntries(
+    private static final JfrEventCatalogue CATALOGUE = new JfrEventCatalogue(
+            Map.ofEntries(
             // transport — per accept, per connection and per drain, from the acceptor's and
             // the caller's virtual threads.
             Map.entry("transport", List.of(
@@ -81,66 +83,35 @@ public final class CommunityJfrEventCatalogue {
                     "eu.exeris.kernel.community.scheduling.CommunityJobJfrEvents$JobFailureEvent")),
             // crypto — per handshake, on the virtual thread driving it.
             Map.entry("crypto", List.of(
-                    "eu.exeris.kernel.community.crypto.CommunityTlsHandshakeEvent")));
-
-    private static final List<String> DELIBERATELY_COLD = List.of(
+                    "eu.exeris.kernel.community.crypto.CommunityTlsHandshakeEvent"))),
+            List.of(
             "eu.exeris.kernel.community.crypto.CommunityProviderBootstrapEvent",
             "eu.exeris.kernel.community.diagnostics.CommunityKernelDiagnosticsEvent",
             "eu.exeris.kernel.community.http.CommunityHttpLifecycleEvent",
-            "eu.exeris.kernel.community.security.CommunityJwksKeyRotationEvent");
+            "eu.exeris.kernel.community.security.CommunityJwksKeyRotationEvent"));
 
     private CommunityJfrEventCatalogue() {
         // Static catalogue — no instances.
     }
 
     /**
+     * This module's catalogue: both buckets, and the behaviour they share with every other module's.
+     *
+     * @return the catalogue; never {@code null}
+     */
+    public static JfrEventCatalogue catalogue() {
+        return CATALOGUE;
+    }
+
+    /**
      * Warms the hot-path event classes of one subsystem, on the calling thread.
+     *
+     * <p>Shorthand for {@code catalogue().warmHotPath(name)}, kept because it is what the two
+     * start seams call and reads as what it does at those call sites.
      *
      * @param subsystemName the starting subsystem's {@code Subsystem.name()}; may be {@code null}
      */
     public static void warmHotPath(String subsystemName) {
-        JfrEventWarmup.ensureInitialised(hotPathFor(subsystemName));
-    }
-
-    /**
-     * The hot-path event classes of one subsystem.
-     *
-     * @param subsystemName the subsystem's {@code Subsystem.name()}; may be {@code null}
-     * @return their fully-qualified names, empty for a subsystem this catalogue does not cover
-     */
-    public static List<String> hotPathFor(String subsystemName) {
-        if (subsystemName == null) {
-            return List.of();
-        }
-        return HOT_PATH.getOrDefault(subsystemName, List.of());
-    }
-
-    /**
-     * Every hot-path event class in this module, across all subsystems.
-     *
-     * @return their fully-qualified names; never {@code null}
-     */
-    public static List<String> allHotPath() {
-        return HOT_PATH.values().stream().flatMap(List::stream).toList();
-    }
-
-    /**
-     * The subsystem names this catalogue warms something for.
-     *
-     * @return the keys of the hot-path map; never {@code null}
-     */
-    public static List<String> warmedSubsystems() {
-        return HOT_PATH.keySet().stream().sorted().toList();
-    }
-
-    /**
-     * Event classes this driver deliberately does not warm: a lifecycle event emitted once per
-     * engine, a key rotation the refresher drives, the provider bootstrap record, and the
-     * diagnostics snapshot a tool asks for. None can arrive as a burst on a request path.
-     *
-     * @return their fully-qualified names; never {@code null}
-     */
-    public static List<String> deliberatelyCold() {
-        return DELIBERATELY_COLD;
+        CATALOGUE.warmHotPath(subsystemName);
     }
 }
