@@ -332,10 +332,12 @@ public final class JfrPinningMonitor {
                     if (ms < thresholdMs) continue;
                     String thread = ev.getThread() != null ? ev.getThread().getJavaName() : "<unknown>";
                     String reason = CarrierPinClassification.pinnedReason(ev);
+                    // The whole stack, not the innermost CLASS_WORK_FRAME_DEPTH: the classifier's
+                    // veto — the frames that mean a carrier is really blocked — reads all of it, and
+                    // it can only do that if it is given all of it. It bounds its own positive
+                    // search itself.
                     boolean cold = CarrierPinClassification.isClassLoadingOrInit(
-                            reason,
-                            CarrierPinClassification.frames(
-                                    ev.getStackTrace(), CarrierPinClassification.CLASS_WORK_FRAME_DEPTH));
+                            reason, CarrierPinClassification.frames(ev.getStackTrace()));
                     PinnedEvent event = new PinnedEvent(ms, thread, formatStack(ev), reason, cold);
                     (cold ? classInit : counted).add(event);
                 }

@@ -6,6 +6,7 @@ package eu.exeris.kernel.tck.contract;
 
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordedFrame;
+import jdk.jfr.consumer.RecordedMethod;
 import jdk.jfr.consumer.RecordedStackTrace;
 
 import java.util.ArrayList;
@@ -40,7 +41,11 @@ import java.util.List;
  * <p>And a class initialiser is not a licence. Loading a native library or making an FFM downcall is
  * ordinary work for a {@code <clinit>}, so a frame that means a carrier is really blocked vetoes the
  * set-aside before any of the above is consulted — otherwise the one block this kernel is most
- * likely to take, OpenSSL through FFM, would read as benign on every fence in the repository.
+ * likely to take, OpenSSL through FFM, would read as benign on every fence in the repository. That
+ * veto reads the whole stack, while the frame heuristic that sets a pin aside reads only the
+ * innermost {@value #CLASS_WORK_FRAME_DEPTH}: a veto can only narrow what is set aside, so nothing
+ * is lost by widening it, and a {@code <clinit>} sixty frames down is no account of the block at
+ * the top.
  *
  * @since 0.12
  * @see JfrPinningMonitor
@@ -88,19 +93,35 @@ public final class CarrierPinClassification {
     /** The tail of that phrasing; the class name sits between the two. */
     private static final String CLINIT_ON_STACK_SUFFIX = ".<clinit> on stack";
 
+    /** The JVM's own phrasing for a thread blocked waiting on another thread's class initialiser. */
+    private static final String INIT_WAIT_PREFIX = "Waited for initialization of ";
+
+    /** The tail of that phrasing; the class name sits between the two. */
+    private static final String INIT_WAIT_SUFFIX = " by another thread";
+
     /**
      * How deep into the stack a class-loading frame still describes the pin.
      *
-     * <p>Public because the reader that builds the frame list needs to know how many of them this
-     * class will look at; building more is the cost the bound exists to avoid.
-     *
      * <p>The blocking site is at the top. Deeper frames are the caller's context, and a stack 256
-     * deep almost always has a {@code loadClass} or a {@code <clinit>} somewhere in it — scanning
-     * the whole of it let any such frame outrank a genuinely blocked carrier and set a real pin
-     * aside. Four covers what the JVM actually reports for class work: the loader frames sit
-     * innermost, above the application frame that touched the class.
+     * deep almost always has a {@code loadClass} or a {@code <clinit>} somewhere in it, so an
+     * unbounded search here would let any such frame outrank a genuinely blocked carrier. The bound
+     * applies to <em>this</em> search only: {@link #BLOCKING_TYPES} is scanned over the whole stack,
+     * because a veto can only make the fence stricter.
+     *
+     * <p>What this bound is, honestly: a fallback. The two reason predicates carry the classification
+     * and they match the JVM's own format strings, so a pin the JVM explains never reaches this
+     * search at all. It exists for a JDK that stops populating {@code pinnedReason} — before 24 there
+     * was no such field — and for a recording that carries a stack and no reason. <strong>No
+     * recording in this repository substantiates any particular value</strong>: there is no captured
+     * {@code jdk.VirtualThreadPinned} event under version control to measure a depth from. Four is
+     * the shallowest window that holds the loader frames the JVM puts above the application frame
+     * that touched the class, and {@code CarrierPinClassificationTest} pins it from both sides so
+     * that changing it is a decision rather than a drift.
      */
     public static final int CLASS_WORK_FRAME_DEPTH = 4;
+
+    /** Stands in for a frame the recording carries without a method or a type. */
+    public static final String UNKNOWN_FRAME = "<unnamed frame>";
 
     private static final String NO_REASON_FIELD = "<no pinnedReason field on this JDK>";
     private static final String UNKNOWN_REASON = "<unknown>";
@@ -141,9 +162,13 @@ public final class CarrierPinClassification {
     /**
      * The innermost {@code limit} frames, as {@code Type.method} strings.
      *
-     * <p>The classification reads four; a recorded stack can be 256 deep, and building the other
-     * 252 strings to throw them away is the whole of the cost. The unbounded form stays for a
-     * report, which does want all of them.
+     * <p>For a caller that reads only the innermost few. The classification itself takes the
+     * unbounded form, because its veto scans the whole stack; this one is for a report, which shows
+     * the top of a stack and not 256 frames of it.
+     *
+     * <p>A frame the JDK left without a method or a type becomes {@link #UNKNOWN_FRAME} rather than
+     * an NPE, and rather than being dropped: dropping one would shift every frame below it up, and
+     * the depth heuristic reads positions.
      *
      * @param stack the recorded stack; may be {@code null}
      * @param limit how many frames to take from the top; must not be negative
@@ -158,9 +183,23 @@ public final class CarrierPinClassification {
         List<String> frames = new ArrayList<>(take);
         for (int i = 0; i < take; i++) {
             RecordedFrame frame = recorded.get(i);
-            frames.add(frame.getMethod().getType().getName() + "." + frame.getMethod().getName());
+            frames.add(describe(frame));
         }
         return frames;
+    }
+
+    /**
+     * One frame as {@code Type.method}, or {@link #UNKNOWN_FRAME} if the recording did not name one.
+     *
+     * @param frame a recorded frame; must not be {@code null}
+     * @return the frame's description, never {@code null}
+     */
+    private static String describe(RecordedFrame frame) {
+        RecordedMethod method = frame.getMethod();
+        if (method == null || method.getType() == null) {
+            return UNKNOWN_FRAME;
+        }
+        return method.getType().getName() + "." + method.getName();
     }
 
     private static boolean startsWithAny(String frame, List<String> types) {
@@ -187,6 +226,23 @@ public final class CarrierPinClassification {
     }
 
     /**
+     * Whether {@code reason} is the JVM's account of a thread waiting on another thread's class
+     * initialiser.
+     *
+     * <p>Matched on the shape the JVM emits, {@code "Waited for initialization of <class> by another
+     * thread"}, for the same reason its neighbour above is: this one was a bare
+     * {@code contains("Waited for initialization of")} while the {@code <clinit>} predicate beside
+     * it had already been tightened — the same substring hole, two lines apart, and only one of them
+     * had a test.
+     *
+     * @param reason the JVM's {@code pinnedReason}
+     * @return {@code true} if the reason names a wait on another thread's class initialisation
+     */
+    private static boolean isInitWaitReason(String reason) {
+        return reason.startsWith(INIT_WAIT_PREFIX) && reason.endsWith(INIT_WAIT_SUFFIX);
+    }
+
+    /**
      * Whether a pin described by {@code reason} and {@code frames} is class loading or class
      * initialisation.
      *
@@ -195,18 +251,25 @@ public final class CarrierPinClassification {
      * @return {@code true} if the pin is cold-start class work rather than a blocked carrier
      */
     public static boolean isClassLoadingOrInit(String reason, List<String> frames) {
-        int depth = Math.min(CLASS_WORK_FRAME_DEPTH, frames.size());
-        // The veto runs first and over the same window. A static initialiser is an ordinary place to
-        // load a native library or make a downcall, so "there is a <clinit> on the stack" cannot be
-        // allowed to outrank "and it is blocked in NativeLibraries".
-        for (int i = 0; i < depth; i++) {
-            if (startsWithAny(frames.get(i), BLOCKING_TYPES)) {
+        // The veto runs first and over the WHOLE stack, not the window the search at the bottom of
+        // this method reads. A static initialiser is an ordinary place to load a native library or
+        // make a downcall, so "there is a <clinit> on the stack" cannot be allowed to outrank "and
+        // it is blocked in NativeLibraries" — and while the veto shared the four-frame window, it
+        // could be outrun twice over: by a blocking frame sitting deeper than four, and by the
+        // reason match below, which returned true before any frame past the window was read.
+        //
+        // The asymmetry is the point. Widening a veto can only make the fence stricter, so it
+        // cannot silence a pin; widening the positive search below would let a <clinit> anywhere in
+        // a 256-deep stack excuse a block it has nothing to do with.
+        for (String frame : frames) {
+            if (startsWithAny(frame, BLOCKING_TYPES)) {
                 return false;
             }
         }
-        if (reason.contains("Waited for initialization of") || isClinitReason(reason)) {
+        if (isInitWaitReason(reason) || isClinitReason(reason)) {
             return true;
         }
+        int depth = Math.min(CLASS_WORK_FRAME_DEPTH, frames.size());
         for (int i = 0; i < depth; i++) {
             String frame = frames.get(i);
             if (frame.endsWith(".<clinit>") || startsWithAny(frame, CLASS_LOADING_TYPES)) {

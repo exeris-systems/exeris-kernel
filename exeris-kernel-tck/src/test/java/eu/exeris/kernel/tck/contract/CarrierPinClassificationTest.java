@@ -17,8 +17,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>A classifier that sets evidence aside earns a test in both directions: the class-loading cases
  * it must recognise, and — the ones that matter — the blocked-carrier pins it must never swallow.
- * Every reason string below is one the JVM actually emitted in a {@code jdk.VirtualThreadPinned}
- * event on this repository's transport suite.
+ *
+ * <p><strong>Where the reason strings come from.</strong> They are the JVM's own format strings,
+ * read out of {@code libjvm.so} beside {@code JavaThread::post_vthread_pinned_event}:
+ * {@code "Waited for initialization of %s by another thread"},
+ * {@code "VM call to %s.<clinit> on stack"}, {@code "Freeze or preempt failed (%d)"} and
+ * {@code "Native or VM frame on stack"}. This file previously claimed each was one the JVM had
+ * emitted on this repository's transport suite, which it could not support — no captured
+ * {@code jdk.VirtualThreadPinned} event exists under version control — and under that claim four
+ * cases used {@code "Native frame on stack"}, a spelling the JVM does not produce. A predicate
+ * written against an invented string is tested against nothing.
+ *
+ * <p>The frame shapes are hand-built, and that is a real limit: a recording puts the blocking
+ * primitive innermost and a {@code <clinit>} well below it, so the frame heuristic is a fallback for
+ * a JDK that stops supplying {@code pinnedReason} rather than the path a real pin takes. What the
+ * cases here can pin is the boundary of the window it reads, from both sides.
  */
 @DisplayName("CarrierPinClassification: cold classes are set aside, blocked carriers are not")
 class CarrierPinClassificationTest {
@@ -70,6 +83,28 @@ class CarrierPinClassificationTest {
                     List.of("eu.exeris.kernel.community.transport.NativeTcpStream.<clinit>")))
                     .isTrue();
         }
+
+        @Test
+        @DisplayName("a loader frame at the last index the window reaches is still set aside")
+        void aLoaderFrameAtTheEdgeOfTheWindowIsSetAside() {
+            // Pins CLASS_WORK_FRAME_DEPTH from below, which nothing did: every other positive frame
+            // case here puts its marker at index 0, so the constant could have been 1 and the whole
+            // suite stayed green. Its counterpart, aLoaderFrameBelowTheBlockingSiteIsCounted, sits
+            // one index further out and pins the same constant from above.
+            List<String> frames = List.of(
+                    "eu.exeris.kernel.community.transport.NativeTcpStream.read",
+                    "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite",
+                    "eu.exeris.kernel.core.transport.scheduler.PaqsScheduler.runStream",
+                    "java.lang.ClassLoader.loadClass");
+
+            assertThat(frames)
+                    .withFailMessage("this case only pins the window while the marker sits at its last index; "
+                            + "CLASS_WORK_FRAME_DEPTH changed and this stack no longer ends on it")
+                    .hasSize(CarrierPinClassification.CLASS_WORK_FRAME_DEPTH);
+
+            assertThat(CarrierPinClassification.isClassLoadingOrInit("Freeze or preempt failed (2)", frames))
+                    .isTrue();
+        }
     }
 
     @Nested
@@ -80,7 +115,7 @@ class CarrierPinClassificationTest {
         @DisplayName("a native frame on the stack is counted — this is the TCK-064 defect itself")
         void nativeFrameIsCounted() {
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
-                    "Native frame on stack",
+                    "Native or VM frame on stack",
                     List.of("eu.exeris.kernel.core.transport.syscall.CoreSyscalls.recv",
                             "eu.exeris.kernel.community.transport.NativeTcpStream.read")))
                     .isFalse();
@@ -135,7 +170,7 @@ class CarrierPinClassificationTest {
             // The blocking site is at the top. A stack 256 deep nearly always has a loadClass
             // somewhere in it, and scanning all of it let that frame outrank the block above it.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
-                    "Native frame on stack",
+                    "Native or VM frame on stack",
                     List.of("eu.exeris.kernel.core.transport.syscall.CoreSyscalls.recv",
                             "eu.exeris.kernel.community.transport.NativeTcpStream.read",
                             "eu.exeris.kernel.core.transport.scheduler.PaqsScheduler.runStream",
@@ -153,7 +188,7 @@ class CarrierPinClassificationTest {
             // and the <clinit> predicate alone set the whole pin aside. On a kernel that loads
             // OpenSSL through FFM that is not a narrower fence, it is no fence.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
-                    "Native frame on stack",
+                    "Native or VM frame on stack",
                     List.of("jdk.internal.loader.NativeLibraries.load",
                             "eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader.<clinit>",
                             "eu.exeris.kernel.core.crypto.openssl.CoreOpenSslBindings.<clinit>")))
@@ -166,7 +201,39 @@ class CarrierPinClassificationTest {
             // "VM call to <class>.<clinit> on stack" is what the JVM emits. A substring match on
             // <clinit> alone let any other reason carrying those characters silence the fence.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
-                    "Native frame on stack while <clinit> was pending elsewhere", RECV_FRAMES))
+                    "Native or VM frame on stack while <clinit> was pending elsewhere", RECV_FRAMES))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("a blocking frame below the window is counted even when the reason says <clinit>")
+        void aBlockingFrameBelowTheWindowOutranksTheClinitReason() {
+            // The veto used to share the four-frame window with the positive search, and the reason
+            // match ran before either could see further. So a carrier genuinely blocked loading a
+            // native library inside a static initialiser — the OpenSSL-through-FFM case — was
+            // silenced on every fence in the repository whenever the block sat deeper than four.
+            // The veto now reads the whole stack, which can only ever make the fence stricter.
+            assertThat(CarrierPinClassification.isClassLoadingOrInit(
+                    "VM call to eu.exeris.kernel.core.crypto.openssl.CoreOpenSslBindings.<clinit> on stack",
+                    List.of("eu.exeris.kernel.core.crypto.openssl.CoreOpenSslBindings.linkSymbol",
+                            "eu.exeris.kernel.core.crypto.openssl.CoreOpenSslBindings.lookup",
+                            "java.lang.foreign.SymbolLookup.libraryLookup",
+                            "java.lang.foreign.Linker.downcallHandle",
+                            "jdk.internal.foreign.abi.DowncallLinker.getBoundMethodHandle",
+                            "jdk.internal.loader.NativeLibraries.load")))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("a reason that merely mentions an init wait is counted, not read as the JVM's verdict")
+        void aReasonMentioningAnInitWaitOutsideTheJvmPhrasingIsCounted() {
+            // The same hole as aReasonMentioningClinitOutsideTheJvmPhrasingIsCounted, two lines away
+            // in the classifier and left open when that one was closed: the init-wait predicate was
+            // a bare contains() while its neighbour had been tightened to the JVM's own phrasing.
+            assertThat(CarrierPinClassification.isClassLoadingOrInit(
+                    "Native or VM frame on stack while Waited for initialization of "
+                            + "eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent was pending",
+                    RECV_FRAMES))
                     .isFalse();
         }
 
