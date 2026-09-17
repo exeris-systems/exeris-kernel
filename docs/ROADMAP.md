@@ -3235,9 +3235,19 @@ Whichever wins must answer the same four questions: what it costs on a zero-allo
 the SPI stays implementation-blind (the Wall), who owns cardinality control for dimensions, and
 whether OTLP belongs in the kernel or in a capability above it.
 
+**Carried with it — the warm-up seam for the sink stack.** `CoreJfrEventCatalogue` files
+`AsyncTelemetryDropEvent` and the six `TelemetryJfrEvents` classes as deliberately cold, and the
+reason is this gap rather than a judgement about those events: they are per-metric-call in shape,
+`CommunityTelemetryProvider.createSinks` does build the `JfrTelemetrySink` that emits six of them,
+and nothing in this kernel calls `createSinks`, binds `KernelProviders.TELEMETRY_SINKS`, or reports
+a `Subsystem` named `telemetry`. So there is no start to hang a warm-up off. Whatever stands the
+sink stack up here is the seam, and those seven entries move out of `deliberatelyCold()` in the same
+change. Until then a host that binds sinks itself initialises them where it builds them.
+
 **Merge Gate:** RFC merged with a decision and its rejected alternatives; a TCK for whatever contract
 lands; and one executable proof that the gap is closed — an event type declared **outside** the
-kernel reaching two different sinks, one of them not JFR.
+kernel reaching two different sinks, one of them not JFR. Whatever bootstraps the sink stack warms
+those seven event classes at that seam, and `CoreJfrEventCatalogue` no longer lists them as cold.
 
 **Status (v0.12):** **NOT STARTED — decision-only slice.** Surfaced 2026-09-17 while classifying every
 JFR event class in the kernel for the warm-up catalogues; the inventory is what made the split between

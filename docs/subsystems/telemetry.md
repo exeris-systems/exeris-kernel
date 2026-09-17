@@ -336,30 +336,57 @@ millisecond. Cold is a decision, not an omission: a cold event is fully supporte
 observable, it simply pays its own initialisation the first time it fires. Warming everything
 instead would cost upwards of 100 ms of start-up for classes a given process may never emit.
 
-One group is cold for a second reason, and the catalogue says so where it sits: the event is on a
-hot path, but the kernel has no seam to warm it from because the kernel never constructs the
-component that emits it. `AsyncTelemetrySink` and the `TelemetryJfrEvents` set are that case — the
-host binds `TELEMETRY_SINKS` from a provider it owns, and a host that wants them warm initialises
-them where it builds its sinks. `JfrCommitDropEvent` was in this bucket and should not have been: it
+One group is cold for a second reason: the event is on a hot path, but the kernel has no seam to
+warm it from. The catalogue says so per entry rather than per group, because the entries do not
+share a reason and one sentence covering both was false for six of the seven:
+
+- `AsyncTelemetryDropEvent` — nothing in the reactor constructs an `AsyncTelemetrySink` at all.
+  `AsyncTelemetrySink.start` is called from `AsyncTelemetrySinkTest` and
+  `CoreAsyncTelemetryRingBufferTckTest` and from nowhere else, so there is no construction site.
+- The six `TelemetryJfrEvents` — a main source *does* construct the sink that emits them.
+  `CommunityTelemetryProvider.createSinks` builds a `JfrTelemetrySink` whenever
+  `TelemetryConfig.jfrSinkEnabled()`, and those six are exactly what that sink emits, from
+  `increment`/`gauge`/`latency` and from the typed error events. What makes them cold sits one level
+  further out: nothing in this kernel calls `createSinks`, nothing binds `TELEMETRY_SINKS`, and no
+  `Subsystem` reports the name `telemetry`, so there is no start to hang a warm-up off. A host that
+  stands the sinks up initialises them where it builds them.
+
+The seam itself is a v0.13 slice, alongside the telemetry bootstrap that would call `createSinks` —
+until something in the kernel stands the sink stack up, there is nothing here to warm from.
+
+`JfrCommitDropEvent` was in this bucket and should not have been: it
 fires from `JfrEventCommitter.offer` when the ring overflows, on the same request virtual thread as
 the persistence events feeding that ring, so it is warmed with the subsystem that stands the
 committer up.
 
 The warm-up runs on the thread that starts the subsystem. `SubsystemOrchestrator.doStart` warms
-Core's set for the subsystem it is about to start, keyed by `Subsystem.name()`; each Community
-subsystem warms its driver's set at the top of its own `start()`. That call sits in each subsystem
+Core's set for the subsystem it has just started, keyed by `Subsystem.name()`; each Community
+subsystem warms its driver's set from its own `start()`. That call sits in each subsystem
 rather than in a shared base class, and the reason is a defect this page previously described as a
 feature: three subsystems implement `Subsystem` directly, so a single hook in
 `AbstractCommunitySubsystem` missed them — including memory, whose allocation events are the hottest
 path the catalogue names. `JfrEventCatalogueCoverageTest` now fails the build if a subsystem does not
 warm, in addition to failing on an unclassified event class.
 
-A subsystem that found no provider warms nothing: every subsystem puts the call behind the check it
-already had — an early return, or the condition `markRunning` takes — so a disabled subsystem does
-not pay class loads for events it will never emit. A kernel with `http.mode=DISABLED` was loading the
-whole HTTP event group on its way to returning; it no longer is. `JfrEventCatalogueCoverageTest`
-reads the call out of the `start()` that actually runs, not out of the class, so a call left behind
-in `stop()` or on a dead branch does not satisfy it.
+A subsystem that found no provider warms nothing, and that holds for **both** halves of the warm-up.
+On the Community side every subsystem puts the call behind the check it already had — an early
+return, or the condition `markRunning` takes. On the Core side the orchestrator asks
+`Subsystem.isRunning()`, which is the same check `stopAll` already trusts to decide what it has to
+stop; that is only readable once `start()` has run, which is why the Core warm-up follows `start()`
+rather than preceding it. A kernel with `http.mode=DISABLED` was loading the whole HTTP event group
+on its way to returning — the Community half stopped doing so first, and the Core half kept doing it
+for one review round longer.
+
+Warming after `start()` returns has one limit, and it is stated rather than left implied: a
+subsystem that emits one of its own Core events from *inside* `start()` still initialises that class
+wherever that emit lands. Transport is the one place that happens, and `NativeTcpCarrier.start()`
+warms both of its groups itself for exactly that reason.
+
+`JfrEventCatalogueCoverageTest` reads the Community call out of the `start()` that actually runs, not
+out of the class, so a call left behind in `stop()` or on a dead branch does not satisfy it; it also
+asserts that `doStart` carries both the Core warm-up call and the `isRunning()` check. That second
+guard is structural — it reads the call graph, so it says both live in `doStart`, not that one is
+nested inside the other.
 
 An engine built without a kernel bootstrap warms its own: `NativeTcpCarrier.start()` does, because
 CLIENT mode stands up no PAQS and an embedded engine has no subsystem starting it. It warms before

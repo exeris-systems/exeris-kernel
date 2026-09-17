@@ -23,9 +23,11 @@ import java.util.Map;
  * So a class is warmed when it is reached from a virtual thread on a path that can produce it
  * <em>concurrently</em> — per request, per stream, per step, per allocation — and left cold when it
  * is emitted once per process, from a bootstrap or maintenance thread, or only by a path whose own
- * cost dwarfs a millisecond. One group is cold for a second reason, and the list says so where it
- * sits: an event on a hot path the kernel has no seam to warm from, because the kernel never
- * constructs the component that emits it.
+ * cost dwarfs a millisecond. One group is cold for a second reason, and the list says so per entry
+ * rather than per group: an event on a hot path the kernel has no seam to warm from. That happens
+ * two ways — nothing constructs the component that emits it, or something constructs it and nothing
+ * in the kernel calls the factory — and the two are not interchangeable, so the list gives each its
+ * own sentence.
  *
  * <p>Neither bucket is a judgement about how useful an event is. A cold event is fully supported and
  * exactly as observable; it simply pays its own initialisation the first time it fires.
@@ -161,11 +163,24 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$RoleRegistryLoadedEvent",
             "eu.exeris.kernel.core.storage.StorageBootstrapSelectedEvent",
             // The sink stack below is cold for a different reason than the rest of this list: not
-            // because it is cheap or rare, but because nothing in this kernel stands it up. No main
-            // source constructs an AsyncTelemetrySink — the host binds TELEMETRY_SINKS from a
-            // provider it owns — so there is no seam here to warm them from. A host that wants them
-            // warm initialises them where it builds its sinks.
+            // because it is cheap or rare, but because this kernel has no seam to warm it from. The
+            // two entries do not share the same reason, and one comment covering both is how a
+            // false one gets written — the first is true of AsyncTelemetryDropEvent alone.
+            //
+            // AsyncTelemetryDropEvent: no main source anywhere in the reactor constructs an
+            // AsyncTelemetrySink. AsyncTelemetrySink.start is called from AsyncTelemetrySinkTest
+            // and CoreAsyncTelemetryRingBufferTckTest and from nothing else, so there is no
+            // construction site to warm it at.
             "eu.exeris.kernel.core.telemetry.AsyncTelemetryDropEvent",
+            // The six TelemetryJfrEvents below: a main source does construct the sink that emits
+            // them — CommunityTelemetryProvider.createSinks builds a JfrTelemetrySink whenever
+            // TelemetryConfig.jfrSinkEnabled() — and these six are exactly what it emits, from
+            // increment/gauge/latency and from the typed error events. What makes them cold sits
+            // one level further out: nothing in this kernel calls createSinks, nothing binds
+            // KernelProviders.TELEMETRY_SINKS, and no Subsystem reports the name "telemetry", so
+            // there is no start the warm-up could hang off. A host that stands the sinks up
+            // initialises them where it builds them. The seam itself lands with the telemetry
+            // bootstrap in v0.13 — see the roadmap slice — and these move out of this list then.
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
@@ -189,8 +204,13 @@ public final class CoreJfrEventCatalogue {
     /**
      * Warms the hot-path event classes of one subsystem, on the calling thread.
      *
-     * <p>Shorthand for {@code catalogue().warmHotPath(name)}, kept because it is what the two
-     * start seams call and reads as what it does at those call sites.
+     * <p>Shorthand for {@code catalogue().warmHotPath(name)}. Two seams call it —
+     * {@code SubsystemOrchestrator.doStart}, and {@code NativeTcpCarrier.start()} for an engine
+     * built without an orchestrator — and it stays a shorthand rather than being inlined to
+     * {@code catalogue().warmHotPath(...)} because {@code JfrEventCatalogueCoverageTest} matches a
+     * warm-up call by its target owner. Through {@code catalogue()} the owner is
+     * {@link JfrEventCatalogue} for every module at once, and the guard could no longer tell one
+     * module's seam from another's.
      *
      * @param subsystemName the starting subsystem's {@code Subsystem.name()}; may be {@code null}
      */
