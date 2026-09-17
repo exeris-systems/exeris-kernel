@@ -273,7 +273,9 @@ public final class JfrPinningMonitor {
                     String thread = ev.getThread() != null ? ev.getThread().getJavaName() : "<unknown>";
                     String reason = CarrierPinClassification.pinnedReason(ev);
                     boolean cold = CarrierPinClassification.isClassLoadingOrInit(
-                            reason, CarrierPinClassification.frames(ev.getStackTrace()));
+                            reason,
+                            CarrierPinClassification.frames(
+                                    ev.getStackTrace(), CarrierPinClassification.CLASS_WORK_FRAME_DEPTH));
                     PinnedEvent event = new PinnedEvent(ms, thread, formatStack(ev), reason, cold);
                     (cold ? classInit : counted).add(event);
                 }

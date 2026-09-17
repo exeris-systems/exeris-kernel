@@ -43,7 +43,7 @@ class CarrierPinClassificationTest {
         }
 
         @Test
-        @DisplayName("running a <clinit> is set aside, whatever the stack says")
+        @DisplayName("running a <clinit> is set aside on the JVM's own account of the pin")
         void clinitOnStackIsSetAside() {
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "VM call to eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent.<clinit> on stack",
@@ -63,7 +63,7 @@ class CarrierPinClassificationTest {
         }
 
         @Test
-        @DisplayName("a static initialiser anywhere in the stack is set aside")
+        @DisplayName("a static initialiser at the blocking site is set aside")
         void clinitFrameIsSetAside() {
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "Freeze or preempt failed (2)",
@@ -142,6 +142,43 @@ class CarrierPinClassificationTest {
                             "java.lang.VirtualThread.run",
                             "jdk.internal.loader.BuiltinClassLoader.loadClass",
                             "java.lang.ClassLoader.loadClass")))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("a block inside a static initialiser is counted — a <clinit> is not a licence")
+        void aBlockingFrameInsideAClinitIsCounted() {
+            // The hole this closes. Loading a native library is ordinary work for a static
+            // initialiser, so the <clinit> frame and the NativeLibraries frame appear together —
+            // and the <clinit> predicate alone set the whole pin aside. On a kernel that loads
+            // OpenSSL through FFM that is not a narrower fence, it is no fence.
+            assertThat(CarrierPinClassification.isClassLoadingOrInit(
+                    "Native frame on stack",
+                    List.of("jdk.internal.loader.NativeLibraries.load",
+                            "eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader.<clinit>",
+                            "eu.exeris.kernel.core.crypto.openssl.CoreOpenSslBindings.<clinit>")))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("a reason that merely mentions <clinit> is counted, not read as the JVM's verdict")
+        void aReasonMentioningClinitOutsideTheJvmPhrasingIsCounted() {
+            // "VM call to <class>.<clinit> on stack" is what the JVM emits. A substring match on
+            // <clinit> alone let any other reason carrying those characters silence the fence.
+            assertThat(CarrierPinClassification.isClassLoadingOrInit(
+                    "Native frame on stack while <clinit> was pending elsewhere", RECV_FRAMES))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("a type merely prefixed by a loader type name does not make a pin class work")
+        void aTypePrefixedLikeALoaderIsCounted() {
+            // ClassLoaders and URLClassPath were matched without a trailing dot, so a type whose
+            // name only starts with theirs passed as class loading.
+            assertThat(CarrierPinClassification.isClassLoadingOrInit(
+                    "Freeze or preempt failed (2)",
+                    List.of("jdk.internal.loader.ClassLoadersDecoy.read",
+                            "jdk.internal.loader.URLClassPathDecoy.read")))
                     .isFalse();
         }
 
