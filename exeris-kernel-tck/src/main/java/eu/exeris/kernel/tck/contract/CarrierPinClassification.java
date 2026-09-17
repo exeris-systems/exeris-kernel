@@ -45,6 +45,21 @@ public final class CarrierPinClassification {
     /** The JFR event the JVM emits when a virtual thread blocks while pinned to its carrier. */
     public static final String VT_PINNED_EVENT = "jdk.VirtualThreadPinned";
 
+    /**
+     * The types whose frames mean the JVM is loading a class.
+     *
+     * <p>An enumerated set, not the {@code jdk.internal.loader.} package prefix this once matched on.
+     * That package also holds {@code NativeLibraries}, which is where a carrier blocks while a native
+     * library is being loaded — a real block, on a kernel that loads OpenSSL through FFM, and the
+     * prefix would have filed it as benign class loading on every fence.
+     */
+    private static final List<String> CLASS_LOADING_TYPES = List.of(
+            "java.lang.ClassLoader.loadClass",
+            "java.lang.ClassLoader.defineClass",
+            "jdk.internal.loader.BuiltinClassLoader.",
+            "jdk.internal.loader.ClassLoaders",
+            "jdk.internal.loader.URLClassPath");
+
     private static final String NO_REASON_FIELD = "<no pinnedReason field on this JDK>";
     private static final String UNKNOWN_REASON = "<unknown>";
 
@@ -86,14 +101,13 @@ public final class CarrierPinClassification {
         return frames;
     }
 
-    /**
-     * Whether this event is the JVM loading or initialising a class.
-     *
-     * @param event a recorded {@code jdk.VirtualThreadPinned} event; must not be {@code null}
-     * @return {@code true} if the pin is cold-start class work rather than a blocked carrier
-     */
-    public static boolean isClassLoadingOrInit(RecordedEvent event) {
-        return isClassLoadingOrInit(pinnedReason(event), frames(event.getStackTrace()));
+    private static boolean isClassLoadingFrame(String frame) {
+        for (String type : CLASS_LOADING_TYPES) {
+            if (frame.startsWith(type)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -109,9 +123,7 @@ public final class CarrierPinClassification {
             return true;
         }
         for (String frame : frames) {
-            if (frame.endsWith(".<clinit>")
-                    || frame.startsWith("jdk.internal.loader.")
-                    || frame.startsWith("java.lang.ClassLoader.loadClass")) {
+            if (frame.endsWith(".<clinit>") || isClassLoadingFrame(frame)) {
                 return true;
             }
         }

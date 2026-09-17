@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
 import eu.exeris.kernel.core.telemetry.JfrCommitGate;
 import eu.exeris.kernel.core.telemetry.JfrEventCommitter;
@@ -104,6 +105,9 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
+        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
+        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
+        CommunityJfrEventCatalogue.warmHotPath(name());
         // Install the off-thread JFR committer before marking running, so the first admission
         // decision already routes its commit onto the platform thread.
         jfrCommitter = JfrEventCommitter.start();

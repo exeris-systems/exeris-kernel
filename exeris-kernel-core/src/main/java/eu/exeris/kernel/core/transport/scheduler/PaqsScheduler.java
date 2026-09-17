@@ -4,7 +4,6 @@
  */
 package eu.exeris.kernel.core.transport.scheduler;
 
-import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.transport.jfr.PaqsHandlerFailureEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamAcceptedEvent;
@@ -187,10 +186,6 @@ public final class PaqsScheduler implements AutoCloseable {
         this.priorityExtractor = priorityExtractor;
         this.engineName = engineName;
         this.executionBackend = executionBackend;
-        // Construction runs on the thread that builds the engine; a stream's virtual thread must
-        // never be the one to initialise a JFR event class, because a <clinit> pins its carrier.
-        // Also done by the orchestrator at subsystem start — this covers an engine built without one.
-        CoreJfrEventCatalogue.warmHotPath("transport");
     }
 
     // =========================================================================

@@ -93,9 +93,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   every other virtual thread waiting on that initialisation blocks pinned as well. JEP 491 unpinned
   `synchronized` and `Object.wait`; it did not unpin class initialisation. The cost is a one-time
   carrier stall at the first stream completion, invisible where carriers are plentiful and measured
-  at 15–16 ms on a loaded host and past 20 ms on a constrained one. `TransportJfrWarmup`, called from
-  `PaqsScheduler` construction and from `NativeTcpCarrier.start()` — client mode stands up no PAQS —
-  initialises the transport event classes on the thread that starts the engine instead.
+  at 15–16 ms on a loaded host and past 20 ms on a constrained one. The transport event classes are
+  initialised on the thread that starts the engine instead — by the subsystem's own `start()`, and by
+  `NativeTcpCarrier.start()` for an engine built without a kernel bootstrap, since client mode stands
+  up no PAQS. Which classes those are is declared in `CoreJfrEventCatalogue` and
+  `CommunityJfrEventCatalogue` (see the entry above).
 
 - **Every JFR event class in the kernel is now classified, and the hot-path ones are initialised
   when their subsystem starts.** A `jdk.jfr.Event` subclass registers itself from its own static
@@ -121,10 +123,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 - **The client-ingress carrier-pinning regression test counts blocked carriers, not a cold JVM.**
   It warms the measured path before the recording opens, sets class-loading and class-initialisation
-  pins aside from the fence while still reporting them, and keeps its recording when it fails —
-  previously it deleted the evidence and reported a thread name, which is not a diagnosis. The
-  classifier is pinned in both directions by `CarrierPinEvidenceTest`: a native frame on the stack
-  still fails the fence.
+  pins aside from the fence while still reporting them, and takes its recording through
+  `JfrPinningMonitor` rather than reading JFR a second way — so the file survives the run and is named
+  in the failure message. Previously it deleted the evidence and reported a thread name, which is not
+  a diagnosis. The
+  classifier is pinned in both directions by `CarrierPinClassificationTest`: a native frame on the
+  stack still fails the fence, and so does a native-library load, which shares a package with the
+  class loaders.
 
 - **The embedded path ADR-084 exists for threw on its first call.** `CommunityWebSocketServerEngine`
   resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and refused when nothing had bound one

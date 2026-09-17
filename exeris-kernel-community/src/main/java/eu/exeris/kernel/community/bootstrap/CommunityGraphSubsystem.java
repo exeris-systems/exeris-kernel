@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.graph.GraphBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -59,6 +60,9 @@ final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
+        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
+        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
+        CommunityJfrEventCatalogue.warmHotPath(name());
         markRunning(graphEngine != null && graphEngine.isRunning());
     }
 

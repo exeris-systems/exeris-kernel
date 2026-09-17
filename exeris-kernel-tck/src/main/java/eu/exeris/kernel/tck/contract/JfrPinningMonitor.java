@@ -88,6 +88,22 @@ public final class JfrPinningMonitor {
      */
     public record PinnedEvent(double durationMs, String threadName, String stackTrace,
                               String pinnedReason, boolean classInit) {
+
+        /**
+         * Creates an event without a recorded reason or verdict.
+         *
+         * <p>This is the constructor this record carried before {@code pinnedReason} and
+         * {@code classInit} were added, kept so a binding compiled against the earlier TCK artifact
+         * still compiles and links. What it cannot preserve is a deconstruction pattern, which names
+         * every component by position — the canonical constructor genuinely has two more.
+         *
+         * @param durationMs how long the carrier was pinned
+         * @param threadName virtual thread that caused the pin
+         * @param stackTrace top-10 frames formatted as {@code "Class.method() | ..."}
+         */
+        public PinnedEvent(double durationMs, String threadName, String stackTrace) {
+            this(durationMs, threadName, stackTrace, "<unknown>", false);
+        }
     }
 
     /**
@@ -102,8 +118,28 @@ public final class JfrPinningMonitor {
      */
     public record Result(List<PinnedEvent> pinnedEvents, List<PinnedEvent> classInitEvents,
                          Path jfrPath, long thresholdMs) {
+
         /**
-         * Whether any event met the capture threshold.
+         * Creates a result with no set-aside events.
+         *
+         * <p>The constructor this record carried before {@code classInitEvents} was added, kept for
+         * the same reason as {@link PinnedEvent}'s: a binding compiled against the earlier artifact
+         * keeps compiling and linking.
+         *
+         * @param pinnedEvents events exceeding the threshold that are counted against it
+         * @param jfrPath      path to the raw JFR file for post-mortem analysis
+         * @param thresholdMs  threshold used during capture
+         */
+        public Result(List<PinnedEvent> pinnedEvents, Path jfrPath, long thresholdMs) {
+            this(pinnedEvents, List.of(), jfrPath, thresholdMs);
+        }
+
+        /**
+         * Whether any pin met the capture threshold and is counted against it.
+         *
+         * <p>Class loading and class initialisation are not counted — they are in
+         * {@link #classInitEvents()} — so this can be {@code false} on a run that recorded pins.
+         * {@link CarrierPinClassification} states why.
          *
          * @return {@code true} if {@link #pinnedEvents} is non-empty
          */
@@ -112,7 +148,7 @@ public final class JfrPinningMonitor {
         }
 
         /**
-         * The number of events that met the capture threshold.
+         * The number of pins counted against the threshold, set-aside ones excluded.
          *
          * @return {@link #pinnedEvents}{@code .size()}
          */

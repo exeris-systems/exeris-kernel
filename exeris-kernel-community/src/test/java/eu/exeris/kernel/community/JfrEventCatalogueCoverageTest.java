@@ -6,10 +6,13 @@ package eu.exeris.kernel.community;
 
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaModifier;
+import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
+import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import jdk.jfr.Event;
 
 import java.util.List;
@@ -38,9 +41,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>This module is the first point in the reactor where Core and Community are both on one
  * classpath, which is why the guard lives here — the same reasoning, and the same placement, as
- * {@code KernelTierDirectionArchitectureTest}.
+ * {@code KernelTierDirectionArchitectureTest}. Test classes are excluded: a fixture subsystem in a
+ * test has no hot path to warm, and judging one would only teach the next author to work around
+ * this file.
  */
-@AnalyzeClasses(packages = "eu.exeris.kernel")
+@AnalyzeClasses(packages = "eu.exeris.kernel", importOptions = ImportOption.DoNotIncludeTests.class)
 class JfrEventCatalogueCoverageTest {
 
     @ArchTest
@@ -58,30 +63,75 @@ class JfrEventCatalogueCoverageTest {
     }
 
     @ArchTest
-    static void everySubsystemNameTheCatalogueCoversIsOneASubsystemReports(JavaClasses classes) {
-        // The dispatch is on Subsystem.name(). A group keyed by a name no subsystem reports would
-        // never be warmed and nothing else would say so — the entries would simply sit there.
-        Set<String> subsystemNames = classes.stream()
+    static void everyCatalogueKeyIsASubsystemThatCanWarmIt(JavaClasses classes) {
+        // The direction that matters. A group keyed by a name no subsystem reports is never warmed,
+        // and nothing else would say so — its entries would simply sit there looking classified.
+        // This check earns its place: it is what a `telemetry` group, keyed on a subsystem this
+        // kernel does not have, was caught by.
+        Set<String> subsystemNames = communitySubsystemNames(classes);
+
+        assertThat(subsystemNames)
+                .withFailMessage("no Community subsystem classes were found; every check below would pass vacuously")
+                .isNotEmpty();
+
+        Set<String> keys = new TreeSet<>(CoreJfrEventCatalogue.catalogue().warmedSubsystems());
+        keys.addAll(CommunityJfrEventCatalogue.catalogue().warmedSubsystems());
+
+        assertThat(difference(keys, subsystemNames))
+                .withFailMessage("catalogue group(s) keyed on a name no Subsystem reports, so nothing warms them: "
+                        + "%s — either the key is wrong, or those events belong in deliberatelyCold()",
+                        difference(keys, subsystemNames))
+                .isEmpty();
+    }
+
+    @ArchTest
+    static void everySubsystemWarmsItsOwnCatalogueGroup(JavaClasses classes) {
+        // The other direction, and the one a single shared hook got wrong: three subsystems
+        // implemented Subsystem directly and never reached the base class the warm-up hung off, so
+        // their groups — memory's allocation events among them — were never warmed by anything.
+        // The call now sits in each start(); this is what keeps a thirteenth subsystem from
+        // forgetting it.
+        List<JavaClass> subsystems = classes.stream()
+                .filter(c -> c.getPackageName().equals("eu.exeris.kernel.community.bootstrap"))
+                .filter(c -> c.isAssignableTo(Subsystem.class))
+                .filter(c -> !c.getModifiers().contains(JavaModifier.ABSTRACT))
+                .toList();
+
+        assertThat(subsystems)
+                .withFailMessage("no concrete Community Subsystem classes were found; this check would pass vacuously")
+                .isNotEmpty();
+
+        for (JavaClass subsystem : subsystems) {
+            assertThat(warmsItsGroup(subsystem))
+                    .withFailMessage("%s never calls CommunityJfrEventCatalogue.warmHotPath — directly or in a "
+                            + "superclass — so its hot-path event classes initialise on whichever virtual thread "
+                            + "emits one first", subsystem.getSimpleName())
+                    .isTrue();
+        }
+    }
+
+    /** Whether this class, or one it inherits from, calls the driver catalogue's warm-up. */
+    private static boolean warmsItsGroup(JavaClass subsystem) {
+        for (JavaClass c = subsystem; c != null; c = c.getRawSuperclass().orElse(null)) {
+            boolean calls = c.getMethodCallsFromSelf().stream()
+                    .anyMatch(call -> "warmHotPath".equals(call.getTarget().getName())
+                            && call.getTargetOwner().getName()
+                                    .equals(CommunityJfrEventCatalogue.class.getName()));
+            if (calls) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Set<String> communitySubsystemNames(JavaClasses classes) {
+        return classes.stream()
                 .filter(c -> c.getPackageName().equals("eu.exeris.kernel.community.bootstrap"))
                 .map(JavaClass::getSimpleName)
                 .filter(n -> n.startsWith("Community") && n.endsWith("Subsystem"))
                 .map(n -> n.substring("Community".length(), n.length() - "Subsystem".length())
                         .toLowerCase(java.util.Locale.ROOT))
                 .collect(Collectors.toCollection(TreeSet::new));
-
-        assertThat(subsystemNames)
-                .withFailMessage("no Community subsystem classes were found; the check below would pass vacuously")
-                .isNotEmpty();
-
-        for (String name : subsystemNames) {
-            boolean covered = !CoreJfrEventCatalogue.catalogue().hotPathFor(name).isEmpty()
-                    || !CommunityJfrEventCatalogue.catalogue().hotPathFor(name).isEmpty();
-            assertThat(covered)
-                    .withFailMessage("subsystem '%s' warms nothing in either catalogue — if that is deliberate "
-                            + "its events belong in deliberatelyCold(), and if it is not, the group is missing",
-                            name)
-                    .isTrue();
-        }
     }
 
     private static void assertClassified(JavaClasses classes, String modulePrefix,
@@ -101,10 +151,17 @@ class JfrEventCatalogueCoverageTest {
         Set<String> classified = new TreeSet<>(hotPath);
         classified.addAll(cold);
 
-        assertThat(classified)
-                .withFailMessage("a class is in both catalogue buckets at once: %s",
-                        intersection(hotPath, cold))
-                .hasSize(hotPath.size() + cold.size());
+        assertThat(intersection(hotPath, cold))
+                .withFailMessage("class(es) in both catalogue buckets at once: %s", intersection(hotPath, cold))
+                .isEmpty();
+
+        assertThat(duplicatesWithin(hotPath))
+                .withFailMessage("name(s) listed twice in the hot-path map: %s", duplicatesWithin(hotPath))
+                .isEmpty();
+
+        assertThat(duplicatesWithin(cold))
+                .withFailMessage("name(s) listed twice in deliberatelyCold(): %s", duplicatesWithin(cold))
+                .isEmpty();
 
         assertThat(difference(declared, classified))
                 .withFailMessage("JFR event class(es) under %s are in neither catalogue bucket. Add each to its "
@@ -122,6 +179,17 @@ class JfrEventCatalogueCoverageTest {
         Set<String> out = new TreeSet<>(from);
         out.removeAll(remove);
         return out;
+    }
+
+    private static Set<String> duplicatesWithin(List<String> names) {
+        Set<String> seen = new TreeSet<>();
+        Set<String> twice = new TreeSet<>();
+        for (String name : names) {
+            if (!seen.add(name)) {
+                twice.add(name);
+            }
+        }
+        return twice;
     }
 
     private static Set<String> intersection(List<String> left, List<String> right) {

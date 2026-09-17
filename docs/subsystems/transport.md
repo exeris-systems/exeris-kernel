@@ -669,11 +669,12 @@ on a virtual thread, while the engine is at its busiest. Measured under the two-
 recording at `jdk.VirtualThreadPinned#threshold=0ms`: 0.4–1 ms per pin on an idle 12-core host,
 15–16 ms on the same host under CPU pressure.
 
-`TransportJfrWarmup` (Core) initialises the transport event classes on the thread that starts the
-engine. It is called from `PaqsScheduler` construction, and from `NativeTcpCarrier.start()` for both
-roles — **client mode stands up no PAQS**, so its `connect()` and `read()` paths would otherwise
-reach those classes cold. Adding a JFR event class to this subsystem means adding it to that set;
-one that is left out still works, it simply initialises wherever its first emit lands.
+`CoreJfrEventCatalogue` and `CommunityJfrEventCatalogue` declare which transport event classes are
+warmed, and `CommunityTransportSubsystem.start()` warms them on the thread that starts it.
+`NativeTcpCarrier.start()` warms them as well, for both roles — **client mode stands up no PAQS**,
+and an embedded engine has no subsystem starting it, so its `connect()` and `read()` paths would
+otherwise reach those classes cold. Adding a JFR event class to this subsystem means adding it to
+one of the catalogue's two buckets; the coverage guard fails the build if it is in neither.
 
 The JDK's own cold classes (`sun.nio.ch.Poller`, the FFM segment internals) pin the same way and no
 runtime warm-up can reach them, which is why `CommunityClientIngressCarrierPinningTest` warms its

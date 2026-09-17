@@ -30,7 +30,7 @@ import java.util.Map;
  *
  * <h2>Names, not class literals</h2>
  * <p>Two thirds of this kernel's event classes are package-private, so no single class can name them
- * with a literal. A stale name here is invisible at runtime — {@code CoreJfrEventCatalogueTest} is
+ * with a literal. A stale name here is invisible at runtime — {@code JfrEventCatalogueCoverageTest} is
  * what catches it, by resolving every name and matching the union of both buckets against the event
  * classes actually present in this module.
  *
@@ -113,15 +113,7 @@ public final class CoreJfrEventCatalogue {
             Map.entry("graph", List.of(
                     "eu.exeris.kernel.core.graph.AlgoOrchestratorEvent",
                     "eu.exeris.kernel.core.graph.GraphSyncOperationEvent",
-                    "eu.exeris.kernel.core.graph.GraphSyncFailedEvent")),
-            // telemetry — the sink's own events, plus the drop events that fire in a burst when the sink is behind.
-            Map.entry("telemetry", List.of(
-                    "eu.exeris.kernel.core.telemetry.AsyncTelemetryDropEvent",
-                    "eu.exeris.kernel.core.telemetry.JfrCommitDropEvent",
-                    "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelMetricJfrEvent",
-                    "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent",
-                    "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent",
-                    "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$MemoryExhaustionJfrEvent"))),
+                    "eu.exeris.kernel.core.graph.GraphSyncFailedEvent"))),
             List.of(
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$CircularDependencyDetectedEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$ConfigSettingsResolvedEvent",
@@ -159,7 +151,13 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.scheduling.SchedulingBootstrapSelectedEvent",
             "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$RoleRegistryLoadedEvent",
             "eu.exeris.kernel.core.storage.StorageBootstrapSelectedEvent",
+            "eu.exeris.kernel.core.telemetry.AsyncTelemetryDropEvent",
+            "eu.exeris.kernel.core.telemetry.JfrCommitDropEvent",
+            "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent",
+            "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+            "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelMetricJfrEvent",
+            "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$MemoryExhaustionJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$TransportBindJfrEvent"));
 
     private CoreJfrEventCatalogue() {

@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
+
 import java.util.function.ToIntFunction;
 import java.util.function.UnaryOperator;
 
@@ -79,6 +81,9 @@ import java.util.function.UnaryOperator;
      */
     @Override
     public void start() {
+        // Same reason as every other Community subsystem: the hot-path JFR event classes initialise
+        // on the starting thread, never later on a virtual thread where a <clinit> pins its carrier.
+        CommunityJfrEventCatalogue.warmHotPath(name());
         markRunning(provider != null);
     }
 

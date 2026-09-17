@@ -116,6 +116,20 @@ class CarrierPinClassificationTest {
         }
 
         @Test
+        @DisplayName("a native-library load is counted — it shares a package with the class loaders")
+        void nativeLibraryLoadIsCounted() {
+            // jdk.internal.loader.NativeLibraries is where a carrier blocks while a native library
+            // is loaded, and this kernel loads OpenSSL. A package-prefix match filed it as class
+            // loading; an enumerated set of loader types does not.
+            assertThat(CarrierPinClassification.isClassLoadingOrInit(
+                    "Freeze or preempt failed (2)",
+                    List.of("jdk.internal.loader.NativeLibraries.load",
+                            "jdk.internal.loader.NativeLibraries$NativeLibraryImpl.open",
+                            "eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader.load")))
+                    .isFalse();
+        }
+
+        @Test
         @DisplayName("a class name containing a loader package does not make a pin class work")
         void applicationFrameNamedLikeALoaderIsCounted() {
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
