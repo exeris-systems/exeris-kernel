@@ -4,9 +4,10 @@
  */
 package eu.exeris.kernel.community.kafka;
 
-import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
+import eu.exeris.kernel.core.telemetry.jfr.JfrEventCatalogue;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Every JFR event class this driver declares, split the way the Core and Community catalogues split
@@ -17,6 +18,11 @@ import java.util.List;
  * and the Community coverage guard cannot see this module at all — it is the module that depends on
  * Community, not the other way round. {@code KafkaJfrEventCatalogueTest} is the guard that keeps
  * this list complete, and it lives here for the same reason.
+ *
+ * <p>It builds a {@link JfrEventCatalogue} directly, as the other two do. An earlier version reached
+ * the warm-up through a seam on the Community catalogue, on the stated ground that the Wall does not
+ * grant this module Core — which is not so: this module's POM declares {@code exeris-kernel-core} and
+ * its sources already import from it.
  *
  * @since 0.12
  */
@@ -37,13 +43,20 @@ final class KafkaJfrEventCatalogue {
     /** Empty, and the guard is what keeps that honest rather than a claim in this sentence. */
     private static final List<String> DELIBERATELY_COLD = List.of();
 
+    /**
+     * Keyed by the engine rather than by a subsystem name: this driver has no {@code Subsystem} of
+     * its own, and {@code KafkaEventEngine.start()} is what warms it.
+     */
+    private static final JfrEventCatalogue CATALOGUE = new JfrEventCatalogue(
+            KafkaJfrEventCatalogue.class, Map.of("kafka", HOT_PATH), DELIBERATELY_COLD);
+
     private KafkaJfrEventCatalogue() {
         // Static catalogue — no instances.
     }
 
     /** Warms this driver's event classes on the calling thread, at engine start. */
     /* default */ static void warmHotPath() {
-        CommunityJfrEventCatalogue.warmDriverEvents(KafkaJfrEventCatalogue.class, HOT_PATH);
+        CATALOGUE.warmHotPath("kafka");
     }
 
     /**

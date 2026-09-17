@@ -9,8 +9,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.CodeSource;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
@@ -27,13 +29,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * unchecked list.
  *
  * <p>The event classes are enumerated by walking this module's compiled output rather than through
- * ArchUnit, which this module does not depend on. Walking {@code target/classes} is enough for one
- * module's own output and adds no dependency to a driver artifact.
+ * ArchUnit, which this module does not depend on — that adds no dependency to a driver artifact. The
+ * output directory is taken from the code source of a class this module declares, not from a
+ * {@code target/classes} relative to the working directory: the working directory is a property of
+ * whoever launched the JVM, and a guard that silently enumerates nothing is worse than no guard.
+ * Binary names are assembled from path elements for the same reason — a separator literal decides
+ * this test's verdict on one platform and not another.
  */
 @DisplayName("KafkaJfrEventCatalogue: every event class in this module is classified")
 class KafkaJfrEventCatalogueTest {
 
-    private static final Path CLASSES = Path.of("target", "classes");
+    private static final String CLASS_SUFFIX = ".class";
+
+    private static final Path CLASSES = compiledOutputDirectory();
 
     @Test
     @DisplayName("declared event classes and catalogue entries are the same set")
@@ -75,13 +83,48 @@ class KafkaJfrEventCatalogueTest {
         }
     }
 
+    /**
+     * This module's compiled output, located through the classpath rather than the working directory.
+     *
+     * @return the directory holding this module's classes
+     */
+    private static Path compiledOutputDirectory() {
+        CodeSource source = KafkaJfrEventCatalogue.class.getProtectionDomain().getCodeSource();
+        assertThat(source)
+                .withFailMessage("KafkaJfrEventCatalogue has no code source, so this module's classes cannot be "
+                        + "enumerated and the check would pass on the empty set")
+                .isNotNull();
+        try {
+            return Path.of(source.getLocation().toURI());
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("code source of KafkaJfrEventCatalogue is not a usable path", e);
+        }
+    }
+
+    /**
+     * The binary name of a class file, from its path relative to the output directory.
+     *
+     * @param relative the class file's path under {@link #CLASSES}
+     * @return the binary name, {@code $} for nesting included
+     */
+    private static String binaryName(Path relative) {
+        StringBuilder name = new StringBuilder(relative.toString().length());
+        for (int i = 0; i < relative.getNameCount(); i++) {
+            if (i > 0) {
+                name.append('.');
+            }
+            name.append(relative.getName(i));
+        }
+        // Stripped as a suffix, not replaced everywhere: a package segment may legitimately contain
+        // the characters ".class".
+        return name.substring(0, name.length() - CLASS_SUFFIX.length());
+    }
+
     private static Set<String> declaredEventClasses() throws IOException {
         Set<String> found = new TreeSet<>();
         try (Stream<Path> tree = Files.walk(CLASSES)) {
-            for (Path classFile : tree.filter(p -> p.toString().endsWith(".class")).toList()) {
-                String name = CLASSES.relativize(classFile).toString()
-                        .replace(".class", "")
-                        .replace('/', '.');
+            for (Path classFile : tree.filter(p -> p.toString().endsWith(CLASS_SUFFIX)).toList()) {
+                String name = binaryName(CLASSES.relativize(classFile));
                 try {
                     Class<?> type = Class.forName(name, false, KafkaJfrEventCatalogueTest.class.getClassLoader());
                     if (Event.class.isAssignableFrom(type) && !Event.class.equals(type)) {

@@ -5,7 +5,6 @@
 package eu.exeris.kernel.community.telemetry;
 
 import eu.exeris.kernel.core.telemetry.jfr.JfrEventCatalogue;
-import eu.exeris.kernel.core.telemetry.jfr.JfrEventWarmup;
 
 import java.util.List;
 import java.util.Map;
@@ -114,23 +113,5 @@ public final class CommunityJfrEventCatalogue {
      */
     public static void warmHotPath(String subsystemName) {
         CATALOGUE.warmHotPath(subsystemName);
-    }
-
-    /**
-     * Warms the hot-path event classes of a driver that ships in its own module.
-     *
-     * <p>The Kafka bindings are such a driver: their event classes are theirs, not this module's, so
-     * they are neither in the catalogue above nor visible to the coverage guard beside it — that
-     * module declares and guards its own set. What this method adds is the seam. The Wall grants a
-     * driver module the SPI and this one, so it reaches the warm-up through here rather than by
-     * importing Core directly.
-     *
-     * @param owner      a class from the driver's module; its loader is what the names resolve
-     *                   through, since those classes ship in that module's artifact
-     * @param classNames fully-qualified names of the driver's hot-path event classes
-     */
-    @SuppressWarnings("PMD.UseProperClassLoader") // the driver's own loader, not the caller's context
-    public static void warmDriverEvents(Class<?> owner, List<String> classNames) {
-        JfrEventWarmup.ensureInitialised(classNames, owner.getClassLoader());
     }
 }
