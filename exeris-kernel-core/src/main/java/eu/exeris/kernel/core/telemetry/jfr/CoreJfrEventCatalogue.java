@@ -23,7 +23,9 @@ import java.util.Map;
  * So a class is warmed when it is reached from a virtual thread on a path that can produce it
  * <em>concurrently</em> — per request, per stream, per step, per allocation — and left cold when it
  * is emitted once per process, from a bootstrap or maintenance thread, or only by a path whose own
- * cost dwarfs a millisecond.
+ * cost dwarfs a millisecond. One group is cold for a second reason, and the list says so where it
+ * sits: an event on a hot path the kernel has no seam to warm from, because the kernel never
+ * constructs the component that emits it.
  *
  * <p>Neither bucket is a judgement about how useful an event is. A cold event is fully supported and
  * exactly as observable; it simply pays its own initialisation the first time it fires.
@@ -89,13 +91,19 @@ public final class CoreJfrEventCatalogue {
                     "eu.exeris.kernel.core.memory.MemoryPressureEvent",
                     "eu.exeris.kernel.core.memory.ResourceArbiterDecisionEvent")),
             // persistence — per session, per connection and per transaction, on the request virtual thread.
+            // JfrCommitDropEvent belongs here rather than in the cold list: it fires from
+            // JfrEventCommitter.offer when the ring is full, on the same request virtual thread as
+            // the four events feeding that ring, and by definition in a burst. The persistence
+            // subsystem is what stands the committer and its gate up, so warming with its name is
+            // what puts the class in front of the first drop.
             Map.entry("persistence", List.of(
                     "eu.exeris.kernel.core.persistence.ConnectionAcquireEvent",
                     "eu.exeris.kernel.core.persistence.ConnectionHoldEvent",
                     "eu.exeris.kernel.core.persistence.RequestSessionLifecycleEvent",
                     "eu.exeris.kernel.core.persistence.TransactionLifecycleEvent",
                     "eu.exeris.kernel.core.persistence.AdmissionDecisionEvent$JfrEvent",
-                    "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent$JfrEvent")),
+                    "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent$JfrEvent",
+                    "eu.exeris.kernel.core.telemetry.JfrCommitDropEvent")),
             // security — per request, on the request virtual thread.
             Map.entry("security", List.of(
                     "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$PrincipalBoundEvent",
@@ -152,8 +160,12 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.scheduling.SchedulingBootstrapSelectedEvent",
             "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$RoleRegistryLoadedEvent",
             "eu.exeris.kernel.core.storage.StorageBootstrapSelectedEvent",
+            // The sink stack below is cold for a different reason than the rest of this list: not
+            // because it is cheap or rare, but because nothing in this kernel stands it up. No main
+            // source constructs an AsyncTelemetrySink — the host binds TELEMETRY_SINKS from a
+            // provider it owns — so there is no seam here to warm them from. A host that wants them
+            // warm initialises them where it builds its sinks.
             "eu.exeris.kernel.core.telemetry.AsyncTelemetryDropEvent",
-            "eu.exeris.kernel.core.telemetry.JfrCommitDropEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",

@@ -14,6 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 /**
  * Contract of the catalogue every module's JFR event classes are split by, and of the warm-up it
@@ -31,6 +33,8 @@ class JfrEventCatalogueTest {
 
     private static final String PROBE = "eu.exeris.kernel.core.telemetry.jfr.JfrEventCatalogueTest$Probe";
     private static final String ABSENT = "eu.exeris.kernel.core.telemetry.jfr.NoSuchEventClassAnywhere";
+    private static final String NESTED = "eu.exeris.kernel.core.telemetry.jfr.NestedWarmupProbe$Inner";
+    private static final String TOP_LEVEL = "eu.exeris.kernel.core.telemetry.jfr.TopLevelWarmupProbe";
 
     @Nested
     @DisplayName("Warming")
@@ -49,6 +53,42 @@ class JfrEventCatalogueTest {
             catalogue.warmHotPath("probe");
 
             assertThat(PROBE_INITIALISED).isTrue();
+        }
+
+        @Test
+        @DisplayName("a nested name also runs its enclosing initialiser, outermost first")
+        void warmingANestedNameAlsoRunsItsEnclosingInitialiser() {
+            // The gap this closes: JLS 12.4.1 says initialising Outer$Inner does not initialise
+            // Outer, and for most of this kernel's nested events the emit helper is on Outer — so
+            // warming only the inner class left the <clinit> the warm-up exists to move exactly
+            // where it was, on the first emitting virtual thread.
+            JfrEventCatalogue catalogue = new JfrEventCatalogue(
+                    JfrEventCatalogueTest.class, Map.of("nested", List.of(NESTED)), List.of());
+
+            assertThat(entriesFor("NestedWarmupProbe"))
+                    .withFailMessage("the probe initialised before the warm-up ran; the assertion below would be vacuous")
+                    .isEmpty();
+
+            catalogue.warmHotPath("nested");
+
+            // containsExactly, not containsExactlyInAnyOrder: the order is the claim. The first emit
+            // would have initialised the holder and then reached the event class, and a warm-up that
+            // runs them the other way round is not reproducing what it replaces.
+            assertThat(entriesFor("NestedWarmupProbe"))
+                    .containsExactly("NestedWarmupProbe", "NestedWarmupProbe$Inner");
+        }
+
+        @Test
+        @DisplayName("a top-level name initialises that class and nothing else")
+        void warmingATopLevelNameInitialisesOnlyThatClass() {
+            JfrEventCatalogue catalogue = new JfrEventCatalogue(
+                    JfrEventCatalogueTest.class, Map.of("flat", List.of(TOP_LEVEL)), List.of());
+
+            catalogue.warmHotPath("flat");
+
+            // getEnclosingClass() or getNestHost() in place of getDeclaringClass() would reach past
+            // a top-level class in cases this one stands in for; so would splitting the name.
+            assertThat(entriesFor("TopLevelWarmupProbe")).containsExactly("TopLevelWarmupProbe");
         }
 
         @Test
@@ -129,6 +169,45 @@ class JfrEventCatalogueTest {
         }
     }
 
+    @Nested
+    @DisplayName("Construction")
+    class Construction {
+
+        @Test
+        @DisplayName("a null argument is rejected where it is passed, naming the catalogue")
+        void nullArgumentsAreRejected() {
+            assertThatNullPointerException().isThrownBy(() ->
+                    new JfrEventCatalogue(null, Map.of(), List.of()));
+            assertThatNullPointerException().isThrownBy(() ->
+                    new JfrEventCatalogue(JfrEventCatalogueTest.class, null, List.of()))
+                    .withMessageContaining(JfrEventCatalogueTest.class.getName());
+            assertThatNullPointerException().isThrownBy(() ->
+                    new JfrEventCatalogue(JfrEventCatalogueTest.class, Map.of(), null))
+                    .withMessageContaining(JfrEventCatalogueTest.class.getName());
+        }
+
+        @Test
+        @DisplayName("a blank class name is rejected, naming the bucket it sits in")
+        void blankNamesAreRejected() {
+            assertThatIllegalArgumentException().isThrownBy(() -> new JfrEventCatalogue(
+                    JfrEventCatalogueTest.class, Map.of("transport", List.of("  ")), List.of()))
+                    .withMessageContaining("transport");
+            assertThatIllegalArgumentException().isThrownBy(() -> new JfrEventCatalogue(
+                    JfrEventCatalogueTest.class, Map.of(), List.of("")))
+                    .withMessageContaining("the cold list");
+        }
+
+        @Test
+        @DisplayName("a name in both buckets is rejected — the coverage guard cannot see that one")
+        void aNameCannotBeBothWarmedAndCold() {
+            // The guard matches the union of the two buckets against a module's declared event
+            // classes, so a name counted twice still lands in that union and passes.
+            assertThatIllegalArgumentException().isThrownBy(() -> new JfrEventCatalogue(
+                    JfrEventCatalogueTest.class, Map.of("transport", List.of("a.Alpha")), List.of("a.Alpha")))
+                    .withMessageContaining("a.Alpha");
+        }
+    }
+
     /** A stand-in for an event class: touching it is what the warm-up is supposed to do. */
     static final class Probe {
 
@@ -139,5 +218,15 @@ class JfrEventCatalogueTest {
         private Probe() {
             // Never instantiated — the static initialiser is the whole subject.
         }
+    }
+
+    /**
+     * The recorded initialisations belonging to one probe, in order.
+     *
+     * @param probe the probe's simple binary name
+     * @return the matching entries
+     */
+    private static List<String> entriesFor(String probe) {
+        return WarmupProbeLog.entries().stream().filter(e -> e.startsWith(probe)).toList();
     }
 }

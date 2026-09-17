@@ -7,6 +7,7 @@ package eu.exeris.kernel.core.telemetry.jfr;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * One module's JFR event classes, split into the ones a subsystem warms when it starts and the ones
@@ -41,20 +42,63 @@ public final class JfrEventCatalogue {
      * @param hotPath          hot-path classes keyed by the {@code Subsystem.name()} that warms
      *                         them; must not be {@code null}
      * @param deliberatelyCold classes this module does not warm; must not be {@code null}
+     * @throws NullPointerException     if any argument is {@code null}
+     * @throws IllegalArgumentException if a class name is blank, or if one name appears in both
+     *                                  buckets
      */
     @SuppressWarnings("PMD.UseProperClassLoader") // the owner's loader, deliberately — see below
     public JfrEventCatalogue(Class<?> owner, Map<String, List<String>> hotPath, List<String> deliberatelyCold) {
+        // Checked rather than left to NPE somewhere inside the copies below. A catalogue is built in
+        // its holder's <clinit>, so a bad argument surfaces as an ExceptionInInitializerError at
+        // boot; without these the message names neither the catalogue nor the entry.
+        Objects.requireNonNull(owner, "owner");
+        Objects.requireNonNull(hotPath, "hotPath of the catalogue owned by " + owner.getName());
+        Objects.requireNonNull(deliberatelyCold,
+                "deliberatelyCold of the catalogue owned by " + owner.getName());
         // Deep, not Map.copyOf: that copies the map and shares its value lists, so a caller holding
         // the list it passed could still empty a group after the catalogue was built.
         Map<String, List<String>> copied = new LinkedHashMap<>();
-        hotPath.forEach((subsystem, classes) -> copied.put(subsystem, List.copyOf(classes)));
+        hotPath.forEach((subsystem, classes) -> {
+            Objects.requireNonNull(subsystem, "subsystem name in the catalogue owned by " + owner.getName());
+            Objects.requireNonNull(classes, "hot-path group '" + subsystem + "'");
+            classes.forEach(name -> requireName(name, "hot-path group '" + subsystem + "'", owner));
+            copied.put(subsystem, List.copyOf(classes));
+        });
+        deliberatelyCold.forEach(name -> requireName(name, "the cold list", owner));
         this.hotPath = Map.copyOf(copied);
         this.deliberatelyCold = List.copyOf(deliberatelyCold);
+        // A name in both buckets is a contradiction the coverage guard cannot see: it matches the
+        // union of the two against the module's declared event classes, and a name counted twice
+        // still lands in that union.
+        this.hotPath.values().stream()
+                .flatMap(List::stream)
+                .filter(this.deliberatelyCold::contains)
+                .findFirst()
+                .ifPresent(name -> {
+                    throw new IllegalArgumentException("'" + name + "' is both warmed and deliberately cold in "
+                            + "the catalogue owned by " + owner.getName() + " — it can only be one");
+                });
         // The owning module's loader, and not the thread context loader PMD suggests: these classes
         // ship in that module's artifact, while the context loader belongs to whatever called in —
         // an application's, a build tool's, or on a virtual thread whatever it inherited. Resolving
         // kernel classes through it would make a warm-up succeed or fail by container convention.
+        // Null is a legitimate answer here — it means the bootstrap loader, which is what
+        // Class.forName(name, true, null) then resolves against — so it is not rejected.
         this.loader = owner.getClassLoader();
+    }
+
+    /**
+     * Rejects a class name that could never resolve, naming where it was found.
+     *
+     * @param name  the catalogue entry
+     * @param where the bucket it sits in, for the message
+     * @param owner the catalogue's owner, for the message
+     */
+    private static void requireName(String name, String where, Class<?> owner) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("blank JFR event class name in " + where
+                    + " of the catalogue owned by " + owner.getName());
+        }
     }
 
     /**
