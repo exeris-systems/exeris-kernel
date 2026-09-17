@@ -87,12 +87,12 @@ final class CommunityWebSocketSubsystem implements Subsystem {
 
     @Override
     public void start() {
-        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
-        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
-        CommunityJfrEventCatalogue.warmHotPath(name());
         if (serverEngine == null) {
             return;
         }
+        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
+        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
+        CommunityJfrEventCatalogue.warmHotPath(name());
         WebSocketKernelProviders.webSocketServerHandler()
                 .ifPresentOrElse(serverEngine::setHandler,
                         () -> serverEngine.setHandler(CommunityWebSocketSubsystem::drain));

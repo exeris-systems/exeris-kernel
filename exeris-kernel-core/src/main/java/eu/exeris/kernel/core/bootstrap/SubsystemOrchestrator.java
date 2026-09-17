@@ -624,13 +624,16 @@ public final class SubsystemOrchestrator {
         long startNanos = System.nanoTime();
         LOG.log(System.Logger.Level.INFO,
                 "  start [{0}] (profile={1})", subsystem.name(), profile);
-        // This subsystem's hot-path JFR event classes initialise here, on the booting thread, and
-        // not later on the first virtual thread to emit one: a virtual thread inside a <clinit>
-        // cannot unmount, so it pins its carrier for the whole of it. The catalogue states which
-        // classes are warmed and which are deliberately left cold; the cost is counted into this
-        // subsystem's start time below, because it is part of starting it.
-        CoreJfrEventCatalogue.warmHotPath(subsystem.name());
         try {
+            // This subsystem's hot-path JFR event classes initialise here, on the booting thread,
+            // and not later on the first virtual thread to emit one: a virtual thread inside a
+            // <clinit> cannot unmount, so it pins its carrier for the whole of it. The catalogue
+            // states which classes are warmed and which are deliberately left cold; the cost is
+            // counted into this subsystem's start time below, because it is part of starting it.
+            // Inside the try, so that a warm-up that does fail takes the same route to
+            // handleFailure as a start() that does — and an optional subsystem can still be
+            // dropped under DEGRADE instead of taking the boot down with it.
+            CoreJfrEventCatalogue.warmHotPath(subsystem.name());
             subsystem.start();
             LOG.log(System.Logger.Level.INFO,
                     "  [{0}] started ({1} ms)", subsystem.name(), elapsedMs(startNanos));

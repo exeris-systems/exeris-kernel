@@ -105,9 +105,13 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
-        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
-        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
-        CommunityJfrEventCatalogue.warmHotPath(name());
+        if (persistenceEngine != null) {
+            // This driver's hot-path JFR event classes initialise here, on the thread that starts
+            // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
+            // it. Behind the same check markRunning takes, because a subsystem with no engine
+            // reaches none of these emit sites.
+            CommunityJfrEventCatalogue.warmHotPath(name());
+        }
         // Install the off-thread JFR committer before marking running, so the first admission
         // decision already routes its commit onto the platform thread.
         jfrCommitter = JfrEventCommitter.start();

@@ -90,12 +90,12 @@ final class CommunityTransportSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
-        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
-        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
-        CommunityJfrEventCatalogue.warmHotPath(name());
         if (transportEngine == null) {
             return;
         }
+        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
+        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
+        CommunityJfrEventCatalogue.warmHotPath(name());
         transportEngine.start();
         markRunning(true);
     }

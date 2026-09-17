@@ -6,6 +6,7 @@ package eu.exeris.kernel.community;
 
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
+import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -16,6 +17,7 @@ import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import jdk.jfr.Event;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -99,23 +101,42 @@ class JfrEventCatalogueCoverageTest {
 
         for (JavaClass subsystem : subsystems) {
             assertThat(warmsItsGroup(subsystem))
-                    .withFailMessage("%s never calls CommunityJfrEventCatalogue.warmHotPath — directly or in a "
-                            + "superclass — so its hot-path event classes initialise on whichever virtual thread "
-                            + "emits one first", subsystem.getSimpleName())
+                    .withFailMessage("%s never calls CommunityJfrEventCatalogue.warmHotPath from start() — its own "
+                            + "or an inherited one — so its hot-path event classes initialise on whichever virtual "
+                            + "thread emits one first", subsystem.getSimpleName())
                     .isTrue();
         }
     }
 
-    /** Whether this class, or one it inherits from, calls the driver catalogue's warm-up. */
+    /**
+     * Whether this class, or one it inherits {@code start()} from, warms its group <em>from
+     * {@code start()}</em>.
+     *
+     * <p>The origin is the point. Asking only whether the class calls {@code warmHotPath} anywhere
+     * accepts a call in {@code stop()}, in a dead private method, or on a branch nothing reaches —
+     * the same shape of false pass as the guard this replaced, one level down: that one asked
+     * whether a subsystem <em>had</em> a group rather than whether anything warmed it, and stayed
+     * green while three subsystems warmed nothing at all.
+     *
+     * <p>The superclass walk stays, because {@code AbstractSingleProviderSubsystem} declares the
+     * {@code start()} its two subclasses inherit unchanged — but it walks to find the class that
+     * declares {@code start()}, not to accept a call from anywhere in the hierarchy.
+     *
+     * @param subsystem a concrete Community subsystem
+     * @return whether its {@code start()} reaches the warm-up
+     */
     private static boolean warmsItsGroup(JavaClass subsystem) {
         for (JavaClass c = subsystem; c != null; c = c.getRawSuperclass().orElse(null)) {
-            boolean calls = c.getMethodCallsFromSelf().stream()
+            Optional<JavaMethod> start = c.tryGetMethod("start");
+            if (start.isEmpty()) {
+                continue;
+            }
+            // The first start() up the chain is the one that runs; if it does not warm, an
+            // inherited one further up is not what a caller of this subsystem would execute.
+            return start.get().getMethodCallsFromSelf().stream()
                     .anyMatch(call -> "warmHotPath".equals(call.getTarget().getName())
                             && call.getTargetOwner().getName()
                                     .equals(CommunityJfrEventCatalogue.class.getName()));
-            if (calls) {
-                return true;
-            }
         }
         return false;
     }

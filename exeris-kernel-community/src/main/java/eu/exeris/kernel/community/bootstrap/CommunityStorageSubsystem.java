@@ -91,9 +91,14 @@ final class CommunityStorageSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
-        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
-        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
-        CommunityJfrEventCatalogue.warmHotPath(name());
+        if (store != null) {
+            // This driver's hot-path JFR event classes initialise here, on the thread that starts
+            // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
+            // it. markRunning below is unconditional on purpose — a subsystem with nothing to run has
+            // not failed — but a subsystem with no store emits none of these events, so it does not
+            // pay their class loads either.
+            CommunityJfrEventCatalogue.warmHotPath(name());
+        }
         // A store is usable as soon as it is created — the filesystem driver holds a path and the S3
         // driver a client — so there is no second start step. An unconfigured subsystem is running
         // too: it has nothing to run, which is not the same as having failed.

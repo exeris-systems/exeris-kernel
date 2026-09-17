@@ -4,7 +4,6 @@
  */
 package eu.exeris.kernel.core.transport.scheduler;
 
-import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.transport.jfr.PaqsHandlerFailureEvent;
 import eu.exeris.kernel.core.transport.jfr.StreamAcceptedEvent;
@@ -187,10 +186,6 @@ public final class PaqsScheduler implements AutoCloseable {
         this.priorityExtractor = priorityExtractor;
         this.engineName = engineName;
         this.executionBackend = executionBackend;
-        // Not redundant with the carrier's own call, and the review that said so was right to: the
-        // TCK binding and any carrier that is not NativeTcpCarrier construct a scheduler directly,
-        // and without this they take the <clinit> pin this class's finally block is named for.
-        CoreJfrEventCatalogue.warmHotPath("transport");
     }
 
     // =========================================================================
