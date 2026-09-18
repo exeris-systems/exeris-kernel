@@ -56,6 +56,16 @@ public final class JfrPinningMonitor {
 
     /** How many frames of one pin's stack a report prints. */
     private static final int REPORTED_FRAMES = 10;
+
+    /**
+     * Stands in for a pin whose recording names no thread.
+     *
+     * <p>Deliberately its own constant rather than {@link CarrierPinClassification#UNKNOWN_REASON},
+     * which happens to spell the same characters and means something else entirely. A thread this
+     * run could not name and a reason the JVM declined to give are not the same fact, and tying
+     * them to one constant would make a future change to either silently move the other.
+     */
+    private static final String UNKNOWN_THREAD = "<unknown>";
     private static final DateTimeFormatter TS_FMT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
@@ -111,7 +121,7 @@ public final class JfrPinningMonitor {
          * @param stackTrace top-10 frames formatted as {@code "Class.method() | ..."}
          */
         public PinnedEvent(double durationMs, String threadName, String stackTrace) {
-            this(durationMs, threadName, stackTrace, "<unknown>", false);
+            this(durationMs, threadName, stackTrace, CarrierPinClassification.UNKNOWN_REASON, false);
         }
     }
 
@@ -237,10 +247,17 @@ public final class JfrPinningMonitor {
      * The full report on a measured run: the counted pins, what the classification set aside, and
      * where the recording is.
      *
-     * <p>Public because a binding that asserts on {@link Result#pinnedEvents()} itself — rather than
-     * through {@link #assertNoPinning} — needs the same report, and a second formatter is a second
-     * thing to keep true. What the fence declined to count is in here, not only in the log: a
-     * failure report that hides its own exclusions is asking to be disbelieved.
+     * <p>The banner states what the run measured — the counted pins and the set-aside ones — and
+     * not a verdict. It read {@code VERDICT: GUILTY}, which was true of the only path that reaches
+     * it today and not of what this method claims to be; a report that decides for its caller is
+     * wrong the first time a caller uses it for anything else.
+     *
+     * <p>Public for a binding outside this repository that asserts on {@link Result#pinnedEvents()}
+     * itself rather than through {@link #assertNoPinning}, so that it need not carry a second
+     * formatter. <strong>There is no such caller in this repository</strong> — every binding here
+     * goes through {@code assertNoPinning}, including the one whose hand-rolled formatter this
+     * replaced, which was moved onto {@code assertNoPinning} rather than onto this. The earlier
+     * wording implied an in-repo caller that does not exist.
      *
      * @param result the outcome of a {@link #measure} run
      * @param label  human-readable label for the diagnostic
@@ -251,11 +268,13 @@ public final class JfrPinningMonitor {
         // frame alone is past 587 characters — PMD measured it.
         StringBuilder sb = new StringBuilder(1024);
         sb.append("\n╔══════════════════════════════════════════════════════╗\n");
-        sb.append("║  CARRIER PINNING TCK — VERDICT: GUILTY               ║\n");
+        sb.append("║  CARRIER PINNING TCK — MEASURED RUN                  ║\n");
         sb.append("╠══════════════════════════════════════════════════════╣\n");
         sb.append("║  Label        : ").append(pad(label, 38)).append(" ║\n");
         sb.append("║  Threshold    : ").append(pad(result.thresholdMs() + " ms", 38)).append(" ║\n");
         sb.append("║  Pinned Count : ").append(pad(String.valueOf(result.pinnedCount()), 38)).append(" ║\n");
+        sb.append("║  Set Aside    : ").append(pad(String.valueOf(result.classInitEvents().size()), 38))
+                .append(" ║\n");
         sb.append("║  JFR File     : ").append(pad(result.jfrPath().getFileName().toString(), 38)).append(" ║\n");
         sb.append("╠══════════════════════════════════════════════════════╣\n");
         appendPins(sb, result.pinnedEvents(), "  ▸ ", true);
@@ -354,7 +373,7 @@ public final class JfrPinningMonitor {
                     if (!VT_PINNED_EVENT.equals(ev.getEventType().getName())) continue;
                     double ms = ev.getDuration().toNanos() / 1_000_000.0;
                     if (ms < thresholdMs) continue;
-                    String thread = ev.getThread() != null ? ev.getThread().getJavaName() : "<unknown>";
+                    String thread = ev.getThread() != null ? ev.getThread().getJavaName() : UNKNOWN_THREAD;
                     String reason = CarrierPinClassification.pinnedReason(ev);
                     // The whole stack, not the innermost CLASS_WORK_FRAME_DEPTH: the classifier's
                     // veto — the frames that mean a carrier is really blocked — reads all of it, and

@@ -41,11 +41,11 @@ import java.util.List;
  * <p>And a class initialiser is not a licence. Loading a native library or making an FFM downcall is
  * ordinary work for a {@code <clinit>}, so a frame that means a carrier is really blocked vetoes the
  * set-aside before any of the above is consulted — otherwise the one block this kernel is most
- * likely to take, OpenSSL through FFM, would read as benign on every fence in the repository. That
- * veto reads the whole stack, while the frame heuristic that sets a pin aside reads only the
- * innermost {@value #CLASS_WORK_FRAME_DEPTH}: a veto can only narrow what is set aside, so nothing
- * is lost by widening it, and a {@code <clinit>} sixty frames down is no account of the block at
- * the top.
+ * likely to take, OpenSSL through FFM, would read as benign on every fence in the repository. A
+ * native-library frame vetoes from anywhere on the stack, since it is never calling context; an FFM
+ * frame vetoes only near the top, since on this kernel it usually is. The frame heuristic that sets
+ * a pin aside reads the innermost {@value #CLASS_WORK_FRAME_DEPTH} either way — a {@code <clinit>}
+ * sixty frames down is no account of the block at the top.
  *
  * @since 0.12
  * @see JfrPinningMonitor
@@ -71,20 +71,40 @@ public final class CarrierPinClassification {
             "jdk.internal.loader.URLClassPath.");
 
     /**
-     * The frames that mean a carrier is really blocked, whatever else is on the stack.
+     * The frames that mean a carrier is really blocked, wherever on the stack they sit.
      *
-     * <p>Checked before anything else, and it has to be: loading a native library or making a
-     * downcall is work a static initialiser is a perfectly ordinary place to do. This kernel loads
-     * OpenSSL through FFM, and a {@code <clinit>} frame sitting above that block would otherwise
-     * file it as benign class work — which is not a narrower fence, it is no fence at all for the
-     * one thing a carrier-pinning TCK exists to catch.
+     * <p>Checked before anything else, and it has to be: loading a native library is work a static
+     * initialiser is a perfectly ordinary place to do. This kernel loads OpenSSL that way, and a
+     * {@code <clinit>} frame above that block would otherwise file it as benign class work — which
+     * is not a narrower fence, it is no fence at all for the one thing a carrier-pinning TCK exists
+     * to catch.
+     *
+     * <p>Scanned over the whole stack because none of these is ever ordinary calling context:
+     * a frame in {@code NativeLibraries} or {@code System.load} means the thread is loading a
+     * library, not that it once passed through one.
      */
-    private static final List<String> BLOCKING_TYPES = List.of(
+    private static final List<String> ALWAYS_BLOCKING = List.of(
             "jdk.internal.loader.NativeLibraries",
             "java.lang.System.load",
             "java.lang.System.loadLibrary",
             "java.lang.Runtime.load",
-            "java.lang.ClassLoader$NativeLibrary",
+            "java.lang.ClassLoader$NativeLibrary");
+
+    /**
+     * The frames that mean a blocked carrier only when they are near the top of the stack.
+     *
+     * <p>An FFM downcall blocks where the downcall happens, and that frame is innermost. Deeper
+     * down, {@code jdk.internal.foreign.} is ordinary calling context on this kernel's allocation
+     * and transport paths — almost anything touching a {@code MemorySegment} passes through it. So
+     * this list is scanned over {@value #CLASS_WORK_FRAME_DEPTH} frames and not the whole stack: a
+     * whole-stack match here turns a real class-initialisation pin taken anywhere under a segment
+     * operation into a counted failure.
+     *
+     * <p>That is the half missed when this and {@link #ALWAYS_BLOCKING} were one list scanned
+     * whole-stack. "Widening a veto can only make the fence stricter" is true and is not the whole
+     * question — stricter is exactly what a false failure is made of.
+     */
+    private static final List<String> BLOCKING_NEAR_TOP = List.of(
             "jdk.internal.foreign.");
 
     /** The JVM's own phrasing for a pin taken inside a class initialiser. */
@@ -123,8 +143,24 @@ public final class CarrierPinClassification {
     /** Stands in for a frame the recording carries without a method or a type. */
     public static final String UNKNOWN_FRAME = "<unnamed frame>";
 
-    private static final String NO_REASON_FIELD = "<no pinnedReason field on this JDK>";
-    private static final String UNKNOWN_REASON = "<unknown>";
+    /**
+     * What {@link #pinnedReason} answers on a JDK with no {@code pinnedReason} field.
+     *
+     * <p>Public because it leaves this class through a public method and is therefore something a
+     * binding can be handed and may want to branch on — and because it was spelled out as a literal
+     * in the test that pins this class's behaviour, where changing the constant would have left the
+     * test green against a string nothing produces.
+     */
+    public static final String NO_REASON_FIELD = "<no pinnedReason field on this JDK>";
+
+    /**
+     * What {@link #pinnedReason} answers when the JVM recorded the field but left it null.
+     *
+     * <p>Public for the same reason as {@link #NO_REASON_FIELD}. The two are distinct on purpose: a
+     * JDK that cannot explain a pin and a pin this JDK declined to explain are different facts, and
+     * a fence counts both.
+     */
+    public static final String UNKNOWN_REASON = "<unknown>";
 
     private CarrierPinClassification() {
         // Static helper — no instances.
@@ -251,25 +287,24 @@ public final class CarrierPinClassification {
      * @return {@code true} if the pin is cold-start class work rather than a blocked carrier
      */
     public static boolean isClassLoadingOrInit(String reason, List<String> frames) {
-        // The veto runs first and over the WHOLE stack, not the window the search at the bottom of
-        // this method reads. A static initialiser is an ordinary place to load a native library or
-        // make a downcall, so "there is a <clinit> on the stack" cannot be allowed to outrank "and
-        // it is blocked in NativeLibraries" — and while the veto shared the four-frame window, it
-        // could be outrun twice over: by a blocking frame sitting deeper than four, and by the
-        // reason match below, which returned true before any frame past the window was read.
-        //
-        // The asymmetry is the point. Widening a veto can only make the fence stricter, so it
-        // cannot silence a pin; widening the positive search below would let a <clinit> anywhere in
-        // a 256-deep stack excuse a block it has nothing to do with.
+        // Both vetoes run before the reason match, which returns early — while they sat after it,
+        // a "VM call to X.<clinit> on stack" reason set a pin aside without any frame being read.
+        // They differ in how far they look, and that difference is the whole of this method's
+        // judgement: ALWAYS_BLOCKING is never calling context, BLOCKING_NEAR_TOP frequently is.
         for (String frame : frames) {
-            if (startsWithAny(frame, BLOCKING_TYPES)) {
+            if (startsWithAny(frame, ALWAYS_BLOCKING)) {
+                return false;
+            }
+        }
+        int depth = Math.min(CLASS_WORK_FRAME_DEPTH, frames.size());
+        for (int i = 0; i < depth; i++) {
+            if (startsWithAny(frames.get(i), BLOCKING_NEAR_TOP)) {
                 return false;
             }
         }
         if (isInitWaitReason(reason) || isClinitReason(reason)) {
             return true;
         }
-        int depth = Math.min(CLASS_WORK_FRAME_DEPTH, frames.size());
         for (int i = 0; i < depth; i++) {
             String frame = frames.get(i);
             if (frame.endsWith(".<clinit>") || startsWithAny(frame, CLASS_LOADING_TYPES)) {
