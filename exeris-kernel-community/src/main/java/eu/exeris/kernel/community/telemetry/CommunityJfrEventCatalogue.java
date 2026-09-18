@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.telemetry;
 
 import eu.exeris.kernel.core.telemetry.jfr.JfrEventCatalogue;
+import eu.exeris.kernel.core.telemetry.jfr.JfrEventWarmup;
 
 import java.util.List;
 import java.util.Map;

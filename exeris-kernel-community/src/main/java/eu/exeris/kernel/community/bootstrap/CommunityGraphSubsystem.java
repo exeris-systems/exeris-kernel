@@ -4,7 +4,6 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
-import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.graph.GraphBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -60,12 +59,10 @@ final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
-        if (graphEngine != null) {
-            // This driver's hot-path JFR event classes initialise here, on the thread that starts
-            // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
-            // it. Behind the same check markRunning takes, because a subsystem with no engine emits none of them.
-            CommunityJfrEventCatalogue.warmHotPath(name());
-        }
+        // No driver warm-up here: this module declares no JFR event class for the graph subsystem,
+        // so CommunityJfrEventCatalogue has no "graph" group and the call this block used to make
+        // resolved to an empty list on every boot. It satisfied the coverage guard and did nothing
+        // else. The Core graph events are warmed by the orchestrator, behind isRunning() below.
         markRunning(graphEngine != null && graphEngine.isRunning());
     }
 

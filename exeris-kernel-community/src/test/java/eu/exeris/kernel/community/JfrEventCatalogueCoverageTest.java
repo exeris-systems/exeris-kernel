@@ -86,11 +86,11 @@ class JfrEventCatalogueCoverageTest {
         Set<String> keys = new TreeSet<>(CoreJfrEventCatalogue.catalogue().warmedSubsystems());
         keys.addAll(CommunityJfrEventCatalogue.catalogue().warmedSubsystems());
 
-        assertThat(difference(keys, subsystemNames))
-                .withFailMessage("catalogue group(s) keyed on a name no Subsystem reports, so nothing warms them: "
-                        + "%s — either the key is wrong, or those events belong in deliberatelyCold()",
-                        difference(keys, subsystemNames))
-                .isEmpty();
+        assertThat(keys)
+                .withFailMessage("catalogue group(s) keyed on a name no Subsystem reports, so nothing warms them — "
+                        + "either the key is wrong, or those events belong in deliberatelyCold(). Keys: %s; "
+                        + "subsystem names: %s", keys, subsystemNames)
+                .isSubsetOf(subsystemNames);
     }
 
     @ArchTest
@@ -107,11 +107,45 @@ class JfrEventCatalogueCoverageTest {
                 .isNotEmpty();
 
         for (JavaClass subsystem : subsystems) {
-            assertThat(warmsItsGroup(subsystem))
-                    .withFailMessage("%s never calls CommunityJfrEventCatalogue.warmHotPath from start() — its own "
-                            + "or an inherited one — so its hot-path event classes initialise on whichever virtual "
-                            + "thread emits one first", subsystem.getSimpleName())
-                    .isTrue();
+            boolean hasGroup = !CommunityJfrEventCatalogue.catalogue()
+                    .hotPathFor(subsystemName(subsystem)).isEmpty();
+
+            if (hasGroup) {
+                assertThat(warmsItsGroup(subsystem))
+                        .withFailMessage("%s never calls CommunityJfrEventCatalogue.warmHotPath from start() — its "
+                                + "own or an inherited one — so its hot-path event classes initialise on whichever "
+                                + "virtual thread emits one first", subsystem.getSimpleName())
+                        .isTrue();
+            } else {
+                // The other direction, and it is not symmetry for its own sake. graph and
+                // persistence carried a warmHotPath call for groups this module does not declare,
+                // so it resolved to an empty list on every boot: a call that existed only to
+                // satisfy the assertion above. Reading that failure message literally is how it got
+                // there, and this is what stops the next one.
+                assertThat(warmsItsGroup(subsystem))
+                        .withFailMessage("%s calls CommunityJfrEventCatalogue.warmHotPath, but this module declares "
+                                + "no event group under that subsystem name — the call can only ever be a no-op. "
+                                + "Delete it, or add the group it was written for", subsystem.getSimpleName())
+                        .isFalse();
+            }
+        }
+    }
+
+    /**
+     * The name one subsystem reports, read from the instance rather than from its class name.
+     *
+     * @param subsystem a concrete Community subsystem
+     * @return what {@code Subsystem.name()} returns
+     */
+    private static String subsystemName(JavaClass subsystem) {
+        try {
+            Class<?> type = Class.forName(subsystem.getName());
+            var constructor = type.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return ((Subsystem) constructor.newInstance()).name();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("could not read Subsystem.name() from " + subsystem.getName()
+                    + " — the guard cannot tell whether this subsystem owns a catalogue group", e);
         }
     }
 
@@ -305,9 +339,4 @@ class JfrEventCatalogueCoverageTest {
         JfrEventCatalogueCoverage.assertBucketsMatchDeclared(modulePrefix, declared, hotPath, cold);
     }
 
-    private static Set<String> difference(Set<String> from, Set<String> remove) {
-        Set<String> out = new TreeSet<>(from);
-        out.removeAll(remove);
-        return out;
-    }
 }
