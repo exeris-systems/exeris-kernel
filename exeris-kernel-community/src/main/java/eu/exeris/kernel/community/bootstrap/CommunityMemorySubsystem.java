@@ -26,13 +26,23 @@ import java.util.function.UnaryOperator;
  *   <li>{@link #initialize()} — creates the {@link CommunityMemoryProvider} and its
  *       {@link MemoryAllocator} from the active kernel config; binds both into the
  *       scoped-value carrier via {@link #providerBindings()}.</li>
- *   <li>{@link #start()} — no-op; the allocator is ready from {@code initialize()}.</li>
+ *   <li>{@link #start()} — warms this tier's hot-path JFR event classes and marks the subsystem
+ *       running; the allocator itself is ready from {@code initialize()}.</li>
  *   <li>{@link #stop()} — closes the allocator, releasing all per-buffer arenas.</li>
  * </ol>
  *
+ * <p>Extends {@link AbstractCommunitySubsystem} for its running flag, and that is load-bearing
+ * rather than tidiness. This class implemented {@link Subsystem} directly and overrode nothing, so
+ * {@link Subsystem#isRunning()} answered the interface default {@code false} — which the SPI
+ * documents as meaning "there is nothing to shut down". Two things followed, and neither was
+ * visible: {@code SubsystemOrchestrator.shutdown()} skipped this subsystem, so the
+ * {@code memoryAllocator.close()} below had never run in any process; and once the orchestrator
+ * began gating the Core warm-up on the same answer, the Core {@code memory} event group — the
+ * allocation events, the hottest in the catalogue — stopped being warmed at all.
+ *
  * @since 0.5
  */
-final class CommunityMemorySubsystem implements Subsystem {
+final class CommunityMemorySubsystem extends AbstractCommunitySubsystem {
 
     private MemoryProvider  memoryProvider;
     private MemoryAllocator memoryAllocator;
@@ -64,10 +74,21 @@ final class CommunityMemorySubsystem implements Subsystem {
 
     @Override
     public void start() {
-        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
-        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
-        CommunityJfrEventCatalogue.warmHotPath(name());
-        // Allocator is ready after initialize() — nothing extra to start.
+        if (memoryAllocator != null) {
+            // This driver's hot-path JFR event classes initialise here, on the thread that starts
+            // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
+            // it. Behind the same check markRunning takes, as every other Community subsystem does.
+            //
+            // There is no provider to fail to find here — initialize() always builds an allocator —
+            // so this guard is not about a missing driver. It is about start() reached without
+            // initialize(), which is the only way this field is null and the only state in which
+            // there is nothing to warm and nothing to stop.
+            CommunityJfrEventCatalogue.warmHotPath(name());
+        }
+        // The allocator needs nothing else started; what start() owes is the running flag, because
+        // stop() below has a resource to release and the orchestrator reads isRunning() to decide
+        // whether to call it.
+        markRunning(memoryAllocator != null);
     }
 
     @Override
@@ -75,6 +96,7 @@ final class CommunityMemorySubsystem implements Subsystem {
         if (memoryAllocator != null) {
             memoryAllocator.close();
         }
+        markRunning(false);
     }
 
     @Override

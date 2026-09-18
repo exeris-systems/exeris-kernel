@@ -33,6 +33,13 @@ class CommunityTransportSubsystemLifecycleTckTest extends AbstractSubsystemLifec
     }
 
     @Override
+    protected boolean expectsRunningAfterStart() {
+        // DISABLED: this binding's config makes start() find nothing to run, so reporting false is
+        // the correct answer here rather than the absent-override default the TCK guards against.
+        return false;
+    }
+
+    @Override
     protected void withLifecycleContext(Runnable action) {
         ScopedValue.where(KernelProviders.CURRENT_CONFIG, new DisabledConfigProvider())
                 .run(action);

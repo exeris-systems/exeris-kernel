@@ -116,6 +116,49 @@ class JfrEventCatalogueCoverageTest {
     }
 
     @ArchTest
+    static void everySubsystemAnswersIsRunningItself(JavaClasses classes) {
+        // The precondition for the guard below it. The orchestrator warms a subsystem's Core group
+        // only when it reports isRunning(), so a subsystem that never overrides the method inherits
+        // the interface default false and silently loses that half of its warm-up — and, for the
+        // same reason, is never stopped, because shutdown() reads the same answer.
+        //
+        // CommunityMemorySubsystem was exactly that, and nothing said so: the lifecycle TCK's own
+        // javadoc recorded the hole (it asserted false-after-stop with no true-after-start to pair
+        // it with) and only three subsystems bind that TCK at all. This is structural and covers
+        // all of them: the declaration has to exist somewhere in the class's own hierarchy.
+        List<JavaClass> subsystems = concreteSubsystems(classes);
+
+        assertThat(subsystems)
+                .withFailMessage("no concrete Community Subsystem classes were found; this check would pass vacuously")
+                .isNotEmpty();
+
+        for (JavaClass subsystem : subsystems) {
+            assertThat(declaresIsRunning(subsystem))
+                    .withFailMessage("%s neither declares isRunning() nor inherits a declaration, so it answers the "
+                            + "Subsystem default false — the orchestrator will never stop it and never warm its Core "
+                            + "event group. Extend AbstractCommunitySubsystem and call markRunning, or override it",
+                            subsystem.getSimpleName())
+                    .isTrue();
+        }
+    }
+
+    /**
+     * Whether this class or one of its superclasses declares {@code isRunning()} — as opposed to
+     * inheriting the {@link Subsystem} interface default.
+     *
+     * @param subsystem a concrete Community subsystem
+     * @return whether a class in its hierarchy declares the method
+     */
+    private static boolean declaresIsRunning(JavaClass subsystem) {
+        for (JavaClass c = subsystem; c != null; c = c.getRawSuperclass().orElse(null)) {
+            if (c.tryGetMethod("isRunning").isPresent()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    @ArchTest
     static void theOrchestratorWarmsACoreGroupOnlyForASubsystemThatIsRunning(JavaClasses classes) {
         // The Core half of the warm-up, which had no check of its own: it ran above every
         // subsystem's guard, so the rule the other three tests here enforce — a subsystem that
