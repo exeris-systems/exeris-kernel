@@ -4,7 +4,6 @@
  */
 package eu.exeris.kernel.core.telemetry.jfr;
 
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,11 +55,13 @@ public final class JfrEventCatalogue {
         Objects.requireNonNull(hotPath, "hotPath of the catalogue owned by " + owner.getName());
         Objects.requireNonNull(deliberatelyCold,
                 "deliberatelyCold of the catalogue owned by " + owner.getName());
-        // Deep, and order-preserving. Map.copyOf alone would share the value lists, so a caller
-        // holding the list it passed could still empty a group after the catalogue was built; and
-        // Map.copyOf OVER this LinkedHashMap — which is what this constructor did — throws the
-        // insertion order away again, because an immutable map's iteration order is salted per JVM
-        // run. Two of the three readers below then answered in a different order every run.
+        // Deep, because Map.copyOf alone would share the value lists — a caller holding the list
+        // it passed could still empty a group after the catalogue was built. The staging map is a
+        // LinkedHashMap so the copy itself is deterministic; what comes out of Map.copyOf below is
+        // NOT ordered, and nothing here promises it is. An earlier version of this constructor kept
+        // the LinkedHashMap to preserve declaration order, which was doubly wrong: no reader wants
+        // that order, and both production catalogues hand this constructor a Map.ofEntries(...)
+        // whose order is already salted before the copy starts.
         Map<String, List<String>> copied = new LinkedHashMap<>();
         hotPath.forEach((subsystem, classes) -> {
             Objects.requireNonNull(subsystem, "subsystem name in the catalogue owned by " + owner.getName());
@@ -69,7 +70,7 @@ public final class JfrEventCatalogue {
             copied.put(subsystem, List.copyOf(classes));
         });
         deliberatelyCold.forEach(name -> requireName(name, "the cold list", owner));
-        this.hotPath = Collections.unmodifiableMap(copied);
+        this.hotPath = Map.copyOf(copied);
         this.deliberatelyCold = List.copyOf(deliberatelyCold);
         // A name in both buckets is a contradiction the coverage guard cannot see: it matches the
         // union of the two against the module's declared event classes, and a name counted twice
@@ -134,10 +135,11 @@ public final class JfrEventCatalogue {
     /**
      * Every hot-path event class in this catalogue, across all subsystems.
      *
-     * <p>In the order the catalogue was declared in: groups in declaration order, and each group's
-     * entries in theirs. That is what makes a report or a diff of this list readable — it answered
-     * in a different order on every JVM run for as long as the constructor ended in
-     * {@code Map.copyOf}.
+     * <p><strong>No defined order.</strong> Entries within one group keep the order that group was
+     * written in; the groups themselves come out in whatever order the backing immutable map
+     * iterates, which is salted per JVM run. Nothing needs more than that — the one caller collects
+     * this into a {@code TreeSet}, and {@link #warmHotPath} reads a single group rather than this.
+     * A caller that wants a stable sequence sorts it.
      *
      * @return their fully-qualified names; never {@code null}
      */
