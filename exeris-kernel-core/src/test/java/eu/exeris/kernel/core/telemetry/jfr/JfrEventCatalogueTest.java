@@ -152,8 +152,8 @@ class JfrEventCatalogueTest {
         @Test
         @DisplayName("the catalogue copies what it was given, down to the per-subsystem lists")
         void catalogueIsIndependentOfItsInputs() {
-            // Clearing the outer map is the easy half, and it was all the first version of this test
-            // did — Map.copyOf is shallow, so each group list was still the caller's to empty.
+            // Both halves: Map.copyOf is shallow, so clearing the outer map alone would leave each
+            // group list still the caller's to empty.
             List<String> mutableGroup = new java.util.ArrayList<>(List.of("a.Alpha"));
             Map<String, List<String>> mutable = new java.util.HashMap<>(Map.of("x", mutableGroup));
             List<String> mutableCold = new java.util.ArrayList<>(List.of("c.Cold"));

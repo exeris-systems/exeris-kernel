@@ -637,17 +637,16 @@ public final class SubsystemOrchestrator {
             // false and emits none of these events, so it should not pay their class load at boot.
             // That is only readable once start() has run, which is why the warm-up follows it.
             //
-            // The limit of warming here, stated rather than hidden: a subsystem that emits one of
-            // its own Core events from inside start() still initialises that class wherever that
-            // emit lands. Transport is the one place that happens, and NativeTcpCarrier.start()
-            // warms both of its groups itself, before it stands anything up, for exactly that.
+            // The limit of warming after start(): a subsystem that emits one of its own Core events
+            // from inside start() still initialises that class wherever that emit lands. Transport
+            // is the one place that happens, and NativeTcpCarrier.start() warms both of its groups
+            // itself, before it stands anything up, to cover it.
             //
-            // Its own catch, and not the one below. While this ran before start() the shared try
-            // was right: a warm-up that failed had failed the subsystem, and handleFailure was the
-            // correct route. After start() it is the wrong one — the subsystem is up and holding
-            // resources, and marking it FAILED over a diagnostic would take a mandatory one's boot
-            // down with it. JfrEventWarmup already swallows ClassNotFoundException and LinkageError
-            // per class on exactly this reasoning; this makes the seam agree with what it calls.
+            // Its own catch, and not the one below. The subsystem is up and holding resources by the
+            // time this runs, so marking it FAILED over a diagnostic would take a mandatory
+            // subsystem's boot down with it. JfrEventWarmup swallows ClassNotFoundException and
+            // LinkageError per class for the same reason; this keeps the seam and the thing it
+            // calls to one rule.
             if (subsystem.isRunning()) {
                 try {
                     CoreJfrEventCatalogue.warmHotPath(subsystem.name());

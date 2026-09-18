@@ -20,11 +20,10 @@ import java.util.Map;
  * this list complete, and it lives here for the same reason.
  *
  * <p>It builds a {@link JfrEventCatalogue} directly, as the other two do, and reads its buckets back
- * through it rather than through accessors of its own — a third shape of the same class was one more
- * place for the two to drift apart. An earlier version reached the warm-up through a seam on the
- * Community catalogue, on the stated ground that the Wall does not grant this module Core — which is
- * not so: this module's POM declares {@code exeris-kernel-core} and its sources already import from
- * it.
+ * through it rather than through accessors of its own: a second shape of the same accessor is a
+ * place for the two to drift apart. Reaching the warm-up through a seam on the Community catalogue
+ * instead would rest on the Wall not granting this module Core, which it does — this module's POM
+ * declares {@code exeris-kernel-core} and its sources import from it.
  *
  * @since 0.12
  */
@@ -44,14 +43,12 @@ final class KafkaJfrEventCatalogue {
     /**
      * The appender's event, in its own group because the engine cannot warm it.
      *
-     * <p>It was in the engine's group, which was wrong in a way no guard could see:
-     * {@code KafkaEventEngine} does not construct, hold or expose a
-     * {@code KafkaEventStreamAppender}. The appender's constructor is public, it is the only way to
-     * obtain one, and this module's own {@code CommunityKafkaEventStreamAppenderTckIT} and
-     * {@code …ReaderTckIT} build one without instantiating an engine at all. So the event was warmed
-     * by something unrelated to the class that emits it, and the path that does emit it —
-     * {@code append} → {@code send}, per append, on the caller's virtual thread inside the
-     * per-stream lock — warmed nothing.
+     * <p>Separate from the engine's group because {@code KafkaEventEngine} does not construct, hold
+     * or expose a {@code KafkaEventStreamAppender}: warming this event at engine start covers a path
+     * that never emits it. The appender's constructor is public and is the only way to obtain one —
+     * this module's own {@code CommunityKafkaEventStreamAppenderTckIT} and {@code …ReaderTckIT} build
+     * one with no engine — and the path that emits is {@code append} → {@code send}, per append, on
+     * the caller's virtual thread inside the per-stream lock.
      */
     private static final List<String> APPENDER_HOT_PATH = List.of(
             "eu.exeris.kernel.community.kafka.KafkaEventLogAppendFailedEvent");
@@ -100,10 +97,10 @@ final class KafkaJfrEventCatalogue {
     /**
      * Warms the appender's event class on the calling thread, at appender construction.
      *
-     * <p>A constructor, and that is not the seam the review of an earlier round rejected: that one
-     * was {@code PaqsScheduler}'s, a per-stream data structure built in a loop. An appender is a
-     * binding built once per event log, so its construction is a start in everything but name — and
-     * it is the only point every caller of {@code append} has passed through.
+     * <p>A constructor is a sound seam here and is not one for a per-stream data structure such as
+     * {@code PaqsScheduler}, which is built in a loop and would warm on every construction. An
+     * appender is a binding built once per event log, so its construction is a start in everything
+     * but name, and it is the one point every caller of {@code append} has passed through.
      */
     /* default */ static void warmAppender() {
         CATALOGUE.warmHotPath(APPENDER_KEY);

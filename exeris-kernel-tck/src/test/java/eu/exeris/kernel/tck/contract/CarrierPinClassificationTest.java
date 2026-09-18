@@ -22,11 +22,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * read out of {@code libjvm.so} beside {@code JavaThread::post_vthread_pinned_event}:
  * {@code "Waited for initialization of %s by another thread"},
  * {@code "VM call to %s.<clinit> on stack"}, {@code "Freeze or preempt failed (%d)"} and
- * {@code "Native or VM frame on stack"}. This file previously claimed each was one the JVM had
- * emitted on this repository's transport suite, which it could not support — no captured
- * {@code jdk.VirtualThreadPinned} event exists under version control — and under that claim four
- * cases used {@code "Native frame on stack"}, a spelling the JVM does not produce. A predicate
- * written against an invented string is tested against nothing.
+ * {@code "Native or VM frame on stack"}. Every reason string below must be one of those, verbatim:
+ * a predicate tested against an invented string is tested against nothing, and no captured
+ * {@code jdk.VirtualThreadPinned} event exists under version control to check a guess against.
+ * Regenerate the list with {@code strings $JAVA_HOME/lib/server/libjvm.so}.
  *
  * <p>The two "the JVM said nothing useful" cases read their reason from the classifier's own
  * constants rather than repeating the characters. A literal there is a test that keeps passing
@@ -83,11 +82,10 @@ class CarrierPinClassificationTest {
         @Test
         @DisplayName("an FFM frame below the window does not outrank a class-initialisation pin")
         void anFfmFrameBelowTheWindowDoesNotOutrankTheClinitReason() {
-            // The regression this pins. jdk.internal.foreign. was scanned over the whole stack for
-            // one review round, and on this kernel almost anything touching a MemorySegment carries
-            // such a frame somewhere below — so a real class-initialisation pin on an allocation or
-            // transport path was counted as a blocked carrier. A false failure is as damaging as a
-            // false silence, and the earlier reasoning had weighed only one of them.
+            // On this kernel almost anything touching a MemorySegment carries a jdk.internal.foreign.
+            // frame somewhere below the blocking site, so that prefix must not veto from depth: it
+            // would count a real class-initialisation pin on any allocation or transport path as a
+            // blocked carrier. A false failure costs as much as a false silence.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "VM call to eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent.<clinit> on stack",
                     List.of("eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent.emit",
@@ -111,10 +109,10 @@ class CarrierPinClassificationTest {
         @Test
         @DisplayName("a loader frame at the last index the window reaches is still set aside")
         void aLoaderFrameAtTheEdgeOfTheWindowIsSetAside() {
-            // Pins CLASS_WORK_FRAME_DEPTH from below, which nothing did: every other positive frame
-            // case here puts its marker at index 0, so the constant could have been 1 and the whole
-            // suite stayed green. Its counterpart, aLoaderFrameBelowTheBlockingSiteIsCounted, sits
-            // one index further out and pins the same constant from above.
+            // Pins CLASS_WORK_FRAME_DEPTH from below: every other positive frame case puts its
+            // marker at index 0, so without this one the constant could be 1 and the suite would
+            // stay green. Its counterpart, aLoaderFrameBelowTheBlockingSiteIsCounted, sits one index
+            // further out and pins the same constant from above.
             List<String> frames = List.of(
                     "eu.exeris.kernel.community.transport.NativeTcpStream.read",
                     "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite",
@@ -180,8 +178,8 @@ class CarrierPinClassificationTest {
         @DisplayName("a native-library load is counted — it shares a package with the class loaders")
         void nativeLibraryLoadIsCounted() {
             // jdk.internal.loader.NativeLibraries is where a carrier blocks while a native library
-            // is loaded, and this kernel loads OpenSSL. A package-prefix match filed it as class
-            // loading; an enumerated set of loader types does not.
+            // is loaded, and this kernel loads OpenSSL. A match on that package prefix would file it
+            // as class loading; the loader types are enumerated so that it cannot.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "Freeze or preempt failed (2)",
                     List.of("jdk.internal.loader.NativeLibraries.load",
@@ -209,10 +207,10 @@ class CarrierPinClassificationTest {
         @Test
         @DisplayName("a block inside a static initialiser is counted — a <clinit> is not a licence")
         void aBlockingFrameInsideAClinitIsCounted() {
-            // The hole this closes. Loading a native library is ordinary work for a static
-            // initialiser, so the <clinit> frame and the NativeLibraries frame appear together —
-            // and the <clinit> predicate alone set the whole pin aside. On a kernel that loads
-            // OpenSSL through FFM that is not a narrower fence, it is no fence.
+            // Loading a native library is ordinary work for a static initialiser, so the <clinit>
+            // frame and the NativeLibraries frame appear together. A <clinit> predicate that did not
+            // yield to the veto would set the whole pin aside, which on a kernel that loads OpenSSL
+            // through FFM is not a narrower fence but no fence.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "Native or VM frame on stack",
                     List.of("jdk.internal.loader.NativeLibraries.load",
@@ -225,7 +223,7 @@ class CarrierPinClassificationTest {
         @DisplayName("a reason that merely mentions <clinit> is counted, not read as the JVM's verdict")
         void aReasonMentioningClinitOutsideTheJvmPhrasingIsCounted() {
             // "VM call to <class>.<clinit> on stack" is what the JVM emits. A substring match on
-            // <clinit> alone let any other reason carrying those characters silence the fence.
+            // <clinit> alone lets any other reason carrying those characters silence the fence.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "Native or VM frame on stack while <clinit> was pending elsewhere", RECV_FRAMES))
                     .isFalse();
@@ -266,9 +264,9 @@ class CarrierPinClassificationTest {
         @Test
         @DisplayName("a type merely prefixed by a loader type name does not make a pin class work")
         void aReasonMentioningAnInitWaitOutsideTheJvmPhrasingIsCounted() {
-            // The same hole as aReasonMentioningClinitOutsideTheJvmPhrasingIsCounted, two lines away
-            // in the classifier and left open when that one was closed: the init-wait predicate was
-            // a bare contains() while its neighbour had been tightened to the JVM's own phrasing.
+            // The same hole as aReasonMentioningClinitOutsideTheJvmPhrasingIsCounted, on the other
+            // reason predicate: a substring match sets aside any pin whose reason merely mentions an
+            // initialisation wait. Both predicates match the JVM's phrasing, and both carry a case.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "Native or VM frame on stack while Waited for initialization of "
                             + "eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent was pending",
@@ -279,8 +277,8 @@ class CarrierPinClassificationTest {
         @Test
         @DisplayName("a type merely prefixed by a loader type name does not make a pin class work")
         void aTypePrefixedLikeALoaderIsCounted() {
-            // ClassLoaders and URLClassPath were matched without a trailing dot, so a type whose
-            // name only starts with theirs passed as class loading.
+            // A loader type matched without its trailing dot admits any type whose name merely
+            // starts with it.
             assertThat(CarrierPinClassification.isClassLoadingOrInit(
                     "Freeze or preempt failed (2)",
                     List.of("jdk.internal.loader.ClassLoadersDecoy.read",

@@ -100,9 +100,9 @@ public final class CarrierPinClassification {
      * whole-stack match here turns a real class-initialisation pin taken anywhere under a segment
      * operation into a counted failure.
      *
-     * <p>That is the half missed when this and {@link #ALWAYS_BLOCKING} were one list scanned
-     * whole-stack. "Widening a veto can only make the fence stricter" is true and is not the whole
-     * question — stricter is exactly what a false failure is made of.
+     * <p>Widening a veto narrows what is set aside, which cannot silence a pin and can manufacture a
+     * failure. Both directions govern where a type belongs: whole-stack only for a type that is
+     * never calling context.
      */
     private static final List<String> BLOCKING_NEAR_TOP = List.of(
             "jdk.internal.foreign.");
@@ -128,15 +128,14 @@ public final class CarrierPinClassification {
      * applies to <em>this</em> search only: {@link #ALWAYS_BLOCKING} is scanned over the whole stack,
      * because a veto can only make the fence stricter.
      *
-     * <p>What this bound is, honestly: a fallback. The two reason predicates carry the classification
-     * and they match the JVM's own format strings, so a pin the JVM explains never reaches this
-     * search at all. It exists for a JDK that stops populating {@code pinnedReason} — before 24 there
-     * was no such field — and for a recording that carries a stack and no reason. <strong>No
-     * recording in this repository substantiates any particular value</strong>: there is no captured
-     * {@code jdk.VirtualThreadPinned} event under version control to measure a depth from. Four is
-     * the shallowest window that holds the loader frames the JVM puts above the application frame
-     * that touched the class, and {@code CarrierPinClassificationTest} pins it from both sides so
-     * that changing it is a decision rather than a drift.
+     * <p>This bound governs a fallback. The two reason predicates carry the classification and match
+     * the JVM's own format strings, so a pin the JVM explains never reaches this search; it runs for
+     * a JDK that does not populate {@code pinnedReason} — the field exists from 24 — and for a
+     * recording that carries a stack and no reason. <strong>No recording in this repository
+     * substantiates any particular value</strong>: no captured {@code jdk.VirtualThreadPinned} event
+     * is under version control to measure a depth from. Four is the shallowest window holding the
+     * loader frames the JVM puts above the application frame that touched the class.
+     * {@code CarrierPinClassificationTest} pins it from both sides, so changing it fails a test.
      */
     public static final int CLASS_WORK_FRAME_DEPTH = 4;
 
@@ -198,9 +197,9 @@ public final class CarrierPinClassification {
     /**
      * The innermost {@code limit} frames, as {@code Type.method} strings.
      *
-     * <p>For a caller that reads only the innermost few. The classification itself takes the
-     * unbounded form, because its veto scans the whole stack; this one is for a report, which shows
-     * the top of a stack and not 256 frames of it.
+     * <p>For a caller that reads only the innermost few — a report shows the top of a stack and not
+     * 256 frames of it. The classification takes the unbounded form instead, because its veto scans
+     * the whole stack.
      *
      * <p>A frame the JDK left without a method or a type becomes {@link #UNKNOWN_FRAME} rather than
      * an NPE, and rather than being dropped: dropping one would shift every frame below it up, and
@@ -266,10 +265,9 @@ public final class CarrierPinClassification {
      * initialiser.
      *
      * <p>Matched on the shape the JVM emits, {@code "Waited for initialization of <class> by another
-     * thread"}, for the same reason its neighbour above is: this one was a bare
-     * {@code contains("Waited for initialization of")} while the {@code <clinit>} predicate beside
-     * it had already been tightened — the same substring hole, two lines apart, and only one of them
-     * had a test.
+     * thread"}, for the same reason its neighbour above is: a reason that merely contains the phrase
+     * is not a statement that an initialisation wait is what blocked, and a substring match would
+     * set such a pin aside. Both predicates carry a test for that case.
      *
      * @param reason the JVM's {@code pinnedReason}
      * @return {@code true} if the reason names a wait on another thread's class initialisation
@@ -287,10 +285,10 @@ public final class CarrierPinClassification {
      * @return {@code true} if the pin is cold-start class work rather than a blocked carrier
      */
     public static boolean isClassLoadingOrInit(String reason, List<String> frames) {
-        // Both vetoes run before the reason match, which returns early — while they sat after it,
-        // a "VM call to X.<clinit> on stack" reason set a pin aside without any frame being read.
-        // They differ in how far they look, and that difference is the whole of this method's
-        // judgement: ALWAYS_BLOCKING is never calling context, BLOCKING_NEAR_TOP frequently is.
+        // Both vetoes run before the reason match, which returns early: a "VM call to X.<clinit> on
+        // stack" reason would otherwise set a pin aside with no frame read at all. They differ in
+        // how far they look, and that difference is this method's judgement — ALWAYS_BLOCKING is
+        // never calling context, BLOCKING_NEAR_TOP frequently is.
         for (String frame : frames) {
             if (startsWithAny(frame, ALWAYS_BLOCKING)) {
                 return false;

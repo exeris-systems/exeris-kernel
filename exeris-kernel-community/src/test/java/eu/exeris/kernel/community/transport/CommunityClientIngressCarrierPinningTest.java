@@ -195,9 +195,8 @@ class CommunityClientIngressCarrierPinningTest {
 
         // assertNoPinning, not a hand-rolled assertion on pinnedEvents(): it logs what the fence set
         // aside BEFORE it decides, which is the only trace that the classification did anything at
-        // all. The version here read pinnedEvents() with a lazy withFailMessage, so on a green run
-        // — the run where a set-aside pin is most interesting — nothing was ever printed, while the
-        // javadoc above, the CHANGELOG and assertNoPinning's own comment all said it was.
+        // all. An assertion built on a lazy withFailMessage evaluates its report only when it fails,
+        // so a green run — the run where a set-aside pin is most interesting — would print nothing.
         JfrPinningMonitor.assertNoPinning(result, "client-ingress-recv");
     }
 

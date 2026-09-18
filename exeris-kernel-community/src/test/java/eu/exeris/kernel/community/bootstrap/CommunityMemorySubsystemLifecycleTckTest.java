@@ -20,13 +20,12 @@ import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
  * Binds the subsystem lifecycle contract to {@link CommunityMemorySubsystem}, and asserts the one
  * thing the contract cannot: that {@code stop()} actually released the allocator.
  *
- * <p>This binding exists because its absence was load-bearing. {@code CommunityMemorySubsystem}
- * implemented {@link Subsystem} directly and overrode nothing, so {@code isRunning()} answered the
- * interface default {@code false} — which tells {@code SubsystemOrchestrator.shutdown()} there is
- * nothing to stop. The {@code memoryAllocator.close()} in {@code stop()} is the only call of its
- * kind in this repository and had therefore never run in any process. Nothing caught it: the
- * orchestrator's shutdown tests use a {@code tracking("memory", …)} fake that <em>does</em> report
- * running, and the one test that touched the real class never shut anything down.
+ * <p>The subsystem under test owns the kernel's {@link MemoryAllocator}, and
+ * {@code SubsystemOrchestrator.shutdown()} calls {@code stop()} only for a subsystem reporting
+ * {@code isRunning()}. The {@code memoryAllocator.close()} in that method is the only call of its
+ * kind in this repository, so the lifecycle contract is what stands between this tier and an arena
+ * leak for the life of the JVM. The orchestrator's own shutdown tests cannot cover it: they drive a
+ * {@code tracking("memory", …)} fake, not this class.
  *
  * <p>No {@code withLifecycleContext} override: {@code initialize()} reads
  * {@code KernelProviders.CURRENT_CONFIG} through an {@code isBound()} check and falls back to
@@ -57,7 +56,8 @@ class CommunityMemorySubsystemLifecycleTckTest extends AbstractSubsystemLifecycl
         subsystem.stop();
 
         // Closed is not directly observable, so this reads the state through the behaviour the
-        // allocator's own contract documents for it: every allocate* method throws once closed.
+        // allocator's own contract documents: every allocate* method throws IllegalStateException
+        // once closed.
         assertThatIllegalStateException()
                 .isThrownBy(() -> allocator.allocateNetwork(64))
                 .withMessageContaining("closed");

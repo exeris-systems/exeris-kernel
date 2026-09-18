@@ -247,17 +247,14 @@ public final class JfrPinningMonitor {
      * The full report on a measured run: the counted pins, what the classification set aside, and
      * where the recording is.
      *
-     * <p>The banner states what the run measured — the counted pins and the set-aside ones — and
-     * not a verdict. It read {@code VERDICT: GUILTY}, which was true of the only path that reaches
-     * it today and not of what this method claims to be; a report that decides for its caller is
-     * wrong the first time a caller uses it for anything else.
+     * <p>The banner states what the run measured — the counted pins and the set-aside ones — and no
+     * verdict. This method does not know what its caller will do with the result, so a verdict in
+     * the banner is only ever right by coincidence.
      *
      * <p>Public for a binding outside this repository that asserts on {@link Result#pinnedEvents()}
      * itself rather than through {@link #assertNoPinning}, so that it need not carry a second
-     * formatter. <strong>There is no such caller in this repository</strong> — every binding here
-     * goes through {@code assertNoPinning}, including the one whose hand-rolled formatter this
-     * replaced, which was moved onto {@code assertNoPinning} rather than onto this. The earlier
-     * wording implied an in-repo caller that does not exist.
+     * formatter. <strong>There is no such caller in this repository</strong>: every binding here
+     * goes through {@code assertNoPinning}.
      *
      * @param result the outcome of a {@link #measure} run
      * @param label  human-readable label for the diagnostic
@@ -306,8 +303,7 @@ public final class JfrPinningMonitor {
      *
      * <p>Package-private so that {@code JfrPinningMonitorClassInitSelfTest} can assert on the
      * report's content without depending on which logging backend a test JVM resolved
-     * {@link System.Logger} to. The log itself is asserted separately, and this is what says the
-     * line would carry the pins if one were emitted.
+     * {@link System.Logger} to. That the line is emitted at all is asserted separately.
      *
      * @param result the outcome of a {@link #measure} run
      * @param label  human-readable label for the diagnostic
@@ -393,8 +389,8 @@ public final class JfrPinningMonitor {
      * The top of a pin's stack, for a report.
      *
      * <p>Built from {@link CarrierPinClassification#frames(RecordedStackTrace, int)} rather than
-     * from the recording again: this method derived {@code Type.method} a second way, which is how
-     * one of them came to null-guard a frame the JDK left without a method and the other did not.
+     * from the recording again. One derivation of {@code Type.method}, so that a frame the JDK left
+     * without a method is handled the same way wherever it is rendered.
      *
      * @param ev a recorded pin event; must not be {@code null}
      * @return the innermost {@value #REPORTED_FRAMES} frames, or a note that there were none

@@ -362,14 +362,15 @@ committer up.
 The warm-up runs on the thread that starts the subsystem. `SubsystemOrchestrator.doStart` warms
 Core's set for the subsystem it has just started, keyed by `Subsystem.name()`; each Community
 subsystem that owns a driver event group warms it from its own `start()`. Not every subsystem does:
-this module declares no event class under `graph` or `persistence`, so those two carry no call — one
-that resolved to an empty list was worse than none, because it satisfied the coverage guard while
-warming nothing, and the guard now fails a call it can prove is a no-op. That call sits in each subsystem
-rather than in a shared base class, and the reason is a defect this page previously described as a
-feature: three subsystems implement `Subsystem` directly, so a single hook in
-`AbstractCommunitySubsystem` missed them — including memory, whose allocation events are the hottest
-path the catalogue names. `JfrEventCatalogueCoverageTest` now fails the build if a subsystem does not
-warm, in addition to failing on an unclassified event class.
+this module declares no event class under `graph` or `persistence`, so those two carry no call. A
+call for a group that does not exist resolves to an empty list on every boot and satisfies the
+coverage guard while warming nothing, so the guard fails a call it can prove is a no-op.
+
+The call sits in each subsystem rather than in a shared base class, because three subsystems
+implement `Subsystem` directly and a single hook in `AbstractCommunitySubsystem` does not reach them
+— memory among them, whose allocation events are the hottest path the catalogue names.
+`JfrEventCatalogueCoverageTest` fails the build if a subsystem that owns a group does not warm it, in
+addition to failing on an unclassified event class.
 
 A subsystem that found no provider warms nothing, and that holds for **both** halves of the warm-up.
 On the Community side every subsystem puts the call behind the check it already had — an early
@@ -386,11 +387,10 @@ inherit the interface default.
 The warm-up call has its own `try`/`catch` inside `doStart`, separate from the one that routes a
 failed `start()` to `handleFailure`. A diagnostic that throws must not mark a subsystem that started
 cleanly as `FAILED`; it is logged at WARNING and the events initialise at their first emit, which is
-the behaviour the warm-up improves on rather than a new failure. A kernel with `http.mode=DISABLED` was loading the whole HTTP event group
-on its way to returning — the Community half stopped doing so first, and the Core half kept doing it
-for one review round longer.
+the behaviour the warm-up improves on rather than a new failure. Without both halves behind their
+checks, a kernel with `http.mode=DISABLED` loads the whole HTTP event group on its way to returning.
 
-Warming after `start()` returns has one limit, and it is stated rather than left implied: a
+Warming after `start()` returns has one limit: a
 subsystem that emits one of its own Core events from *inside* `start()` still initialises that class
 wherever that emit lands. Transport is the one place that happens, and `NativeTcpCarrier.start()`
 warms both of its groups itself for exactly that reason.

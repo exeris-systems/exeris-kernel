@@ -164,8 +164,8 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.storage.StorageBootstrapSelectedEvent",
             // The sink stack below is cold for a different reason than the rest of this list: not
             // because it is cheap or rare, but because this kernel has no seam to warm it from. The
-            // two entries do not share the same reason, and one comment covering both is how a
-            // false one gets written — the first is true of AsyncTelemetryDropEvent alone.
+            // two entries reach that state by different routes, so each states its own; a reason
+            // shared across entries holds for one of them and is false for the rest.
             //
             // AsyncTelemetryDropEvent: no main source anywhere in the reactor constructs an
             // AsyncTelemetrySink. AsyncTelemetrySink.start is called from AsyncTelemetrySinkTest
@@ -179,8 +179,9 @@ public final class CoreJfrEventCatalogue {
             // one level further out: nothing in this kernel calls createSinks, nothing binds
             // KernelProviders.TELEMETRY_SINKS, and no Subsystem reports the name "telemetry", so
             // there is no start the warm-up could hang off. A host that stands the sinks up
-            // initialises them where it builds them. The seam itself lands with the telemetry
-            // bootstrap in v0.13 — see the roadmap slice — and these move out of this list then.
+            // initialises them where it builds them. Whatever stands the sink stack up in the
+            // kernel is the seam these belong to — the v0.13 roadmap slice — and they leave this
+            // list with it.
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",

@@ -38,7 +38,7 @@ orchestration or bootstrap internals", which is false too — Community main sou
 `core.events.outbox.OutboxOrchestrator` and the `*Bootstrap` entry points of flow, graph, scheduling,
 persistence and events.
 
-**Roots, not exact packages, and the row now says so.** The reach is one level finer than the list:
+**The row enumerates roots, not exact packages.** The reach is one level finer than the list:
 30 distinct Core packages, all of them nesting under the 15 roots — `core.crypto` itself is never
 imported, only `core.crypto.openssl` and `core.crypto.tls`, and seven `*.jfr` and driver
 sub-packages (`core.http.jfr`, `core.security.jfr`, `core.transport.jfr`, `core.transport.syscall`,
@@ -47,11 +47,10 @@ named. Read as exact packages, the list would make each of those an undeclared b
 as roots, which is what it has always been, nothing sits outside it.
 
 **Measured on `fix/tck064-jfr-event-class-init-pinning`, 2026-09-17: 115 import statements across 82
-distinct types, in 30 packages under those 15 roots.** The figure this replaced — 111 across 79 —
-was not made stale by the branch that carried the `last-verified` stamp to 2026-09-17: it was
-already stale at that branch's merge base, where the same commands answer 113 and 80. A count in
-prose goes out of date on a cadence nothing here enforces, which is why the rule is the root set and
-the count is evidence of when it was last taken.
+distinct types, in 30 packages under those 15 roots.** A count in prose goes out of date on a cadence
+nothing here enforces — the same commands answer 113 and 80 on that branch's merge base — which is
+why the rule is the root set and the count is only evidence of when it was last taken. Re-measure
+before trusting it; do not re-stamp `last-verified` without doing so.
 
 Regenerate both. The exact reach, which is what a review of one import wants:
 

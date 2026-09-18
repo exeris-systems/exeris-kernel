@@ -60,9 +60,9 @@ final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
     @Override
     public void start() {
         // No driver warm-up here: this module declares no JFR event class for the graph subsystem,
-        // so CommunityJfrEventCatalogue has no "graph" group and the call this block used to make
-        // resolved to an empty list on every boot. It satisfied the coverage guard and did nothing
-        // else. The Core graph events are warmed by the orchestrator, behind isRunning() below.
+        // so CommunityJfrEventCatalogue has no "graph" group and a warmHotPath call would resolve to
+        // an empty list on every boot. The Core graph events are warmed by the orchestrator, behind
+        // isRunning() below.
         markRunning(graphEngine != null && graphEngine.isRunning());
     }
 

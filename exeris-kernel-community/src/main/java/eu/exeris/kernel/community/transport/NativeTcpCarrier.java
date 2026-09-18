@@ -227,14 +227,13 @@ public final class NativeTcpCarrier implements TransportEngine {
                 throw new IllegalStateException("StreamHandler must be set before start() in SERVER/DUAL mode");
             }
 
-            // After the preconditions and inside the try, both of which this sat outside of: an
-            // engine started without a handler paid fourteen class loads on its way to throwing,
-            // and a warm-up that threw anything JfrEventWarmup does not swallow left running set
-            // and no way back. Still before the first stream exists, which is the whole point — a
-            // JFR event class that first initialises on a virtual thread pins its carrier for the
-            // whole <clinit>. The orchestrator warms the Core group too when it starts the
-            // transport subsystem; this covers an engine built without one, and it covers the
-            // window inside this method, since the orchestrator's call comes after start() returns.
+            // After the preconditions and inside the try: an engine that is going to throw must not
+            // pay fourteen class loads first, and a warm-up that throws anything JfrEventWarmup does
+            // not swallow must leave running clear. Still before the first stream exists, which is
+            // the point — a JFR event class that first initialises on a virtual thread pins its
+            // carrier for the whole <clinit>. The orchestrator warms the Core group too when it
+            // starts the transport subsystem; this covers an engine built without one, and the
+            // window inside this method, since the orchestrator's call lands after start() returns.
             //
             // Both groups warm in both roles. Roughly half of the fourteen — the PAQS and acceptor
             // events — are unreachable in CLIENT mode, and that is a cost this accepts rather than

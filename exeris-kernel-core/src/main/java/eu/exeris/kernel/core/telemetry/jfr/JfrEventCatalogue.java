@@ -53,25 +53,23 @@ public final class JfrEventCatalogue {
         // boot; without these the message names neither the catalogue nor the entry.
         //
         // The Supplier overload, not the String one: this runs in a <clinit> on the boot path, and
-        // the String form builds every message by concatenation before finding out that none of
-        // them is needed. Which is every run but the broken one.
+        // the String form concatenates every message before finding out whether any is needed.
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(hotPath, () -> "hotPath of the catalogue owned by " + owner.getName());
         Objects.requireNonNull(deliberatelyCold,
                 () -> "deliberatelyCold of the catalogue owned by " + owner.getName());
-        // Deep, because Map.copyOf alone would share the value lists — a caller holding the list
-        // it passed could still empty a group after the catalogue was built. The staging map is a
+        // Deep, because Map.copyOf alone would share the value lists — a caller holding the list it
+        // passed could still empty a group after the catalogue was built. The staging map is a
         // LinkedHashMap so the copy itself is deterministic; what comes out of Map.copyOf below is
-        // NOT ordered, and nothing here promises it is. An earlier version of this constructor kept
-        // the LinkedHashMap to preserve declaration order, which was doubly wrong: no reader wants
-        // that order, and both production catalogues hand this constructor a Map.ofEntries(...)
-        // whose order is already salted before the copy starts.
+        // NOT ordered, and nothing here promises it is. Group order cannot be a property of this
+        // class in any case: the callers build their maps with Map.ofEntries, whose iteration order
+        // is salted per JVM run, so the order is gone before the copy starts.
         Map<String, List<String>> copied = new LinkedHashMap<>();
         hotPath.forEach((subsystem, classes) -> {
             Objects.requireNonNull(subsystem, () -> "subsystem name in the catalogue owned by " + owner.getName());
             Objects.requireNonNull(classes, () -> "hot-path group '" + subsystem + "'");
-            // The group label is passed, not the finished sentence: built here it was concatenated
-            // once per class name — 78 times on the Core catalogue — to be discarded every time.
+            // The group label is passed, not the finished sentence: built here it would be
+            // concatenated once per class name — 78 times on the Core catalogue — and discarded.
             classes.forEach(name -> requireName(name, subsystem, owner));
             copied.put(subsystem, List.copyOf(classes));
         });

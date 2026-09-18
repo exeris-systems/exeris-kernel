@@ -18,8 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * implements. It is here because two modules need it and neither can see the other's tests: the
  * Community guard enumerates through ArchUnit, the Kafka driver's through its own
  * {@code CodeSource}, and the driver is the module that depends on Community rather than the other
- * way round. Each module keeps its own enumeration — those are genuinely different mechanisms — and
- * shares the judgement made about the result, which was the part duplicated verbatim.
+ * way round. Each module keeps its own enumeration — those are different mechanisms, not copies —
+ * and shares the judgement made about the result, which is identical either way.
  *
  * <p>Plain collections rather than a catalogue type: this module sees the SPI and nothing below it,
  * and a warm-up catalogue is a Core concern.
@@ -60,9 +60,9 @@ public final class JfrEventCatalogueCoverage {
                         + "assertion below would pass on the empty set", what)
                 .isNotEmpty();
 
-        // Each subject computed once. AssertJ's withFailMessage(String, Object...) is eager, so
-        // passing the same expression as both the subject and a message argument ran every set
-        // operation in this method twice on a green run, which is every run.
+        // Each subject computed once. AssertJ's withFailMessage(String, Object...) is eager, so an
+        // expression passed as both the subject and a message argument is computed twice on every
+        // run, failing or not.
         Set<String> inBothBuckets = intersection(hotPath, cold);
         assertThat(inBothBuckets)
                 .withFailMessage("class(es) in both catalogue buckets at once for %s: %s", what, inBothBuckets)

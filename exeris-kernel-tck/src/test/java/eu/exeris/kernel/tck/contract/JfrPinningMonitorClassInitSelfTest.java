@@ -76,11 +76,9 @@ class JfrPinningMonitorClassInitSelfTest {
     /**
      * A fence that sets evidence aside and then says nothing is a fence nobody can audit.
      *
-     * <p>This is the half that had no test. The client-ingress regression asserted on
-     * {@code pinnedEvents()} with a lazy {@code withFailMessage}, so the report was built only when
-     * the fence failed — on a green run, the run where a set-aside pin is most interesting, nothing
-     * was printed at all, while the test's javadoc and the changelog both said it was. It asserts
-     * through {@code assertNoPinning} now, and this is what says that reports.
+     * <p>The report is emitted from the path a passing fence takes, so nothing else in the suite
+     * exercises it: an assertion built on a lazy {@code withFailMessage} evaluates its report only
+     * on failure, and a green run would print nothing.
      *
      * <p>Two assertions, because they can fail for different reasons: the text is read back
      * directly, and the log is captured through {@code java.util.logging}, which is what

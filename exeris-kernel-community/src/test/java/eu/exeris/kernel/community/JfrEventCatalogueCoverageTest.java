@@ -42,11 +42,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link Event} subclass in the module it claims, and every {@link Event} subclass the module
  * actually declares must appear in one of the two buckets.
  *
- * <p>Two seams carry the warm-up and each has a guard here: every Community subsystem warms its own
- * group from its {@code start()}, and {@code SubsystemOrchestrator.doStart} warms the Core group of
- * a subsystem that reports {@code isRunning()}. The second was added after the first shipped
- * without it — the Core half ran above every subsystem's guard, so the rule this file enforces held
- * for one half of the warm-up and not the other.
+ * <p>Two seams carry the warm-up and each has a guard here: a Community subsystem that owns an event
+ * group warms it from its own {@code start()}, and {@code SubsystemOrchestrator.doStart} warms the
+ * Core group of a subsystem that reports {@code isRunning()}. Both halves need a guard, because the
+ * rule this file enforces — a subsystem that found no provider warms nothing — is satisfiable by one
+ * half alone.
  *
  * <p>This module is the first point in the reactor where Core and Community are both on one
  * classpath, which is why the guard lives here — the same reasoning, and the same placement, as
@@ -117,11 +117,10 @@ class JfrEventCatalogueCoverageTest {
                                 + "virtual thread emits one first", subsystem.getSimpleName())
                         .isTrue();
             } else {
-                // The other direction, and it is not symmetry for its own sake. graph and
-                // persistence carried a warmHotPath call for groups this module does not declare,
-                // so it resolved to an empty list on every boot: a call that existed only to
-                // satisfy the assertion above. Reading that failure message literally is how it got
-                // there, and this is what stops the next one.
+                // The other direction, and not symmetry for its own sake: a warmHotPath call for a
+                // group this module does not declare resolves to an empty list on every boot, and
+                // satisfies the assertion above while warming nothing. The message above asks for
+                // the call; only this asks whether there is anything for it to warm.
                 assertThat(warmsItsGroup(subsystem))
                         .withFailMessage("%s calls CommunityJfrEventCatalogue.warmHotPath, but this module declares "
                                 + "no event group under that subsystem name — the call can only ever be a no-op. "
@@ -153,13 +152,11 @@ class JfrEventCatalogueCoverageTest {
     static void everySubsystemAnswersIsRunningItself(JavaClasses classes) {
         // The precondition for the guard below it. The orchestrator warms a subsystem's Core group
         // only when it reports isRunning(), so a subsystem that never overrides the method inherits
-        // the interface default false and silently loses that half of its warm-up — and, for the
-        // same reason, is never stopped, because shutdown() reads the same answer.
+        // the interface default false and loses that half of its warm-up — and is never stopped,
+        // because shutdown() reads the same answer.
         //
-        // CommunityMemorySubsystem was exactly that, and nothing said so: the lifecycle TCK's own
-        // javadoc recorded the hole (it asserted false-after-stop with no true-after-start to pair
-        // it with) and only three subsystems bind that TCK at all. This is structural and covers
-        // all of them: the declaration has to exist somewhere in the class's own hierarchy.
+        // Structural, and covering every subsystem rather than the four that bind the lifecycle TCK:
+        // the declaration has to exist somewhere in the class's own hierarchy.
         List<JavaClass> subsystems = concreteSubsystems(classes);
 
         assertThat(subsystems)

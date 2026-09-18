@@ -32,13 +32,12 @@ import java.util.function.UnaryOperator;
  * </ol>
  *
  * <p>Extends {@link AbstractCommunitySubsystem} for its running flag, and that is load-bearing
- * rather than tidiness. This class implemented {@link Subsystem} directly and overrode nothing, so
- * {@link Subsystem#isRunning()} answered the interface default {@code false} — which the SPI
- * documents as meaning "there is nothing to shut down". Two things followed, and neither was
- * visible: {@code SubsystemOrchestrator.shutdown()} skipped this subsystem, so the
- * {@code memoryAllocator.close()} below had never run in any process; and once the orchestrator
- * began gating the Core warm-up on the same answer, the Core {@code memory} event group — the
- * allocation events, the hottest in the catalogue — stopped being warmed at all.
+ * rather than tidiness. Two things read {@link Subsystem#isRunning()} and both go silent when it
+ * answers the interface default {@code false}: {@code SubsystemOrchestrator.shutdown()} skips the
+ * subsystem, so the {@code memoryAllocator.close()} below never runs and every arena this tier holds
+ * leaks for the life of the JVM; and the orchestrator gates the Core warm-up on the same answer, so
+ * the Core {@code memory} event group — the allocation events, the hottest in the catalogue — is
+ * never warmed. A subsystem here that holds a resource must report through {@code markRunning}.
  *
  * @since 0.5
  */
@@ -79,10 +78,9 @@ final class CommunityMemorySubsystem extends AbstractCommunitySubsystem {
             // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
             // it. Behind the same check markRunning takes, as every other Community subsystem does.
             //
-            // There is no provider to fail to find here — initialize() always builds an allocator —
-            // so this guard is not about a missing driver. It is about start() reached without
-            // initialize(), which is the only way this field is null and the only state in which
-            // there is nothing to warm and nothing to stop.
+            // This tier has no provider to fail to find — initialize() always builds an allocator —
+            // so the guard reads as start() reached without initialize(). That is the only state in
+            // which there is nothing to warm and nothing to stop.
             CommunityJfrEventCatalogue.warmHotPath(name());
         }
         // The allocator needs nothing else started; what start() owes is the running flag, because
