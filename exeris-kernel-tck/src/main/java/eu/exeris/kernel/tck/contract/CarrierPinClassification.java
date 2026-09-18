@@ -125,7 +125,7 @@ public final class CarrierPinClassification {
      * <p>The blocking site is at the top. Deeper frames are the caller's context, and a stack 256
      * deep almost always has a {@code loadClass} or a {@code <clinit>} somewhere in it, so an
      * unbounded search here would let any such frame outrank a genuinely blocked carrier. The bound
-     * applies to <em>this</em> search only: {@link #BLOCKING_TYPES} is scanned over the whole stack,
+     * applies to <em>this</em> search only: {@link #ALWAYS_BLOCKING} is scanned over the whole stack,
      * because a veto can only make the fence stricter.
      *
      * <p>What this bound is, honestly: a fallback. The two reason predicates carry the classification
