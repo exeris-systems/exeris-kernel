@@ -60,33 +60,38 @@ public final class JfrEventCatalogueCoverage {
                         + "assertion below would pass on the empty set", what)
                 .isNotEmpty();
 
-        assertThat(intersection(hotPath, cold))
-                .withFailMessage("class(es) in both catalogue buckets at once for %s: %s",
-                        what, intersection(hotPath, cold))
+        // Each subject computed once. AssertJ's withFailMessage(String, Object...) is eager, so
+        // passing the same expression as both the subject and a message argument ran every set
+        // operation in this method twice on a green run, which is every run.
+        Set<String> inBothBuckets = intersection(hotPath, cold);
+        assertThat(inBothBuckets)
+                .withFailMessage("class(es) in both catalogue buckets at once for %s: %s", what, inBothBuckets)
                 .isEmpty();
 
-        assertThat(duplicatesWithin(hotPath))
-                .withFailMessage("name(s) listed twice in the hot-path map for %s: %s",
-                        what, duplicatesWithin(hotPath))
+        Set<String> warmedTwice = duplicatesWithin(hotPath);
+        assertThat(warmedTwice)
+                .withFailMessage("name(s) listed twice in the hot-path map for %s: %s", what, warmedTwice)
                 .isEmpty();
 
-        assertThat(duplicatesWithin(cold))
-                .withFailMessage("name(s) listed twice in deliberatelyCold() for %s: %s",
-                        what, duplicatesWithin(cold))
+        Set<String> coldTwice = duplicatesWithin(cold);
+        assertThat(coldTwice)
+                .withFailMessage("name(s) listed twice in deliberatelyCold() for %s: %s", what, coldTwice)
                 .isEmpty();
 
         Set<String> classified = new TreeSet<>(hotPath);
         classified.addAll(cold);
 
-        assertThat(difference(declared, classified))
+        Set<String> unclassified = difference(declared, classified);
+        assertThat(unclassified)
                 .withFailMessage("JFR event class(es) for %s are in neither catalogue bucket. Add each to its "
                         + "hot-path group, or to deliberatelyCold() with the reason it can wait: %s",
-                        what, difference(declared, classified))
+                        what, unclassified)
                 .isEmpty();
 
-        assertThat(difference(classified, declared))
+        Set<String> unresolved = difference(classified, declared);
+        assertThat(unresolved)
                 .withFailMessage("catalogue name(s) for %s do not resolve to a JFR event class there — renamed, "
-                        + "moved, or deleted: %s", what, difference(classified, declared))
+                        + "moved, or deleted: %s", what, unresolved)
                 .isEmpty();
     }
 

@@ -51,10 +51,14 @@ public final class JfrEventCatalogue {
         // Checked rather than left to NPE somewhere inside the copies below. A catalogue is built in
         // its holder's <clinit>, so a bad argument surfaces as an ExceptionInInitializerError at
         // boot; without these the message names neither the catalogue nor the entry.
+        //
+        // The Supplier overload, not the String one: this runs in a <clinit> on the boot path, and
+        // the String form builds every message by concatenation before finding out that none of
+        // them is needed. Which is every run but the broken one.
         Objects.requireNonNull(owner, "owner");
-        Objects.requireNonNull(hotPath, "hotPath of the catalogue owned by " + owner.getName());
+        Objects.requireNonNull(hotPath, () -> "hotPath of the catalogue owned by " + owner.getName());
         Objects.requireNonNull(deliberatelyCold,
-                "deliberatelyCold of the catalogue owned by " + owner.getName());
+                () -> "deliberatelyCold of the catalogue owned by " + owner.getName());
         // Deep, because Map.copyOf alone would share the value lists — a caller holding the list
         // it passed could still empty a group after the catalogue was built. The staging map is a
         // LinkedHashMap so the copy itself is deterministic; what comes out of Map.copyOf below is
@@ -64,12 +68,14 @@ public final class JfrEventCatalogue {
         // whose order is already salted before the copy starts.
         Map<String, List<String>> copied = new LinkedHashMap<>();
         hotPath.forEach((subsystem, classes) -> {
-            Objects.requireNonNull(subsystem, "subsystem name in the catalogue owned by " + owner.getName());
-            Objects.requireNonNull(classes, "hot-path group '" + subsystem + "'");
-            classes.forEach(name -> requireName(name, "hot-path group '" + subsystem + "'", owner));
+            Objects.requireNonNull(subsystem, () -> "subsystem name in the catalogue owned by " + owner.getName());
+            Objects.requireNonNull(classes, () -> "hot-path group '" + subsystem + "'");
+            // The group label is passed, not the finished sentence: built here it was concatenated
+            // once per class name — 78 times on the Core catalogue — to be discarded every time.
+            classes.forEach(name -> requireName(name, subsystem, owner));
             copied.put(subsystem, List.copyOf(classes));
         });
-        deliberatelyCold.forEach(name -> requireName(name, "the cold list", owner));
+        deliberatelyCold.forEach(name -> requireName(name, null, owner));
         this.hotPath = Map.copyOf(copied);
         this.deliberatelyCold = List.copyOf(deliberatelyCold);
         // A name in both buckets is a contradiction the coverage guard cannot see: it matches the
@@ -96,12 +102,14 @@ public final class JfrEventCatalogue {
      * Rejects a class name that could never resolve, naming where it was found.
      *
      * @param name  the catalogue entry
-     * @param where the bucket it sits in, for the message
+     * @param group the hot-path group it sits in, or {@code null} for the cold list; used only to
+     *              build the message, and only when one is needed
      * @param owner the catalogue's owner, for the message
      */
-    private static void requireName(String name, String where, Class<?> owner) {
+    private static void requireName(String name, String group, Class<?> owner) {
         if (name == null || name.isBlank()) {
-            throw new IllegalArgumentException("blank JFR event class name in " + where
+            throw new IllegalArgumentException("blank JFR event class name in "
+                    + (group == null ? "the cold list" : "hot-path group '" + group + "'")
                     + " of the catalogue owned by " + owner.getName());
         }
     }
