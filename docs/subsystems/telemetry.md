@@ -327,7 +327,7 @@ buckets:
 |:--|:--|
 | `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 48 warmed, 43 deliberately cold |
 | `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 34 event classes — 30 warmed, 4 deliberately cold |
-| `KafkaJfrEventCatalogue` (`eu.exeris.kernel.community.kafka`) | 3 event classes — all warmed; the driver ships its own catalogue and its own guard, because the Community guard runs in the module it depends on and cannot see it |
+| `KafkaJfrEventCatalogue` (`eu.exeris.kernel.community.kafka`) | 3 event classes — all warmed, in two groups because the driver has two seams: `kafka-engine` warms at `KafkaEventEngine.start()`, `kafka-appender` at `KafkaEventStreamAppender` construction. The driver ships its own catalogue and its own guard, because the Community guard runs in the module it depends on and cannot see it |
 
 A class is **warmed** when a virtual thread can reach it on a path that produces it concurrently —
 per request, per stream, per step, per allocation. It is left **cold** when it is emitted once per
@@ -361,7 +361,10 @@ committer up.
 
 The warm-up runs on the thread that starts the subsystem. `SubsystemOrchestrator.doStart` warms
 Core's set for the subsystem it has just started, keyed by `Subsystem.name()`; each Community
-subsystem warms its driver's set from its own `start()`. That call sits in each subsystem
+subsystem that owns a driver event group warms it from its own `start()`. Not every subsystem does:
+this module declares no event class under `graph` or `persistence`, so those two carry no call — one
+that resolved to an empty list was worse than none, because it satisfied the coverage guard while
+warming nothing, and the guard now fails a call it can prove is a no-op. That call sits in each subsystem
 rather than in a shared base class, and the reason is a defect this page previously described as a
 feature: three subsystems implement `Subsystem` directly, so a single hook in
 `AbstractCommunitySubsystem` missed them — including memory, whose allocation events are the hottest
@@ -371,9 +374,19 @@ warm, in addition to failing on an unclassified event class.
 A subsystem that found no provider warms nothing, and that holds for **both** halves of the warm-up.
 On the Community side every subsystem puts the call behind the check it already had — an early
 return, or the condition `markRunning` takes. On the Core side the orchestrator asks
-`Subsystem.isRunning()`, which is the same check `stopAll` already trusts to decide what it has to
+`Subsystem.isRunning()`, which is the same check `shutdown()` already trusts to decide what it has to
 stop; that is only readable once `start()` has run, which is why the Core warm-up follows `start()`
-rather than preceding it. A kernel with `http.mode=DISABLED` was loading the whole HTTP event group
+rather than preceding it. It also means a subsystem that never overrides `isRunning()` loses its Core
+warm-up entirely — `CommunityMemorySubsystem` did, and the same default had been costing it its
+`stop()` since long before any of this. Two guards now cover that: the lifecycle TCK asserts
+`isRunning()` after `start()` against what each binding declares, and an ArchUnit check requires
+every concrete Community subsystem to declare the method somewhere in its own hierarchy rather than
+inherit the interface default.
+
+The warm-up call has its own `try`/`catch` inside `doStart`, separate from the one that routes a
+failed `start()` to `handleFailure`. A diagnostic that throws must not mark a subsystem that started
+cleanly as `FAILED`; it is logged at WARNING and the events initialise at their first emit, which is
+the behaviour the warm-up improves on rather than a new failure. A kernel with `http.mode=DISABLED` was loading the whole HTTP event group
 on its way to returning — the Community half stopped doing so first, and the Core half kept doing it
 for one review round longer.
 

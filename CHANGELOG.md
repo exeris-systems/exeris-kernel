@@ -87,6 +87,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The memory subsystem is stopped at shutdown, and its allocator is released.**
+  `CommunityMemorySubsystem` implemented `Subsystem` directly and overrode nothing, so
+  `isRunning()` answered the interface default `false` — which the SPI documents as telling the
+  orchestrator there is nothing to shut down. `SubsystemOrchestrator.shutdown()` therefore skipped
+  it, and the `memoryAllocator.close()` in its `stop()` — the only call of its kind in the kernel —
+  had never run in any process. It now extends `AbstractCommunitySubsystem` and reports through
+  `markRunning`, like every other Community subsystem. **Behaviour change:** `close()` ends the
+  validity of any segment still loaned out; the memory subsystem is FOUNDATION, so it stops last in
+  the reverse-topological order. Two guards keep the class of defect from returning: the subsystem
+  lifecycle TCK asserts `isRunning()` after `start()` against what each binding declares — the
+  companion check its own javadoc had recorded as missing — and an architecture test requires every
+  concrete Community subsystem to declare `isRunning()` in its own hierarchy.
+
 - **A transport engine no longer initialises its JFR event classes on a stream's virtual thread.**
   `StreamLifecycleEvent` is emitted from the PAQS scheduler's `finally` block, so whichever stream
   finished first ran its `<clinit>` — and a virtual thread inside a `<clinit>` cannot unmount, while
@@ -119,8 +132,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   why cold is a decision rather than an omission; where a class is cold because the kernel never
   stands up the component that emits it, the catalogue says so. `JfrEventCatalogueCoverageTest` fails
   the build on an event class in neither bucket, on a catalogue name that no longer resolves, on a
-  subsystem whose `start()` does not reach the warm-up, and on a `doStart` that has lost either the
-  Core warm-up call or the check it sits behind.
+  subsystem whose `start()` does not reach the warm-up, on a subsystem that warms a group this
+  module does not declare — a call that can only be a no-op — and on a `doStart` that has lost
+  either the Core warm-up call or the check it sits behind. The Kafka driver warms in two places
+  rather than one: its engine's two events at `KafkaEventEngine.start()`, and the event log
+  appender's at that appender's construction, which is the only seam every caller of `append` passes
+  through — the engine neither builds nor holds one.
 
 - **Every carrier-pinning fence stops counting a cold JVM, not just the client-ingress one.**
   `JfrPinningMonitor` — the instrument behind every subsystem's carrier-pinning binding — counted
