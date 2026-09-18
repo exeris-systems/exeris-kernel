@@ -60,7 +60,10 @@ class KafkaJfrEventCatalogueTest {
     @Test
     @DisplayName("warming this driver's events initialises them and does not throw")
     void warmingIsSurvivable() throws ClassNotFoundException {
-        KafkaJfrEventCatalogue.warmHotPath();
+        // Both seams, because the catalogue now has two groups and a test that warmed one of them
+        // would assert over the union below while having initialised half of it.
+        KafkaJfrEventCatalogue.warmEngine();
+        KafkaJfrEventCatalogue.warmAppender();
 
         for (String name : KafkaJfrEventCatalogue.catalogue().allHotPath()) {
             // Loaded with initialize=false: if the warm-up did its work this only confirms the name

@@ -31,29 +31,47 @@ import java.util.Map;
 final class KafkaJfrEventCatalogue {
 
     /**
-     * All three of this driver's events, and all three warmed.
+     * The engine's own events: publish failure and consumer-loop failure.
      *
-     * <p>Each fires from the publish or consume path, which are virtual threads, and a publish
+     * <p>Both fire from the publish or consume path, which are virtual threads, and a publish
      * failure arrives for every in-flight message at once — which is the worst moment to be loading
      * a class.
      */
-    private static final List<String> HOT_PATH = List.of(
+    private static final List<String> ENGINE_HOT_PATH = List.of(
             "eu.exeris.kernel.community.kafka.KafkaPublishFailedEvent",
-            "eu.exeris.kernel.community.kafka.KafkaEventLogAppendFailedEvent",
             "eu.exeris.kernel.community.kafka.KafkaConsumerLoopFailedEvent");
+
+    /**
+     * The appender's event, in its own group because the engine cannot warm it.
+     *
+     * <p>It was in the engine's group, which was wrong in a way no guard could see:
+     * {@code KafkaEventEngine} does not construct, hold or expose a
+     * {@code KafkaEventStreamAppender}. The appender's constructor is public, it is the only way to
+     * obtain one, and this module's own {@code CommunityKafkaEventStreamAppenderTckIT} and
+     * {@code …ReaderTckIT} build one without instantiating an engine at all. So the event was warmed
+     * by something unrelated to the class that emits it, and the path that does emit it —
+     * {@code append} → {@code send}, per append, on the caller's virtual thread inside the
+     * per-stream lock — warmed nothing.
+     */
+    private static final List<String> APPENDER_HOT_PATH = List.of(
+            "eu.exeris.kernel.community.kafka.KafkaEventLogAppendFailedEvent");
 
     /** Empty, and the guard is what keeps that honest rather than a claim in this sentence. */
     private static final List<String> DELIBERATELY_COLD = List.of();
 
-    /** The one group key, named once so the warm-up and the catalogue cannot disagree about it. */
-    private static final String ENGINE_KEY = "kafka";
+    /** Group keys, named once so a warm-up and the catalogue cannot disagree about them. */
+    private static final String ENGINE_KEY = "kafka-engine";
+
+    private static final String APPENDER_KEY = "kafka-appender";
 
     /**
-     * Keyed by the engine rather than by a subsystem name: this driver has no {@code Subsystem} of
-     * its own, and {@code KafkaEventEngine.start()} is what warms it.
+     * Keyed by what warms each group rather than by a subsystem name: this driver has no
+     * {@code Subsystem} of its own, and its two seams own different events.
      */
     private static final JfrEventCatalogue CATALOGUE = new JfrEventCatalogue(
-            KafkaJfrEventCatalogue.class, Map.of(ENGINE_KEY, HOT_PATH), DELIBERATELY_COLD);
+            KafkaJfrEventCatalogue.class,
+            Map.of(ENGINE_KEY, ENGINE_HOT_PATH, APPENDER_KEY, APPENDER_HOT_PATH),
+            DELIBERATELY_COLD);
 
     private KafkaJfrEventCatalogue() {
         // Static catalogue — no instances.
@@ -69,13 +87,25 @@ final class KafkaJfrEventCatalogue {
     }
 
     /**
-     * Warms this driver's event classes on the calling thread, at engine start.
+     * Warms the engine's event classes on the calling thread, at {@code KafkaEventEngine.start()}.
      *
      * <p>No-arg, unlike the other two holders' {@code warmHotPath(String)}: they are keyed by
-     * {@code Subsystem.name()} and dispatch on it, and this driver has one group keyed by an engine.
-     * A parameter here would be a key the caller could only ever get wrong.
+     * {@code Subsystem.name()} and dispatch on it, while this driver's groups are keyed by the seam
+     * that warms them. A parameter here would be a key the caller could only ever get wrong.
      */
-    /* default */ static void warmHotPath() {
+    /* default */ static void warmEngine() {
         CATALOGUE.warmHotPath(ENGINE_KEY);
+    }
+
+    /**
+     * Warms the appender's event class on the calling thread, at appender construction.
+     *
+     * <p>A constructor, and that is not the seam the review of an earlier round rejected: that one
+     * was {@code PaqsScheduler}'s, a per-stream data structure built in a loop. An appender is a
+     * binding built once per event log, so its construction is a start in everything but name — and
+     * it is the only point every caller of {@code append} has passed through.
+     */
+    /* default */ static void warmAppender() {
+        CATALOGUE.warmHotPath(APPENDER_KEY);
     }
 }
