@@ -642,11 +642,21 @@ public final class SubsystemOrchestrator {
             // emit lands. Transport is the one place that happens, and NativeTcpCarrier.start()
             // warms both of its groups itself, before it stands anything up, for exactly that.
             //
-            // Inside the try, so that a warm-up that does fail takes the same route to
-            // handleFailure as a start() that does — and an optional subsystem can still be
-            // dropped under DEGRADE instead of taking the boot down with it.
+            // Its own catch, and not the one below. While this ran before start() the shared try
+            // was right: a warm-up that failed had failed the subsystem, and handleFailure was the
+            // correct route. After start() it is the wrong one — the subsystem is up and holding
+            // resources, and marking it FAILED over a diagnostic would take a mandatory one's boot
+            // down with it. JfrEventWarmup already swallows ClassNotFoundException and LinkageError
+            // per class on exactly this reasoning; this makes the seam agree with what it calls.
             if (subsystem.isRunning()) {
-                CoreJfrEventCatalogue.warmHotPath(subsystem.name());
+                try {
+                    CoreJfrEventCatalogue.warmHotPath(subsystem.name());
+                } catch (RuntimeException ex) { // NOPMD — a warm-up must not fail a started subsystem
+                    LOG.log(System.Logger.Level.WARNING,
+                            "  [{0}] JFR event warm-up failed; the subsystem is running and its events will "
+                                    + "initialise at their first emit: {1}",
+                            subsystem.name(), ex.toString());
+                }
             }
             LOG.log(System.Logger.Level.INFO,
                     "  [{0}] started ({1} ms)", subsystem.name(), elapsedMs(startNanos));
