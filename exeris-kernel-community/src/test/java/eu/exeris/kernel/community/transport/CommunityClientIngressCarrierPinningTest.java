@@ -14,9 +14,7 @@ import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStream;
-import jdk.jfr.Recording;
-import jdk.jfr.consumer.RecordedEvent;
-import jdk.jfr.consumer.RecordingFile;
+import eu.exeris.kernel.tck.contract.JfrPinningMonitor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -26,15 +24,13 @@ import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,11 +59,45 @@ import static org.assertj.core.api.Assertions.assertThat;
  * is deliberately far larger than the carrier pool so the scarce-carrier deadlock would re-manifest
  * if any client RECV ever blocked a carrier again. The test fails if:
  * <ol>
- *   <li>any {@code jdk.VirtualThreadPinned} event &gt; {@value #PIN_THRESHOLD_MS} ms is recorded
- *       (the same fence the {@link eu.exeris.kernel.tck.contract.JfrPinningMonitor} uses), <em>or</em></li>
+ *   <li>any {@code jdk.VirtualThreadPinned} event over the fence
+ *       ({@value JfrPinningMonitor#DEFAULT_THRESHOLD_MS} ms) is recorded that is not class loading
+ *       or class initialisation — the fence value is
+ *       {@link eu.exeris.kernel.tck.contract.JfrPinningMonitor}'s own, and what is counted against
+ *       it is narrower (see below), <em>or</em></li>
  *   <li>the client VTs do not all complete the round-trip within {@value #COMPLETION_TIMEOUT_SECONDS} s
  *       — i.e. the carrier-starvation deadlock returned.</li>
  * </ol>
+ *
+ * <h2>What the fence counts, and what it must not</h2>
+ * <p>Not every {@code jdk.VirtualThreadPinned} event is evidence of a blocking recv. Class loading
+ * and class <em>initialisation</em> pin a carrier too, and for a reason that has nothing to do with
+ * this test's subject: a virtual thread running a {@code <clinit>} cannot unmount, and every other
+ * virtual thread waiting on that initialisation blocks pinned as well — JEP 491 unpinned
+ * {@code synchronized} and {@code Object.wait}, but not class-initialisation waits. On this test's
+ * two-carrier model the waiters hold the carriers the initialiser needs, so a cold-start class
+ * initialisation stretches with CPU pressure: measured at 0.4–1 ms per pin on an idle 12-core host,
+ * 15–16 ms on the same host under load, and past {@value JfrPinningMonitor#DEFAULT_THRESHOLD_MS} ms on a constrained
+ * runner. That is what made this test fail on
+ * {@code eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent} — the JFR event class the PAQS
+ * scheduler emits from its {@code finally} block, initialised by whichever stream finished first.
+ *
+ * <p>Two things follow, and both are here:
+ * <ol>
+ *   <li>A full warm-up round-trip runs <em>before</em> the recording starts, so the classes the
+ *       measured path needs are already loaded and initialised. The engine's {@code start()} does
+ *       the same for the transport JFR event classes in production, through
+ *       {@code CommunityJfrEventCatalogue} — a one-time carrier stall at the first stream
+ *       completion is a runtime defect, not only a test artefact.</li>
+ *   <li>A pin whose reason or stack is class loading or class initialisation is reported but does
+ *       not fail the test. Everything else does: a blocking recv on a carrier pins with a native
+ *       frame on the stack, which is a different reason and a different stack.</li>
+ * </ol>
+ *
+ * <p>The recording is taken by {@link eu.exeris.kernel.tck.contract.JfrPinningMonitor}, which is
+ * also what reads it — there is one JFR reader in this repository, not a second copy here. It writes
+ * under {@code target/jfr-reports/pinning} and never deletes, so a failing run has its {@code .jfr}
+ * named in the message: the reason and the stack are the whole diagnosis, and the thread name alone
+ * is not.
  *
  * <h2>Faithful 2-vCPU carrier model</h2>
  * <p>The defect only manifests when carriers are <em>scarce</em>. A 12-core host hides it: there are
@@ -88,14 +118,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("TCK-064: client RECV round-trip never pins a carrier (scarce-carrier model)")
 class CommunityClientIngressCarrierPinningTest {
 
-    private static final String VT_PINNED_EVENT = "jdk.VirtualThreadPinned";
-    private static final long PIN_THRESHOLD_MS = 20L;
-
     /** Far larger than the 2-carrier model so the scarce-carrier deadlock would re-surface. */
     private static final int CLIENT_COUNT = 32;
     private static final int MESSAGES_PER_CLIENT = 4;
     private static final int MESSAGE_SIZE = 256;
     private static final long COMPLETION_TIMEOUT_SECONDS = 60L;
+    /**
+     * Bounds each half of the warm-up — the round-trip, then the wait for its server handler. Twice
+     * this plus {@link #COMPLETION_TIMEOUT_SECONDS} stays inside the method's own 90 s timeout, so a
+     * stalled warm-up fails with a sentence rather than as an unexplained JUnit timeout.
+     */
+    private static final long WARMUP_TIMEOUT_SECONDS = 10L;
 
     @Test
     @Timeout(value = 90, unit = TimeUnit.SECONDS)
@@ -109,49 +142,45 @@ class CommunityClientIngressCarrierPinningTest {
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         TransportEngine server = createEngine(provider, allocator, TransportMode.SERVER, port);
         AtomicInteger serverEchoCount = new AtomicInteger();
-        server.setStreamHandler(stream -> echoUntilClosed(stream, allocator, serverEchoCount));
+        AtomicInteger serverHandlersCompleted = new AtomicInteger();
+        server.setStreamHandler(stream -> {
+            echoUntilClosed(stream, allocator, serverEchoCount);
+            serverHandlersCompleted.incrementAndGet();
+        });
 
         // One client engine, one client reactor — N client streams multiplex onto it. This is the
         // exact production shape the TCK-064 fix targets (no per-stream blocking-recv VT).
         TransportEngine client = createEngine(provider, allocator, TransportMode.CLIENT, 0);
 
-        Path jfr = Files.createTempFile("tck064-client-recv-pinning-", ".jfr");
         CountDownLatch done = new CountDownLatch(CLIENT_COUNT);
         AtomicInteger failures = new AtomicInteger();
         AtomicInteger completed = new AtomicInteger();
+        AtomicBoolean allDone = new AtomicBoolean();
 
-        try (Recording rec = new Recording()) {
-            rec.enable(VT_PINNED_EVENT)
-                    .withThreshold(Duration.ofMillis(PIN_THRESHOLD_MS))
-                    .withStackTrace();
-            rec.setDestination(jfr);
-
+        JfrPinningMonitor.Result result;
+        try {
             server.start();
             client.start();
-            rec.start();
 
-            for (int i = 0; i < CLIENT_COUNT; i++) {
-                Thread.ofVirtual()
-                        .name("tck064-client-recv-", i)
-                        .start(() -> {
-                            try {
-                                runClientRoundTrips(client, "127.0.0.1", port, allocator, payload);
-                                completed.incrementAndGet();
-                            } catch (RuntimeException ex) {
-                                failures.incrementAndGet();
-                            } finally {
-                                done.countDown();
-                            }
-                        });
-            }
+            // One full round-trip through the measured path before the recording opens. It loads and
+            // initialises what that path needs — sun.nio.ch.Poller on the first channel park, the FFM
+            // segment internals, the reactor and stream classes — on this warm-up's virtual thread
+            // rather than inside the window, where a <clinit> reads as a carrier pin.
+            warmUpRoundTrip(client, port, allocator, payload, serverHandlersCompleted);
 
-            boolean allDone = done.await(COMPLETION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
-            rec.stop();
+            result = JfrPinningMonitor.measure(
+                    JfrPinningMonitor.Config.defaults("tck064-client-recv"),
+                    () -> allDone.set(
+                            fanOutClients(client, port, allocator, payload, done, completed, failures)));
 
-            assertThat(allDone)
+            // What await() returned, not what the latch reads now: the recording is stopped and the
+            // whole JFR file parsed between the two, and a straggler finishing in that window would
+            // turn a timed-out await into a pass.
+            assertThat(allDone.get())
                     .withFailMessage(
                             "TCK-064 REGRESSION: %d/%d client RECV round-trips did not complete within %d s — "
-                                    + "the scarce-carrier deadlock has returned (a client recv path is blocking a carrier).",
+                                    + "the scarce-carrier deadlock has returned (a client recv path is blocking "
+                                    + "a carrier).",
                             completed.get(), CLIENT_COUNT, COMPLETION_TIMEOUT_SECONDS)
                     .isTrue();
             assertThat(failures.get())
@@ -164,13 +193,82 @@ class CommunityClientIngressCarrierPinningTest {
             allocator.close();
         }
 
-        List<String> pins = readPinningEvents(jfr);
-        Files.deleteIfExists(jfr);
-        assertThat(pins)
-                .withFailMessage(
-                        "TCK-064 REGRESSION: %d carrier-pinning event(s) > %d ms during client RECV:%n%s",
-                        pins.size(), PIN_THRESHOLD_MS, String.join(System.lineSeparator(), pins))
-                .isEmpty();
+        // assertNoPinning, not a hand-rolled assertion on pinnedEvents(): it logs what the fence set
+        // aside BEFORE it decides, which is the only trace that the classification did anything at
+        // all. An assertion built on a lazy withFailMessage evaluates its report only when it fails,
+        // so a green run — the run where a set-aside pin is most interesting — would print nothing.
+        JfrPinningMonitor.assertNoPinning(result, "client-ingress-recv");
+    }
+
+    /**
+     * Fans the client virtual threads and waits for them, inside the recording window.
+     *
+     * @return what {@code await} returned — whether every round-trip finished inside the timeout
+     */
+    private static boolean fanOutClients(TransportEngine client,
+                                         int port,
+                                         MemoryAllocator allocator,
+                                         byte[] payload,
+                                         CountDownLatch done,
+                                         AtomicInteger completed,
+                                         AtomicInteger failures) throws InterruptedException {
+        for (int i = 0; i < CLIENT_COUNT; i++) {
+            Thread.ofVirtual()
+                    .name("tck064-client-recv-", i)
+                    .start(() -> {
+                        try {
+                            runClientRoundTrips(client, "127.0.0.1", port, allocator, payload);
+                            completed.incrementAndGet();
+                        } catch (RuntimeException ex) {
+                            failures.incrementAndGet();
+                        } finally {
+                            done.countDown();
+                        }
+                    });
+        }
+        return done.await(COMPLETION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Drives one full round-trip through the measured path and waits for its server-side handler,
+     * so the recording opens on a warm JVM. It runs on a virtual thread because that is the path the
+     * measured clients take — a platform-thread warm-up would miss whatever only the parking and
+     * continuation route touches, which is precisely where the cold classes were found.
+     */
+    private static void warmUpRoundTrip(TransportEngine client,
+                                        int port,
+                                        MemoryAllocator allocator,
+                                        byte[] payload,
+                                        AtomicInteger serverHandlersCompleted) throws InterruptedException {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Thread warmUp = Thread.ofVirtual()
+                .name("tck064-warmup")
+                .unstarted(() -> runClientRoundTrips(client, "127.0.0.1", port, allocator, payload));
+        warmUp.setUncaughtExceptionHandler((thread, error) -> failure.set(error));
+        warmUp.start();
+        warmUp.join(Duration.ofSeconds(WARMUP_TIMEOUT_SECONDS));
+
+        assertThat(warmUp.isAlive())
+                .withFailMessage("Warm-up round-trip did not finish within %d s", WARMUP_TIMEOUT_SECONDS)
+                .isFalse();
+        assertThat(failure.get())
+                .withFailMessage("Warm-up round-trip failed: %s", failure.get())
+                .isNull();
+
+        // The server-side handler only returns once the client has closed. Wait for that, so the
+        // stream's teardown does not straddle the start of the recording. What PAQS does after the
+        // handler returns — the lifecycle JFR emit — no longer initialises anything: the engine's
+        // start() warmed that event class through the catalogue.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WARMUP_TIMEOUT_SECONDS);
+        // Subtraction, not `<`: nanoTime is free to wrap, and a comparison of two absolute values
+        // reads the wrong way round when it does.
+        while (serverHandlersCompleted.get() == 0 && System.nanoTime() - deadline < 0) {
+            LockSupport.parkNanos(100_000L);
+        }
+        assertThat(serverHandlersCompleted.get())
+                .withFailMessage("Warm-up stream's server handler did not complete within %d s",
+                        WARMUP_TIMEOUT_SECONDS)
+                .isPositive();
     }
 
     private static void runClientRoundTrips(TransportEngine client,
@@ -249,28 +347,6 @@ class CommunityClientIngressCarrierPinningTest {
                 .run(() -> holder[0] = provider.createEngine(new TransportConfig(
                         mode, "127.0.0.1", port, 1, null, null, 1024, 30_000)));
         return holder[0];
-    }
-
-    private static List<String> readPinningEvents(Path jfr) throws IOException {
-        List<String> pins = new ArrayList<>();
-        if (!Files.exists(jfr)) {
-            return pins;
-        }
-        try (RecordingFile rf = new RecordingFile(jfr)) {
-            while (rf.hasMoreEvents()) {
-                RecordedEvent ev = rf.readEvent();
-                if (!VT_PINNED_EVENT.equals(ev.getEventType().getName())) {
-                    continue;
-                }
-                double ms = ev.getDuration().toNanos() / 1_000_000.0;
-                if (ms < PIN_THRESHOLD_MS) {
-                    continue;
-                }
-                String thread = ev.getThread() != null ? ev.getThread().getJavaName() : "<unknown>";
-                pins.add(String.format(java.util.Locale.ROOT, "  - %s pinned %.2f ms", thread, ms));
-            }
-        }
-        return pins;
     }
 
     private static int nextFreePort() {

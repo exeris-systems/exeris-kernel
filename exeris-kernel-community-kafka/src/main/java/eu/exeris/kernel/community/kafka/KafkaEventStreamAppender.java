@@ -96,6 +96,11 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
         this.logTopic = Objects.requireNonNull(config, "config").eventLogTopic();
         this.engineName = Objects.requireNonNull(engineName, "engineName");
         this.headResolver = Objects.requireNonNull(headResolver, "headResolver");
+        // On the constructing thread, and not on the first append: KafkaEventLogAppendFailedEvent
+        // is emitted from send(), per append, on the caller's virtual thread and inside the
+        // per-stream lock — a <clinit> there pins the carrier for its whole duration while every
+        // other appender on the same stream waits behind the lock. Both constructors reach here.
+        KafkaJfrEventCatalogue.warmAppender();
     }
 
     private static LongBinaryOperator defaultHeadResolver(KafkaEventConfig config) {

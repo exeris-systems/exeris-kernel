@@ -6,6 +6,7 @@ package eu.exeris.kernel.tck.contract;
 
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordedStackTrace;
 import jdk.jfr.consumer.RecordingFile;
 
 import java.io.IOException;
@@ -30,16 +31,41 @@ import java.util.Locale;
  * <p>Threshold default: {@value #DEFAULT_THRESHOLD_MS} ms — tighter than the
  * performance contract kill threshold (50 ms), acting as an early-warning fence.
  *
+ * <p><b>Not every pin over the fence is a blocked carrier.</b> Class loading and class
+ * initialisation pin one too, for a reason no subsystem under test controls and for a duration set
+ * by how busy the host is — {@link CarrierPinClassification} states the mechanism and the
+ * measurement. Those events are captured and reported in {@link Result#classInitEvents()} but are
+ * not counted by {@link Result#hasPinning()} or {@link #assertNoPinning}; everything else is,
+ * including a pin the JVM declines to explain.
+ *
  * @since 0.5
  * @see JfrAllocationMonitor
  * @see AbstractSubsystemZeroAllocTck
  */
 public final class JfrPinningMonitor {
 
-    private static final String VT_PINNED_EVENT = "jdk.VirtualThreadPinned";
+    private static final System.Logger LOG = System.getLogger(JfrPinningMonitor.class.getName());
+
+    private static final String VT_PINNED_EVENT = CarrierPinClassification.VT_PINNED_EVENT;
 
     /** Default carrier-pinning threshold, in milliseconds; see the class-level contract note. */
     public static final long DEFAULT_THRESHOLD_MS = 20L;
+
+    /** How many pins a report prints before deferring to the recording. */
+    private static final int REPORTED_PINS = 5;
+
+    /** How many frames of one pin's stack a report prints. */
+    private static final int REPORTED_FRAMES = 10;
+
+    /**
+     * Stands in for a pin whose recording names no thread.
+     *
+     * <p>Deliberately its own constant rather than {@link CarrierPinClassification#UNKNOWN_REASON},
+     * which happens to spell the same characters and means something else entirely. A thread this
+     * run could not name and a reason the JVM declined to give are not the same fact, and tying
+     * them to one constant would make a future change to either silently move the other.
+     */
+    private static final String UNKNOWN_THREAD = "<unknown>";
     private static final DateTimeFormatter TS_FMT =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
@@ -71,23 +97,77 @@ public final class JfrPinningMonitor {
     /**
      * One captured {@code jdk.VirtualThreadPinned} event that met the capture threshold.
      *
-     * @param durationMs how long the carrier was pinned
-     * @param threadName virtual thread that caused the pin
-     * @param stackTrace top-10 frames formatted as {@code "Class.method() | ..."}
+     * @param durationMs   how long the carrier was pinned
+     * @param threadName   virtual thread that caused the pin
+     * @param stackTrace   top-10 frames formatted as {@code "Class.method() | ..."}
+     * @param pinnedReason the JVM's own account of the pin, from the event's {@code pinnedReason}
+     *                     field; a JDK without that field says so rather than inventing one
+     * @param classInit    whether this pin is class loading or class initialisation rather than a
+     *                     blocked carrier — see {@link CarrierPinClassification}
      */
-    public record PinnedEvent(double durationMs, String threadName, String stackTrace) {
+    public record PinnedEvent(double durationMs, String threadName, String stackTrace,
+                              String pinnedReason, boolean classInit) {
+
+        /**
+         * Creates an event without a recorded reason or verdict.
+         *
+         * <p>This is the constructor this record carried before {@code pinnedReason} and
+         * {@code classInit} were added, kept so a binding compiled against the earlier TCK artifact
+         * still compiles and links. What it cannot preserve is a deconstruction pattern, which names
+         * every component by position — the canonical constructor genuinely has two more.
+         *
+         * @param durationMs how long the carrier was pinned
+         * @param threadName virtual thread that caused the pin
+         * @param stackTrace top-10 frames formatted as {@code "Class.method() | ..."}
+         */
+        public PinnedEvent(double durationMs, String threadName, String stackTrace) {
+            this(durationMs, threadName, stackTrace, CarrierPinClassification.UNKNOWN_REASON, false);
+        }
     }
 
     /**
      * Outcome of one {@link #measure} run.
      *
-     * @param pinnedEvents events exceeding the threshold
-     * @param jfrPath      path to the raw JFR file for post-mortem analysis
-     * @param thresholdMs  threshold used during capture
+     * <p>{@code pinnedEvents} is narrower in 0.12 than it was in 0.11 — it no longer holds every
+     * recorded pin, only the counted ones. That is a change in meaning for an existing caller, not
+     * an addition beside it; the two accessors say so where a caller reads them.
+     *
+     * @param pinnedEvents    events exceeding the threshold that are counted against it — every pin
+     *                        that is not class loading or class initialisation
+     * @param classInitEvents events exceeding the threshold that are class loading or class
+     *                        initialisation: reported, never counted
+     * @param jfrPath         path to the raw JFR file for post-mortem analysis
+     * @param thresholdMs     threshold used during capture
      */
-    public record Result(List<PinnedEvent> pinnedEvents, Path jfrPath, long thresholdMs) {
+    public record Result(List<PinnedEvent> pinnedEvents, List<PinnedEvent> classInitEvents,
+                         Path jfrPath, long thresholdMs) {
+
         /**
-         * Whether any event met the capture threshold.
+         * Creates a result with no set-aside events.
+         *
+         * <p>The constructor this record carried before {@code classInitEvents} was added, kept for
+         * the same reason as {@link PinnedEvent}'s: a binding compiled against the earlier artifact
+         * keeps compiling and linking.
+         *
+         * @param pinnedEvents events exceeding the threshold that are counted against it
+         * @param jfrPath      path to the raw JFR file for post-mortem analysis
+         * @param thresholdMs  threshold used during capture
+         */
+        public Result(List<PinnedEvent> pinnedEvents, Path jfrPath, long thresholdMs) {
+            this(pinnedEvents, List.of(), jfrPath, thresholdMs);
+        }
+
+        /**
+         * Whether any pin met the capture threshold and is counted against it.
+         *
+         * <p>Class loading and class initialisation are not counted — they are in
+         * {@link #classInitEvents()} — so this can be {@code false} on a run that recorded pins.
+         * {@link CarrierPinClassification} states why.
+         *
+         * <p><strong>Narrowed in 0.12.</strong> Through 0.11 this answered for every
+         * {@code jdk.VirtualThreadPinned} event over the threshold. It now answers only for the
+         * counted ones. A binding that wants the earlier meaning asks for
+         * {@link #pinnedEvents()} together with {@link #classInitEvents()}.
          *
          * @return {@code true} if {@link #pinnedEvents} is non-empty
          */
@@ -96,7 +176,10 @@ public final class JfrPinningMonitor {
         }
 
         /**
-         * The number of events that met the capture threshold.
+         * The number of pins counted against the threshold, set-aside ones excluded.
+         *
+         * <p><strong>Narrowed in 0.12</strong>, for the same reason and in the same way as
+         * {@link #hasPinning()}: through 0.11 this counted every recorded pin over the threshold.
          *
          * @return {@link #pinnedEvents}{@code .size()}
          */
@@ -152,31 +235,133 @@ public final class JfrPinningMonitor {
      * @param label  human-readable label for the diagnostic on failure
      */
     public static void assertNoPinning(Result result, String label) {
+        // Reported before the early return, and that ordering is the point: a fence that sets
+        // evidence aside and then says nothing on a green run is a fence nobody can audit. This is
+        // the only trace that the classification did anything at all.
+        reportSetAside(result, label);
         if (!result.hasPinning()) return;
-        StringBuilder sb = new StringBuilder(512);
+        throw new AssertionError(describe(result, label));
+    }
+
+    /**
+     * The full report on a measured run: the counted pins, what the classification set aside, and
+     * where the recording is.
+     *
+     * <p>The banner states what the run measured — the counted pins and the set-aside ones — and no
+     * verdict. This method does not know what its caller will do with the result, so a verdict in
+     * the banner is only ever right by coincidence.
+     *
+     * <p>Public for a binding outside this repository that asserts on {@link Result#pinnedEvents()}
+     * itself rather than through {@link #assertNoPinning}, so that it need not carry a second
+     * formatter. <strong>There is no such caller in this repository</strong>: every binding here
+     * goes through {@code assertNoPinning}.
+     *
+     * @param result the outcome of a {@link #measure} run
+     * @param label  human-readable label for the diagnostic
+     * @return the formatted report, ready to be a failure message
+     */
+    public static String describe(Result result, String label) {
+        // 1024, not 512: the report carries each pin's reason and a set-aside block, and the fixed
+        // frame alone is past 587 characters — PMD measured it.
+        StringBuilder sb = new StringBuilder(1024);
         sb.append("\n╔══════════════════════════════════════════════════════╗\n");
-        sb.append("║  CARRIER PINNING TCK — VERDICT: GUILTY               ║\n");
+        sb.append("║  CARRIER PINNING TCK — MEASURED RUN                  ║\n");
         sb.append("╠══════════════════════════════════════════════════════╣\n");
         sb.append("║  Label        : ").append(pad(label, 38)).append(" ║\n");
         sb.append("║  Threshold    : ").append(pad(result.thresholdMs() + " ms", 38)).append(" ║\n");
         sb.append("║  Pinned Count : ").append(pad(String.valueOf(result.pinnedCount()), 38)).append(" ║\n");
+        sb.append("║  Set Aside    : ").append(pad(String.valueOf(result.classInitEvents().size()), 38))
+                .append(" ║\n");
         sb.append("║  JFR File     : ").append(pad(result.jfrPath().getFileName().toString(), 38)).append(" ║\n");
         sb.append("╠══════════════════════════════════════════════════════╣\n");
-        result.pinnedEvents().stream().limit(5).forEach(e ->
-                sb.append("  ▸ ").append(e.threadName())
-                        .append(" | ").append(String.format(java.util.Locale.ROOT, "%.2f", e.durationMs())).append(" ms\n")
-                        .append("    ").append(e.stackTrace()).append("\n")
-        );
+        appendPins(sb, result.pinnedEvents(), "  ▸ ", true);
         sb.append("╚══════════════════════════════════════════════════════╝\n");
+        appendSetAside(sb, result);
+        sb.append("Recording kept at ").append(result.jfrPath()).append('\n');
         sb.append("Per performance-contract.md: carrier blocked > ")
                 .append(result.thresholdMs())
                 .append(" ms is BANNED. Avoid synchronized, blocking I/O, non-VT-safe executors.");
-        throw new AssertionError(sb.toString());
+        return sb.toString();
     }
 
+    /**
+     * Names the pins the classification set aside, on every run rather than only a failing one.
+     *
+     * @param result the outcome of a {@link #measure} run
+     * @param label  human-readable label for the diagnostic
+     */
+    private static void reportSetAside(Result result, String label) {
+        String report = setAsideReport(result, label);
+        if (report.isEmpty() || !LOG.isLoggable(System.Logger.Level.INFO)) {
+            return;
+        }
+        LOG.log(System.Logger.Level.INFO, report);
+    }
+
+    /**
+     * The text {@link #reportSetAside} logs, or empty when the run set nothing aside.
+     *
+     * <p>Package-private so that {@code JfrPinningMonitorClassInitSelfTest} can assert on the
+     * report's content without depending on which logging backend a test JVM resolved
+     * {@link System.Logger} to. That the line is emitted at all is asserted separately.
+     *
+     * @param result the outcome of a {@link #measure} run
+     * @param label  human-readable label for the diagnostic
+     * @return the report, or an empty string
+     */
+    static String setAsideReport(Result result, String label) {
+        if (result.classInitEvents().isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(256).append("[").append(label).append("] ");
+        appendSetAside(sb, result);
+        return sb.toString().stripTrailing();
+    }
+
+    /**
+     * Appends the set-aside block, including the sentence that says there was nothing to set aside.
+     *
+     * @param sb     the report being built
+     * @param result the outcome of a {@link #measure} run
+     */
+    private static void appendSetAside(StringBuilder sb, Result result) {
+        if (result.classInitEvents().isEmpty()) {
+            sb.append("No class-loading or class-initialisation pins in this run.").append('\n');
+            return;
+        }
+        sb.append(result.classInitEvents().size())
+                .append(" carrier pin(s) over ").append(result.thresholdMs())
+                .append(" ms were class loading or class initialisation and are NOT counted against the fence")
+                .append('\n');
+        appendPins(sb, result.classInitEvents(), "  · ", false);
+    }
+
+    /**
+     * Appends up to five pins, and says how many were left out.
+     *
+     * @param sb         the report being built
+     * @param pins       the pins to render
+     * @param bullet     the marker distinguishing counted pins from set-aside ones
+     * @param withStacks whether to print each pin's stack under it
+     */
+    private static void appendPins(StringBuilder sb, List<PinnedEvent> pins, String bullet, boolean withStacks) {
+        pins.stream().limit(REPORTED_PINS).forEach(e -> {
+            sb.append(bullet).append(e.threadName())
+                    .append(" | ").append(String.format(Locale.ROOT, "%.2f", e.durationMs())).append(" ms")
+                    .append(" | ").append(e.pinnedReason()).append('\n');
+            if (withStacks) {
+                sb.append("    ").append(e.stackTrace()).append('\n');
+            }
+        });
+        if (pins.size() > REPORTED_PINS) {
+            sb.append("  … ").append(pins.size() - REPORTED_PINS)
+                    .append(" more not shown; the recording has all of them").append('\n');
+        }
+    }
 
     private static Result parseResult(Path jfrFile, long thresholdMs) throws IOException {
-        List<PinnedEvent> events = new ArrayList<>();
+        List<PinnedEvent> counted = new ArrayList<>();
+        List<PinnedEvent> classInit = new ArrayList<>();
         if (Files.exists(jfrFile)) {
             try (RecordingFile rf = new RecordingFile(jfrFile)) {
                 while (rf.hasMoreEvents()) {
@@ -184,22 +369,38 @@ public final class JfrPinningMonitor {
                     if (!VT_PINNED_EVENT.equals(ev.getEventType().getName())) continue;
                     double ms = ev.getDuration().toNanos() / 1_000_000.0;
                     if (ms < thresholdMs) continue;
-                    String thread = ev.getThread() != null ? ev.getThread().getJavaName() : "<unknown>";
-                    events.add(new PinnedEvent(ms, thread, formatStack(ev)));
+                    String thread = ev.getThread() != null ? ev.getThread().getJavaName() : UNKNOWN_THREAD;
+                    String reason = CarrierPinClassification.pinnedReason(ev);
+                    // The whole stack, not the innermost CLASS_WORK_FRAME_DEPTH: the classifier's
+                    // veto — the frames that mean a carrier is really blocked — reads all of it, and
+                    // it can only do that if it is given all of it. It bounds its own positive
+                    // search itself.
+                    boolean cold = CarrierPinClassification.isClassLoadingOrInit(
+                            reason, CarrierPinClassification.frames(ev.getStackTrace()));
+                    PinnedEvent event = new PinnedEvent(ms, thread, formatStack(ev), reason, cold);
+                    (cold ? classInit : counted).add(event);
                 }
             }
         }
-        return new Result(List.copyOf(events), jfrFile, thresholdMs);
+        return new Result(List.copyOf(counted), List.copyOf(classInit), jfrFile, thresholdMs);
     }
 
+    /**
+     * The top of a pin's stack, for a report.
+     *
+     * <p>Built from {@link CarrierPinClassification#frames(RecordedStackTrace, int)} rather than
+     * from the recording again. One derivation of {@code Type.method}, so that a frame the JDK left
+     * without a method is handled the same way wherever it is rendered.
+     *
+     * @param ev a recorded pin event; must not be {@code null}
+     * @return the innermost {@value #REPORTED_FRAMES} frames, or a note that there were none
+     */
     private static String formatStack(RecordedEvent ev) {
-        if (ev.getStackTrace() == null) return "<no stack>";
-        StringBuilder sb = new StringBuilder();
-        ev.getStackTrace().getFrames().stream().limit(10).forEach(f ->
-                sb.append(f.getMethod().getType().getName())
-                        .append(".").append(f.getMethod().getName()).append("() | ")
-        );
-        return sb.length() > 3 ? sb.substring(0, sb.length() - 3) : "<empty>";
+        if (ev.getStackTrace() == null) {
+            return "<no stack>";
+        }
+        List<String> frames = CarrierPinClassification.frames(ev.getStackTrace(), REPORTED_FRAMES);
+        return frames.isEmpty() ? "<empty>" : String.join("() | ", frames) + "()";
     }
 
     /**

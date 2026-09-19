@@ -6,6 +6,7 @@ package eu.exeris.kernel.core.bootstrap;
 
 import eu.exeris.kernel.core.bootstrap.health.KernelHealthMonitor;
 import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
+import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
@@ -625,6 +626,37 @@ public final class SubsystemOrchestrator {
                 "  start [{0}] (profile={1})", subsystem.name(), profile);
         try {
             subsystem.start();
+            // This subsystem's hot-path JFR event classes initialise here, on the booting thread,
+            // and not later on the first virtual thread to emit one: a virtual thread inside a
+            // <clinit> cannot unmount, so it pins its carrier for the whole of it. The catalogue
+            // states which classes are warmed and which are deliberately left cold; the cost is
+            // counted into this subsystem's start time below, because it is part of starting it.
+            //
+            // Behind isRunning(), which is the check stopAll already trusts to decide what it has
+            // to stop: a subsystem that found no provider, or that was configured off, reports
+            // false and emits none of these events, so it should not pay their class load at boot.
+            // That is only readable once start() has run, which is why the warm-up follows it.
+            //
+            // The limit of warming after start(): a subsystem that emits one of its own Core events
+            // from inside start() still initialises that class wherever that emit lands. Transport
+            // is the one place that happens, and NativeTcpCarrier.start() warms both of its groups
+            // itself, before it stands anything up, to cover it.
+            //
+            // Its own catch, and not the one below. The subsystem is up and holding resources by the
+            // time this runs, so marking it FAILED over a diagnostic would take a mandatory
+            // subsystem's boot down with it. JfrEventWarmup swallows ClassNotFoundException and
+            // LinkageError per class for the same reason; this keeps the seam and the thing it
+            // calls to one rule.
+            if (subsystem.isRunning()) {
+                try {
+                    CoreJfrEventCatalogue.warmHotPath(subsystem.name());
+                } catch (RuntimeException ex) { // NOPMD — a warm-up must not fail a started subsystem
+                    LOG.log(System.Logger.Level.WARNING,
+                            "  [{0}] JFR event warm-up failed; the subsystem is running and its events will "
+                                    + "initialise at their first emit: {1}",
+                            subsystem.name(), ex.toString());
+                }
+            }
             LOG.log(System.Logger.Level.INFO,
                     "  [{0}] started ({1} ms)", subsystem.name(), elapsedMs(startNanos));
             healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.RUNNING);

@@ -150,6 +150,11 @@ public final class KafkaEventEngine implements EventEngine {
         if (!started.compareAndSet(false, true)) {
             return;
         }
+        // On this thread, before the loop runs: a virtual thread inside a <clinit> pins its carrier
+        // for the whole of it, and both of these events fire from a virtual thread. The appender's
+        // event is not warmed here — this engine neither builds nor holds an appender, so it warms
+        // its own at construction.
+        KafkaJfrEventCatalogue.warmEngine();
         loop.start();
     }
 
