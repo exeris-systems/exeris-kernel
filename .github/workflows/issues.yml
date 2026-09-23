@@ -35,8 +35,8 @@ permissions:
 
 jobs:
   labels:
-    uses: exeris-systems/.github/.github/workflows/labels-sync.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/labels-sync.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
     with:
       dry-run: ${{ inputs.dry-run == true }}
   hygiene:
-    uses: exeris-systems/.github/.github/workflows/issue-hygiene.yml@1d9a445a79513fa4692297f5d1b43892c2269ed9 # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/issue-hygiene.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main

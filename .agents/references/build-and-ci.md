@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-09-23
 ---
 
 # Reference — build commands and the CI gates
@@ -90,9 +90,9 @@ per module — do not lower a floor to make a build pass), then a sequenced chai
 `tls-openssl-matrix` branching off the build, and `benchmarks` plus the JFR reporting jobs on `main`
 only. `spi-compatibility-gate` deliberately does not depend on the build: it compiles the SPI alone.
 
-Other workflows: `codeql.yml`, `dependency-review.yml`, `release.yml`, and the two Claude workflows
-(`claude.yml` responds only to human `@claude` mentions; `claude-code-review.yml` reviews pull
-requests).
+Other workflows: `codeql.yml`, `dependency-review.yml`, `release.yml`, `issues.yml`, and
+`guardrails.yml`, which calls the organisation's shared gates and the L2 review that posts the
+verdict. `claude.yml` responds only to human `@claude` mentions and reviews nothing.
 
 ## Platform caveats
 
