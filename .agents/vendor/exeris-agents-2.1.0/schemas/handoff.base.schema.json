@@ -1,9 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Handoff (base)",
-  "description": "One agent passing work to another. Referenced by triage-result and verdict rather than emitted alone. agents-md-schema.md rule 13.\n\nThis is the BASE: it fixes the shape and leaves the role vocabulary to the repository, because role names are per-repository by design (agents-md-schema.md rule 10 keeps the repository prefix). A consuming repository composes it with `allOf` and narrows `from` and `to` to its own enum. It may only narrow: `additionalProperties` is false here and every property is declared, so a repository cannot add a field to a shape the bundle owns.\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
+  "description": "One agent passing work to another. Referenced by triage-result and verdict rather than emitted alone. agents-md-schema.md rule 13.\n\nThis is the BASE: it fixes the shape and leaves the role vocabulary to the repository, because role names are per-repository by design (agents-md-schema.md rule 10 keeps the repository prefix). A consuming repository composes it with `allOf` and narrows `from` and `to` to its own enum, and may add a property of its own: this base declares no closer, so the one object it describes accepts anything until the composition refuses it. Why this base carries no closer, and where each one belongs, is in `BUNDLE.md` beside this file in the vendored tree, under \"What a schema here costs you\".\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "from",
     "to",

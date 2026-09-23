@@ -1333,8 +1333,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   three decision schemas, nineteen behaviour tests, four nested `AGENTS.md`, and four L0 hooks that
   divide the work: one denies an action no policy permits, one blocks a session from reporting
   itself finished while an owed check has not run, and two record the state it reads. The shared
-  half is imported from `exeris-agents` 1.4.0, pinned, vendored and digest-verified; this repository
-  no longer carries a renderer of its own. (#449, #478)
+  half is imported from `exeris-agents` 2.1.0, pinned, vendored and digest-verified; this repository
+  no longer carries a renderer of its own. That bundle's base schemas close nothing on their own, so
+  each composed schema here carries its own closers — one per object rather than one per file,
+  because the keyword stops at the object it sits in and a root closer leaves every array item
+  taking any property. (#449, #478)
 - **One review, one verdict, one publisher** — this repository no longer runs a review workflow of
   its own (ADR-087 §A.3: the reviewer may not publish). Its review rules reach the organisation's
   shared routine as `docs/repo-review-rules.md`, applied after that routine's own steps and under

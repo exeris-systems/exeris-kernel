@@ -7,10 +7,23 @@
 # routine as `repo-routine`, so having rules of one's own is not a reason to keep a second review
 # with a verdict format nothing can be gated on.
 #
-# THIS BRANCH RUNS THE WHOLE SET. `repo-checks` hands the reviewer the four scripts this tree
-# carries and the Javadoc gate selects the `javadoc-gate` profile these poms declare; the default
-# branch runs neither, because it has neither, and a gate naming what a branch does not have
-# reports a result about the naming rather than about the code.
+# THIS FILE IS ONE BLOB ON EVERY BRANCH, and that is a requirement rather than a preference.
+# `claude-code-action` refuses to start when the workflow it runs under differs in any byte from
+# the copy on the repository's default branch, and it reports that refusal as a successful skip —
+# so a branch whose copy has drifted gets no review at all, on every pull request, while the
+# verdict check stays red for a reason no log on that pull request states. Nothing a caller can
+# pass turns it off.
+#
+# What follows from that: anything a single branch needs goes in a workflow file of its own, never
+# in this one, because only the file carrying the action is compared. `javadoc.yml` is that file —
+# the Javadoc gate's module set is a property of the tree, since the modules it names have to carry
+# the `javadoc-gate` profile in their poms, and that is configuration rather than a rule. And
+# `repo-checks` below names scripts that not every branch carries, so it asks before it runs one:
+# one string, true on every tree.
+#
+# THE RULES ARE AUTHORED HERE, on the default branch, and reach the release lines by the forward
+# merge they already take from it. A release line that edits this file is a release line whose
+# review is off.
 #
 # WHAT BLOCKS A MERGE. `docs-review / publish / verdict` is the one job here meant to be a required
 # status check: it is red when the verdict is BLOCKED, when no verdict exists, and when a mandatory
@@ -119,19 +132,29 @@ jobs:
       repo-routine: docs/repo-review-rules.md
       # The mechanical checks the kernel routine's table earns, run by CI and handed to the reviewer
       # as output. CI runs them because the runner's harness denies Bash: a routine that asks the
-      # model to execute a script gets a review reporting its own checks as `not-run`. Separated by
-      # `;`, never `&&` — a candidate locator exits non-zero when it FINDS something, so `&&` would
-      # stop the list at the first script that had anything to say. A non-zero exit is evidence
-      # handed to the reviewer, and never a failure of this job.
-      repo-checks: >-
-        tools/spi-contract-blindness-check/spi-contract-blindness-check.sh ;
-        tools/error-code-registry-check/error-code-registry-check.sh ;
-        tools/checkstyle-parity-check/checkstyle-parity-check.sh ;
-        tools/scope-register-check/scope-register-check.sh
-      # `mandatory-gates` is left at the routine's own three. The Javadoc gate below is a REPORTED
-      # check here, which is this repository's standing position on it; naming it would make its
-      # `not-run` turn the required check red, and that is the branch-protection decision made in
-      # another place.
+      # model to execute a script gets a review reporting its own checks as `not-run`.
+      #
+      # Each is asked for before it is run, because this file is one blob on every branch and the
+      # scripts are not: a release line carries them and the default branch does not yet. A missing
+      # script says so in the output the reviewer reads, which is a fact about the branch; `No such
+      # file or directory` four times over is a fact about nothing. The loop runs under `bash -c`
+      # with no `set -e`, so a script that exits non-zero is evidence and the next one still runs —
+      # most of these locate candidates rather than decide, and a non-zero exit never fails the job.
+      repo-checks: |
+        for s in tools/spi-contract-blindness-check/spi-contract-blindness-check.sh \
+                 tools/error-code-registry-check/error-code-registry-check.sh \
+                 tools/checkstyle-parity-check/checkstyle-parity-check.sh \
+                 tools/scope-register-check/scope-register-check.sh; do
+          if [ -x "$s" ]; then
+            echo "== $s"; "$s"; echo "-- exit $?"
+          else
+            echo "== $s: this branch does not carry it"
+          fi
+        done
+      # `mandatory-gates` is left at the routine's own three, which are the three gate jobs in this
+      # file. The Javadoc gate is a REPORTED check and lives in `javadoc.yml`; naming it here would
+      # make its `not-run` turn the required check red, and that is a branch-protection decision
+      # made in another place.
     # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
     # has — signing keys, the Central token, the Packages token — to a job that needs three.
     # SonarCloud flags it (S7631, "Only pass required secrets to this workflow") and is right to.
@@ -139,25 +162,6 @@ jobs:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
       exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
       exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}
-  # ADR-085 §F.21. A gate is a worklist, and its job here is keeping the list empty rather than
-  # showing it: both modules named below report zero doclint errors and zero warnings under
-  # `failOnWarnings`, and nothing but this job holds them there. It stays a reported check; making
-  # it required is a branch-protection change, not a workflow one.
-  #
-  # `-Pjavadoc-gate` selects a profile that exists only for this job. The `release` profile keeps
-  # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
-  # the strict settings there instead would let a red gate block a release.
-  javadoc:
-    if: ${{ github.event.action != 'closed' }}
-    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
-    with:
-      # The two published surfaces a downstream implementor reads, which is what
-      # javadoc-conventions.md rule 11 holds to a whole-module bar. Every jar module here reaches
-      # Maven Central, so "published" alone narrows nothing; rule 11 is what narrows it. The other
-      # modules measure clean and are gated by nothing, because gating one costs it a javadoc-gate
-      # profile block in its own pom.
-      modules: exeris-kernel-spi,exeris-kernel-tck
-      extra-maven-args: "-Pjavadoc-gate"
   # The other half of the record, and the only job here that runs on `closed`. A review-domain run
   # record is complete when the review ends and its outcome is `UNKNOWN`: the oracle has not judged
   # yet. `review-disposition` judges when the pull request closes — per finding, from what the human
