@@ -1,0 +1,140 @@
+# The per-repo footprint of ADR-085 §C.11. Everything it runs lives in exeris-systems/.github;
+# this file only says which gates apply here and how strictly.
+#
+# ONE REVIEW, ONE VERDICT, ONE PUBLISHER. The review of the change and the review of the
+# documentation are the same review, and this repository runs no review workflow of its own:
+# ADR-087 §A.3 says the reviewer may not publish. This repository's own rules reach the shared
+# routine as `repo-routine`, so having rules of one's own is not a reason to keep a second review
+# with a verdict format nothing can be gated on.
+#
+# THIS BRANCH RUNS A SUBSET, and says which. `repo-checks` and the Javadoc gate are absent here
+# because the tree this branch carries has neither the scripts the first hands over nor the
+# `javadoc-gate` profile the second selects; a gate naming what a branch does not have reports a
+# result about the naming rather than about the code. Both arrive with the development line at the
+# next release integration, and this file is then the one that line carries.
+#
+# WHAT BLOCKS A MERGE. `docs-review / publish / verdict` is the one job here meant to be a required
+# status check: it is red when the verdict is BLOCKED, when no verdict exists, and when a mandatory
+# gate did not run, so a pull request cannot be green by the absence of a review. It is not yet one
+# of this repository's required contexts — those are Build & TCK Verification, SPI Compatibility
+# Gate and SonarCloud — and adding it is a branch-protection change, not a change to this file. Say
+# "runs" rather than "enforces" anywhere this file is described.
+#
+# WHY THE PINS ARE SHAs. `dependabot.yml` states the rule: a SHA is immune to a moved tag but
+# invisible to a reader, and Dependabot is what keeps it current, rewriting the SHA and the trailing
+# comment together. SonarCloud enforces it and is a required check here. The trailing comment names
+# the ref the SHA came from, not a version and not a date: that repository publishes no tags, and
+# Dependabot updates a version comment by finding the previous version string in it, so a date would
+# rot where `@main` stays true whichever commit the SHA is.
+#
+# WHAT THE PIN DOES NOT PIN. `docs-lint.yml` checks its own repository out at
+# `github.job_workflow_sha`, so the scripts it calls come from the commit named below. The other
+# shared workflows do not, so the Python they call is read from that repository's default branch
+# whatever SHA is written here — and the review routine itself is read there by design, because a
+# change to the routine is a change to every review and lands everywhere on merge with no adoption
+# step. Bumping this pin keeps the workflow files and the scripts on one commit; leaving it behind
+# does not hold the scripts back.
+name: guardrails
+on:
+  pull_request:
+    # labeled/unlabeled matter: adr-conventions rule 9 requires the `adr` label on a PR that
+    # amends an ADR, so adding the label after a red run has to re-run the gate.
+    #
+    # `closed` is not a gate event and is here for one job: the judgement of ADR-087 §C.16, which
+    # reads what the human did with the review once there is a history to read. Every other job
+    # skips it explicitly — a gate on a pull request that can no longer merge decides nothing.
+    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled, closed]
+concurrency:
+  group: guardrails-${{ github.event.pull_request.number }}
+  # Not `true`. Publication removes the review label, and that removal is an `unlabeled` event whose
+  # run would cancel the run still publishing; and the human who merges is no `[bot]`, so on
+  # `closed` a plain `true` cancels the publishing run and the judgement that follows it.
+  # Bot-triggered runs queue instead of cancelling; human pushes still collapse.
+  cancel-in-progress: ${{ github.event.action != 'closed' && !endsWith(github.actor, '[bot]') }}
+# A called workflow can only NARROW what the caller grants, never raise it, so this block is the
+# union of what every called workflow declares — not a wish list and not a minimum. Omitting one
+# does not run that job with less: it makes the whole file an invalid workflow, rejected before any
+# gate runs, with no logs.
+#
+# Granting them here does not widen docs-lint, commit-lint or pr-body-check: a called workflow's
+# jobs receive what its OWN permissions block declares, capped by this one. `id-token: write` is
+# docs-review's, for the OIDC exchange the review action performs; `issues: read` lets the routine
+# read the debt issues that issue-conventions.md rule 6 says a review finding becomes. `actions:
+# read` belongs to `judge` alone: the judgement compares the commit a review READ with the head the
+# pull request ended at, and the first is the reviewing run's own `head_sha`, which the platform
+# states on the Actions API and nowhere else independent of the record being judged.
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  id-token: write
+  actions: read
+
+jobs:
+  docs:
+    if: ${{ github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+    with:
+      # ramp, not strict: in ramp the gate fails only on files the pull request touches, so a pull
+      # request is answerable for what it edits and not for a backlog it did not create. Flip to
+      # strict when the frontmatter backfill has landed across the repository.
+      mode: ramp
+      # Off until every page under docs/subsystems/ carries Contract / Hot path / Failure modes /
+      # Owning ADRs. Turning it on would fail the majority on a retrofit no pull request can be
+      # asked to carry.
+      section-check: false
+  commits:
+    if: ${{ github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+  pr-body:
+    if: ${{ github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+  # The L2 review of ADR-085 §J.33, published under the organisation's identity by ADR-087 §B.
+  #
+  # `needs` puts it after the gates it complements and `l1-results` hands it their conclusions.
+  # Without the second the reviewer tries to read a CI step summary, its harness denies the network
+  # call, and every mandatory gate lands in the verdict as `not-run` — which the publish step
+  # correctly turns red, on every pull request, until it is supplied.
+  #
+  # `always()` stands for every human-initiated event: a review that vanishes from the checks
+  # because its gates went red is the failure this arrangement exists to prevent. The narrowing is
+  # the event, not the outcome — the review action refuses a non-human actor, so a run started by
+  # the bot's own labelling can never perform the review it exists for.
+  docs-review:
+    needs: [docs, commits, pr-body]
+    if: ${{ always() && github.event.sender.type == 'User'
+            && github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+    with:
+      # The publish job is the required one. The produce job never is, because a review that
+      # crashed has to reach the step that notices it produced nothing.
+      publish: true
+      l1-results: >-
+        {"docs-lint": "${{ needs.docs.result }}",
+         "commit-lint": "${{ needs.commits.result }}",
+         "pr-body-check": "${{ needs.pr-body.result }}"}
+      # This repository's own review rules, applied AFTER the shared routine's steps and under its
+      # severity tags and verdict schema. The file is read at the BASE commit, never at the pull
+      # request's ref: a pull request must not write the rules it is judged by. A pull request whose
+      # base does not carry the file yet is reviewed by the shared routine alone.
+      repo-routine: docs/repo-review-rules.md
+      # `mandatory-gates` is left at the routine's own three, which are the three this file runs.
+    # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
+    # has — signing keys, the Central token, the Packages token — to a job that needs three.
+    # SonarCloud flags it (S7631, "Only pass required secrets to this workflow") and is right to.
+    secrets:
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
+      exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}
+  # The other half of the record, and the only job here that runs on `closed`. A review-domain run
+  # record is complete when the review ends and its outcome is `UNKNOWN`: the oracle has not judged
+  # yet. `review-disposition` judges when the pull request closes — per finding, from what the human
+  # did with it — and its verdict is appended as its own record keyed by the run's id (ADR-087
+  # §C.16). It is not a gate: the pull request is closed, it publishes no check a branch protection
+  # rule can name, and it posts nothing to the pull request.
+  judge:
+    if: ${{ github.event.action == 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/judge-review.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+    secrets:
+      exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
+      exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}
