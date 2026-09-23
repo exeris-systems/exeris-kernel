@@ -1,9 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Triage result (base)",
-  "description": "What a router hands to whoever runs next. agents-md-schema.md rule 13.\n\nBASE: `task_class` and `primary_agent` are left open and narrowed by the composing repository \u2014 a kernel router classifies contract and performance work, a docs router classifies records and narrative, and neither vocabulary belongs to the other. Two conventions the base does fix: `MULTI_DOMAIN` means no single class dominates, and a repository's `primary_agent` enum includes its own router, so re-entry is expressed rather than left implicit.\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
+  "description": "What a router hands to whoever runs next. agents-md-schema.md rule 13.\n\nBASE: `task_class` and `primary_agent` are left open and narrowed by the composing repository \u2014 a kernel router classifies contract and performance work, a docs router classifies records and narrative, and neither vocabulary belongs to the other. Two conventions the base does fix: `MULTI_DOMAIN` means no single class dominates, and a repository's `primary_agent` enum includes its own router, so re-entry is expressed rather than left implicit.\n\nOPEN. No object here declares `additionalProperties` or `unevaluatedProperties` \u2014 not the root, not a validation gate \u2014 so a repository can add a property to either, and a composition that closes neither accepts anything. Why this base carries no closer, and where each one belongs, is in `BUNDLE.md` beside this file in the vendored tree, under \"What a schema here costs you\".\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "task_class",
     "primary_risk",
@@ -50,7 +49,6 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "gate",
           "risk"

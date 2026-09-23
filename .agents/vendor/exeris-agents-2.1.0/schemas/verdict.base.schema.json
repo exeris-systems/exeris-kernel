@@ -1,9 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Review verdict (base)",
-  "description": "One schema for every reviewing role in every repository. Roles use different words for the same three states \u2014 ALLOW / ALLOW WITH CONDITIONS / REFUSE, APPROVE / CONDITIONAL / REJECT, PASS / CONDITIONAL / BLOCKED. `decision` is the canonical triple a grader reads; `decision_label` carries the role's own word so the Markdown and the JSON can be shown to agree. agents-md-schema.md rule 13.\n\nBASE: `agent` and `scope_class` are left open and narrowed by the composing repository.\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
+  "description": "One schema for every reviewing role in every repository. Roles use different words for the same three states \u2014 ALLOW / ALLOW WITH CONDITIONS / REFUSE, APPROVE / CONDITIONAL / REJECT, PASS / CONDITIONAL / BLOCKED. `decision` is the canonical triple a grader reads; `decision_label` carries the role's own word so the Markdown and the JSON can be shown to agree. agents-md-schema.md rule 13.\n\nBASE: `agent` and `scope_class` are left open and narrowed by the composing repository.\n\nOPEN. No object here declares `additionalProperties` or `unevaluatedProperties` \u2014 not the root, not a finding, not a check entry \u2014 so a repository can add a property to any of them, and a composition that closes none of them accepts anything. Why this base carries no closer, and where each one belongs, is in `BUNDLE.md` beside this file in the vendored tree, under \"What a schema here costs you\".\n\nThis file carries no `$id`: the bundle is vendored and every `$ref` into it is a relative path, so it resolves from the filesystem \u2014 on github.com, in CI without a network, and in a fresh clone alike. An `$id` would make the canonical identifier a URL that must then be fetched or registered.",
   "type": "object",
-  "additionalProperties": false,
   "required": [
     "agent",
     "decision",
@@ -50,7 +49,6 @@
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "what",
           "why",
@@ -95,7 +93,6 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "check",
           "result"
