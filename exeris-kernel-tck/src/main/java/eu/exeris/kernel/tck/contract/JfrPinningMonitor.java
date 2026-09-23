@@ -128,9 +128,9 @@ public final class JfrPinningMonitor {
     /**
      * Outcome of one {@link #measure} run.
      *
-     * <p>{@code pinnedEvents} is narrower in 0.12 than it was in 0.11 — it no longer holds every
-     * recorded pin, only the counted ones. That is a change in meaning for an existing caller, not
-     * an addition beside it; the two accessors say so where a caller reads them.
+     * <p>{@code pinnedEvents} holds the counted pins and not every pin the run recorded: class
+     * loading and class initialisation are set aside in {@code classInitEvents}. The two accessors
+     * draw the same line, and say so where a caller reads them.
      *
      * @param pinnedEvents    events exceeding the threshold that are counted against it — every pin
      *                        that is not class loading or class initialisation
@@ -164,10 +164,9 @@ public final class JfrPinningMonitor {
          * {@link #classInitEvents()} — so this can be {@code false} on a run that recorded pins.
          * {@link CarrierPinClassification} states why.
          *
-         * <p><strong>Narrowed in 0.12.</strong> Through 0.11 this answered for every
-         * {@code jdk.VirtualThreadPinned} event over the threshold. It now answers only for the
-         * counted ones. A binding that wants the earlier meaning asks for
-         * {@link #pinnedEvents()} together with {@link #classInitEvents()}.
+         * <p>A binding that wants every {@code jdk.VirtualThreadPinned} event over the
+         * threshold, counted or set aside, reads {@link #pinnedEvents()} together with
+         * {@link #classInitEvents()}.
          *
          * @return {@code true} if {@link #pinnedEvents} is non-empty
          */
@@ -178,8 +177,8 @@ public final class JfrPinningMonitor {
         /**
          * The number of pins counted against the threshold, set-aside ones excluded.
          *
-         * <p><strong>Narrowed in 0.12</strong>, for the same reason and in the same way as
-         * {@link #hasPinning()}: through 0.11 this counted every recorded pin over the threshold.
+         * <p>The set-aside pins are in {@link #classInitEvents()}; {@link #hasPinning()} draws
+         * the same line.
          *
          * @return {@link #pinnedEvents}{@code .size()}
          */
