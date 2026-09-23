@@ -1,136 +1,176 @@
 # The per-repo footprint of ADR-085 §C.11. Everything it runs lives in exeris-systems/.github;
 # this file only says which gates apply here and how strictly.
 #
-# Nothing in the repository ran these before: the documentation standards were binding but
-# unenforced, and the L2 documentation review existed only inside a Cowork session, so a standard
-# could be contradicted with nothing to say so.
+# ONE REVIEW, ONE VERDICT, ONE PUBLISHER. The review of the change and the review of the
+# documentation are the same review, and this repository runs no review workflow of its own:
+# ADR-087 §A.3 says the reviewer may not publish. This repository's own rules reach the shared
+# routine as `repo-routine`, so having rules of one's own is not a reason to keep a second review
+# with a verdict format nothing can be gated on.
 #
-# What this file does NOT do is block a merge. None of the five jobs below is a required status
-# check -- the required contexts are Build & TCK Verification, SPI Compatibility Gate and SonarCloud
-# Code Analysis -- so a red gate here annotates the pull request and a green merge is still
-# permitted. Making one required is a branch-protection change, not a change to this file. Say
+# THIS FILE IS ONE BLOB ON EVERY BRANCH, and that is a requirement rather than a preference.
+# `claude-code-action` refuses to start when the workflow it runs under differs in any byte from
+# the copy on the repository's default branch, and it reports that refusal as a successful skip —
+# so a branch whose copy has drifted gets no review at all, on every pull request, while the
+# verdict check stays red for a reason no log on that pull request states. Nothing a caller can
+# pass turns it off.
+#
+# What follows from that: anything a single branch needs goes in a workflow file of its own, never
+# in this one, because only the file carrying the action is compared. `javadoc.yml` is that file —
+# the Javadoc gate's module set is a property of the tree, since the modules it names have to carry
+# the `javadoc-gate` profile in their poms, and that is configuration rather than a rule. And
+# `repo-checks` below names scripts that not every branch carries, so it asks before it runs one:
+# one string, true on every tree.
+#
+# THE RULES ARE AUTHORED HERE, on the default branch, and reach the release lines by the forward
+# merge they already take from it. A release line that edits this file is a release line whose
+# review is off.
+#
+# WHAT BLOCKS A MERGE. `docs-review / publish / verdict` is the one job here meant to be a required
+# status check: it is red when the verdict is BLOCKED, when no verdict exists, and when a mandatory
+# gate did not run, so a pull request cannot be green by the absence of a review. It is not yet one
+# of this repository's required contexts — those are Build & TCK Verification, SPI Compatibility
+# Gate and SonarCloud — and adding it is a branch-protection change, not a change to this file. Say
 # "runs" rather than "enforces" anywhere this file is described.
+#
+# WHY THE PINS ARE SHAs. `dependabot.yml` states the rule: a SHA is immune to a moved tag but
+# invisible to a reader, and Dependabot is what keeps it current, rewriting the SHA and the trailing
+# comment together. SonarCloud enforces it and is a required check here. The trailing comment names
+# the ref the SHA came from, not a version and not a date: that repository publishes no tags, and
+# Dependabot updates a version comment by finding the previous version string in it, so a date would
+# rot where `@main` stays true whichever commit the SHA is.
+#
+# WHAT THE PIN DOES NOT PIN. `docs-lint.yml` checks its own repository out at
+# `github.job_workflow_sha`, so the scripts it calls come from the commit named below. The other
+# shared workflows do not, so the Python they call is read from that repository's default branch
+# whatever SHA is written here — and the review routine itself is read there by design, because a
+# change to the routine is a change to every review and lands everywhere on merge with no adoption
+# step. Bumping this pin keeps the workflow files and the scripts on one commit; leaving it behind
+# does not hold the scripts back.
 name: guardrails
 on:
   pull_request:
     # labeled/unlabeled matter: adr-conventions rule 9 requires the `adr` label on a PR that
     # amends an ADR, so adding the label after a red run has to re-run the gate.
-    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled]
+    #
+    # `closed` is not a gate event and is here for one job: the judgement of ADR-087 §C.16, which
+    # reads what the human did with the review once there is a history to read. Every other job
+    # skips it explicitly — a gate on a pull request that can no longer merge decides nothing.
+    types: [opened, edited, synchronize, ready_for_review, labeled, unlabeled, closed]
 concurrency:
   group: guardrails-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  # Not `true`. Publication removes the review label, and that removal is an `unlabeled` event whose
+  # run would cancel the run still publishing; and the human who merges is no `[bot]`, so on
+  # `closed` a plain `true` cancels the publishing run and the judgement that follows it.
+  # Bot-triggered runs queue instead of cancelling; human pushes still collapse.
+  cancel-in-progress: ${{ github.event.action != 'closed' && !endsWith(github.actor, '[bot]') }}
 # A called workflow can only NARROW what the caller grants, never raise it, so this block is the
-# union of what every called workflow declares — not a wish list. Omitting the last two is what
-# made the first push of this file an invalid workflow: "requesting 'issues: read, id-token: write',
-# but is only allowed 'issues: none, id-token: none'".
+# union of what every called workflow declares — not a wish list and not a minimum. Omitting one
+# does not run that job with less: it makes the whole file an invalid workflow, rejected before any
+# gate runs, with no logs.
 #
 # Granting them here does not widen docs-lint, commit-lint or pr-body-check: a called workflow's
 # jobs receive what its OWN permissions block declares, capped by this one. `id-token: write` is
-# docs-review's, for the OIDC exchange claude-code-action performs; `issues: read` lets the routine
-# read the debt issues that issue-conventions.md rule 6 says a review finding becomes.
+# docs-review's, for the OIDC exchange the review action performs; `issues: read` lets the routine
+# read the debt issues that issue-conventions.md rule 6 says a review finding becomes. `actions:
+# read` belongs to `judge` alone: the judgement compares the commit a review READ with the head the
+# pull request ended at, and the first is the reviewing run's own `head_sha`, which the platform
+# states on the Actions API and nowhere else independent of the record being judged.
 permissions:
   contents: read
   pull-requests: read
   issues: read
   id-token: write
-
-# Bumped 2026-09-09 from 1d9a445a, eight commits back, for a reason worth writing down: a pinned
-# `uses:` did NOT pin the scripts the workflow calls. That repository checked itself out with no
-# `ref`, so the scripts always came from its default branch — harmless while scripts are only added,
-# and a hard failure the moment one is removed. #23 there removed `scripts/agents_file_check.py`,
-# and this repository's `docs / docs-lint` went to exit code 2 within minutes and stayed there.
-# `docs-lint.yml` now takes `ref: ${{ github.job_workflow_sha }}`; the other six shared workflows
-# still do not, so they read that repository's default branch whatever this file says.
-#
-# Measured before bumping: `commit-lint.yml`, `pr-body-check.yml` and `docs-review.yml` are
-# byte-identical across those eight commits, so three of the five are no-ops. `javadoc-gate.yml`
-# grew 197 lines but its one required input became optional and every new input defaults to the
-# previous behaviour, so the call below still means what it meant.
-#
-# Bumped again 2026-09-10, one commit, for a reason this file can state exactly: .github#28 stops
-# `frontmatter_check.py` requiring `last-verified` of a record type and stops
-# `frontmatter_backfill.py` writing it. Because `docs-lint.yml` is the one shared workflow that
-# takes `ref: ${{ github.job_workflow_sha }}`, its scripts follow this pin — so the bump is what
-# lets the same pull request delete the key from 26 records rather than needing two. Measured both
-# ways rather than assumed: those 26 files report 26 errors under 0509e289 and 0 under this pin.
-# The other four move with it and change nothing — the compare is one commit touching only
-# `scripts/_common.py`, `frontmatter_check.py` and `frontmatter_backfill.py`, no workflow file.
-#
-# Pinned by commit SHA, like every other `uses:` in this repository — `dependabot.yml` explains
-# why: a SHA is immune to a moved tag but invisible to a reader, and Dependabot is what keeps it
-# current, rewriting the SHA and the trailing comment together. SonarCloud enforces the same rule
-# and it is a required check here.
-#
-# The trailing comment names the ref the SHA came from, not a version and not a date. That
-# repository publishes no tags and no releases, so there is no version to name; and a date would
-# rot, because Dependabot updates a version comment by finding the PREVIOUS VERSION STRING in it
-# and replacing that (dependabot-core#5951) — it has no rule for a date, so the SHA would move and
-# the date would not. `@main` stays true whichever commit the SHA is.
-#
-# Whether Dependabot bumps these at all is worth watching on the first weekly run: it does cover
-# reusable-workflow `uses:` (GitHub docs), and for a SHA with no tag behind it, it moves the pin to
-# the branch HEAD (dependabot-core#13466, #14716) — which is the behaviour wanted here. Both are
-# reports about other people's repositories, not something observed in this one.
+  actions: read
 
 jobs:
   docs:
-    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+    if: ${{ github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/docs-lint.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
     with:
-      # ramp, not strict, and deliberately: of the 120 files the gate reads, 54 carry no frontmatter
-      # at all. In ramp the gate fails only on files the pull request touches, so a PR is answerable
-      # for what it edits and not for a backlog it did not create. Flip to strict when the backfill
-      # has landed. The count moves with the backfill; 113 was the figure before the 0.12 pass, and
-      # a stale number here contradicts the release notes rather than merely aging.
+      # ramp, not strict: in ramp the gate fails only on files the pull request touches, so a pull
+      # request is answerable for what it edits and not for a backlog it did not create. Flip to
+      # strict when the frontmatter backfill has landed across the repository.
       mode: ramp
-      # Off until docs/subsystems/*.md carry Contract / Hot path / Failure modes / Owning ADRs.
-      # Seventeen subsystem pages exist; the two added for websocket and diagnostics carry the set
-      # and the other fifteen do not, so this stays off until that retrofit lands.
+      # Off until every page under docs/subsystems/ carries Contract / Hot path / Failure modes /
+      # Owning ADRs. Turning it on would fail the majority on a retrofit no pull request can be
+      # asked to carry.
       section-check: false
   commits:
-    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+    if: ${{ github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/commit-lint.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
   pr-body:
-    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
-  # The L2 review of ADR-085 §J.33 — the documentation routine, which is not what
-  # claude-code-review.yml runs. That workflow reviews the change; this one checks the change
-  # against the documentation standards. They are different questions and both are wanted.
-  # Skips itself when no Markdown or Java changed.
+    if: ${{ github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/pr-body-check.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+  # The L2 review of ADR-085 §J.33, published under the organisation's identity by ADR-087 §B.
+  #
+  # `needs` puts it after the gates it complements and `l1-results` hands it their conclusions.
+  # Without the second the reviewer tries to read a CI step summary, its harness denies the network
+  # call, and every mandatory gate lands in the verdict as `not-run` — which the publish step
+  # correctly turns red, on every pull request, until it is supplied.
+  #
+  # `always()` stands for every human-initiated event: a review that vanishes from the checks
+  # because its gates went red is the failure this arrangement exists to prevent. The narrowing is
+  # the event, not the outcome — the review action refuses a non-human actor, so a run started by
+  # the bot's own labelling can never perform the review it exists for.
   docs-review:
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
+    needs: [docs, commits, pr-body]
+    if: ${{ always() && github.event.sender.type == 'User'
+            && github.event.action != 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/docs-review.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+    with:
+      # The publish job is the required one. The produce job never is, because a review that
+      # crashed has to reach the step that notices it produced nothing.
+      publish: true
+      l1-results: >-
+        {"docs-lint": "${{ needs.docs.result }}",
+         "commit-lint": "${{ needs.commits.result }}",
+         "pr-body-check": "${{ needs.pr-body.result }}"}
+      # This repository's own review rules, applied AFTER the shared routine's steps and under its
+      # severity tags and verdict schema. The file is read at the BASE commit, never at the pull
+      # request's ref: a pull request must not write the rules it is judged by. A pull request whose
+      # base does not carry the file yet is reviewed by the shared routine alone.
+      repo-routine: docs/repo-review-rules.md
+      # The mechanical checks the kernel routine's table earns, run by CI and handed to the reviewer
+      # as output. CI runs them because the runner's harness denies Bash: a routine that asks the
+      # model to execute a script gets a review reporting its own checks as `not-run`.
+      #
+      # Each is asked for before it is run, because this file is one blob on every branch and the
+      # scripts are not: a release line carries them and the default branch does not yet. A missing
+      # script says so in the output the reviewer reads, which is a fact about the branch; `No such
+      # file or directory` four times over is a fact about nothing. The loop runs under `bash -c`
+      # with no `set -e`, so a script that exits non-zero is evidence and the next one still runs —
+      # most of these locate candidates rather than decide, and a non-zero exit never fails the job.
+      repo-checks: |
+        for s in tools/spi-contract-blindness-check/spi-contract-blindness-check.sh \
+                 tools/error-code-registry-check/error-code-registry-check.sh \
+                 tools/checkstyle-parity-check/checkstyle-parity-check.sh \
+                 tools/scope-register-check/scope-register-check.sh; do
+          if [ -x "$s" ]; then
+            echo "== $s"; "$s"; echo "-- exit $?"
+          else
+            echo "== $s: this branch does not carry it"
+          fi
+        done
+      # `mandatory-gates` is left at the routine's own three, which are the three gate jobs in this
+      # file. The Javadoc gate is a REPORTED check and lives in `javadoc.yml`; naming it here would
+      # make its `not-run` turn the required check red, and that is a branch-protection decision
+      # made in another place.
     # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
-    # has — GPG keys, the Central token, the Packages token — to a job that needs one. SonarCloud
-    # flags it (S7631, "Only pass required secrets to this workflow") and is right to.
+    # has — signing keys, the Central token, the Packages token — to a job that needs three.
+    # SonarCloud flags it (S7631, "Only pass required secrets to this workflow") and is right to.
     secrets:
       claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-  # ADR-085 §F.21. This was written to land RED — 62 doclint errors and 100 warnings on
-  # exeris-kernel-spi, 13 and 100 on the TCK, measured 2026-09-05 — on the argument that a gate is
-  # a worklist and a worklist nobody can see is one nobody clears. The list was cleared before the
-  # gate landed, by the javadoc sweep in #456, #464 and #465: both gated modules now report zero
-  # doclint errors, zero warnings under failOnWarnings, and zero Checkstyle violations against the
-  # bundle ruleset. So it arrives green, and its job is the second one — keeping the list empty
-  # rather than showing it. It stays a reported check; making it required is a branch-protection
-  # change, not a workflow one.
-  #
-  # `-Pjavadoc-gate` selects a profile that exists only for this job. The `release` profile keeps
-  # `doclint none` on purpose, so that publishing never depends on the state of the prose; putting
-  # the strict settings there instead would have made a red gate block a release.
-  javadoc:
-    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@0fd1f5d640df4837246db6cb7b3f98c669a4cd26 # exeris-systems/.github@main
-    with:
-      # The two published surfaces that are neither Core, Community nor tooling — the set
-      # javadoc-conventions.md rule 11 sends to diff-aware checking instead of a hard gate. Every
-      # jar module here reaches Maven Central, so "published" alone does not narrow anything; what
-      # narrows it is rule 11, and what is left after it is the SPI and the TCK.
-      #
-      # The set is still SPI + TCK, but the reason rule 11 exempted the rest has expired. Those
-      # pre-sweep counts were core 31 errors, community 6/91, community-testkit 0/24,
-      # community-kafka 0/11; core's warning figure sat at javadoc's -Xmaxwarns 100 ceiling, so it
-      # is a cap and not a measurement. diagnostics-cli counted as clean and was not: #469 found a
-      # class comment advertising three protocol methods where handle dispatches four, which no
-      # doclint run can see. After #464, #465 and #469 every one of them is 0/0 -- measured, and
-      # held there by nothing, because only the two modules named below carry the profile.
-      # Adding them here is a decision rather than an oversight: it costs each pom a javadoc-gate
-      # profile block, and it holds those modules to a whole-module bar where rule 11 asks only
-      # for diff-aware checking. Gating a module whose backfill is already done mandates no
-      # backfill, so it does not conflict with rule 11 — it is simply stricter than rule 11 needs.
-      modules: exeris-kernel-spi,exeris-kernel-tck
-      extra-maven-args: "-Pjavadoc-gate"
+      exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
+      exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}
+  # The other half of the record, and the only job here that runs on `closed`. A review-domain run
+  # record is complete when the review ends and its outcome is `UNKNOWN`: the oracle has not judged
+  # yet. `review-disposition` judges when the pull request closes — per finding, from what the human
+  # did with it — and its verdict is appended as its own record keyed by the run's id (ADR-087
+  # §C.16). It is not a gate: the pull request is closed, it publishes no check a branch protection
+  # rule can name, and it posts nothing to the pull request.
+  judge:
+    if: ${{ github.event.action == 'closed' }}
+    uses: exeris-systems/.github/.github/workflows/judge-review.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+    secrets:
+      exeris_bot_app_id: ${{ secrets.EXERIS_BOT_APP_ID }}
+      exeris_bot_private_key: ${{ secrets.EXERIS_BOT_PRIVATE_KEY }}

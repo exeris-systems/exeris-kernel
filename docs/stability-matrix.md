@@ -234,7 +234,8 @@ maturity change here.
   `docs/subsystems/*.md` cross-references.
 - Consistency convention, not an automated gate: every `## Stability` / `[stable|preview|experimental]`
   mention in module and subsystem docs is expected to resolve to a row here, checked in PR review
-  (including by the `claude-code-review.yml` prompt). Unlike the compatibility gate in
+  (including by the shared review routine, which this repository extends in
+  `docs/repo-review-rules.md`). Unlike the compatibility gate in
   [Semver policy](#semver-policy), no script in `tools/` or workflow in `.github/workflows/` parses
   `docs/modules/*.md` or `docs/subsystems/*.md` for these mentions and diffs them against this table.
 

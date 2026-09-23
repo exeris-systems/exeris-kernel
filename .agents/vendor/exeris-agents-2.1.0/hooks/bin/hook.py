@@ -270,16 +270,38 @@ def matches_any(patterns, text: str) -> bool:
     return any(re.search(p, text) for p in patterns or [])
 
 
+def _glob_hits(g: str, subject: str) -> bool:
+    if fnmatch.fnmatch(subject, g):
+        return True
+    # `**` in fnmatch does not cross the directory separator the way the layout implies.
+    if g.endswith("/**") and subject.startswith(g[:-3] + "/"):
+        return True
+    if g.endswith("/**") and subject == g[:-3]:
+        return True
+    return False
+
+
 def path_matches(globs, path: str) -> bool:
+    """Repository-relative globs against a repository path; home-anchored globs against the world.
+
+    A glob that starts with `~/` or `$HOME/` is about a file OUTSIDE the repository — a credential
+    store, a key — and is matched against the tool's path made absolute, with `~` expanded on both
+    sides. Everything else keeps its meaning: relative to the repository root. The two never mix:
+    a home-anchored glob is not tried against the relative form, and a relative glob is not tried
+    against the absolute one, so `**/.ssh/**` in a repository does not silently start denying the
+    home directory and `~/.ssh/**` does not match a `.ssh` vendored under the checkout.
+    """
     rel = os.path.relpath(path, repo_root()) if os.path.isabs(path) else path
     rel = rel.replace(os.sep, "/")
+    absolute = os.path.abspath(os.path.expanduser(path)).replace(os.sep, "/")
     for g in globs or []:
-        if fnmatch.fnmatch(rel, g):
-            return True
-        # `**` in fnmatch does not cross the directory separator the way the layout implies.
-        if g.endswith("/**") and rel.startswith(g[:-3] + "/"):
-            return True
-        if g.endswith("/**") and rel == g[:-3]:
+        if g.startswith(("~/", "$HOME/")):
+            home = os.path.expanduser("~").replace(os.sep, "/")
+            anchored = home + "/" + g.split("/", 1)[1]
+            if _glob_hits(anchored, absolute):
+                return True
+            continue
+        if _glob_hits(g, rel):
             return True
     return False
 
@@ -319,8 +341,14 @@ def run(hook_id: str, vendor: str, on_error: str, wired_event: str) -> int:
     command, path = extract(event)
 
     if spec.get("decision") == "deny":
+        reason = " ".join((spec.get("reason") or "").split())
         if command and matches_any(spec.get("match"), command):
-            return emit(vendor, kind, "deny", " ".join((spec.get("reason") or "").split()))
+            return emit(vendor, kind, "deny", reason)
+        # A deny rule used to read the command and nothing else, so a rule wired to the read or
+        # edit tool answered "allow" to every file — the file arrives as a path, not a command.
+        # `paths` on a deny rule is the same vocabulary the recorders use, and a hit is a deny.
+        if path and spec.get("paths") and path_matches(spec.get("paths"), path):
+            return emit(vendor, kind, "deny", reason)
         return emit(vendor, kind, "allow", "")
 
     if spec.get("record"):
