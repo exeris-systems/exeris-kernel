@@ -1,0 +1,44 @@
+# ADR-085 §F.21, in a file of its own and not in `guardrails.yml`.
+#
+# THE SPLIT IS NOT TIDINESS. `claude-code-action` refuses to start when the workflow it runs under
+# differs in any byte from the copy on the default branch, so `guardrails.yml` has to be one blob
+# on every branch. This gate cannot be: the modules it names must carry the `javadoc-gate` profile
+# in their own poms, and which modules do is a property of a tree rather than a rule. Keeping it
+# here lets each branch name what it can actually hold to, while the file the reviewer enters
+# through stays identical everywhere. No action of that kind runs here, so nothing compares this
+# file across branches.
+#
+# `modules` IS EMPTY ON THIS BRANCH, and that is the honest value rather than a placeholder. Every
+# substantive step in the called workflow is guarded on `modules != ''`, so an empty set gates
+# nothing and reports nothing. Naming the two published surfaces here instead would report a pass
+# that measures nothing: `-Ddoclint` reaches the plugin only where a module's pom does not configure
+# `doclint` itself, this repository's root pom sets `doclint none`, and the profile that overrides
+# it is the one this branch's poms do not carry. A gate that goes green because it was disabled is
+# worse than a gate that says it ran on nothing.
+#
+# A release line fills the set in its own copy when its poms carry the profile and its modules
+# measure clean, and it stays a REPORTED check there: making it required is a branch-protection
+# change, not a workflow one.
+name: javadoc
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+concurrency:
+  group: javadoc-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+# What the called workflow declares, and nothing beyond it: it builds and reads, and publishes no
+# check of its own beyond this job's own conclusion.
+permissions:
+  contents: read
+
+jobs:
+  javadoc:
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+    # with:
+    #   # The two published surfaces a downstream implementor reads, which is what
+    #   # javadoc-conventions.md rule 11 holds to a whole-module bar. Both need the `javadoc-gate`
+    #   # profile in their own pom, and `-Pjavadoc-gate` is what selects it; the `release` profile
+    #   # keeps `doclint none` on purpose, so that publishing never depends on the state of the
+    #   # prose.
+    #   modules: exeris-kernel-spi,exeris-kernel-tck
+    #   extra-maven-args: "-Pjavadoc-gate"

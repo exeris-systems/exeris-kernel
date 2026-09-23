@@ -7,11 +7,23 @@
 # routine as `repo-routine`, so having rules of one's own is not a reason to keep a second review
 # with a verdict format nothing can be gated on.
 #
-# THIS BRANCH RUNS A SUBSET, and says which. `repo-checks` and the Javadoc gate are absent here
-# because the tree this branch carries has neither the scripts the first hands over nor the
-# `javadoc-gate` profile the second selects; a gate naming what a branch does not have reports a
-# result about the naming rather than about the code. Both arrive with the development line at the
-# next release integration, and this file is then the one that line carries.
+# THIS FILE IS ONE BLOB ON EVERY BRANCH, and that is a requirement rather than a preference.
+# `claude-code-action` refuses to start when the workflow it runs under differs in any byte from
+# the copy on the repository's default branch, and it reports that refusal as a successful skip —
+# so a branch whose copy has drifted gets no review at all, on every pull request, while the
+# verdict check stays red for a reason no log on that pull request states. Nothing a caller can
+# pass turns it off.
+#
+# What follows from that: anything a single branch needs goes in a workflow file of its own, never
+# in this one, because only the file carrying the action is compared. `javadoc.yml` is that file —
+# the Javadoc gate's module set is a property of the tree, since the modules it names have to carry
+# the `javadoc-gate` profile in their poms, and that is configuration rather than a rule. And
+# `repo-checks` below names scripts that not every branch carries, so it asks before it runs one:
+# one string, true on every tree.
+#
+# THE RULES ARE AUTHORED HERE, on the default branch, and reach the release lines by the forward
+# merge they already take from it. A release line that edits this file is a release line whose
+# review is off.
 #
 # WHAT BLOCKS A MERGE. `docs-review / publish / verdict` is the one job here meant to be a required
 # status check: it is red when the verdict is BLOCKED, when no verdict exists, and when a mandatory
@@ -118,7 +130,31 @@ jobs:
       # request's ref: a pull request must not write the rules it is judged by. A pull request whose
       # base does not carry the file yet is reviewed by the shared routine alone.
       repo-routine: docs/repo-review-rules.md
-      # `mandatory-gates` is left at the routine's own three, which are the three this file runs.
+      # The mechanical checks the kernel routine's table earns, run by CI and handed to the reviewer
+      # as output. CI runs them because the runner's harness denies Bash: a routine that asks the
+      # model to execute a script gets a review reporting its own checks as `not-run`.
+      #
+      # Each is asked for before it is run, because this file is one blob on every branch and the
+      # scripts are not: a release line carries them and the default branch does not yet. A missing
+      # script says so in the output the reviewer reads, which is a fact about the branch; `No such
+      # file or directory` four times over is a fact about nothing. The loop runs under `bash -c`
+      # with no `set -e`, so a script that exits non-zero is evidence and the next one still runs —
+      # most of these locate candidates rather than decide, and a non-zero exit never fails the job.
+      repo-checks: |
+        for s in tools/spi-contract-blindness-check/spi-contract-blindness-check.sh \
+                 tools/error-code-registry-check/error-code-registry-check.sh \
+                 tools/checkstyle-parity-check/checkstyle-parity-check.sh \
+                 tools/scope-register-check/scope-register-check.sh; do
+          if [ -x "$s" ]; then
+            echo "== $s"; "$s"; echo "-- exit $?"
+          else
+            echo "== $s: this branch does not carry it"
+          fi
+        done
+      # `mandatory-gates` is left at the routine's own three, which are the three gate jobs in this
+      # file. The Javadoc gate is a REPORTED check and lives in `javadoc.yml`; naming it here would
+      # make its `not-run` turn the required check red, and that is a branch-protection decision
+      # made in another place.
     # Named, not `secrets: inherit`. Inherit hands the called workflow every secret this repository
     # has — signing keys, the Central token, the Packages token — to a job that needs three.
     # SonarCloud flags it (S7631, "Only pass required secrets to this workflow") and is right to.
