@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -95,6 +96,11 @@ final class CommunityHttpSubsystem implements Subsystem {
         if (provider == null || httpConfig == null || httpConfig.mode() == HttpMode.DISABLED) {
             return;
         }
+        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
+        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
+        // Below the guard, not above it: a kernel with http.mode=DISABLED was loading the whole HTTP
+        // event group on its way to returning.
+        CommunityJfrEventCatalogue.warmHotPath(name());
 
         if (serverEngine != null) {
             PersistenceEngine persistenceEngine = KernelProviders.PERSISTENCE_ENGINE.isBound()

@@ -104,6 +104,11 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
+        // No driver warm-up here: this module declares no JFR event class for the persistence
+        // subsystem, so CommunityJfrEventCatalogue has no "persistence" group and a warmHotPath call
+        // would resolve to an empty list on every boot. The Core persistence events — including
+        // JfrCommitDropEvent, which the committer installed below can produce — are warmed by the
+        // orchestrator, behind isRunning().
         // Install the off-thread JFR committer before marking running, so the first admission
         // decision already routes its commit onto the platform thread.
         jfrCommitter = JfrEventCommitter.start();

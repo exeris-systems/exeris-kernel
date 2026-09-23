@@ -87,6 +87,94 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The memory subsystem is stopped at shutdown, and its allocator is released.**
+  `CommunityMemorySubsystem` implemented `Subsystem` directly and overrode nothing, so
+  `isRunning()` answered the interface default `false` — which the SPI documents as telling the
+  orchestrator there is nothing to shut down. `SubsystemOrchestrator.shutdown()` therefore skipped
+  it, and the `memoryAllocator.close()` in its `stop()` — the only call of its kind in the kernel —
+  had never run in any process. It now extends `AbstractCommunitySubsystem` and reports through
+  `markRunning`, like every other Community subsystem. **Behaviour change:** `close()` ends the
+  validity of any segment still loaned out; the memory subsystem is FOUNDATION, so it stops last in
+  the reverse-topological order. Two guards keep the class of defect from returning: the subsystem
+  lifecycle TCK asserts `isRunning()` after `start()` against what each binding declares — the
+  companion check its own javadoc had recorded as missing — and an architecture test requires every
+  concrete Community subsystem to declare `isRunning()` in its own hierarchy.
+
+- **A transport engine no longer initialises its JFR event classes on a stream's virtual thread.**
+  `StreamLifecycleEvent` is emitted from the PAQS scheduler's `finally` block, so whichever stream
+  finished first ran its `<clinit>` — and a virtual thread inside a `<clinit>` cannot unmount, while
+  every other virtual thread waiting on that initialisation blocks pinned as well. JEP 491 unpinned
+  `synchronized` and `Object.wait`; it did not unpin class initialisation. The cost is a one-time
+  carrier stall at the first stream completion, invisible where carriers are plentiful and measured
+  at 15–16 ms on a loaded host and past 20 ms on a constrained one. The transport event classes are
+  initialised on the thread that starts the engine instead — by the subsystem's own `start()`, and by
+  `NativeTcpCarrier.start()` for an engine built without a kernel bootstrap, since client mode stands
+  up no PAQS. That call runs after the engine's own preconditions and before `initPaqs()` constructs
+  a scheduler, so a SERVER-mode engine started without a stream handler no longer pays fourteen class
+  loads on its way to throwing, and the scheduler's own constructor does not repeat it. Which classes those are is declared in `CoreJfrEventCatalogue` and
+  `CommunityJfrEventCatalogue` (see the entry above).
+
+- **Every JFR event class in the kernel is now classified, and the hot-path ones are initialised
+  when their subsystem starts.** A `jdk.jfr.Event` subclass registers itself from its own static
+  initialiser, so the first emit of a cold class pins a carrier for as long as the class takes to
+  load — and turning JFR off does not help, because every emit site is a static method that has
+  already initialised the class by the time the `FlightRecorder.isInitialized()` guard inside it
+  runs. Most of those helpers sit on an enclosing holder rather than on the event class, and JLS
+  12.4.1 means initialising `Outer$Inner` does not initialise `Outer`, so the warm-up initialises a
+  named class's declaring chain as well, outermost first.
+  `CoreJfrEventCatalogue` and `CommunityJfrEventCatalogue` split all 125 event classes of the two
+  main modules into warmed (78) and deliberately cold (47); the warm-up runs on the starting thread
+  from each Community subsystem's own `start()`, behind the check that subsystem already had, and
+  from `SubsystemOrchestrator.doStart` once the subsystem it started reports `isRunning()` — the same
+  check `stopAll` already trusts. A subsystem with no provider warms nothing, on either half. The
+  Kafka driver carries its own catalogue and guard for its three. Warming everything would cost upwards of 100 ms
+  of start-up (measured: ~1 ms per class) for failure-path events a process may never emit, which is
+  why cold is a decision rather than an omission; where a class is cold because the kernel never
+  stands up the component that emits it, the catalogue says so. `JfrEventCatalogueCoverageTest` fails
+  the build on an event class in neither bucket, on a catalogue name that no longer resolves, on a
+  subsystem whose `start()` does not reach the warm-up, on a subsystem that warms a group this
+  module does not declare — a call that can only be a no-op — and on a `doStart` that has lost
+  either the Core warm-up call or the check it sits behind. The Kafka driver warms in two places
+  rather than one: its engine's two events at `KafkaEventEngine.start()`, and the event log
+  appender's at that appender's construction, which is the only seam every caller of `append` passes
+  through — the engine neither builds nor holds one.
+
+- **Every carrier-pinning fence stops counting a cold JVM, not just the client-ingress one.**
+  `JfrPinningMonitor` — the instrument behind every subsystem's carrier-pinning binding — counted
+  each `jdk.VirtualThreadPinned` event alike, so a class initialising on a virtual thread read as a
+  blocked carrier on any of them. It now classifies through `CarrierPinClassification`: class
+  loading and class initialisation land in `Result.classInitEvents()`, reported in the failure
+  banner but not counted, and everything else still fails, a pin the JVM declines to explain
+  included. A class initialiser is not a licence either — a frame that means the carrier is really
+  blocked, such as a native-library load or an FFM downcall, keeps the pin counted however many
+  `<clinit>` frames sit above it. `PinnedEvent` carries the JVM's `pinnedReason` and its verdict, so
+  a report says why a carrier was pinned rather than only which thread was.
+
+  **Narrowing, for anyone binding the TCK:** `Result.pinnedEvents()`, `pinnedCount()` and
+  `hasPinning()` answered for every recorded pin over the threshold through 0.11 and answer only for
+  the counted ones from 0.12. The earlier meaning is `pinnedEvents()` together with
+  `classInitEvents()`. The records keep their previous constructors, so a binding compiled against
+  the earlier artifact still compiles and links; what changed is what the answer means.
+
+- **One formatter for a pinning report, and it names what the fence set aside.**
+  `JfrPinningMonitor.describe(Result, String)` builds the banner, the set-aside block and the path to
+  the recording; `assertNoPinning` throws with it and a binding that asserts on `pinnedEvents()`
+  itself uses the same text. The client-ingress test carried a second formatter for want of one it
+  could reach, and it is deleted.
+
+- **The client-ingress carrier-pinning regression test counts blocked carriers, not a cold JVM.**
+  It warms the measured path before the recording opens, sets class-loading and class-initialisation
+  pins aside from the fence while still reporting them, and takes its recording through
+  `JfrPinningMonitor` rather than reading JFR a second way — so the file survives the run and is named
+  in the failure message. Previously it deleted the evidence and reported a thread name, which is not
+  a diagnosis. It asserts through `JfrPinningMonitor.assertNoPinning`, which logs the set-aside block
+  before it decides, so a green run says what the fence set aside and not only that it passed. The
+  classifier is pinned in both directions by `CarrierPinClassificationTest`: a pin the JVM explains
+  as `Native or VM frame on stack` still fails the fence, and so does a native-library load, which
+  shares a package with the class loaders — including one whose blocking frame sits deeper than the
+  window the frame heuristic reads, because the veto that outranks a `<clinit>` scans the whole
+  stack.
+
 - **The embedded path ADR-084 exists for threw on its first call.** `CommunityWebSocketServerEngine`
   resolved `KernelProviders.MEMORY_ALLOCATOR` at construction and refused when nothing had bound one
   — precisely the state a tool embedding an endpoint is in. The transport factory's own javadoc

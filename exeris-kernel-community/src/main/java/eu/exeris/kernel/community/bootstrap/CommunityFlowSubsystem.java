@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.flow.CommunityFlowSnapshotStore;
 import eu.exeris.kernel.community.flow.JdbcFlowSnapshotStore;
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.flow.FlowBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -87,6 +88,9 @@ final class CommunityFlowSubsystem extends AbstractCommunitySubsystem {
         if (flowEngine == null) {
             return;
         }
+        // This driver's hot-path JFR event classes initialise here, on the thread that starts the
+        // subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of it.
+        CommunityJfrEventCatalogue.warmHotPath(name());
         flowEngine.start();
         markRunning(true);
     }

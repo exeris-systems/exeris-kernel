@@ -5,8 +5,10 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.memory.ResourceArbiter;
 import eu.exeris.kernel.core.memory.WatermarkManager;
+import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
 import eu.exeris.kernel.core.transport.scheduler.PaqsScheduler;
 import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
@@ -116,7 +118,6 @@ public final class NativeTcpCarrier implements TransportEngine {
     // exeris.transport.* knobs.
     private static final int ACCEPTED_SEND_BUFFER_BYTES =
             Integer.getInteger("exeris.transport.acceptedSendBufferBytes", 0);
-
     private final TransportConfig config;
     private final MemoryAllocator allocator;
     private final KernelCryptoProvider cryptoProvider;
@@ -221,10 +222,27 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
 
         try {
-            if (mode() == TransportMode.SERVER || mode() == TransportMode.DUAL) {
-                if (streamHandler == null) {
-                    throw new IllegalStateException("StreamHandler must be set before start() in SERVER/DUAL mode");
-                }
+            boolean serverRole = mode() == TransportMode.SERVER || mode() == TransportMode.DUAL;
+            if (serverRole && streamHandler == null) {
+                throw new IllegalStateException("StreamHandler must be set before start() in SERVER/DUAL mode");
+            }
+
+            // After the preconditions and inside the try: an engine that is going to throw must not
+            // pay fourteen class loads first, and a warm-up that throws anything JfrEventWarmup does
+            // not swallow must leave running clear. Still before the first stream exists, which is
+            // the point — a JFR event class that first initialises on a virtual thread pins its
+            // carrier for the whole <clinit>. The orchestrator warms the Core group too when it
+            // starts the transport subsystem; this covers an engine built without one, and the
+            // window inside this method, since the orchestrator's call lands after start() returns.
+            //
+            // Both groups warm in both roles. Roughly half of the fourteen — the PAQS and acceptor
+            // events — are unreachable in CLIENT mode, and that is a cost this accepts rather than
+            // a property it wants: splitting the group by role needs a catalogue key that is not a
+            // Subsystem name, which is the v0.13 telemetry-bootstrap mechanism.
+            CoreJfrEventCatalogue.warmHotPath("transport");
+            CommunityJfrEventCatalogue.warmHotPath("transport");
+
+            if (serverRole) {
                 initPaqs();
                 startServerRuntime();
             } else {

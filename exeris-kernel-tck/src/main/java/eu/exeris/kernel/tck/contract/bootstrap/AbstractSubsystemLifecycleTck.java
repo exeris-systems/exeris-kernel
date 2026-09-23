@@ -78,6 +78,23 @@ public abstract class AbstractSubsystemLifecycleTck {
         action.run();
     }
 
+    /**
+     * Whether the subsystem this binding builds is expected to report {@link Subsystem#isRunning()}
+     * after {@code start()}, given the configuration {@link #withLifecycleContext} puts it in.
+     *
+     * <p>Defaults to {@code true}, and the strict default is the load-bearing part. A binding whose
+     * configuration makes the subsystem find no provider — a DISABLED mode, an absent driver —
+     * overrides this to {@code false} and states the reason in one line. A binding that declares
+     * nothing gets the assertion rather than an exemption, which is the direction that catches the
+     * failure this check exists for: a subsystem that never overrides {@code isRunning()} and so
+     * answers the interface default {@code false} for the life of the JVM.
+     *
+     * @return {@code true} if {@code isRunning()} must report {@code true} after {@code start()}
+     */
+    protected boolean expectsRunningAfterStart() {
+        return true;
+    }
+
     private Subsystem subsystem;
 
     /**
@@ -186,13 +203,36 @@ public abstract class AbstractSubsystemLifecycleTck {
         }
 
         /**
+         * Asserts that {@code isRunning()} answers what the binding declares once {@code start()}
+         * has run.
+         *
+         * <p>This is what gives {@link #isRunningFalseAfterStop()} its meaning. Alone, that
+         * assertion cannot tell a subsystem that correctly transitions running → stopped from one
+         * whose {@code isRunning()} always returns {@code false} — the default a {@link Subsystem}
+         * inherits when it never overrides the method, and the state in which the orchestrator never
+         * calls {@code stop()} and every resource the subsystem holds leaks.
+         *
+         * <p>What the binding declares is {@link #expectsRunningAfterStart()}, because a DISABLED
+         * configuration legitimately reports {@code false} here; each binding states which it is
+         * rather than the contract accepting both.
+         */
+        @Test
+        @DisplayName("isRunning() after start() matches what the binding declares")
+        void isRunningAfterStartMatchesTheBinding() {
+            withLifecycleContext(subsystem::initialize);
+            withLifecycleContext(subsystem::start);
+            assertThat(subsystem.isRunning())
+                    .as("Subsystem.isRunning() after start(); a subsystem that holds a resource "
+                            + "stop() must release has to report true, or the orchestrator never calls stop()")
+                    .isEqualTo(expectsRunningAfterStart());
+        }
+
+        /**
          * Asserts that {@code isRunning()} reports {@code false} after the
-         * {@code initialize() → start() → stop()} sequence run directly by this TCK. No test
-         * in this class asserts {@code isRunning()} is {@code true} after {@code start()};
-         * without that companion check, this assertion cannot distinguish a subsystem that
-         * correctly transitions running → stopped from one whose {@code isRunning()} always
-         * returns {@code false} — the default a {@link Subsystem} inherits when it never
-         * overrides it.
+         * {@code initialize() → start() → stop()} sequence run directly by this TCK.
+         *
+         * <p>Paired with {@link #isRunningAfterStartMatchesTheBinding()}, which is what makes this
+         * one mean something for a binding that reports running.
          */
         @Test
         @DisplayName("isRunning() returns false after stop()")

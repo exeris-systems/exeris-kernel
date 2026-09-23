@@ -257,6 +257,7 @@ jobs:
           retention-days: 30
 
       - name: SonarQube Cloud Analysis
+        id: sonar
         # Runs in this job, immediately after the build, so it consumes the compiled classes and the
         # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. That reuse is the
         # whole point: SonarCloud Automatic Analysis never builds the project, so the
@@ -342,6 +343,28 @@ jobs:
           mvn -B -e -DskipTests -Dpmd.skip=true -Dcheckstyle.skip=true \
             verify -P coverage \
             org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+
+      - name: Say so when the Sonar analysis failed
+        # `continue-on-error` above reports the step as `success` whatever the goal did, so a failed
+        # analysis and a clean one are indistinguishable in the job summary and in `gh pr checks`.
+        # That is not hypothetical: on one head the scanner died with `HTTP 500` from
+        # sonarcloud.io/batch/project.protobuf, the step showed green, and the only visible symptom
+        # was the required `SonarCloud Code Analysis` context never arriving — which reads as a
+        # SonarCloud integration problem rather than as a failed run.
+        #
+        # This step does not fail the job either, for the reason the one above does not: this job is
+        # the root of the pipeline and eight others depend on it. It makes the failure legible.
+        if: ${{ always() && steps.sonar.outcome == 'failure' }}
+        run: |
+          {
+            echo "### SonarQube Cloud analysis FAILED"
+            echo
+            echo "The scanner did not complete, so no analysis was submitted and the required"
+            echo "\`SonarCloud Code Analysis\` status will not appear on this commit."
+            echo
+            echo "The build itself is unaffected — this step does not gate the pipeline."
+            echo "Read the \`SonarQube Cloud Analysis\` step's log in [this run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) for the scanner's own error."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: JFR writer to reader, end to end
         # The only job on a pull request that has real recordings: parse-jfr-to-json needs the

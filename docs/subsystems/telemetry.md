@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-17
 ---
 
 # Kernel Subsystem: Telemetry (L1 Observability)
@@ -293,6 +293,130 @@ static void emitExhaustion(long requested, long available, String name) {
 
 **Rule:** JFR `Event` subclasses must set `@StackTrace(false)` on all hot-path events.
 Stack trace capture is O(depth) allocation — it is reserved for `LeakTracker` and `CarrierPinnedEvent` only.
+
+### Hot-path event classes are initialised when their subsystem starts
+
+A `jdk.jfr.Event` subclass registers itself with the JFR metadata repository from its own static
+initialiser, and has to be loaded from the jar first. A virtual thread running a `<clinit>`
+**cannot unmount** — the JVM reports `VM call to <class>.<clinit> on stack` — and every other virtual
+thread that reaches the same class in that window blocks in `Object.wait` inside class
+initialisation, pinned as well (`Waited for initialization of <class> by another thread`). JEP 491
+unpinned `synchronized` and `Object.wait`; it did not unpin class initialisation. So the first emit
+of a cold event class stalls a carrier, and where carriers are scarce the waiters hold the carriers
+the initialiser needs.
+
+**Turning JFR off does not avoid it.** Every emit site here is a static method — some on the event
+class itself (`SomeEvent.emit(...)`), most of the nested ones on an enclosing holder that declares
+several (`SecurityJfrEvents.emitPrincipalBound(...)`). Either way the `FlightRecorder.isInitialized()`
+or `isEnabled()` guard inside the method runs after the class has already initialised. Measured over
+103 event classes: 79 ms with a recording running, 108 ms without — what dominates is the class load,
+not the JFR registration.
+
+**A nested name warms its holder too.** JLS 12.4.1: initialising `Outer$Inner` does not initialise
+`Outer`. Where the emit helper sits on the holder — 33 of the kernel's 35 nested event classes — the
+first emit therefore still ran the holder's `<clinit>` on a virtual thread, including the
+`EventType.getEventType(...)` registration `AdmissionDecisionEvent` and
+`PersistenceAdmissionStageEvent` cache in a static field. `JfrEventWarmup` walks the declaring chain
+with `Class.getDeclaringClass()` and initialises it outermost-first, which is the order the first
+emit would have taken.
+
+Two catalogues carry the answer, and every event class in the kernel is in exactly one of their
+buckets:
+
+| | |
+|:--|:--|
+| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 48 warmed, 43 deliberately cold |
+| `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 34 event classes — 30 warmed, 4 deliberately cold |
+| `KafkaJfrEventCatalogue` (`eu.exeris.kernel.community.kafka`) | 3 event classes — all warmed, in two groups because the driver has two seams: `kafka-engine` warms at `KafkaEventEngine.start()`, `kafka-appender` at `KafkaEventStreamAppender` construction. The driver ships its own catalogue and its own guard, because the Community guard runs in the module it depends on and cannot see it |
+
+A class is **warmed** when a virtual thread can reach it on a path that produces it concurrently —
+per request, per stream, per step, per allocation. It is left **cold** when it is emitted once per
+process, from a bootstrap or maintenance thread, or only by a path whose own cost dwarfs a
+millisecond. Cold is a decision, not an omission: a cold event is fully supported and exactly as
+observable, it simply pays its own initialisation the first time it fires. Warming everything
+instead would cost upwards of 100 ms of start-up for classes a given process may never emit.
+
+One group is cold for a second reason: the event is on a hot path, but the kernel has no seam to
+warm it from. The catalogue says so per entry rather than per group, because the entries do not
+share a reason and one sentence covering both was false for six of the seven:
+
+- `AsyncTelemetryDropEvent` — nothing in the reactor constructs an `AsyncTelemetrySink` at all.
+  `AsyncTelemetrySink.start` is called from `AsyncTelemetrySinkTest` and
+  `CoreAsyncTelemetryRingBufferTckTest` and from nowhere else, so there is no construction site.
+- The six `TelemetryJfrEvents` — a main source *does* construct the sink that emits them.
+  `CommunityTelemetryProvider.createSinks` builds a `JfrTelemetrySink` whenever
+  `TelemetryConfig.jfrSinkEnabled()`, and those six are exactly what that sink emits, from
+  `increment`/`gauge`/`latency` and from the typed error events. What makes them cold sits one level
+  further out: nothing in this kernel calls `createSinks`, nothing binds `TELEMETRY_SINKS`, and no
+  `Subsystem` reports the name `telemetry`, so there is no start to hang a warm-up off. A host that
+  stands the sinks up initialises them where it builds them.
+
+The seam itself is a v0.13 slice, alongside the telemetry bootstrap that would call `createSinks` —
+until something in the kernel stands the sink stack up, there is nothing here to warm from.
+
+`JfrCommitDropEvent` was in this bucket and should not have been: it
+fires from `JfrEventCommitter.offer` when the ring overflows, on the same request virtual thread as
+the persistence events feeding that ring, so it is warmed with the subsystem that stands the
+committer up.
+
+The warm-up runs on the thread that starts the subsystem. `SubsystemOrchestrator.doStart` warms
+Core's set for the subsystem it has just started, keyed by `Subsystem.name()`; each Community
+subsystem that owns a driver event group warms it from its own `start()`. Not every subsystem does:
+this module declares no event class under `graph` or `persistence`, so those two carry no call. A
+call for a group that does not exist resolves to an empty list on every boot and satisfies the
+coverage guard while warming nothing, so the guard fails a call it can prove is a no-op.
+
+The call sits in each subsystem rather than in a shared base class, because three subsystems
+implement `Subsystem` directly and a single hook in `AbstractCommunitySubsystem` does not reach them
+— memory among them, whose allocation events are the hottest path the catalogue names.
+`JfrEventCatalogueCoverageTest` fails the build if a subsystem that owns a group does not warm it, in
+addition to failing on an unclassified event class.
+
+A subsystem that found no provider warms nothing, and that holds for **both** halves of the warm-up.
+On the Community side every subsystem puts the call behind the check it already had — an early
+return, or the condition `markRunning` takes. On the Core side the orchestrator asks
+`Subsystem.isRunning()`, which is the same check `shutdown()` already trusts to decide what it has to
+stop; that is only readable once `start()` has run, which is why the Core warm-up follows `start()`
+rather than preceding it. It also means a subsystem that never overrides `isRunning()` loses its Core
+warm-up entirely — `CommunityMemorySubsystem` did, and the same default had been costing it its
+`stop()` since long before any of this. Two guards now cover that: the lifecycle TCK asserts
+`isRunning()` after `start()` against what each binding declares, and an ArchUnit check requires
+every concrete Community subsystem to declare the method somewhere in its own hierarchy rather than
+inherit the interface default.
+
+The warm-up call has its own `try`/`catch` inside `doStart`, separate from the one that routes a
+failed `start()` to `handleFailure`. A diagnostic that throws must not mark a subsystem that started
+cleanly as `FAILED`; it is logged at WARNING and the events initialise at their first emit, which is
+the behaviour the warm-up improves on rather than a new failure. Without both halves behind their
+checks, a kernel with `http.mode=DISABLED` loads the whole HTTP event group on its way to returning.
+
+Warming after `start()` returns has one limit: a
+subsystem that emits one of its own Core events from *inside* `start()` still initialises that class
+wherever that emit lands. Transport is the one place that happens, and `NativeTcpCarrier.start()`
+warms both of its groups itself for exactly that reason.
+
+`JfrEventCatalogueCoverageTest` reads the Community call out of the `start()` that actually runs, not
+out of the class, so a call left behind in `stop()` or on a dead branch does not satisfy it; it also
+asserts that `doStart` carries both the Core warm-up call and the `isRunning()` check. That second
+guard is structural — it reads the call graph, so it says both live in `doStart`, not that one is
+nested inside the other.
+
+An engine built without a kernel bootstrap warms its own: `NativeTcpCarrier.start()` does, because
+CLIENT mode stands up no PAQS and an embedded engine has no subsystem starting it. It warms before
+`initPaqs()` constructs a scheduler, so the scheduler's constructor does not repeat it — a
+data-structure constructor is the wrong seam for a process-wide warm-up, and it fired on every
+construction in the PAQS unit tests. The Kafka driver warms its three events at
+`KafkaEventEngine.start()`, through a `JfrEventCatalogue` of its own, exactly as the other two
+catalogues are built.
+
+The catalogues hold fully-qualified **names**, not class literals: two thirds of the kernel's event
+classes are package-private, so no single class can name them otherwise, and widening 66 classes to
+`public` to hold a warm-up list would be the worse change. Each catalogue resolves its names through
+its own module's class loader, because a driver's events ship in the driver's artifact.
+`JfrEventCatalogueCoverageTest` is what makes names safe — it resolves every one and matches the
+union of both buckets against the event classes each module actually declares, so a new event class
+that nobody classified fails the build, and so does a name left behind by a rename, a group keyed on
+a subsystem name nothing reports, and a subsystem that never warms.
 
 ---
 

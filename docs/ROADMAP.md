@@ -1140,6 +1140,8 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** OTLP metrics integration test against an OpenTelemetry Collector container shows metrics arriving with correct labels; tracing integration test produces a parent-child span across kernel + downstream HTTP client; both paths verified zero-allocation on emission via TCK budget assertions.
 
+**Sequencing (noted 2026-09-17):** "metrics arriving with correct labels" is not reachable from today's SPI — `TelemetrySink.increment/gauge/latency` take a name and a number with no dimension set, and a sink cannot be added to the active set by anything but the winning `TelemetryProvider`. Both are the subject of *Telemetry: a contract for events the kernel did not define* under v0.13, which this entry now waits on rather than duplicates.
+
 ---
 
 ### Telemetry: Glass-Box Binary Serializer and `exeris-decoder` CLI
@@ -3171,6 +3173,86 @@ gate does and does not cover.
    in `ramp`, errors in `strict`, which is why CI runs `ramp`. Of seventeen `subsystem` pages, the
    two added for websocket and diagnostics carry the four required sections and the other fifteen do
    not, which is why CI passes `--no-section-check`.
+
+---
+
+## Known Gaps / Future Work planned for v0.13
+
+### Telemetry: a contract for events the kernel did not define
+
+**Gap:** Two telemetry paths exist in this kernel and only one of them is sink-agnostic, which is
+not a defect in either but is a gap between them.
+
+1. **The typed path.** 128 `jdk.jfr.Event` subclasses are constructed and committed at their emit
+   sites (`StreamLifecycleEvent.emit`, `RouteExecutionEvent.emit`, …). They carry the rich,
+   Glass-Box field sets the telemetry contract advertises, and they reach **JFR and nothing else**:
+   no `TelemetrySink` sees them, so no Prometheus, SLF4J, file or wire consumer does either.
+2. **The sink path.** `TelemetrySink` fans out to every sink the winning `TelemetryProvider` built
+   (`KernelProviders.TELEMETRY_SINKS` is a list, so fan-out already works), but what it can carry is
+   `KernelEvent(code, level, timestamp, exception, component)` plus `increment` / `gauge` /
+   `latency`. That shape is a kernel *diagnostic* record. An application or a capability cannot
+   express a typed domain event through it, and the three metric primitives take **a name and a
+   number with no dimension set** — `PrometheusMetricsSink` keys its maps on the metric name alone.
+
+Three consequences follow, and each is already load-bearing somewhere:
+
+- **An application cannot add its own telemetry and have it land where the kernel's does.** Writing a
+  `jdk.jfr.Event` subclass works and reaches JFR only; going through a sink means flattening a domain
+  event into an error-code-shaped `KernelEvent`. There is no third option.
+- **A capability cannot add a sink.** One `TelemetryProvider` wins on priority and builds the whole
+  list; `TelemetryConfig` is a fixed four-knob record (console / JFR / file path / queue depth).
+  `exeris-caps-observability-bridge` — which every SKU in the HLA composes, and which is declared as
+  `@Provides JfrEventSink` `@Requires` kernel Telemetry SPI — would have to *replace* the active
+  provider to install itself, and `JfrEventSink` is a type the kernel SPI does not define.
+- **Dimensioned counting has nowhere to go.** `exeris-caps-usage-metering` is specified as recording
+  "counted events against a dimension set", and OTLP labels are the same requirement. Today a
+  dimension can only be baked into the metric name string, which is how cardinality becomes
+  unbounded and unreviewable.
+
+The existing entry *Telemetry: OTLP Metrics Export and Distributed Tracing* assumes both a sink that
+can be added and metrics that carry labels, so it rests on this gap rather than standing beside it.
+
+**Owner:** Telemetry subsystem (kernel), with `exeris-telemetry-spec` (ADR-018 Repo C) as the wire
+contract for anything that leaves the process.
+
+**Resolution:** **An RFC before any implementation** — this is a multi-option design question about a
+contract surface, which is the shape `RFC-TEMPLATE.md` exists for, not a decision already taken. The
+options the RFC must weigh, at minimum:
+
+- **(A) Widen the sink contract.** A typed, user-definable event plus dimensioned metrics on
+  `TelemetrySink`, and route the kernel's own 128 event classes through the fan-out instead of
+  committing to JFR inline. Most uniform; touches every emit site and puts a sink call on paths that
+  are currently a single `commit()`.
+- **(B) Make JFR the one ingestion point.** Sinks become consumers of a JFR `RecordingStream` rather
+  than emit targets, which is what "forwards JFR → ADR-018 wire" already implies and leaves all 128
+  emit sites untouched. Shifts cost and failure modes to a consumer thread, and makes every sink
+  depend on JFR being enabled.
+- **(C) Two surfaces, one mapping.** JFR stays the kernel's own path; a new application- and
+  capability-facing event/metric SPI is defined, with a documented mapping into JFR and into the
+  wire. Smallest blast radius on the kernel's hot paths; the most surface to keep honest.
+
+Whichever wins must answer the same four questions: what it costs on a zero-allocation hot path, how
+the SPI stays implementation-blind (the Wall), who owns cardinality control for dimensions, and
+whether OTLP belongs in the kernel or in a capability above it.
+
+**Carried with it — the warm-up seam for the sink stack.** `CoreJfrEventCatalogue` files
+`AsyncTelemetryDropEvent` and the six `TelemetryJfrEvents` classes as deliberately cold, and the
+reason is this gap rather than a judgement about those events: they are per-metric-call in shape,
+`CommunityTelemetryProvider.createSinks` does build the `JfrTelemetrySink` that emits six of them,
+and nothing in this kernel calls `createSinks`, binds `KernelProviders.TELEMETRY_SINKS`, or reports
+a `Subsystem` named `telemetry`. So there is no start to hang a warm-up off. Whatever stands the
+sink stack up here is the seam, and those seven entries move out of `deliberatelyCold()` in the same
+change. Until then a host that binds sinks itself initialises them where it builds them.
+
+**Merge Gate:** RFC merged with a decision and its rejected alternatives; a TCK for whatever contract
+lands; and one executable proof that the gap is closed — an event type declared **outside** the
+kernel reaching two different sinks, one of them not JFR. Whatever bootstraps the sink stack warms
+those seven event classes at that seam, and `CoreJfrEventCatalogue` no longer lists them as cold.
+
+**Status (v0.12):** **NOT STARTED — decision-only slice.** Surfaced 2026-09-17 while classifying every
+JFR event class in the kernel for the warm-up catalogues; the inventory is what made the split between
+the two paths visible as a contract question rather than an implementation detail. No RFC exists in
+`docs/rfc/`.
 
 ---
 
