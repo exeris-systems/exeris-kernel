@@ -1335,6 +1335,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   itself finished while an owed check has not run, and two record the state it reads. The shared
   half is imported from `exeris-agents` 1.4.0, pinned, vendored and digest-verified; this repository
   no longer carries a renderer of its own. (#449, #478)
+- **One review, one verdict, one publisher** — this repository no longer runs a review workflow of
+  its own (ADR-087 §A.3: the reviewer may not publish). Its review rules reach the organisation's
+  shared routine as `docs/repo-review-rules.md`, applied after that routine's own steps and under
+  its severity tags and verdict schema, and its mechanical gates reach the reviewer as output CI
+  produced — the runner's harness denies a shell, so a routine that asks the model to run a script
+  gets a review reporting its own checks as `not-run`. The verdict is posted under the
+  organisation's identity and validated against the shared base, and `docs-review / publish /
+  verdict` is red when it is BLOCKED, absent, or rests on a mandatory gate that did not run. That
+  check is not yet one of this repository's required contexts; making it required is a
+  branch-protection change.
 - **The diagnostics NDJSON session is driven with a malformed line mid-session** — through `serve()`
   for the first time, from the CLI documentation pass. (#479)
 
