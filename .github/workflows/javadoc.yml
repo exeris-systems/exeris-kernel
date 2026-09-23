@@ -44,11 +44,21 @@ jobs:
       # silently, because every step of the called workflow is guarded on `modules != ''` and an
       # empty set runs green having measured nothing.
       #
-      # `modules` names the published surfaces a downstream implementor reads, which is the set
-      # javadoc-conventions.md rule 11 holds to a whole-module bar. Each needs the `javadoc-gate`
-      # profile in its own pom and `-Pjavadoc-gate` is what selects it; empty is the honest value
-      # for a tree whose poms do not carry it, and is what the called workflow defaults to.
+      # TWO SETS, AND THEY ANSWER DIFFERENT QUESTIONS.
+      #
+      # `modules` is the whole-module bar: every file complies, always. It holds the SPI, which is
+      # what a downstream implementor writes against, and the TCK, which is what a contributor runs
+      # to show an implementation conforms. Each module in it needs the `javadoc-gate` profile in
+      # its own pom, and `-Pjavadoc-gate` is what selects that profile — so empty is the honest
+      # value for a tree whose poms do not carry it, and is what the called workflow defaults to.
       # The `release` profile keeps `doclint none` on purpose, so publishing never depends on the
       # state of the prose.
+      #
+      # `diff-modules` is javadoc-conventions.md rule 11 as rule 11 states it: for Kernel Core,
+      # Community and tooling, rules 2-9 apply to changed files only, with no backfill mandate. It
+      # needs no pom change, because that half runs `javadoc` and Checkstyle directly over the
+      # changed files rather than through the Maven plugin — which is also why this value is the
+      # same on every branch while `modules` is not.
       modules: ""
+      diff-modules: exeris-kernel-core,exeris-kernel-community
       extra-maven-args: ""
