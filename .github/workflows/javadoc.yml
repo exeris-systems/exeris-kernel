@@ -11,9 +11,15 @@
 # `modules` NAMES WHAT THIS TREE CAN BE HELD TO, and is absent where that is nothing. The gate
 # measures a module only where that module's own pom carries the `javadoc-gate` profile: without it
 # the root pom's `doclint none` stands, `-Ddoclint` never reaches the plugin, and the run reports a
-# pass that measured nothing. Every substantive step in the called workflow is guarded on
-# `modules != ''`, so an absent set gates nothing and claims nothing — which is the honest state for
-# a tree whose poms do not carry the profile, and not a placeholder waiting to be filled in.
+# pass that measured nothing. Every substantive whole-module step in the called workflow is guarded
+# on `modules != ''`, so leaving that one set empty gates no module and claims nothing — the honest
+# state for a tree whose poms do not carry the profile, and not a placeholder waiting to be filled.
+#
+# THE TWO SETS MAY NOT BOTH BE EMPTY. The called workflow joins them into one list before any of
+# those guards apply and refuses an empty result — `neither 'modules' nor 'diff-modules' was given
+# — the gate has nothing to check`, exit 1. So a copy of this file with both empty does not report
+# nothing; it fails this job on every pull request. Emptying one is a statement about the tree,
+# and the workflow will not let emptying both pass quietly.
 #
 # Each copy of this file therefore states its own set and says nothing about any other branch's: a
 # comment that describes a tree it is not in is false the moment the file is merged into that tree.
