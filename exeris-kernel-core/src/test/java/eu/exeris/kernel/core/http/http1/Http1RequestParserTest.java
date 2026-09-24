@@ -212,9 +212,9 @@ class Http1RequestParserTest {
     }
 
     /**
-     * Every parse failure on the inbound path is the remote client's fault (ADR-083). The type no
-     * longer carries that on its own, so each case asserts it: an origin stated per throw site is
-     * only as good as the test that reads it back.
+     * Every parse failure on the inbound path is the remote client's fault (ADR-083). The type does
+     * not fix the origin on its own — the throw site states it — so each case reads it back: an
+     * origin stated per site is only as good as what checks it.
      */
     private static void assertInboundCallerFault(Throwable thrown) {
         assertThat(thrown).isInstanceOf(Http1ParseException.class);
