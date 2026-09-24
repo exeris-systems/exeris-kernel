@@ -1400,14 +1400,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
-- **An inbound HTTP/1.1 parse violation has a type of its own** — `Http1RequestParseException`,
-  top-level in `eu.exeris.kernel.core.http.http1`, replacing the nested
-  `Http1RequestParser.Http1ParseException` that has carried it since 0.5. The two types were
-  distinguishable only by scope: inside `Http1RequestParser` the simple name resolved inward to the
-  `CALLER`-fixed subclass and everywhere else outward to the `SYSTEM`-defaulting base, so identical
-  source text produced opposite ADR-083 classifications depending on where it was written. The
-  split itself is kept — it is the inbound/outbound answer, not a duplicate — and the fault origin
-  each type fixes is unchanged.
+- **One HTTP/1.1 parse exception, and it will not guess whose fault a framing violation is** —
+  `Http1ParseException` takes a `FaultOrigin` in every constructor and offers none without one. It
+  had two that defaulted to `SYSTEM`, and a nested `Http1RequestParser.Http1ParseException`
+  subclass that existed to pin `CALLER` on the inbound path, which meant two types with one simple
+  name in one package: inside the parser it resolved inward to the subclass, everywhere else
+  outward to the base, so identical source text classified a failure oppositely depending on where
+  it was written. Neither the defaults nor the subclass had a production caller that needed them —
+  every outbound site already passed `SYSTEM` explicitly. The classification moved from the type to
+  the call, where the compiler requires it, and every inbound case now reads the origin back.
 
 ### Documentation
 

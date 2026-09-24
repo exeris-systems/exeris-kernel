@@ -15,9 +15,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 class Http1ParseExceptionTest {
 
     @Test
-    @DisplayName("Http1ParseException carries EX-HTTP-4004 error code and classifies as SYSTEM fault by default (ADR-083)")
-    void carriesErrorCodeAndClassifiesAsSystemFaultByDefault() {
-        Http1ParseException exception = new Http1ParseException("Test violation", 42L);
+    @DisplayName("Http1ParseException carries EX-HTTP-4004 and the SYSTEM origin it was given (ADR-083)")
+    void carriesErrorCodeAndTheSystemOriginItWasGiven() {
+        Http1ParseException exception = new Http1ParseException(
+                FaultOrigin.SYSTEM, "Test violation", 42L);
 
         assertThat(exception.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
         assertThat(exception.faultOrigin()).isEqualTo(FaultOrigin.SYSTEM);
@@ -27,10 +28,11 @@ class Http1ParseExceptionTest {
     }
 
     @Test
-    @DisplayName("Http1ParseException with cause chains properly and preserves SYSTEM fault origin by default")
-    void constructorWithCausePreservesSystemFaultByDefault() {
+    @DisplayName("Http1ParseException with cause chains properly and carries the SYSTEM origin it was given")
+    void constructorWithCauseCarriesTheSystemOriginItWasGiven() {
         IllegalStateException cause = new IllegalStateException("Underlying error");
-        Http1ParseException exception = new Http1ParseException("Malformed framing", cause, 100L, 200L);
+        Http1ParseException exception = new Http1ParseException(
+                FaultOrigin.SYSTEM, "Malformed framing", cause, 100L, 200L);
 
         assertThat(exception.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
         assertThat(exception.faultOrigin()).isEqualTo(FaultOrigin.SYSTEM);
@@ -39,9 +41,9 @@ class Http1ParseExceptionTest {
     }
 
     @Test
-    @DisplayName("Http1RequestParseException fixes CALLER fault at the type (ADR-083)")
+    @DisplayName("Http1ParseException fixes CALLER fault at the type (ADR-083)")
     void requestParseExceptionFixesCallerFault() {
-        Http1RequestParseException inbound = new Http1RequestParseException(
+        Http1ParseException inbound = new Http1ParseException(FaultOrigin.CALLER, 
                 "Request line too long", 1024L, 8192L);
 
         assertThat(inbound.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
@@ -51,10 +53,10 @@ class Http1ParseExceptionTest {
     }
 
     @Test
-    @DisplayName("Http1RequestParseException fixes CALLER fault when chaining a cause too")
+    @DisplayName("Http1ParseException fixes CALLER fault when chaining a cause too")
     void requestParseExceptionFixesCallerFaultWithCause() {
         NumberFormatException cause = new NumberFormatException("For input string: \"x\"");
-        Http1RequestParseException inbound = new Http1RequestParseException(
+        Http1ParseException inbound = new Http1ParseException(FaultOrigin.CALLER, 
                 "Malformed Content-Length", cause, 7L);
 
         assertThat(inbound.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);

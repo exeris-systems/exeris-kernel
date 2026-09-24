@@ -63,7 +63,7 @@ class Http1RequestParserTest {
                     Http1RequestParser.DEFAULT_MAX_HEADER_SIZE,
                     (name, value) -> {
                     }
-            )).isInstanceOf(Http1RequestParseException.class)
+            )).satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("too many header fields");
         }
     }
@@ -92,7 +92,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }
@@ -136,7 +136,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }
@@ -150,7 +150,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }
@@ -164,8 +164,8 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
                     segment, 0, headers.length(), 16, 8_192, (name, value) -> { }))
                     .as("a header line carrying no colon is malformed framing, not a size breach")
-                    .isInstanceOf(Http1RequestParseException.class)
-                    .satisfies(ex -> assertThat(((Http1RequestParseException) ex).faultOrigin())
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
+                    .satisfies(ex -> assertThat(((Http1ParseException) ex).faultOrigin())
                             .isEqualTo(FaultOrigin.CALLER));
         }
     }
@@ -179,8 +179,8 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
                     segment, 0, headers.length(), 16, 8, (name, value) -> { }))
                     .as("over the limit the size breach is the reason reported, not the missing colon")
-                    .isInstanceOf(Http1RequestParseException.class)
-                    .satisfies(ex -> assertThat(((Http1RequestParseException) ex).faultOrigin())
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
+                    .satisfies(ex -> assertThat(((Http1ParseException) ex).faultOrigin())
                             .isEqualTo(FaultOrigin.CALLER));
         }
     }
@@ -194,7 +194,7 @@ class Http1RequestParserTest {
 
             assertThatThrownBy(() -> Http1RequestParser.parseRequestLine(segment, past, 2))
                     .as("a public entry point taking an offset checks it against the segment")
-                    .isInstanceOf(Http1RequestParseException.class);
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault);
         }
     }
 
@@ -207,7 +207,17 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseRequestLine(
                     segment, 2, segment.byteSize()))
                     .as("offset plus length has to stay inside the segment, not merely length")
-                    .isInstanceOf(Http1RequestParseException.class);
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault);
         }
+    }
+
+    /**
+     * Every parse failure on the inbound path is the remote client's fault (ADR-083). The type no
+     * longer carries that on its own, so each case asserts it: an origin stated per throw site is
+     * only as good as the test that reads it back.
+     */
+    private static void assertInboundCallerFault(Throwable thrown) {
+        assertThat(thrown).isInstanceOf(Http1ParseException.class);
+        assertThat(((Http1ParseException) thrown).faultOrigin()).isEqualTo(FaultOrigin.CALLER);
     }
 }

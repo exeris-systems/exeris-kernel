@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.http.http1;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -29,7 +30,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
                     .as("the configured header-count bound must be the one enforced")
-                    .isInstanceOf(Http1RequestParseException.class);
+                    .satisfies(Http1CodecTest::assertInboundCallerFault);
         }
     }
 
@@ -42,7 +43,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
                     .as("the configured single-header size bound must be the one enforced")
-                    .isInstanceOf(Http1RequestParseException.class);
+                    .satisfies(Http1CodecTest::assertInboundCallerFault);
         }
     }
 
@@ -57,7 +58,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> new Http1Codec().parseHeaders(segment, 0, headers.length()))
                     .as("the default bound of 8 192 refuses it")
-                    .isInstanceOf(Http1RequestParseException.class);
+                    .satisfies(Http1CodecTest::assertInboundCallerFault);
 
             Http1Codec raised = new Http1Codec(100, 16_384);
             assertThat(raised.parseHeaders(segment, 0, headers.length()))
@@ -101,7 +102,7 @@ class Http1CodecTest {
             Http1Codec codec = new Http1Codec();
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
-                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(Http1CodecTest::assertInboundCallerFault)
                     .hasMessageContaining("invalid Content-Length");
         }
     }
@@ -114,7 +115,7 @@ class Http1CodecTest {
             Http1Codec codec = new Http1Codec();
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
-                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(Http1CodecTest::assertInboundCallerFault)
                     .hasMessageContaining("invalid Content-Length");
         }
     }
@@ -160,7 +161,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> seen.add(name)))
-                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(Http1CodecTest::assertInboundCallerFault)
                     .hasMessageContaining("invalid Content-Length");
 
             assertThat(seen)
@@ -200,7 +201,7 @@ class Http1CodecTest {
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> { }))
                     .as("the configured header-count bound must be the one enforced")
-                    .isInstanceOf(Http1RequestParseException.class);
+                    .satisfies(Http1CodecTest::assertInboundCallerFault);
         }
     }
 
@@ -215,5 +216,15 @@ class Http1CodecTest {
                     .isInstanceOf(NullPointerException.class)
                     .hasMessageContaining("visitor");
         }
+    }
+
+    /**
+     * Every parse failure on the inbound path is the remote client's fault (ADR-083). The type no
+     * longer carries that on its own, so each case asserts it: an origin stated per throw site is
+     * only as good as the test that reads it back.
+     */
+    private static void assertInboundCallerFault(Throwable thrown) {
+        assertThat(thrown).isInstanceOf(Http1ParseException.class);
+        assertThat(((Http1ParseException) thrown).faultOrigin()).isEqualTo(FaultOrigin.CALLER);
     }
 }

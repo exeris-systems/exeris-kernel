@@ -290,13 +290,12 @@ Five subclasses declare `CALLER` unconditionally today — `RequestBodyDecodeExc
 `EventStreamAppendConflictException` (all four in `exeris-kernel-spi`), and
 `eu.exeris.kernel.core.websocket.WebSocketProtocolException` in `exeris-kernel-core` — a Core-only
 type (it never reaches a handler; the engine catches it itself), carrying `EX-HTTP-4015`.
-HTTP/1.1 parse violations split that answer across two types rather than one, per ADR-083.
-`eu.exeris.kernel.core.http.http1.Http1RequestParseException` is the inbound one — a request a
-remote client sent this server and it could not frame — and every constructor fixes `CALLER`, so a
-throw site cannot pick another origin by omission. Its supertype
-`eu.exeris.kernel.core.http.http1.Http1ParseException` defaults to `SYSTEM`, which is the outbound
-answer: a response an upstream dependency returned to this client. Same failure, opposite ends of a
-connection.
+`eu.exeris.kernel.core.http.http1.Http1ParseException` is one type answering for both directions,
+and it takes the origin rather than defaulting to one: `CALLER` for a request this server could not
+frame, because a remote client sent it, and `SYSTEM` for a response this client could not frame,
+because an upstream dependency returned it. Same failure, opposite ends of a connection. There is
+no origin-less constructor, so a throw site states which end it is on or does not compile, and each
+inbound site is read back by a test — an origin stated per site is only as good as what checks it.
 **A new subclass should state its origin when the answer is clear from its own contract, and leave
 the default when it is not**; a wrong `CALLER` is worse than an unclassified `SYSTEM`.
 
