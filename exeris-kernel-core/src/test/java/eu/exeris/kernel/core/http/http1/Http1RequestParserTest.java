@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.http.http1;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -151,6 +152,62 @@ class Http1RequestParserTest {
                     }))
                     .isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("Invalid HTTP header field-name");
+        }
+    }
+
+    @Test
+    void headerLineWithoutAColonIsRejectedAsMalformed() {
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "Host example.com\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
+                    segment, 0, headers.length(), 16, 8_192, (name, value) -> { }))
+                    .as("a header line carrying no colon is malformed framing, not a size breach")
+                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(ex -> assertThat(((Http1RequestParseException) ex).faultOrigin())
+                            .isEqualTo(FaultOrigin.CALLER));
+        }
+    }
+
+    @Test
+    void headerLineWithoutAColonOverTheSizeLimitIsRejectedAsASizeBreach() {
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "H".repeat(64) + "\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
+                    segment, 0, headers.length(), 16, 8, (name, value) -> { }))
+                    .as("over the limit the size breach is the reason reported, not the missing colon")
+                    .isInstanceOf(Http1RequestParseException.class)
+                    .satisfies(ex -> assertThat(((Http1RequestParseException) ex).faultOrigin())
+                            .isEqualTo(FaultOrigin.CALLER));
+        }
+    }
+
+    @Test
+    void anOffsetPastTheSegmentIsRejectedRatherThanRead() {
+        try (Arena arena = Arena.ofConfined()) {
+            String requestLine = "GET / HTTP/1.1\r\n";
+            MemorySegment segment = arena.allocateFrom(requestLine, StandardCharsets.US_ASCII);
+            long past = segment.byteSize() + 1;
+
+            assertThatThrownBy(() -> Http1RequestParser.parseRequestLine(segment, past, 2))
+                    .as("a public entry point taking an offset checks it against the segment")
+                    .isInstanceOf(Http1RequestParseException.class);
+        }
+    }
+
+    @Test
+    void aLengthBeyondTheRemainingBytesIsRejectedRatherThanRead() {
+        try (Arena arena = Arena.ofConfined()) {
+            String requestLine = "GET / HTTP/1.1\r\n";
+            MemorySegment segment = arena.allocateFrom(requestLine, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseRequestLine(
+                    segment, 2, segment.byteSize()))
+                    .as("offset plus length has to stay inside the segment, not merely length")
+                    .isInstanceOf(Http1RequestParseException.class);
         }
     }
 }
