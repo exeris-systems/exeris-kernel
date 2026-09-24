@@ -52,7 +52,7 @@ class CommunityHttpClientHeadResponseTest {
     void headResponseDecodesWithoutBody() {
         try (LoanedBuffer aggregate = load(HEAD_RESPONSE)) {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    ALLOCATOR, aggregate, aggregate.size(), true);
+                    aggregate, aggregate.size(), true);
 
             assertThat(response.status().code()).isEqualTo(200);
             assertThat(response.hasBody())
@@ -72,7 +72,7 @@ class CommunityHttpClientHeadResponseTest {
     void withoutTheFlagItIsStillATruncation() {
         try (LoanedBuffer aggregate = load(HEAD_RESPONSE)) {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    ALLOCATOR, aggregate, aggregate.size(), false))
+                    aggregate, aggregate.size(), false))
                     .as("if this passed too, the flag would not be what makes HEAD work")
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> {

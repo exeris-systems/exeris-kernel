@@ -183,7 +183,7 @@ class CommunityHttpClientResponseDecoderTest {
 
         withWire(wire.getBytes(StandardCharsets.US_ASCII), (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -198,7 +198,7 @@ class CommunityHttpClientResponseDecoderTest {
 
         withWire(wire.getBytes(StandardCharsets.US_ASCII), (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(200);
             assertThat(response.body()).isNotNull();
             assertThat(response.body().size()).isEqualTo(5L);
@@ -212,7 +212,7 @@ class CommunityHttpClientResponseDecoderTest {
         String wire = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 5\r\n\r\nhello";
         withWire(wire.getBytes(StandardCharsets.ISO_8859_1), (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(200);
             assertThat(response.body()).isNotNull();
             assertThat(response.body().size()).isEqualTo(5L);
@@ -233,7 +233,7 @@ class CommunityHttpClientResponseDecoderTest {
     private List<HttpHeader> headersOfBytes(byte[] wire) {
         return withWire(wire, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, true);
+                    buffer, total, true);
             if (response.body() != null) {
                 response.body().close();
             }
@@ -397,7 +397,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] fourDigits = "HTTP/1.1 2000 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(fourDigits, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -407,7 +407,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] twoDigits = "HTTP/1.1 20 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(twoDigits, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -417,7 +417,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] noReason = "HTTP/1.1 204\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(noReason, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(204);
             assertThat(response.status().reasonPhrase()).isEmpty();
             return null;
@@ -427,7 +427,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] trailingSpaceNoReason = "HTTP/1.1 204 \r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(trailingSpaceNoReason, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(204);
             assertThat(response.status().reasonPhrase()).isEmpty();
             return null;
@@ -437,7 +437,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] multiSpaceReason = "HTTP/1.1 200   Custom OK   \r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(multiSpaceReason, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(200);
             assertThat(response.status().reasonPhrase()).isEqualTo("Custom OK");
             return null;
@@ -447,7 +447,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] tabReason = "HTTP/1.1 200\tAccepted Tab\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(tabReason, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -456,7 +456,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] tabAfterVersion = "HTTP/1.1\t200 OK\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(tabAfterVersion, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -468,7 +468,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] http10 = "HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(http10, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.version()).isEqualTo(HttpVersion.HTTP_1_0);
             return null;
         });
@@ -476,7 +476,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] http11 = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(http11, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.version()).isEqualTo(HttpVersion.HTTP_1_1);
             return null;
         });
@@ -485,7 +485,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] http2 = "HTTP/2 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(http2, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -494,7 +494,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] http20 = "HTTP/2.0 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(http20, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -504,7 +504,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] unknownVersion = "UNKNOWN 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(unknownVersion, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -513,7 +513,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] invalidPrefix = "INVALID/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(invalidPrefix, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -522,7 +522,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] http3 = "HTTP/3.0 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(http3, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -534,7 +534,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] ok = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(ok, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.OK);
             return null;
         });
@@ -542,7 +542,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] partialContent = "HTTP/1.1 206 Partial Content\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(partialContent, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.PARTIAL_CONTENT);
             return null;
         });
@@ -550,7 +550,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] tempRedirect = "HTTP/1.1 307 Temporary Redirect\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(tempRedirect, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.TEMPORARY_REDIRECT);
             return null;
         });
@@ -558,7 +558,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] permRedirect = "HTTP/1.1 308 Permanent Redirect\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(permRedirect, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.PERMANENT_REDIRECT);
             return null;
         });
@@ -566,7 +566,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] methodNotAllowed = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(methodNotAllowed, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.METHOD_NOT_ALLOWED);
             return null;
         });
@@ -574,7 +574,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] reqTimeout = "HTTP/1.1 408 Request Timeout\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(reqTimeout, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.REQUEST_TIMEOUT);
             return null;
         });
@@ -582,7 +582,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] conflict = "HTTP/1.1 409 Conflict\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(conflict, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.CONFLICT);
             return null;
         });
@@ -590,7 +590,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] gone = "HTTP/1.1 410 Gone\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(gone, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.GONE);
             return null;
         });
@@ -598,7 +598,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] contentTooLarge = "HTTP/1.1 413 Content Too Large\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(contentTooLarge, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.CONTENT_TOO_LARGE);
             return null;
         });
@@ -606,7 +606,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] uriTooLong = "HTTP/1.1 414 URI Too Long\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(uriTooLong, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.URI_TOO_LONG);
             return null;
         });
@@ -614,7 +614,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] tooManyReqs = "HTTP/1.1 429 Too Many Requests\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(tooManyReqs, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.TOO_MANY_REQUESTS);
             return null;
         });
@@ -622,7 +622,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] headersTooLarge = "HTTP/1.1 431 Request Header Fields Too Large\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(headersTooLarge, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE);
             return null;
         });
@@ -630,7 +630,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] notImplemented = "HTTP/1.1 501 Not Implemented\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(notImplemented, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.NOT_IMPLEMENTED);
             return null;
         });
@@ -638,7 +638,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] versionNotSupported = "HTTP/1.1 505 HTTP Version Not Supported\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(versionNotSupported, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.HTTP_VERSION_NOT_SUPPORTED);
             return null;
         });
@@ -646,7 +646,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] noContent = "HTTP/1.1 204 No Content\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(noContent, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.NO_CONTENT);
             return null;
         });
@@ -654,7 +654,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] notModified = "HTTP/1.1 304 Not Modified\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(notModified, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.NOT_MODIFIED);
             return null;
         });
@@ -663,7 +663,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] customOk = "HTTP/1.1 200 Custom Text\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(customOk, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(200);
             assertThat(response.status().reasonPhrase()).isEqualTo("Custom Text");
             assertThat(response.status()).isNotSameAs(HttpStatus.OK);
@@ -676,7 +676,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] bareCrWithReason = "HTTP/1.1 200\rOK\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(bareCrWithReason, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -685,7 +685,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] bareCrNoReason = "HTTP/1.1 200\r\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(bareCrNoReason, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -697,7 +697,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] conflict = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 5\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(conflict, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -772,7 +772,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] emptyHeaders = "HTTP/1.1 204 No Content\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(emptyHeaders, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(204);
             assertThat(response.status()).isSameAs(HttpStatus.NO_CONTENT);
             assertThat(response.headers()).isEmpty();
@@ -786,7 +786,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] negative = "HTTP/1.1 200 OK\r\nContent-Length: -1\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(negative, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -795,7 +795,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] nonDigit = "HTTP/1.1 200 OK\r\nContent-Length: 5abc\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(nonDigit, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -836,7 +836,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] raw = "HTTP/1.1 200 OK\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(raw, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status().code()).isEqualTo(200);
             assertThat(response.headers()).isEmpty();
             assertThat(response.body()).isNull();
@@ -849,7 +849,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] raw = "HTTP/1.1 200 OK\r\nX-Bad Name: val\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(raw, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode())
                             .isEqualTo(KernelErrorCodes.EX_HTTP_4004));
@@ -864,7 +864,7 @@ class CommunityHttpClientResponseDecoderTest {
                 .getBytes(StandardCharsets.US_ASCII);
         withWire(trailingContentLength, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -875,7 +875,7 @@ class CommunityHttpClientResponseDecoderTest {
                 .getBytes(StandardCharsets.US_ASCII);
         withWire(trailingNoContent, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> assertThat(((ExerisKernelException) ex).errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004));
             return null;
@@ -887,7 +887,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] wire = "HTTP/1.1 200 ok\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(wire, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.OK);
             return null;
         });
@@ -895,7 +895,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] wireNotFound = "HTTP/1.1 404 not found\r\nContent-Length: 0\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(wireNotFound, (buffer, total) -> {
             HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false);
+                    buffer, total, false);
             assertThat(response.status()).isSameAs(HttpStatus.NOT_FOUND);
             return null;
         });
@@ -906,7 +906,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] wire = "HTTP/1.1 200 OK\r\nContent-Length: 12a4\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(wire, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> {
                         ExerisKernelException ke = (ExerisKernelException) ex;
@@ -924,7 +924,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] wire = "HTTP/1.1 200 OK\r\nContent-Length: 9223372036854775808\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(wire, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> {
                         ExerisKernelException ke = (ExerisKernelException) ex;
@@ -956,7 +956,7 @@ class CommunityHttpClientResponseDecoderTest {
             byte[] wire = malformed.getBytes(StandardCharsets.US_ASCII);
             withWire(wire, (buffer, total) -> {
                 assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                        allocator, buffer, total, false))
+                        buffer, total, false))
                         .isInstanceOf(ExerisKernelException.class)
                         .satisfies(ex -> {
                             ExerisKernelException ke = (ExerisKernelException) ex;
@@ -976,7 +976,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] bytesNoColon = wireNoColon.getBytes(StandardCharsets.US_ASCII);
         withWire(bytesNoColon, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> {
                         ExerisKernelException ke = (ExerisKernelException) ex;
@@ -1021,7 +1021,7 @@ class CommunityHttpClientResponseDecoderTest {
         byte[] wire = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".getBytes(StandardCharsets.US_ASCII);
         withWire(wire, (buffer, total) -> {
             assertThatThrownBy(() -> CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, buffer, total, false))
+                    buffer, total, false))
                     .isInstanceOf(ExerisKernelException.class)
                     .satisfies(ex -> {
                         ExerisKernelException ke = (ExerisKernelException) ex;

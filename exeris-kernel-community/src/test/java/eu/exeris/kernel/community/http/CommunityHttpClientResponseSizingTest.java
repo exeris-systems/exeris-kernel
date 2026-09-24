@@ -198,8 +198,9 @@ class CommunityHttpClientResponseSizingTest {
      * Runs one request against a canned peer on a private allocator and reports the peak.
      *
      * <p>The response is decoded before the allocator is read, and the body buffer is released
-     * afterwards, so the peak includes the body copy the decoder makes — which is part of what a
-     * response costs and belongs in the number.
+     * afterwards. The decode moves no bytes — a body is a slice of the aggregate — so what the peak
+     * includes is the aggregate that slice holds open, which is what a retained response actually
+     * costs and belongs in the number.
      */
     private static Exchange exchange(long responseCeiling, byte[] cannedResponse, HttpRequest request) {
         try (MemoryAllocator allocator =
