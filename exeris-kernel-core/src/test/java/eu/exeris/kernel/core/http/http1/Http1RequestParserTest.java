@@ -62,7 +62,7 @@ class Http1RequestParserTest {
                     Http1RequestParser.DEFAULT_MAX_HEADER_SIZE,
                     (name, value) -> {
                     }
-            )).isInstanceOf(Http1RequestParser.Http1ParseException.class)
+            )).isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("too many header fields");
         }
     }
@@ -91,7 +91,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }
@@ -135,7 +135,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }
@@ -149,7 +149,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }

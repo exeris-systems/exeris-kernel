@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
+import eu.exeris.kernel.core.http.http1.Http1RequestParseException;
 import eu.exeris.kernel.core.http.http1.Http1RequestParser;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
@@ -122,7 +123,7 @@ class CommunityHttp1RequestReaderTest {
 
             assertThatThrownBy(() -> CommunityHttp1RequestReader.tryParseRequest(
                     new Http1Codec(2, 8_192), buffer, bytes.length))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class);
+                    .isInstanceOf(Http1RequestParseException.class);
         }
     }
 

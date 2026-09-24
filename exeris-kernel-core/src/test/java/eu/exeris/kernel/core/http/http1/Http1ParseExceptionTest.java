@@ -39,15 +39,15 @@ class Http1ParseExceptionTest {
     }
 
     @Test
-    @DisplayName("Nested Http1RequestParser.Http1ParseException explicitly classifies as CALLER fault (ADR-083)")
-    void nestedRequestParserExceptionInheritsCallerFault() {
-        Http1RequestParser.Http1ParseException nested = new Http1RequestParser.Http1ParseException(
+    @DisplayName("Http1RequestParseException fixes CALLER fault at the type (ADR-083)")
+    void requestParseExceptionFixesCallerFault() {
+        Http1RequestParseException inbound = new Http1RequestParseException(
                 "Request line too long", 1024L, 8192L);
 
-        assertThat(nested.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
-        assertThat(nested.faultOrigin()).isEqualTo(FaultOrigin.CALLER);
-        assertThat(FaultOrigin.classify(nested)).isEqualTo(FaultOrigin.CALLER);
-        assertThat(nested.rawArgs()).containsExactly(1024L, 8192L);
+        assertThat(inbound.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
+        assertThat(inbound.faultOrigin()).isEqualTo(FaultOrigin.CALLER);
+        assertThat(FaultOrigin.classify(inbound)).isEqualTo(FaultOrigin.CALLER);
+        assertThat(inbound.rawArgs()).containsExactly(1024L, 8192L);
     }
 
     @Test

@@ -1436,6 +1436,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   verdict` is red when it is BLOCKED, absent, or rests on a mandatory gate that did not run. That
   check is not yet one of this repository's required contexts; making it required is a
   branch-protection change.
+- **An inbound HTTP/1.1 parse violation has a type of its own** — `Http1RequestParseException`,
+  top-level in `eu.exeris.kernel.core.http.http1`, replacing the nested
+  `Http1RequestParser.Http1ParseException` that has carried it since 0.5. The two types were
+  distinguishable only by scope: inside `Http1RequestParser` the simple name resolved inward to the
+  `CALLER`-fixed subclass and everywhere else outward to the `SYSTEM`-defaulting base, so identical
+  source text produced opposite ADR-083 classifications depending on where it was written. The
+  split itself is kept — it is the inbound/outbound answer, not a duplicate — and the fault origin
+  each type fixes is unchanged.
 - **The diagnostics NDJSON session is driven with a malformed line mid-session** — through `serve()`
   for the first time, from the CLI documentation pass. (#479)
 

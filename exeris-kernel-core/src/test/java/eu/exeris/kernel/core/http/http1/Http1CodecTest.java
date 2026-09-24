@@ -29,7 +29,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
                     .as("the configured header-count bound must be the one enforced")
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class);
+                    .isInstanceOf(Http1RequestParseException.class);
         }
     }
 
@@ -42,7 +42,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
                     .as("the configured single-header size bound must be the one enforced")
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class);
+                    .isInstanceOf(Http1RequestParseException.class);
         }
     }
 
@@ -57,7 +57,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> new Http1Codec().parseHeaders(segment, 0, headers.length()))
                     .as("the default bound of 8 192 refuses it")
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class);
+                    .isInstanceOf(Http1RequestParseException.class);
 
             Http1Codec raised = new Http1Codec(100, 16_384);
             assertThat(raised.parseHeaders(segment, 0, headers.length()))
@@ -101,7 +101,7 @@ class Http1CodecTest {
             Http1Codec codec = new Http1Codec();
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("invalid Content-Length");
         }
     }
@@ -114,7 +114,7 @@ class Http1CodecTest {
             Http1Codec codec = new Http1Codec();
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length()))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("invalid Content-Length");
         }
     }
@@ -160,7 +160,7 @@ class Http1CodecTest {
 
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> seen.add(name)))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .isInstanceOf(Http1RequestParseException.class)
                     .hasMessageContaining("invalid Content-Length");
 
             assertThat(seen)
@@ -200,7 +200,7 @@ class Http1CodecTest {
             assertThatThrownBy(() -> codec.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> { }))
                     .as("the configured header-count bound must be the one enforced")
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class);
+                    .isInstanceOf(Http1RequestParseException.class);
         }
     }
 

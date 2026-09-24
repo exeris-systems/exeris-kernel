@@ -214,7 +214,7 @@ public final class Http1Codec {
      * @param offset  offset to first header line (after the request-line CRLF)
      * @param length  available bytes
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
-     * @throws Http1RequestParser.Http1ParseException {@code EX-HTTP-4004} if a header field is
+     * @throws Http1RequestParseException {@code EX-HTTP-4004} if a header field is
      *         malformed, a field name is not a valid RFC 9110 token, or the header count or a
      *         single field's size exceeds the limits this codec was constructed with
      */
@@ -246,7 +246,7 @@ public final class Http1Codec {
      * @param visitor callback for each parsed header field; non-null
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
      * @throws NullPointerException if {@code visitor} is {@code null}
-     * @throws Http1RequestParser.Http1ParseException {@code EX-HTTP-4004} if a header field is
+     * @throws Http1RequestParseException {@code EX-HTTP-4004} if a header field is
      *         malformed, a field name is not a valid RFC 9110 token, or the header count or a
      *         single field's size exceeds the limits this codec was constructed with
      */
@@ -391,11 +391,11 @@ public final class Http1Codec {
             try {
                 long parsed = Long.parseLong(value);
                 if (parsed < MIN_CONTENT_LENGTH) {
-                    throw new Http1RequestParser.Http1ParseException(MSG_INVALID_CONTENT_LENGTH, value);
+                    throw new Http1RequestParseException(MSG_INVALID_CONTENT_LENGTH, value);
                 }
                 return parsed;
             } catch (NumberFormatException ex) {
-                throw new Http1RequestParser.Http1ParseException(MSG_INVALID_CONTENT_LENGTH, ex, value);
+                throw new Http1RequestParseException(MSG_INVALID_CONTENT_LENGTH, ex, value);
             }
         }
 
