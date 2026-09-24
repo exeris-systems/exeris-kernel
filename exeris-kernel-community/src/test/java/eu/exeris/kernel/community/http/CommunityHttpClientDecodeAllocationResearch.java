@@ -76,13 +76,13 @@ class CommunityHttpClientDecodeAllocationResearch {
             buffer.setSize(response.length);
 
             for (int i = 0; i < WARMUP; i++) {
-                decodeOnce(allocator, buffer, response.length);
+                decodeOnce(buffer, response.length);
             }
             long[] samples = new long[3];
             for (int window = 0; window < samples.length; window++) {
                 long before = THREADS.getCurrentThreadAllocatedBytes();
                 for (int i = 0; i < MEASURED; i++) {
-                    decodeOnce(allocator, buffer, response.length);
+                    decodeOnce(buffer, response.length);
                 }
                 samples[window] = (THREADS.getCurrentThreadAllocatedBytes() - before) / MEASURED;
             }
@@ -96,7 +96,7 @@ class CommunityHttpClientDecodeAllocationResearch {
      * {@code -1} because that is its state on the read that first completes the header block — the
      * one read on which it does its work.
      */
-    private static void decodeOnce(MemoryAllocator allocator, LoanedBuffer buffer, int total) {
+    private static void decodeOnce(LoanedBuffer buffer, int total) {
         long terminator = CommunityHttpClientResponseDecoder.resolveHeaderTerminator(
                 -1, buffer.segment(), total);
         long expected = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
@@ -105,7 +105,7 @@ class CommunityHttpClientDecodeAllocationResearch {
             throw new IllegalStateException("fixture did not frame - expected total unresolved");
         }
         HttpResponse response = CommunityHttpClientResponseDecoder.decodeResponse(
-                allocator, buffer, total, false);
+                buffer, total, false);
         if (response.body() != null) {
             response.body().close();
         }
