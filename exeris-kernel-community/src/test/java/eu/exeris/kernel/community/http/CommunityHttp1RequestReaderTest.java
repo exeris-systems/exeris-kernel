@@ -7,7 +7,6 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
 import eu.exeris.kernel.core.http.http1.Http1RequestParseException;
-import eu.exeris.kernel.core.http.http1.Http1RequestParser;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpVersion;

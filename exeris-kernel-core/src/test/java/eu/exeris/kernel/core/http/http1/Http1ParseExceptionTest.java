@@ -51,6 +51,20 @@ class Http1ParseExceptionTest {
     }
 
     @Test
+    @DisplayName("Http1RequestParseException fixes CALLER fault when chaining a cause too")
+    void requestParseExceptionFixesCallerFaultWithCause() {
+        NumberFormatException cause = new NumberFormatException("For input string: \"x\"");
+        Http1RequestParseException inbound = new Http1RequestParseException(
+                "Malformed Content-Length", cause, 7L);
+
+        assertThat(inbound.errorCode()).isEqualTo(KernelErrorCodes.EX_HTTP_4004);
+        assertThat(inbound.faultOrigin()).isEqualTo(FaultOrigin.CALLER);
+        assertThat(FaultOrigin.classify(inbound)).isEqualTo(FaultOrigin.CALLER);
+        assertThat(inbound.rawArgs()).containsExactly(7L);
+        assertThat(inbound).hasCause(cause);
+    }
+
+    @Test
     @DisplayName("Http1ParseException with explicit FaultOrigin.CALLER classifies as CALLER fault")
     void explicitCallerFaultOriginPreserved() {
         Http1ParseException exception = new Http1ParseException(
