@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   javadoc:
-    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@29ca06ad118d7a7afc5ce2bc02d65fddd131e27b # exeris-systems/.github@main
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@34817fb904322548710e4aabf666b3459d051398 # exeris-systems/.github@main
     with:
       # THE BLOCK IS LIVE ON EVERY BRANCH AND ONLY THE VALUES MOVE, which is the whole of why it
       # is written out here rather than left commented. A tree that gates nothing and a tree that
