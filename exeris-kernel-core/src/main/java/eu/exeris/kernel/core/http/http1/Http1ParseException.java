@@ -58,9 +58,12 @@ public class Http1ParseException extends ExerisKernelException {
 
     private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4004;
 
+    /**
+     * Which end of the connection produced the framing that could not be parsed. Non-transient,
+     * so a deserialised instance answers {@link #faultOrigin()} with the classification the
+     * throw site made rather than with the supertype's default.
+     */
     private final FaultOrigin faultOrigin;
-
-
 
     /**
      * Constructs the exception with {@code EX-HTTP-4004}, an explicit {@link FaultOrigin},
