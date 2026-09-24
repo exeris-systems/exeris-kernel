@@ -31,8 +31,10 @@ import java.util.Objects;
  * <p><b>Thread confinement:</b> owner thread — one instance reads one response on the thread that
  * constructed it; not safe for concurrent use.
  * <p><b>Ownership:</b> owns the aggregate buffer for the reader's life; {@link #close()} releases
- * it. {@link #decode()} copies any body into a separate buffer owned by the returned
- * {@link HttpResponse}, so the reader may be closed immediately after decoding.
+ * it. {@link #decode()} moves no bytes: a body is a slice of that aggregate, and a slice holds a
+ * reference on it, so the reader may be closed as soon as it has decoded and the bytes stay live
+ * until the returned {@link HttpResponse}'s body is closed as well. What a retained response keeps
+ * alive is therefore the whole aggregate, sized by what was read, and not the body alone.
  *
  * @since 0.12
  */
@@ -89,14 +91,15 @@ final class CommunityHttpClientResponseReader implements AutoCloseable {
     }
 
     /**
-     * Decodes what was read. Any body is copied into its own buffer owned by the response, so this
-     * reader may be closed immediately afterwards.
+     * Decodes what was read. A body is a zero-copy slice of the aggregate rather than a copy of it;
+     * the slice holds a reference on the aggregate, so this reader may be closed immediately
+     * afterwards and the body stays readable until it is closed in its turn.
      *
      * @return the decoded response
      */
     /* default */ HttpResponse decode() {
         return CommunityHttpClientResponseDecoder.decodeResponse(
-                allocator, aggregate, total, bodyless);
+                aggregate, total, bodyless);
     }
 
     @Override

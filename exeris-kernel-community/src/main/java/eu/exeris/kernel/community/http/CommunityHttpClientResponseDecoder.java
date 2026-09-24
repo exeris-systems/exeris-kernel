@@ -13,7 +13,6 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
-import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 
 import java.lang.foreign.MemorySegment;
@@ -139,8 +138,7 @@ final class CommunityHttpClientResponseDecoder {
      * Returns a zero-copy slice of {@code aggregate} if the response carries a non-empty body;
      * ownership transfers to the returned response.
      */
-    /* default */ static HttpResponse decodeResponse(@SuppressWarnings("unused") MemoryAllocator allocator,
-                                                     LoanedBuffer aggregate,
+    /* default */ static HttpResponse decodeResponse(LoanedBuffer aggregate,
                                                      long total,
                                                      boolean bodyless) {
         long statusLineEnd = CommunityHttpBufferOps.findCrLf(aggregate.segment(), 0, total);

@@ -974,7 +974,19 @@ class CoreFlowRuntimeTest {
             long failedAfterClose = engine.stats().failedFlows();
 
             allowExit.set(true);
-            awaitTrue(3_000, () -> guard.releaseCount() == 1);
+            // Await the snapshot, not the claim release. finalizeFailedInstance() releases claims
+            // and writes the terminal snapshot in that order, so a thread woken by the release can
+            // read the store in the window before the write and see the pre-terminal state. The
+            // await has to name the last effect this test asserts, or it is a race the assertion
+            // loses only when the machine is slow enough to let it.
+            awaitTrue(3_000, () -> snapshotStore
+                    .load(context.instanceIdMost(), context.instanceIdLeast())
+                    .map(FlowSnapshot::state)
+                    .filter(FlowState.FAILED_ROLLEDBACK::equals)
+                    .isPresent());
+            assertThat(guard.releaseCount())
+                    .as("a late failed exit releases the instance's claims exactly once")
+                    .isEqualTo(1);
 
             assertThat(engine.stats().failedFlows())
                     .as("late failed exits must not change stable shutdown counters")
