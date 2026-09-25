@@ -292,23 +292,29 @@ public final class KernelErrorCodes {
 
     /**
      * PAQS (Priority-Aware Queue Scheduler) load-shedding: an incoming stream was
-     * rejected at the network edge because its priority was below the current
-     * load-shedding threshold.
+     * rejected at the network edge because admitting it would exceed the transport's
+     * stream capacity or memory budget.
      *
      * <p>This is a deliberate, non-fatal policy decision — not a hardware failure.
      * No connection state is allocated for the shed stream.
      *
-     * <p><b>Two surfaces, one code.</b> PAQS request-edge shedding emits this code as the JFR
-     * {@code StreamShedEvent} (typed event fields — streamId, priority, action, transport, occupancy — read
-     * by name, not by rawArgs index). The streaming stream-open shed (ADR-043) additionally <em>throws</em>
+     * <p><b>Two surfaces, one code.</b> The streaming stream-open shed (ADR-043) <em>throws</em>
      * it via {@link eu.exeris.kernel.spi.exceptions.transport.TransportException#streamShed(String, long)};
-     * the rawArgs layout below is that exception carrier's schema.
+     * the rawArgs layout below is that exception carrier's schema. PAQS request-edge shedding
+     * throws nothing and is observable only as a JFR event, described below.
      *
      * <p><b>rawArgs layout for Glass-Box (exception carrier):</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
      *   <li>index 1 – {@code long}   streamId (identifier of the shed stream)</li>
      * </ul>
+     *
+     * @implNote The kernel's Core transport records every shed, on both surfaces, as the JFR event
+     *           {@code eu.exeris.kernel.core.transport.StreamShed}, whose typed fields are read by
+     *           name: {@code streamId} ({@code long}), {@code priority} ({@code String}, a
+     *           {@code StreamPriority} constant name), {@code shedReason} ({@code String}, the
+     *           admission decision that shed the stream), {@code engineName} ({@code String}) and
+     *           {@code activeStreamCount} ({@code int}). The event has no error-code field.
      */
     public static final String EX_NET_4006 = "EX-NET-4006";
 

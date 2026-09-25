@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-17
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Telemetry (L1 Observability)
@@ -624,13 +624,20 @@ exeris-decode --filter EX-MEM /tmp/exeris-crash/kernel-12345.ring
 
 ### Output Format
 
-```
-[0000000042ns] EX-BOOT-0001 [FATAL_BUILD_DEFECT] DAG cycle detected
-               rawArgs[0]: cycleMembers=[Security, Flow]
+Illustrative: the decoder is not part of this repository, so this block shows the shape of a
+decoded frame rather than a captured run. Only a code thrown with `rawArgs` can appear with a
+payload; `EX-BOOT-0001`, `EX-MEM-1002`, `EX-MEM-1003` and `EX-CFG-1004` carry none and are read from
+their JFR events instead.
 
-[0000000107ns] EX-MEM-1002 [CRITICAL] Arena leak detected
-               rawArgs[0]: segmentAddress=0x7f3a00000000
-               rawArgs[1]: segmentByteSize=65536
+```
+[0000000042ns] EX-BOOT-0002 [FATAL] Subsystem lifecycle failure
+               rawArgs[0]: subsystemName=Flow
+               rawArgs[1]: phase=INITIALIZE
+               rawArgs[2]: detail=Snapshot store unreachable
+
+[0000000107ns] EX-MEM-1001 [CRITICAL] Off-heap exhausted
+               rawArgs[0]: requestedBytes=65536
+               rawArgs[1]: availableBytes=4096
 
 [0000001840ns] EX-NET-4006 [WARN] PAQS load shedding
                rawArgs[0]: transportName=CommunityTcpTransport

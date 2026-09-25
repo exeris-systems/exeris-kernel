@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-17
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Transport (L2 Native I/O)
@@ -354,7 +354,7 @@ is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through
 | `EX-NET-4003` | Receive Timeout          | `[0] String transportName, [1] long timeoutMs`                              |
 | `EX-NET-4004` | Engine Bootstrap Failure | `[0] String transportName, [1] String reason`                               |
 | `EX-NET-4005` | Engine Start Failure     | `[0] String transportName, [1] int port` — thrown by `TransportException.engineStartFailure`; port-in-use is one cause among several (e.g. carrier loop thread creation failure) — **Fatal:** check OS process list when the port is the cause |
-| `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`); the JFR `StreamShedEvent` this code names on the PAQS path carries typed fields (`priority`, `shedReason`, `activeStreamCount`) instead, read by name, not by this `rawArgs` layout |
+| `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`); the JFR `StreamShedEvent` recorded on both shed paths carries typed fields (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) instead, read by name, not by this `rawArgs` layout |
 | `EX-NET-4007` | Buffer Exhaustion        | Reserved — no kernel code path raises it, so it publishes no `rawArgs` layout |
 
 **Operational note for `EX-NET-4006`:** This is a deliberate, non-fatal policy decision — not a hardware

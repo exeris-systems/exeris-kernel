@@ -571,10 +571,14 @@ no duplicate decoder. The file=open / live=enterprise decoder cut is recorded in
 [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) (Open-Core Observability Boundary); the
 state-vs-event split (state via `KernelDiagnostics`, events via this binary format) is recorded in ADR-033.
 
+Illustrative output (the decoder is not in this repository); payloads follow the `rawArgs` layouts in
+`KernelErrorCodes`. A dependency cycle (`EX-BOOT-0001`) carries no `rawArgs` and is read from the
+`CircularDependencyDetected` JFR event instead.
+
 ```
 $ exeris-decode /tmp/exeris-crash/kernel-12345.ring
-[0000ns] EX-BOOT-0001: DAG cycle detected — cycleMembers=[Security, Flow]
-[0042ns] EX-MEM-1002: Arena leak detected — segmentAddress=0x7f3a00000000, segmentByteSize=65536
+[0000ns] EX-BOOT-0002: Subsystem lifecycle failure — subsystemName=Flow, phase=INITIALIZE, detail=Snapshot store unreachable
+[0042ns] EX-MEM-1001: Off-heap exhausted — requestedBytes=65536, availableBytes=4096
 ```
 
 ### Implementation Notes (for Kernel Engineers)

@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-24
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Exceptions (L0 Foundation)
@@ -111,7 +111,7 @@ formatting. It implements:
 | `EX-NET-4003` | Transport Receive Timeout   | `[0] String transportName, [1] long timeoutMs`        |
 | `EX-NET-4004` | Transport Engine Bootstrap  | `[0] String transportName, [1] String reason`         |
 | `EX-NET-4005` | Transport Engine Start      | `[0] String transportName, [1] int port`              |
-| `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] int streamPriority, [2] int thresholdPriority` |
+| `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`, streaming stream-open path); PAQS request-edge shedding throws nothing and both paths record the JFR event `eu.exeris.kernel.core.transport.StreamShed` (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) |
 | `EX-NET-4007` | Buffer Exhaustion (reserved) | *(reserved — no rawArgs)*: no kernel code path raises this code, so it publishes no layout; one is defined with its first thrower |
 
 ### HTTP (`EX-HTTP-`, codec-level violations 4001..4006; subsystem, streaming and request-decode faults 4007..)

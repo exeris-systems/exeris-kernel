@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Flow / Sagas (L4 Orchestration)
