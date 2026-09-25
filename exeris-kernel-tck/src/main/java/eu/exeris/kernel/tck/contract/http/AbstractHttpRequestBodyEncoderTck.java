@@ -51,9 +51,11 @@ import java.util.Locale;
  *       MUST be wrapped in a generic {@link RuntimeException} (typically
  *       {@link IllegalStateException}); no driver types may cross the SPI boundary.</li>
  *   <li>Buffer ownership: the returned {@link LoanedBuffer} is owned by the
- *       caller (the façade transfers ownership to {@link eu.exeris.kernel.spi.http.HttpRequest}
- *       on construction). The TCK verifies the returned buffer is live
- *       ({@code refCount() > 0}) and closes it itself.</li>
+ *       caller. It travels with the {@link eu.exeris.kernel.spi.http.HttpRequest} that carries
+ *       it; the caller of {@link eu.exeris.kernel.spi.http.HttpClientEngine#send} keeps ownership
+ *       of that request body and releases it after {@code send} returns or throws, and the engine
+ *       reads it during {@code send} and neither closes nor retains it. The TCK verifies the
+ *       returned buffer is live ({@code refCount() > 0}) and closes it itself.</li>
  * </ul>
  *
  * <h2>How to use</h2>

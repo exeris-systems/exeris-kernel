@@ -18,12 +18,14 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpServerEngine;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,6 +40,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>This contract verifies that an {@link HttpProvider} can build a server/client pair
  * that performs a real request/response round-trip using SPI engines rather than fixture-only
  * lifecycle checks.
+ *
+ * <p>It also verifies the outbound request-body ownership rule of
+ * {@link HttpClientEngine#send(HttpRequest)} on the success path: the server receives the body's
+ * bytes, and once {@code send} has returned the body is still alive, holds its one caller reference
+ * and was never closed — the caller releases it.
  *
  * @since 0.5
  */
@@ -220,6 +227,48 @@ public abstract class AbstractHttpProviderLoopbackTck {
             if (response.body() != null) {
                 response.body().close();
             }
+        }
+    }
+
+    @Test
+    @DisplayName("A request body reaches the server, and send leaves it to the caller unclosed")
+    void requestBodyReachesTheServerAndStaysWithTheCaller() {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+        byte[] payload = "{\"contract\":\"the caller releases the request body\"}"
+                .getBytes(StandardCharsets.US_ASCII);
+
+        AtomicReference<byte[]> received = new AtomicReference<>();
+        HttpHandler handler = exchange -> {
+            received.set(CountingRequestBody.bytesOf(exchange.request().body()));
+            exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+        };
+
+        CountingRequestBody body = CountingRequestBody.of(payload);
+        try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, port))) {
+            serverEngine.setHandler(handler);
+            serverEngine.start();
+            clientEngine.start();
+
+            HttpResponse response = clientEngine.send(new HttpRequest(
+                    HttpMethod.POST,
+                    requestPath(),
+                    requestVersion(),
+                    List.of(new HttpHeader("Content-Type", "application/json")),
+                    body));
+            try (LoanedBuffer ignored = response.body()) {
+                assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+            }
+
+            // A body that never reached the server would make the ownership checks below vacuous.
+            assertThat(received.get())
+                    .as("the server must receive the request body's bytes")
+                    .isEqualTo(payload);
+            body.assertStillOwnedByCaller(payload, "returns");
+        } finally {
+            body.close();
         }
     }
 

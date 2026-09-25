@@ -6,19 +6,29 @@ package eu.exeris.kernel.tck.contract.http;
 
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * TCK: Abstract base for {@link HttpClientEngine} contract verification.
@@ -35,6 +45,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       {@link IllegalStateException} when the engine carries no configured default authority</li>
  *   <li>{@code send} of a request whose authority carries no explicit port is refused with
  *       {@link IllegalStateException}</li>
+ *   <li>{@code send} neither closes nor retains {@code request.body()}: after a refused send, and
+ *       after a send that fails once it has started dialling an unreachable peer, the body is still
+ *       alive, holds its one caller reference, and was never closed; the caller releases it</li>
  * </ul>
  *
  * @since 0.5
@@ -163,6 +176,94 @@ public abstract class AbstractHttpClientEngineTck {
     }
 
     @Nested
+    @DisplayName("Request body ownership")
+    class RequestBodyOwnership {
+
+        private static final byte[] PAYLOAD =
+                "{\"contract\":\"the caller releases the request body\"}".getBytes(StandardCharsets.US_ASCII);
+
+        @Test
+        @DisplayName("A send refused before start() neither closes nor retains the request body")
+        void sendRefusedBeforeStartLeavesTheBodyToTheCaller() {
+            CountingRequestBody body = CountingRequestBody.of(PAYLOAD);
+            try {
+                HttpRequest request = postWithBody(body).withAuthority("127.0.0.1:9");
+
+                assertThatThrownBy(() -> engine.send(request))
+                        .as("an engine that has not been started must refuse the send")
+                        .isInstanceOf(IllegalStateException.class);
+
+                body.assertStillOwnedByCaller(PAYLOAD, "throws");
+            } finally {
+                body.close();
+            }
+        }
+
+        @Test
+        @DisplayName("A send refused for a port-less authority neither closes nor retains the request body")
+        void sendRefusedForPortlessAuthorityLeavesTheBodyToTheCaller() {
+            engine.start();
+            CountingRequestBody body = CountingRequestBody.of(PAYLOAD);
+            try {
+                HttpRequest request = postWithBody(body).withAuthority("service.internal");
+
+                assertThatThrownBy(() -> engine.send(request))
+                        .as("an authority carrying no port must be refused")
+                        .isInstanceOf(IllegalStateException.class);
+
+                body.assertStillOwnedByCaller(PAYLOAD, "throws");
+            } finally {
+                body.close();
+            }
+        }
+
+        @Test
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        @DisplayName("A send that fails dialling an unreachable peer neither closes nor retains the request body")
+        void sendFailingOnUnreachablePeerLeavesTheBodyToTheCaller() {
+            engine.start();
+            int port = unusedLoopbackPort();
+            CountingRequestBody body = CountingRequestBody.of(PAYLOAD);
+            try {
+                HttpRequest request = postWithBody(body).withAuthority("127.0.0.1:" + port);
+
+                Throwable failure = catchThrowable(() -> {
+                    HttpResponse response = engine.send(request);
+                    if (response.body() != null) {
+                        response.body().close();
+                    }
+                });
+
+                body.assertStillOwnedByCaller(PAYLOAD, failure == null ? "returns" : "throws");
+                // The address and port pass every refusal check, so an engine that dials fails here
+                // in its I/O path. An engine that answers without dialling never reaches that path,
+                // and the case reports the exception path as not exercised rather than as passed.
+                assumeTrue(failure != null,
+                        "the engine answered an unreachable peer without dialling it; the exception path is not exercised");
+                assertThat(failure)
+                        .as("a send to a peer nobody listens on must fail with an unchecked exception")
+                        .isInstanceOf(RuntimeException.class);
+            } finally {
+                body.close();
+            }
+        }
+
+        private HttpRequest postWithBody(CountingRequestBody body) {
+            HttpRequest request = new HttpRequest(
+                    HttpMethod.POST,
+                    "/ownership",
+                    HttpVersion.HTTP_1_1,
+                    List.of(new HttpHeader("Content-Type", "application/json")),
+                    body);
+            assertThat(request.hasBody())
+                    .as("the request must carry the body, or the case asserts nothing about it")
+                    .isTrue();
+            assertThat(request.body().size()).isEqualTo(PAYLOAD.length);
+            return request;
+        }
+    }
+
+    @Nested
     @DisplayName("Lifecycle: CLOSE (idempotency)")
     class Close {
 
@@ -188,5 +289,18 @@ public abstract class AbstractHttpClientEngineTck {
                     .isInstanceOf(IllegalStateException.class);
         }
     }
-}
 
+    /**
+     * Returns a loopback port that nothing listens on, by binding an ephemeral port and releasing it.
+     *
+     * <p>Another process may claim the port between the release and the dial; the window is the same
+     * one every loopback contract that allocates its own port accepts.
+     */
+    private static int unusedLoopbackPort() {
+        try (ServerSocket socket = new ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (IOException ex) {
+            throw new IllegalStateException("Unable to allocate a free TCP port", ex);
+        }
+    }
+}
