@@ -57,9 +57,12 @@ import java.util.Objects;
  *
  * <h2>Memory ownership</h2>
  * <p>Request body: allocated by the resolved encoder via the supplied
- * {@link MemoryAllocator}; ownership transfers to the engine on {@code send}.
- * Response body: returned by the engine, decoded, closed in a {@code finally};
- * callers never see the response buffer directly.
+ * {@link MemoryAllocator}; this client, as the caller of
+ * {@link HttpClientEngine#send(HttpRequest)}, keeps ownership of it and releases
+ * it after each attempt's {@code send} returns or throws, before any retry wait;
+ * the engine reads it during {@code send} and neither closes nor retains it.
+ * Response body: returned by the engine, decoded, closed in a
+ * {@code finally}; callers never see the response buffer directly.
  *
  * <h2>Error mapping</h2>
  * <p>Non-2xx responses raise {@link WebClientException} carrying status code +
@@ -73,7 +76,7 @@ import java.util.Objects;
  * @since 0.8
  */
 // CyclomaticComplexity: execute()/buildRequest() codify the documented status-mapping +
-// codec-resolution + buffer-ownership-transfer paths from ADR-034 §4; the branches are
+// codec-resolution + buffer-release paths from ADR-034 §4; the branches are
 // contract surface, not accidental complexity.
 // CouplingBetweenObjects: facade composes the four SPI seams listed in ADR-034 §4
 // (HttpClientEngine, request-body codec, response-body codec, request enricher) plus the
@@ -360,20 +363,27 @@ public final class KernelWebClient {
         while (true) {
             // ADR-045: the typed body is re-encoded each attempt; no LoanedBuffer is retained across
             // attempts, so the codec path's zero-leak invariant is untouched by retry.
-            // ADR-074 decision 5: authority, THEN enrich, THEN send. The engine would substitute
-            // its default inside send(), which is strictly after enrichment — so an enricher binding
-            // an outbound credential's audience to the peer (ADR-040) would observe null every time.
-            // Resolving it here is what makes that decision true of the only path that exists.
-            HttpRequest addressed = buildRequest(method, path, requestBody).withAuthority(authority);
-            if (addressed.authority() == null) {
-                addressed = addressed.withAuthority(engine.defaultAuthority());
+            HttpRequest built = buildRequest(method, path, requestBody);
+            HttpRequest request;
+            HttpResponse response = null;
+            RuntimeException transportFailure = null;
+            // The engine reads the request body during send and neither closes nor retains it, so
+            // this client releases it on every path out of the attempt, before the policy runs and
+            // before any retry wait. The encoded buffer is the one closed, not request.body(): the
+            // derived requests share that one buffer and take no reference of their own, so this is
+            // exactly one close, and an enricher that substituted a body cannot make this client
+            // release a buffer it never allocated. A bodyless request carries null, which
+            // try-with-resources skips.
+            try (LoanedBuffer _ = built.body()) {
+                request = addressAndEnrich(built);
+                try {
+                    response = engine.send(request);
+                } catch (RuntimeException ex) {
+                    transportFailure = ex;
+                }
             }
-            HttpRequest request = enricher.enrich(addressed);
 
-            HttpResponse response;
-            try {
-                response = engine.send(request);
-            } catch (RuntimeException transportFailure) {
+            if (transportFailure != null) {
                 // No response/body yet — a policy throw here just propagates; nothing to release.
                 RetryDecision decision = retryPolicy.decide(request,
                         HttpAttemptOutcome.ofFailure(transportFailure), attempt);
@@ -393,6 +403,18 @@ public final class KernelWebClient {
             }
             return finishAttempt(response, responseType, status);
         }
+    }
+
+    // ADR-074 decision 5: authority, THEN enrich, THEN send. The engine would substitute its default
+    // inside send(), which is strictly after enrichment — so an enricher binding an outbound
+    // credential's audience to the peer (ADR-040) would observe null every time. Resolving it here is
+    // what makes that decision true of the only path that exists.
+    private HttpRequest addressAndEnrich(HttpRequest built) {
+        HttpRequest addressed = built.withAuthority(authority);
+        if (addressed.authority() == null) {
+            addressed = addressed.withAuthority(engine.defaultAuthority());
+        }
+        return enricher.enrich(addressed);
     }
 
     /**
@@ -501,8 +523,9 @@ public final class KernelWebClient {
         }
     }
 
-    // Outbound buffer must be released if anything throws between allocate() and engine ownership
-    // transfer. (RuntimeException catching is suppressed class-wide — see the type-level note.)
+    // Outbound buffer must be released if anything throws between allocate() and the return of the
+    // request, because execute() only takes over its release once it holds that request.
+    // (RuntimeException catching is suppressed class-wide — see the type-level note.)
     private HttpRequest buildRequest(HttpMethod method, String path, Object body) {
         if (body == null) {
             return HttpRequest.noBody(method, path, DEFAULT_VERSION, ACCEPT_JSON_HEADERS);
@@ -530,7 +553,7 @@ public final class KernelWebClient {
             return new HttpRequest(method, path, DEFAULT_VERSION, List.copyOf(merged), buf);
         } catch (RuntimeException ex) {
             if (buf != null) {
-                buf.close();   // engine never received ownership; release the loan locally.
+                buf.close();   // no request carries it yet; release the loan locally.
             }
             throw ex;
         }

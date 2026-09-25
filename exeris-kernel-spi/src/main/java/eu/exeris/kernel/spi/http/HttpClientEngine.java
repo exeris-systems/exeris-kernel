@@ -23,9 +23,10 @@ package eu.exeris.kernel.spi.http;
  * <p><b>Allocation:</b> allocates (one {@link HttpResponse} per {@link #send(HttpRequest)}, and an
  * off-heap {@link eu.exeris.kernel.spi.memory.LoanedBuffer} for the response body when the response
  * carries one)
- * <p><b>Ownership:</b> the caller of {@code send} owns the returned {@link HttpResponse#body()} and
- * releases it with {@code close()}; the engine owns its connections and releases them on
- * {@link #close()}
+ * <p><b>Ownership:</b> the caller of {@code send} keeps ownership of {@link HttpRequest#body()} —
+ * the engine reads it during {@code send} and neither closes nor retains it; the caller owns the
+ * returned {@link HttpResponse#body()} and releases it with {@code close()}; the engine owns its
+ * connections and releases them on {@link #close()}
  *
  * @apiNote {@link #send(HttpRequest)} blocks the calling virtual thread until the full response is
  *          received, so a caller sizes concurrency in virtual threads rather than in engines. Each
@@ -53,6 +54,9 @@ public interface HttpClientEngine extends AutoCloseable {
      * @param request outbound request; must not be {@code null}
      * @return the server's response; never {@code null}
      * @throws IllegalStateException if the engine has not been started or has been closed
+     * @implSpec MUST NOT close or retain {@code request.body()} on any path, success or exception.
+     *           The caller releases it after {@code send} returns or throws, and may send the same
+     *           request again before it does.
      * @apiNote <strong>Body lifecycle:</strong> when {@link HttpResponse#body()} is non-null the
      *          caller owns that buffer and must {@code close()} it once the payload has been read;
      *          the off-heap segment returns to the pool only then, so a missed close is a leak that

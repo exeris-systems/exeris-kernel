@@ -20,16 +20,15 @@ import java.util.Objects;
  *
  * <p><b>Allocation:</b> allocates (the encoder allocates {@link #body()} off-heap through the
  * encoding context's {@code MemoryAllocator}; {@link #noBody()} allocates no buffer at all)
- * <p><b>Ownership:</b> the buffer travels with the carrier — ownership passes to the
- * {@link HttpRequest} or {@link HttpResponse} that carries it, and the engine releases it once the
- * write completes on the response direction ({@link HttpExchange#respond(HttpResponse)}); this
- * interface does not establish who releases it on the request/client-send direction. An encoder
- * must not close or retain the buffer after returning.
+ * <p><b>Ownership:</b> the buffer travels with the carrier to the {@link HttpRequest} or
+ * {@link HttpResponse} that carries it. On the response direction the engine releases it once the
+ * write completes ({@link HttpExchange#respond(HttpResponse)}); on the request direction the caller
+ * of {@link HttpClientEngine#send(HttpRequest)} keeps ownership of the body and releases it after
+ * {@code send} returns or throws, and the engine reads it during {@code send} and neither closes nor
+ * retains it. An encoder must not close or retain the buffer after returning.
  *
  * @param headers headers generated during encoding; non-null, may be empty
  * @param body encoded body buffer, or {@code null} for a bodyless response
- * @implNote The Community client engine does not release the buffer on the request/client-send
- *           direction after the write completes.
  * @since 0.5
  */
 public record HttpEncodedBody(
@@ -49,7 +48,7 @@ public record HttpEncodedBody(
 
     /**
      * Returns the carrier for an encode that produced no bytes — an empty header list and a
-     * {@code null} buffer, so there is nothing for the engine to release.
+     * {@code null} buffer, so there is nothing to release.
      *
      * @return bodyless encoded representation
      */
