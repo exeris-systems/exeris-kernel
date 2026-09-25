@@ -50,7 +50,7 @@ class KernelErrorCodesTest {
         }
 
         @Test
-        @DisplayName("EX_MEM_1003 == 'EX-MEM-1003' (allocation hint conflict)")
+        @DisplayName("EX_MEM_1003 == 'EX-MEM-1003' (peek-view ownership misuse)")
         void exMem1003() {
             assertThat(KernelErrorCodes.EX_MEM_1003).isEqualTo("EX-MEM-1003");
         }

@@ -12,11 +12,14 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * stop, or perform a lifecycle operation.
  *
  * <h2>rawArgs Binary Layout — {@value KernelErrorCodes#EX_FLOW_7002}</h2>
+ * <p>The named factories fill this layout. An instance built by one of the two public
+ * constructors carries empty {@code rawArgs}: no phase and no reason can be read off it.
  * <ul>
  *   <li>index 0 – {@code String} engineName</li>
- *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
- *       {@code "COMPILE"}, {@code "SCHEDULE"}, {@code "OPTIMISTIC_LOCK_CONFLICT"} (since 0.7),
- *       {@code "SCHEMA_MISMATCH"} (since 0.10)</li>
+ *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "COMPILE"},
+ *       {@code "SCHEDULE"}, {@code "OPTIMISTIC_LOCK_CONFLICT"} (since 0.7),
+ *       {@code "SCHEMA_MISMATCH"} (since 0.10), or {@code "WAKE"} with the five-slot layout
+ *       below (since 0.12)</li>
  *   <li>index 2 – {@code String} staticReasonCode — stable identifier, never user-supplied
  *       (e.g. {@code "STARTUP_FAILED"}, {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"},
  *       {@code "STALE_VERSION"}, {@code "STEP_OUT_OF_RANGE"})</li>

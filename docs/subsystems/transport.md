@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-17
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Transport (L2 Native I/O)
@@ -354,14 +354,12 @@ is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through
 | `EX-NET-4003` | Receive Timeout          | `[0] String transportName, [1] long timeoutMs`                              |
 | `EX-NET-4004` | Engine Bootstrap Failure | `[0] String transportName, [1] String reason`                               |
 | `EX-NET-4005` | Engine Start Failure     | `[0] String transportName, [1] int port` — thrown by `TransportException.engineStartFailure`; port-in-use is one cause among several (e.g. carrier loop thread creation failure) — **Fatal:** check OS process list when the port is the cause |
-| `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`); the JFR `StreamShedEvent` this code names on the PAQS path carries typed fields (`priority`, `shedReason`, `activeStreamCount`) instead, read by name, not by this `rawArgs` layout |
-| `EX-NET-4007` | Buffer Exhaustion        | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs`       |
+| `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`); the JFR `StreamShedEvent` recorded on both shed paths carries typed fields (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) instead, read by name, not by this `rawArgs` layout |
+| `EX-NET-4007` | Buffer Exhaustion        | Reserved — no kernel code path raises it, so it publishes no `rawArgs` layout |
 
 **Operational note for `EX-NET-4006`:** This is a deliberate, non-fatal policy decision — not a hardware
 failure. No connection state or heap object is allocated for the shed stream. It MUST emit a JFR event
 (`eu.exeris.kernel.core.transport.jfr.StreamShedEvent`) but must not increment error counters used for alerting.
-
-**Operational note for `EX-NET-4007`:** When thrown, the `WatermarkManager` detects slab exhaustion and elevates the watermark level. `ResourceArbiter.decide(Context.TRANSPORT_IO)` then returns `Action.SHED_LOAD`, signaling PAQS to reject new streams.
 
 ---
 
@@ -715,7 +713,6 @@ the record of what it costs.
 
 - PAQS shedding logic: verify streams below threshold are rejected before a Virtual Thread is spawned
   (`AdmissionController.admit`, `PaqsSchedulerTest`).
-- `SlabPool` exhaustion: `EX-NET-4007` thrown with correct `rawArgs` when all slots are active.
 - Priority ordering: `StreamPriority` enum ordinals enforce correct relative ordering.
 
 ### Integration Tests (TCK)
