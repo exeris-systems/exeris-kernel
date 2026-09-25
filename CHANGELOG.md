@@ -87,6 +87,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A diagnostics call is audited when it is made, including one that throws** (ADR-033
+  Obligation 8). `CommunityKernelDiagnostics` committed each method's `EX-DIAG` JFR audit event
+  after the method's work, so a call that threw — a provider failing `ServiceLoader` discovery in
+  `listProviders`, a subsystem whose state query failed in `getBootstrapDag` or
+  `describeSubsystem` — left no record, and a failed call looked the same in the recording as a
+  call never made. Every method now emits its event as its first statement. The event and its
+  fields are unchanged; a `describeSubsystem(null)` call, which still throws
+  `NullPointerException`, is now audited too.
+
 - **The error-code registry says what its throwers and emitters deliver.** The `KernelErrorCodes` Javadoc
   is the layout a Glass-Box decoder is written against, and for these entries it described
   something no code produces. `EX-MEM-1003` is peek-view ownership misuse, the meaning its emitter,

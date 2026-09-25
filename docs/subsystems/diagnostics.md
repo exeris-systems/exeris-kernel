@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-09
+last-verified: 2026-09-25
 ---
 
 # Diagnostics Subsystem — Read-Only Introspection for Adapters
@@ -161,11 +161,16 @@ One JFR event, carrying the method name and an error code:
 eu.exeris.kernel.diagnostics.KernelDiagnostics
 ```
 
-Every call that **returns** is audited, including the ones that answer empty — an operator asking
-why a tool saw nothing needs to know the call happened. A call that **throws** emits nothing: the
-event is committed after the operation produces its snapshot, so the failing branch is dark. An
-operator reconstructing a session from JFR alone therefore sees successes and silence, not successes
-and failures.
+**Every call is audited, on call** — before the method does any work (ADR-033 Obligation 8). That
+covers the calls that answer empty, since an operator asking why a tool saw nothing needs to know
+the call happened, and it covers the calls that **throw**: a provider that fails discovery, a
+subsystem whose state query fails, a `describeSubsystem` rejecting a `null` name. A failed call
+therefore leaves the same record as a successful one rather than silence, which is what an
+un-called method looks like.
+
+The event records that a call was made, not how it ended — it carries no outcome. The caller sees
+the failure; the recording sees the call. The Community driver pins this in
+`DiagnosticsAuditOnThrowTest` for every method that can throw there.
 
 ## Not in scope
 
