@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * TCK: Abstract base for {@link EventBus} contract verification.
@@ -69,6 +70,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       failedHandlerCount]}, no cause, and each handler's exception as a suppressed exception;
  *       every payload reference is still released. The suppressed exceptions are compared as a
  *       set, since the bus promises no delivery order.</li>
+ *   <li>A type the registry does not know. {@code subscribe()} to it either returns a valid
+ *       token or refuses with {@value KernelErrorCodes#EX_EVENT_6011} and {@code rawArgs
+ *       [eventType]}. {@code publish()} and {@code publishAndAwait()} of its ordinal either accept
+ *       the event or refuse it with {@value KernelErrorCodes#EX_EVENT_6009} and {@code rawArgs
+ *       [eventTypeOrdinal, String reason]}, and release the payload exactly once either way. The
+ *       SPI promises the shape of a refusal, not that there is one: {@code EventBus} documents
+ *       rejecting an unregistered subscription as the in-memory binding's behaviour, and names no
+ *       {@code reason} value a binding must use.</li>
  * </ol>
  *
  * <h2>No-Ordering by Design (ADR-049)</h2>
@@ -114,6 +123,8 @@ public abstract class AbstractEventBusTck {
     private static final int  ORDINAL_ORDER_PLACED  = 101;
     private static final String TYPE_USER_CREATED   = "UserCreated";
     private static final String TYPE_ORDER_PLACED   = "OrderPlaced";
+    private static final int    ORDINAL_NEVER_REGISTERED = 199;
+    private static final String TYPE_NEVER_REGISTERED    = "TckNeverRegistered";
 
     private EventEngine engine;
 
@@ -430,6 +441,110 @@ public abstract class AbstractEventBusTck {
                 throw failure;
             }
         };
+    }
+
+    // =========================================================================
+    // Unregistered event types — the shape of a refusal
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Unregistered event types — a refusal carries its documented code and rawArgs")
+    class UnregisteredEventTypes {
+
+        @Test
+        @DisplayName("subscribe() to an unregistered type returns a valid token or throws EX-EVENT-6011 [eventType]")
+        void subscribeToUnregisteredTypeIsAcceptedOrRejectedWith6011() {
+            EventBus bus = engine.bus();
+            AtomicReference<SubscriptionToken> accepted = new AtomicReference<>(null);
+
+            Throwable thrown = catchThrowable(() -> accepted.set(bus.subscribe(TYPE_NEVER_REGISTERED,
+                    (d, payload) -> {
+                        try (payload) { /* no-op */ }  // NOPMD EmptyControlStatement - closing the payload IS the contract
+                    })));
+
+            if (thrown == null) {
+                // The SPI does not require a refusal here; a binding that accepts must still
+                // hand back a token that revokes the subscription.
+                assertThat(accepted.get())
+                        .as("an accepted subscribe() MUST return a non-null token").isNotNull();
+                assertThat(accepted.get().isValid())
+                        .as("an accepted subscribe() MUST return a VALID token").isTrue();
+                bus.unsubscribe(accepted.get());
+            } else {
+                assertThat(thrown)
+                        .as("a rejected subscribe() MUST throw EventBusException")
+                        .isInstanceOfSatisfying(EventBusException.class, ex -> {
+                            assertThat(ex.errorCode())
+                                    .as("a rejected subscription MUST carry EX-EVENT-6011")
+                                    .isEqualTo(KernelErrorCodes.EX_EVENT_6011);
+                            assertThat(ex.rawArgs())
+                                    .as("EX-EVENT-6011 rawArgs MUST be [eventType]")
+                                    .containsExactly(TYPE_NEVER_REGISTERED);
+                        });
+            }
+        }
+
+        @Test
+        @DisplayName("publish() of an unregistered ordinal is accepted or refused with EX-EVENT-6009; payload released once")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void publishOfUnregisteredOrdinalIsAcceptedOrRefusedWith6009() throws Exception {
+            EventBus bus = engine.bus();
+            EventDescriptor published = descriptor(ORDINAL_NEVER_REGISTERED);
+            AtomicInteger closeCalls = new AtomicInteger(0);
+            CountDownLatch closed = new CountDownLatch(1);
+            TrackingPayload payload = new TrackingPayload(closeCalls, closed);
+
+            Throwable thrown = catchThrowable(() -> bus.publish(published, payload));
+
+            assertAcceptedOrRefusedWith6009(thrown, closeCalls, closed);
+        }
+
+        @Test
+        @DisplayName("publishAndAwait() of an unregistered ordinal is accepted or refused with EX-EVENT-6009; payload released once")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void publishAndAwaitOfUnregisteredOrdinalIsAcceptedOrRefusedWith6009() throws Exception {
+            EventBus bus = engine.bus();
+            EventDescriptor published = descriptor(ORDINAL_NEVER_REGISTERED);
+            AtomicInteger closeCalls = new AtomicInteger(0);
+            CountDownLatch closed = new CountDownLatch(1);
+            TrackingPayload payload = new TrackingPayload(closeCalls, closed);
+
+            Throwable thrown = catchThrowable(() -> bus.publishAndAwait(published, payload));
+
+            assertAcceptedOrRefusedWith6009(thrown, closeCalls, closed);
+        }
+
+        private static void assertAcceptedOrRefusedWith6009(Throwable thrown,
+                                                            AtomicInteger closeCalls,
+                                                            CountDownLatch closed)
+                throws InterruptedException {
+            if (thrown != null) {
+                assertThat(thrown)
+                        .as("a refused publish MUST throw EventBusException, not a raw exception")
+                        .isInstanceOfSatisfying(EventBusException.class, ex -> {
+                            assertThat(ex.errorCode())
+                                    .as("a publish refused for a reason other than a full queue "
+                                        + "MUST carry EX-EVENT-6009")
+                                    .isEqualTo(KernelErrorCodes.EX_EVENT_6009);
+                            assertThat(ex.rawArgs())
+                                    .as("EX-EVENT-6009 rawArgs MUST be [eventTypeOrdinal, String reason]")
+                                    .hasSize(2);
+                            assertThat(ex.rawArgs()[0])
+                                    .as("EX-EVENT-6009 rawArgs[0] MUST be the refused ordinal")
+                                    .isEqualTo(ORDINAL_NEVER_REGISTERED);
+                            assertThat(ex.rawArgs()[1])
+                                    .as("EX-EVENT-6009 rawArgs[1] MUST be the String reason")
+                                    .isInstanceOf(String.class);
+                        });
+            }
+            // Ownership passed to the bus on entry, on success or on failure — so the bus
+            // releases the caller's reference whichever way it answered.
+            assertThat(closed.await(5, TimeUnit.SECONDS))
+                    .as("the bus MUST release a payload it was handed, accepted or refused")
+                    .isTrue();
+            assertThat(closeCalls.get())
+                    .as("the payload MUST be released exactly once").isEqualTo(1);
+        }
     }
 
     // =========================================================================
