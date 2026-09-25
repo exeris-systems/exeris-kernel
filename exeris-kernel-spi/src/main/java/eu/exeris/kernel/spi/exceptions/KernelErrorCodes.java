@@ -49,20 +49,38 @@ public final class KernelErrorCodes {
     public static final String EX_MEM_1001 = "EX-MEM-1001";
 
     /**
-     * Off-heap arena leak detected: a {@code MemorySegment} was not returned
-     * to its parent arena before the arena's lifecycle ended.
+     * Off-heap buffer leak detected: a {@code LoanedBuffer} tracked under
+     * {@code LeakDetectionMode.SAMPLED} or {@code LeakDetectionMode.PARANOID} became
+     * unreachable without being closed, so its off-heap segment was never returned to the pool.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code long} segmentAddress</li>
-     *   <li>index 1 – {@code long} segmentByteSize</li>
-     * </ul>
+     * <p><b>Reported, never thrown.</b> Detection happens after the buffer is collected, on a
+     * thread its owner does not control, so there is no caller to throw to. No exception carries
+     * this code and it has no {@code rawArgs} layout.
+     *
+     * @implNote The kernel's Core leak tracker records each detection as the JFR event
+     *           {@code eu.exeris.kernel.core.BufferLeak}, whose typed fields are read by name:
+     *           {@code bufferLabel} ({@code String}, the buffer's identity hash in hex),
+     *           {@code allocationStack} ({@code String}, the allocating stack under
+     *           {@code PARANOID}, the placeholder {@code "<sampled>"} under {@code SAMPLED}) and
+     *           {@code capacityBytes} ({@code long}). The event has no error-code field; this code
+     *           appears in the event type's description.
      */
     public static final String EX_MEM_1002 = "EX-MEM-1002";
 
     /**
-     * Allocation hint conflict: two subsystems requested incompatible
-     * {@code AllocationHint} tiers for the same buffer slot.
+     * Peek-view ownership misuse: {@code retain()} or {@code addCloseAction(Runnable)} was called
+     * on the non-owning view returned by {@code LoanedBuffer.peek(long, long)}. A peek view owns no
+     * reference, so {@code retain()} increments nothing and {@code addCloseAction} is rejected
+     * with {@code UnsupportedOperationException}; a caller that relied on either to keep the
+     * memory alive risks a use-after-free once the parent is released.
+     *
+     * <p><b>Reported, never thrown under this code.</b> No exception carries it and it has no
+     * {@code rawArgs} layout.
+     *
+     * @implNote The kernel's Core buffer records each misuse as the JFR event
+     *           {@code eu.exeris.kernel.core.PeekViewMisuse}, whose typed fields are read by name:
+     *           {@code errorCode} ({@code String}, this code) and {@code callerMethod}
+     *           ({@code String}, {@code "retain"} or {@code "addCloseAction"}).
      */
     public static final String EX_MEM_1003 = "EX-MEM-1003";
 
@@ -78,30 +96,42 @@ public final class KernelErrorCodes {
      * <p>This is an <em>unrecoverable architectural defect</em>. The kernel halts
      * immediately; no degraded mode or partial boot is attempted.
      *
-     * <p>Semantically associated with
-     * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}:
-     * because that exception is a pure pre-telemetry panic type (plain {@code RuntimeException},
-     * no {@code rawArgs}), the bootstrap orchestrator catches it and translates the failure
-     * into Glass-Box telemetry using this error code.
+     * <p>The exception thrown for it,
+     * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}, is a
+     * plain {@code RuntimeException}, not an {@code ExerisKernelException}: it carries this code in
+     * its message and in its {@code ERROR_CODE} constant, and it has no {@code rawArgs}. The cycle's
+     * members are read from
+     * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException#cycleMembers()},
+     * an insertion-ordered {@code Set<String>}.
      *
-     * <p><b>rawArgs layout for Glass-Box</b> (emitted by the orchestrator, not by the exception):
-     * <ul>
-     *   <li>index 0 – {@code String[]} cycleMembers — ordered subsystem names forming the cycle,
-     *       typically derived from
-     *       {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException#cycleMembers()}</li>
-     * </ul>
+     * @implNote The kernel's Core bootstrap orchestrator also records the failure, before
+     *           re-throwing the exception, as the JFR event
+     *           {@code eu.exeris.kernel.bootstrap.CircularDependencyDetected}, whose typed fields
+     *           are read by name: {@code cycleMembers}, a single {@code String} holding the names
+     *           from {@code cycleMembers()} in the same order, joined with {@code ", "} (comma and
+     *           space); and {@code errorCode} ({@code String}, this code).
      */
     public static final String EX_BOOT_0001 = "EX-BOOT-0001";
 
     /**
-     * Subsystem initialization or startup failure.
+     * Subsystem lifecycle failure: a subsystem failed during {@code initialize()},
+     * {@code start()} or {@code stop()}.
+     *
+     * <p>Carried by {@link eu.exeris.kernel.spi.exceptions.SubsystemException}, whose two
+     * constructors both fill the same fixed layout.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
-     * <p>This code is shared across multiple bootstrap pathways and therefore
-     * does not expose a stable {@code rawArgs} layout for Glass-Box decoding.
-     * Callers may attach implementation-specific {@code rawArgs}, but
-     * Glass-Box consumers must treat them as opaque and must not rely on a
-     * particular arity or field order.</p>
+     * <ul>
+     *   <li>index 0 – {@code String} subsystemName (logical name of the failing subsystem)</li>
+     *   <li>index 1 – {@link eu.exeris.kernel.spi.exceptions.SubsystemException.Phase} phase
+     *       ({@code INITIALIZE}, {@code START} or {@code STOP})</li>
+     *   <li>index 2 – {@code String} detail (static detail string)</li>
+     * </ul>
+     *
+     * @implNote The kernel's Core bootstrap sorter also cites this code in the message text of
+     *           the checked exception it raises for a {@code dependsOn()} entry naming a subsystem
+     *           that is not registered. That exception is not an {@code ExerisKernelException}
+     *           and carries no {@code rawArgs}.
      */
     public static final String EX_BOOT_0002 = "EX-BOOT-0002";
 
@@ -283,15 +313,12 @@ public final class KernelErrorCodes {
     public static final String EX_NET_4006 = "EX-NET-4006";
 
     /**
-     * Transport buffer exhaustion: no available {@code LoanedBuffer} segments remain
-     * in the ingress {@code SlabPool}. Backpressure must be initiated.
+     * Transport buffer exhaustion: no {@code LoanedBuffer} segment remains in a transport's
+     * ingress pool.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} transportName</li>
-     *   <li>index 1 – {@code int}    poolCapacity  (total slab slots in the pool)</li>
-     *   <li>index 2 – {@code int}    activeSlabs   (slabs currently in use)</li>
-     * </ul>
+     * <p><b>Reserved.</b> No kernel code path raises this code: no exception is constructed with
+     * it and no event records it. It publishes no {@code rawArgs} layout, because a layout with no
+     * thrower is a promise nothing checks; the layout is defined together with the first thrower.
      */
     public static final String EX_NET_4007 = "EX-NET-4007";
 
@@ -753,10 +780,11 @@ public final class KernelErrorCodes {
     /**
      * Generic event engine failure (no specific category).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} message (human-readable diagnostic)</li>
-     * </ul>
+     * <p><b>No rawArgs layout.</b> This code is set by the message constructors of
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventEngineException}, which leave
+     * {@code rawArgs} empty. The human-readable diagnostic is the exception's
+     * {@code getMessage()}, and an upstream failure, when there is one, is its
+     * {@code getCause()}.
      */
     public static final String EX_EVENT_6001 = "EX-EVENT-6001";
 
@@ -864,17 +892,23 @@ public final class KernelErrorCodes {
     public static final String EX_FLOW_7001 = "EX-FLOW-7001";
 
     /**
-     * Flow engine lifecycle failure: start, stop, compile, or scheduler operation failed.
+     * Flow engine lifecycle failure: a start, compile, schedule, wake, optimistic-lock or
+     * resume-compatibility operation was refused or failed.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box</b> — filled by the named factories of
+     * {@link eu.exeris.kernel.spi.exceptions.flow.FlowEngineException}, which owns the full
+     * per-phase layout; an instance built by one of its public constructors carries empty
+     * {@code rawArgs}:
      * <ul>
      *   <li>index 0 – {@code String} engineName</li>
-     *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
-     *       {@code "COMPILE"}, {@code "SCHEDULE"}</li>
+     *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "COMPILE"},
+     *       {@code "SCHEDULE"}, {@code "WAKE"}, {@code "OPTIMISTIC_LOCK_CONFLICT"},
+     *       {@code "SCHEMA_MISMATCH"}</li>
      *   <li>index 2 – {@code String} staticReasonCode — e.g. {@code "STARTUP_FAILED"},
      *       {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"}</li>
      *   <li>index 3 – {@code int}    contextValue — phase-specific numeric context
-     *       (queue depth for SCHEDULE); {@code -1} when not applicable</li>
+     *       (queue depth for SCHEDULE); {@code -1} when not applicable. For {@code "WAKE"},
+     *       indices 3 and 4 are instead the {@code long} halves of the flow instance id.</li>
      * </ul>
      */
     public static final String EX_FLOW_7002 = "EX-FLOW-7002";
@@ -961,11 +995,17 @@ public final class KernelErrorCodes {
      * refused to apply it. The previous, sealed value remains authoritative — no field is
      * mutated. This is a security-relevant audit signal, not a runtime failure.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} filename (relative path under the config directory)</li>
-     *   <li>index 1 – {@code String} key      (dot-path key of the sealed field; never the value)</li>
-     * </ul>
+     * <p><b>An event code, never thrown.</b> The refusal is not a failure of any caller, so no
+     * exception carries this code and it has no {@code rawArgs} layout. What it identifies is the
+     * refusal event, which names the file and the key only — never the value.
+     *
+     * @implNote The kernel's Core config file watcher logs each refusal at {@code WARNING}, tagged
+     *           with this code, and records it as the JFR event
+     *           {@code eu.exeris.kernel.config.ImmutableReloadRefused}, whose typed fields are read
+     *           by name: {@code file} ({@code String}, the name of the changed file in the watched
+     *           config directory) and {@code key} ({@code String}, the dot-path key of the sealed
+     *           field). The event has no error-code field; this code appears in the event type's
+     *           description.
      */
     public static final String EX_CFG_1004 = "EX-CFG-1004";
 

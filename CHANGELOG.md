@@ -87,6 +87,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The error-code registry says what its throwers and emitters deliver.** The `KernelErrorCodes` Javadoc
+  is the layout a Glass-Box decoder is written against, and for these entries it described
+  something no code produces. `EX-MEM-1003` is peek-view ownership misuse, the meaning its emitter,
+  `LoanedBuffer` and the TCK already used, not an allocation-hint conflict. `EX-MEM-1002`,
+  `EX-MEM-1003` and `EX-CFG-1004` are reported as JFR events and never thrown under their code, so
+  each names its event's typed fields instead of a `rawArgs` layout. `EX-BOOT-0001`'s cycle members
+  reach the JFR event as one `", "`-joined `String`, not a `String[]`, and the exception itself
+  carries no `rawArgs`. `EX-BOOT-0002` has the fixed three-slot layout `SubsystemException` always
+  fills, not an opaque one. `EX-EVENT-6001` has no `rawArgs`; its diagnostic is `getMessage()`.
+  `EX-NET-4007` is reserved: nothing raises it, so it publishes no layout. `EX-FLOW-7002` and
+  `FlowEngineException` list the phases the factories construct, with `WAKE` and without `STOP`.
+  No constant, signature or runtime behaviour changed; the subsystem documents' code tables follow.
+
 - **The Community-only crypto checks are skipped for another tier, not passed.**
   `AbstractCryptoEngineTck`'s `communityPriorityIsZero()`, `communityDoesNotSupportQuic()` and
   `communityRejectsQuicConfig()` returned early when `isCommunityTier()` was `false`, so a binding
