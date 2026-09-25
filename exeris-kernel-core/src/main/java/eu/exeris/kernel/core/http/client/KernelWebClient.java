@@ -373,8 +373,9 @@ public final class KernelWebClient {
             // derived requests share that one buffer and take no reference of their own, so this is
             // exactly one close, and an enricher that substituted a body cannot make this client
             // release a buffer it never allocated. A bodyless request carries null, which
-            // try-with-resources skips.
-            try (LoanedBuffer _ = built.body()) {
+            // try-with-resources skips. The resource keeps its explicit type because this module's PMD
+            // ruleset requires one (UseExplicitTypes); java:S7466 asks for the opposite.
+            try (@SuppressWarnings("java:S7466") LoanedBuffer _ = built.body()) {
                 request = addressAndEnrich(built);
                 try {
                     response = engine.send(request);

@@ -8,7 +8,6 @@ import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpClientRequestEnricher;
 import eu.exeris.kernel.spi.http.HttpEncodedBody;
 import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpRequestBodyEncoder;
 import eu.exeris.kernel.spi.http.HttpRequestBodyEncoderRegistry;
@@ -119,8 +118,9 @@ class KernelWebClientRequestBodyReleaseTest {
     void transportFailureNotRetriedReleasesBody() {
         ProgrammedEngine engine = new ProgrammedEngine(List.of(boom()));
 
-        assertThatThrownBy(() -> client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none())
-                .post("/widget", "cogwheel", String.class))
+        KernelWebClient client = client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none());
+
+        assertThatThrownBy(() -> client.post("/widget", "cogwheel", String.class))
                 .isInstanceOf(TransportBoom.class);
 
         assertThat(engine.bodyAliveAtSend).containsExactly(true);
@@ -136,8 +136,9 @@ class KernelWebClientRequestBodyReleaseTest {
             throw new IllegalArgumentException("header value carries CR");
         };
 
-        assertThatThrownBy(() -> client(engine, refusing, HttpRetryPolicy.none())
-                .post("/widget", "cogwheel", String.class))
+        KernelWebClient client = client(engine, refusing, HttpRetryPolicy.none());
+
+        assertThatThrownBy(() -> client.post("/widget", "cogwheel", String.class))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("header value carries CR");
 
@@ -184,8 +185,9 @@ class KernelWebClientRequestBodyReleaseTest {
         ProgrammedEngine engine = new ProgrammedEngine(List.of());
         engine.defaultAuthorityFailure = new IllegalStateException("engine closed");
 
-        assertThatThrownBy(() -> client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none())
-                .post("/widget", "cogwheel", String.class))
+        KernelWebClient client = client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none());
+
+        assertThatThrownBy(() -> client.post("/widget", "cogwheel", String.class))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("engine closed");
 
@@ -223,8 +225,10 @@ class KernelWebClientRequestBodyReleaseTest {
             }
         };
 
-        assertThatThrownBy(() -> client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none(),
-                nullHeader).post("/widget", "cogwheel", String.class))
+        KernelWebClient client = client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none(),
+                nullHeader);
+
+        assertThatThrownBy(() -> client.post("/widget", "cogwheel", String.class))
                 .isInstanceOf(NullPointerException.class);
 
         assertThat(engine.received).as("nothing was sent").isEmpty();

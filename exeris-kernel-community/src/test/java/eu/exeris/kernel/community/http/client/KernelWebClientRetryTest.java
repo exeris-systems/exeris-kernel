@@ -227,8 +227,10 @@ class KernelWebClientRetryTest {
     void transportFailureToCapReleasesEveryBody() {
         ProgrammedEngine engine = new ProgrammedEngine(List.of(boom(), boom(), boom()));
 
-        assertThatThrownBy(() -> client(engine, idempotencyKey("k-2"))
-                .post("/widget", Map.of("name", "Cogwheel"), Map.class))
+        KernelWebClient client = client(engine, idempotencyKey("k-2"));
+        Map<String, String> widget = Map.of("name", "Cogwheel");
+
+        assertThatThrownBy(() -> client.post("/widget", widget, Map.class))
                 .isInstanceOf(TransportBoom.class);
 
         assertThat(engine.received).hasSize(3);
@@ -244,7 +246,10 @@ class KernelWebClientRetryTest {
             throw new IllegalArgumentException("header value carries CR");
         };
 
-        assertThatThrownBy(() -> client(engine, refusing).post("/widget", Map.of("name", "Cogwheel"), Map.class))
+        KernelWebClient client = client(engine, refusing);
+        Map<String, String> widget = Map.of("name", "Cogwheel");
+
+        assertThatThrownBy(() -> client.post("/widget", widget, Map.class))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThat(engine.received).as("nothing was sent").isEmpty();
@@ -258,8 +263,10 @@ class KernelWebClientRetryTest {
         ProgrammedEngine engine = new ProgrammedEngine(List.of());
         engine.defaultAuthorityFailure = new IllegalStateException("engine closed");
 
-        assertThatThrownBy(() -> client(engine, HttpClientRequestEnricher.noop())
-                .post("/widget", Map.of("name", "Cogwheel"), Map.class))
+        KernelWebClient client = client(engine, HttpClientRequestEnricher.noop());
+        Map<String, String> widget = Map.of("name", "Cogwheel");
+
+        assertThatThrownBy(() -> client.post("/widget", widget, Map.class))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(engine.received).as("nothing was sent").isEmpty();
@@ -273,8 +280,10 @@ class KernelWebClientRetryTest {
         ProgrammedEngine engine = new ProgrammedEngine(List.of(
                 status(503, "busy"), status(503, "busy"), status(503, "still busy")));
 
-        assertThatThrownBy(() -> client(engine, idempotencyKey("k-3"))
-                .post("/widget", Map.of("name", "Cogwheel"), Map.class))
+        KernelWebClient client = client(engine, idempotencyKey("k-3"));
+        Map<String, String> widget = Map.of("name", "Cogwheel");
+
+        assertThatThrownBy(() -> client.post("/widget", widget, Map.class))
                 .isInstanceOf(KernelWebClient.WebClientException.class)
                 .extracting(ex -> ((KernelWebClient.WebClientException) ex).responseBody())
                 .isEqualTo("still busy");

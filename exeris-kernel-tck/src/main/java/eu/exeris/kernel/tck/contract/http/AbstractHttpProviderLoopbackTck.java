@@ -18,7 +18,6 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpServerEngine;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -258,7 +257,7 @@ public abstract class AbstractHttpProviderLoopbackTck {
                     requestVersion(),
                     List.of(new HttpHeader("Content-Type", "application/json")),
                     body));
-            try (LoanedBuffer ignored = response.body()) {
+            try (var _ = response.body()) {
                 assertThat(response.status().code()).isEqualTo(expectedStatus().code());
             }
 
