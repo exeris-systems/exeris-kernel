@@ -151,6 +151,12 @@ jobs:
             echo "== $s: this branch does not carry it"
           fi
         done
+      # THE ROUTINE IN PARTS, each part its own model run, composed into one verdict and one
+      # comment with a section per part. `pr` runs on every pull request, and so does `repo`, which
+      # is the extension above together with the check output: the four scripts run for that part
+      # alone. `docs`, `records` and `code-docs` run only where the diff has their files. A part
+      # that leaves no verdict makes the check red, so the review cannot shrink without saying so.
+      review-in-parts: true
       # `mandatory-gates` is left at the routine's own three, which are the three gate jobs in this
       # file. The Javadoc gate is a REPORTED check and lives in `javadoc.yml`; naming it here would
       # make its `not-run` turn the required check red, and that is a branch-protection decision
