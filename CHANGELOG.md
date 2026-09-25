@@ -98,7 +98,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   fills, not an opaque one. `EX-EVENT-6001` has no `rawArgs`; its diagnostic is `getMessage()`.
   `EX-NET-4007` is reserved: nothing raises it, so it publishes no layout. `EX-FLOW-7002` and
   `FlowEngineException` list the phases the factories construct, with `WAKE` and without `STOP`.
-  No constant, signature or runtime behaviour changed; the subsystem documents' code tables follow.
+  No constant, signature or runtime behaviour changed. The code tables in the exceptions, flow,
+  memory, telemetry and transport documents follow; the bootstrap and events documents are
+  verified separately.
 
 - **The Community-only crypto checks are skipped for another tier, not passed.**
   `AbstractCryptoEngineTck`'s `communityPriorityIsZero()`, `communityDoesNotSupportQuic()` and

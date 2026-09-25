@@ -266,7 +266,7 @@ The SDK `@DomainEvent.topic` attribute captures an author's routing target; **[A
 
 | Code            | Meaning               | Glass-Box Payload (`rawArgs`)                                          |
 |:----------------|:----------------------|:-----------------------------------------------------------------------|
-| `EX-EVENT-6001` | Generic Engine Failure| *(no rawArgs)* — the diagnostic is `getMessage()`, an upstream failure `getCause()` |
+| `EX-EVENT-6001` | Generic Engine Failure| `[0] String message`                                                   |
 | `EX-EVENT-6002` | Bus Publish Failure   | `[0] String eventType, [1] long queueDepth, [2] long queueCapacity`    |
 | `EX-EVENT-6003` | Registry Conflict     | `[0] String eventType, [1] int ordinal`                                |
 | `EX-EVENT-6004` | Provider Boot Failure | `[0] String providerName, [1] String reason` |
