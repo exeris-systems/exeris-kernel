@@ -58,10 +58,10 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *       Community. No test here pins an Enterprise value.</li>
  * </ol>
  *
- * <p>The three Community-only checks above are skipped by a bare early return — not
- * {@link org.junit.jupiter.api.Assumptions#assumeTrue} — when {@link #isCommunityTier()}
- * returns {@code false}, so they report as passed rather than skipped against an Enterprise
- * binding. See {@link #isCommunityTier()}.
+ * <p>The three Community-only checks above are skipped via
+ * {@link org.junit.jupiter.api.Assumptions#assumeTrue} when {@link #isCommunityTier()} returns
+ * {@code false}, so a binding of another tier sees them reported as aborted, never as passed.
+ * See {@link #isCommunityTier()}.
  *
  * <h2>Usage</h2>
  * {@snippet lang="java" :
@@ -111,10 +111,10 @@ public abstract class AbstractCryptoEngineTck {
      * @implSpec A Community-tier provider must additionally satisfy {@code supportsQuic() ==
      *           false} and {@code priority() == 0}. The three tests that check those constraints
      *           — {@link #communityPriorityIsZero()}, {@link #communityDoesNotSupportQuic()},
-     *           {@link #communityRejectsQuicConfig()} — skip themselves by a bare early return,
-     *           not {@link org.junit.jupiter.api.Assumptions#assumeTrue}, when this returns
-     *           {@code false}; overriding it to {@code false} makes those tests report as
-     *           passed, not skipped, without exercising any assertion.
+     *           {@link #communityRejectsQuicConfig()} — are skipped via
+     *           {@link org.junit.jupiter.api.Assumptions#assumeTrue} when this returns
+     *           {@code false}: JUnit reports them as aborted, distinct from both passed and
+     *           failed, so a binding exempted from them never counts them as passed.
      */
     protected boolean isCommunityTier() {
         return true;
@@ -253,14 +253,15 @@ public abstract class AbstractCryptoEngineTck {
      * For a Community-tier provider, verifies that {@link KernelCryptoProvider#priority()} is
      * exactly zero.
      *
-     * @apiNote Skipped by a bare early return, not
-     *          {@link org.junit.jupiter.api.Assumptions#assumeTrue}, when
+     * @apiNote Skipped via {@link org.junit.jupiter.api.Assumptions#assumeTrue} when
      *          {@link #isCommunityTier()} is {@code false} — see that method's Javadoc.
      */
     @Test
     @DisplayName("Provider metadata: Community tier: priority() == 0")
     public final void communityPriorityIsZero() {
-        if (!isCommunityTier()) return;
+        assumeTrue(isCommunityTier(),
+                "Skipped: priority() == 0 is a Community-tier constraint " +
+                        "— this binding declares isCommunityTier() == false");
         assertThat(provider.priority())
                 .as("Community KernelCryptoProvider MUST have priority() == 0")
                 .isZero();
@@ -270,14 +271,15 @@ public abstract class AbstractCryptoEngineTck {
      * For a Community-tier provider, verifies that {@link KernelCryptoProvider#supportsQuic()}
      * returns {@code false} — QUIC support is Enterprise-only.
      *
-     * @apiNote Skipped by a bare early return, not
-     *          {@link org.junit.jupiter.api.Assumptions#assumeTrue}, when
+     * @apiNote Skipped via {@link org.junit.jupiter.api.Assumptions#assumeTrue} when
      *          {@link #isCommunityTier()} is {@code false} — see that method's Javadoc.
      */
     @Test
     @DisplayName("Provider metadata: Community tier: supportsQuic() == false")
     public final void communityDoesNotSupportQuic() {
-        if (!isCommunityTier()) return;
+        assumeTrue(isCommunityTier(),
+                "Skipped: supportsQuic() == false is a Community-tier constraint " +
+                        "— this binding declares isCommunityTier() == false");
         assertThat(provider.supportsQuic())
                 .as("Community KernelCryptoProvider MUST return supportsQuic() == false " +
                         "(QUIC is Enterprise-only)")
@@ -329,14 +331,15 @@ public abstract class AbstractCryptoEngineTck {
      * throws {@link CryptoBootstrapException} for a QUIC configuration — QUIC is
      * Enterprise-only.
      *
-     * @apiNote Skipped by a bare early return, not
-     *          {@link org.junit.jupiter.api.Assumptions#assumeTrue}, when
+     * @apiNote Skipped via {@link org.junit.jupiter.api.Assumptions#assumeTrue} when
      *          {@link #isCommunityTier()} is {@code false} — see that method's Javadoc.
      */
     @Test
     @DisplayName("createTlsEngine: Community: createTlsEngine(QUIC) throws CryptoBootstrapException")
     public final void communityRejectsQuicConfig() {
-        if (!isCommunityTier()) return;
+        assumeTrue(isCommunityTier(),
+                "Skipped: rejecting a QUIC config is a Community-tier constraint " +
+                        "— this binding declares isCommunityTier() == false");
         var config = quicConfig();
         assertThatThrownBy(() -> provider.createTlsEngine(config))
                 .as("Community MUST throw CryptoBootstrapException for QUIC config — " +

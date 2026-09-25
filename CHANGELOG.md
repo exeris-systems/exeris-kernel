@@ -87,6 +87,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The Community-only crypto checks are skipped for another tier, not passed.**
+  `AbstractCryptoEngineTck`'s `communityPriorityIsZero()`, `communityDoesNotSupportQuic()` and
+  `communityRejectsQuicConfig()` returned early when `isCommunityTier()` was `false`, so a binding
+  declaring another tier reported all three as passed with no assertion run. They now use
+  `assumeTrue`, as the class's `isIoReady()` cases already did, and JUnit reports them as aborted.
+  **For anyone binding the TCK:** a binding returning `false` from `isCommunityTier()` — the Core
+  `OffHeapTlsEngine` binding does — now shows three more skipped tests and three fewer passed; a
+  Community binding is unaffected.
+
 - **A client request body is released after its send.** `KernelWebClient` encoded each request body
   into a loaned off-heap buffer and nothing released it, so every request carrying a body kept one
   buffer, and a client posting under load ended in `MemoryExhaustedException` rather than a heap
