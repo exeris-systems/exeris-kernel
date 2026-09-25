@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.http.http1;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.core.http.CanonicalHeaderNames;
 
 import java.lang.foreign.MemorySegment;
@@ -172,12 +173,12 @@ public final class Http1RequestParser {
 
             long fieldSize = lineEnd - pos;
             if (fieldSize > maxHeaderSize) {
-                throw new Http1ParseException(MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
+                throw new Http1ParseException(FaultOrigin.CALLER, MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
             }
 
             headerCount++;
             if (headerCount > maxHeaders) {
-                throw new Http1ParseException(MSG_TOO_MANY_HEADERS, headerCount, maxHeaders);
+                throw new Http1ParseException(FaultOrigin.CALLER, MSG_TOO_MANY_HEADERS, headerCount, maxHeaders);
             }
 
             String name = resolveFieldName(seg, pos, colonPos);
@@ -189,54 +190,22 @@ public final class Http1RequestParser {
         return -1;
     }
 
-    /**
-     * Unchecked exception for HTTP/1.1 protocol parse violations (DoS limits, malformed
-     * framing).
-     *
-     * @since 0.5
-     */
-    public static final class Http1ParseException extends eu.exeris.kernel.core.http.http1.Http1ParseException {
-
-        private static final long serialVersionUID = 1L;
-
-        /**
-         * Constructs the exception with {@code EX-HTTP-4004} and no chained cause.
-         *
-         * @param messageTemplate static message template describing the violation
-         * @param rawArgs         domain-specific detail carried as-is for telemetry
-         */
-        public Http1ParseException(String messageTemplate, Object... rawArgs) {
-            super(eu.exeris.kernel.spi.exceptions.FaultOrigin.CALLER, messageTemplate, rawArgs);
-        }
-
-        /**
-         * Constructs the exception with {@code EX-HTTP-4004}, chaining {@code cause}.
-         *
-         * @param messageTemplate static message template describing the violation
-         * @param cause           the exception that caused the parse failure
-         * @param rawArgs         domain-specific detail carried as-is for telemetry
-         */
-        public Http1ParseException(String messageTemplate, Throwable cause, Object... rawArgs) {
-            super(eu.exeris.kernel.spi.exceptions.FaultOrigin.CALLER, messageTemplate, cause, rawArgs);
-        }
-    }
-
     // =========================================================================
     // Internal
     // =========================================================================
 
     private static void rejectMalformedHeaderLine(long fieldSize, int maxHeaderSize) {
         if (fieldSize > maxHeaderSize) {
-            throw new Http1ParseException(MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
         }
-        throw new Http1ParseException(MSG_MALFORMED_HEADER, fieldSize);
+        throw new Http1ParseException(FaultOrigin.CALLER, MSG_MALFORMED_HEADER, fieldSize);
     }
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long size = seg.byteSize();
         if (offset < 0 || length < 0 || offset > size) {
             long requestedEnd = (length > Long.MAX_VALUE - offset) ? Long.MAX_VALUE : offset + length;
-            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
         }
         if (length < CRLF_SEQUENCE_LENGTH) {
             return -1;
@@ -244,7 +213,7 @@ public final class Http1RequestParser {
         long maxLength = size - offset;
         if (length > maxLength) {
             long requestedEnd = (length > Long.MAX_VALUE - offset) ? Long.MAX_VALUE : offset + length;
-            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
         }
 
         long end = offset + length;
@@ -261,7 +230,7 @@ public final class Http1RequestParser {
     private static long findByte(MemorySegment seg, long start, long end, byte target) {
         long size = seg.byteSize();
         if (start < 0 || end < start || end > size) {
-            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, start, end, size);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_RANGE_OUT_OF_BOUNDS, start, end, size);
         }
         for (long pos = start; pos < end; pos++) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
@@ -283,7 +252,7 @@ public final class Http1RequestParser {
         }
         String rawName = readAscii(seg, start, end);
         if (!CanonicalHeaderNames.isValidFieldName(rawName)) {
-            throw new Http1ParseException(MSG_INVALID_HEADER_NAME, rawName);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_INVALID_HEADER_NAME, rawName);
         }
         return rawName;
     }

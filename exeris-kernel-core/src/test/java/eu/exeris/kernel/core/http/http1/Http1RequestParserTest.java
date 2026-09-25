@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.http.http1;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import org.junit.jupiter.api.Test;
 
 import java.lang.foreign.Arena;
@@ -62,7 +63,7 @@ class Http1RequestParserTest {
                     Http1RequestParser.DEFAULT_MAX_HEADER_SIZE,
                     (name, value) -> {
                     }
-            )).isInstanceOf(Http1RequestParser.Http1ParseException.class)
+            )).satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("too many header fields");
         }
     }
@@ -91,7 +92,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }
@@ -135,7 +136,7 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
     }
@@ -149,8 +150,74 @@ class Http1RequestParserTest {
             assertThatThrownBy(() -> Http1RequestParser.parseHeaders(segment, 0, headers.length(),
                     (name, value) -> {
                     }))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class)
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
                     .hasMessageContaining("Invalid HTTP header field-name");
         }
+    }
+
+    @Test
+    void headerLineWithoutAColonIsRejectedAsMalformed() {
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "Host example.com\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
+                    segment, 0, headers.length(), 16, 8_192, (name, value) -> { }))
+                    .as("a header line carrying no colon is malformed framing, not a size breach")
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
+                    .satisfies(ex -> assertThat(((Http1ParseException) ex).faultOrigin())
+                            .isEqualTo(FaultOrigin.CALLER));
+        }
+    }
+
+    @Test
+    void headerLineWithoutAColonOverTheSizeLimitIsRejectedAsASizeBreach() {
+        try (Arena arena = Arena.ofConfined()) {
+            String headers = "H".repeat(64) + "\r\n\r\n";
+            MemorySegment segment = arena.allocateFrom(headers, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseHeaders(
+                    segment, 0, headers.length(), 16, 8, (name, value) -> { }))
+                    .as("over the limit the size breach is the reason reported, not the missing colon")
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault)
+                    .satisfies(ex -> assertThat(((Http1ParseException) ex).faultOrigin())
+                            .isEqualTo(FaultOrigin.CALLER));
+        }
+    }
+
+    @Test
+    void anOffsetPastTheSegmentIsRejectedRatherThanRead() {
+        try (Arena arena = Arena.ofConfined()) {
+            String requestLine = "GET / HTTP/1.1\r\n";
+            MemorySegment segment = arena.allocateFrom(requestLine, StandardCharsets.US_ASCII);
+            long past = segment.byteSize() + 1;
+
+            assertThatThrownBy(() -> Http1RequestParser.parseRequestLine(segment, past, 2))
+                    .as("a public entry point taking an offset checks it against the segment")
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault);
+        }
+    }
+
+    @Test
+    void aLengthBeyondTheRemainingBytesIsRejectedRatherThanRead() {
+        try (Arena arena = Arena.ofConfined()) {
+            String requestLine = "GET / HTTP/1.1\r\n";
+            MemorySegment segment = arena.allocateFrom(requestLine, StandardCharsets.US_ASCII);
+
+            assertThatThrownBy(() -> Http1RequestParser.parseRequestLine(
+                    segment, 2, segment.byteSize()))
+                    .as("offset plus length has to stay inside the segment, not merely length")
+                    .satisfies(Http1RequestParserTest::assertInboundCallerFault);
+        }
+    }
+
+    /**
+     * Every parse failure on the inbound path is the remote client's fault (ADR-083). The type does
+     * not fix the origin on its own — the throw site states it — so each case reads it back: an
+     * origin stated per site is only as good as what checks it.
+     */
+    private static void assertInboundCallerFault(Throwable thrown) {
+        assertThat(thrown).isInstanceOf(Http1ParseException.class);
+        assertThat(((Http1ParseException) thrown).faultOrigin()).isEqualTo(FaultOrigin.CALLER);
     }
 }

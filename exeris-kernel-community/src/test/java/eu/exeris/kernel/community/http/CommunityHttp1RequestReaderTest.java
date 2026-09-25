@@ -4,9 +4,10 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
-import eu.exeris.kernel.core.http.http1.Http1RequestParser;
+import eu.exeris.kernel.core.http.http1.Http1ParseException;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpVersion;
@@ -122,7 +123,7 @@ class CommunityHttp1RequestReaderTest {
 
             assertThatThrownBy(() -> CommunityHttp1RequestReader.tryParseRequest(
                     new Http1Codec(2, 8_192), buffer, bytes.length))
-                    .isInstanceOf(Http1RequestParser.Http1ParseException.class);
+                    .satisfies(CommunityHttp1RequestReaderTest::assertInboundCallerFault);
         }
     }
 
@@ -138,5 +139,15 @@ class CommunityHttp1RequestReaderTest {
             buffer.setSize(bytes.length);
             body.run(new Http1Codec(), buffer, bytes.length);
         }
+    }
+
+    /**
+     * Every parse failure on the inbound path is the remote client's fault (ADR-083). The type does
+     * not fix the origin on its own — the throw site states it — so each case reads it back: an
+     * origin stated per site is only as good as what checks it.
+     */
+    private static void assertInboundCallerFault(Throwable thrown) {
+        assertThat(thrown).isInstanceOf(Http1ParseException.class);
+        assertThat(((Http1ParseException) thrown).faultOrigin()).isEqualTo(FaultOrigin.CALLER);
     }
 }

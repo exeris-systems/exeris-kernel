@@ -1398,6 +1398,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   written, exit 0 — the check the CLI regression taught, where a jar that assembled was executed
   nowhere.
 
+### Fixed
+
+- **One HTTP/1.1 parse exception, and it will not guess whose fault a framing violation is** —
+  `Http1ParseException` takes a `FaultOrigin` in every constructor and offers none without one. It
+  had two that defaulted to `SYSTEM`, and a nested `Http1RequestParser.Http1ParseException`
+  subclass that existed to pin `CALLER` on the inbound path, which meant two types with one simple
+  name in one package: inside the parser it resolved inward to the subclass, everywhere else
+  outward to the base, so identical source text classified a failure oppositely depending on where
+  it was written. Neither the defaults nor the subclass had a production caller that needed them —
+  every outbound site already passed `SYSTEM` explicitly. The classification moved from the type to
+  the call, where the compiler requires it, and every inbound case now reads the origin back.
+
 ### Documentation
 
 - **Published Javadoc states contracts instead of reporting implementations** — `spi`, `tck`, `core`,

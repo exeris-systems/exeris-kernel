@@ -13,6 +13,13 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *
  * <p>Carries error code {@link KernelErrorCodes#EX_HTTP_4004}.
  *
+ * <p><b>The fault origin is required, not defaulted.</b> Every constructor takes one, because the
+ * same framing violation belongs to opposite parties depending on which end of the connection read
+ * it: {@link FaultOrigin#CALLER} for a request this server could not frame — the remote client sent
+ * it — and {@link FaultOrigin#SYSTEM} for a response this client could not frame, which an upstream
+ * dependency returned. A constructor that supplied either one silently would classify half the
+ * throw sites wrongly by omission, and ADR-083 treats a wrong origin as worse than an unstated one.
+ *
  * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
  * <p>Carries domain detail for {@link KernelErrorCodes#EX_HTTP_4004}:
  * <ul>
@@ -51,32 +58,12 @@ public class Http1ParseException extends ExerisKernelException {
 
     private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4004;
 
+    /**
+     * Which end of the connection produced the framing that could not be parsed. Non-transient,
+     * so a deserialised instance answers {@link #faultOrigin()} with the classification the
+     * throw site made rather than with the supertype's default.
+     */
     private final FaultOrigin faultOrigin;
-
-    /**
-     * Constructs the exception with {@code EX-HTTP-4004}, defaulting to {@link FaultOrigin#SYSTEM}
-     * per ADR-083 (the conservative default direction), and no chained cause.
-     *
-     * @param messageTemplate static message template describing the violation
-     * @param rawArgs         domain-specific detail carried as-is for telemetry, never used to
-     *                        build {@code messageTemplate}
-     */
-    public Http1ParseException(String messageTemplate, Object... rawArgs) {
-        this(FaultOrigin.SYSTEM, messageTemplate, rawArgs);
-    }
-
-    /**
-     * Constructs the exception with {@code EX-HTTP-4004}, defaulting to {@link FaultOrigin#SYSTEM}
-     * per ADR-083 (the conservative default direction), chaining {@code cause}.
-     *
-     * @param messageTemplate static message template describing the violation
-     * @param cause           the exception that caused the parse failure
-     * @param rawArgs         domain-specific detail carried as-is for telemetry, never used to
-     *                        build {@code messageTemplate}
-     */
-    public Http1ParseException(String messageTemplate, Throwable cause, Object... rawArgs) {
-        this(FaultOrigin.SYSTEM, messageTemplate, cause, rawArgs);
-    }
 
     /**
      * Constructs the exception with {@code EX-HTTP-4004}, an explicit {@link FaultOrigin},
