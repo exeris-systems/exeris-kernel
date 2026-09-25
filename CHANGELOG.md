@@ -87,6 +87,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A client request body is released after its send.** `KernelWebClient` encoded each request body
+  into a loaned off-heap buffer and nothing released it, so every request carrying a body kept one
+  buffer, and a client posting under load ended in `MemoryExhaustedException` rather than a heap
+  `OutOfMemoryError`. It now releases each attempt's body once that attempt's `send` returns or
+  throws, before the retry policy is consulted, so no buffer is held across a retry delay. The caller
+  of `HttpClientEngine#send` keeps ownership of the request body and releases it after `send` returns
+  or throws; the engine reads it during `send` and neither closes nor retains it. Every in-tree engine
+  already behaved that way; the SPI Javadoc now states it on `HttpClientEngine#send` and on the types
+  that carry the body, and the TCK fails an engine that closes or retains it. Recorded as ADR-034
+  Amendment A1.
+
 - **The memory subsystem is stopped at shutdown, and its allocator is released.**
   `CommunityMemorySubsystem` implemented `Subsystem` directly and overrode nothing, so
   `isRunning()` answered the interface default `false` — which the SPI documents as telling the

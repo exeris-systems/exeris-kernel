@@ -7,6 +7,7 @@
 **Scope:** kernel/transport (per-repo; lockstep cross-repo coordination with `exeris-tooling`)
 **Authors:** Arkadiusz Przychocki
 **Supersedes:** ADR-026 — Client-Side Application API (`CommunityWebClient`)
+**Amended:** 2026-09-25 — the caller of `HttpClientEngine#send` keeps ownership of the request body, not the engine (see "Amendments", A1, below); §4's request-body bullet is superseded on that point.
 
 ## Context
 
@@ -231,7 +232,7 @@ Behaviour preserved verbatim from `CommunityWebClient` (ADR-026):
 - 404 → `WebClientException` with `status() == 404` and `isNotFound() == true`.
 - Other non-2xx → `WebClientException` with status + body.
 - Every call blocks the caller's virtual thread through `HttpClientEngine.send`.
-- Request body buffer: facade allocates via `MemoryAllocator`, hands ownership to engine on `send`. On encoder failure between allocate and engine-transfer the buffer is released locally.
+- Request body buffer: facade allocates via `MemoryAllocator`, hands ownership to engine on `send`. On encoder failure between allocate and engine-transfer the buffer is released locally. *(Superseded by "Amendments", A1, below, 2026-09-25: ownership does not transfer on `send`. The façade, as the caller of `send`, keeps ownership and releases the buffer after each attempt's `send` returns or throws. The encoder-failure clause stands.)*
 - Response body buffer: returned by engine, decoded, closed in a `finally`. Callers never see the buffer.
 - Enricher chain (ADR-032) runs after the base `HttpRequest` is constructed and before `engine.send`.
 
@@ -263,6 +264,55 @@ Emitted code now reads `private final KernelWebClient client;` and `catch (Kerne
 The `Community*` class-name prefix convention (memory: `feedback_community_class_naming`) is a **driver-side convention** for concrete SPI implementations shipped in `exeris-kernel-community`: `CommunityHttpProvider`, `CommunityHttpClientEngine`, `CommunityHttpServerEngine`, `CommunityTlsEngine`, `CommunityMemoryProvider`, `CommunityJsonRequestBodyEncoder` + `CommunityJsonResponseBodyDecoder` (this ADR), `CommunityKernelContextEnricher` (ADR-032), etc. These classes implement SPI contracts and are interchangeable with Enterprise alternatives.
 
 Tier-neutral facades and orchestration classes in Core do not use the prefix. `KernelWebClient` is the canonical example introduced by this ADR — it composes any `HttpClientEngine` driver (Community today, Enterprise tomorrow) with any codec registry driver (Community Jackson today, Enterprise Panama JSON tomorrow). The Sprint 2/3 misstep with `ExerisWebClient` → `CommunityWebClient` (ADR-026 Amendment 2026-05-17) over-corrected toward driver-prefix conformance in a place where the facade-vs-driver distinguo applies. ADR-034 records the distinguo explicitly so future facades land in Core without re-litigating the prefix question.
+
+## Amendments
+
+### A1 (2026-09-25) — the outbound request body stays with the caller of `send`
+
+§4 says the façade "hands ownership to engine on `send`". Ownership does not transfer.
+
+**The caller of `HttpClientEngine#send` keeps ownership of the request body and releases it after
+`send` returns or throws; the engine reads it during `send` and neither closes nor retains it, on
+any path, success or exception.** The caller may send the same request again before it releases the
+body.
+
+`KernelWebClient` is such a caller. The encoder allocates the body for an attempt and hands it over
+with the returned `HttpEncodedBody`; the client keeps it and releases it once that attempt's `send`
+returns or throws, before the retry policy is consulted, so no buffer is held across a retry delay.
+A request derived from another, by an enricher (ADR-032) or by `withAdditionalHeaders`, shares the
+body buffer and takes no reference of its own, so each encoded body is released exactly once, by the
+caller of `send`. §4's encoder-failure clause stands: a buffer allocated for a request that was never
+built is released where the encoding failed.
+
+`HttpEncodedBody` is reused for both directions (§1), and its ownership is set per direction. On
+server egress the exchange releases the body once the write completes; on the client request
+direction the caller releases it.
+
+Four reasons fix the owner on the caller side:
+
+- **Retries need no engine-side release rule.** ADR-045 re-encodes the body on every attempt, so each
+  attempt sends its own buffer. An engine that owned the body could not tell a caller's last attempt
+  from an earlier one, and would need a "release after the last attempt" rule it has no way to
+  evaluate. With the caller as owner, sending a request more than once is the caller's affair.
+- **A caller already keeps ownership.** The Community S3 blob client sends a body backed by a staging
+  buffer that its upload handle owns and releases on `close()`. An engine that also released it would
+  release it twice.
+- **No known engine closes it.** The in-tree engines, `CommunityHttpClientEngine` on both the pooled
+  and the fresh-connection path and `DeferredHttpClientEngine`, never close the request body. The
+  amendment adds an obligation to `HttpClientEngine`, a `stable` SPI surface in the release that
+  first publishes it to Maven Central, and it is one every in-tree engine already meets.
+- **`send` is synchronous.** It blocks the caller's virtual thread until the exchange completes, so an
+  engine has no reason to hold the caller's buffer once `send` returns; the in-tree engines copy the
+  body into their own wire buffer. Server egress is asynchronous: an exchange writes the encoded body
+  after the handler has returned, which is why ownership transfers there and not here.
+
+The contract is stated on `HttpClientEngine#send` and on the ownership notes of `HttpRequest`,
+`HttpEncodedBody`, `HttpRequestBodyEncoder` and `HttpClientRequestEnricher`, in the same words.
+`AbstractHttpClientEngineTck$RequestBodyOwnership` covers three failure paths: a send refused before
+`start()`, a send refused for an authority without a port, and a send that fails on connect to a port
+nobody listens on. `AbstractHttpProviderLoopbackTck` covers a completed round trip and also asserts
+that the server received the body's bytes. In every case the body is still alive, holds only the
+caller's reference (`refCount() == 1`), and was never closed.
 
 ## Alternatives Considered
 
