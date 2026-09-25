@@ -7,9 +7,12 @@ package eu.exeris.kernel.tck.contract.events;
 import eu.exeris.kernel.spi.events.EventBus;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -18,7 +21,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +32,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TCK: Abstract base for {@link EventBus} contract verification.
@@ -57,6 +63,12 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       only once every handler has closed its own reference; this suite does not simulate a
  *       handler that omits {@code close()} to verify that a leak is separately flagged.</li>
  *   <li>publishAndAwait() blocks until all handlers complete.</li>
+ *   <li>publishAndAwait() with handlers that throw: every subscribed handler still runs, and the
+ *       caller receives one {@link EventBusException} carrying
+ *       {@value KernelErrorCodes#EX_EVENT_6010}, {@code rawArgs [eventTypeOrdinal,
+ *       failedHandlerCount]}, no cause, and each handler's exception as a suppressed exception;
+ *       every payload reference is still released. The suppressed exceptions are compared as a
+ *       set, since the bus promises no delivery order.</li>
  * </ol>
  *
  * <h2>No-Ordering by Design (ADR-049)</h2>
@@ -358,6 +370,66 @@ public abstract class AbstractEventBusTck {
                 .as("publishAndAwait() MUST block until all handlers have completed. " +
                     "If 'handler-done' is missing, the implementation returned too early.")
                 .containsExactly("handler-done");
+    }
+
+    @Test
+    @DisplayName("publishAndAwait() with failing handlers runs every handler, then throws EX-EVENT-6010")
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    void publishAndAwaitReportsEveryHandlerFailureAfterAllHandlersRan() {
+        EventBus bus = engine.bus();
+        Set<String> ran = ConcurrentHashMap.newKeySet();
+        RuntimeException firstFailure  = new IllegalStateException("TCK handler failure A");
+        RuntimeException secondFailure = new IllegalStateException("TCK handler failure B");
+
+        // Two failing handlers and one that succeeds: a count of 2 is not what a bus that stops
+        // at the first failure reports, and the succeeding handler is the one such a bus skips
+        // whichever order it dispatches in.
+        bus.subscribe(TYPE_USER_CREATED, failingHandler("failing-a", ran, firstFailure));
+        bus.subscribe(TYPE_USER_CREATED, (d, payload) -> {
+            try (payload) {
+                ran.add("succeeding");
+            }
+        });
+        bus.subscribe(TYPE_USER_CREATED, failingHandler("failing-b", ran, secondFailure));
+
+        EventDescriptor published = descriptor(ORDINAL_USER_CREATED);
+        AtomicInteger closeCalls = new AtomicInteger(0);
+        TrackingPayload payload = new TrackingPayload(closeCalls);
+
+        assertThatThrownBy(() -> bus.publishAndAwait(published, payload))
+                .as("publishAndAwait() MUST report handler failures as one EventBusException, "
+                    + "not rethrow a handler's own exception")
+                .isInstanceOfSatisfying(EventBusException.class, ex -> {
+                    assertThat(ex.errorCode())
+                            .as("handler failures after delivery MUST carry EX-EVENT-6010")
+                            .isEqualTo(KernelErrorCodes.EX_EVENT_6010);
+                    assertThat(ex.rawArgs())
+                            .as("EX-EVENT-6010 rawArgs MUST be [eventTypeOrdinal, failedHandlerCount]")
+                            .containsExactly(ORDINAL_USER_CREATED, 2);
+                    assertThat(ex.getCause())
+                            .as("EX-EVENT-6010 carries no cause; the failures are suppressed")
+                            .isNull();
+                    assertThat(ex.getSuppressed())
+                            .as("each handler's exception MUST be attached as suppressed")
+                            .containsExactlyInAnyOrder(firstFailure, secondFailure);
+                });
+
+        assertThat(ran)
+                .as("a failing handler MUST NOT stop the handlers subscribed alongside it")
+                .containsExactlyInAnyOrder("failing-a", "succeeding", "failing-b");
+        assertThat(closeCalls.get())
+                .as("every payload reference MUST be released on the failure path — 3 handlers, "
+                    + "3 close() calls")
+                .isEqualTo(3);
+    }
+
+    private static EventHandler failingHandler(String name, Set<String> ran, RuntimeException failure) {
+        return (d, payload) -> {
+            try (payload) {
+                ran.add(name);
+                throw failure;
+            }
+        };
     }
 
     // =========================================================================
