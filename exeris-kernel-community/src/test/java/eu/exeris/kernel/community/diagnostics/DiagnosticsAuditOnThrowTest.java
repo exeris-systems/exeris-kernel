@@ -60,10 +60,13 @@ class DiagnosticsAuditOnThrowTest {
             return BootstrapPhase.RUNTIME;
         }
         @Override public void initialize() {
+            // diagnostics reads this subsystem's description only; it is never booted
         }
         @Override public void start() {
+            // diagnostics reads this subsystem's description only; it is never booted
         }
         @Override public void stop() {
+            // diagnostics reads this subsystem's description only; it is never booted
         }
         @Override public boolean isRunning() {
             throw new IllegalStateException("live-state query failed");
@@ -82,10 +85,13 @@ class DiagnosticsAuditOnThrowTest {
             return BootstrapPhase.RUNTIME;
         }
         @Override public void initialize() {
+            // diagnostics reads this subsystem's description only; it is never booted
         }
         @Override public void start() {
+            // diagnostics reads this subsystem's description only; it is never booted
         }
         @Override public void stop() {
+            // diagnostics reads this subsystem's description only; it is never booted
         }
     }
 
