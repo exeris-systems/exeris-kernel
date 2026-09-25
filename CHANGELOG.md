@@ -87,6 +87,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A diagnostics call is audited when it is made, including one that throws** (ADR-033
+  Obligation 8). `CommunityKernelDiagnostics` committed each method's `EX-DIAG` JFR audit event
+  after the method's work, so a call that threw — a provider failing `ServiceLoader` discovery in
+  `listProviders`, a subsystem whose state query failed in `getBootstrapDag` or
+  `describeSubsystem` — left no record, and a failed call looked the same in the recording as a
+  call never made. Every method now emits its event as its first statement. The event and its
+  fields are unchanged; a `describeSubsystem(null)` call, which still throws
+  `NullPointerException`, is now audited too.
+
 - **The Community-only crypto checks are skipped for another tier, not passed.**
   `AbstractCryptoEngineTck`'s `communityPriorityIsZero()`, `communityDoesNotSupportQuic()` and
   `communityRejectsQuicConfig()` returned early when `isCommunityTier()` was `false`, so a binding
