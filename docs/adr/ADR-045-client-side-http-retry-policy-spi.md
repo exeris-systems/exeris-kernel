@@ -1,3 +1,12 @@
+---
+title: "ADR-045: `HttpRetryPolicy` SPI — Opt-in Client-Side Retry for `KernelWebClient`"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-045
+---
+
 # ADR-045: `HttpRetryPolicy` SPI — Opt-in Client-Side Retry for `KernelWebClient`
 
 **Status:** Accepted

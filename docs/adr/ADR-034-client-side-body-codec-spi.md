@@ -1,3 +1,12 @@
+---
+title: "ADR-034: Client-Side Body Codec SPI — `HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` + `KernelWebClient` Facade"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-034
+---
+
 # ADR-034: Client-Side Body Codec SPI — `HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` + `KernelWebClient` Facade
 
 **Status:** Accepted
