@@ -46,7 +46,7 @@ class ErrorMapperRegistryTest {
         }
 
         @Test
-        @DisplayName("EX-MEM-1003 (hint conflict) → INTERNAL_ERROR")
+        @DisplayName("EX-MEM-1003 (peek-view misuse) → INTERNAL_ERROR")
         void memHintConflict() {
             assertThat(ErrorMapperRegistry.mapCode(KernelErrorCodes.EX_MEM_1003))
                     .isEqualTo(TransportErrorCode.INTERNAL_ERROR);

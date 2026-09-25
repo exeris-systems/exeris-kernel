@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-17
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Telemetry (L1 Observability)
@@ -121,10 +121,10 @@ Every `ExerisKernelException` subclass MUST declare its `rawArgs` binary layout 
 
 ```
 EX-MEM-1001  Off-heap exhausted             rawArgs[0]=long requestedBytes,    [1]=long availableBytes
-EX-MEM-1002  Arena leak detected            rawArgs[0]=long segmentAddress,     [1]=long segmentByteSize
-EX-MEM-1003  AllocationHint conflict        (no rawArgs)
-EX-BOOT-0001 DAG cycle detected             rawArgs[0]=String[] cycleMembers    ← emitted by orchestrator (pre-telemetry panic)
-EX-BOOT-0002 Bootstrap failure              rawArgs — opaque (variable arity per pathway; Glass-Box consumers MUST NOT rely on layout)
+EX-MEM-1002  Buffer leak detected           (no rawArgs — JFR-only: BufferLeak event fields bufferLabel, allocationStack, capacityBytes)
+EX-MEM-1003  Peek-view ownership misuse     (no rawArgs — JFR-only: PeekViewMisuse event fields errorCode, callerMethod)
+EX-BOOT-0001 DAG cycle detected             (no rawArgs — the exception is a plain RuntimeException; JFR CircularDependencyDetected field cycleMembers is one ", "-joined String)
+EX-BOOT-0002 Subsystem lifecycle failure    rawArgs[0]=String subsystemName,    [1]=Phase phase,            [2]=String detail
 EX-BOOT-0003 Bootstrap deadline exceeded    rawArgs[0]=String subsystemName,    [1]=long deadlineMs
 EX-BOOT-0004 Memory provider bootstrap      rawArgs[0]=String providerName,     [1]=long requestedBytes
 EX-BOOT-3001 Telemetry provider failure     rawArgs[0]=String providerName,     [1]=String reason
@@ -137,27 +137,19 @@ EX-NET-4003  Transport receive timeout      rawArgs[0]=String transportName,    
 EX-NET-4004  Transport engine bootstrap     rawArgs[0]=String transportName,    [1]=String reason
 EX-NET-4005  Transport engine start         rawArgs[0]=String transportName,    [1]=int port
 EX-NET-4006  PAQS load shedding             rawArgs[0]=String transportName,    [1]=long streamId          (exception carrier only — the JFR StreamShedEvent for this code has its own typed fields; see the JFR Events table)
-EX-NET-4007  Buffer exhaustion              rawArgs[0]=String transportName,    [1]=int poolCapacity,      [2]=int activeSlabs
+EX-NET-4007  Buffer exhaustion              (reserved — raised by no kernel code path; no rawArgs layout)
 EX-SEC-2001  PrincipalContext missing        (no rawArgs)
 EX-SEC-2002  Token validation failure       rawArgs[0]=String tokenType,        [1]=String failureReason
 EX-RUN-3002  Carrier pinned                 rawArgs[0]=long blockTimeMs,        [1]=String carrierThreadName
-EX-EVENT-6001 Generic event failure         rawArgs[0]=String message
+EX-EVENT-6001 Generic event failure         (no rawArgs — the diagnostic is getMessage())
 EX-EVENT-6002 Bus publish failure           rawArgs[0]=String eventType,        [1]=long queueDepth,        [2]=long queueCapacity
 EX-EVENT-6003 Registry conflict             rawArgs[0]=String eventType,        [1]=int ordinal
 EX-EVENT-6004 Provider boot failure         rawArgs[0]=String providerName,     [1]=String reason           ← intentional duplicate of EX-FLOW-7001 schema; different subsystem domain
 EX-FLOW-7001 Provider boot failure          rawArgs[0]=String providerName,     [1]=String reason           ← intentional duplicate of EX-EVENT-6004 schema; different subsystem domain
-EX-FLOW-7002 Lifecycle / schedule fail      rawArgs[0]=String engineName,       [1]=String phase,           [2]=String staticReasonCode, [3]=int contextVal
+EX-FLOW-7002 Lifecycle / schedule fail      rawArgs[0]=String engineName,       [1]=String phase,           [2]=String staticReasonCode, [3]=int contextVal   (phase WAKE: [3]=long idMost, [4]=long idLeast)
 EX-FLOW-7003 Step execution failure         rawArgs[0]=String defName,          [1]=long idMost,            [2]=long idLeast,            [3]=int stepIdx, [4]=String reason, [5]=String causeType
 EX-FLOW-7004 Registry conflict              rawArgs[0]=int stepId,              [1]=String reason
 ```
-
-> **Note — `EX-BOOT-0002` Variable Arity:** This is the only code in the registry that deliberately
-> violates the one-code-one-schema rule. `EX-BOOT-0002` is a catch-all for bootstrap failures that
-> occur before the telemetry subsystem itself has initialised (i.e., before the JFR sink is bound and
-> before the Glass-Box ring buffer is ready). At that point, the kernel cannot guarantee which
-> subsystem triggered the failure, so the `rawArgs` layout varies per pathway. **Glass-Box decoders
-> MUST treat `EX-BOOT-0002` as an opaque payload** — emit it as a hex dump or raw string for manual
-> inspection. Structural field decoding is explicitly not supported for this code.
 
 > **Note — `EX-EVENT-6004` / `EX-FLOW-7001` Identical Schema:** These two codes share the same
 > `rawArgs` layout (`providerName`, `reason`) intentionally. They model the same class of failure
@@ -632,13 +624,20 @@ exeris-decode --filter EX-MEM /tmp/exeris-crash/kernel-12345.ring
 
 ### Output Format
 
-```
-[0000000042ns] EX-BOOT-0001 [FATAL_BUILD_DEFECT] DAG cycle detected
-               rawArgs[0]: cycleMembers=[Security, Flow]
+Illustrative: the decoder is not part of this repository, so this block shows the shape of a
+decoded frame rather than a captured run. Only a code thrown with `rawArgs` can appear with a
+payload; `EX-BOOT-0001`, `EX-MEM-1002`, `EX-MEM-1003` and `EX-CFG-1004` carry none and are read from
+their JFR events instead.
 
-[0000000107ns] EX-MEM-1002 [CRITICAL] Arena leak detected
-               rawArgs[0]: segmentAddress=0x7f3a00000000
-               rawArgs[1]: segmentByteSize=65536
+```
+[0000000042ns] EX-BOOT-0002 [FATAL] Subsystem lifecycle failure
+               rawArgs[0]: subsystemName=Flow
+               rawArgs[1]: phase=INITIALIZE
+               rawArgs[2]: detail=Snapshot store unreachable
+
+[0000000107ns] EX-MEM-1001 [CRITICAL] Off-heap exhausted
+               rawArgs[0]: requestedBytes=65536
+               rawArgs[1]: availableBytes=4096
 
 [0000001840ns] EX-NET-4006 [WARN] PAQS load shedding
                rawArgs[0]: transportName=CommunityTcpTransport

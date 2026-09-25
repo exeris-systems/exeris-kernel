@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-24
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Exceptions (L0 Foundation)
@@ -80,15 +80,15 @@ formatting. It implements:
 | Code          | Description             | Glass-Box Payload                               |
 |:--------------|:------------------------|:------------------------------------------------|
 | `EX-MEM-1001` | Off-heap Exhausted      | `[0] long reqBytes, [1] long availBytes`        |
-| `EX-MEM-1002` | Arena Leak Detected     | `[0] long segAddr, [1] long segSize`            |
-| `EX-MEM-1003` | AllocationHint Conflict | *(no rawArgs)*                                  |
+| `EX-MEM-1002` | Buffer Leak Detected    | *(JFR-only — no rawArgs)*: never thrown; the Core leak tracker records the JFR event `eu.exeris.kernel.core.BufferLeak` with typed fields `bufferLabel` (String), `allocationStack` (String, `"<sampled>"` under `SAMPLED`), `capacityBytes` (long) |
+| `EX-MEM-1003` | Peek-View Ownership Misuse | *(JFR-only — no rawArgs)*: `retain()` or `addCloseAction()` on a `peek()` view; never thrown under this code. The JFR event `eu.exeris.kernel.core.PeekViewMisuse` carries `errorCode` (String) and `callerMethod` (String, `retain` or `addCloseAction`) |
 
 ### Bootstrap (`EX-BOOT-`)
 
 | Code           | Description                  | Glass-Box Payload                                |
 |:---------------|:-----------------------------|:-------------------------------------------------|
-| `EX-BOOT-0001` | DAG Cycle Detected           | *(JFR-only — no rawArgs)*: the type actually thrown, `SubsystemCircularDependencyException`, is a plain `RuntimeException`, not an `ExerisKernelException` — it carries no `rawArgs` at all. The JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` records `cycleMembers` as one comma-joined `String`, not a `String[]`. (`KernelErrorCodes.java`'s own Javadoc for this code still describes a `String[]` rawArgs layout "emitted by the orchestrator" — that description is stale against the current `SubsystemOrchestrator`/`BootstrapJfrEvents` implementation.) |
-| `EX-BOOT-0002` | Subsystem Init Failure       | `[0] String subsystemName, [1] Phase phase (INITIALIZE\|START\|STOP), [2] String detail` — the sole thrower, `SubsystemException`, uses this fixed 3-slot layout every time. `KernelErrorCodes.java`'s Javadoc still calls this code "opaque … variable arity per pathway"; that is stale — there is exactly one pathway today. |
+| `EX-BOOT-0001` | DAG Cycle Detected           | *(JFR-only — no rawArgs)*: the type actually thrown, `SubsystemCircularDependencyException`, is a plain `RuntimeException`, not an `ExerisKernelException` — it carries no `rawArgs` at all. The JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` records `cycleMembers` as one `String`, the names from `SubsystemCircularDependencyException.cycleMembers()` joined with `", "`, plus `errorCode`. |
+| `EX-BOOT-0002` | Subsystem Init Failure       | `[0] String subsystemName, [1] Phase phase (INITIALIZE\|START\|STOP), [2] String detail` — the sole thrower, `SubsystemException`, uses this fixed 3-slot layout every time. The missing-dependency abort cites the code in its message text only and carries no `rawArgs`. |
 | `EX-BOOT-0003` | Init Timeout                 | `[0] String subsystemName, [1] long deadlineMs`  |
 | `EX-BOOT-0004` | Memory Provider Init Failure | `[0] String providerName, [1] long reqBytes`     |
 | `EX-BOOT-3001` | Telemetry Provider Failure   | `[0] String providerName, [1] String reason`     |
@@ -111,8 +111,8 @@ formatting. It implements:
 | `EX-NET-4003` | Transport Receive Timeout   | `[0] String transportName, [1] long timeoutMs`        |
 | `EX-NET-4004` | Transport Engine Bootstrap  | `[0] String transportName, [1] String reason`         |
 | `EX-NET-4005` | Transport Engine Start      | `[0] String transportName, [1] int port`              |
-| `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] int streamPriority, [2] int thresholdPriority` |
-| `EX-NET-4007` | Buffer Exhaustion           | `[0] String transportName, [1] int poolCapacity, [2] int activeSlabs` — declared in `KernelErrorCodes` but, as of this tree, no `TransportException` factory (or any other code) constructs it; there is no throw site to verify the layout against |
+| `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`, streaming stream-open path); PAQS request-edge shedding throws nothing and both paths record the JFR event `eu.exeris.kernel.core.transport.StreamShed` (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) |
+| `EX-NET-4007` | Buffer Exhaustion (reserved) | *(reserved — no rawArgs)*: no kernel code path raises this code, so it publishes no layout; one is defined with its first thrower |
 
 ### HTTP (`EX-HTTP-`, codec-level violations 4001..4006; subsystem, streaming and request-decode faults 4007..)
 
@@ -170,7 +170,7 @@ formatting. It implements:
 
 | Code            | Description              | Glass-Box Payload                                               |
 |:----------------|:-------------------------|:----------------------------------------------------------------|
-| `EX-EVENT-6001` | Generic Engine Failure   | *(no rawArgs)* — every current throw site uses `EventEngineException`'s message-only constructor, which puts the text in `getMessage()`; `rawArgs` stays empty, not `[0] String message` |
+| `EX-EVENT-6001` | Generic Engine Failure   | *(no rawArgs)* — set by `EventEngineException`'s message constructors, which leave `rawArgs` empty; the diagnostic is `getMessage()`, an upstream failure is `getCause()` |
 | `EX-EVENT-6002` | Queue Overflow           | `[0] String eventType, [1] long depth, [2] long capacity`       |
 | `EX-EVENT-6003` | Registry Conflict        | `[0] String eventType, [1] int ordinal`                         |
 | `EX-EVENT-6004` | Provider Creation Failure| `[0] String providerName, [1] String reason`                    |
@@ -184,7 +184,7 @@ formatting. It implements:
 | Code           | Description               | Glass-Box Payload                                                               |
 |:---------------|:--------------------------|:--------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure   | `[0] String providerName, [1] String reason`                                    |
-| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx` — **except `phase="WAKE"`, which carries five slots**: `[3] long instanceIdMost, [4] long instanceIdLeast` (since 0.12; a flow identity is 128 bits and does not fit the `int`). Read this layout by phase, not by arity; index 2 is the reason code on every phase. `phase` is one of `START`, `COMPILE`, `SCHEDULE`, `WAKE`, `OPTIMISTIC_LOCK_CONFLICT` (since 0.7), `SCHEMA_MISMATCH` (since 0.10, the phase behind eight of `FlowEngineException`'s fourteen factory methods) — `STOP` is named in the class-level contract but as of this tree no factory constructs it |
+| `EX-FLOW-7002` | Engine Lifecycle Failure  | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int ctx` — **except `phase="WAKE"`, which carries five slots**: `[3] long instanceIdMost, [4] long instanceIdLeast` (since 0.12; a flow identity is 128 bits and does not fit the `int`). Read this layout by phase, not by arity; index 2 is the reason code on every phase. `phase` is one of `START`, `COMPILE`, `SCHEDULE`, `WAKE`, `OPTIMISTIC_LOCK_CONFLICT` (since 0.7), `SCHEMA_MISMATCH` (since 0.10, the phase behind eight of `FlowEngineException`'s fourteen factory methods). An instance built by a public constructor rather than a factory carries empty `rawArgs` |
 | `EX-FLOW-7003` | Step Execution Failure    | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType (cause.getClass().getName() or "none")` |
 | `EX-FLOW-7004` | Registry Conflict         | `[0] int stepId, [1] String reason`                                             |
 
@@ -195,7 +195,7 @@ formatting. It implements:
 | `EX-CFG-1001` | Missing Property         | `[0] String missingKey, [1] String providerName`                              |
 | `EX-CFG-1002` | Type Mismatch            | `[0] String key, [1] String expectedType, [2] String actualValue` ⚠️ redact  |
 | `EX-CFG-1003` | Hot-Reload Read Error    | `[0] String filename, [1] String reason`                                      |
-| `EX-CFG-1004` | Immutable Key Reload Refused | *(JFR-only — no rawArgs)*: `DynamicConfigFileWatcher` never throws for this code, it only logs and calls `ImmutableReloadEvent.emitRefused(filename, key)`. The JFR event `eu.exeris.kernel.config.ImmutableReloadRefused` carries `file` and `key` fields in that shape, but no exception carries them. |
+| `EX-CFG-1004` | Immutable Key Reload Refused | *(JFR-only — no rawArgs)*: never thrown; `DynamicConfigFileWatcher` logs the refusal at `WARNING` with this code and records the JFR event `eu.exeris.kernel.config.ImmutableReloadRefused`, whose typed fields are `file` and `key` (never the value) |
 
 ### Blob Storage (`EX-BLOB-`)
 

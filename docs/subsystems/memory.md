@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Memory (L0 Foundation)
@@ -70,18 +70,14 @@ Every byte allocated must serve a purpose:
 > (`MemoryExhaustedException extends ExerisKernelException`) carries the two values below through a
 > real `rawArgs()` array. `EX-MEM-1002` and `EX-MEM-1003` are never thrown as exceptions at all: both
 > are reported purely as `jdk.jfr.Event` subclasses (`LeakDetectedEvent`, `PeekMisuseEvent`) with
-> named typed fields, not a `rawArgs` array — `LeakDetectedEvent`'s own Javadoc says so explicitly.
-> The Payload column below documents each event's actual fields; it deliberately diverges from
-> `KernelErrorCodes.java`'s own `rawArgs` Javadoc for 1002/1003, which describes a layout
-> (`segmentAddress`/`segmentByteSize` for 1002; an undocumented "allocation hint conflict" for 1003)
-> that neither event implements — that SPI-side Javadoc is itself stale and outside this document's
-> reach (`.java` files are not touched here).
+> named typed fields, not a `rawArgs` array. The Payload column below documents each event's fields,
+> as `KernelErrorCodes.java` does for both codes.
 
 | Code          | Meaning                  | Action                                          | Actual Payload (JFR event fields, not `rawArgs`)     |
 |:--------------|:-------------------------|:------------------------------------------------|:-----------------------------------------------------|
 | `EX-MEM-1001` | Off-heap Exhausted       | Trigger `H3_EXCESSIVE_LOAD` backpressure.       | `MemoryExhaustedException.rawArgs()`: `[0] long requestedBytes, [1] long availableBytes` |
 | `EX-MEM-1002` | Arena Leak Detected      | `LeakTracker` fires in `PARANOID` (every allocation) or `SAMPLED` (~1-in-128) mode when a buffer is GC'd unclosed. | `LeakDetectedEvent` fields: `bufferLabel` (String, hex identity hash), `allocationStack` (String, `PARANOID` only), `capacityBytes` (long) |
-| `EX-MEM-1003` | Peek View Ownership Misuse | `retain()` or `addCloseAction()` was called on a non-owning view returned by `peek()`; call was a no-op, potential use-after-free risk. | `PeekMisuseEvent` fields: `errorCode` (String, `"EX-MEM-1003"`), `callerMethod` (String, `"retain"` or `"addCloseAction"`) |
+| `EX-MEM-1003` | Peek View Ownership Misuse | `retain()` or `addCloseAction()` was called on a non-owning view returned by `peek()`; `retain()` is a no-op and `addCloseAction()` throws `UnsupportedOperationException` — potential use-after-free risk. | `PeekMisuseEvent` fields: `errorCode` (String, `"EX-MEM-1003"`), `callerMethod` (String, `"retain"` or `"addCloseAction"`) |
 
 ---
 

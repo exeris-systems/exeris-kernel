@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: Flow / Sagas (L4 Orchestration)
@@ -280,7 +280,7 @@ The same defaults apply to the outbox-orchestrator pump and the RLS-interceptor 
 | Code           | Meaning                  | Glass-Box Payload (`rawArgs`)                                                                                                                           |
 |:---------------|:-------------------------|:--------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `EX-FLOW-7001` | Provider Engine Failure  | `[0] String providerName, [1] String reason`                                                                                                            |
-| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values documented on `FlowEngineException`: `START`, `STOP`, `COMPILE`, `SCHEDULE`, `SCHEMA_MISMATCH` (since 0.10), `OPTIMISTIC_LOCK_CONFLICT` (since 0.7). **The `WAKE` phase carries five slots, not four (since 0.12)** — `[3] long instanceIdMost, [4] long instanceIdLeast` instead of a single `int contextVal`, because its context is a 128-bit flow instance identity. A consumer must read this layout by phase rather than assume a fixed arity; index 2 (`reasonCode`) stays in place on every phase. |
+| `EX-FLOW-7002` | Engine Lifecycle Failure | `[0] String engineName, [1] String phase, [2] String reasonCode, [3] int contextVal` — `phase` values documented on `FlowEngineException`: `START`, `COMPILE`, `SCHEDULE`, `SCHEMA_MISMATCH` (since 0.10), `OPTIMISTIC_LOCK_CONFLICT` (since 0.7). **The `WAKE` phase carries five slots, not four (since 0.12)** — `[3] long instanceIdMost, [4] long instanceIdLeast` instead of a single `int contextVal`, because its context is a 128-bit flow instance identity. A consumer must read this layout by phase rather than assume a fixed arity; index 2 (`reasonCode`) stays in place on every phase. |
 | `EX-FLOW-7003` | Step Execution Failure   | `[0] String definitionName, [1] long instanceIdMost, [2] long instanceIdLeast, [3] int stepIndex, [4] String staticReasonCode ("STEP_FAILED" \| "COMPENSATION_FAILED"), [5] String causeType`. Layout is defined and unit-tested for shape (`FlowExceptionLayoutTest`), but **no code path in Core or Community currently throws `FlowExecutionException`** — a step or compensation failure is instead recorded only via the `FlowStepFailedEvent` JFR event, with the flow routed to `FAILED_ROLLEDBACK`. This code is currently dead outside its own layout test. |
 | `EX-FLOW-7004` | Registry Conflict        | `[0] int stepId, [1] String reason`                                                                                                                     |
 
