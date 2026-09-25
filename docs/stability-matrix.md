@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-25
 ---
 
 # Exeris Kernel — SPI Stability Matrix
