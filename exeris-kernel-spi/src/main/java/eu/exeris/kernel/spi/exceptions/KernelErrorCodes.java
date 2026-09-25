@@ -787,7 +787,8 @@ public final class KernelErrorCodes {
      * Generic event engine failure (no specific category).
      *
      * <p><b>No rawArgs layout.</b> This code is set by the message constructors of
-     * {@link eu.exeris.kernel.spi.exceptions.events.EventEngineException}, which leave
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventEngineException} and
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException}, which leave
      * {@code rawArgs} empty. The human-readable diagnostic is the exception's
      * {@code getMessage()}, and an upstream failure, when there is one, is its
      * {@code getCause()}.
@@ -795,7 +796,7 @@ public final class KernelErrorCodes {
     public static final String EX_EVENT_6001 = "EX-EVENT-6001";
 
     /**
-     * Event bus publish failure: queue is full and the implementation cannot accept the event.
+     * Event bus queue overflow: the queue is full and the implementation cannot accept the event.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
@@ -880,6 +881,65 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_EVENT_6008 = "EX-EVENT-6008";
+
+    /**
+     * Event bus publish failure: the bus did not accept the event, for a reason other than a full
+     * queue ({@link #EX_EVENT_6002}). Contrast {@link #EX_EVENT_6010}: here the publish itself
+     * failed, so no handler was given the event by this call.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int}    eventTypeOrdinal  (ordinal of the event that was not accepted)</li>
+     *   <li>index 1 – {@code String} reason            (static failure category)</li>
+     * </ul>
+     * <p>An upstream failure, when there is one, is the exception's {@code getCause()}. Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#publishFailed(int, String, Throwable)}.
+     *
+     * @implNote The kernel's bindings emit three {@code reason} values: {@code "delivery-failed"}
+     *           — the binding's queue or broker client threw, and its exception is the cause;
+     *           {@code "interrupted"} — the publishing thread was interrupted while waiting for
+     *           queue space, no cause is attached, and the thread's interrupt status is left set;
+     *           {@code "unregistered-type"} — the descriptor's ordinal is not registered with the
+     *           engine's registry, and no cause is attached.
+     * @since 0.12
+     */
+    public static final String EX_EVENT_6009 = "EX-EVENT-6009";
+
+    /**
+     * Event handler failure: {@code EventBus.publishAndAwait} delivered the event and one or more
+     * handlers threw. Contrast {@link #EX_EVENT_6009}: here the event was delivered, so retrying
+     * the publish runs again the handlers that succeeded.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int} eventTypeOrdinal    (ordinal of the delivered event)</li>
+     *   <li>index 1 – {@code int} failedHandlerCount  (number of handlers that threw)</li>
+     * </ul>
+     * <p>No cause is set. Each handler's exception is attached with
+     * {@code addSuppressed}, so {@code getSuppressed()} holds {@code failedHandlerCount} entries.
+     * Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#handlersFailed(int, int)}.
+     *
+     * @since 0.12
+     */
+    public static final String EX_EVENT_6010 = "EX-EVENT-6010";
+
+    /**
+     * Event bus subscription rejected: {@code EventBus.subscribe} could not register the handler
+     * for the named event type.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} eventType  (the type name the caller subscribed to)</li>
+     * </ul>
+     * <p>No cause is set. Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#subscriptionRejected(String)}.
+     *
+     * @implNote The kernel's in-memory bus raises it when the type is not registered in the
+     *           {@code EventRegistry}; register the type before subscribing.
+     * @since 0.12
+     */
+    public static final String EX_EVENT_6011 = "EX-EVENT-6011";
 
     // -----------------------------------------------------------------------
     // EX-FLOW – Flow Engine / Saga Orchestration subsystem

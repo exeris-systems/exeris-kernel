@@ -192,8 +192,11 @@ public final class InMemoryEventBus implements EventBus {
      * delays its successors. Callers that want fan-out have {@link #publish}, which is
      * fire-and-forget and unchanged.
      *
-     * <p>Failure handling is unchanged — every handler runs, failures are collected, and the first
-     * is thrown once all have finished.
+     * <p>A handler that throws a {@code RuntimeException} does not stop its successors: every
+     * handler runs, and once all have finished the bus throws one {@link EventBusException}
+     * ({@code EX-EVENT-6010}, {@code rawArgs [eventTypeOrdinal, failedHandlerCount]}) with each
+     * handler's exception attached as suppressed, in subscription order. An {@code Error} out of a
+     * handler is rethrown as it is, after the remaining payload references are released.
      */
     // java:S1181 — the same exemption the five other release-before-rethrow sites carry (see
     // NativeCipherContext, SecurityInterceptor, PaqsScheduler). The Throwable is not handled here:
@@ -242,7 +245,7 @@ public final class InMemoryEventBus implements EventBus {
             closeUnclosed(wrappers);
             throw escaped;
         }
-        throwIfFailed(failures);
+        throwIfFailed(descriptor.eventTypeOrdinal(), failures);
     }
 
     // =========================================================================
@@ -256,9 +259,7 @@ public final class InMemoryEventBus implements EventBus {
 
         int ordinal = registry.ordinalOf(eventType);
         if (ordinal < 0) {
-            throw new EventBusException(
-                    "Cannot subscribe to unregistered event type: '" + eventType + "'. "
-                    + "Register it in EventRegistry before subscribing.");
+            throw EventBusException.subscriptionRejected(eventType);
         }
 
         long seq  = subscriptionSeq.incrementAndGet();
@@ -326,12 +327,12 @@ public final class InMemoryEventBus implements EventBus {
         }
     }
 
-    private static void throwIfFailed(List<Throwable> failures) {
+    private static void throwIfFailed(int eventTypeOrdinal, List<Throwable> failures) {
         if (failures.isEmpty()) {
             return;
         }
         EventBusException busException =
-                new EventBusException("One or more event handlers failed during publishAndAwait");
+                EventBusException.handlersFailed(eventTypeOrdinal, failures.size());
         failures.forEach(busException::addSuppressed);
         throw busException;
     }

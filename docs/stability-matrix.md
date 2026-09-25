@@ -83,7 +83,7 @@ this is informational and **not** a dependency of the open-core surface.
 > **`spi.flow` in v0.12 — `FlowDefinitionBuilder.version(int)`.** Same shape, same reason: a `default` method rather than an abstract one, so out-of-tree builders keep both linking and compiling. The default *throws* instead of returning a value, which is the deliberate difference from `registerMigration`'s and `FlowExecutionPlan.definitionVersion()`'s: a builder that silently ignored a requested version would produce a v1 definition claiming to be v3 — the exact confusion ADR-064 exists to prevent. Additive in both senses the gate asks, so it passes clean; the note is here because the *behaviour* of the default is the contract, and no diff reports that.
 | `…spi.memory` | **stable** | 0.5.0 | — (foundational) | `AbstractMemoryAllocatorTck`, `…LoanedBufferTck`, `…MemoryGovernorTck`, +5 | yes (slab pools) |
 | `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
-| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
+| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) [^eventbuscode] | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
 | `…spi.telemetry` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractTelemetryProviderTck`, `…SinkTck`, `…RingBufferTck`, `…JfrTelemetrySinkTck` | yes (binary glass-box sink) |
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
@@ -257,3 +257,14 @@ maturity change here.
     `tsvector`, native `enum`, composites) through `getString` now throws where it previously
     returned a value. Other engines are unaffected: the guarantee is scoped to the server the set was
     measured on.
+
+[^eventbuscode]: **Behavioural note, 0.12.** `EventBusException`'s two message constructors,
+    `EventBusException(String)` and `EventBusException(String, Throwable)`, set `EX-EVENT-6001`
+    instead of `EX-EVENT-6002`, and still leave `rawArgs` empty. `EX-EVENT-6002` is the queue
+    overflow code, and its `[eventType, queueDepth, queueCapacity]` layout is filled only by
+    `EventBusException.publishOverflow`. The kernel's own event-bus failures now carry codes of
+    their own through three additive factories: `publishFailed` (`EX-EVENT-6009`),
+    `handlersFailed` (`EX-EVENT-6010`) and `subscriptionRejected` (`EX-EVENT-6011`). No signature
+    changes, so the API-diff gate sees only the additions; the note is here because an out-of-tree
+    caller of those constructors, or a filter keyed on `EX-EVENT-6002`, observes a different code
+    with no change a diff reports.

@@ -170,7 +170,7 @@ formatting. It implements:
 
 | Code            | Description              | Glass-Box Payload                                               |
 |:----------------|:-------------------------|:----------------------------------------------------------------|
-| `EX-EVENT-6001` | Generic Engine Failure   | *(no rawArgs)* — set by `EventEngineException`'s message constructors, which leave `rawArgs` empty; the diagnostic is `getMessage()`, an upstream failure is `getCause()` |
+| `EX-EVENT-6001` | Generic Engine Failure   | *(no rawArgs)* — set by the message constructors of `EventEngineException` and `EventBusException`, which leave `rawArgs` empty; the diagnostic is `getMessage()`, an upstream failure is `getCause()` |
 | `EX-EVENT-6002` | Queue Overflow           | `[0] String eventType, [1] long depth, [2] long capacity`       |
 | `EX-EVENT-6003` | Registry Conflict        | `[0] String eventType, [1] int ordinal`                         |
 | `EX-EVENT-6004` | Provider Creation Failure| `[0] String providerName, [1] String reason`                    |
@@ -178,6 +178,9 @@ formatting. It implements:
 | `EX-EVENT-6006` | Projection Handler Threw | `rawArgs[0]: String projectionName, rawArgs[1]: int eventTypeOrdinal` |
 | `EX-EVENT-6007` | Event-Loop VT Uncaught Exception | `rawArgs[0]: String loopName, rawArgs[1]: String exceptionType` |
 | `EX-EVENT-6008` | Append Version Conflict (ADR-049) | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion` |
+| `EX-EVENT-6009` | Bus Publish Failure      | `[0] int eventTypeOrdinal, [1] String reason` — the bus did not accept the event, for a reason other than a full queue; an upstream failure is `getCause()`. The kernel's bindings emit `reason` `"delivery-failed"` (the queue or broker client threw; cause attached), `"interrupted"` (interrupted while waiting for queue space; no cause, interrupt status left set) and `"unregistered-type"` (ordinal not registered; no cause) |
+| `EX-EVENT-6010` | Event Handlers Failed    | `[0] int eventTypeOrdinal, [1] int failedHandlerCount` — `publishAndAwait` delivered the event and handlers threw; each handler's exception is in `getSuppressed()`, no cause. A retry runs again the handlers that succeeded |
+| `EX-EVENT-6011` | Subscription Rejected    | `[0] String eventType` — `subscribe` could not register the handler; the in-memory bus raises it for a type not registered in the `EventRegistry` |
 
 ### Flow / Saga (`EX-FLOW-`)
 
