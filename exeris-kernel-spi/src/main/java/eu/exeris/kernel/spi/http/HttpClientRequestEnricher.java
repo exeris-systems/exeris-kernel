@@ -16,8 +16,10 @@ import java.util.Objects;
  * the body is carried over by reference and never copied)
  * <p><b>Thread confinement:</b> owner thread — an enricher runs synchronously on the virtual thread
  * issuing the request, and must not hand work to another thread
- * <p><b>Ownership:</b> the enricher owns nothing — the request body buffer belongs to the calling
- * site; this interface does not establish who releases it after {@code send}
+ * <p><b>Ownership:</b> the enricher owns nothing — the caller of
+ * {@link HttpClientEngine#send(HttpRequest)} keeps ownership of the request body and releases it
+ * after {@code send} returns or throws, and the engine reads it during {@code send} and neither
+ * closes nor retains it
  *
  * @implSpec Per ADR-032, an implementation:
  *           <ul>
@@ -30,8 +32,6 @@ import java.util.Objects;
  *             <li>MUST run synchronously on the caller's virtual thread: no thread-spawning, no
  *                 blocking I/O.</li>
  *           </ul>
- * @implNote The Community reference client engine does not close the request body buffer after
- *           {@code send} returns.
  * @since 0.8
  */
 @FunctionalInterface

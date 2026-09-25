@@ -4,7 +4,7 @@ type: subsystem
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-08
+last-verified: 2026-09-25
 ---
 
 # Kernel Subsystem: HTTP (HPACK + HTTP/2 + HTTP/1.1)
@@ -179,6 +179,11 @@ The typed HTTP client facade is `KernelWebClient` (with nested `WebClientExcepti
 `exeris-kernel-core`'s `eu.exeris.kernel.core.http.client` package as a tier-neutral class, not a
 Community class — typed HTTP verbs + Jackson 3 JSON binding on top of `HttpClientEngine`; the SPI
 surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-entity clients.
+
+**Request-body ownership:** the caller of `HttpClientEngine#send` keeps ownership of the request
+body and releases it after `send` returns or throws; the engine reads it during `send` and neither
+closes nor retains it. `KernelWebClient`, as that caller, releases each attempt's encoded body before
+any retry wait (ADR-034 Amendment A1).
 
 ### Client connection pooling and keep-alive (since v0.12.0)
 

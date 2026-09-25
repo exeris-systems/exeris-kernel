@@ -43,8 +43,11 @@ import java.util.Optional;
  * <p><b>Thread confinement:</b> owner thread — the record is immutable and readable anywhere, but
  * its {@link LoanedBuffer} body may only be touched from the virtual thread that owns the
  * corresponding {@link HttpExchange}
- * <p><b>Ownership:</b> the transport or codec that produced the body owns it and releases it when
- * the exchange ends; a derived request from {@link #withAuthority(String)} or
+ * <p><b>Ownership:</b> on an inbound request the transport that produced the body owns it and
+ * releases it when the exchange ends; on an outbound request the caller of
+ * {@link HttpClientEngine#send(HttpRequest)} keeps ownership of the body and releases it after
+ * {@code send} returns or throws, and the engine reads it during {@code send} and neither closes nor
+ * retains it; a derived request from {@link #withAuthority(String)} or
  * {@link #withAdditionalHeaders(List)} shares that one buffer and takes no reference of its own
  *
  * @param method    HTTP method; non-null

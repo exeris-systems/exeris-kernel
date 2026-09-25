@@ -7,6 +7,7 @@ package eu.exeris.kernel.community.http.client;
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
 import eu.exeris.kernel.community.http.CommunityJsonRequestBodyEncoder;
 import eu.exeris.kernel.community.http.CommunityJsonResponseBodyDecoder;
+import eu.exeris.kernel.community.http.LeakTrackingAllocator;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.client.KernelWebClient;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -106,6 +107,26 @@ class KernelWebClientIntegrationTest {
 
             assertThat(created).containsEntry("id", "1").containsEntry("name", "Cogwheel");
         });
+    }
+
+    @Test
+    @DisplayName("POST over the wire releases the request body it encoded once the call returns")
+    void postReleasesRequestBody() {
+        // Only the client's own allocations go through the tracker: the engine and the server draw on
+        // the scoped allocator, so what is counted here is exactly the request body the client encoded.
+        LeakTrackingAllocator clientAllocator = new LeakTrackingAllocator(ALLOCATOR);
+        runScopedTest(clientAllocator, client -> {
+            handlerHook.set((method, path, exchange) -> {
+                assertThat(new String(readRequestBody(exchange.request().body()), StandardCharsets.UTF_8))
+                        .contains("\"name\":\"Cogwheel\"");
+                respondWithJson(exchange, new HttpStatus(201, "Created"), Map.of("id", "1"));
+            });
+
+            client.post("/widget", Map.of("name", "Cogwheel"), Map.class);
+        });
+
+        assertThat(clientAllocator.allocated()).as("request bodies the client encoded").isEqualTo(1);
+        assertThat(clientAllocator.outstanding()).as("request bodies still held after the call").isZero();
     }
 
     @Test
@@ -317,6 +338,10 @@ class KernelWebClientIntegrationTest {
     private record Widget(String id, String name) {}
 
     private void runScopedTest(Consumer<KernelWebClient> testCase) {
+        runScopedTest(ALLOCATOR, testCase);
+    }
+
+    private void runScopedTest(MemoryAllocator clientAllocator, Consumer<KernelWebClient> testCase) {
         java.lang.ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() -> {
             int port = nextFreePort();
             try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
@@ -333,7 +358,8 @@ class KernelWebClientIntegrationTest {
 
                 server.start();
                 engine.start();
-                KernelWebClient client = new KernelWebClient(engine, ALLOCATOR, REQUEST_ENCODERS, RESPONSE_DECODERS);
+                KernelWebClient client =
+                        new KernelWebClient(engine, clientAllocator, REQUEST_ENCODERS, RESPONSE_DECODERS);
 
                 testCase.accept(client);
             }

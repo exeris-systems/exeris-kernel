@@ -15,8 +15,9 @@ package eu.exeris.kernel.spi.http;
  *
  * <p><b>Thread confinement:</b> owner thread — {@link #decide} runs synchronously on the virtual
  * thread issuing the request, between two attempts
- * <p><b>Ownership:</b> the policy owns nothing — the request body buffer belongs to the façade,
- * which re-encodes it for each attempt
+ * <p><b>Ownership:</b> the policy owns nothing — the façade, as the caller of
+ * {@link HttpClientEngine#send(HttpRequest)}, keeps ownership of each attempt's request body,
+ * re-encodes it for each attempt and releases it after that attempt's {@code send} returns or throws
  *
  * @implSpec {@link #decide(HttpRequest, HttpAttemptOutcome, int)} is invoked once per completed
  *           attempt that did not succeed, with the zero-based {@code attemptIndex} of that attempt.
@@ -42,7 +43,8 @@ public interface HttpRetryPolicy {
      * Decides whether the attempt that produced {@code outcome} should be retried.
      *
      * @param request      the request as sent — for method / header inspection only;
-     *                     the body MUST NOT be read, retained, or closed; never {@code null}
+     *                     the body MUST NOT be read, retained, or closed, and may already be
+     *                     released; never {@code null}
      * @param outcome      the HTTP status or transport failure of this attempt; never {@code null}
      * @param attemptIndex zero-based index of the attempt that just completed ({@code 0} = first try)
      * @return {@link RetryDecision#retryAfter(long)} to retry after a delay, or

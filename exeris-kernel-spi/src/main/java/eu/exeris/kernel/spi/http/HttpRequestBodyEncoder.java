@@ -15,9 +15,10 @@ package eu.exeris.kernel.spi.http;
  * <p><b>Allocation:</b> allocates (one off-heap body buffer per encode, taken from the encoding
  * context's {@code MemoryAllocator}, plus the headers the encoding establishes)
  * <p><b>Ownership:</b> the buffer the encoder allocates transfers with the returned
- * {@link HttpEncodedBody} to the {@link HttpRequest} that carries it; this interface does not
- * establish who releases that buffer after the write. The encoder releases it itself only on a
- * path where it returns nothing
+ * {@link HttpEncodedBody} to the {@link HttpRequest} that carries it; the caller of
+ * {@link HttpClientEngine#send(HttpRequest)} keeps ownership of that request body and releases it
+ * after {@code send} returns or throws, and the engine reads it during {@code send} and neither closes
+ * nor retains it. The encoder releases it itself only on a path where it returns nothing
  *
  * @implSpec An implementation:
  *           <ul>
@@ -31,7 +32,6 @@ package eu.exeris.kernel.spi.http;
  *                 in a generic {@link RuntimeException} — typically {@link IllegalStateException} —
  *                 so no driver type crosses the SPI boundary.</li>
  *           </ul>
- * @implNote The Community client engine does not release the buffer after the write.
  * @since 0.8
  */
 public interface HttpRequestBodyEncoder {
@@ -53,11 +53,11 @@ public interface HttpRequestBodyEncoder {
      * @return encoded request body descriptor; never null
      * @implSpec Allocate the body through {@link HttpRequestEncodingContext#allocator()} and
      *           release it on every path that does not return it, or the segment never returns to
-     *           the pool. Ownership of a returned buffer belongs to the {@link HttpRequest} that
-     *           carries it.
-     * @apiNote Do not close the buffer after handing the carrier to a request; this interface does
-     *          not establish who releases it after the write.
-     * @implNote The Community client engine does not release the buffer after the write.
+     *           the pool. A returned buffer travels with the {@link HttpRequest} that carries it,
+     *           and the caller of {@link HttpClientEngine#send(HttpRequest)} keeps ownership of it.
+     * @apiNote Do not close the buffer after handing the carrier to a request; the caller of
+     *          {@link HttpClientEngine#send(HttpRequest)} keeps ownership of the request body and
+     *          releases it after {@code send} returns or throws.
      */
     HttpEncodedBody encode(Object payload, HttpRequestEncodingContext context);
 
