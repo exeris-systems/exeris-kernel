@@ -10,6 +10,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
+import eu.exeris.kernel.spi.security.StorageContext;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -55,6 +56,7 @@ public final class PersistenceSessionBox {
     private RequestPersistenceSession session;
     private String sessionScopeKey;
     private boolean released;
+    private boolean acquiredWithSystemScope;
 
     /**
      * Creates an unacquired session box for one request; no connection is opened until the
@@ -113,7 +115,7 @@ public final class PersistenceSessionBox {
      *         acquired under a different scope key
      */
     public RequestPersistenceSession getOrAcquire(ConnectionOpener opener) {
-        return getOrAcquireInternal(SHARED_SCOPE_KEY, opener, true);
+        return getOrAcquireInternal(SHARED_SCOPE_KEY, null, opener, true);
     }
 
     /**
@@ -128,10 +130,37 @@ public final class PersistenceSessionBox {
      */
     public RequestPersistenceSession getOrAcquireIfScopeMatches(String scopeKey, ConnectionOpener opener) {
         Objects.requireNonNull(scopeKey, "scopeKey must not be null");
-        return getOrAcquireInternal(scopeKey, opener, true);
+        return getOrAcquireInternal(scopeKey, null, opener, true);
+    }
+
+    /**
+     * Returns the request session, acquiring one under {@code scopeKey} for {@code storageContext}
+     * on first call.
+     *
+     * <p>{@code storageContext} is the context the opener configures the connection for; the box
+     * reads it only to record, on acquire, whether it declares a tenant (see
+     * {@link #acquiredWithSystemScope()}).
+     *
+     * @param scopeKey       the isolation/tenant scope key the caller is addressing
+     * @param storageContext the context the backing connection is opened for
+     * @param opener         supplies the backing connection when none is acquired yet; not invoked
+     *                       again once a session exists
+     * @return the active session; {@code null} if an existing request session was already
+     *         acquired under a different scope key
+     * @throws NullPointerException if {@code scopeKey} or {@code storageContext} is {@code null}
+     */
+    public RequestPersistenceSession getOrAcquireIfScopeMatches(String scopeKey,
+                                                                StorageContext storageContext,
+                                                                ConnectionOpener opener) {
+        return getOrAcquireInternal(
+                Objects.requireNonNull(scopeKey, "scopeKey must not be null"),
+                Objects.requireNonNull(storageContext, "storageContext must not be null"),
+                opener,
+                true);
     }
 
     private RequestPersistenceSession getOrAcquireInternal(String scopeKey,
+                                                          StorageContext storageContext,
                                                           ConnectionOpener opener,
                                                           boolean requireScopeMatch) {
         Objects.requireNonNull(opener, "opener must not be null");
@@ -154,6 +183,10 @@ public final class PersistenceSessionBox {
         if (session == null) {
             session = openRequestSession(opener);
             sessionScopeKey = scopeKey;
+            // A context whose isolation key is absent or blank has its tenant key published as '';
+            // an acquire that names no context declares no tenant either.
+            String isolationKey = storageContext == null ? null : storageContext.isolationKey().orElse(null);
+            acquiredWithSystemScope = isolationKey == null || isolationKey.isBlank();
             RequestSessionLifecycleEvent.emit(
                     "ACQUIRE",
                     isolation,
@@ -174,6 +207,31 @@ public final class PersistenceSessionBox {
                     true);
         }
         return session;
+    }
+
+    /**
+     * Whether this box's session was acquired for a context that declares no tenant.
+     *
+     * <p>Recorded once, when the backing connection is acquired, from the context the connection
+     * was opened for — not from whatever is bound to {@code KernelProviders.STORAGE_CONTEXT}. A
+     * context declares no tenant when its isolation key is absent or blank, the same test
+     * {@code RlsConnectionInterceptor} applies before publishing the tenant key as {@code ''}:
+     * {@code ImmutableStorageContext.GLOBAL} is one, and so is any context built without a key. The
+     * ambient-context overload of the engine resolves to {@code GLOBAL} when no context is bound,
+     * so a public route that reaches persistence that way is recorded, and so is a handler that
+     * chose the system context explicitly. An acquire that names no context at all
+     * ({@link #getOrAcquire()}, {@link #getOrAcquire(ConnectionOpener)} and the two-argument
+     * {@link #getOrAcquireIfScopeMatches(String, ConnectionOpener)}) is recorded as well, because
+     * nothing the box was given declares a tenant.
+     *
+     * <p>The box records the fact and does not act on it; the caller that owns the request decides
+     * what to report.
+     *
+     * @return {@code true} if a session was acquired for a context declaring no tenant, or for no
+     *         context; {@code false} if none was acquired, or if it was acquired for a tenant
+     */
+    public boolean acquiredWithSystemScope() {
+        return acquiredWithSystemScope;
     }
 
     /**

@@ -46,6 +46,7 @@ public final class CommunityJfrEventCatalogue {
             // as a burst by definition.
             Map.entry("http", List.of(
                     "eu.exeris.kernel.community.http.RouteExecutionEvent",
+                    "eu.exeris.kernel.community.http.CommunityUnscopedRequestSessionEvent",
                     "eu.exeris.kernel.community.http.CommunityHttpClientPoolEvent",
                     "eu.exeris.kernel.community.http.Http2RapidResetFloodEvent")),
             // websocket — per session, on the virtual thread that owns the upgraded stream.

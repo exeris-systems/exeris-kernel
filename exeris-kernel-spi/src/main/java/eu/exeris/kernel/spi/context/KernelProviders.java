@@ -820,20 +820,23 @@ public final class KernelProviders {
      * or the system-scope global context ({@link ImmutableStorageContext#GLOBAL}) if
      * the slot is not bound.
      *
-     * <p>This method is intended <strong>exclusively</strong> for system-level and
-     * bootstrap tasks (e.g., migrations, internal maintenance jobs) that legitimately
-     * run outside a tenant request scope. It must <strong>never</strong> be used in
-     * a request-handling path — doing so will silently disable tenant isolation and
-     * bypass Row-Level Security, potentially leaking cross-tenant data.
+     * <p>An unbound slot yields the system context silently: no exception is raised and
+     * nothing is reported. That is the answer for system-level and bootstrap tasks
+     * (e.g., migrations, internal maintenance jobs) that legitimately run outside a tenant
+     * request scope, and it carries no tenant key, so it is not tenant isolation.
      *
-     * <p>Request-scoped code must use {@link #storageContext()}, which throws
+     * <p>Code that requires a tenant scope uses {@link #storageContext()}, which throws
      * {@link eu.exeris.kernel.spi.exceptions.security.StorageContextMissingException}
      * ({@code EX-SEC-2004}) if the slot is unbound, making misconfiguration explicit
      * and fail-fast.
      *
      * @return bound storage context, or {@link ImmutableStorageContext#GLOBAL}; never {@code null}
-     * @apiNote Bootstrap / system tasks only. Do NOT call from request handlers or
+     * @apiNote Do not use this method to decide a request's tenant scope, and do not call it from
      *          {@link eu.exeris.kernel.spi.persistence.ConnectionInterceptor} implementations.
+     *          {@link eu.exeris.kernel.spi.persistence.PersistenceEngine#openConnection()} resolves
+     *          its context through this method by contract, so on a route that establishes no
+     *          identity — a {@code permitAll()} route, which binds no {@code StorageContext} — that
+     *          overload yields a connection scoped to {@link ImmutableStorageContext#GLOBAL}.
      */
     public static StorageContext storageContextOrSystem() {
         return STORAGE_CONTEXT.orElse(ImmutableStorageContext.GLOBAL);

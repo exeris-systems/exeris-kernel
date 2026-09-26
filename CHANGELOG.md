@@ -87,6 +87,23 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
+  `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
+  handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
+  scoped to `ImmutableStorageContext.GLOBAL` with no exception and no record. The Community
+  dispatcher now emits the JFR event `eu.exeris.kernel.security.UnscopedRequestSession` (`method`,
+  `path`, `readOnly`) for every `permitAll()` request whose persistence session was opened for a
+  context declaring no tenant, before the session is released. An authenticated route resolving a
+  tenant-less context is not reported. A health check on a `permitAll()` route that reads the
+  database emits the event on every probe; that is the case it exists to show, and it can be
+  disabled in the JFR settings. Behaviour is unchanged: no route starts failing, and
+  `STORAGE_CONTEXT` stays unbound on a `permitAll()` route, so `KernelProviders.storageContext()`
+  still raises `EX-SEC-2004` there. The Javadoc of `KernelProviders.storageContextOrSystem()`,
+  `PersistenceEngine.openConnection()` and `RouteRequirement.permitAll()` now states the consequence
+  instead of contradicting it, and `docs/subsystems/security.md` states what a conforming RLS policy
+  does with such a connection (it matches no tenant row and refuses writes). A `LONG_RUNNING` route
+  has no request session and is not covered by the event.
+
 - **A WebSocket handler's `receive()` returns `null` at the peer's close frame, not when the peer
   drops the socket.** `CommunityWebSocketExchange` echoed the close and marked the exchange closed,
   then read the socket once more before returning, so the handler stayed blocked in `receive()`
