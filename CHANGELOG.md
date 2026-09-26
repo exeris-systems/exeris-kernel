@@ -97,6 +97,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   The engine now answers from the configuration it builds its delegate from, before `start()` as well
   as after it. A client engine built directly from an `HttpProvider` was not affected.
 
+- **The loopback TCK checks the `Host` field the server receives** (ADR-074 decision 3).
+  `AbstractHttpProviderLoopbackTck$PeerAddressing#hostFollowsTheRequestAuthority` and
+  `#hostFollowsTheConfiguredDefaultAuthority` require exactly one `Host`, equal to the authority the
+  request names or, for an unaddressed request, to the configured default. Both address the server
+  by host name, so a `Host` built from the address a connection reports differs from it. No case
+  read `Host` before, so a client sending any value passed. The `clientConfig` fixture no longer
+  copies the default peer into `bindHost` and `port`; it carries none and the `-1` sentinel, so a
+  client that dials its listener address no longer passes the unaddressed cases.
+  `requestAuthorityOverridesTheConfiguredDefaultPeer` moves into the same `PeerAddressing` group.
+  **For anyone binding the TCK:** the new hook `loopbackHostName()` (default `localhost`) must
+  resolve to `loopbackHost()`; a binding whose client derives `Host` from the connection's address,
+  from the default when the request names a peer, or from `bindHost`, or dials `bindHost` for an
+  unaddressed request, now fails.
+
 - **A WebSocket handler's `receive()` returns `null` at the peer's close frame, not when the peer
   drops the socket.** `CommunityWebSocketExchange` echoed the close and marked the exchange closed,
   then read the socket once more before returning, so the handler stayed blocked in `receive()`
