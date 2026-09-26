@@ -224,8 +224,10 @@ the response encoder — and `respond(HttpStatus)` for a bare status.
 
 ### Routing
 
-You do not have to `switch` on paths. `HttpRouter` **is** an `HttpHandler`
-(`public final class HttpRouter implements HttpHandler`), so it drops into the same slot.
+You do not have to `switch` on paths. `HttpRouter` **is** an `HttpHandler` — it implements
+`HttpHandler` and `StreamRouteResolver` — so it drops into the same slot. If you bind something that
+wraps the router instead, implement `StreamRouteResolver` on the wrapper too and delegate to the
+router, or its `streamRoute` registrations are never matched.
 
 Source: `GeneratedAppBootPathReachabilityIntegrationTest`, in
 `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/testing/http/`
@@ -374,6 +376,7 @@ fixtures deliberately do not cover.
 | Process exits immediately after boot | Your `Runnable` returned. Park inside it. |
 | Nothing listening on the port | `http.mode` and port both unset → `DISABLED`. See the gotcha above. |
 | Only `/health*` responds; everything else unserved | `HTTP_SERVER_HANDLER` was never bound — or was bound *inside* `boot()` instead of around it. |
+| A stream route answers like its by-id route, or `404` | The bound handler does not implement `StreamRouteResolver` (a lambda wrapping the router, for example), or the request arrived over HTTP/2, which serves no stream route. |
 | `BootstrapException` … `[EX-CFG-0001]` | No `ConfigProvider` on the classpath. Add `exeris-kernel-community` — see [01](./01-platform-and-dependencies.md). |
 | Ctrl-C leaves resources open | No signal handling exists. Register your own hook to release the park. |
 | A subsystem you expected is missing | Check your `BootstrapSelector`. `forNames` only records the names you gave it — the orchestrator expands those to their transitive `dependsOn()` closure, but never pulls in an unrelated subsystem. |
