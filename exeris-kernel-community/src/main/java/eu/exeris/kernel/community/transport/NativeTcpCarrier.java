@@ -1021,13 +1021,29 @@ public final class NativeTcpCarrier implements TransportEngine {
         owner.enqueueRegistration(channel);
     }
 
+    /**
+     * A reactor for a new outbound channel. A connect that races {@link #stop()} can read the reactor
+     * list while it is being cleared, which shows as an index past the end or an empty slot; either
+     * means the engine has stopped, and is reported as such.
+     *
+     * @throws IllegalStateException if the engine has no reactors, or stopped while this ran
+     */
     private NativeTcpReactor selectReactor() {
         int size = reactors.size();
         if (size == 0) {
             throw new IllegalStateException("No reactor loops initialized");
         }
         int index = Math.floorMod(nextReactorIndex.getAndIncrement(), size);
-        return reactors.get(index);
+        NativeTcpReactor reactor;
+        try {
+            reactor = reactors.get(index);
+        } catch (IndexOutOfBoundsException cleared) {
+            throw new IllegalStateException("Engine is not running", cleared);
+        }
+        if (reactor == null) {
+            throw new IllegalStateException("Engine is not running");
+        }
+        return reactor;
     }
 
     private ChannelRuntimeRegistry.ChannelRuntimeState registerRuntime(NativeTcpStream stream,

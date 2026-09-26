@@ -72,7 +72,9 @@ class NativeTcpCarrierCloseRacesConnectTest {
             }
         }
 
-        assertThat(unexpected).as("failures outside the connect contract").isEmpty();
+        assertThat(unexpected)
+                .withFailMessage(() -> "failures outside the connect contract:\n" + stackTraces(unexpected))
+                .isEmpty();
         assertThat(connected.get()).as("some connects won the race").isPositive();
     }
 
@@ -122,6 +124,16 @@ class NativeTcpCarrierCloseRacesConnectTest {
                 .where(KernelProviders.CRYPTO_PROVIDER, crypto)
                 .where(KernelProviders.CURRENT_CONFIG, new MapConfigProvider(Map.of(), Map.of()))
                 .call(() -> new NativeTcpTransportProvider().createEngine(config));
+    }
+
+    private static String stackTraces(Iterable<Throwable> failures) {
+        StringBuilder out = new StringBuilder();
+        for (Throwable failure : failures) {
+            java.io.StringWriter trace = new java.io.StringWriter();
+            failure.printStackTrace(new java.io.PrintWriter(trace));
+            out.append(trace).append('\n');
+        }
+        return out.toString();
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

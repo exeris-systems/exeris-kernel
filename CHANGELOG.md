@@ -151,6 +151,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `SERVER`, and the client engine's is `CLIENT` with port `0` and no certificate material, whatever
   `HttpMode` says; only `DISABLED` carries over.
 
+- **A connect that races `close()` fails as "not running".** `NativeTcpCarrier#connect` picks a
+  reactor by reading the reactor list's size and then an element, while `stop()` may be clearing
+  that list; the read could fail with `IndexOutOfBoundsException`, or hand back an empty slot, outside
+  `connect`'s contract. Both now throw `IllegalStateException` (`Engine is not running`), the
+  exception `connect` documents for an engine that is not running.
+
 - **A failed TLS handshake reaches the caller with its cause.** A Community stream whose handshake
   failed closed itself, and the caller then saw `IllegalStateException` (`stream closed`) from a
   write, or end-of-stream or `IllegalStateException` from a read, depending on which thread had
