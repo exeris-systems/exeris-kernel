@@ -87,6 +87,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A request session opened without a storage context is recorded, not silent** (ADR-061). A
+  `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
+  handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
+  scoped to `ImmutableStorageContext.GLOBAL` with no exception and no record. The Community
+  dispatcher now emits the JFR event `eu.exeris.kernel.security.UnscopedRequestSession` (`method`,
+  `path`, `routeKind`, `readOnly`) for every request whose persistence session was acquired with the
+  slot unbound, before the session is released. Behaviour is unchanged: no route starts failing, and
+  `STORAGE_CONTEXT` stays unbound on a `permitAll()` route, so `KernelProviders.storageContext()`
+  still raises `EX-SEC-2004` there. The Javadoc of `KernelProviders.storageContextOrSystem()`,
+  `PersistenceEngine.openConnection()` and `RouteRequirement.permitAll()` now states the consequence
+  instead of contradicting it, and `docs/subsystems/security.md` states what a conforming RLS policy
+  does with such a connection (it matches no tenant row and refuses writes). A `LONG_RUNNING` route
+  has no request session and is not covered by the event.
+
 - **An event-bus failure carries the code of what failed, not queue overflow.** Every
   `EventBusException` built through a message constructor carried `EX-EVENT-6002`, the queue
   overflow code, without the `[eventType, queueDepth, queueCapacity]` layout that code documents, so

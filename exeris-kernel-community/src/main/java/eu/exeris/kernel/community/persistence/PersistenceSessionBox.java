@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.persistence;
 
 import eu.exeris.kernel.core.persistence.RequestSessionLifecycleEvent;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
@@ -55,6 +56,7 @@ public final class PersistenceSessionBox {
     private RequestPersistenceSession session;
     private String sessionScopeKey;
     private boolean released;
+    private boolean acquiredWithoutStorageContext;
 
     /**
      * Creates an unacquired session box for one request; no connection is opened until the
@@ -154,6 +156,7 @@ public final class PersistenceSessionBox {
         if (session == null) {
             session = openRequestSession(opener);
             sessionScopeKey = scopeKey;
+            acquiredWithoutStorageContext = !KernelProviders.STORAGE_CONTEXT.isBound();
             RequestSessionLifecycleEvent.emit(
                     "ACQUIRE",
                     isolation,
@@ -174,6 +177,23 @@ public final class PersistenceSessionBox {
                     true);
         }
         return session;
+    }
+
+    /**
+     * Whether this box acquired its session while no {@code StorageContext} was bound.
+     *
+     * <p>Recorded once, when the backing connection is acquired, from
+     * {@link KernelProviders#STORAGE_CONTEXT}: {@code true} means that slot was unbound on the
+     * acquiring thread, so a connection opened through the ambient-context path was scoped to the
+     * system context rather than to a tenant. The box records the fact and does not act on it; the
+     * caller that owns the request decides what to report. A session opener that passed an explicit
+     * context is recorded the same way, because the box cannot see which context an opener used.
+     *
+     * @return {@code true} if a session was acquired with {@code STORAGE_CONTEXT} unbound;
+     *         {@code false} if none was acquired, or if the slot was bound when it was
+     */
+    public boolean acquiredWithoutStorageContext() {
+        return acquiredWithoutStorageContext;
     }
 
     /**

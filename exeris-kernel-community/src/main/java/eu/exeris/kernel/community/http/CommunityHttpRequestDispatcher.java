@@ -106,7 +106,7 @@ final class CommunityHttpRequestDispatcher {
                 && requirement.execution() == RouteRequirement.Execution.LONG_RUNNING;
 
         if (!authorize(request, requirement, () -> exchange,
-                () -> handleRequest(method, request, exchange, handler, longRunning))) {
+                () -> handleRequest(method, request, exchange, handler, requirement, longRunning))) {
             return;
         }
 
@@ -270,13 +270,18 @@ final class CommunityHttpRequestDispatcher {
      * outside a request session already runs, flow threads included. The trade is explicit: more
      * acquires, and therefore more {@code RlsConnectionInterceptor} round-trips, bought against not
      * pinning a pooled connection across a block whose own work draws from that same pool.
+     *
+     * <p>{@code requirement} is the one {@link #dispatch} resolved and admitted, so it is never
+     * {@code null} here: a {@code null} answer from the policy is denied before any handler runs.
      */
     private void handleRequest(HttpMethod method,
                                HttpRequest request,
                                HttpExchange exchange,
                                HttpHandler handler,
+                               RouteRequirement requirement,
                                boolean longRunning) {
         boolean readOnly = isReadOnlyMethod(method);
+        RouteRequirement.Kind routeKind = requirement.kind();
         PersistenceSessionBox box = longRunning
                 ? null
                 : new PersistenceSessionBox(
@@ -293,7 +298,7 @@ final class CommunityHttpRequestDispatcher {
                     exchange.respond(HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, request.version()));
                 }
             } finally {
-                completeRequest(request, box, startedAt);
+                completeRequest(request, box, startedAt, routeKind);
             }
         };
 
@@ -327,16 +332,27 @@ final class CommunityHttpRequestDispatcher {
      * Closes out one request: returns the pooled connection a {@code PROMPT} route held, or records
      * how long a {@code LONG_RUNNING} route actually ran.
      *
-     * <p>The event is a single-phase commit with a hand-measured duration rather than
-     * {@code begin()}/{@code commit()} around the handler. This runs on a virtual thread, and a JFR
-     * event straddling a blocking operation on one is a known crash shape in this repository — and a
-     * handler declared {@code LONG_RUNNING} is by definition one that blocks.
+     * <p>Both events are single-phase commits rather than {@code begin()}/{@code commit()} around
+     * the handler, the {@code LONG_RUNNING} one with a hand-measured duration. This runs on a virtual
+     * thread, and a JFR event straddling a blocking operation on one is a known crash shape in this
+     * repository — and a handler declared {@code LONG_RUNNING} is by definition one that blocks.
+     *
+     * <p>A {@code PROMPT} route whose session was acquired with no {@code StorageContext} bound is
+     * reported before {@link PersistenceSessionBox#release()} runs, so a failure while returning the
+     * connection cannot suppress the report. The per-request cost of the check is one field read;
+     * the event's own enabled check runs only when the flag is set.
      */
-    private static void completeRequest(HttpRequest request, PersistenceSessionBox box, long startedAt) {
+    private static void completeRequest(HttpRequest request, PersistenceSessionBox box, long startedAt,
+                                        RouteRequirement.Kind routeKind) {
         if (box == null) {
             RouteExecutionEvent.emitLongRunning(
                     request.method().name(), request.path(), System.nanoTime() - startedAt);
         } else {
+            if (box.acquiredWithoutStorageContext()) {
+                CommunityUnscopedRequestSessionEvent.emit(
+                        request.method().name(), request.path(), routeKind.name(),
+                        isReadOnlyMethod(request.method()));
+            }
             box.release();
         }
     }
