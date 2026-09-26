@@ -149,7 +149,7 @@ class CommunityUnscopedRequestSessionEventTest {
 
     private HttpHandler readsThroughTheAmbientContext() {
         return exchange -> {
-            try (PersistenceConnection _ = engine.openConnection()) {
+            try (var _ = engine.openConnection()) {
                 exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
             }
         };
@@ -284,7 +284,7 @@ class CommunityUnscopedRequestSessionEventTest {
         List<String> paths = pathsReportedAround(() -> dispatch(
                 dispatcherFor(RouteRequirement.permitAll(), null), "/public-explicit-tenant", List.of(),
                 exchange -> {
-                    try (PersistenceConnection _ = engine.openConnection(tenant)) {
+                    try (var _ = engine.openConnection(tenant)) {
                         exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
                     }
                 }));
@@ -306,7 +306,7 @@ class CommunityUnscopedRequestSessionEventTest {
         RecordedEvent event = firstEventFrom(() -> dispatch(
                 dispatcherFor(RouteRequirement.permitAll(), null), "/public-explicit-system", List.of(),
                 exchange -> ScopedValue.where(KernelProviders.STORAGE_CONTEXT, tenant).run(() -> {
-                    try (PersistenceConnection _ = engine.openConnection(ImmutableStorageContext.system())) {
+                    try (var _ = engine.openConnection(ImmutableStorageContext.system())) {
                         exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
                     }
                 })));
@@ -398,7 +398,7 @@ class CommunityUnscopedRequestSessionEventTest {
                 HttpMethod.GET, "/public-release-fails", HttpVersion.HTTP_1_1, List.of(), null);
         CapturingExchange exchange = new CapturingExchange(request);
         HttpHandler handler = ex -> {
-            try (PersistenceConnection _ = failingEngine.openConnection()) {
+            try (var _ = failingEngine.openConnection()) {
                 ex.respond(HttpResponse.noBody(HttpStatus.OK, request.version()));
             }
         };
