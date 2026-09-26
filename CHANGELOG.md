@@ -87,6 +87,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A booted kernel's HTTP client shows the request enricher its configured default peer**
+  (ADR-074 decision 5). `DeferredHttpClientEngine`, the engine `CommunityHttpSubsystem` binds as
+  `HTTP_CLIENT_ENGINE`, did not override `HttpClientEngine#defaultAuthority`, so it answered the
+  interface's `null` even with `http.client.defaultAuthority` set. `KernelWebClient` therefore handed
+  an unaddressed request to the `HttpClientRequestEnricher` with no authority, and the delegate
+  substituted the default only inside `send`, after enrichment: the request reached the configured
+  peer, but an enricher binding an outbound credential's audience to that peer (ADR-040) saw `null`.
+  The engine now answers from the configuration it builds its delegate from, before `start()` as well
+  as after it. A client engine built directly from an `HttpProvider` was not affected.
+
 - **A WebSocket handler's `receive()` returns `null` at the peer's close frame, not when the peer
   drops the socket.** `CommunityWebSocketExchange` echoed the close and marked the exchange closed,
   then read the socket once more before returning, so the handler stayed blocked in `receive()`

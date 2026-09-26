@@ -7,7 +7,9 @@ package eu.exeris.kernel.community.bootstrap;
 import eu.exeris.kernel.community.crypto.CommunityKernelCryptoProvider;
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
+import eu.exeris.kernel.core.http.client.KernelWebClient;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -15,12 +17,16 @@ import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpRequest;
+import eu.exeris.kernel.spi.http.HttpRequestBodyEncoderRegistry;
+import eu.exeris.kernel.spi.http.HttpResponseBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.InetSocketAddress;
@@ -29,7 +35,11 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -240,6 +250,136 @@ class CommunityHttpBootstrapIntegrationTest {
             restoreProperty("exeris.http.port", previousPort);
             restoreProperty("exeris.transport.certPath", previousCert);
             restoreProperty("exeris.transport.keyPath", previousKey);
+        }
+    }
+
+    @Test
+    @DisplayName("a booted client's enricher sees the configured default peer of an unaddressed request (ADR-074)")
+    void bootedClientEnricherSeesConfiguredDefaultAuthority() throws Exception {
+        AtomicReference<String> seenByEnricher = new AtomicReference<>();
+
+        try (StubPeer peer = new StubPeer()) {
+            String defaultAuthority = peer.authority();
+
+            bootClient(defaultAuthority, () ->
+                    bootedClient(seenByEnricher).get("/orders", Void.class));
+
+            assertThat(seenByEnricher.get())
+                    .as("the engine a booted kernel binds must report the configured default before enrichment")
+                    .isEqualTo(defaultAuthority);
+            assertThat(peer.served())
+                    .as("and the request must reach the peer the enricher was shown")
+                    .isOne();
+        }
+    }
+
+    @Test
+    @DisplayName("a booted client's per-request authority wins over the configured default (ADR-074)")
+    void bootedClientExplicitAuthorityWinsOverDefault() throws Exception {
+        AtomicReference<String> seenByEnricher = new AtomicReference<>();
+
+        try (StubPeer defaultPeer = new StubPeer(); StubPeer namedPeer = new StubPeer()) {
+            String explicitAuthority = namedPeer.authority();
+
+            bootClient(defaultPeer.authority(), () ->
+                    bootedClient(seenByEnricher).withAuthority(explicitAuthority).get("/orders", Void.class));
+
+            assertThat(seenByEnricher.get())
+                    .as("an authority the caller named must reach the enricher unchanged")
+                    .isEqualTo(explicitAuthority);
+            assertThat(namedPeer.served()).as("the named peer receives the request").isOne();
+            assertThat(defaultPeer.served()).as("the configured default is not dialled").isZero();
+        }
+    }
+
+    // CLIENT mode: the kernel binds a client engine whose default peer is http.client.defaultAuthority
+    // — the engine an application reaches through HttpKernelProviders.httpClientEngine().
+    private static void bootClient(String defaultAuthority, Runnable insideKernel) throws Exception {
+        String previousMode = System.getProperty("exeris.http.mode");
+        String previousDefaultAuthority = System.getProperty("exeris.http.client.defaultAuthority");
+
+        System.setProperty("exeris.http.mode", "CLIENT");
+        System.setProperty("exeris.http.client.defaultAuthority", defaultAuthority);
+
+        try {
+            KernelBootstrap.builder()
+                    .selector(BootstrapSelector.forNames("http"))
+                    .build()
+                    .boot(insideKernel);
+        } finally {
+            restoreProperty("exeris.http.mode", previousMode);
+            restoreProperty("exeris.http.client.defaultAuthority", previousDefaultAuthority);
+        }
+    }
+
+    // Must be called inside the booted scope: the engine and allocator are the kernel's bindings.
+    private static KernelWebClient bootedClient(AtomicReference<String> seenByEnricher) {
+        HttpClientEngine engine = HttpKernelProviders.httpClientEngine()
+                .orElseThrow(() -> new AssertionError("CLIENT mode must bind HTTP_CLIENT_ENGINE"));
+        return new KernelWebClient(
+                engine,
+                KernelProviders.MEMORY_ALLOCATOR.get(),
+                HttpRequestBodyEncoderRegistry.of(List.of()),
+                HttpResponseBodyDecoderRegistry.of(List.of()),
+                request -> {
+                    seenByEnricher.set(request.authority());
+                    return request;
+                });
+    }
+
+    /**
+     * A loopback HTTP/1.1 peer that answers every request {@code 200} with an empty body and closes
+     * the connection, counting the requests it read. Bound to an OS-assigned port before the kernel
+     * boots, so the authority it reports is already listening.
+     */
+    private static final class StubPeer implements AutoCloseable {
+
+        private static final byte[] RESPONSE =
+                "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        .getBytes(StandardCharsets.US_ASCII);
+
+        private final ServerSocket socket;
+        private final AtomicInteger served = new AtomicInteger();
+        private final Thread acceptor;
+
+        StubPeer() throws IOException {
+            socket = new ServerSocket();
+            socket.bind(new InetSocketAddress("127.0.0.1", 0));
+            acceptor = Thread.ofVirtual().name("stub-peer-" + socket.getLocalPort()).start(this::serve);
+        }
+
+        String authority() {
+            return "127.0.0.1:" + socket.getLocalPort();
+        }
+
+        int served() {
+            return served.get();
+        }
+
+        private void serve() {
+            while (!socket.isClosed()) {
+                try (Socket connection = socket.accept()) {
+                    connection.setSoTimeout(2_000);
+                    BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(connection.getInputStream(), StandardCharsets.US_ASCII));
+                    String line = reader.readLine();
+                    while (line != null && !line.isEmpty()) {
+                        line = reader.readLine();
+                    }
+                    served.incrementAndGet();
+                    OutputStream out = connection.getOutputStream();
+                    out.write(RESPONSE);
+                    out.flush();
+                } catch (IOException _) {
+                    // accept() fails once close() has closed the socket; anything else ends one exchange.
+                }
+            }
+        }
+
+        @Override
+        public void close() throws Exception {
+            socket.close();
+            acceptor.join(Duration.ofSeconds(5));
         }
     }
 

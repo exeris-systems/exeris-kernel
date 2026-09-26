@@ -408,8 +408,10 @@ public final class KernelWebClient {
 
     // ADR-074 decision 5: authority, THEN enrich, THEN send. The engine would substitute its default
     // inside send(), which is strictly after enrichment — so an enricher binding an outbound
-    // credential's audience to the peer (ADR-040) would observe null every time. Resolving it here is
-    // what makes that decision true of the only path that exists.
+    // credential's audience to the peer (ADR-040) would observe null every time. Resolving it here
+    // makes the decision hold for every request this client sends, provided engine.defaultAuthority()
+    // reports the default the engine dials: an engine that wraps or defers another answers it from
+    // its own configuration rather than inheriting the interface's null.
     private HttpRequest addressAndEnrich(HttpRequest built) {
         HttpRequest addressed = built.withAuthority(authority);
         if (addressed.authority() == null) {

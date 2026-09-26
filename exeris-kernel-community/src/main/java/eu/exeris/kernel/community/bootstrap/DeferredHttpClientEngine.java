@@ -58,6 +58,26 @@ final class DeferredHttpClientEngine implements HttpClientEngine {
         return local.send(request);
     }
 
+    /**
+     * Returns {@link HttpConfig#defaultAuthority()} of the configuration this engine builds its
+     * delegate from.
+     *
+     * <p>The default peer is a property of that configuration, not of the delegate, so it is
+     * answered from the configuration: the same value before {@link #start()}, while running and
+     * after {@link #close()}, and the same whichever provider's engine {@code start()} builds. This
+     * is the engine an application reaches through {@code HttpKernelProviders.httpClientEngine()},
+     * and a caller that resolves the peer before enrichment (ADR-074) reads it here; the interface
+     * default of {@code null} would hide the configured peer from that caller while the delegate
+     * still dialled it inside {@link #send(HttpRequest)}.
+     *
+     * @return the configured default peer as {@code host:port}, or {@code null} when none is
+     *         configured and an unaddressed request is refused
+     */
+    @Override
+    public String defaultAuthority() {
+        return config.defaultAuthority();
+    }
+
     @Override
     public boolean isRunning() {
         HttpClientEngine local = delegate;
