@@ -10,6 +10,7 @@ import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
@@ -26,6 +27,21 @@ import java.net.ServerSocket;
 final class CommunityHttpTransportFactory {
 
     private CommunityHttpTransportFactory() {
+    }
+
+    /**
+     * Which side of the wire the engine that owns the transport serves.
+     *
+     * <p>An HTTP engine is a server or a client, never both, whatever {@link HttpMode} the subsystem
+     * runs in: {@code HttpMode.DUAL} builds one engine of each. Deriving the transport's mode from
+     * the subsystem's would give the client engine a listener it never starts and hand its outbound
+     * connections the listener's certificate material.
+     */
+    /* default */ enum Role {
+        /** The engine accepts connections on its port and presents the listener's material. */
+        SERVER,
+        /** The engine only dials out and binds no port. */
+        CLIENT
     }
 
     /**
@@ -47,15 +63,17 @@ final class CommunityHttpTransportFactory {
      * already bound there.
      *
      * @param config    the HTTP engine configuration to derive transport settings from
-     * @param port      the port to bind, ignored for a client-mode transport
+     * @param port      the port to bind, ignored for a client transport
      * @param allocator the allocator to bind if none is already bound
+     * @param role      the side of the wire the owning engine serves
      * @return a transport engine ready to {@code start()}
      */
-    /* default */ static TransportEngine buildTransport(HttpConfig config, int port, MemoryAllocator allocator) {
+    /* default */ static TransportEngine buildTransport(HttpConfig config, int port, MemoryAllocator allocator,
+                                                        Role role) {
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.isBound()
             ? KernelProviders.CURRENT_CONFIG.get()
             : null;
-        TransportConfig transportConfig = buildTransportConfig(config, port, configProvider);
+        TransportConfig transportConfig = buildTransportConfig(config, port, configProvider, role);
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
             return provider.createEngine(transportConfig);
@@ -65,31 +83,53 @@ final class CommunityHttpTransportFactory {
     }
 
     /**
-     * Builds the listener's transport configuration.
+     * Builds the transport configuration of one HTTP engine.
      *
      * <p>Separate from {@link #buildTransport} so the operator-facing values on it can be asserted
      * without opening a socket. The HTTP listener carries its own {@code TransportConfig} rather
      * than sharing the transport subsystem's, so every key both paths honour has to be read here
      * as well — one read in the subsystem alone would apply to a standalone carrier and silently
      * not to the server almost every deployment actually runs.
+     *
+     * <p>The transport's mode follows {@code role}, not {@link HttpConfig#mode()}: a server engine
+     * gets a {@code SERVER} transport with the listener's port and certificate material, and a
+     * client engine gets a {@code CLIENT} transport with port {@code 0} and no material. Only
+     * {@link HttpMode#DISABLED} carries over, as a {@code DISABLED} transport.
+     *
+     * @param config         the HTTP engine configuration
+     * @param port           the listener port, ignored for a client
+     * @param configProvider the bound configuration, or {@code null}
+     * @param role           the side of the wire the owning engine serves
+     * @return the transport configuration
      */
     /* default */ static TransportConfig buildTransportConfig(HttpConfig config,
                                                               int port,
-                                                              ConfigProvider configProvider) {
-        TransportMode transportMode = switch (config.mode()) {
-            case SERVER -> TransportMode.SERVER;
-            case CLIENT -> TransportMode.CLIENT;
-            case DUAL -> TransportMode.DUAL;
-            case DISABLED -> TransportMode.DISABLED;
-        };
-        int transportPort = transportMode == TransportMode.CLIENT ? 0 : port;
+                                                              ConfigProvider configProvider,
+                                                              Role role) {
+        if (config.mode() == HttpMode.DISABLED) {
+            return transportConfig(config, TransportMode.DISABLED, port, configProvider, null, null);
+        }
+        if (role == Role.CLIENT) {
+            return transportConfig(config, TransportMode.CLIENT, 0, configProvider, null, null);
+        }
+        return transportConfig(config, TransportMode.SERVER, port, configProvider,
+                resolveTransportProperty(configProvider, "transport.certPath", "network.certPath"),
+                resolveTransportProperty(configProvider, "transport.keyPath", "network.keyPath"));
+    }
+
+    private static TransportConfig transportConfig(HttpConfig config,
+                                                   TransportMode transportMode,
+                                                   int port,
+                                                   ConfigProvider configProvider,
+                                                   String certPath,
+                                                   String keyPath) {
         return new TransportConfig(
                 transportMode,
                 config.bindHost(),
-                transportPort,
+                port,
                 CommunityReactorCountResolver.resolve(configProvider),
-                resolveTransportProperty(configProvider, "transport.certPath", "network.certPath"),
-                resolveTransportProperty(configProvider, "transport.keyPath", "network.keyPath"),
+                certPath,
+                keyPath,
                 config.maxConnections(),
                 config.idleTimeoutMillis(),
                 CommunityAdmissionCeilingResolver.resolve(configProvider));

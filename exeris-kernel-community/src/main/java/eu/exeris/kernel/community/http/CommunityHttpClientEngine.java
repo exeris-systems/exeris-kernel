@@ -303,7 +303,8 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
     private static ResolvedHttpClientDeps resolveDeps(HttpConfig config) {
         MemoryAllocator allocator = resolveAllocator(config);
         boolean closeAllocatorOnClose = !KernelProviders.MEMORY_ALLOCATOR.isBound();
-        TransportEngine transport = CommunityHttpTransportFactory.buildTransport(config, config.port(), allocator);
+        TransportEngine transport = CommunityHttpTransportFactory.buildTransport(
+                config, config.port(), allocator, CommunityHttpTransportFactory.Role.CLIENT);
         return new ResolvedHttpClientDeps(allocator, transport, closeAllocatorOnClose);
     }
 

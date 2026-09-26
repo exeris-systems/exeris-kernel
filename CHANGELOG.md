@@ -87,6 +87,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A kernel booted with `http.mode=DUAL` starts, and its client engine dials out as a client.**
+  `CommunityHttpTransportFactory` derived each engine's transport mode from the subsystem's
+  `HttpMode`, so in `DUAL` the client engine got a `DUAL` transport: a listener on the server's
+  port, carrying the server's certificate and key, that nothing gave a stream handler. Its
+  `start()` threw `StreamHandler must be set before start() in SERVER/DUAL mode` and the `http`
+  subsystem failed the boot. The transport now takes the engine's role: the server engine's is
+  `SERVER`, and the client engine's is `CLIENT` with port `0` and no certificate material, whatever
+  `HttpMode` says; only `DISABLED` carries over.
+
 - **A failed TLS handshake no longer takes down healthy connections served by the same thread.**
   OpenSSL keeps its error queue per OS thread, and on the 3.x line `SSL_get_error` reports
   `SSL_ERROR_SSL` whenever that queue holds an entry, whichever connection left it. Nothing emptied
