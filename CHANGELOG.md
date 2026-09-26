@@ -87,6 +87,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **Storage boots with the S3 driver named** (ADR-056). A kernel booted with
+  `storage.blob.provider=blob-s3-community` and the driver's required keys failed in the storage
+  subsystem's `initialize()` with `IllegalStateException: KernelProviders.MEMORY_ALLOCATOR is not
+  bound`: bootstrap composes `providerBindings()` only after every subsystem has initialised, so the
+  `memory` dependency ordered the boot without making the allocator visible, and the S3 driver
+  refuses to create a store without it. `CommunityStorageSubsystem` now selects the driver in
+  `initialize()` and creates the store in `start()`, which runs inside the kernel scope, behind a
+  `DeferredBlobStore` bound to `BLOB_STORE` — the shape `DeferredHttpServerEngine` already gives the
+  HTTP engines. An id naming no driver (`EX-BLOB-8008`) and an unset `storage.blob.location`
+  (`EX-BLOB-8009`) are still refused in `initialize()`. A driver refusing its own configuration, such
+  as S3 without `storage.blob.s3.bucket`, is refused in `start()` and still fails the boot before the
+  application runs. `eu.exeris.kernel.storage.StorageBootstrapSelected` is recorded when the driver
+  is selected, before its store is created.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection

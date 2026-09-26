@@ -136,17 +136,23 @@ class CommunityStorageSubsystemTest {
             // CommunityS3Settings requires s3.bucket, s3.accessKey and s3.secretKey out of them, so
             // naming the S3 driver failed at boot every time. No live endpoint is needed — the store
             // parses settings and constructs a client without connecting.
+            //
+            // The allocator is bound around start() and not around initialize(), because that is
+            // where a kernel boot binds it: providerBindings() are composed only after every
+            // subsystem has initialised.
             CommunityStorageSubsystem subsystem = new CommunityStorageSubsystem();
 
-            withAllocator(() -> ScopedValue.where(KernelProviders.CURRENT_CONFIG, s3Config()).run(() -> {
+            ScopedValue.where(KernelProviders.CURRENT_CONFIG, s3Config()).run(() -> {
                 subsystem.initialize();
-                subsystem.start();
-                subsystem.providerBindings()
-                        .apply(ScopedValue.where(KernelProviders.CURRENT_CONFIG, s3Config()))
-                        .run(() -> assertThat(KernelProviders.BLOB_STORAGE_PROVIDER.get().providerId())
-                                .isEqualTo(S3_PROVIDER));
-                subsystem.stop();
-            }));
+                withAllocator(() -> {
+                    subsystem.start();
+                    subsystem.providerBindings()
+                            .apply(ScopedValue.where(KernelProviders.CURRENT_CONFIG, s3Config()))
+                            .run(() -> assertThat(KernelProviders.BLOB_STORAGE_PROVIDER.get().providerId())
+                                    .isEqualTo(S3_PROVIDER));
+                    subsystem.stop();
+                });
+            });
         }
 
         @Test
@@ -154,6 +160,7 @@ class CommunityStorageSubsystemTest {
         void unforwardedPropertyIsRefusedByTheDriver() {
             // Bucket omitted. The subsystem cannot validate what a driver needs — it does not know —
             // so the contract is that the driver refuses loudly rather than starting half-configured.
+            // The driver reads its settings when it creates the store, which is start().
             CommunityStorageSubsystem subsystem = new CommunityStorageSubsystem();
             MapConfigProvider config = config(Map.of(
                     StorageBootstrap.PROVIDER_KEY, S3_PROVIDER,
@@ -161,10 +168,15 @@ class CommunityStorageSubsystemTest {
                     "storage.blob.s3.accessKey", "key",
                     "storage.blob.s3.secretKey", "secret"));
 
-            withAllocator(() -> ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() ->
-                    assertThatThrownBy(subsystem::initialize)
-                            .isInstanceOf(IllegalArgumentException.class)
-                            .hasMessageContaining("s3.bucket")));
+            ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
+                subsystem.initialize();
+                withAllocator(() -> assertThatThrownBy(subsystem::start)
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("s3.bucket"));
+            });
+            assertThat(subsystem.isRunning())
+                    .as("a store that was refused is not a running subsystem")
+                    .isFalse();
         }
 
         @Test

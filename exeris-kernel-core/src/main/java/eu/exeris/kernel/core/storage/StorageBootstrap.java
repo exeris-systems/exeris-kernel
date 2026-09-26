@@ -7,7 +7,6 @@ package eu.exeris.kernel.core.storage;
 import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
-import eu.exeris.kernel.spi.storage.blob.BlobStore;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,7 +15,7 @@ import java.util.ServiceLoader;
 import java.util.stream.Collectors;
 
 /**
- * Selects a {@link BlobStorageProvider} <em>by configured id</em> and creates its store (ADR-056).
+ * Selects a {@link BlobStorageProvider} <em>by configured id</em> (ADR-056).
  *
  * <p>Every sibling bootstrap ranks by {@code priority()} and takes the winner. This one cannot, and
  * the reason is a property of the drivers rather than a preference: the two Community blob providers
@@ -28,6 +27,11 @@ import java.util.stream.Collectors;
  * for blob storage does not reach this class at all; the subsystem that calls it is opt-in on the
  * same key. What is refused here is asking for storage without saying which, which is the only
  * situation where a silent pick would be wrong.
+ *
+ * <p><b>Selecting a driver and creating its store are separate steps.</b> A wrong id is refused before
+ * the kernel scope exists, but a driver may need that scope to create a store — the S3 driver takes
+ * its buffers from {@code KernelProviders.MEMORY_ALLOCATOR} — so this class returns the provider and
+ * leaves {@link BlobStorageProvider#createStore} to a caller running inside the scope.
  *
  * @since 0.12
  */
@@ -43,24 +47,16 @@ public final class StorageBootstrap {
     }
 
     /**
-     * The provider that was named and the store it created.
-     *
-     * @param provider the selected provider
-     * @param store    the store it produced
-     */
-    public record BootstrapResult(BlobStorageProvider provider, BlobStore store) {
-    }
-
-    /**
-     * Resolves the configured provider from the classpath and creates its store.
+     * Resolves the configured provider from the classpath and records the selection on the
+     * {@code eu.exeris.kernel.storage.StorageBootstrapSelected} JFR event. Creates no store.
      *
      * @param providerId the configured provider id; must name a discovered driver
-     * @param config     the store configuration
-     * @return the provider and its store
+     * @param config     the store configuration, whose location the selection event records
+     * @return the selected provider; never {@code null}
      * @throws BlobStorageException ({@code EX-BLOB-8007}) if no driver is present, or
      *                               ({@code EX-BLOB-8008}) if none matches {@code providerId}
      */
-    public static BootstrapResult loadWithProvider(String providerId, BlobStorageConfig config) {
+    public static BlobStorageProvider loadProvider(String providerId, BlobStorageConfig config) {
         Objects.requireNonNull(providerId, "providerId must not be null");
         Objects.requireNonNull(config, "config must not be null");
 
@@ -68,7 +64,6 @@ public final class StorageBootstrap {
         ServiceLoader.load(BlobStorageProvider.class).forEach(discovered::add);
 
         BlobStorageProvider provider = select(discovered, providerId);
-        BlobStore store = provider.createStore(config);
 
         StorageBootstrapSelectedEvent.emit(
                 provider.getClass().getName(),
@@ -76,7 +71,7 @@ public final class StorageBootstrap {
                 provider.priority(),
                 config.location());
 
-        return new BootstrapResult(provider, store);
+        return provider;
     }
 
     /**

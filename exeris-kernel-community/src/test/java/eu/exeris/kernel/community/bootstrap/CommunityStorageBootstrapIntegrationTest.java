@@ -11,11 +11,16 @@ import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
+import eu.exeris.kernel.spi.storage.blob.BlobAccess;
+import eu.exeris.kernel.spi.storage.blob.BlobRef;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.net.URI;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,11 +44,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Configuration is set as {@code exeris.}-prefixed system properties because that is what
  * {@code CommunityConfigProvider} reads — the key spelling under test is the one an operator writes.
  * Each case restores the properties it touched.
+ *
+ * <p>The S3 cases need no endpoint: creating the store parses its settings and builds a client without
+ * dialling, and a presigned URL is computed locally. The URL is what shows a store was created from the
+ * operator's keys, rather than a slot being bound to something that never started.
  */
 @DisplayName("Community: storage boots by name through KernelBootstrap")
 class CommunityStorageBootstrapIntegrationTest {
 
     private static final String FS_PROVIDER = "blob-fs-community";
+    private static final String S3_PROVIDER = "blob-s3-community";
+    private static final String S3_ENDPOINT = "http://127.0.0.1:9000";
+    private static final String S3_BUCKET = "objects";
+    private static final String S3_ACCESS_KEY = "exeris-access";
     private static final String PROVIDER_PROPERTY = "exeris." + StorageBootstrap.PROVIDER_KEY;
     private static final String LOCATION_PROPERTY = "exeris.storage.blob.location";
 
@@ -140,6 +153,59 @@ class CommunityStorageBootstrapIntegrationTest {
                 .isFalse();
     }
 
+    @Test
+    @DisplayName("S3: the store is created inside the boot, from the keys the operator set")
+    void s3StoreIsCreatedInsideTheKernelScope() throws Exception {
+        AtomicReference<String> providerId = new AtomicReference<>();
+        AtomicReference<URI> signed = new AtomicReference<>();
+
+        withProperties(s3Properties(true), () -> bootStorage(() -> {
+            providerId.set(KernelProviders.BLOB_STORAGE_PROVIDER.get().providerId());
+            signed.set(ScopedValue.where(KernelProviders.STORAGE_CONTEXT,
+                            ImmutableStorageContext.shared("tenant-a"))
+                    .call(() -> KernelProviders.BLOB_STORE.get()
+                            .signedUrl(new BlobRef("reports", "q3.pdf"), BlobAccess.READ,
+                                    Duration.ofMinutes(5))
+                            .orElseThrow()));
+        }));
+
+        assertThat(providerId.get()).isEqualTo(S3_PROVIDER);
+        URI url = signed.get();
+        assertThat(url)
+                .as("the S3 driver takes MEMORY_ALLOCATOR, which is bound only once the kernel scope "
+                        + "is entered; a store created before it cannot exist, and a slot bound to a "
+                        + "store that was never created cannot sign")
+                .isNotNull();
+        assertThat(url.getHost()).isEqualTo("127.0.0.1");
+        assertThat(url.getPort()).isEqualTo(9000);
+        assertThat(url.getRawPath())
+                .as("path-style under the configured bucket, inside the tenant's prefix")
+                .startsWith("/" + S3_BUCKET + "/t-")
+                .endsWith("/reports/q3.pdf");
+        assertThat(url.getRawQuery())
+                .as("signed with the access key forwarded from storage.blob.s3.accessKey")
+                .contains("X-Amz-Credential=" + S3_ACCESS_KEY + "%2F")
+                .contains("X-Amz-Signature=");
+    }
+
+    @Test
+    @DisplayName("S3 misconfigured: the driver's refusal still fails the boot, and main does not run")
+    void s3ConfigurationRefusalFailsTheBoot() {
+        AtomicBoolean mainRan = new AtomicBoolean();
+
+        assertThatThrownBy(() -> withProperties(s3Properties(false),
+                () -> bootStorage(() -> mainRan.set(true))))
+                .isInstanceOf(KernelBootstrap.BootstrapException.class)
+                .satisfies(thrown -> assertThat(causeOfType(thrown, IllegalArgumentException.class))
+                        .as("storage.blob.s3.bucket unset is the driver's own refusal, naming the "
+                                + "property; the boot failed with: %s", thrown.getMessage())
+                        .isNotNull()
+                        .hasMessageContaining("s3.bucket"));
+        assertThat(mainRan.get())
+                .as("the store is created in start(), and a refusal there is still a refused boot")
+                .isFalse();
+    }
+
     private static void bootStorage(Runnable kernelMain) throws KernelBootstrap.BootstrapException {
         KernelBootstrap.builder()
                 .selector(BootstrapSelector.forNames("storage"))
@@ -152,6 +218,18 @@ class CommunityStorageBootstrapIntegrationTest {
         Map<String, String> properties = new LinkedHashMap<>();
         properties.put(PROVIDER_PROPERTY, providerId);
         properties.put(LOCATION_PROPERTY, location);
+        return properties;
+    }
+
+    /**
+     * The S3 driver's keys; {@code withBucket} false leaves {@code storage.blob.s3.bucket} unset, which
+     * the driver refuses.
+     */
+    private static Map<String, String> s3Properties(boolean withBucket) {
+        Map<String, String> properties = properties(S3_PROVIDER, S3_ENDPOINT);
+        properties.put("exeris.storage.blob.s3.bucket", withBucket ? S3_BUCKET : null);
+        properties.put("exeris.storage.blob.s3.accessKey", S3_ACCESS_KEY);
+        properties.put("exeris.storage.blob.s3.secretKey", "exeris-secret");
         return properties;
     }
 
