@@ -113,6 +113,11 @@ as it stands.
 not an `HttpRouter`: a delegating wrapper resolves exact and template routes and the parameters
 arrive, a lambda over a router resolves nothing, the resolver receives the path with its query
 string, and a wrapper's binding reaches the stream handler only when it wraps the returned handler.
+`GeneratedAppStreamRouteReachabilityIntegrationTest` boots the kernel with a forwarder of the
+generated application's shape bound to `HTTP_SERVER_HANDLER` and reads over a socket an SSE head and
+one event for an exact, a templated and a query-bearing stream route, where the by-id respond-once
+twin would otherwise answer; a wrapper's binding reaches the stream route inside the kernel's
+bindings, and a handler that does not implement the interface is served respond-once.
 `StreamMatchTest` pins the record's null checks; `StreamResolutionMissAllocationTest` pins that a
 miss through a forwarder allocates nothing; `HttpRouterTest#streamTemplateOnlyMethodResolves` and
 `HttpRouterTest#leadingPlaceholderTemplateMatches` pin the per-method early return and the literal

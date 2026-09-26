@@ -3209,7 +3209,9 @@ moves to 0.12.
 test binds a forwarder, never the router; the SPI is unchanged; ADR-043 is amended.
 
 **Status (v0.12): DELIVERED kernel-side.** `CommunityHttpStreamDispatcher#resolveStreamHandler`
-resolves through `StreamRouteResolver`, pinned by `CommunityStreamResolutionDelegationTest`; a miss
+resolves through `StreamRouteResolver`, pinned by `CommunityStreamResolutionDelegationTest` and, over
+a real boot with a forwarder of the generated application's shape bound, by
+`GeneratedAppStreamRouteReachabilityIntegrationTest`, which runs untagged in the default build; a miss
 through a forwarder allocates nothing (`StreamResolutionMissAllocationTest`); `spi-api-diff` shows no
 SPI change against the release base. Generated applications stream once a tooling release built on
 kernel 0.12 or later ships the resolving forwarder and the constructor-injected event bus. The
