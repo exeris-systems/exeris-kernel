@@ -94,8 +94,8 @@ final class CommunityHttpConfigResolver {
             .orElse(true);
         HttpVersion maxVersion = resolveMaxVersion(configProvider);
         // ADR-074. A DIAL address, deliberately distinct from http.bindHost, which is a LISTEN
-        // address — the client used to read the latter as the former. No default: an unaddressed
-        // request is refused rather than sent to whatever the server happens to bind.
+        // address and never read by the client. No default: an unaddressed request is refused
+        // rather than sent to whatever the server happens to bind.
         // ADR-071's tail: the HTTP/1 header keys are a per-field size and a field count, while
         // HTTP/2 bounds an assembled header BLOCK — different quantities, so this is its own key
         // rather than a product of the other two, which would have loosened the default twelvefold.

@@ -182,9 +182,9 @@ public abstract class AbstractHttpClientEngineTck {
             engine.start();
 
             // HttpConfig.defaultClient() carries no default authority, and this request names none.
-            // The engine must refuse rather than fall back to a host it was never given: before
-            // ADR-074 the fallback was HttpConfig.bindHost — the SERVER/DUAL *listener* address —
-            // so an unaddressed request was silently sent to whatever the local server bound.
+            // The engine must refuse rather than fall back to a host it was never given, such as
+            // HttpConfig.bindHost: that is the SERVER/DUAL *listener* address, and falling back to
+            // it sends an unaddressed request to whatever the local server binds.
             assertThatThrownBy(() -> engine.send(HttpRequest.noBody(
                     HttpMethod.GET, "/health", HttpVersion.HTTP_1_1, List.of())))
                     .as("a request naming no peer, against an engine configured with none, must fail")
@@ -197,8 +197,8 @@ public abstract class AbstractHttpClientEngineTck {
         void authorityWithoutPortIsRefused() {
             engine.start();
 
-            // There is no scheme on HttpRequest, so there is no basis for defaulting to 80 or 443 —
-            // and defaulting to the listener port is what this ADR removed. Refusing names the fix.
+            // There is no scheme on HttpRequest, so there is no basis for defaulting to 80 or 443,
+            // and the listener port is not the peer's. Refusing names the fix.
             assertThatThrownBy(() -> engine.send(HttpRequest
                     .noBody(HttpMethod.GET, "/health", HttpVersion.HTTP_1_1, List.of())
                     .withAuthority("service.internal")))
