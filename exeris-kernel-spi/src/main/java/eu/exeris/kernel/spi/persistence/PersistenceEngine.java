@@ -75,6 +75,12 @@ public interface PersistenceEngine extends AutoCloseable {
      * @apiNote Close the connection through try-with-resources; on a route that declares itself
      *          long-running the handle is owning, so a missed close is a pool leak rather than a
      *          no-op.
+     *          <p>A route that establishes no identity — a {@code permitAll()} route — has no
+     *          {@code StorageContext} bound, so on such a route this overload yields a connection
+     *          scoped to the system context, which carries no tenant key, and raises nothing. To
+     *          scope a public route's persistence to a tenant, pass the context to
+     *          {@link #openConnection(StorageContext)} or bind
+     *          {@code KernelProviders.STORAGE_CONTEXT} around the call.
      */
     PersistenceConnection openConnection();
 

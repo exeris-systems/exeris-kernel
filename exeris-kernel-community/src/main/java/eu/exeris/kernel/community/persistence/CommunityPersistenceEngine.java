@@ -195,6 +195,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
         if (requestBox != null && requestBox.belongsTo(this)) {
             RequestPersistenceSession requestSession = requestBox.getOrAcquireIfScopeMatches(
                     tenantKey,
+                    storageContext,
                     () -> openPhysicalConnection(storageContext, tenantKey, snapshot));
             if (requestSession != null) {
                 return requestBox.requestScopedConnection(requestSession);

@@ -140,6 +140,9 @@ public final class RouteRequirement {
     /**
      * A route open to unauthenticated callers.
      *
+     * <p>Such a route establishes no identity, so its handler has neither a
+     * {@code PrincipalContext} nor a {@code StorageContext} bound.
+     *
      * @return the shared permit-all requirement
      */
     public static RouteRequirement permitAll() {

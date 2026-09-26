@@ -96,15 +96,39 @@ into the DB connection state. A missing `StorageContext` is equivalent to a miss
 
 > **The request-scoped path does not use that accessor, and this is the gap to know about.**
 > `KernelProviders` also exposes `storageContextOrSystem()`, which returns `ImmutableStorageContext.GLOBAL`
-> when the ScopedValue is unbound, raising nothing. `CommunityPersistenceEngine.openConnection()` — the
-> zero-arg overload — calls that one, and it is the overload `PersistenceSessionBox` uses for every
-> non-`LONG_RUNNING` HTTP request. `TransactionOrchestrator`'s default constructor documents the same
-> fallback.
+> when the ScopedValue is unbound, raising nothing. `PersistenceEngine.openConnection()` — the zero-arg
+> overload — resolves its context through that one by contract, and it is the overload
+> `PersistenceSessionBox` uses for every non-`LONG_RUNNING` HTTP request. `TransactionOrchestrator`'s
+> default constructor documents the same fallback.
 >
 > A `permitAll()` route never runs the interceptor at all (`CommunityHttpRequestDispatcher` returns early on
 > `RouteRequirement.Kind.PERMIT_ALL`), so `STORAGE_CONTEXT` is never bound for it. If such a handler touches
-> persistence it therefore receives a `GLOBAL`-scoped connection **silently** — not an aborted query and not
-> an `EX-SEC-2004`. Treat `permitAll()` plus persistence as a route that must scope its own reads.
+> persistence it receives a `GLOBAL`-scoped connection — not an aborted query and not an `EX-SEC-2004`.
+>
+> **What the database does with that connection.** `GLOBAL` declares no tenant, so
+> `RlsConnectionInterceptor` publishes `exeris.tenant_id` as `''`. Under the documented `FORCE`'d policy
+> (`tenant_id = current_setting('exeris.tenant_id', true)`, the canonical example in
+> `RlsConnectionInterceptor`'s javadoc) that key matches no tenant row, and `WITH CHECK` refuses every
+> write: a conforming deployment fails closed at the database. Rows are exposed only where the deployment
+> departs from that policy — a policy with an arm that admits the empty key (a "system" arm), or a
+> scoped table that is not `FORCE`'d while the application connects as its owner.
+>
+> **What the kernel reports.** When a `permitAll()` route's request session was opened for a storage
+> context that declares no tenant — an absent or blank isolation key, the case in which the tenant key is
+> published as `''` — the dispatcher emits the JFR event `eu.exeris.kernel.security.UnscopedRequestSession`
+> before the session is released, carrying `method`, `path` and `readOnly`. What counts is the context the
+> connection was opened for, not whether the `STORAGE_CONTEXT` slot was bound: a handler that passes a
+> tenant context to `openConnection(StorageContext)`, or binds one, is not reported; a handler that chooses
+> the system context on a public route, by passing it or binding it, is — a deliberate system scope on a
+> public route is what an operator should be able to see. Only `permitAll()` routes are reported: an
+> authenticated route whose security provider resolved a context without a tenant is a tenant-less
+> deployment's own answer, and stays silent. The event fires on every matching request, so a health check
+> on a `permitAll()` route that reads the database emits it on every probe — that is the case an operator
+> is meant to see, and a deployment that has accepted it disables the event in its JFR settings. The event
+> carries the request path, with the same trade `eu.exeris.kernel.http.RouteExecution` states.
+>
+> **The residual.** A `LONG_RUNNING` `permitAll()` route has no request session, so each persistence call
+> acquires through the engine directly and this event cannot see it. Nothing reports that case.
 
 ---
 
