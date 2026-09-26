@@ -68,6 +68,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * records whether the allocator is bound where the wrapper itself runs: it binds no allocator, so
  * {@code true} there means the kernel's scope encloses it.
  *
+ * <p>The boot case pins what the nesting leaves out: nothing the kernel binds at boot reaches a stream
+ * handler. {@link KernelProviders#CURRENT_CONFIG} is bound around the whole boot and
+ * {@link HttpKernelProviders#HTTP_SERVER_ENGINE} by the HTTP subsystem, where the fixture reads it;
+ * the thread a stream handler runs on inherits neither, which is why a stream handler receives the
+ * providers it needs through its constructor.
+ *
  * <p>One boot serves every case, and each case sets the slot before it sends anything. Every request
  * sends {@code Connection: close} and the client reads to end of stream, so an SSE response is read
  * whole once the route has emitted its one event and closed; no case holds a stream open or waits on
@@ -101,6 +107,9 @@ class GeneratedAppStreamRouteReachabilityIntegrationTest {
                     exchange -> emitAndClose(exchange, "tenant=" + tenant()
                             + " allocator=" + KernelProviders.MEMORY_ALLOCATOR.isBound()
                             + " registry=" + registryOrigin()))
+            .streamRoute(HttpMethod.GET, "/orders/boot/stream",
+                    exchange -> emitAndClose(exchange, "config=" + KernelProviders.CURRENT_CONFIG.isBound()
+                            + " server=" + HttpKernelProviders.HTTP_SERVER_ENGINE.isBound()))
             .build();
 
     private EmbeddedHttpEngineFixture fixture;
@@ -225,6 +234,23 @@ class GeneratedAppStreamRouteReachabilityIntegrationTest {
         // registry=kernel is the precondition that makes (b)'s registry=wrapper an ordering: the
         // kernel binds a registry around a stream, and the wrapper's binding shadows it.
         assertServedAsStream(response, "data: tenant=none allocator=true registry=kernel\n\n");
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Boot bindings: none reaches a stream handler
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("(f) a slot bound at boot does not reach a stream handler")
+    void slotBoundAtBootDoesNotReachAStreamHandler() {
+        slot.set(router);
+        assertThat(fixture.engine())
+                .as("control: HTTP_SERVER_ENGINE is bound inside the boot, where the fixture read it")
+                .isNotNull();
+
+        Response response = send("GET", "/orders/boot/stream");
+
+        assertServedAsStream(response, "data: config=false server=false\n\n");
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -117,7 +117,8 @@ string, and a wrapper's binding reaches the stream handler only when it wraps th
 generated application's shape bound to `HTTP_SERVER_HANDLER` and reads over a socket an SSE head and
 one event for an exact, a templated and a query-bearing stream route, where the by-id respond-once
 twin would otherwise answer; a wrapper's binding reaches the stream route inside the kernel's
-bindings, and a handler that does not implement the interface is served respond-once.
+bindings, no slot bound at boot reaches it, and a handler that does not implement the interface is
+served respond-once.
 `StreamMatchTest` pins the record's null checks; `StreamResolutionMissAllocationTest` pins that a
 miss through a forwarder allocates nothing; `HttpRouterTest#streamTemplateOnlyMethodResolves` and
 `HttpRouterTest#leadingPlaceholderTemplateMatches` pin the per-method early return and the literal
