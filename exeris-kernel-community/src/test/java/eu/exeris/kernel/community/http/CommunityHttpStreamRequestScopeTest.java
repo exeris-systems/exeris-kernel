@@ -5,18 +5,30 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.http.RouteRequirement;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.spi.security.AuthenticationResult;
+import eu.exeris.kernel.spi.security.ImmutablePrincipal;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
+import eu.exeris.kernel.spi.security.SecurityProvider;
+import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,6 +45,9 @@ class CommunityHttpStreamRequestScopeTest {
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
+
+    private static final String BEARER_TOKEN = "Bearer stream-token";
+    private static final ImmutableStorageContext STREAM_TENANT = ImmutableStorageContext.shared("tenant-stream");
 
     @AfterAll
     @SuppressWarnings("unused")
@@ -97,5 +112,94 @@ class CommunityHttpStreamRequestScopeTest {
         assertThat(sessionBound.get())
                 .as("binding the request session here would outlive any sane connection hold")
                 .isFalse();
+    }
+
+    @Test
+    @DisplayName("an authenticated stream opens inside the principal and storage the interceptor bound")
+    void authenticatedStreamOpenRunsInsideTheInterceptorBindings() {
+        AtomicReference<Boolean> principalBound = new AtomicReference<>();
+        AtomicReference<StorageContext> storageSeen = new AtomicReference<>();
+
+        authenticatingDispatcher(RouteRequirement.authenticated()).dispatchStream(
+                streamRequestWithToken(), () -> {
+                    throw new AssertionError("a valid token on an authenticated route must not be denied");
+                }, () -> {
+                    principalBound.set(KernelProviders.PRINCIPAL_CONTEXT.isBound());
+                    storageSeen.set(KernelProviders.STORAGE_CONTEXT.isBound()
+                            ? KernelProviders.STORAGE_CONTEXT.get()
+                            : null);
+                });
+
+        assertThat(principalBound.get()).as("ran-guard: the stream opened").isNotNull();
+        assertThat(principalBound.get())
+                .as("the stream opens inside the scope the interceptor established, so its handler "
+                        + "sees the principal a respond-once handler on the same route would")
+                .isTrue();
+        assertThat(storageSeen.get())
+                .as("and the storage context the provider resolved for it")
+                .isSameAs(STREAM_TENANT);
+        assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound())
+                .as("the binding does not outlive the open")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("a permit-all stream opens with no principal, even when the request carries a valid token")
+    void permitAllStreamOpenRunsOutsideEveryPrincipal() {
+        AtomicReference<Boolean> principalBound = new AtomicReference<>();
+        AtomicReference<Boolean> storageBound = new AtomicReference<>();
+
+        authenticatingDispatcher(RouteRequirement.permitAll()).dispatchStream(
+                streamRequestWithToken(), () -> {
+                    throw new AssertionError("permit-all must not deny");
+                }, () -> {
+                    principalBound.set(KernelProviders.PRINCIPAL_CONTEXT.isBound());
+                    storageBound.set(KernelProviders.STORAGE_CONTEXT.isBound());
+                });
+
+        assertThat(principalBound.get()).as("ran-guard: the stream opened").isNotNull();
+        assertThat(principalBound.get())
+                .as("a permit-all route runs no interceptor, so a token the provider would accept "
+                        + "still binds no principal")
+                .isFalse();
+        assertThat(storageBound.get()).as("and no storage context").isFalse();
+    }
+
+    private static HttpRequest streamRequestWithToken() {
+        return new HttpRequest(HttpMethod.GET, "/era/stream", HttpVersion.HTTP_1_1,
+                List.of(new HttpHeader("Authorization", BEARER_TOKEN)), null);
+    }
+
+    /** A real interceptor over a provider that accepts every token, and a policy answering {@code requirement}. */
+    private static CommunityHttpRequestDispatcher authenticatingDispatcher(RouteRequirement requirement) {
+        return new CommunityHttpRequestDispatcher(
+                ALLOCATOR, new SecurityInterceptor(new AcceptingProvider()), null, null,
+                (method, path) -> requirement);
+    }
+
+    /** Authenticates every token as a tenant principal bound to {@link #STREAM_TENANT}. */
+    private static final class AcceptingProvider implements SecurityProvider {
+
+        @Override
+        public String providerId() {
+            return "stream-scope-test-provider";
+        }
+
+        @Override
+        public String providerName() {
+            return "Stream Scope Test Provider";
+        }
+
+        @Override
+        public AuthenticationResult authenticate(LoanedBuffer rawToken) {
+            return new AuthenticationResult(
+                    ImmutablePrincipal.ofTenant(UUID.randomUUID(), UUID.randomUUID(), Set.of()),
+                    STREAM_TENANT);
+        }
+
+        @Override
+        public StorageContext systemStorageContext() {
+            return ImmutableStorageContext.GLOBAL;
+        }
     }
 }
