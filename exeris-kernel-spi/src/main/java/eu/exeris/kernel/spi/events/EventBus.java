@@ -70,7 +70,10 @@ public interface EventBus {
      * @throws EventBusException {@code EX-EVENT-6002} when the backing queue is at capacity and
      *         the engine is configured to refuse rather than block
      *         ({@link EventEngineConfig#busPublishFailFast()}); {@code rawArgs} carry
-     *         {@code [String eventType, long queueDepth, long queueCapacity]}
+     *         {@code [String eventType, long queueDepth, long queueCapacity]}.
+     *         {@code EX-EVENT-6009} when the bus does not accept the event for any other reason;
+     *         {@code rawArgs} carry {@code [int eventTypeOrdinal, String reason]} and the upstream
+     *         failure, when there is one, is the cause
      * @apiNote Ownership of {@code payload} passes to the bus on entry: do not close it after this
      *          call, on success or on failure. Handlers may already be running by the time this
      *          returns, so do not treat a normal return as delivery — use
@@ -90,7 +93,8 @@ public interface EventBus {
      * @param eventType the event type name (e.g. {@code "UserCreated"})
      * @param handler   the handler (non-null)
      * @return an opaque {@link SubscriptionToken} for later unsubscription
-     * @throws EventBusException if the subscription cannot be registered
+     * @throws EventBusException {@code EX-EVENT-6011} if the subscription cannot be registered;
+     *         {@code rawArgs} carry {@code [String eventType]}
      * @apiNote Subscriptions take effect for publications made after this call returns; an event
      *          published concurrently may or may not reach the new handler.
      * @implNote The in-memory binding rejects a subscription to a type that
@@ -123,8 +127,11 @@ public interface EventBus {
      * @param descriptor routing metadata (non-null)
      * @param payload    event payload (non-null)
      * @throws InterruptedException if the calling thread is interrupted while waiting
-     * @throws EventBusException    if one or more handler invocations failed; the individual
-     *         handler failures are attached as suppressed exceptions
+     * @throws EventBusException    {@code EX-EVENT-6010} if the event was delivered and one or
+     *         more handler invocations failed; {@code rawArgs} carry
+     *         {@code [int eventTypeOrdinal, int failedHandlerCount]} and the individual handler
+     *         failures are attached as suppressed exceptions. {@code EX-EVENT-6002} or
+     *         {@code EX-EVENT-6009} if the bus does not accept the event, as for {@link #publish}
      * @apiNote Same ownership transfer as {@link #publish} — the caller does not close
      *          {@code payload}. Never call this from inside an event handler: the wait is on
      *          handlers, and a handler waiting on handlers can deadlock.

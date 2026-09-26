@@ -87,6 +87,23 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **An event-bus failure carries the code of what failed, not queue overflow.** Every
+  `EventBusException` built through a message constructor carried `EX-EVENT-6002`, the queue
+  overflow code, without the `[eventType, queueDepth, queueCapacity]` layout that code documents, so
+  a Kafka send failure, an interrupted enqueue and a failing handler all reached an operator as a
+  full queue. Three codes are added, each with a factory on `EventBusException` that fills its
+  layout: `EX-EVENT-6009` for a publish the bus did not accept (`publishFailed`,
+  `[eventTypeOrdinal, reason]`, reason `delivery-failed`, `interrupted` or `unregistered-type`),
+  `EX-EVENT-6010` for a `publishAndAwait` whose handlers threw after delivery (`handlersFailed`,
+  `[eventTypeOrdinal, failedHandlerCount]`, each handler's exception suppressed), and
+  `EX-EVENT-6011` for a rejected subscription (`subscriptionRejected`, `[eventType]`). The Core,
+  Community and Kafka buses raise them, with static messages. The two message constructors stay
+  and now set `EX-EVENT-6001`; `publishOverflow` alone carries `EX-EVENT-6002`. A push onto the
+  Kafka engine's local queue, which that engine does not use, is refused with
+  `EventEngineException` (`EX-EVENT-6001`) instead of `EventBusException`. **For anyone keying on
+  the code:** a filter on `EX-EVENT-6002` now matches only queue overflow — see the stability
+  matrix's behavioural note.
+
 - **A diagnostics call is audited when it is made, including one that throws** (ADR-033
   Obligation 8). `CommunityKernelDiagnostics` committed each method's `EX-DIAG` JFR audit event
   after the method's work, so a call that threw — a provider failing `ServiceLoader` discovery in

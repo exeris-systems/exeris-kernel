@@ -19,6 +19,7 @@ import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
+import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
@@ -112,12 +113,21 @@ public final class KafkaEventEngine implements EventEngine {
      * @param kafkaConfig Kafka-specific binding configuration (bootstrap servers, topics, timeouts)
      */
     public KafkaEventEngine(EventEngineConfig spiConfig, KafkaEventConfig kafkaConfig) {
+        // Arguments evaluate left to right, so spiConfig is checked before a producer exists.
+        this(Objects.requireNonNull(spiConfig, "spiConfig"), kafkaConfig,
+                createProducer(Objects.requireNonNull(kafkaConfig, "kafkaConfig")));
+    }
+
+    // Package-private seam: a unit test injects a mock Producer to exercise the publish failure
+    // paths without a broker. The engine owns the producer and closes it on close().
+    /* default */ KafkaEventEngine(EventEngineConfig spiConfig, KafkaEventConfig kafkaConfig,
+                                   Producer<byte[], byte[]> producer) {
         this.spiConfig = Objects.requireNonNull(spiConfig, "spiConfig");
         Objects.requireNonNull(kafkaConfig, "kafkaConfig");
         this.registry      = new KafkaEventRegistry();
         this.localDelegate = new InMemoryEventBus(registry);
         this.queue         = new NoOpQueue(spiConfig.queueCapacity());
-        this.producer      = createProducer(kafkaConfig);
+        this.producer      = Objects.requireNonNull(producer, "producer");
         this.publishBus    = new KafkaPublishBus(spiConfig.engineName(),
                                                  producer, registry, kafkaConfig,
                                                  localDelegate, publishedTotal);
@@ -212,6 +222,10 @@ public final class KafkaEventEngine implements EventEngine {
     private static final class KafkaPublishBus implements EventBus {
 
         private static final String UNKNOWN_TOPIC = "<unknown>";
+        /** {@code EX-EVENT-6009} reason: the producer's send failed. */
+        private static final String REASON_DELIVERY_FAILED = "delivery-failed";
+        /** {@code EX-EVENT-6009} reason: the descriptor's ordinal is not registered. */
+        private static final String REASON_UNREGISTERED_TYPE = "unregistered-type";
 
         private final String                   engineName;
         private final Producer<byte[], byte[]> producer;
@@ -260,7 +274,8 @@ public final class KafkaEventEngine implements EventEngine {
                 KafkaPublishFailedEvent.emit(engineName, resolveTopicSafe(descriptor),
                         descriptor.eventTypeOrdinal(), "publish",
                         ex.getClass().getName(), String.valueOf(ex.getMessage()));
-                throw new EventBusException("Kafka producer.send failed", ex);
+                throw EventBusException.publishFailed(
+                        descriptor.eventTypeOrdinal(), REASON_DELIVERY_FAILED, ex);
             }
         }
 
@@ -283,7 +298,8 @@ public final class KafkaEventEngine implements EventEngine {
                 KafkaPublishFailedEvent.emit(engineName, resolveTopicSafe(descriptor),
                         descriptor.eventTypeOrdinal(), "publishAndAwait",
                         ex.getClass().getName(), String.valueOf(ex.getMessage()));
-                throw new EventBusException("Kafka producer.send failed", ex);
+                throw EventBusException.publishFailed(
+                        descriptor.eventTypeOrdinal(), REASON_DELIVERY_FAILED, ex);
             }
         }
 
@@ -310,9 +326,8 @@ public final class KafkaEventEngine implements EventEngine {
         private ProducerRecord<byte[], byte[]> buildRecord(EventDescriptor descriptor, EventPayload payload) {
             EventTypeSpec spec = registry.specOfOrdinal(descriptor.eventTypeOrdinal());
             if (spec == null) {
-                throw new EventBusException(
-                        "Cannot publish event with unregistered ordinal: "
-                        + descriptor.eventTypeOrdinal());
+                throw EventBusException.publishFailed(
+                        descriptor.eventTypeOrdinal(), REASON_UNREGISTERED_TYPE, null);
             }
             String topic = effectiveTopic(spec, config);   // ADR-050: honour the topic override
             byte[] key   = KafkaEventCodec.streamKey(descriptor);
@@ -486,12 +501,12 @@ public final class KafkaEventEngine implements EventEngine {
     // The Kafka driver does not use a local EventQueue — Kafka itself is the durable queue
     // and KafkaPublishBus.publish goes producer → consumer directly. NoOpQueue.push therefore
     // fails loud rather than silently returning true: any caller that reaches it has reached
-    // it by mistake (the SPI's queue() slot is a contract leak for this driver). The chosen
-    // failure mode is EventBusException — the kernel's documented refusal exception that
-    // generic callers already catch from bus().publish(...) — rather than
-    // UnsupportedOperationException, which sits outside the SPI's declared error hierarchy.
-    // Callers that expect a queue-backed engine should use the in-memory CommunityEventEngine
-    // instead.
+    // it by mistake (the SPI's queue() slot is a contract leak for this driver). The failure is
+    // misuse of the engine, not a bus operation, so it is an EventEngineException carrying the
+    // generic engine code EX-EVENT-6001 — inside the SPI's declared error hierarchy, unlike
+    // UnsupportedOperationException, and not an EventBusException, whose codes describe what
+    // happened to a publish or a subscription. Callers that expect a queue-backed engine should
+    // use the in-memory CommunityEventEngine instead.
     // =========================================================================
 
     private record NoOpQueue(int capacity) implements EventQueue {
@@ -502,7 +517,7 @@ public final class KafkaEventEngine implements EventEngine {
 
         @Override
         public boolean push(EventDescriptor descriptor, EventPayload payload) {
-            throw new EventBusException(BYPASS_MESSAGE);
+            throw new EventEngineException(BYPASS_MESSAGE);
         }
 
         @Override

@@ -206,6 +206,11 @@ final class CommunityEventEngine implements EventEngine {
      */
     private static final class PersistentQueueingBus implements EventBus {
 
+        /** {@code EX-EVENT-6009} reason: {@link EventQueue#push} threw. */
+        private static final String REASON_DELIVERY_FAILED = "delivery-failed";
+        /** {@code EX-EVENT-6009} reason: interrupted while waiting for queue space. */
+        private static final String REASON_INTERRUPTED = "interrupted";
+
         private final String engineName;
         private final EventBus delegate;
         private final EventQueue queue;
@@ -239,10 +244,12 @@ final class CommunityEventEngine implements EventEngine {
          *
          * @param descriptor routing metadata (non-null)
          * @param payload    event payload; ownership transfers to this bus (non-null)
-         * @throws eu.exeris.kernel.spi.exceptions.events.EventBusException EX-EVENT-6002 if
-         *         {@code descriptor} is persistent and {@link EventQueue#push} either refuses
-         *         the event (queue full in fail-fast mode) or raises an unexpected
-         *         {@code RuntimeException}
+         * @throws eu.exeris.kernel.spi.exceptions.events.EventBusException if {@code descriptor}
+         *         is persistent and the queue does not accept it: {@code EX-EVENT-6002} when the
+         *         queue is full in fail-fast mode; {@code EX-EVENT-6009} with reason
+         *         {@code "interrupted"} when the thread is interrupted while waiting for space in
+         *         blocking mode, or with reason {@code "delivery-failed"} and the queue's exception
+         *         as the cause when {@link EventQueue#push} throws
          */
         @Override
         public void publish(EventDescriptor descriptor, EventPayload payload) {
@@ -281,10 +288,12 @@ final class CommunityEventEngine implements EventEngine {
          * @param descriptor routing metadata (non-null)
          * @param payload    event payload; ownership transfers to this bus (non-null)
          * @throws InterruptedException if the calling thread is interrupted while waiting
-         * @throws eu.exeris.kernel.spi.exceptions.events.EventBusException EX-EVENT-6002 if
-         *         {@code descriptor} is persistent and {@link EventQueue#push} either refuses
-         *         the event (queue full in fail-fast mode) or raises an unexpected
-         *         {@code RuntimeException}
+         * @throws eu.exeris.kernel.spi.exceptions.events.EventBusException if {@code descriptor}
+         *         is persistent and the queue does not accept it: {@code EX-EVENT-6002} when the
+         *         queue is full in fail-fast mode; {@code EX-EVENT-6009} with reason
+         *         {@code "interrupted"} when the thread is interrupted while waiting for space in
+         *         blocking mode, or with reason {@code "delivery-failed"} and the queue's exception
+         *         as the cause when {@link EventQueue#push} throws
          */
         @Override
         public void publishAndAwait(EventDescriptor descriptor, EventPayload payload) throws InterruptedException {
@@ -309,31 +318,34 @@ final class CommunityEventEngine implements EventEngine {
                 // push() retained internally then threw; it already closed its own retain.
                 // Close the caller's ref to prevent a leak.
                 payload.close();
-                throw new EventBusException("Failed to enqueue persistent event '"
-                        + registry.nameOfOrdinal(descriptor.eventTypeOrdinal()) + "'", ex);
+                throw EventBusException.publishFailed(
+                        descriptor.eventTypeOrdinal(), REASON_DELIVERY_FAILED, ex);
             }
         }
 
         /**
-         * Builds the {@code EX-EVENT-6002} exception for a failed persistent-queue push,
-         * choosing between the two failure shapes {@link CommunityEventQueue#push} can produce.
-         * Fail-fast mode uses the typed {@link EventBusException#publishOverflow} factory
-         * carrying the documented Glass-Box rawArgs {@code [eventType, queueDepth,
-         * queueCapacity]}; blocking mode's {@code false} return only happens on interrupt, so
-         * it falls back to the message-only constructor.
+         * Builds the exception for a persistent-queue push that returned {@code false}, choosing
+         * between the two failure shapes {@link CommunityEventQueue#push} can produce. Fail-fast
+         * mode's {@code false} means the queue is full: {@code EX-EVENT-6002} from
+         * {@link EventBusException#publishOverflow}, with rawArgs {@code [eventType, queueDepth,
+         * queueCapacity]}. Blocking mode's {@code false} only happens on interrupt:
+         * {@code EX-EVENT-6009} from {@link EventBusException#publishFailed} with reason
+         * {@code "interrupted"} and no cause. The queue has already restored the thread's
+         * interrupt status, and this method leaves it set.
          *
          * <p>On the fail-fast branch this also emits {@link CommunityEventQueueOverflowEvent}
          * so operator dashboards can attribute overflow rates to specific engine + event-type
          * pairs — the publishing-caller exception is per-call and leaves no post-mortem trail.
          */
         private EventBusException failedPushException(EventDescriptor descriptor) {
-            String eventType = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());
             if (failFastOnFull) {
+                String eventType = registry.nameOfOrdinal(descriptor.eventTypeOrdinal());
                 CommunityEventQueueOverflowEvent.emit(
                         engineName, eventType, queue.size(), queue.capacity());
                 return EventBusException.publishOverflow(eventType, queue.size(), queue.capacity());
             }
-            return new EventBusException("Interrupted while enqueueing persistent event '" + eventType + '\'');
+            return EventBusException.publishFailed(
+                    descriptor.eventTypeOrdinal(), REASON_INTERRUPTED, null);
         }
     }
 }

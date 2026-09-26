@@ -18,7 +18,11 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * <h2>Error Code Variants</h2>
  * <ul>
  *   <li>Generic failure     → {@value KernelErrorCodes#EX_EVENT_6001}</li>
- *   <li>Bus publish failure → {@value KernelErrorCodes#EX_EVENT_6002} (see {@link EventBusException})</li>
+ *   <li>Bus failure         → {@value KernelErrorCodes#EX_EVENT_6002} queue overflow,
+ *       {@value KernelErrorCodes#EX_EVENT_6009} publish not accepted,
+ *       {@value KernelErrorCodes#EX_EVENT_6010} handlers failed,
+ *       {@value KernelErrorCodes#EX_EVENT_6011} subscription rejected
+ *       (see {@link EventBusException}, a sibling of this class, not a subclass)</li>
  *   <li>Registry conflict   → {@value KernelErrorCodes#EX_EVENT_6003} (see {@link EventRegistryException})</li>
  *   <li>Provider failure    → {@value KernelErrorCodes#EX_EVENT_6004} (see {@link EventProviderException})</li>
  * </ul>

@@ -371,6 +371,24 @@ class KernelErrorCodesTest {
         void exEvent6004() {
             assertThat(KernelErrorCodes.EX_EVENT_6004).isEqualTo("EX-EVENT-6004");
         }
+
+        @Test
+        @DisplayName("EX_EVENT_6009 == 'EX-EVENT-6009' (event bus publish failure)")
+        void exEvent6009() {
+            assertThat(KernelErrorCodes.EX_EVENT_6009).isEqualTo("EX-EVENT-6009");
+        }
+
+        @Test
+        @DisplayName("EX_EVENT_6010 == 'EX-EVENT-6010' (event handler failure)")
+        void exEvent6010() {
+            assertThat(KernelErrorCodes.EX_EVENT_6010).isEqualTo("EX-EVENT-6010");
+        }
+
+        @Test
+        @DisplayName("EX_EVENT_6011 == 'EX-EVENT-6011' (event bus subscription rejected)")
+        void exEvent6011() {
+            assertThat(KernelErrorCodes.EX_EVENT_6011).isEqualTo("EX-EVENT-6011");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -480,6 +498,8 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_GRPH_5003, KernelErrorCodes.EX_GRPH_5004, KernelErrorCodes.EX_GRPH_5005,
                     KernelErrorCodes.EX_EVENT_6001, KernelErrorCodes.EX_EVENT_6002,
                     KernelErrorCodes.EX_EVENT_6003, KernelErrorCodes.EX_EVENT_6004,
+                    KernelErrorCodes.EX_EVENT_6009, KernelErrorCodes.EX_EVENT_6010,
+                    KernelErrorCodes.EX_EVENT_6011,
                     KernelErrorCodes.EX_FLOW_7001, KernelErrorCodes.EX_FLOW_7002,
                     KernelErrorCodes.EX_FLOW_7003, KernelErrorCodes.EX_FLOW_7004,
                     KernelErrorCodes.EX_CFG_1001, KernelErrorCodes.EX_CFG_1002, KernelErrorCodes.EX_CFG_1003,
