@@ -324,14 +324,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `CommunityStorageSubsystemTest` drives the subsystem with a hand-bound config, and the one real
   boot that included storage used `BootstrapSelector.all()` and asserted on memory alone: with
   `CommunityStorageSubsystem` removed from `CommunitySubsystemProvider`, every test in the Community
-  bootstrap package still passed (127 run, 1 skipped for an absent TLS certificate).
-  `CommunityStorageBootstrapIntegrationTest` boots `KernelBootstrap` with
-  `BootstrapSelector.forNames("storage")` and sets the keys as the `exeris.storage.blob.*` system
-  properties `CommunityConfigProvider` reads. Unset, the dependency closure brings `memory` up with
-  storage and neither `BLOB_STORE` nor `BLOB_STORAGE_PROVIDER` is bound; `blob-fs-community` with a
-  location binds `BLOB_STORE` inside `boot()` and names that driver; an id matching no driver refuses
-  the boot with `EX-BLOB-8008`. The same removal now fails all three cases, dropping `memory` from
-  `dependsOn` fails the first, and swallowing the refusal fails the third.
+  bootstrap package still passed. `CommunityStorageBootstrapIntegrationTest` boots `KernelBootstrap`
+  with `BootstrapSelector.forNames("storage")` and sets the keys as the `exeris.storage.blob.*`
+  system properties `CommunityConfigProvider` reads. Unset, the dependency closure brings `memory`
+  up with storage and neither `BLOB_STORE` nor `BLOB_STORAGE_PROVIDER` is bound. Set, the driver
+  bound is the one the key names, in both directions: the case naming `blob-s3-community`,
+  discovered second, fails against a selection that checks the id and then takes the first driver
+  discovered, and the case naming `blob-fs-community`, discovered first, fails against one that
+  takes the last; each asserts the discovery order it depends on. An id matching no driver refuses
+  the boot with `EX-BLOB-8008`. Removing the subsystem from the provider fails every case, dropping
+  `memory` from `dependsOn` fails the unconfigured case and each case naming the S3 driver, and
+  swallowing the refusal fails the unknown-id case.
 
 ### Changed
 

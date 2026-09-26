@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.storage.blob.BlobAccess;
 import eu.exeris.kernel.spi.storage.blob.BlobRef;
+import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -21,9 +22,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -44,6 +47,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Configuration is set as {@code exeris.}-prefixed system properties because that is what
  * {@code CommunityConfigProvider} reads — the key spelling under test is the one an operator writes.
  * Each case restores the properties it touched.
+ *
+ * <p>Both Community drivers register at the same priority, so the key is the only thing that
+ * separates them. A selection that checked the id and then took the first driver discovered would
+ * still bind a driver whenever the id is known, and it binds the right one whenever the key names the
+ * driver discovered first. One configured case therefore names the driver discovered second and the
+ * other the driver discovered first, and each asserts the discovery order it relies on rather than
+ * assuming it.
  *
  * <p>The S3 cases need no endpoint: creating the store parses its settings and builds a client without
  * dialling, and a presigned URL is computed locally. The URL is what shows a store was created from the
@@ -105,8 +115,42 @@ class CommunityStorageBootstrapIntegrationTest {
     }
 
     @Test
-    @DisplayName("configured: the named driver is bound inside boot, and it is the one named")
-    void configuredStorageBindsTheNamedDriverInsideBoot(@TempDir Path root) throws Exception {
+    @DisplayName("configured: the driver the key names is bound, not the first one discovered")
+    void configuredStorageBindsTheNamedDriverNotTheFirstDiscovered() throws Exception {
+        List<String> discovered = discoveredProviderIds();
+        assertThat(discovered.indexOf(S3_PROVIDER))
+                .as("this case separates the driver the key names from the first driver discovered "
+                        + "only while the named driver is not discovered first; discovery order: %s",
+                        discovered)
+                .isPositive();
+        AtomicBoolean blobStoreBound = new AtomicBoolean();
+        AtomicReference<String> providerId = new AtomicReference<>();
+
+        withProperties(s3Properties(true), () -> bootStorage(() -> {
+            blobStoreBound.set(KernelProviders.BLOB_STORE.isBound());
+            providerId.set(KernelProviders.BLOB_STORAGE_PROVIDER.get().providerId());
+        }));
+
+        assertThat(blobStoreBound.get())
+                .as("storage.blob.provider set through the kernel's own config provider binds "
+                        + "BLOB_STORE for the application")
+                .isTrue();
+        assertThat(providerId.get())
+                .as("both Community drivers register at the same priority; only the key separates "
+                        + "them, and it names %s, discovered after %s", S3_PROVIDER, discovered.get(0))
+                .isEqualTo(S3_PROVIDER);
+    }
+
+    @Test
+    @DisplayName("configured: naming the driver discovered first binds that driver")
+    void configuredStorageBindsTheFirstDiscoveredDriverWhenItIsNamed(@TempDir Path root)
+            throws Exception {
+        List<String> discovered = discoveredProviderIds();
+        assertThat(discovered.indexOf(FS_PROVIDER))
+                .as("this case is the other direction: the named driver is the one discovered first, "
+                        + "which a selection preferring any later driver gets wrong; discovery order: %s",
+                        discovered)
+                .isZero();
         AtomicBoolean blobStoreBound = new AtomicBoolean();
         AtomicReference<String> providerId = new AtomicReference<>();
 
@@ -120,8 +164,8 @@ class CommunityStorageBootstrapIntegrationTest {
                         + "BLOB_STORE for the application")
                 .isTrue();
         assertThat(providerId.get())
-                .as("both Community drivers register at the same priority; only the key separates "
-                        + "them")
+                .as("the key names %s, and a selection preferring a later driver binds another",
+                        FS_PROVIDER)
                 .isEqualTo(FS_PROVIDER);
         assertThat(KernelProviders.BLOB_STORE.isBound())
                 .as("the store is bound inside boot() only")
@@ -204,6 +248,13 @@ class CommunityStorageBootstrapIntegrationTest {
         assertThat(mainRan.get())
                 .as("the store is created in start(), and a refusal there is still a refused boot")
                 .isFalse();
+    }
+
+    /** Provider ids in the order the storage bootstrap discovers them, through the same lookup. */
+    private static List<String> discoveredProviderIds() {
+        List<String> ids = new ArrayList<>();
+        ServiceLoader.load(BlobStorageProvider.class).forEach(provider -> ids.add(provider.providerId()));
+        return ids;
     }
 
     private static void bootStorage(Runnable kernelMain) throws KernelBootstrap.BootstrapException {
