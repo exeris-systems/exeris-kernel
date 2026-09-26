@@ -86,6 +86,12 @@ final class CommunityWebSocketExchange implements WebSocketExchange, AutoCloseab
                 if (message != null) {
                     return message;
                 }
+                if (closed.get()) {
+                    // The peer's close frame was in the buffer and has been echoed. The loop ends
+                    // here, not at the next read: RFC 6455 §7.1.1 has the server drop the TCP
+                    // connection first, and a peer waiting for that sends nothing a read could see.
+                    return null;
+                }
             } catch (WebSocketProtocolException violation) {
                 // The peer broke the protocol: close with the code the violation maps to and end the
                 // handler's loop. The handler is not told which rule broke — it has no way to act on
