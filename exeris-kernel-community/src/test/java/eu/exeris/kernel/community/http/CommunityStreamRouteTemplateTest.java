@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.routing.HttpRouter;
+import eu.exeris.kernel.core.http.routing.StreamMatch;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpStreamExchange;
@@ -104,7 +105,7 @@ class CommunityStreamRouteTemplateTest {
         HttpRequest request = HttpRequest.noBody(
                 HttpMethod.POST, path, HttpVersion.HTTP_1_1, List.of());
 
-        HttpRouter.StreamMatch match = dispatcher.resolveStreamHandler(request, router);
+        StreamMatch match = dispatcher.resolveStreamHandler(request, router);
         assertThat(match).as("route must resolve as streaming for %s", path).isNotNull();
 
         dispatcher.dispatchStream(request, new DiscardingStream(), match);

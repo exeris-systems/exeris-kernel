@@ -99,7 +99,7 @@ class HttpRoutingAllocationResearch {
     /** Both halves, in the order the transport runs them: stream probe first, then dispatch. */
     private static void routeOnce(HttpRouter router, HttpMethod method, String path,
                                   HttpExchange exchange) {
-        HttpRouter.StreamMatch stream = router.resolveStream(method, path);
+        StreamMatch stream = router.resolveStream(method, path);
         if (stream == null) {
             router.handle(exchange);
         }

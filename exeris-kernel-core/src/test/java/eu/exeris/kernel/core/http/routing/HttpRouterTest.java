@@ -411,7 +411,7 @@ class HttpRouterTest {
                     .streamRoute(HttpMethod.POST, "/orders/{id}/actions/ship", exchange -> { })
                     .build();
 
-            HttpRouter.StreamMatch match =
+            StreamMatch match =
                     router.resolveStream(HttpMethod.POST, "/orders/42/actions/ship");
 
             assertTrue(match != null, "a registered stream route that cannot match is a dead route");
@@ -425,7 +425,7 @@ class HttpRouterTest {
                     .streamRoute(HttpMethod.GET, "/t/{tenant}/s/{stream}", exchange -> { })
                     .build();
 
-            HttpRouter.StreamMatch match =
+            StreamMatch match =
                     router.resolveStream(HttpMethod.GET, "/t/acme/s/audit?since=5");
 
             assertTrue(match != null);

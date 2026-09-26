@@ -4,7 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.core.http.routing.HttpRouter;
+import eu.exeris.kernel.core.http.routing.StreamMatch;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -192,7 +192,7 @@ class CommunityHttpStreamJfrTest {
                 try {
                     dispatcher.dispatchStream(
                             new HttpRequest(HttpMethod.GET, "/stream", HttpVersion.HTTP_1_1, List.of(), null),
-                            serverStream, HttpRouter.StreamMatch.exact(handler));
+                            serverStream, StreamMatch.exact(handler));
                 } finally {
                     self[0].handlerDone.set(true);
                 }

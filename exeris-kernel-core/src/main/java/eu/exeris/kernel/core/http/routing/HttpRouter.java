@@ -191,25 +191,6 @@ public final class HttpRouter implements HttpHandler {
     private record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
 
     /**
-     * A resolved streaming route: the handler, and whatever its template captured.
-     *
-     * @param handler the streaming handler to drive
-     * @param params  captured path parameters; empty for an exact stream route
-     */
-    public record StreamMatch(HttpStreamHandler handler, Map<String, String> params) {
-
-        /**
-         * A match with nothing captured — what an exact stream route resolves to.
-         *
-         * @param handler the streaming handler
-         * @return the match; never {@code null}
-         */
-        public static StreamMatch exact(HttpStreamHandler handler) {
-            return new StreamMatch(handler, Map.of());
-        }
-    }
-
-    /**
      * Mutable accumulator for route registrations, compiled into an immutable {@link HttpRouter} by
      * {@link #build()}. Precedence across route kinds — exact, then template, then prefix — is fixed
      * regardless of registration order; within the same kind, the first registration that matches a

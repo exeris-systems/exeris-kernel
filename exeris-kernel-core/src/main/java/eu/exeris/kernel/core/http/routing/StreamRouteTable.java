@@ -48,15 +48,15 @@ final class StreamRouteTable {
      * @param path   request path, query already stripped
      * @return the match, or {@code null}
      */
-    /* default */ HttpRouter.StreamMatch resolve(HttpMethod method, String path) {
+    /* default */ StreamMatch resolve(HttpMethod method, String path) {
         Map<String, HttpStreamHandler> byPath = exact.get(method);
         HttpStreamHandler literal = byPath == null ? null : byPath.get(path);
         if (literal != null) {
-            return HttpRouter.StreamMatch.exact(literal);
+            return StreamMatch.exact(literal);
         }
         for (TemplateEntry entry : templates) {
             if (entry.method() == method && entry.template().matches(path)) {
-                return new HttpRouter.StreamMatch(entry.handler(), entry.template().capture(path));
+                return new StreamMatch(entry.handler(), entry.template().capture(path));
             }
         }
         return null;

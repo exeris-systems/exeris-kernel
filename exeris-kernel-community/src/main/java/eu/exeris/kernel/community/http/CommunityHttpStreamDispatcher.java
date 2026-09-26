@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.core.http.routing.PathParamStreamExchange;
+import eu.exeris.kernel.core.http.routing.StreamMatch;
 import eu.exeris.kernel.core.http.sse.HttpStreamEngine;
 import eu.exeris.kernel.core.http.sse.StreamAdmissionController;
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
@@ -62,8 +63,7 @@ final class CommunityHttpStreamDispatcher {
      * @param handler the active root handler
      * @return the resolved stream route, or {@code null}
      */
-    /* default */ HttpRouter.StreamMatch resolveStreamHandler(HttpRequest request,
-                                                              HttpHandler handler) {
+    /* default */ StreamMatch resolveStreamHandler(HttpRequest request, HttpHandler handler) {
         if (handler instanceof HttpRouter router) {
             return router.resolveStream(request.method(), request.path());
         }
@@ -82,7 +82,7 @@ final class CommunityHttpStreamDispatcher {
      */
     /* default */ StreamClosedException dispatchStream(HttpRequest request,
                                                       TransportStream stream,
-                                                      HttpRouter.StreamMatch match) {
+                                                      StreamMatch match) {
         return dispatchStream(request, stream, match, 0L);
     }
 
@@ -97,7 +97,7 @@ final class CommunityHttpStreamDispatcher {
      */
     /* default */ StreamClosedException dispatchStream(HttpRequest request,
                                                       TransportStream stream,
-                                                      HttpRouter.StreamMatch match,
+                                                      StreamMatch match,
                                                       long authDeadlineEpochMillis) {
         // PAQS admission (ADR-043 obligation 7): a NEW open is admitted once and holds its slot for the
         // stream lifetime. Under SHED_LOAD this throws TransportException(EX-NET-4006) before the slot is

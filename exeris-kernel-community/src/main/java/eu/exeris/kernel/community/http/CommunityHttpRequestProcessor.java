@@ -4,7 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.core.http.routing.HttpRouter;
+import eu.exeris.kernel.core.http.routing.StreamMatch;
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
 import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
@@ -300,7 +300,7 @@ public final class CommunityHttpRequestProcessor {
                 readResult.headers(),
                 bodyBuffer);
 
-        HttpRouter.StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
+        StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
         if (streamRoute != null) {
             // v0.10 streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
             // (HttpStreamEngine deadline / StreamAdmissionController) but their PRODUCTION binding is

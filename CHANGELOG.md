@@ -37,6 +37,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **`HttpRouter.StreamMatch` is now the top-level `eu.exeris.kernel.core.http.routing.StreamMatch`.**
+  Same components and the same `exact(HttpStreamHandler)` factory. It moved out of the final router
+  class so that a handler which is not an `HttpRouter` can return one. Code compiled against 0.11
+  that names `HttpRouter.StreamMatch` or calls `HttpRouter#resolveStream` is recompiled against
+  0.12. This is Core API; the SPI is unchanged.
+
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
   total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
   and Tier B column type — and throws a typed exception for anything it does not implement. It
