@@ -78,6 +78,7 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
      *
      * <p>Exact stream routes win over template stream routes, mirroring the respond-once precedence:
      * a deployment that registers both a literal and a templated path meant the literal to be special.
+     * A method with no stream route answers {@code null} without examining the path.
      *
      * @param method request method
      * @param path   request path as received; it may carry a query string, which takes no part in
@@ -86,6 +87,9 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
      */
     @Override
     public StreamMatch resolveStream(HttpMethod method, String path) {
+        if (!streamRoutes.serves(method)) {
+            return null;
+        }
         return streamRoutes.resolve(method, stripQuery(path));
     }
 

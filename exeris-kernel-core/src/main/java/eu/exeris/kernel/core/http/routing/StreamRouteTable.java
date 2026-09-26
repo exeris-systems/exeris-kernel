@@ -9,9 +9,11 @@ import eu.exeris.kernel.spi.http.HttpStreamHandler;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The streaming half of the routing table: exact paths first, then templates.
@@ -28,14 +30,35 @@ final class StreamRouteTable {
     // Keyed by method first so a lookup needs no key object: a (method, path) record would be
     // allocated and discarded on every request just to probe the map.
     private final Map<HttpMethod, Map<String, HttpStreamHandler>> exact;
-    private final List<TemplateEntry> templates;
+    // An array, not a List: a for-each over an array compiles to an indexed walk, while over a List
+    // it creates an iterator, which is an allocation on every request wherever the loop has not been
+    // compiled with escape analysis.
+    private final TemplateEntry[] templates;
+    // Every method that has at least one stream route, exact or templated.
+    private final Set<HttpMethod> methods;
 
     private StreamRouteTable(Map<HttpMethod, Map<String, HttpStreamHandler>> exact,
                              List<TemplateEntry> templates) {
         Map<HttpMethod, Map<String, HttpStreamHandler>> copied = new EnumMap<>(HttpMethod.class);
         exact.forEach((method, byPath) -> copied.put(method, Map.copyOf(byPath)));
         this.exact = copied;
-        this.templates = List.copyOf(templates);
+        this.templates = templates.toArray(new TemplateEntry[0]);
+        Set<HttpMethod> served = EnumSet.noneOf(HttpMethod.class);
+        served.addAll(copied.keySet());
+        for (TemplateEntry entry : this.templates) {
+            served.add(entry.method());
+        }
+        this.methods = served;
+    }
+
+    /**
+     * Returns whether any stream route, exact or templated, is registered for {@code method}.
+     *
+     * @param method request method; {@code null} answers {@code false}
+     * @return {@code true} if a request with this method can resolve to a stream route
+     */
+    /* default */ boolean serves(HttpMethod method) {
+        return method != null && methods.contains(method);
     }
 
     /**

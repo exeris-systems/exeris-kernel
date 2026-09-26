@@ -29,8 +29,10 @@ import eu.exeris.kernel.spi.http.HttpMethod;
  *
  * <h2>Cost</h2>
  * <p>Every request pays for this call and most requests are not streams, so a miss is the common
- * case and an implementation keeps it free of allocation. A wrapper that delegates adds nothing to a
- * miss. A hit may allocate; it is paid once per stream, not per event.
+ * case and an implementation keeps it free of allocation. {@link HttpRouter} allocates nothing on a
+ * miss when the request's method has no stream route or the path carries no query string; otherwise
+ * it copies the path once to drop the query. A wrapper that delegates adds nothing to a miss. A hit
+ * may allocate; it is paid once per stream, not per event.
  *
  * <h2>Wrapping a router</h2>
  * <p>A wrapper delegates. When a binding of its own must reach the stream handler, it wraps the

@@ -50,6 +50,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   that names `HttpRouter.StreamMatch` or calls `HttpRouter#resolveStream` is recompiled against
   0.12. This is Core API; the SPI is unchanged.
 
+- **Stream resolution skips a request whose method has no stream route.** `HttpRouter#resolveStream`
+  runs for every request once a driver resolves stream routes through the bound handler, and most
+  requests are not streams. A method with no stream route, exact or templated, now answers `null`
+  before the path is examined, so a query-bearing `PUT` or `DELETE` no longer copies its path to
+  drop the query (measured 64 B per request for a ten-character path, now 0 B). The stream-template
+  table is walked as an array, which allocates no iterator at any compilation tier.
+
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
   total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
   and Tier B column type — and throws a typed exception for anything it does not implement. It
