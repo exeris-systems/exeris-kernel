@@ -14,6 +14,9 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.ValueLayout;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
@@ -71,6 +74,11 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
     /**
      * Creates a writable {@link TransportStream} connected to the running engine.
+     *
+     * <p>Called once per pre-allocated VT slot, and every slot is written from its own virtual
+     * thread, concurrently with the others. A stream is owned by exactly one virtual thread, so
+     * each call must return a stream no earlier call returned; {@link #bootstrapSubsystem()}
+     * fails a binding that hands out the same stream twice.
      *
      * @return a stream open for writing, one per pre-allocated VT slot
      */
@@ -171,8 +179,14 @@ public abstract class TransportCarrierPinningTck extends AbstractSubsystemCarrie
 
         streams = new TransportStream[vtSlotCount];
         buffers = new LoanedBuffer[vtSlotCount];
+        Set<TransportStream> issued = Collections.newSetFromMap(new IdentityHashMap<>());
         for (int i = 0; i < vtSlotCount; i++) {
             streams[i] = createWritableStream();
+            Assertions.assertThat(issued.add(streams[i]))
+                    .as("createWritableStream() returned for slot %d a stream an earlier slot already "
+                            + "holds; a stream is owned by exactly one virtual thread, and each slot "
+                            + "writes from its own", i)
+                    .isTrue();
             LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
             buf.segment().set(ValueLayout.JAVA_LONG, 0, 0xCAFEL);
             buffers[i] = buf;

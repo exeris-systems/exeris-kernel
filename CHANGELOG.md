@@ -87,6 +87,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The carrier-pinning TCK holds a binding to one stream per slot.** `TransportCarrierPinningTck`
+  writes every slot from its own virtual thread, and its `createWritableStream()` hook asks for one
+  stream per slot; the three Community bindings returned the same stream for all 1 200 slots, so
+  the case ran 1 200 concurrent producers against one stream. `bootstrapSubsystem()` now fails a
+  binding that returns a stream an earlier slot already holds, and the Community bindings dial one
+  loopback connection per slot. They also stop the server after the contract's drain instead of
+  before it, so the drain asserts that queued writes reach a live peer rather than that a closed
+  peer discarded them. **For anyone binding the TCK:** no hook or signature changed; a binding that
+  returns one shared stream now fails in setup.
+
 - **A write queued while another producer's flush empties the stream is written, not stranded.**
   `NativeTcpStream.queueWrite` raises the outbound depth before it offers the write, and only the
   producer that raises it from zero flushes. A producer suspended between the two was therefore not
