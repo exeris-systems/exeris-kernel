@@ -13,8 +13,8 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when a request's persistence session was opened for a storage context that
- * declares no tenant.
+ * JFR event emitted when a {@code permitAll()} route's request session was opened for a storage
+ * context that declares no tenant.
  *
  * <h2>What it is for</h2>
  * <p>A {@code permitAll()} route runs no security interceptor, so nothing binds
@@ -22,21 +22,26 @@ import jdk.jfr.StackTrace;
  * through the ambient-context path — {@code PersistenceEngine.openConnection()}, and everything
  * built on it — receives a connection scoped to the system context, whose tenant key is empty. No
  * exception is raised on that path, by contract. This event is what makes it visible: it names the
- * route that took a request session without a tenant scope, so an operator can tell a deliberate
- * system read from a route that expected a tenant and did not get one.
+ * public route that took a request session without a tenant scope, so an operator can tell a
+ * deliberate system read from a route that expected a tenant and did not get one.
  *
  * <p>What is recorded is the context the session's connection was actually opened for, not the
  * state of the {@code STORAGE_CONTEXT} slot. A context declares no tenant when its isolation key
  * is absent or blank — the case in which the tenant session key is published as {@code ''}. So a
  * handler that passes a tenant context to {@code openConnection(StorageContext)} is not reported,
- * bound slot or not; and a handler that chooses the system context on a request path, by passing
- * it or by binding it, is reported, because a deliberate system scope on a request is exactly what
- * an operator should be able to see.
+ * bound slot or not; and a handler that chooses the system context on a public route, by passing
+ * it or by binding it, is reported, because a deliberate system scope on a public route is exactly
+ * what an operator should be able to see.
  *
- * <p>{@code routeKind} carries the resolved {@code RouteRequirement.Kind}. {@code PERMIT_ALL} is a
- * public route. Any other kind is an authenticated route whose identity resolved to a context
- * without a tenant — a tenant-less deployment, whose security provider binds the system context,
- * reports every request that reaches persistence — or whose handler chose the system context.
+ * <p>Only a route whose resolved requirement is {@code PERMIT_ALL} is reported. An authenticated
+ * route whose security provider resolved a context without a tenant is a tenant-less deployment's
+ * legitimate answer, and reporting it would put one event on every request that reaches
+ * persistence.
+ *
+ * <p>The event fires on every matching request, not once per route: a health check on a
+ * {@code permitAll()} route that reads the database emits it on every probe. That is the case an
+ * operator is meant to see; a deployment that has accepted it disables this event in its JFR
+ * settings.
  *
  * <p>A {@code LONG_RUNNING} route has no request session, so this event cannot observe it.
  *
@@ -55,8 +60,8 @@ import jdk.jfr.StackTrace;
  */
 @Name("eu.exeris.kernel.security.UnscopedRequestSession")
 @Label("Unscoped Request Session")
-@Description("A request's persistence session was opened for a storage context that declares no "
-        + "tenant; its connection is scoped to the system context")
+@Description("A permitAll route's persistence session was opened for a storage context that declares "
+        + "no tenant; its connection is scoped to the system context")
 @Category({"Exeris Kernel", "Security"})
 @StackTrace(false)
 public final class CommunityUnscopedRequestSessionEvent extends Event {
@@ -71,13 +76,6 @@ public final class CommunityUnscopedRequestSessionEvent extends Event {
     /** The request's path. */
     @Label("Path")
     public String path;
-
-    /**
-     * The resolved route requirement's kind, as its constant name; {@code "PERMIT_ALL"} for a
-     * public route, any other kind for an authenticated route that ended up without a tenant.
-     */
-    @Label("Route Kind")
-    public String routeKind;
 
     /** Whether the session was requested read-only, which the dispatcher derives from the method. */
     @Label("Read Only")
@@ -98,17 +96,15 @@ public final class CommunityUnscopedRequestSessionEvent extends Event {
      *
      * @param method    the request method name
      * @param path      the request path
-     * @param routeKind the resolved route requirement's kind name
      * @param readOnly  whether the session was requested read-only
      */
-    public static void emit(String method, String path, String routeKind, boolean readOnly) {
+    public static void emit(String method, String path, boolean readOnly) {
         if (!EVENT_TYPE.isEnabled()) {
             return;
         }
         CommunityUnscopedRequestSessionEvent event = new CommunityUnscopedRequestSessionEvent();
         event.method = method;
         event.path = path;
-        event.routeKind = routeKind;
         event.readOnly = readOnly;
         event.commit();
     }

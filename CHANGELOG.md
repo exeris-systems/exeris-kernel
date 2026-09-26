@@ -92,10 +92,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
   scoped to `ImmutableStorageContext.GLOBAL` with no exception and no record. The Community
   dispatcher now emits the JFR event `eu.exeris.kernel.security.UnscopedRequestSession` (`method`,
-  `path`, `routeKind`, `readOnly`) for every request whose persistence session was opened for a
-  context declaring no tenant, before the session is released — including an authenticated request
-  whose provider resolved the system context, so a tenant-less deployment reports every request
-  that reaches persistence. Behaviour is unchanged: no route starts failing, and
+  `path`, `readOnly`) for every `permitAll()` request whose persistence session was opened for a
+  context declaring no tenant, before the session is released. An authenticated route resolving a
+  tenant-less context is not reported. A health check on a `permitAll()` route that reads the
+  database emits the event on every probe; that is the case it exists to show, and it can be
+  disabled in the JFR settings. Behaviour is unchanged: no route starts failing, and
   `STORAGE_CONTEXT` stays unbound on a `permitAll()` route, so `KernelProviders.storageContext()`
   still raises `EX-SEC-2004` there. The Javadoc of `KernelProviders.storageContextOrSystem()`,
   `PersistenceEngine.openConnection()` and `RouteRequirement.permitAll()` now states the consequence

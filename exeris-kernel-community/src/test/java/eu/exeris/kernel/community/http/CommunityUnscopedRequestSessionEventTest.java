@@ -238,7 +238,6 @@ class CommunityUnscopedRequestSessionEventTest {
 
         assertThat(event.getString("method")).isEqualTo("GET");
         assertThat(event.getString("path")).isEqualTo("/public-read");
-        assertThat(event.getString("routeKind")).isEqualTo("PERMIT_ALL");
         assertThat(event.getBoolean("readOnly")).isTrue();
     }
 
@@ -314,25 +313,30 @@ class CommunityUnscopedRequestSessionEventTest {
 
         assertThat(interceptorSaw).containsExactly(ImmutableStorageContext.GLOBAL);
         assertThat(event.getString("path")).isEqualTo("/public-explicit-system");
-        assertThat(event.getString("routeKind")).isEqualTo("PERMIT_ALL");
     }
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    @DisplayName("an authenticated route whose identity resolves to the system context is recorded")
-    void authenticatedSystemScopeIsRecorded() throws Exception {
+    @DisplayName("an authenticated route whose provider resolves the system context is not recorded: "
+            + "that is a tenant-less deployment's own answer, not a public route")
+    void authenticatedSystemScopeIsSilent() throws Exception {
         SecurityInterceptor interceptor =
                 new SecurityInterceptor(new TenantProvider(ImmutableStorageContext.GLOBAL));
+        AtomicReference<HttpResponse> response = new AtomicReference<>();
 
-        RecordedEvent event = firstEventFrom(() -> dispatch(
+        List<String> paths = pathsReportedAround(() -> response.set(dispatch(
                 dispatcherFor(RouteRequirement.authenticated(), interceptor), "/authenticated-system",
-                List.of(new HttpHeader("Authorization", TOKEN)), readsThroughTheAmbientContext()));
+                List.of(new HttpHeader("Authorization", TOKEN)), readsThroughTheAmbientContext())));
 
-        assertThat(interceptorSaw).containsExactly(ImmutableStorageContext.GLOBAL);
-        assertThat(event.getString("path")).isEqualTo("/authenticated-system");
-        assertThat(event.getString("routeKind"))
-                .as("a tenant-less identity on an authenticated route, not a public one")
-                .isEqualTo("AUTHENTICATED");
+        assertThat(response.get().status())
+                .as("the authenticated handler must actually run, or its silence proves nothing")
+                .isEqualTo(HttpStatus.OK);
+        assertThat(interceptorSaw)
+                .as("its session was scoped to the system context, exactly as the control's")
+                .containsExactly(ImmutableStorageContext.GLOBAL, ImmutableStorageContext.GLOBAL);
+        assertThat(paths)
+                .as("only the permitAll control may emit")
+                .containsExactly(CONTROL_PATH);
     }
 
     @Test

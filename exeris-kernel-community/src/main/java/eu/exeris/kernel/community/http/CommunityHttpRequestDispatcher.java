@@ -281,7 +281,7 @@ final class CommunityHttpRequestDispatcher {
                                RouteRequirement requirement,
                                boolean longRunning) {
         boolean readOnly = isReadOnlyMethod(method);
-        RouteRequirement.Kind routeKind = requirement.kind();
+        boolean permitAll = requirement.kind() == RouteRequirement.Kind.PERMIT_ALL;
         PersistenceSessionBox box = longRunning
                 ? null
                 : new PersistenceSessionBox(
@@ -298,7 +298,7 @@ final class CommunityHttpRequestDispatcher {
                     exchange.respond(HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, request.version()));
                 }
             } finally {
-                completeRequest(request, box, startedAt, routeKind);
+                completeRequest(request, box, startedAt, permitAll);
             }
         };
 
@@ -337,21 +337,23 @@ final class CommunityHttpRequestDispatcher {
      * thread, and a JFR event straddling a blocking operation on one is a known crash shape in this
      * repository — and a handler declared {@code LONG_RUNNING} is by definition one that blocks.
      *
-     * <p>A {@code PROMPT} route whose session was acquired for a context declaring no tenant is
-     * reported before {@link PersistenceSessionBox#release()} runs, so a failure while returning the
-     * connection cannot suppress the report. The per-request cost of the check is one field read;
-     * the event's own enabled check runs only when the flag is set.
+     * <p>A {@code permitAll()} route whose session was acquired for a context declaring no tenant
+     * is reported before {@link PersistenceSessionBox#release()} runs, so a failure while returning
+     * the connection cannot suppress the report. Any other route kind is not: an authenticated route
+     * whose identity resolved to a tenant-less context is a deployment's own answer, not a public
+     * route reaching persistence unscoped. The per-request cost of the check is two boolean reads;
+     * the event's own enabled check runs only when both hold.
      */
     private static void completeRequest(HttpRequest request, PersistenceSessionBox box, long startedAt,
-                                        RouteRequirement.Kind routeKind) {
+                                        boolean permitAll) {
         if (box == null) {
             RouteExecutionEvent.emitLongRunning(
                     request.method().name(), request.path(), System.nanoTime() - startedAt);
         } else {
-            if (box.acquiredWithSystemScope()) {
+            boolean publicRouteWithoutTenant = permitAll && box.acquiredWithSystemScope();
+            if (publicRouteWithoutTenant) {
                 CommunityUnscopedRequestSessionEvent.emit(
-                        request.method().name(), request.path(), routeKind.name(),
-                        isReadOnlyMethod(request.method()));
+                        request.method().name(), request.path(), isReadOnlyMethod(request.method()));
             }
             box.release();
         }
