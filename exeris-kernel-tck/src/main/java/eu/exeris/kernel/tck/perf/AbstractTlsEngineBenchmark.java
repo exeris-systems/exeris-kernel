@@ -37,14 +37,9 @@ import java.util.concurrent.TimeUnit;
  *       pre-encrypted record. Same zero-copy constraint.</li>
  * </ol>
  *
- * <h2>SLO targets</h2>
- * <p>None of these figures are enforced by this class — conformance means reading the
- * printed report and comparing it to these targets by hand.
- * <ul>
- *   <li>wrap throughput: {@code ≥ 500 000 ops/s} at 1 KB record size.</li>
- *   <li>wrap + unwrap round-trip: {@code ≤ 5 µs} p99.</li>
- *   <li>Enterprise: {@code 0 B/op} heap allocation in steady state (post-handshake).</li>
- * </ul>
+ * <h2>Results</h2>
+ * <p>This template sets no performance target and asserts none: JMH reports what a binding
+ * measures, and nothing fails on the result. The kernel ships no binding of this template.
  *
  * <h2>Allocation profiling</h2>
  * <p>Run with {@code -prof gc} to read {@code norm.alloc}: TLS vectors are required to
@@ -155,7 +150,6 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
 
     // =========================================================================
     // Benchmark 1: wrap (encrypt) throughput
-    // SLO: ≥ 500 000 ops/s at 1 KB | Enterprise: 0 B/op
     // =========================================================================
 
     /**
@@ -179,7 +173,6 @@ public abstract class AbstractTlsEngineBenchmark extends AbstractExerisBenchmark
 
     // =========================================================================
     // Benchmark 2: wrap + unwrap round-trip latency
-    // SLO: p99 ≤ 5 µs
     // =========================================================================
 
     /**

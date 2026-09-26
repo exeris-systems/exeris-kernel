@@ -36,11 +36,9 @@ import java.util.concurrent.TimeUnit;
  *       with depth=1 — the dominant read pattern in Exeris domain graphs.</li>
  * </ol>
  *
- * <h2>SLO</h2>
- * <ul>
- *   <li>Session open/close: {@code ≥ 1 000 000 ops/s} (Enterprise slab pool, 0 B/op).</li>
- *   <li>Single-hop BFS p99: {@code ≤ 500 µs} on a cache-warm in-memory graph.</li>
- * </ul>
+ * <h2>Results</h2>
+ * <p>This template sets no performance target and asserts none: JMH reports what a binding
+ * measures, and nothing fails on the result. The kernel ships no binding of this template.
  *
  * <h2>Valhalla note</h2>
  * <p>{@link GraphTraversal} is a Valhalla-ready record (no identity ops).
@@ -138,13 +136,12 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
 
     // =========================================================================
     // Benchmark 1: Session open/close churn
-    // SLO: ≥ 1 000 000 ops/s | Enterprise: 0 B/op (slab pool pop/push)
     // =========================================================================
 
     /**
      * Hot-path benchmark — measures one {@code openSession()} / {@code close()} cycle.
      *
-     * <p>Enterprise: pop from Treiber-stack pool — O(1) CAS, required to be 0 B/op.
+     * <p>Enterprise: pop from Treiber-stack pool — O(1) CAS.
      * Community: allocates a heap object wrapping a connection-pool checkout.
      *
      * @param bh JMH blackhole — prevents the JIT from eliminating the session reference
@@ -154,7 +151,7 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
     @OutputTimeUnit(TimeUnit.SECONDS)
     public void sessionOpenClose(Blackhole bh) {
         // TWR ensures close() is called even if openSession() allocates a wrapper.
-        // Enterprise: pop from Treiber-stack pool — O(1) CAS, 0 B/op.
+        // Enterprise: pop from Treiber-stack pool — O(1) CAS.
         // Community:  new heap object wrapping a connection-pool checkout.
         try (GraphSession session = engine.openSession()) {
             bh.consume(session);
@@ -163,7 +160,6 @@ public abstract class AbstractGraphEngineBenchmark extends AbstractExerisBenchma
 
     // =========================================================================
     // Benchmark 2: Single-hop BFS latency
-    // SLO: p99 ≤ 500 µs on in-memory/cache-warm graph
     // =========================================================================
 
     /**

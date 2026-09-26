@@ -32,9 +32,9 @@ logic.
   supports these drivers against a documented `< 20x` contract, met in the faster regime.
 - **Unified MATCH DSL:** A protocol-blind query surface — the same `GraphSession` calls render to plain SQL
   (PostgreSQL, via recursive CTEs) or Cypher (Neo4j / Memgraph / FalkorDB) depending on the active
-  `GraphDialect` — the same business code works on both. A separate `MatchDslTranspiler` component targets
-  literal SQL:2023 PGQ (`GRAPH_TABLE`) syntax but is not wired into that live path today (see Core
-  Philosophy §1).
+  `GraphDialect` — the same business code works on both. A separate Core class, `MatchDslTranspiler`,
+  dispatches a traversal to those same `GraphDialect` builders and writes no syntax of its own; no session
+  or backend calls it (see Core Philosophy §1).
 - **No-Arena Enforcement:** All graph-related native memory is carved exclusively from L0 `MemoryAllocator` slabs.
   Drivers are prohibited from opening independent FFM `Arena` instances, ensuring full visibility to
   `GlobalMemoryArbiter` and JFR Telemetry.
@@ -132,10 +132,10 @@ in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
 
 **What Graph Core DOES:**
 
-1. Discover graph metadata (`GraphMetadataEngine`). `MatchDslTranspiler` — the Core class documented as
-   transpiling DSL queries into native SQL/PGQ or Cypher strings — exists and is unit-tested but is not
-   instantiated anywhere in the live session path today: the Community backends call `GraphDialect`
-   methods (`buildMatchQuery`, `buildMultiHopQuery`) directly (see Core Philosophy §1 above).
+1. Discover graph metadata (`GraphMetadataEngine`). `MatchDslTranspiler` returns the query string the
+   bound `GraphDialect` builds for a traversal or shortest-path request, and only tests call it: no
+   session or backend instantiates it, and the Community backends call `GraphDialect` methods
+   (`buildMatchQuery`, `buildMultiHopQuery`) themselves (see Core Philosophy §1 above).
 2. Manage the `GraphSyncService` for cross-subsystem consistency.
 3. Execute shortest-path algorithms (Dijkstra, Yen's k-shortest) via the pluggable `PathFinder` SPI.
    BFS traversal (`traverseBreadthFirst`, `streamBfsJson`) does not go through `PathFinder` — it is
