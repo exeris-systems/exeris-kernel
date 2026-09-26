@@ -87,6 +87,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A WebSocket handler's `receive()` returns `null` at the peer's close frame, not when the peer
+  drops the socket.** `CommunityWebSocketExchange` echoed the close and marked the exchange closed,
+  then read the socket once more before returning, so the handler stayed blocked in `receive()`
+  until the peer dropped the TCP connection. RFC 6455 §7.1.1 has the server drop it first, so a
+  client that follows it waited on a connection the server held open, and the handler's virtual
+  thread and the connection were held until the client's own timeout ended both. `receive()` now
+  returns `null` once the close frame is processed, and the engine closes the connection when the
+  handler returns.
+
 - **An event-bus failure carries the code of what failed, not queue overflow.** Every
   `EventBusException` built through a message constructor carried `EX-EVENT-6002`, the queue
   overflow code, without the `[eventType, queueDepth, queueCapacity]` layout that code documents, so
