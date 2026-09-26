@@ -298,6 +298,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   suppression is cheaper for a future reader than a false positive resolved in a web UI where the
   code is not.
 
+- **`KernelProviders.MEMORY_ALLOCATOR` is bound inside an HTTP handler.** The kernel binds it around
+  the boot callback, and the thread a request or a stream runs on inherits no `ScopedValue` binding,
+  so a handler resolving it threw `NoSuchElementException` — which a handler classifying failures by
+  exception type reported as a `400`. `CommunityHttpRequestDispatcher` now rebinds it per request and
+  per stream, beside the request-body decoder registry. An application that bound an allocator per
+  request to work around this can remove that binding.
+
 ### Fixed — verification
 
 - **The HTTP boot fixture had never carried a request body.** Every case sent a bodyless `GET`, so

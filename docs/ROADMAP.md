@@ -1704,14 +1704,17 @@ See also: ADR-012 (isolation model); `exeris-sdk/docs/rfc/RFC-2026-06-24-univers
 
 **Status (v0.12): re-measured, and the fixture is complete.** A later claim held that the fixture binds
 `HTTP_SERVER_HANDLER` only, so `MEMORY_ALLOCATOR` is unbound at request time and every write over HTTP
-answers `400`. It does not reproduce. Driven through the fixture over a socket, `POST`, `PUT`, `PATCH`
-and `DELETE` each answer `200`, the body arrives whole, and both `KernelProviders.MEMORY_ALLOCATOR` and
-`HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` report bound *inside the handler* — which is
-the scope the v0.10 fix above rebinds them into. The gap was that nothing asserted it: the fixture's
-only integration test covered `start()`, `close()` and the pre-start guards, so no test in the
-repository had ever sent a body through it. `KernelBootstrapHttpEngineFixtureIntegrationTest` now
-parameterises the four write methods and pins all four facts; mutation-checked by removing the
-dispatcher's per-request rebind, which reddens every case.
+answers `400`. The attribution to the fixture does not reproduce; the unbound allocator was real on
+0.11.0 and is fixed in 0.12. Driven through the fixture over a socket, `POST`, `PUT`, `PATCH` and
+`DELETE` each answer `200`, the body arrives whole, and both `KernelProviders.MEMORY_ALLOCATOR` and
+`HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` report bound *inside the handler*. The v0.10
+fix above rebinds the decoder registry per request; `MEMORY_ALLOCATOR` joined that per-request rebind
+in 0.12, in `CommunityHttpRequestDispatcher`, which at 0.11.0 did not bind it at all. The remaining
+gap was that nothing asserted it: the fixture's only integration test covered `start()`, `close()`
+and the pre-start guards, so no test in the repository had ever sent a body through it.
+`KernelBootstrapHttpEngineFixtureIntegrationTest` now parameterises the four write methods and pins
+all four facts; mutation-checked by removing the dispatcher's per-request rebind, which reddens
+every case.
 
 **1.0 disposition:** **1.0-RECOMMENDED** — both are small, concrete kernel fixes that block the Entity-First "a generated app runs over a real boot" demonstration end-to-end (by-id CRUD + `@Action`s + writes). Path-parameter routing especially is load-bearing for the entire generated CRUD table. Targetable in v0.10 alongside the SSE boot-path work.
 
