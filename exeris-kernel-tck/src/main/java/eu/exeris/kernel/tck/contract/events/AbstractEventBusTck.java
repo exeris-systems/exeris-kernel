@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * TCK: Abstract base for {@link EventBus} contract verification.
@@ -42,17 +43,40 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * <p>The golden test of this suite is the <b>RAII payload close audit</b> and the
  * <b>ScopedValue propagation</b> verification. These two tests together ensure that
  * no slab memory is leaked and that cross-cutting context (tenant, trace ID) propagates
- * correctly to all event handlers without ThreadLocal.
+ * correctly to all event handlers of a bus that is not brokered, without ThreadLocal.
  *
  * <h2>Verified Constraints</h2>
+ * <p>{@link EventBus#isBrokered()} selects which half of the contract a bus keeps, and this suite
+ * reads it from the bus under test rather than from a hook of its own. A case that holds only for a
+ * bus that is not brokered opens with {@code assumeFalse(bus.isBrokered(), reason)}, so on a
+ * brokered bus it is reported as skipped, never as passed.
+ *
+ * <p>On every bus:
+ * <ol>
+ *   <li>{@code subscribe()} returns a valid, non-{@code INVALID} token, and {@code unsubscribe()}
+ *       does not throw for either a live token or {@link SubscriptionToken#INVALID}.</li>
+ *   <li>publish() with N=0 handlers calls payload.close() immediately (no leak).</li>
+ *   <li>publishAndAwait() with N=3 handlers that each close their payload: when the call returns,
+ *       the payload's close-call count equals one plus its retain-call count — every reference
+ *       the bus took is released, and the caller's own exactly once. A bus that fans the caller's
+ *       payload out retains it twice and sees three closes; a brokered bus retains nothing and
+ *       closes it once.</li>
+ *   <li>A type the registry does not know. {@code subscribe()} to it either returns a valid
+ *       token or refuses with {@value KernelErrorCodes#EX_EVENT_6011} and {@code rawArgs
+ *       [eventType]}. {@code publish()} and {@code publishAndAwait()} of its ordinal either accept
+ *       the event or refuse it with {@value KernelErrorCodes#EX_EVENT_6009} and {@code rawArgs
+ *       [eventTypeOrdinal, String reason]}, and release the payload exactly once either way. The
+ *       SPI promises the shape of a refusal, not that there is one: {@code EventBus} documents
+ *       rejecting an unregistered subscription as the in-memory binding's behaviour, and names no
+ *       {@code reason} value a binding must use.</li>
+ * </ol>
+ *
+ * <p>On a bus that is not brokered:
  * <ol>
  *   <li>{@code publish()} dispatches purely by the descriptor's {@code eventTypeOrdinal} — the
  *       descriptors this suite publishes carry no event-type name, and the handler registered
  *       against that ordinal's type still receives the event. Algorithmic complexity (O(1), no
  *       {@code String} comparison) is an SPI contract claim this suite does not measure.</li>
- *   <li>{@code subscribe()} returns a valid, non-{@code INVALID} token, and {@code unsubscribe()}
- *       does not throw for either a live token or {@link SubscriptionToken#INVALID}.</li>
- *   <li>publish() with N=0 handlers calls payload.close() immediately (no leak).</li>
  *   <li>publish() with N=1 handler: handler receives exactly 1 payload, closes it.</li>
  *   <li>publish() with N=3 handlers: retain() called (N-1)=2 times, total refCount=3,
  *       every handler closes — refCount reaches 0.</li>
@@ -70,14 +94,6 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  *       failedHandlerCount]}, no cause, and each handler's exception as a suppressed exception;
  *       every payload reference is still released. The suppressed exceptions are compared as a
  *       set, since the bus promises no delivery order.</li>
- *   <li>A type the registry does not know. {@code subscribe()} to it either returns a valid
- *       token or refuses with {@value KernelErrorCodes#EX_EVENT_6011} and {@code rawArgs
- *       [eventType]}. {@code publish()} and {@code publishAndAwait()} of its ordinal either accept
- *       the event or refuse it with {@value KernelErrorCodes#EX_EVENT_6009} and {@code rawArgs
- *       [eventTypeOrdinal, String reason]}, and release the payload exactly once either way. The
- *       SPI promises the shape of a refusal, not that there is one: {@code EventBus} documents
- *       rejecting an unregistered subscription as the in-memory binding's behaviour, and names no
- *       {@code reason} value a binding must use.</li>
  * </ol>
  *
  * <h2>No-Ordering by Design (ADR-049)</h2>
@@ -125,6 +141,14 @@ public abstract class AbstractEventBusTck {
     private static final String TYPE_ORDER_PLACED   = "OrderPlaced";
     private static final int    ORDINAL_NEVER_REGISTERED = 199;
     private static final String TYPE_NEVER_REGISTERED    = "TckNeverRegistered";
+
+    /** Why a case asserting in-process fan-out does not apply to a brokered bus. */
+    private static final String BROKERED_FAN_OUT =
+            "a brokered bus copies the payload onto the wire and fans out on consume, "
+            + "after the publishing call has returned";
+    /** Why a case asserting publishAndAwait's wait on handlers does not apply to a brokered bus. */
+    private static final String BROKERED_AWAIT =
+            "a brokered bus's publishAndAwait awaits the broker's acknowledgement, not its handlers";
 
     private EventEngine engine;
 
@@ -238,6 +262,7 @@ public abstract class AbstractEventBusTck {
         @DisplayName("N=1 handler: handler receives payload, close() reaches refCount=0")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void singleHandlerPayloadClosed() throws Exception {
+            assumeFalse(engine.bus().isBrokered(), BROKERED_FAN_OUT);
             AtomicInteger closeCalls = new AtomicInteger(0);
             CountDownLatch handled = new CountDownLatch(1);
 
@@ -261,6 +286,7 @@ public abstract class AbstractEventBusTck {
         @DisplayName("N=3 handlers broadcast: retain() called (N-1)=2 times, all handlers close()")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void broadcastThreeHandlersAllClose() throws Exception {
+            assumeFalse(engine.bus().isBrokered(), BROKERED_FAN_OUT);
             AtomicInteger closeCalls = new AtomicInteger(0);
             CountDownLatch allHandled = new CountDownLatch(3);
             CountDownLatch allClosed = new CountDownLatch(3);
@@ -291,6 +317,34 @@ public abstract class AbstractEventBusTck {
                     .as("All 3 handlers must call close() — total close calls = 3")
                     .isEqualTo(3);
         }
+
+        @Test
+        @DisplayName("publishAndAwait() with N=3 handlers: on return, close() calls = 1 + retain() calls")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void publishAndAwaitReleasesEveryReferenceBeforeReturning() throws Exception {
+            EventBus bus = engine.bus();
+            for (int i = 0; i < 3; i++) {
+                bus.subscribe(TYPE_USER_CREATED, (d, payload) -> {
+                    try (payload) {  // NOPMD EmptyControlStatement - closing the payload IS the contract
+                        // handler work is intentionally empty
+                    }
+                });
+            }
+            AtomicInteger closeCalls = new AtomicInteger(0);
+            TrackingPayload payload = new TrackingPayload(closeCalls);
+
+            bus.publishAndAwait(descriptor(ORDINAL_USER_CREATED), payload);
+
+            // Whichever half of the contract the bus keeps, it has finished with the caller's
+            // reference by the time publishAndAwait returns: a bus that fans out in process has
+            // run every handler, and a brokered bus has released the reference it copied from.
+            // Each retain() adds a reference, and each reference is closed exactly once.
+            assertThat(closeCalls.get())
+                    .as("publishAndAwait() MUST return only after every payload reference is "
+                        + "released — close() calls = 1 (the caller's reference) + retain() calls "
+                        + "(%d)", payload.retainCalls())
+                    .isEqualTo(1 + payload.retainCalls());
+        }
     }
 
     // =========================================================================
@@ -305,6 +359,8 @@ public abstract class AbstractEventBusTck {
         @DisplayName("GOLDEN: Handler reads ScopedValue bound in structured publish scope (JEP 506)")
         @Timeout(value = 5, unit = TimeUnit.SECONDS)
         void handlerInheritsPublishScopeScopedValue() throws Exception {
+            assumeFalse(engine.bus().isBrokered(),
+                    "a brokered bus's handlers observe none of the publisher's ScopedValue bindings");
             // A custom ScopedValue, created here and unknown to the kernel — that is the point of
             // the case, not an incidental detail. A binding can only be carried onto another thread
             // by naming it, so an implementation that dispatches handlers elsewhere cannot deliver
@@ -361,6 +417,7 @@ public abstract class AbstractEventBusTck {
     @DisplayName("publishAndAwait() blocks until all handlers have completed")
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void publishAndAwaitBlocksUntilAllHandlersComplete() throws Exception {
+        assumeFalse(engine.bus().isBrokered(), BROKERED_AWAIT);
         List<String> log = new CopyOnWriteArrayList<>();
 
         engine.bus().subscribe(TYPE_ORDER_PLACED, (d, payload) -> {
@@ -388,6 +445,7 @@ public abstract class AbstractEventBusTck {
     @Timeout(value = 10, unit = TimeUnit.SECONDS)
     void publishAndAwaitReportsEveryHandlerFailureAfterAllHandlersRan() {
         EventBus bus = engine.bus();
+        assumeFalse(bus.isBrokered(), BROKERED_AWAIT);
         Set<String> ran = ConcurrentHashMap.newKeySet();
         RuntimeException firstFailure  = new IllegalStateException("TCK handler failure A");
         RuntimeException secondFailure = new IllegalStateException("TCK handler failure B");
