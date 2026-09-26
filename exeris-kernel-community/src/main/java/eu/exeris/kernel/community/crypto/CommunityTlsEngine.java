@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.tls.OffHeapTlsEngine;
+import eu.exeris.kernel.core.crypto.tls.TlsHandshakeFailureCodes;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException;
@@ -47,7 +48,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 	"PMD.ExceptionAsFlowControl",
 	"PMD.UseTryWithResources"
 })
-public final class CommunityTlsEngine implements TlsEngine {
+public final class CommunityTlsEngine implements TlsEngine, TlsHandshakeFailureCodes {
 
 	private static final int SSL_SUCCESS = 1;
 
@@ -197,6 +198,26 @@ public final class CommunityTlsEngine implements TlsEngine {
 	public TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
 		ensureBound();
 		return delegate.wrap(plaintext, ciphertext);
+	}
+
+	/**
+	 * Forwards to the wrapped {@link OffHeapTlsEngine}.
+	 *
+	 * @return the {@code SSL_get_error} code of the failed handshake step, {@code 0} until one fails
+	 */
+	@Override
+	public int handshakeFailureSslError() {
+		return delegate.handshakeFailureSslError();
+	}
+
+	/**
+	 * Forwards to the wrapped {@link OffHeapTlsEngine}.
+	 *
+	 * @return the {@code X509_V_*} verification result, or {@code -1} when there is none
+	 */
+	@Override
+	public long peerVerificationResult() {
+		return delegate.peerVerificationResult();
 	}
 
 	/**

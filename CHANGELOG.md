@@ -114,6 +114,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `SERVER`, and the client engine's is `CLIENT` with port `0` and no certificate material, whatever
   `HttpMode` says; only `DISABLED` carries over.
 
+- **A failed TLS handshake reaches the caller with its cause.** A Community stream whose handshake
+  failed closed itself, and the caller then saw `IllegalStateException` (`stream closed`) from a
+  write, or end-of-stream or `IllegalStateException` from a read, depending on which thread had
+  driven the failed step; the reactor drives most of them. The stream now records the failure's
+  codes under its TLS lock before it closes, and every later `read`, `write` or `queueWrite` throws
+  `TlsHandshakeException` (`EX-NET-2001`), built on the calling thread: detail
+  `peer certificate verification failed` with the `X509_V_*` code when the server's certificate
+  failed verification, otherwise `handshake failed` with the `SSL_get_error` code. No handshake step
+  reaches the engine once a failure is recorded.
+
 - **A failed TLS handshake no longer takes down healthy connections served by the same thread.**
   OpenSSL keeps its error queue per OS thread, and on the 3.x line `SSL_get_error` reports
   `SSL_ERROR_SSL` whenever that queue holds an entry, whichever connection left it. Nothing emptied

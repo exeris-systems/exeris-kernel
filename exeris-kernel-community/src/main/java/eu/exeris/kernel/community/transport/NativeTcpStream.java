@@ -12,6 +12,7 @@ import eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent;
 import eu.exeris.kernel.core.transport.syscall.SyscallHandles;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
+import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -69,6 +70,12 @@ import java.util.concurrent.locks.LockSupport;
  * if a different thread still holds that slot after {@link #close()}'s bounded wait, releasing the
  * queued buffers is deferred to that thread's own subsequent call, not performed by this one.
  *
+ * <h2>TLS handshake failure</h2>
+ * <p>A TLS handshake failure is recorded under the TLS lock by whichever thread observes it, before
+ * the stream closes; every path that then reports the stream closed or at end-of-stream throws the
+ * recorded failure instead, as a {@link TlsHandshakeException} ({@code EX-NET-2001}) built on the
+ * throwing thread. No handshake step runs after a failure is recorded.
+ *
  * @since 0.5
  */
 // QA-016 extracted 3 seams (PlainSocketIo, ConsumerGate, PendingWrite); residual TLS handshake state +
@@ -81,13 +88,13 @@ import java.util.concurrent.locks.LockSupport;
     "PMD.CloseResource",                       // LoanedBuffer ownership transfers via retain (PERF-062).
     "PMD.AvoidBranchingStatementAsLastInLoop", // continue-then-return idiom in advanceInbound state machine.
     "PMD.AvoidCatchingGenericException",       // best-effort cleanup paths must absorb RuntimeException.
-    "PMD.NullAssignment"                       // currentInbound reset to null after close() to release reference.
+    "PMD.NullAssignment",                      // currentInbound reset to null after close() to release reference.
+    "PMD.CouplingBetweenObjects"               // the TLS failure record and the handshake backoff seam.
 })
 final class NativeTcpStream implements TransportStream {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpStream.class.getName());
     private static final String STREAM_CLOSED_MESSAGE = "Stream is closed";
-    private static final long HANDSHAKE_BACKOFF_NANOS = 250_000L;
     private static final long HANDSHAKE_TIMEOUT_MILLIS = 10_000L;
     private static final long REGISTRATION_BACKOFF_NANOS = 100_000L;
     private static final long REGISTRATION_TIMEOUT_MILLIS = 5_000L;
@@ -125,6 +132,7 @@ final class NativeTcpStream implements TransportStream {
     private final NativeTcpStreamPlainSocketIo.Backend plainSocketBackend;
     private final NativeTcpStreamPendingWrite.TlsContext pendingWriteTlsContext;
     private final NativeTcpStreamPendingWrite.TryWriter pendingWriteTryWriter;
+    private final NativeTcpHandshakeBackoff handshakeBackoff;
 
     // PERF: fd-owner BIO unwrap pulls ciphertext directly from the kernel socket and never
     // inspects its {@code ciphertext} parameter (OffHeapTlsEngine#unwrap contract). A single
@@ -164,6 +172,10 @@ final class NativeTcpStream implements TransportStream {
     private volatile long registrationReadyNanos;
     private final Object tlsLock = new Object();
     private final StreamRuntimeState runtime = new StreamRuntimeState();
+    // Written once under tlsLock by the thread whose handshake step returned CLOSED, before it closes
+    // the stream; every later closed or end-of-stream report throws it instead.
+    @SuppressWarnings("java:S3077") // an immutable record, published once
+    private volatile NativeTcpTlsFailure recordedTlsFailure;
     
     // Phase 1B: Queue depth tracking for telemetry and backpressure. Read/written only on the
     // reactor thread (offerIngress) and feeds an advisory JFR "trend" label only — not shared, so
@@ -201,6 +213,22 @@ final class NativeTcpStream implements TransportStream {
                     Runnable writeInterestCallback,
                     Runnable closeCallback,
                     SyscallHandles socketHandles) {
+        this(engineName, streamId, channel, connection, allocator, tlsEngine,
+                writeInterestCallback, closeCallback, socketHandles, NativeTcpHandshakeBackoff.PARK);
+    }
+
+    @SuppressWarnings("PMD.ExcessiveParameterList") // the canonical constructor plus the backoff seam
+    /* default */ NativeTcpStream(String engineName,
+                    long streamId,
+                    SocketChannel channel,
+                    NativeTcpConnection connection,
+                    MemoryAllocator allocator,
+                    TlsEngine tlsEngine,
+                    Runnable writeInterestCallback,
+                    Runnable closeCallback,
+                    SyscallHandles socketHandles,
+                    NativeTcpHandshakeBackoff handshakeBackoff) {
+        this.handshakeBackoff = Objects.requireNonNull(handshakeBackoff, "handshakeBackoff must not be null");
         this.engineName = Objects.requireNonNull(engineName, "engineName must not be null");
         this.streamId = streamId;
         this.channel = Objects.requireNonNull(channel, "channel must not be null");
@@ -249,6 +277,8 @@ final class NativeTcpStream implements TransportStream {
      *                                   exceeds its capacity
      * @throws IllegalStateException    if this stream has been closed and the remote side did not
      *                                   close first
+     * @throws TlsHandshakeException    if the TLS handshake failed ({@code EX-NET-2001}), including a
+     *                                   server certificate that failed verification
      * @throws TransportException       if the TLS handshake does not complete within its timeout
      *                                   ({@code EX-NET-4003})
      */
@@ -268,6 +298,7 @@ final class NativeTcpStream implements TransportStream {
         Thread currentThread = Thread.currentThread();
         NativeTcpStreamConsumerGate.acquireSingleConsumer(runtime.inboundConsumer(), currentThread, "inbound");
         try {
+            throwRecordedTlsFailure();
             if (closed.get()) {
                 return closedReadOutcome();
             }
@@ -358,6 +389,8 @@ final class NativeTcpStream implements TransportStream {
      * @throws IllegalArgumentException if {@code source} is {@code null} or {@code length} is out
      *                                   of range for it
      * @throws IllegalStateException    if this stream has been closed
+     * @throws TlsHandshakeException    if the TLS handshake failed ({@code EX-NET-2001}), including a
+     *                                   server certificate that failed verification
      * @throws TransportException       if an unrecoverable send failure occurs ({@code EX-NET-4002})
      */
     @Override
@@ -387,7 +420,7 @@ final class NativeTcpStream implements TransportStream {
             return;
         }
 
-        ensureTlsReady(true);
+        requireTlsReady();
         try (LoanedBuffer plain = allocator.allocateNetwork(length)) {
             MemorySegment.copy(source, 0, plain.segment(), 0, length);
             plain.setSize(length);
@@ -422,6 +455,7 @@ final class NativeTcpStream implements TransportStream {
         }
         lastActivityNanos = System.nanoTime();
         if (closeRequested.get() || closed.get()) {
+            throwRecordedTlsFailure();
             throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
         }
         if (length == 0) {
@@ -429,7 +463,7 @@ final class NativeTcpStream implements TransportStream {
             return;
         }
 
-        ensureTlsReady(true);
+        requireTlsReady();
         Thread observedConsumer = runtime.outboundConsumer().get();
         NativeTcpStreamPendingWrite pendingWrite = newPendingWrite(buffer, length);
         boolean queueWasEmpty = enqueuePendingWrite(pendingWrite, false);
@@ -1039,8 +1073,28 @@ final class NativeTcpStream implements TransportStream {
 
     private void ensureOpen() {
         if (closeRequested.get() || closed.get()) {
+            throwRecordedTlsFailure();
             throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
         }
+    }
+
+    /** Completes the handshake for a sender; {@link #ensureTlsReady} throws a recorded failure itself. */
+    private void requireTlsReady() {
+        if (!ensureTlsReady(true)) {
+            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+        }
+    }
+
+    /** Throws the recorded handshake failure, built on this thread, if there is one. */
+    private void throwRecordedTlsFailure() {
+        NativeTcpTlsFailure failure = recordedTlsFailure;
+        if (failure != null) {
+            throw failure.toException();
+        }
+    }
+
+    /* default */ NativeTcpTlsFailure recordedTlsFailure() {
+        return recordedTlsFailure;
     }
 
     private void ensureTlsBound() {
@@ -1068,9 +1122,15 @@ final class NativeTcpStream implements TransportStream {
         if (markTlsReadyIfHandshakeComplete()) {
             return true;
         }
+        boolean ready = driveHandshake(blocking);
+        if (!ready && blocking) {
+            throwRecordedTlsFailure();
+        }
+        return ready;
+    }
 
+    private boolean driveHandshake(boolean blocking) {
         long deadline = handshakeDeadlineNanos();
-
         while (!closed.get()) {
             TlsStatus status = executeHandshakeStep();
             if (status == TlsStatus.FINISHED) {
@@ -1090,20 +1150,31 @@ final class NativeTcpStream implements TransportStream {
             if (isHandshakeTimedOut(deadline)) {
                 throw TransportException.receiveTimeout(engineName, HANDSHAKE_TIMEOUT_MILLIS);
             }
-            backoffHandshake();
+            handshakeBackoff.pause();
         }
         return false;
     }
 
+    /**
+     * One handshake step under the TLS lock. A step that returns {@code CLOSED} records the engine's
+     * failure codes before the lock is released, so no thread can see the stream closed without the
+     * reason; once a failure is recorded, no further step reaches the engine.
+     */
     private TlsStatus executeHandshakeStep() {
         try (LoanedBuffer outbound = allocator.allocateInfrastructure(1)) {
             synchronized (tlsLock) {
+                if (recordedTlsFailure != null) {
+                    return TlsStatus.CLOSED;
+                }
                 if (markTlsReadyIfHandshakeComplete()) {
                     return TlsStatus.FINISHED;
                 }
                 TlsStatus status = tlsEngine.beginHandshake(outbound);
                 if (status == TlsStatus.FINISHED || markTlsReadyIfHandshakeComplete()) {
                     return TlsStatus.FINISHED;
+                }
+                if (status == TlsStatus.CLOSED) {
+                    recordedTlsFailure = NativeTcpTlsFailure.from(tlsEngine);
                 }
                 return status;
             }
@@ -1126,13 +1197,10 @@ final class NativeTcpStream implements TransportStream {
         return System.nanoTime() >= deadline;
     }
 
-    private static void backoffHandshake() {
-        LockSupport.parkNanos(HANDSHAKE_BACKOFF_NANOS);
-    }
-
     private int closedReadOutcome() {
         closeCurrentInbound();
         drainInboundQueue();
+        throwRecordedTlsFailure();
         if (remoteClosed.get()) {
             return -1;
         }
