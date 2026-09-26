@@ -50,10 +50,13 @@ import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
  * scoped slot that was bound by the kernel bootstrapper.
  *
  * <h2>Context Propagation Model (JEP 506)</h2>
- * <p>{@code ScopedValue} slots are inherited by every {@link Thread#startVirtualThread(Runnable) virtual thread}
- * spawned within the binding scope. This means a single {@code ScopedValue.where(...).run(...)}
- * in {@code KernelBootstrap} covers the entire lifetime of the kernel — thousands of virtual
- * threads all read the same provider instances with zero synchronisation overhead.
+ * <p>A binding is visible to code running inside its scope on the thread that established it, and
+ * to every subtask forked inside that scope through {@code StructuredTaskScope}. A thread started
+ * any other way ({@link Thread#ofVirtual()}, {@link Thread#ofPlatform()},
+ * {@link Thread#startVirtualThread(Runnable)}) inherits no binding, wherever it is started. A
+ * driver may run request and stream handlers on threads it starts that way, so a handler relies
+ * only on the bindings the driver documents for that call, and receives any provider it needs
+ * through its constructor, read where the application composes the handler inside the boot scope.
  *
  * <h2>Binding (bootstrap side)</h2>
  * {@snippet lang="java" :
@@ -79,9 +82,9 @@ import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
  * <p><b>Allocation:</b> zero-alloc on hot path — reading a slot ({@code get()} or
  * {@code orElse}) allocates nothing; the {@link Optional}-returning accessors on this class
  * allocate one {@code Optional} per call when the slot they read is bound.
- * <p><b>Thread confinement:</b> any thread — every slot is readable from any thread executing
- * inside the binding scope, including the virtual threads that inherit the binding; outside
- * that scope every slot is unbound.
+ * <p><b>Thread confinement:</b> any thread — every slot is readable from code executing inside the
+ * binding scope, on the thread that established it or in a subtask forked within it; a thread
+ * started any other way, like code outside that scope, sees every slot unbound.
  * <p><b>Ownership:</b> the kernel bootstrapper owns each bound provider, engine and context,
  * and their lifecycle; a reader borrows the reference for the duration of the binding scope
  * and neither closes nor restarts it. A resource obtained <em>from</em> a bound instance — a
@@ -104,9 +107,8 @@ public final class KernelProviders {
      * The active {@link ConfigProvider} (bound once during L0 bootstrap, before any other slot).
      *
      * <p>Bound by the kernel bootstrapper in {@code exeris-kernel-core} immediately
-     * after {@code ServiceLoader} selects the highest-priority {@link ConfigProvider}.
-     * All virtual threads spawned within the kernel scope inherit this slot
-     * automatically — zero constructor injection needed.
+     * after {@code ServiceLoader} selects the highest-priority {@link ConfigProvider}, for the
+     * kernel's lifetime; the class documentation says which threads see it.
      *
      * {@snippet lang="java" :
      * ConfigProvider.KernelSettings settings =
@@ -132,8 +134,8 @@ public final class KernelProviders {
     /**
      * The kernel-wide {@link MemoryAllocator} (created from {@link #MEMORY_PROVIDER}).
      *
-     * <p>This is the primary slot for all allocation calls. It is populated once
-     * during bootstrap and inherited by every virtual thread in the kernel scope.
+     * <p>This is the primary slot for all allocation calls. Bound once during bootstrap for the
+     * kernel's lifetime; the class documentation says which threads see it.
      *
      * {@snippet lang="java" :
      * try (LoanedBuffer buf = KernelProviders.MEMORY_ALLOCATOR.get()
@@ -221,8 +223,8 @@ public final class KernelProviders {
     /**
      * The kernel-wide {@link PersistenceEngine} (created from {@link #PERSISTENCE_PROVIDER}).
      *
-     * <p>This is the primary slot for all persistence operations. It is populated once
-     * during bootstrap and inherited by every virtual thread in the kernel scope.
+     * <p>This is the primary slot for all persistence operations. Bound once during bootstrap for
+     * the kernel's lifetime; the class documentation says which threads see it.
      *
      * {@snippet lang="java" :
      * try (PersistenceConnection conn = KernelProviders.persistenceEngine().openConnection()) {
@@ -260,10 +262,9 @@ public final class KernelProviders {
      * The kernel-wide {@link EventEngine} (created from the selected
      * {@link eu.exeris.kernel.spi.events.EventProvider}).
      *
-     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution.
-     * All subsystems read this slot to publish and subscribe to kernel events.
-     * The slot is inherited automatically by every virtual thread spawned within the
-     * kernel scope — zero constructor coupling, zero static singletons.
+     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution, for the
+     * kernel's lifetime; the class documentation says which threads see it. Subsystems read this
+     * slot to publish and subscribe to kernel events.
      *
      * <p>Publishing:
      * {@snippet lang="java" :
@@ -324,9 +325,8 @@ public final class KernelProviders {
      * <b>producer</b> — the generated {@code *EventPublisher} — via
      * {@link #eventPayloadCodecRegistry()} (ADR-036 "site B"); {@code EventBus} /
      * {@code EventEngine} carry no codec knowledge. The slot is <b>optional</b>: a
-     * kernel without a codec binding still bootstraps events. Inherited by every
-     * virtual thread in the kernel scope (the publish-path threads where the generated
-     * publisher runs).
+     * kernel without a codec binding still bootstraps events. When bound, it holds for the
+     * kernel's lifetime; the class documentation says which threads see it.
      *
      * @apiNote A producer treats an empty {@link Optional} as "no codec configured" and falls
      *          back to {@link eu.exeris.kernel.spi.events.EventPayload#empty()}.
@@ -357,10 +357,9 @@ public final class KernelProviders {
     /**
      * The kernel-wide {@link FlowEngine} (created from the selected {@link FlowProvider}).
      *
-     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution.
-     * All subsystems that trigger or inspect flows read this slot.
-     * The slot is inherited automatically by every virtual thread spawned within the
-     * kernel scope — zero constructor coupling, zero static singletons.
+     * <p>Bound once during bootstrap after {@link java.util.ServiceLoader} resolution, for the
+     * kernel's lifetime; the class documentation says which threads see it. Subsystems that
+     * trigger or inspect flows read this slot.
      *
      * <p>Scheduling a flow:
      * {@snippet lang="java" :
@@ -446,8 +445,8 @@ public final class KernelProviders {
     /**
      * The kernel-wide {@link TransportEngine} (created from {@link #TRANSPORT_PROVIDER}).
      *
-     * <p>This is the primary slot for all transport operations. It is populated once
-     * during bootstrap and inherited by every virtual thread in the kernel scope.
+     * <p>This is the primary slot for all transport operations. Bound once during bootstrap for the
+     * kernel's lifetime; the class documentation says which threads see it.
      *
      * {@snippet lang="java" :
      * TransportEngine engine = KernelProviders.TRANSPORT_ENGINE.get();
@@ -475,8 +474,8 @@ public final class KernelProviders {
     /**
      * The kernel-wide {@link GraphEngine} (created from {@link #GRAPH_PROVIDER}).
      *
-     * <p>This is the primary slot for all graph operations. It is populated once
-     * during bootstrap and inherited by every virtual thread in the kernel scope.
+     * <p>This is the primary slot for all graph operations. Bound once during bootstrap for the
+     * kernel's lifetime; the class documentation says which threads see it.
      *
      * {@snippet lang="java" :
      * try (GraphSession session = KernelProviders.graphEngine().openSession()) {
@@ -570,9 +569,8 @@ public final class KernelProviders {
     /**
      * The authenticated {@link PrincipalContext} for the current request scope.
      *
-     * <p>Re-bound per request by the transport/security interceptor. Every virtual
-     * thread spawned within the request scope inherits this value automatically
-     * (including children forked via {@link java.util.concurrent.StructuredTaskScope}).
+     * <p>Re-bound per request by the security interceptor around the handler it admits; a subtask
+     * forked inside that scope sees it, a thread started inside it does not.
      *
      * {@snippet lang="java" :
      * PrincipalContext ctx = KernelProviders.PRINCIPAL_CONTEXT.get();
@@ -859,7 +857,8 @@ public final class KernelProviders {
     /**
      * Returns the active {@link ConfigProvider} from the current kernel scope.
      *
-     * <p>Available on every virtual thread after L0 bootstrap completes.
+     * <p>Available inside the kernel scope once L0 bootstrap completes; the class documentation
+     * says which threads see it.
      *
      * @return config provider bound by the kernel bootstrapper
      * @throws java.util.NoSuchElementException if called outside the kernel scope

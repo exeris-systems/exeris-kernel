@@ -42,8 +42,9 @@ import java.util.Optional;
  * }
  *
  * <p><b>Thread confinement:</b> any thread inside the binding scope — a {@code ScopedValue} binding
- * is visible to the binding thread and to every thread forked inside that scope, and a thread
- * outside it reads the slot as unbound rather than as empty
+ * is visible to the binding thread and to every subtask forked inside that scope through
+ * {@code StructuredTaskScope}; a thread started any other way, like a thread outside the scope,
+ * reads the slot as unbound rather than as empty
  *
  * @apiNote Read a slot through its accessor rather than through {@code get()} where one exists: the
  *          optional slots are unbound in perfectly healthy deployments, and
@@ -65,8 +66,8 @@ public final class HttpKernelProviders {
     /**
      * The kernel-wide {@link HttpServerEngine} (created from {@link #HTTP_PROVIDER}).
      *
-     * <p>Bound during HTTP bootstrap and inherited by every virtual thread in the
-     * kernel scope — zero constructor injection needed in handler code.
+     * <p>Bound once during HTTP bootstrap for the kernel's lifetime; the class documentation of
+     * {@link eu.exeris.kernel.spi.context.KernelProviders} says which threads see it.
      *
      * @apiNote Read it directly where the engine is a precondition of the code reading it:
      *          {@snippet lang="java" :

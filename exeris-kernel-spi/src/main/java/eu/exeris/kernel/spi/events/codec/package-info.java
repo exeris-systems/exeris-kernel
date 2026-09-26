@@ -26,8 +26,9 @@
  * exposed via the optional
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_PAYLOAD_CODEC_REGISTRY}
  * {@link java.lang.ScopedValue} slot (the {@code EVENT_STREAM_READER} /
- * {@code EVENT_STREAM_APPENDER} precedent), inherited by every virtual thread in the
- * kernel scope.
+ * {@code EVENT_STREAM_APPENDER} precedent). Like every kernel slot it reaches the thread that
+ * established the binding and the subtasks forked inside its scope, not a thread started any other
+ * way (see {@link eu.exeris.kernel.spi.context.KernelProviders}).
  *
  * @since 0.10
  */
