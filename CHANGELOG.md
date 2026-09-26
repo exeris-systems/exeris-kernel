@@ -87,6 +87,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **Closing a connection the peer already closed closes its stream.** The Community carrier marks
+  a `NativeTcpConnection` closed when it reads the peer's end of stream, without closing the
+  stream, and `close()` returned early on that flag. The stream — its socket, selection key and
+  queues — stayed open until the idle reaper or the engine's own close. `close()` now closes the
+  stream on every call; the stream's close is idempotent and its terminal teardown runs once, so a
+  repeated call releases nothing twice.
+
 - **The carrier-pinning TCK holds a binding to one stream per slot.** `TransportCarrierPinningTck`
   writes every slot from its own virtual thread, and its `createWritableStream()` hook asks for one
   stream per slot; the three Community bindings returned the same stream for all 1 200 slots, so

@@ -133,12 +133,15 @@ final class NativeTcpConnection implements TransportConnection {
 
     /**
      * Closes this connection and its bound stream, if any. Idempotent.
+     *
+     * <p>The stream is closed on every call, not only on the one that clears {@code open}: the
+     * carrier clears that flag itself when the peer closes ({@link #markClosedByCarrier()}), and
+     * that alone releases nothing the stream holds. Repeating the stream's close is safe — it is
+     * idempotent, and its terminal teardown runs at most once.
      */
     @Override
     public void close() {
-        if (!open.compareAndSet(true, false)) {
-            return;
-        }
+        open.set(false);
         try (NativeTcpStream _ = streamRef.get()) {
             // TWR closes stream if non-null; NativeTcpStream.close() is idempotent
         }
