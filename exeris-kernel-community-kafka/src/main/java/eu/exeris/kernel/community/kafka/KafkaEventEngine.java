@@ -21,6 +21,7 @@ import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
 
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -39,6 +40,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Function;
 
 /**
  * Community Kafka {@link EventEngine} binding.
@@ -58,6 +60,13 @@ import java.util.concurrent.locks.LockSupport;
  *       {@link KafkaHeapEventPayload}, and published onto the internal in-memory bus for
  *       local fan-out.</li>
  * </ul>
+ *
+ * <p>The bus is therefore {@linkplain EventBus#isBrokered() brokered}.
+ * {@link EventBus#publishAndAwait} returns once the broker has acknowledged the record — from every
+ * in-sync replica when {@link KafkaEventConfig#requireAllAcks()} is true ({@code acks=all}), from
+ * the partition leader otherwise ({@code acks=1}) — and awaits no handler, local or remote. Both
+ * publishing methods encode the caller's payload into the record and close it exactly once, on
+ * success or refusal; local handlers receive a fresh payload per consumed record.
  *
  * <h2>The Wall</h2>
  * <p>{@code org.apache.kafka.clients.*} is referenced ONLY in this package
@@ -122,6 +131,14 @@ public final class KafkaEventEngine implements EventEngine {
     // paths without a broker. The engine owns the producer and closes it on close().
     /* default */ KafkaEventEngine(EventEngineConfig spiConfig, KafkaEventConfig kafkaConfig,
                                    Producer<byte[], byte[]> producer) {
+        this(spiConfig, kafkaConfig, producer, KafkaConsumer::new);
+    }
+
+    // Package-private seam: a unit test that starts the engine injects a consumer that reaches no
+    // broker. The loop thread builds the consumer from the factory and closes it when the loop ends.
+    /* default */ KafkaEventEngine(EventEngineConfig spiConfig, KafkaEventConfig kafkaConfig,
+                                   Producer<byte[], byte[]> producer,
+                                   Function<Properties, Consumer<byte[], byte[]>> consumerFactory) {
         this.spiConfig = Objects.requireNonNull(spiConfig, "spiConfig");
         Objects.requireNonNull(kafkaConfig, "kafkaConfig");
         this.registry      = new KafkaEventRegistry();
@@ -132,7 +149,8 @@ public final class KafkaEventEngine implements EventEngine {
                                                  producer, registry, kafkaConfig,
                                                  localDelegate, publishedTotal);
         this.loop          = new ConsumerLoop(spiConfig.engineName(), kafkaConfig,
-                                              registry, localDelegate);
+                                              registry, localDelegate,
+                                              Objects.requireNonNull(consumerFactory, "consumerFactory"));
     }
 
     @Override
@@ -313,6 +331,17 @@ public final class KafkaEventEngine implements EventEngine {
             return spec == null ? UNKNOWN_TOPIC : effectiveTopic(spec, config);
         }
 
+        /**
+         * {@inheritDoc}
+         *
+         * @return {@code true}: a publication reaches the local subscribers only through the
+         *         broker, after the consumer loop has polled it back
+         */
+        @Override
+        public boolean isBrokered() {
+            return true;
+        }
+
         @Override
         public SubscriptionToken subscribe(String eventType, EventHandler handler) {
             return localDelegate.subscribe(eventType, handler);
@@ -346,6 +375,7 @@ public final class KafkaEventEngine implements EventEngine {
         private final KafkaEventConfig    config;
         private final KafkaEventRegistry  registry;
         private final EventBus            localDelegate;
+        private final Function<Properties, Consumer<byte[], byte[]>> consumerFactory;
         private final AtomicReference<Thread> loopThread = new AtomicReference<>();
         private final AtomicBoolean       running = new AtomicBoolean(false);
         private final AtomicLong          processedTotal = new AtomicLong(0L);
@@ -355,11 +385,13 @@ public final class KafkaEventEngine implements EventEngine {
         private ConsumerLoop(String engineName,
                              KafkaEventConfig config,
                              KafkaEventRegistry registry,
-                             EventBus localDelegate) {
-            this.engineName    = engineName;
-            this.config        = config;
-            this.registry      = registry;
-            this.localDelegate = localDelegate;
+                             EventBus localDelegate,
+                             Function<Properties, Consumer<byte[], byte[]>> consumerFactory) {
+            this.engineName      = engineName;
+            this.config          = config;
+            this.registry        = registry;
+            this.localDelegate   = localDelegate;
+            this.consumerFactory = consumerFactory;
         }
 
         @Override
@@ -414,7 +446,7 @@ public final class KafkaEventEngine implements EventEngine {
             props.put("enable.auto.commit", "true");
             props.put("auto.offset.reset",  "earliest");
 
-            try (KafkaConsumer<byte[], byte[]> consumer = new KafkaConsumer<>(props)) {
+            try (Consumer<byte[], byte[]> consumer = consumerFactory.apply(props)) {
                 long pollNanos = config.consumerPollTimeout().toNanos();
                 while (running.get() && !Thread.currentThread().isInterrupted()) {
                     refreshSubscriptions(consumer);
@@ -453,7 +485,7 @@ public final class KafkaEventEngine implements EventEngine {
         // and rebuilding the subscription set means allocating a fresh HashSet plus a
         // Set.copyOf() inside registry.registeredTypes(). The version counter is bumped only
         // when register() truly mutates state, so an unchanged version skips that allocation.
-        private void refreshSubscriptions(KafkaConsumer<byte[], byte[]> consumer) {
+        private void refreshSubscriptions(Consumer<byte[], byte[]> consumer) {
             int currentVersion = registry.registeredVersion();
             if (currentVersion == lastRegisteredVersion) {
                 return;

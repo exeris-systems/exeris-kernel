@@ -88,7 +88,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
-| `…spi.events` | **preview** | 0.5.0 | — | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
+| `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
@@ -268,3 +268,17 @@ maturity change here.
     changes, so the API-diff gate sees only the additions; the note is here because an out-of-tree
     caller of those constructors, or a filter keyed on `EX-EVENT-6002`, observes a different code
     with no change a diff reports.
+
+[^eventbusawait]: **Behavioural note, 0.12.** `EventBus.publishAndAwait`'s promise to block until
+    every handler has finished, and its `EX-EVENT-6010` for failed handlers, are scoped to a bus
+    that is not brokered, and the additive default method `EventBus.isBrokered()` (returning
+    `false`) says which kind a bus is. On a brokered bus `publishAndAwait` blocks until the broker
+    has acknowledged the publication, promises nothing about any handler, never throws
+    `EX-EVENT-6010`, and its handlers observe none of the publisher's `ScopedValue` bindings; the
+    broadcast retain protocol applies to the payload such a bus creates on consume, while the
+    caller's reference is released exactly once. The Community Kafka bus reports `true`, and this
+    is how it already behaved; the in-memory buses report `false` and are unchanged. The API-diff
+    gate reports the new method; the note is here because the narrowed meaning of an existing
+    method is the change, and no diff reports that. `AbstractEventBusTck` skips its five
+    in-process cases on a brokered bus, through an assumption on `isBrokered()`, and adds one case
+    every bus runs.

@@ -15,7 +15,8 @@ import eu.exeris.kernel.spi.exceptions.events.EventBusException;
  * comparison in the hot path.
  *
  * <h2>Broadcast RAII Protocol</h2>
- * <p>When {@link #publish} is called with N registered handlers for a type:
+ * <p>When {@link #publish} is called on a bus that is not {@linkplain #isBrokered() brokered},
+ * with N registered handlers for a type:
  * <ol>
  *   <li>{@code N == 0}: {@link EventPayload#close()} called immediately — slab returned.</li>
  *   <li>{@code N == 1}: payload passed as-is (initial refCount = 1); handler closes.</li>
@@ -26,6 +27,11 @@ import eu.exeris.kernel.spi.exceptions.events.EventBusException;
  * </ol>
  * <p>A handler is therefore always given a correctly-counted payload and simply closes it; the
  * counting is the bus's job, never the handler's.
+ *
+ * <p>A brokered bus does not fan the caller's payload out. It copies the payload onto the wire and
+ * releases the caller's reference exactly once, whether the publication is accepted or refused;
+ * the protocol above applies to the payload it creates when it consumes the publication and hands
+ * it to its handlers.
  *
  * <h2>Ordering</h2>
  * <p>The bus is <b>unordered by design</b> (ADR-049): it makes no per-key, per-stream or
@@ -40,17 +46,21 @@ import eu.exeris.kernel.spi.exceptions.events.EventBusException;
  * be called concurrently. The publishing thread must itself be bound to
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_ENGINE}; handler threads spawned by
  * {@link #publish} do not inherit that, or any other, {@code ScopedValue} binding — only the
- * in-thread handlers invoked by {@link #publishAndAwait} do
+ * in-thread handlers invoked by {@link #publishAndAwait} on a bus that is not brokered do. A
+ * brokered bus's handlers observe none of the publisher's bindings
  * <p><b>Ownership:</b> {@link #publish} and {@link #publishAndAwait} take the caller's payload
  * reference; from then on the bus owns the fan-out and each handler closes the reference it was
  * given. The caller never closes a published payload, on any outcome
  *
- * @implSpec An implementation performs the broadcast retain protocol above, and performs it on
- *           every exit path: a dispatch that fails part-way — a {@link EventPayload#retain()} that
- *           throws, a handler thread that cannot be started — releases the references no handler
- *           will ever own before the failure reaches the caller. Otherwise a failed publish leaks
- *           a slab permanently. It also accepts a payload it cannot deliver: with zero
- *           subscribers the payload is closed immediately rather than dropped.
+ * @implSpec An implementation that is not brokered performs the broadcast retain protocol above,
+ *           and performs it on every exit path: a dispatch that fails part-way — a
+ *           {@link EventPayload#retain()} that throws, a handler thread that cannot be started —
+ *           releases the references no handler will ever own before the failure reaches the
+ *           caller. Otherwise a failed publish leaks a slab permanently. A brokered implementation
+ *           releases the caller's reference exactly once, before {@link #publish} or
+ *           {@link #publishAndAwait} returns or throws, and performs the retain protocol on the
+ *           payload it creates on consume. Every implementation accepts a payload it cannot
+ *           deliver: with zero subscribers the payload is closed immediately rather than dropped.
  * @implNote The standard binding is an in-memory routing table with asynchronous virtual-thread
  *           dispatch over heap-backed payloads; a native binding is an off-heap routing table with
  *           slab-allocated subscriber slots and O(1) ordinal lookup.
@@ -76,8 +86,8 @@ public interface EventBus {
      *         failure, when there is one, is the cause
      * @apiNote Ownership of {@code payload} passes to the bus on entry: do not close it after this
      *          call, on success or on failure. Handlers may already be running by the time this
-     *          returns, so do not treat a normal return as delivery — use
-     *          {@link #publishAndAwait} when the caller needs that.
+     *          returns, so do not treat a normal return as delivery — on a bus that is not
+     *          brokered, use {@link #publishAndAwait} when the caller needs that.
      * @implNote The standard binding dispatches asynchronously on virtual threads; a native
      *           binding writes the event to a ring buffer that its loop drains. On
      *           {@code EX-EVENT-6002} the publisher must not retry inline — the exception is
@@ -115,27 +125,56 @@ public interface EventBus {
     void unsubscribe(SubscriptionToken token);
 
     /**
-     * Hands an event to the bus and blocks until every handler has finished with it, so a normal
+     * Hands an event to the bus and blocks until the bus has finished with it: on a bus that is not
+     * {@linkplain #isBrokered() brokered}, until every handler has finished with it, so a normal
      * return means delivery actually happened.
      *
-     * <p>How the wait is implemented is not part of this contract, and the scoped-value bindings a
-     * handler observes follow from it: the in-memory binding runs handlers on the calling thread,
-     * so they observe every {@code ScopedValue} the publisher had bound — including values the
-     * kernel does not define (ADR-066). A binding that dispatches onto other threads can only
-     * deliver what it can name.
+     * <p>On a bus that is not brokered, how the wait is implemented is not part of this contract,
+     * and the scoped-value bindings a handler observes follow from it: the in-memory binding runs
+     * handlers on the calling thread, so they observe every {@code ScopedValue} the publisher had
+     * bound — including values the kernel does not define (ADR-066). A binding that dispatches
+     * onto other threads can only deliver what it can name.
+     *
+     * <p>On a brokered bus the call blocks until the broker has acknowledged the publication, to
+     * the durability the binding is configured for. It promises nothing about any handler: a
+     * handler may run after this call has returned, on another thread or in another process, and
+     * observes none of the publisher's {@code ScopedValue} bindings. The caller's payload reference
+     * is released before this call returns or throws.
      *
      * @param descriptor routing metadata (non-null)
      * @param payload    event payload (non-null)
      * @throws InterruptedException if the calling thread is interrupted while waiting
      * @throws EventBusException    {@code EX-EVENT-6010} if the event was delivered and one or
-     *         more handler invocations failed; {@code rawArgs} carry
+     *         more handler invocations failed — on a bus that is not brokered only; a brokered bus
+     *         never throws it. {@code rawArgs} carry
      *         {@code [int eventTypeOrdinal, int failedHandlerCount]} and the individual handler
      *         failures are attached as suppressed exceptions. {@code EX-EVENT-6002} or
      *         {@code EX-EVENT-6009} if the bus does not accept the event, as for {@link #publish}
      * @apiNote Same ownership transfer as {@link #publish} — the caller does not close
-     *          {@code payload}. Never call this from inside an event handler: the wait is on
-     *          handlers, and a handler waiting on handlers can deadlock.
+     *          {@code payload}. Never call this from inside an event handler: on a bus that is
+     *          not brokered the wait is on handlers, and a handler waiting on handlers can
+     *          deadlock.
      * @implNote A native binding spins on the processed-event counter for a bounded wait.
      */
     void publishAndAwait(EventDescriptor descriptor, EventPayload payload) throws InterruptedException;
+
+    /**
+     * Reports whether a publication reaches handlers only through an external broker, after the
+     * publishing call has returned.
+     *
+     * <p>The answer selects which half of this contract the bus keeps. A bus that is not brokered
+     * fans the caller's payload out to its handlers itself, and {@link #publishAndAwait} returns
+     * once every handler has finished. A brokered bus hands the publication to the broker, a
+     * handler receives it from there, and {@link #publishAndAwait} awaits the broker's
+     * acknowledgement rather than any handler.
+     *
+     * @return {@code true} when a publication reaches handlers only through an external broker,
+     *         after the publishing call has returned; {@code false} when the bus dispatches to its
+     *         handlers itself
+     * @implSpec The default returns {@code false}.
+     * @since 0.12
+     */
+    default boolean isBrokered() {
+        return false;
+    }
 }
