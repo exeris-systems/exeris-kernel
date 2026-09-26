@@ -27,7 +27,8 @@ its Open Question 1 is owed "an option table, costs and recorded dissent of its 
 may treat the shape as settled. This ADR discharges that.
 
 **A code spike ran first, and it moved the problem.** Every document in this repository describes the
-client as *single-host*. It is narrower than that:
+client as *single-host*. Each engine does reach one host, but it reads that host from a listen
+address:
 
 - `CommunityHttpClientEngine` has **zero public constructors**. Every one is package-private.
 - Its only reachable path is `CommunityHttpProvider.createClientEngine(config)`, which routes through
@@ -36,10 +37,14 @@ client as *single-host*. It is narrower than that:
   reads a **listen** address as a **dial** address.
 - **No client-target configuration key exists anywhere** in SPI, Core or Community.
 
-So through the supported path the kernel's HTTP client dials the address its own server listens on.
-An application cannot address even the **first** external peer, let alone a second, and in
-`CLIENT`-only mode `bindHost` is not semantically defined for it at all. The gap is not "we cannot
-express a second peer" but "we cannot express any peer".
+So through the supported path an engine dials the `bindHost` and `port` of the `HttpConfig` it was
+built from. The engine the kernel binds as its HTTP client is built from `http.bindHost` and
+`http.port`: in `DUAL` mode that is its own server's listener, and in `CLIENT` mode it is the one
+peer written into those keys. Any other peer needs an engine of its own, built through
+`HttpProvider.createClientEngine` with that peer's address written into `HttpConfig.bindHost` — one
+engine per peer, which is how the kernel's own `CommunityS3Client` reaches its storage endpoint. The
+gap is not "we cannot express a second peer" but "we cannot express any peer except by writing it
+into a listen address — the `http.bindHost` key or `HttpConfig.bindHost` — at one engine per peer".
 
 Two further spike findings bear directly on the option costs, and one of them removes an assumed one:
 
@@ -82,8 +87,9 @@ Add an `authority` component to the record; one engine serves many peers.
   `start`/`stop`/`close` lifecycle. For a runtime whose thesis is No Waste Compute, one transport
   engine per peer is the wasteful shape.
 - **It does not avoid an SPI change**, it relocates one: engines are unconstructable from outside
-  their package, so this needs a public per-host factory on `HttpProvider` — a break on a `stable`
-  interface instead of on a `stable` carrier.
+  their package, and the one public factory takes the peer from `bindHost`, a listen address, so
+  this needs a public per-host factory on `HttpProvider` — a break on a `stable` interface instead
+  of on a `stable` carrier.
 
 ### Option 3 — The client holds a resolver plus an engine factory
 
@@ -105,7 +111,8 @@ Add `http.client.targetHost` / `…targetPort`, distinct from `bindHost`, and st
 
 The dissent recorded in RFC-2026-06-29 keeps Option E live for the **resolver** half. It does not
 apply here: this half has a consumer today, namely any application talking to any peer that is not
-itself, and the spike shows that set currently includes every application.
+itself, and the spike shows that each of them reaches its peer only by writing it into a listen
+address, at one engine per peer.
 
 ## 🏁 The Decision
 
@@ -114,7 +121,15 @@ itself, and the spike shows that set currently includes every application.
 1. **The carrier.** `HttpRequest(method, authority, path, version, headers, body)`. `authority` is
    the RFC 3986 authority — `host` or `host:port` — and may be `null`, meaning *"the engine's
    configured default peer"*. The previous canonical constructor is **retained** as a compatibility
-   bridge that passes `null`, so every existing call site compiles and behaves unchanged.
+   bridge that passes `null`, so every existing call site compiles. An unaddressed request resolves
+   to the engine's configured default (decision 2), which is no longer `bindHost:port`, and is
+   refused when no default is configured.
+
+   *(Amended 2026-09-26, settled during implementation in v0.12: the port is required — `host:port`,
+   an IPv6 address bracketed. `HttpRequest` carries no scheme, so there is nothing to default a port
+   from, and the listener's port is the default this decision removes. A `defaultAuthority` without
+   a port is refused when `HttpConfig` is constructed; a request authority without one is refused at
+   send, which `AbstractHttpClientEngineTck` asserts.)*
 
 2. **A default peer becomes configurable, and stops being the listener.** The client engine resolves
    its default target from client-scoped configuration rather than from `http.bindHost`. This is
@@ -150,8 +165,14 @@ default, and that `Host` reflects the effective authority — the last one being
 would fail if an implementation kept deriving it from the connection.
 
 **A documented-but-wrong configuration key stops being both.** `bindHost` returns to meaning what
-`HttpConfig` says it means. Any deployment that relied on the client reaching its own server keeps
-working by configuring that explicitly, which is the difference between a coincidence and a setting.
+`HttpConfig` says it means. A deployment whose client reached its peer through `http.bindHost` and
+`http.port` — a `CLIENT`-only deployment pointing them at a remote peer, or a `DUAL` deployment
+calling its own server — keeps working by setting `http.client.defaultAuthority` to that
+`host:port`, or by addressing each request, which is the difference between a coincidence and a
+setting. A `DUAL` deployment on the default `0.0.0.0` bind names its own server by a loopback
+address and the listener's port, such as `127.0.0.1:8080`, not by `0.0.0.0`: the authority is a
+dial address, and it is also what the `Host` header carries. A deployment that does neither boots
+cleanly, and its first unaddressed request is refused.
 
 **What this does not decide:** whether `resolve` returns one endpoint or a weighted set; cache
 ownership and TTL; the failure-mode taxonomy for unresolved names. All three are resolver concerns,

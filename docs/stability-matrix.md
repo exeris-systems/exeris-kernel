@@ -149,9 +149,14 @@ next reader inherits the finding instead of rediscovering it.
 > rather than asserted.** `HttpRequest` gained `authority` and `HttpConfig` gained
 > `defaultAuthority`; both retain their previous canonical constructor as a bridge, so the SPI
 > compatibility gate reports **`stable-breaks=0` / `stable-src-breaks=0`** against `v0.11.0`.
-> The residual risk the gate cannot see is source-level and out-of-tree: a record **deconstruction
+> One residual risk the gate cannot see is source-level and out-of-tree: a record **deconstruction
 > pattern** (`case HttpRequest(m, p, v, h, b)`) or a `HttpRequest::new` canonical-constructor
 > reference would not compile. Neither appears anywhere in this repository — checked, not assumed.
+> The other is behavioural, which no signature check can see: `HttpConfig`'s bridge yields an engine
+> with no default peer, and `HttpRequest`'s a request naming none, so an unaddressed request sent
+> through such an engine is refused at send where v0.11 dialled `bindHost:port`. The code compiles
+> unchanged and fails at its first unaddressed send; the v0.12.0 release notes' upgrade step names
+> the fix (an `HttpConfig` constructor taking `defaultAuthority`, or `withAuthority` per request).
 
 Because this package is `mixed`, the breakdown is **exhaustive**: every class in
 `eu.exeris.kernel.spi.http` appears in exactly one row. A class named in no row would be neither
