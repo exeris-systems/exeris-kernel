@@ -114,6 +114,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A stream route resolves when the bound handler wraps the router** (ADR-043 Amendment A1). The
+  Community dispatcher resolved stream routes only when the handler bound to `HTTP_SERVER_HANDLER`
+  was the `HttpRouter` instance itself, and served every other handler respond-once. A generated
+  application binds a forwarder over a router it builds inside the boot callback, so none of its
+  stream routes resolved over a real boot: a `GET {base}/stream` reached the by-id route with the id
+  `stream`, and a per-action stream `POST` answered `404`. The dispatcher now resolves through
+  `StreamRouteResolver` on the bound handler, which `HttpRouter` implements and a wrapper implements
+  by delegating. A handler that does not implement it, such as a lambda over a router, is still
+  served respond-once. A generated application streams once a tooling release built on kernel 0.12
+  or later binds a forwarder that implements the interface and hands its stream handlers the event
+  bus through their constructors; both changes are in `exeris-tooling`.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection

@@ -4,9 +4,9 @@
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.core.http.routing.PathParamStreamExchange;
 import eu.exeris.kernel.core.http.routing.StreamMatch;
+import eu.exeris.kernel.core.http.routing.StreamRouteResolver;
 import eu.exeris.kernel.core.http.sse.HttpStreamEngine;
 import eu.exeris.kernel.core.http.sse.StreamAdmissionController;
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
@@ -21,9 +21,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Community: routes a parsed request to the SSE streaming path when its route is streaming-flagged
- * (ADR-043 obligation 7). A streaming route resolves to an {@link HttpStreamHandler} via
- * {@link HttpRouter#resolveStream}; the handler runs on the stream's own virtual thread (the
- * "1 VT per stream" model — the same VT the transport already dispatched this stream on).
+ * (ADR-043 obligation 7, amendment A1). A streaming route resolves to an {@link HttpStreamHandler}
+ * through the bound handler's {@link StreamRouteResolver}; a handler that does not implement it gets
+ * respond-once dispatch only. The handler runs on the stream's own virtual thread (the "1 VT per
+ * stream" model — the same VT the transport already dispatched this stream on).
  *
  * <p>The SSE wire framing and the held-open egress mechanics live in the tier-blind Core
  * {@link HttpStreamEngine}; this class is the NIO-side wiring that hands it the
@@ -56,16 +57,17 @@ final class CommunityHttpStreamDispatcher {
     }
 
     /**
-     * Resolves the streaming handler for {@code request} if the active handler is a router carrying a
-     * streaming route; returns {@code null} when the request is not streaming (respond-once path).
+     * Resolves the streaming handler for {@code request} if the active handler resolves stream
+     * routes; returns {@code null} when the request is not streaming (respond-once path). The method
+     * and the path are passed as the request carries them, query string included.
      *
      * @param request the parsed request
      * @param handler the active root handler
      * @return the resolved stream route, or {@code null}
      */
     /* default */ StreamMatch resolveStreamHandler(HttpRequest request, HttpHandler handler) {
-        if (handler instanceof HttpRouter router) {
-            return router.resolveStream(request.method(), request.path());
+        if (handler instanceof StreamRouteResolver resolver) {
+            return resolver.resolveStream(request.method(), request.path());
         }
         return null;
     }
