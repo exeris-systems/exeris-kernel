@@ -37,14 +37,11 @@ import java.util.concurrent.TimeUnit;
  *       expected to be O(1) ({@code EnumSet.contains()}).</li>
  * </ol>
  *
- * <h2>SLO targets</h2>
- * <p>Neither figure is enforced by this class — JMH does not fail the build on an SLO
- * breach, so conformance means comparing the printed report to these targets by hand.
- * <ul>
- *   <li>authenticate(): {@code >= 500 000 ops/s}; Enterprise target: {@code 0 B/op},
- *       checked via the JMH {@code -prof gc} allocation profiler.</li>
- *   <li>hasRole() p99: {@code <= 100 ns}.</li>
- * </ul>
+ * <h2>Results</h2>
+ * <p>This template sets no performance target and asserts none: JMH reports what a binding
+ * measures, and nothing fails on the result. Run with the JMH {@code -prof gc} profiler to
+ * read the allocation per {@code authenticate()} call. The kernel ships no binding of this
+ * template.
  *
  * @since 0.5
  */
@@ -148,8 +145,7 @@ public abstract class AbstractSecurityProviderBenchmark extends AbstractExerisBe
 
     /**
      * Hot-path benchmark — measures {@link SecurityProvider#authenticate} throughput on the
-     * pre-copied token buffer. Throughput target: {@code >= 500 000 ops/s}; Enterprise
-     * allocation target: {@code 0 B/op}, checked via the JMH {@code -prof gc} profiler.
+     * pre-copied token buffer.
      *
      * @param bh JMH blackhole — prevents the JIT from eliminating the authentication result
      */
@@ -162,7 +158,7 @@ public abstract class AbstractSecurityProviderBenchmark extends AbstractExerisBe
 
     /**
      * Hot-path benchmark — measures the latency of one {@code hasRole} check against the
-     * pre-authenticated principal. p99 target: {@code <= 100 ns}.
+     * pre-authenticated principal.
      *
      * @param bh JMH blackhole — prevents the JIT from eliminating the boolean result
      */
