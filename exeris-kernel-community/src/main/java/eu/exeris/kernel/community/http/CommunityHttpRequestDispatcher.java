@@ -337,7 +337,7 @@ final class CommunityHttpRequestDispatcher {
      * thread, and a JFR event straddling a blocking operation on one is a known crash shape in this
      * repository — and a handler declared {@code LONG_RUNNING} is by definition one that blocks.
      *
-     * <p>A {@code PROMPT} route whose session was acquired with no {@code StorageContext} bound is
+     * <p>A {@code PROMPT} route whose session was acquired for a context declaring no tenant is
      * reported before {@link PersistenceSessionBox#release()} runs, so a failure while returning the
      * connection cannot suppress the report. The per-request cost of the check is one field read;
      * the event's own enabled check runs only when the flag is set.
@@ -348,7 +348,7 @@ final class CommunityHttpRequestDispatcher {
             RouteExecutionEvent.emitLongRunning(
                     request.method().name(), request.path(), System.nanoTime() - startedAt);
         } else {
-            if (box.acquiredWithoutStorageContext()) {
+            if (box.acquiredWithSystemScope()) {
                 CommunityUnscopedRequestSessionEvent.emit(
                         request.method().name(), request.path(), routeKind.name(),
                         isReadOnlyMethod(request.method()));

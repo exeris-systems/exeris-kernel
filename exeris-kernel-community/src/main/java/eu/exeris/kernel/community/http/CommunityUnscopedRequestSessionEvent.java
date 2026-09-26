@@ -13,8 +13,8 @@ import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when a request's persistence session was acquired with no
- * {@code StorageContext} bound.
+ * JFR event emitted when a request's persistence session was opened for a storage context that
+ * declares no tenant.
  *
  * <h2>What it is for</h2>
  * <p>A {@code permitAll()} route runs no security interceptor, so nothing binds
@@ -23,16 +23,20 @@ import jdk.jfr.StackTrace;
  * built on it — receives a connection scoped to the system context, whose tenant key is empty. No
  * exception is raised on that path, by contract. This event is what makes it visible: it names the
  * route that took a request session without a tenant scope, so an operator can tell a deliberate
- * system read on a public route from a route that expected a tenant and did not get one.
+ * system read from a route that expected a tenant and did not get one.
  *
- * <p>{@code routeKind} carries the resolved {@code RouteRequirement.Kind}. On a route that ran the
- * security interceptor the context is bound before the handler runs, so any kind other than
- * {@code PERMIT_ALL} in this field signals a defect rather than a public route.
+ * <p>What is recorded is the context the session's connection was actually opened for, not the
+ * state of the {@code STORAGE_CONTEXT} slot. A context declares no tenant when its isolation key
+ * is absent or blank — the case in which the tenant session key is published as {@code ''}. So a
+ * handler that passes a tenant context to {@code openConnection(StorageContext)} is not reported,
+ * bound slot or not; and a handler that chooses the system context on a request path, by passing
+ * it or by binding it, is reported, because a deliberate system scope on a request is exactly what
+ * an operator should be able to see.
  *
- * <p>The session box records whether the slot was bound at the moment it acquired, not which
- * context the opener used: a handler that passes an explicit context to
- * {@code openConnection(StorageContext)} without binding the slot is recorded as well. Binding
- * {@code STORAGE_CONTEXT} around the persistence call is what removes a route from this event.
+ * <p>{@code routeKind} carries the resolved {@code RouteRequirement.Kind}. {@code PERMIT_ALL} is a
+ * public route. Any other kind is an authenticated route whose identity resolved to a context
+ * without a tenant — a tenant-less deployment, whose security provider binds the system context,
+ * reports every request that reaches persistence — or whose handler chose the system context.
  *
  * <p>A {@code LONG_RUNNING} route has no request session, so this event cannot observe it.
  *
@@ -51,8 +55,8 @@ import jdk.jfr.StackTrace;
  */
 @Name("eu.exeris.kernel.security.UnscopedRequestSession")
 @Label("Unscoped Request Session")
-@Description("A request's persistence session was acquired with no StorageContext bound; "
-        + "its connection is scoped to the system context")
+@Description("A request's persistence session was opened for a storage context that declares no "
+        + "tenant; its connection is scoped to the system context")
 @Category({"Exeris Kernel", "Security"})
 @StackTrace(false)
 public final class CommunityUnscopedRequestSessionEvent extends Event {
@@ -70,7 +74,7 @@ public final class CommunityUnscopedRequestSessionEvent extends Event {
 
     /**
      * The resolved route requirement's kind, as its constant name; {@code "PERMIT_ALL"} for a
-     * public route, and anything else a defect.
+     * public route, any other kind for an authenticated route that ended up without a tenant.
      */
     @Label("Route Kind")
     public String routeKind;

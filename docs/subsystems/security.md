@@ -113,14 +113,18 @@ into the DB connection state. A missing `StorageContext` is equivalent to a miss
 > departs from that policy — a policy with an arm that admits the empty key (a "system" arm), or a
 > scoped table that is not `FORCE`'d while the application connects as its owner.
 >
-> **What the kernel reports.** When a request's persistence session was acquired with no `StorageContext`
-> bound, the dispatcher emits the JFR event `eu.exeris.kernel.security.UnscopedRequestSession` before the
-> session is released, carrying `method`, `path`, `routeKind` and `readOnly`. `routeKind` is `PERMIT_ALL`
-> for a public route; any other value signals a defect, because an authenticated route binds the context
-> before its handler runs. The event carries the request path, with the same trade
-> `eu.exeris.kernel.http.RouteExecution` states. A handler that passes an explicit context to
-> `openConnection(StorageContext)` without binding the slot is recorded too; binding `STORAGE_CONTEXT`
-> around the persistence call is what scopes a public route and removes it from the event.
+> **What the kernel reports.** When a request's persistence session was opened for a storage context
+> that declares no tenant — an absent or blank isolation key, the case in which the tenant key is published
+> as `''` — the dispatcher emits the JFR event `eu.exeris.kernel.security.UnscopedRequestSession` before
+> the session is released, carrying `method`, `path`, `routeKind` and `readOnly`. What counts is the
+> context the connection was opened for, not whether the `STORAGE_CONTEXT` slot was bound: a handler that
+> passes a tenant context to `openConnection(StorageContext)`, or binds one, is not reported; a handler
+> that chooses the system context on a request path, by passing it or binding it, is — a deliberate system
+> scope on a request is what an operator should be able to see. `routeKind` is `PERMIT_ALL` for a public
+> route. Any other value is an authenticated route whose identity resolved to a context without a tenant,
+> or whose handler chose the system context; a tenant-less deployment, whose security provider binds the
+> system context, reports every request that reaches persistence. The event carries the request path,
+> with the same trade `eu.exeris.kernel.http.RouteExecution` states.
 >
 > **The residual.** A `LONG_RUNNING` `permitAll()` route has no request session, so each persistence call
 > acquires through the engine directly and this event cannot see it. Nothing reports that case.

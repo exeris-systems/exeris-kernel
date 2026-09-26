@@ -97,7 +97,10 @@ class CommunityUnscopedRequestSessionEventTest {
         }
     }
 
-    /** Authenticates every token as a tenant principal with a SHARED context for that tenant. */
+    /**
+     * Authenticates every token and binds the given context: a tenant principal for a context that
+     * names a tenant, a tenant-less one for the system context.
+     */
     private static final class TenantProvider implements SecurityProvider {
         private final ImmutableStorageContext storage;
 
@@ -117,8 +120,10 @@ class CommunityUnscopedRequestSessionEventTest {
 
         @Override
         public AuthenticationResult authenticate(LoanedBuffer rawToken) {
-            return new AuthenticationResult(
-                    ImmutablePrincipal.ofTenant(UUID.randomUUID(), UUID.randomUUID(), Set.of()), storage);
+            ImmutablePrincipal principal = storage.isolationKey().isPresent()
+                    ? ImmutablePrincipal.ofTenant(UUID.randomUUID(), UUID.randomUUID(), Set.of())
+                    : ImmutablePrincipal.ofScopes(UUID.randomUUID(), Set.of());
+            return new AuthenticationResult(principal, storage);
         }
 
         @Override
@@ -193,13 +198,10 @@ class CommunityUnscopedRequestSessionEventTest {
         return paths;
     }
 
-    @Test
-    @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    @DisplayName("permitAll + openConnection(): GLOBAL reaches the interceptor, nothing throws, and it is recorded")
-    void permitAllPersistenceIsRecorded() throws Exception {
+    /** Runs {@code reportedCase} and returns the first event the recording delivers for it. */
+    private static RecordedEvent firstEventFrom(Runnable reportedCase) throws InterruptedException {
         AtomicReference<RecordedEvent> seen = new AtomicReference<>();
         CountDownLatch arrived = new CountDownLatch(1);
-        HttpResponse response;
 
         try (RecordingStream stream = new RecordingStream()) {
             stream.enable(EVENT_NAME);
@@ -210,20 +212,30 @@ class CommunityUnscopedRequestSessionEventTest {
             });
             stream.startAsync();
 
-            response = dispatch(dispatcherFor(RouteRequirement.permitAll(), null), "/public-read",
-                    List.of(), readsThroughTheAmbientContext());
+            reportedCase.run();
 
             assertThat(arrived.await(20, TimeUnit.SECONDS))
-                    .as("a public route that took an unscoped session must reach the recording")
+                    .as("a request session with no tenant scope must reach the recording")
                     .isTrue();
         }
+        return seen.get();
+    }
 
-        assertThat(response.status())
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("permitAll + openConnection(): GLOBAL reaches the interceptor, nothing throws, and it is recorded")
+    void permitAllPersistenceIsRecorded() throws Exception {
+        AtomicReference<HttpResponse> response = new AtomicReference<>();
+
+        RecordedEvent event = firstEventFrom(() -> response.set(dispatch(
+                dispatcherFor(RouteRequirement.permitAll(), null), "/public-read", List.of(),
+                readsThroughTheAmbientContext())));
+
+        assertThat(response.get().status())
                 .as("the handler completed: no exception on the ambient-context path, by contract")
                 .isEqualTo(HttpStatus.OK);
         assertThat(interceptorSaw).containsExactly(ImmutableStorageContext.GLOBAL);
 
-        RecordedEvent event = seen.get();
         assertThat(event.getString("method")).isEqualTo("GET");
         assertThat(event.getString("path")).isEqualTo("/public-read");
         assertThat(event.getString("routeKind")).isEqualTo("PERMIT_ALL");
@@ -249,7 +261,7 @@ class CommunityUnscopedRequestSessionEventTest {
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    @DisplayName("permitAll whose handler binds STORAGE_CONTEXT itself is not recorded")
+    @DisplayName("permitAll whose handler binds a tenant STORAGE_CONTEXT itself is not recorded")
     void selfScopedPermitAllIsSilent() throws Exception {
         ImmutableStorageContext tenant = ImmutableStorageContext.shared("tenant-self");
 
@@ -266,8 +278,67 @@ class CommunityUnscopedRequestSessionEventTest {
 
     @Test
     @Timeout(value = 30, unit = TimeUnit.SECONDS)
-    @DisplayName("an authenticated route is not recorded: its context is bound before the handler runs")
-    void authenticatedRouteIsSilent() throws Exception {
+    @DisplayName("permitAll whose handler passes a tenant context explicitly is not recorded, slot unbound")
+    void explicitTenantContextIsSilent() throws Exception {
+        ImmutableStorageContext tenant = ImmutableStorageContext.shared("tenant-explicit");
+
+        List<String> paths = pathsReportedAround(() -> dispatch(
+                dispatcherFor(RouteRequirement.permitAll(), null), "/public-explicit-tenant", List.of(),
+                exchange -> {
+                    try (PersistenceConnection ignored = engine.openConnection(tenant)) {
+                        exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+                    }
+                }));
+
+        assertThat(interceptorSaw)
+                .as("the connection was configured for the tenant the handler named")
+                .containsExactly(tenant, ImmutableStorageContext.GLOBAL);
+        assertThat(paths)
+                .as("what reaches the database is the tenant context; an unbound slot is not a report")
+                .containsExactly(CONTROL_PATH);
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("a handler that chooses the system context is recorded, even with a tenant bound")
+    void explicitSystemContextIsRecorded() throws Exception {
+        ImmutableStorageContext tenant = ImmutableStorageContext.shared("tenant-bound");
+
+        RecordedEvent event = firstEventFrom(() -> dispatch(
+                dispatcherFor(RouteRequirement.permitAll(), null), "/public-explicit-system", List.of(),
+                exchange -> ScopedValue.where(KernelProviders.STORAGE_CONTEXT, tenant).run(() -> {
+                    try (PersistenceConnection ignored = engine.openConnection(ImmutableStorageContext.system())) {
+                        exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+                    }
+                })));
+
+        assertThat(interceptorSaw).containsExactly(ImmutableStorageContext.GLOBAL);
+        assertThat(event.getString("path")).isEqualTo("/public-explicit-system");
+        assertThat(event.getString("routeKind")).isEqualTo("PERMIT_ALL");
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("an authenticated route whose identity resolves to the system context is recorded")
+    void authenticatedSystemScopeIsRecorded() throws Exception {
+        SecurityInterceptor interceptor =
+                new SecurityInterceptor(new TenantProvider(ImmutableStorageContext.GLOBAL));
+
+        RecordedEvent event = firstEventFrom(() -> dispatch(
+                dispatcherFor(RouteRequirement.authenticated(), interceptor), "/authenticated-system",
+                List.of(new HttpHeader("Authorization", TOKEN)), readsThroughTheAmbientContext()));
+
+        assertThat(interceptorSaw).containsExactly(ImmutableStorageContext.GLOBAL);
+        assertThat(event.getString("path")).isEqualTo("/authenticated-system");
+        assertThat(event.getString("routeKind"))
+                .as("a tenant-less identity on an authenticated route, not a public one")
+                .isEqualTo("AUTHENTICATED");
+    }
+
+    @Test
+    @Timeout(value = 30, unit = TimeUnit.SECONDS)
+    @DisplayName("an authenticated route bound to a tenant is not recorded")
+    void authenticatedTenantRouteIsSilent() throws Exception {
         ImmutableStorageContext tenant = ImmutableStorageContext.shared("tenant-auth");
         SecurityInterceptor interceptor = new SecurityInterceptor(new TenantProvider(tenant));
         AtomicReference<HttpResponse> response = new AtomicReference<>();
@@ -314,7 +385,8 @@ class CommunityUnscopedRequestSessionEventTest {
         when(failingEngine.canServiceRequest()).thenReturn(true);
         when(failingEngine.openConnection()).thenAnswer(invocation -> {
             PersistenceSessionBox box = PersistenceSessionBox.currentOrNull();
-            return box.requestScopedConnection(box.getOrAcquire(() -> failsOnClose));
+            return box.requestScopedConnection(box.getOrAcquireIfScopeMatches(
+                    "shared", ImmutableStorageContext.GLOBAL, () -> failsOnClose));
         });
         CommunityHttpRequestDispatcher dispatcher = new CommunityHttpRequestDispatcher(
                 ALLOCATOR, null, failingEngine, null, (method, path) -> RouteRequirement.permitAll());
@@ -326,26 +398,13 @@ class CommunityUnscopedRequestSessionEventTest {
                 ex.respond(HttpResponse.noBody(HttpStatus.OK, request.version()));
             }
         };
-        AtomicReference<RecordedEvent> seen = new AtomicReference<>();
-        CountDownLatch arrived = new CountDownLatch(1);
+        RecordedEvent event = firstEventFrom(() ->
+                assertThatThrownBy(() -> dispatcher.dispatch(request, exchange, handler))
+                        .as("the release failure propagates; the test is about what was recorded before it")
+                        .isInstanceOf(IllegalStateException.class));
 
-        try (RecordingStream stream = new RecordingStream()) {
-            stream.enable(EVENT_NAME);
-            stream.onEvent(EVENT_NAME, event -> {
-                if (seen.compareAndSet(null, event)) {
-                    arrived.countDown();
-                }
-            });
-            stream.startAsync();
-
-            assertThatThrownBy(() -> dispatcher.dispatch(request, exchange, handler))
-                    .as("the release failure propagates; the test is about what was recorded before it")
-                    .isInstanceOf(IllegalStateException.class);
-
-            assertThat(arrived.await(20, TimeUnit.SECONDS))
-                    .as("the report is emitted before release, so a throwing release cannot hide it")
-                    .isTrue();
-        }
-        assertThat(seen.get().getString("path")).isEqualTo("/public-release-fails");
+        assertThat(event.getString("path"))
+                .as("the report is emitted before release, so a throwing release cannot hide it")
+                .isEqualTo("/public-release-fails");
     }
 }

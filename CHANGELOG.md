@@ -87,13 +87,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
-- **A request session opened without a storage context is recorded, not silent** (ADR-061). A
+- **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
   scoped to `ImmutableStorageContext.GLOBAL` with no exception and no record. The Community
   dispatcher now emits the JFR event `eu.exeris.kernel.security.UnscopedRequestSession` (`method`,
-  `path`, `routeKind`, `readOnly`) for every request whose persistence session was acquired with the
-  slot unbound, before the session is released. Behaviour is unchanged: no route starts failing, and
+  `path`, `routeKind`, `readOnly`) for every request whose persistence session was opened for a
+  context declaring no tenant, before the session is released — including an authenticated request
+  whose provider resolved the system context, so a tenant-less deployment reports every request
+  that reaches persistence. Behaviour is unchanged: no route starts failing, and
   `STORAGE_CONTEXT` stays unbound on a `permitAll()` route, so `KernelProviders.storageContext()`
   still raises `EX-SEC-2004` there. The Javadoc of `KernelProviders.storageContextOrSystem()`,
   `PersistenceEngine.openConnection()` and `RouteRequirement.permitAll()` now states the consequence
