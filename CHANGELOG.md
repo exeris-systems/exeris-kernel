@@ -57,6 +57,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   drop the query (measured 64 B per request for a ten-character path, now 0 B). The stream-template
   table is walked as an array, which allocates no iterator at any compilation tier.
 
+- **A path template rejects a request on its literal prefix before walking segments.** Everything
+  before a template's first placeholder is literal, so a path that does not start with it cannot
+  match. Both route tables use it. In a generated application's table a `POST` is rejected by one
+  prefix comparison against every other entity's stream template instead of a segment walk: the
+  stream probe for a collection `POST` went from a median 199 ns to 29 ns at 10 entities and from
+  678 ns to 104 ns at 30, over three fresh JVMs each.
+
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
   total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
   and Tier B column type — and throws a typed exception for anything it does not implement. It
