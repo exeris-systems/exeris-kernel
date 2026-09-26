@@ -87,6 +87,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A write queued while another producer's flush empties the stream is written, not stranded.**
+  `NativeTcpStream.queueWrite` raises the outbound depth before it offers the write, and only the
+  producer that raises it from zero flushes. A producer suspended between the two was therefore not
+  a flusher, and the flush then in progress could not see its write; that flusher signalled the
+  reactor only when its own flush stalled, so the write stayed queued on a key armed for reads
+  alone until the idle reaper reset the stream and discarded it. The flusher now re-reads
+  the depth after releasing the consumer slot and hands a non-zero depth to the reactor, which keeps
+  write interest armed until it reads the depth at zero. Reaching the window takes two producers on
+  one stream, which the `TransportStream` contract rules out — a stream is owned by one virtual
+  thread — so a conforming caller never reached it; the carrier-pinning TCK bindings did (see the
+  carrier-pinning entry). The cost on the uncontended path is one volatile read.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
