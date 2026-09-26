@@ -7,21 +7,35 @@ package eu.exeris.kernel.core.http.routing;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
 
 import java.util.Map;
+import java.util.Objects;
 
 /**
- * A resolved streaming route: the handler, and whatever its template captured.
+ * A resolved streaming route: the handler a driver runs, and the path parameters its template captured.
  *
- * @param handler the streaming handler to drive
- * @param params  captured path parameters; empty for an exact stream route
+ * <p>{@code params} is held, not copied: pass an unmodifiable map. A driver applies it to the
+ * exchange it hands the handler, as {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}.
+ *
+ * @param handler the streaming handler to run; never {@code null}
+ * @param params  the captured path parameters, empty for an exact route; never {@code null}
  * @since 0.12
  */
 public record StreamMatch(HttpStreamHandler handler, Map<String, String> params) {
 
     /**
-     * A match with nothing captured — what an exact stream route resolves to.
+     * Rejects a match that could not be run.
      *
-     * @param handler the streaming handler
-     * @return the match; never {@code null}
+     * @throws NullPointerException if {@code handler} or {@code params} is {@code null}
+     */
+    public StreamMatch {
+        Objects.requireNonNull(handler, "handler");
+        Objects.requireNonNull(params, "params");
+    }
+
+    /**
+     * Returns a match with nothing captured, which is what an exact stream route resolves to.
+     *
+     * @param handler the streaming handler; never {@code null}
+     * @return the match
      */
     public static StreamMatch exact(HttpStreamHandler handler) {
         return new StreamMatch(handler, Map.of());

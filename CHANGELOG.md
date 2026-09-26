@@ -18,6 +18,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **`StreamRouteResolver`, the Core contract through which a driver resolves stream routes**
+  (ADR-043 Amendment A1). `HttpRouter` implements it, and a handler that wraps a router implements it
+  by delegating to the router. Its Javadoc states where resolution runs (before authorization,
+  outside the kernel's bindings, reading no `ScopedValue`), how a wrapper extends its own bindings to
+  the stream handler, and that anything bound around a stream is held for the stream's whole life.
+  `StreamMatch` refuses a `null` handler or parameter map at construction.
+
 - **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
   gains `abstain()` and a matching `Kind.ABSTAIN`; the dispatcher walks an ordered list of policies
   and takes the first non-abstaining answer. Without it a policy had only two replies — a requirement

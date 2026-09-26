@@ -40,9 +40,11 @@ import java.util.Objects;
  * captured values reaching the handler through
  * {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}. A registration that cannot match
  * is unrepresentable — a malformed brace throws at {@link Builder#streamRoute}, and a well-formed one
- * is compiled as a template.
+ * is compiled as a template. The router is also the {@link StreamRouteResolver} for its own stream
+ * table, so a driver resolves its stream routes through that contract whether the router is bound
+ * directly or reached through a handler that wraps it.
  */
-public final class HttpRouter implements HttpHandler {
+public final class HttpRouter implements HttpHandler, StreamRouteResolver {
 
     private static final HttpHandler DEFAULT_NOT_FOUND = exchange ->
             exchange.respond(HttpStatus.NOT_FOUND);
@@ -78,9 +80,11 @@ public final class HttpRouter implements HttpHandler {
      * a deployment that registers both a literal and a templated path meant the literal to be special.
      *
      * @param method request method
-     * @param path   request path (query stripped)
+     * @param path   request path as received; it may carry a query string, which takes no part in
+     *               matching
      * @return the resolved stream route, or {@code null}
      */
+    @Override
     public StreamMatch resolveStream(HttpMethod method, String path) {
         return streamRoutes.resolve(method, stripQuery(path));
     }
@@ -89,7 +93,8 @@ public final class HttpRouter implements HttpHandler {
      * Returns {@code true} if {@code (method, path)} is registered as a streaming route.
      *
      * @param method request method
-     * @param path   request path (query stripped)
+     * @param path   request path as received; it may carry a query string, which takes no part in
+     *               matching
      * @return whether the route is streaming
      */
     public boolean isStreamRoute(HttpMethod method, String path) {
