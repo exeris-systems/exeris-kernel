@@ -56,6 +56,20 @@ final class CommunityTransportTestHarness {
     }
 
     static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount) {
+        return openLoopbackPair(allocator, drainingServerHandler, reactorCount, "127.0.0.1");
+    }
+
+    /**
+     * Opens a loopback pair whose client end dials the server at {@code dialHost}.
+     *
+     * @param dialHost the host the client end dials; must resolve to {@code 127.0.0.1}, where the
+     *                 server listens. A host name here lets a case see whether the dialled
+     *                 connection reports the address it reached or the name it was given.
+     */
+    static Pair openLoopbackPair(MemoryAllocator allocator,
+                                 boolean drainingServerHandler,
+                                 int reactorCount,
+                                 String dialHost) {
         int port = nextFreePort();
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
 
@@ -107,7 +121,7 @@ final class CommunityTransportTestHarness {
         serverEngine.start();
         clientEngine.start();
 
-        TransportConnection clientConnection = clientEngine.connect("127.0.0.1", port);
+        TransportConnection clientConnection = clientEngine.connect(dialHost, port);
         try {
             if (!serverConnectionReady.await(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("Server did not accept connection within timeout");

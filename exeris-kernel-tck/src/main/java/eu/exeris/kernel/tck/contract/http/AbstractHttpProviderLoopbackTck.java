@@ -50,12 +50,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * reaches that peer rather than the configured default, and the server receives exactly one
  * {@code Host} field equal to the request's effective authority — the request's own authority, or
  * the configured default when it names none. The authority is a host name
- * ({@link #loopbackHostName()}) while
- * {@link eu.exeris.kernel.spi.transport.TransportConnection#remoteAddress()} reports an address, so a
- * {@code Host} built from the connection, from the configured default instead of the request, or from
- * the configuration's {@code bindHost} differs from it. The client fixture carries no
- * {@code bindHost} and the {@code -1} port sentinel, so the configured default authority is the only
- * peer a client can reach unaddressed.
+ * ({@link #loopbackHostName()}), so a {@code Host} taken from the configured default instead of the
+ * request, or from the configuration's {@code bindHost}, differs from it. A {@code Host} built from
+ * the connection differs from it too, because
+ * {@link eu.exeris.kernel.spi.transport.TransportConnection#remoteAddress()} reports an address on
+ * the dialled end as on the accepted one; that part holds on a transport that passes
+ * {@link eu.exeris.kernel.tck.contract.transport.AbstractTransportConnectionTck}, which checks it.
+ * The client fixture carries no {@code bindHost} and the {@code -1} port sentinel, so the configured
+ * default authority is the only peer a client can reach unaddressed.
  *
  * @since 0.5
  */
@@ -94,7 +96,9 @@ public abstract class AbstractHttpProviderLoopbackTck {
      * Returns a host name, not an address literal, that resolves to {@link #loopbackHost()}.
      *
      * <p>The {@code Host} cases address the server by this name, so the effective authority differs
-     * from the textual address of the connection the client opens to it.
+     * from the address the client's connection reports: the address the name resolved to, on a
+     * transport that passes
+     * {@link eu.exeris.kernel.tck.contract.transport.AbstractTransportConnectionTck}.
      *
      * @return a loopback host name; defaults to {@code "localhost"}
      * @apiNote Override together with {@link #loopbackHost()}: the client dials this name and must

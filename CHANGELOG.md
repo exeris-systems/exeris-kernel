@@ -101,8 +101,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `AbstractHttpProviderLoopbackTck$PeerAddressing#hostFollowsTheRequestAuthority` and
   `#hostFollowsTheConfiguredDefaultAuthority` require exactly one `Host`, equal to the authority the
   request names or, for an unaddressed request, to the configured default. Both address the server
-  by host name, so a `Host` built from the address a connection reports differs from it. No case
-  read `Host` before, so a client sending any value passed. The `clientConfig` fixture no longer
+  by host name, so a `Host` built from the address the client's connection reports differs from it
+  wherever the dialled connection reports an address, which the transport TCK checks (next entry).
+  No case read `Host` before, so a client sending any value passed. The `clientConfig` fixture no longer
   copies the default peer into `bindHost` and `port`; it carries none and the `-1` sentinel, so a
   client that dials its listener address no longer passes the unaddressed cases.
   `requestAuthorityOverridesTheConfiguredDefaultPeer` moves into the same `PeerAddressing` group.
@@ -110,6 +111,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   resolve to `loopbackHost()`; a binding whose client derives `Host` from the connection's address,
   from the default when the request names a peer, or from `bindHost`, or dials `bindHost` for an
   unaddressed request, now fails.
+
+- **A dialled TCP connection reports the address it reached, not the name it was dialled by.**
+  `NativeTcpCarrier#connect` built the `NativeTcpConnection` from the host string it was given, so
+  `TransportConnection#remoteAddress()` on a Community client connection dialled as `localhost`
+  returned `localhost`, where the SPI documents the peer's address (`192.168.1.1`) and an accepted
+  connection reports one. It now reports the address the channel connected to, and `remotePort()`
+  the port it connected to. A caller that needs the name it dialled keeps it; the HTTP client already
+  writes `Host` from the request's authority. `AbstractTransportConnectionTck$RemoteEndpoint` checks
+  both ends: `#acceptedEndReportsAnAddress` and `#dialledEndReportsAnAddress` require an IP address
+  literal. Until now only the accepted end was checked, and only for being non-blank. **For anyone
+  binding the TCK:** a binding whose dialled connection reports a host name now fails, and
+  `createConnectionPair` should open the client end by host name where the transport dials by name,
+  as the Community bindings now do, since the dialled-end case cannot tell a name from an address
+  otherwise.
 
 - **A WebSocket handler's `receive()` returns `null` at the peer's close frame, not when the peer
   drops the socket.** `CommunityWebSocketExchange` echoed the close and marked the exchange closed,
