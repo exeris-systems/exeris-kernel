@@ -1,0 +1,290 @@
+# Behaviour tests for this repository's roles — agents-md-schema.md rule 14.
+#
+# Runtime-independent on purpose: a case names a fixture, a prompt, the schema the answer must
+# conform to, and assertions over its fields. The vendored runner drives whichever CLI is on PATH;
+# nothing here mentions one.
+#
+# Graders are deterministic. `fields` are equality assertions against the parsed JSON, `contains`
+# and `forbidden` are substrings of the raw answer, `min_findings` counts, and `any_check_result`
+# asserts the verdict admitted a check it did not run.
+#
+# Seven of these cases assert a REFUSAL to escalate, and they carry the `negative` tag so the count is
+# derivable rather than remembered — `--tags negative` selects exactly them. That balance is
+# deliberate: every profile here carries a non-goal about over-policing, and a suite of only
+# positive cases passes against an agent that blocks everything — the same shape as a TCK that only
+# tests the happy flow, which this repository rejects in code and should not accept in its own
+# agent layer.
+#
+# Five of the 7 are one half of a PAIR, and the pairing is the point: the same construct is a
+# defect or ordinary depending on where it sits, so a case that only asserts the defect passes
+# against an agent that has learned the string and nothing about the scope.
+#
+#   ThreadLocal            hot path -> blocking      | testkit fixture -> PASS
+#   an allocation          write path -> blocking    | bootstrap, once per JVM -> PASS
+#   a cross-module import  SPI -> Community -> BLOCK | Community -> Core -> PASS
+#   target-state prose     reported as shipped -> flag | labelled as not-here -> PASS
+#   MULTI_DOMAIN           a real four-surface change | a typo -> DOCS_ADR
+#   the whole-PR verdict   that same four-surface change | a typo -> PASS
+#
+# They run on demand and on a schedule, never on every pull request: model-in-the-loop CI on a solo
+# project is cost without a signal. A change to a profile, skill or policy a case covers reruns that
+# case before merge, and the pull request names the run.
+version: 1
+
+defaults:
+  schema_dir: ../schemas
+  fixture_dir: fixtures
+
+cases:
+  # ── The Wall (ADR-006) — the invariant the whole repository is organised around ──────────────
+  - id: wall-spi-must-not-import-community
+    agent: exeris-architect
+    fixture: spi-imports-community.md
+    prompt: "Review this change for placement and boundary integrity."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: BLOCKED
+        scope_class: runtime non-hot
+      min_findings: 1
+      contains: ["implementation-blind"]
+    tags: [wall, architect]
+
+  - id: wall-core-must-not-wire-a-driver
+    agent: exeris-architect
+    fixture: core-hardcodes-driver.md
+    prompt: "Review this change for placement and boundary integrity."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: BLOCKED
+      min_findings: 1
+      contains: ["driver-agnostic"]
+    tags: [wall, architect]
+
+  - id: wall-community-may-depend-on-core
+    # The paired negative for the two above. Without it the suite passes against an agent that has
+    # learned "a cross-module import is a finding" and nothing about which way the arrow may point:
+    # Community -> Core -> SPI is the legal direction, and a reviewer that blocks it has inverted
+    # the rule it is enforcing.
+    agent: exeris-architect
+    fixture: community-depends-on-core.md
+    prompt: "Review this change for placement and boundary integrity."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+    tags: [wall, architect, negative]
+
+  # ── scope discipline — the same construct is a defect or fine depending on where it sits ─────
+  - id: scope-threadlocal-on-a-hot-path-is-blocking
+    agent: exeris-performance
+    fixture: threadlocal-on-hot-path.md
+    prompt: "Review this change against the hot-path performance contract."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        scope_class: runtime hot path
+      min_findings: 1
+      contains: ["ScopedValue"]
+    tags: [scope, performance, bans]
+
+  - id: scope-threadlocal-in-a-test-fixture-is-not
+    # The paired negative. Without it the suite passes against an agent that has learned the string
+    # `ThreadLocal` and nothing about where the ban applies.
+    agent: exeris-performance
+    fixture: threadlocal-in-a-test-fixture.md
+    prompt: "Review this change against the hot-path performance contract."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: test-tooling
+    tags: [scope, performance, bans, negative]
+
+  - id: scope-a-bootstrap-allocation-is-not-a-hot-path-defect
+    # The other axis of the same discipline. The testkit case above separates production from test;
+    # this one separates hot from cold inside production, which is where "No Waste Compute" is most
+    # often misapplied — a HashMap built once per JVM is not an allocation regression.
+    agent: exeris-performance
+    fixture: bootstrap-allocation.md
+    prompt: "Review this change against the hot-path performance contract."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: runtime non-hot
+    tags: [scope, performance, negative]
+
+  # ── contract verification ────────────────────────────────────────────────────────────────────
+  - id: tck-signature-change-owes-abstract-tck
+    agent: exeris-tck
+    fixture: spi-method-gains-a-parameter.md
+    prompt: "Classify the contract impact and state what coverage this owes."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: BLOCKED
+      min_findings: 1
+      contains: ["AbstractBlobStorageTck"]
+    tags: [tck, contract]
+
+  - id: tck-typo-owes-nothing
+    # exeris-tck's own stated non-goal. A TCK reviewer that demands coverage for a Javadoc typo is
+    # the one people stop asking.
+    agent: exeris-tck
+    fixture: javadoc-typo-fix.md
+    prompt: "Classify the contract impact and state what coverage this owes."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: docs-only
+    tags: [tck, contract, negative]
+
+  # ── documentation truth ──────────────────────────────────────────────────────────────────────
+  - id: docs-target-state-is-not-reported-as-shipped
+    agent: exeris-docs-adr
+    fixture: subsystem-doc-claims-target-state.md
+    prompt: "Review this documentation change for drift against the repository as it is."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        scope_class: docs-only
+      min_findings: 1
+      # No `forbidden` here, and the removal is deliberate. It read
+      # "the transport submits reads and writes through io_uring" — a substring the fixture itself
+      # does not contain, because the fixture writes `io_uring` in backticks, so the grader could
+      # never fire. Worse, had it fired it would have failed the RIGHT answer: a review that
+      # refutes a claim quotes it first. The failure mode this case guards is captured by
+      # `min_findings` and by the decision, which an answer agreeing with the page cannot produce.
+    tags: [docs, drift]
+
+  - id: docs-target-state-labelled-as-target-is-fine
+    # The paired negative. The policy is that planned architecture must be MARKED as planned, not
+    # that it may never be mentioned; a reviewer that flags the word `io_uring` wherever it appears
+    # has turned a labelling rule into a vocabulary ban, and the next author deletes the section
+    # that was doing the disambiguating.
+    agent: exeris-docs-adr
+    fixture: subsystem-doc-labels-target-state.md
+    prompt: "Review this documentation change for drift against the repository as it is."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: docs-only
+    tags: [docs, drift, negative]
+
+  - id: docs-missing-rows-are-a-registry-defect
+    agent: exeris-docs-adr
+    fixture: exceptions-doc-drift.md
+    prompt: "Review this for documentation drift and say what must change before merge."
+    expect:
+      schema: verdict.schema.json
+      min_findings: 1
+      contains: ["error-code-registry-check"]
+    tags: [docs, drift, errors]
+
+  # ── routing ──────────────────────────────────────────────────────────────────────────────────
+  - id: route-placement-question-goes-to-the-architect
+    agent: exeris-router
+    fixture: new-community-driver-placement.md
+    prompt: "Triage this task and route it."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: ARCHITECTURE
+        primary_agent: exeris-architect
+    tags: [routing]
+
+  - id: route-allocation-regression-goes-to-performance
+    agent: exeris-router
+    fixture: allocation-in-the-write-path.md
+    prompt: "Triage this task and route it."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: PERFORMANCE_REVIEW
+        primary_agent: exeris-performance
+    tags: [routing]
+
+  - id: route-doc-drift-goes-to-docs-adr
+    agent: exeris-router
+    fixture: exceptions-doc-drift.md
+    prompt: "Triage this task and route it."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: DOCS_ADR
+        primary_agent: exeris-docs-adr
+    tags: [routing]
+
+  - id: route-typo-is-not-multi-domain
+    # The router's own non-goal: proportional review depth. A router that answers MULTI_DOMAIN to
+    # everything has replaced triage with a fan-out.
+    agent: exeris-router
+    fixture: javadoc-typo-fix.md
+    prompt: "Triage this task and route it."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: DOCS_ADR
+    tags: [routing, negative]
+
+  - id: route-a-four-surface-change-is-multi-domain
+    # The direction `route-typo-is-not-multi-domain` cannot test on its own: without this case an
+    # agent that never answers MULTI_DOMAIN passes that one perfectly. SPI contract, a hot-path
+    # allocation, a JFR event and a missing subsystem page is what the class is for.
+    agent: exeris-router
+    fixture: websocket-backpressure.md
+    prompt: "Triage this task and route it."
+    expect:
+      schema: triage-result.schema.json
+      fields:
+        task_class: MULTI_DOMAIN
+    tags: [routing]
+
+  # ── the evaluator, the role the CI review runs as ────────────────────────────────────────────
+  - id: evaluator-reports-every-surface-a-change-touches
+    # The reason this role exists. The fixture moves an SPI contract, a hot-path allocation, a JFR
+    # event and a missing subsystem page at once; a reviewer wearing one lens reports a subset and
+    # calls it a verdict. Two findings is the floor, not the target.
+    agent: exeris-evaluator
+    fixture: websocket-backpressure.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        scope_class: runtime hot path
+      min_findings: 2
+      contains: ["AbstractWebSocketSessionTck"]
+    tags: [evaluator, review]
+
+  - id: evaluator-does-not-escalate-a-typo
+    # The paired negative, and the one that keeps the role usable. An evaluator that answers
+    # BLOCKED to everything has replaced review with a veto, and is the reviewer people route
+    # around within a week.
+    agent: exeris-evaluator
+    fixture: javadoc-typo-fix.md
+    prompt: "Review this change and answer with a verdict."
+    expect:
+      schema: verdict.schema.json
+      fields:
+        decision: PASS
+        scope_class: docs-only
+    tags: [evaluator, review, negative]
+
+  # ── evidence discipline ──────────────────────────────────────────────────────────────────────
+  - id: verdict-admits-the-check-it-could-not-run
+    # `checks_run` carries a `not-run` value for exactly this: a green verdict resting on an unrun
+    # check must say so. The fixture describes a change whose gate needs a Testcontainers Postgres,
+    # which a review turn does not have.
+    agent: exeris-tck
+    fixture: spi-method-gains-a-parameter.md
+    prompt: >-
+      Classify the contract impact. You have no Docker daemon and no Maven repository in this
+      turn, so no tagged gate can be executed. Report what you ran and what you did not.
+    expect:
+      schema: verdict.schema.json
+      any_check_result: not-run
+    tags: [evidence, tck]

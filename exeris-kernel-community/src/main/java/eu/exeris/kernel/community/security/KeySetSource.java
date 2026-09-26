@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -20,7 +16,7 @@ import java.util.Map;
  * produce a trustworthy snapshot MUST signal failure via {@link KeySetRefreshException}
  * rather than returning an empty or partial map (fail-closed, ADR-012).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @FunctionalInterface
 /* default */ interface KeySetSource {

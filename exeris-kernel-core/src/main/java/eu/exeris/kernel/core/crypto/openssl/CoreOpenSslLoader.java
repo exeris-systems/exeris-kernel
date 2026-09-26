@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.crypto.openssl;
 
@@ -45,7 +41,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * <p>Shared OpenSSL constants are exposed as {@code public static final int} fields
  * so callers do not duplicate magic numbers.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 public final class CoreOpenSslLoader {
@@ -156,7 +152,7 @@ public final class CoreOpenSslLoader {
      * {@code GlobalMemoryArbiter.INFRASTRUCTURE} — ensuring symbols stay inside the
      * single pre-allocated memory block.
      *
-     * <h2>Library Discovery Order</h2>
+     * <h4>Library Discovery Order</h4>
      * <ol>
      *   <li>{@code EXERIS_OPENSSL_CRYPTO_PATH} → explicit path for {@code libcrypto}.</li>
      *   <li>{@code EXERIS_OPENSSL_PATH} → legacy override; controls {@code libcrypto}
@@ -170,7 +166,10 @@ public final class CoreOpenSslLoader {
      *
      * @param arena the arena whose scope governs the lifetime of the loaded symbols
      * @return immutable {@link CoreOpenSslRuntime} containing the exact runtime lookup and resolved handles
-     * @throws CryptoBootstrapException if libssl cannot be found or a required symbol is missing
+     * @throws CryptoBootstrapException if libssl cannot be found, if libssl and libcrypto
+     *                                  disagree on major version, if the resolved version
+     *                                  falls outside the supported band, or if a required
+     *                                  symbol is missing ({@code EX-NET-2002})
      */
     public static CoreOpenSslRuntime load(Arena arena) {
         ResolvedLibrary crypto = resolveCrypto(arena);
@@ -272,7 +271,7 @@ public final class CoreOpenSslLoader {
      * @param major OpenSSL major version ({@code OPENSSL_version_major()})
      * @param minor OpenSSL minor version ({@code OPENSSL_version_minor()})
      * @param text  full human-readable version string ({@code OpenSSL_version(OPENSSL_VERSION)})
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ record OpenSslVersion(int major, int minor, String text) {
     }
@@ -294,6 +293,7 @@ public final class CoreOpenSslLoader {
      *
      * @throws CryptoBootstrapException if a required version symbol is missing or the
      *                                  version falls outside the supported band
+     *                                  ({@code EX-NET-2002})
      */
     private static OpenSslVersion verifyOpenSslVersion(Linker linker, SymbolLookup lookup) {
         long versionNum = invokeVersionNum(linker, lookup);
@@ -314,7 +314,8 @@ public final class CoreOpenSslLoader {
      * @param minor      reported OpenSSL minor version (included in the diagnostic message only)
      * @param versionNum packed {@code OPENSSL_version_num()} value
      * @throws CryptoBootstrapException if the version is outside the supported band
-     * @since 0.9.0
+     *                                  ({@code EX-NET-2002})
+     * @since 0.9
      */
     /* package */ static void assertSupported(int major, int minor, long versionNum) {
         if (!isSupportedVersion(major, versionNum)) {
@@ -334,7 +335,7 @@ public final class CoreOpenSslLoader {
      * @param major      reported OpenSSL major version
      * @param versionNum packed {@code OPENSSL_version_num()} value
      * @return {@code true} iff {@code 3 <= major <= 4} and {@code versionNum >= 0x30000000}
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static boolean isSupportedVersion(int major, long versionNum) {
         return major >= OPENSSL_MIN_KNOWN_MAJOR
@@ -356,6 +357,9 @@ public final class CoreOpenSslLoader {
      * has already passed against the authoritative crypto-side major) rather than failing the load.
      * The mismatch exception is thrown only when the ssl-side major is resolvable <em>and</em>
      * disagrees with the crypto-side major.
+     *
+     * @throws CryptoBootstrapException if the ssl-side major is resolvable and disagrees with
+     *                                  the crypto-side major ({@code EX-NET-2002})
      */
     private static void assertSameMajor(Linker linker, SymbolLookup ssl, SymbolLookup crypto) {
         OptionalInt sslMajor = optVersionInt(linker, ssl, "OPENSSL_version_major");
@@ -371,7 +375,8 @@ public final class CoreOpenSslLoader {
      * @param sslMajor    {@code OPENSSL_version_major()} resolved via the {@code libssl} handle
      * @param cryptoMajor {@code OPENSSL_version_major()} resolved via the {@code libcrypto} handle
      * @throws CryptoBootstrapException if the two majors disagree (mixed-ABI cross-load)
-     * @since 0.9.0
+     *                                  ({@code EX-NET-2002})
+     * @since 0.9
      */
     /* package */ static void assertSameMajor(int sslMajor, int cryptoMajor) {
         if (!majorsAgree(sslMajor, cryptoMajor)) {
@@ -386,7 +391,7 @@ public final class CoreOpenSslLoader {
      * @param sslMajor    ssl-side {@code OPENSSL_version_major()}
      * @param cryptoMajor crypto-side {@code OPENSSL_version_major()}
      * @return {@code true} iff the two majors are equal
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static boolean majorsAgree(int sslMajor, int cryptoMajor) {
         return sslMajor == cryptoMajor;
@@ -468,7 +473,7 @@ public final class CoreOpenSslLoader {
      *
      * @param lookup the live symbol lookup
      * @param path   the candidate string that resolved (filesystem path or SONAME)
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ record ResolvedLibrary(SymbolLookup lookup, String path) {
     }

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence.jdbc;
 
@@ -27,7 +23,7 @@ import java.util.UUID;
  * {@link PersistenceConnection}. Connection ownership and pooling are managed by
  * the caller (typically {@code CommunityPersistenceEngine} / request scope).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityJdbcEventStore implements EventStore {
 
@@ -51,6 +47,14 @@ public final class CommunityJdbcEventStore implements EventStore {
 
     private final PersistenceConnection connection;
 
+    /**
+     * Wraps {@code connection} for outbox access; every operation requires it to already be
+     * inside a transaction.
+     *
+     * @param connection the connection to issue outbox statements against; not retained beyond
+     *                    this instance's lifetime and never closed by it
+     * @throws NullPointerException if {@code connection} is {@code null}
+     */
     public CommunityJdbcEventStore(PersistenceConnection connection) {
         this.connection = Objects.requireNonNull(connection, "connection must not be null");
     }

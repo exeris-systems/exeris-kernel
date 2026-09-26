@@ -17,9 +17,12 @@ Authority for the decision itself is
 
 ## This line (`main` and `development/*`) — the distributable artifact
 
-**JDK 25 LTS.** Main sources compile preview-clean; test and TCK fixtures still compile and run with
-`--enable-preview`, because they are not distributed. Maven 3.9+ multi-module reactor, JUnit 5,
-ArchUnit, JMH, JFR, Testcontainers (Postgres and Kafka) behind tagged gates.
+**JDK 25 LTS baseline, and anything newer also works.** The line is **preview-clean in every
+scope** — main sources, test sources and TCK fixtures alike — and the build sets `--enable-preview`
+nowhere (ADR-066 and its Amendment A1). That is what un-pinned the JDK: the flag is legal only when
+`--release` equals the running JDK, so while it was set anywhere, 25 was the only JDK that could
+build the repository. Maven 3.9+ multi-module reactor, JUnit 5, ArchUnit, JMH, JFR, Testcontainers
+(Postgres and Kafka) behind tagged gates.
 
 The default line picks its JDK by one rule: **LTS only, preview-clean** — 25 today, 29 next. No
 `--enable-preview` on main sources, no `StructuredTaskScope`, concurrency on virtual threads plus
@@ -47,9 +50,10 @@ forking was tried: it booted the HTTP subsystem with no handler bound and every 
 A move *away* from `StructuredTaskScope` on the default path is therefore not a guardrail violation.
 
 **Verify the state by bytecode, never by grep.** `tools/preview-bytecode-scan/preview-bytecode-scan.sh`
-is the gate; it reads the published jars and fails on any class stamped `minor_version 0xFFFF`. Main
-sources carry no `StructuredTaskScope` import on this branch; test sources still do, and legitimately
-so while the flag is on for test compilation.
+is the gate; it reads the published jars and fails on any class stamped `minor_version 0xFFFF`. As of
+v0.12 the test fixtures are converted too — `TckScope`, plus `BlockingPeerPair` for the three that
+must drive blocking peers on platform threads — so a `StructuredTaskScope` import **anywhere** on
+this line is now wrong rather than exempt. Neither main nor test sources carry one.
 
 ## Valhalla-ready carriers
 

@@ -37,3 +37,8 @@ replay_pid*
 # agent-file gate walks the working tree and reads a worktree's own AGENTS.md as a nested one,
 # reporting a 7 KB file against the 4 KB nested limit — an error that does not exist.
 .claude/worktrees/
+
+# Runtime state written by the L0 hooks (.agents/hooks/hooks.yaml). Per-session, per-checkout,
+# never repository content — a state directory shared across sessions makes a stop gate fire once
+# per checkout and never again.
+.agents-state/

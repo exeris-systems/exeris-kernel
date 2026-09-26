@@ -65,6 +65,6 @@ jobs:
       # needs no pom change, because that half runs `javadoc` and Checkstyle directly over the
       # changed files rather than through the Maven plugin — which is also why this value is the
       # same on every branch while `modules` is not.
-      modules: ""
+      modules: exeris-kernel-spi,exeris-kernel-tck
       diff-modules: exeris-kernel-core,exeris-kernel-community
-      extra-maven-args: ""
+      extra-maven-args: "-Pjavadoc-gate"

@@ -1,12 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
+
+import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.context.KernelProviders;
 
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.core.transport.syscall.CoreSyscallLoader;
@@ -20,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Community socket-backend selector and bootstrap-validation lifecycle owner.
  *
- * <p>Extracted from {@link NativeTcpCarrier} in v0.8 Sprint 1 (QA-013a). Owns:
+ * <p>One instance per {@link NativeTcpCarrier}. Owns:
  *
  * <ul>
  *   <li>The {@link SocketBackendMode} selection from JVM property / env vars.</li>
@@ -35,8 +34,26 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p>Native socket helpers (FFM downcalls, sockaddr serialization, server/
  * client probes) live in {@link NativeTcpSocketProbe}; this class only owns
  * state and routes validation calls through to the probe helpers.
+ *
+ * <p><b>Allocation:</b> attempts one shared {@link Arena} at construction, unless NIO is pinned
+ * explicitly or the runtime is Windows; the arena is closed immediately if native syscall handles
+ * cannot be resolved, or held for this instance's lifetime otherwise. No allocation thereafter.
+ * <p><b>Thread confinement:</b> none — the resolved {@link SocketBackendSelection} is immutable
+ * after construction and the validation latches are {@link AtomicBoolean}-gated, so every method
+ * here may be called from any thread.
+ * <p><b>Ownership:</b> owns the {@link Arena} (and the native syscall handles it backs) and is the
+ * only thing that closes it, deterministically, from {@link #close()}; the owning
+ * {@link NativeTcpCarrier} is responsible for calling it exactly once.
  */
 final class NativeTcpSocketBackend {
+
+    /**
+     * Config key for the backend selection. Resolved through {@link ConfigProvider} first, so the
+     * choice is reachable from a config file and the environment and appears in
+     * {@code docs/subsystems/config.md} — the property and env aliases below stay as the second
+     * tier, because they were the published surface and a deployment may be using them.
+     */
+    /* default */ static final String SOCKET_BACKEND_KEY = "transport.socket.backend";
 
     /* default */ static final String SOCKET_BACKEND_PROPERTY = "exeris.community.transport.socket.backend";
     /* default */ static final String SOCKET_BACKEND_ENV = "EXERIS_COMMUNITY_TRANSPORT_SOCKET_BACKEND";
@@ -166,19 +183,46 @@ final class NativeTcpSocketBackend {
             return configValue;
         }
 
-        @SuppressWarnings("PMD.CyclomaticComplexity") // 4-source property/env fallback ladder is intrinsic.
+        /**
+         * The backend is chosen while the carrier is constructed, which happens inside the boot
+         * scope, so {@code CURRENT_CONFIG} is bound. A carrier built outside a boot (tests,
+         * tooling) reads {@code null} and falls through to the property ladder unchanged.
+         *
+         * @return the configured mode string, or {@code null} when no provider is bound
+         */
+        private static String fromConfigProvider() {
+            if (!KernelProviders.CURRENT_CONFIG.isBound()) {
+                return null;
+            }
+            ConfigProvider config = KernelProviders.CURRENT_CONFIG.get();
+            return config == null ? null : config.getString(SOCKET_BACKEND_KEY).orElse(null);
+        }
+
+        /**
+         * First non-blank of the ordered sources. A loop rather than a fallback chain because the
+         * chain's NPath grows multiplicatively with each source and PMD refuses it at five —
+         * correctly, since the branching says nothing the ordering does not.
+         *
+         * @param candidates the sources, in precedence order
+         * @return the first usable value, or {@code null}
+         */
+        private static String firstNonBlank(String... candidates) {
+            for (String candidate : candidates) {
+                if (candidate != null && !candidate.isBlank()) {
+                    return candidate;
+                }
+            }
+            return null;
+        }
+
         private static SocketBackendMode resolveConfiguredMode() {
-            String configured = System.getProperty(SOCKET_BACKEND_PROPERTY);
-            if (configured == null || configured.isBlank()) {
-                configured = System.getProperty(SOCKET_BACKEND_ENV_ALIAS);
-            }
-            if (configured == null || configured.isBlank()) {
-                configured = System.getenv(SOCKET_BACKEND_ENV);
-            }
-            if (configured == null || configured.isBlank()) {
-                configured = System.getenv(SOCKET_BACKEND_ENV_ALIAS);
-            }
-            if (configured == null || configured.isBlank()) {
+            String configured = firstNonBlank(
+                    fromConfigProvider(),
+                    System.getProperty(SOCKET_BACKEND_PROPERTY),
+                    System.getProperty(SOCKET_BACKEND_ENV_ALIAS),
+                    System.getenv(SOCKET_BACKEND_ENV),
+                    System.getenv(SOCKET_BACKEND_ENV_ALIAS));
+            if (configured == null) {
                 return AUTO;
             }
             return switch (configured.trim().toLowerCase(Locale.ROOT)) {

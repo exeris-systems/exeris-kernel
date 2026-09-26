@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.testkit.persistence;
 
@@ -24,7 +20,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * bootstrap, real migrations, real pool. Nothing here is a stand-in.
  *
  * <h2>Lifecycle</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (EmbeddedPersistenceEngineFixture fixture = EmbeddedPersistenceEngineFixtures.inMemoryH2()) {
  *     fixture.start();
  *     try (PersistenceConnection connection = fixture.engine().openConnection()) {
@@ -33,7 +29,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  *         connection.rollback();
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>Which thread</h2>
  * <p>{@link #engine()} is safe to use directly from the test thread: the Community engine reads no
@@ -42,7 +38,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * a provider slot, which is the usual shape of a host runtime's transaction manager — must run through
  * {@link #runInKernelScope(Runnable)} instead, or it will fail to resolve them.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface EmbeddedPersistenceEngineFixture extends AutoCloseable {
 

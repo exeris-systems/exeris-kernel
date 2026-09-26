@@ -1,15 +1,12 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.bootstrap;
 
 import eu.exeris.kernel.core.bootstrap.health.KernelHealthMonitor;
 import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
+import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
@@ -47,7 +44,7 @@ import java.util.function.UnaryOperator;
  * <h2>Responsibilities</h2>
  * <ol>
  *   <li><b>Discovery:</b> Loads all {@link SubsystemProvider} implementations via
- *       {@link ServiceLoader}, sorted by priority descending. Higher-priority provider
+ *       {@link java.util.ServiceLoader}, sorted by priority descending. Higher-priority provider
  *       wins on name collision (Enterprise shadows Community).</li>
  *   <li><b>Closure:</b> Expands the {@link BootstrapSelector} to its full transitive
  *       dependency closure via BFS — requesting {@code "persistence"} automatically
@@ -77,7 +74,7 @@ import java.util.function.UnaryOperator;
  * Narrow synchronized sections are used only for internal {@code orderedSubsystems}
  * list mutation/snapshots off the hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see SubsystemCircularDependencyException
  * @see BootstrapJfrEvents
  */
@@ -294,6 +291,10 @@ public final class SubsystemOrchestrator {
      *
      * @param config the active kernel config
      * @return the selected subsystems in bootstrap (topological) order; never {@code null}
+     * @throws SubsystemCircularDependencyException if the selected subsystems contain a
+     *         dependency cycle (FAIL_FAST — cannot be suppressed)
+     * @throws BootstrapException if the selector requests a subsystem not present in the
+     *         registry, or the registry contains a duplicate subsystem name
      */
     public List<Subsystem> resolveTopology(ConfigProvider config) throws BootstrapException {
         Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
@@ -353,8 +354,9 @@ public final class SubsystemOrchestrator {
     }
 
     /**
-     * Graceful shutdown — stops all running subsystems in strict reverse topological
-     * order. Never throws — exceptions are logged as WARNING.
+     * Graceful shutdown — calls {@code stop()} on each subsystem for which
+     * {@link Subsystem#isRunning()} reports {@code true}, in strict reverse topological order.
+     * Never throws — a {@code stop()} that throws is caught and logged as WARNING.
      */
     public void shutdown() {
         if (terminated.get()) {
@@ -397,12 +399,22 @@ public final class SubsystemOrchestrator {
     // Query API
     // =========================================================================
 
-    /** @return {@code true} after a successful {@link #initialize(ConfigProvider)} */
+    /**
+     * Reports whether {@link #initialize(ConfigProvider)} has completed successfully and
+     * {@link #shutdown()} has not yet reset it.
+     *
+     * @return {@code true} after a successful {@link #initialize(ConfigProvider)}
+     */
     public boolean isInitialized() {
         return initialized.get();
     }
 
-    /** @return {@code true} after a successful {@link #start(ConfigProvider)} */
+    /**
+     * Reports whether {@link #start(ConfigProvider)} has completed successfully and
+     * {@link #shutdown()} has not yet reset it.
+     *
+     * @return {@code true} after a successful {@link #start(ConfigProvider)}
+     */
     public boolean isStarted() {
         return started.get();
     }
@@ -411,7 +423,7 @@ public final class SubsystemOrchestrator {
      * Builds a {@link ScopedValue.Carrier} from all provider bindings collected
      * during {@link #initialize(ConfigProvider)}.
      *
-     * <h2>Protocol</h2>
+     * <h4>Protocol</h4>
      * <p>Called by {@link KernelBootstrap} <em>after</em> {@link #initialize(ConfigProvider)}
      * returns and <em>before</em> {@link #start(ConfigProvider)} is called.
      * {@code KernelBootstrap} then executes both {@code start()} and the application
@@ -420,7 +432,7 @@ public final class SubsystemOrchestrator {
      * {@link eu.exeris.kernel.spi.context.KernelProviders#allocator()} etc. without
      * argument threading.
      *
-     * <h2>Type safety</h2>
+     * <h4>Type safety</h4>
      * <p>The previous implementation iterated a {@code Map<ScopedValue<?>, Object>} and
      * required {@code @SuppressWarnings({"unchecked","rawtypes"})} to build the carrier.
      * This implementation applies the {@link #composedEnricher} — a {@link UnaryOperator}
@@ -428,7 +440,7 @@ public final class SubsystemOrchestrator {
      * No casts, no wildcards, no suppressions. The compiler validates each
      * {@code .where(ScopedValue<T>, T)} binding at the subsystem's own call site.
      *
-     * <h2>Empty bindings</h2>
+     * <h4>Empty bindings</h4>
      * <p>If no subsystem overrode {@link Subsystem#providerBindings()}, the composed
      * enricher is the identity function and this method returns {@code null}.
      * {@link KernelBootstrap} treats {@code null} as "no additional scope required"
@@ -478,7 +490,11 @@ public final class SubsystemOrchestrator {
         return Collections.unmodifiableList(orderedSubsystems);
     }
 
-    /** Exposes readiness/liveness registry for probe wiring. */
+    /**
+     * Exposes readiness/liveness registry for probe wiring.
+     *
+     * @return the health monitor tracking this orchestrator's subsystems
+     */
     public KernelHealthMonitor healthMonitor() {
         return healthMonitor;
     }
@@ -610,6 +626,37 @@ public final class SubsystemOrchestrator {
                 "  start [{0}] (profile={1})", subsystem.name(), profile);
         try {
             subsystem.start();
+            // This subsystem's hot-path JFR event classes initialise here, on the booting thread,
+            // and not later on the first virtual thread to emit one: a virtual thread inside a
+            // <clinit> cannot unmount, so it pins its carrier for the whole of it. The catalogue
+            // states which classes are warmed and which are deliberately left cold; the cost is
+            // counted into this subsystem's start time below, because it is part of starting it.
+            //
+            // Behind isRunning(), which is the check stopAll already trusts to decide what it has
+            // to stop: a subsystem that found no provider, or that was configured off, reports
+            // false and emits none of these events, so it should not pay their class load at boot.
+            // That is only readable once start() has run, which is why the warm-up follows it.
+            //
+            // The limit of warming after start(): a subsystem that emits one of its own Core events
+            // from inside start() still initialises that class wherever that emit lands. Transport
+            // is the one place that happens, and NativeTcpCarrier.start() warms both of its groups
+            // itself, before it stands anything up, to cover it.
+            //
+            // Its own catch, and not the one below. The subsystem is up and holding resources by the
+            // time this runs, so marking it FAILED over a diagnostic would take a mandatory
+            // subsystem's boot down with it. JfrEventWarmup swallows ClassNotFoundException and
+            // LinkageError per class for the same reason; this keeps the seam and the thing it
+            // calls to one rule.
+            if (subsystem.isRunning()) {
+                try {
+                    CoreJfrEventCatalogue.warmHotPath(subsystem.name());
+                } catch (RuntimeException ex) { // NOPMD — a warm-up must not fail a started subsystem
+                    LOG.log(System.Logger.Level.WARNING,
+                            "  [{0}] JFR event warm-up failed; the subsystem is running and its events will "
+                                    + "initialise at their first emit: {1}",
+                            subsystem.name(), ex.toString());
+                }
+            }
             LOG.log(System.Logger.Level.INFO,
                     "  [{0}] started ({1} ms)", subsystem.name(), elapsedMs(startNanos));
             healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.RUNNING);
@@ -829,7 +876,11 @@ public final class SubsystemOrchestrator {
     // Builder
     // =========================================================================
 
-    /** Creates a new {@link Builder}. */
+    /**
+     * Creates a new {@link Builder}.
+     *
+     * @return a new builder with default settings
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -843,7 +894,23 @@ public final class SubsystemOrchestrator {
         private BootstrapSelector selector      = BootstrapSelector.all();
         private ClassLoader       classLoader;
 
-        /** Sets the failure policy (default: {@link FailurePolicy#FAIL_FAST}). */
+        /**
+         * Creates a builder with every setting at its default.
+         *
+         * <p>Obtain one through {@link SubsystemOrchestrator#builder()} rather than directly; the factory is the
+         * documented entry point and this constructor exists only because the class is public.
+         */
+        public Builder() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        /**
+         * Sets the failure policy (default: {@link FailurePolicy#FAIL_FAST}).
+         *
+         * @param policy failure policy
+         * @return this builder
+         */
         public Builder failurePolicy(FailurePolicy policy) {
             this.failurePolicy = Objects.requireNonNull(policy);
             return this;
@@ -852,6 +919,9 @@ public final class SubsystemOrchestrator {
         /**
          * Sets which subsystems to activate (default: {@link BootstrapSelector#all()}).
          * The orchestrator expands the selector to its full transitive closure.
+         *
+         * @param sel bootstrap selector
+         * @return this builder
          */
         public Builder selector(BootstrapSelector sel) {
             this.selector = Objects.requireNonNull(sel);
@@ -859,15 +929,22 @@ public final class SubsystemOrchestrator {
         }
 
         /**
-         * Sets the {@link ClassLoader} for {@link ServiceLoader} discovery.
+         * Sets the {@link ClassLoader} for {@link java.util.ServiceLoader} discovery.
          * Defaults to {@code Thread.currentThread().getContextClassLoader()}.
+         *
+         * @param loaderClass class loader
+         * @return this builder
          */
         public Builder classLoader(ClassLoader loaderClass) {
             this.classLoader = loaderClass;
             return this;
         }
 
-        /** Builds the orchestrator. Does not start or initialize any subsystem. */
+        /**
+         * Builds the orchestrator. Does not start or initialize any subsystem.
+         *
+         * @return a new orchestrator configured from this builder
+         */
         public SubsystemOrchestrator build() {
             return new SubsystemOrchestrator(this);
         }
@@ -883,10 +960,21 @@ public final class SubsystemOrchestrator {
      */
     public static final class BootstrapException extends Exception {
 
+        /**
+         * Creates the exception with {@code message} and no cause.
+         *
+         * @param message failure detail message
+         */
         public BootstrapException(String message) {
             super(message);
         }
 
+        /**
+         * Creates the exception with {@code message} and the underlying {@code cause}.
+         *
+         * @param message failure detail message
+         * @param cause   the underlying failure
+         */
         public BootstrapException(String message, Throwable cause) {
             super(message, cause);
         }

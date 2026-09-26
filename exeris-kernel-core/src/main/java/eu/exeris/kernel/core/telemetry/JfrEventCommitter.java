@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.telemetry;
 
@@ -47,7 +43,7 @@ import java.util.concurrent.atomic.LongAdder;
  * increments {@link #droppedCount()} and emits a {@link JfrCommitDropEvent} so operators can detect
  * runaway emission rates.
  *
- * @since 0.7.1
+ * @since 0.7
  * @see AsyncTelemetrySink
  */
 public final class JfrEventCommitter implements AutoCloseable {
@@ -78,7 +74,11 @@ public final class JfrEventCommitter implements AutoCloseable {
         this.consumer = Thread.ofPlatform().daemon(true).name(THREAD_NAME).unstarted(this::drain);
     }
 
-    /** Creates and starts a committer with default capacity and drain timeout. */
+    /**
+     * Creates and starts a committer with default capacity and drain timeout.
+     *
+     * @return a started committer ready to accept events
+     */
     public static JfrEventCommitter start() {
         return start(DEFAULT_CAPACITY, DEFAULT_DRAIN_TIMEOUT);
     }
@@ -100,12 +100,20 @@ public final class JfrEventCommitter implements AutoCloseable {
         return committer;
     }
 
-    /** Returns the configured ring capacity (informational; useful for diagnostics). */
+    /**
+     * Returns the configured ring capacity (informational; useful for diagnostics).
+     *
+     * @return the ring capacity in events, as passed to {@link #start(int, Duration)}
+     */
     public int capacity() {
         return capacity;
     }
 
-    /** Returns the running total of dropped events since construction. */
+    /**
+     * Returns the running total of dropped events since construction.
+     *
+     * @return the number of events discarded because the ring was full when {@link #offer} was called
+     */
     public long droppedCount() {
         return droppedCount.sum();
     }

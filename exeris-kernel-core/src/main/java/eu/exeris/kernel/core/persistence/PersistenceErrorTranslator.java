@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.persistence;
 
@@ -39,7 +35,7 @@ import eu.exeris.kernel.spi.exceptions.persistence.PersistenceProviderException;
  * <p>Imports only {@code exeris-kernel-spi}. Completely ignorant of JDBC, HikariCP,
  * pgjdbc, or the PG wire protocol. Operates on plain {@code String} SQLState codes.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
 public final class PersistenceErrorTranslator {
@@ -87,10 +83,16 @@ public final class PersistenceErrorTranslator {
      * Translates a raw PostgreSQL {@code SQLSTATE} code into a
      * {@link PersistenceProviderException} with the appropriate Exeris error code.
      *
-     * @param sqlState   5-character PostgreSQL SQLSTATE (e.g. {@code "23505"})
+     * @param sqlState   5-character PostgreSQL SQLSTATE (e.g. {@code "23505"}); {@code null} or a
+     *                   string shorter than two characters is mapped generically rather than
+     *                   rejected
      * @param detail     server error detail / message (stored in {@code rawArgs})
      * @param cause      original exception (may be {@code null} in Enterprise native path)
-     * @return a {@link PersistenceProviderException} ready to propagate to the caller
+     * @return a {@link PersistenceProviderException} carrying
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5004} for any
+     *         SQLSTATE in the authentication class ({@code 28}), and
+     *         {@value eu.exeris.kernel.spi.exceptions.KernelErrorCodes#EX_PERS_5003} for every
+     *         other recognized or unrecognized code, ready to propagate to the caller
      */
     public static PersistenceProviderException translate(String sqlState,
                                                           String detail,
@@ -125,6 +127,9 @@ public final class PersistenceErrorTranslator {
 
     /**
      * Returns {@code true} if the given {@code SQLSTATE} is a constraint violation (class 23).
+     *
+     * @param sqlState 5-character PostgreSQL SQLSTATE
+     * @return {@code true} if {@code sqlState} is in constraint-violation class {@code 23}
      */
     public static boolean isConstraintViolation(String sqlState) {
         return sqlState != null && sqlState.startsWith(CLASS_CONSTRAINT);

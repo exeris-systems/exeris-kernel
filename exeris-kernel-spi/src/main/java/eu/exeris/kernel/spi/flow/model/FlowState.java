@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.flow.model;
 
@@ -20,7 +16,7 @@ package eu.exeris.kernel.spi.flow.model;
  *                  └──► COMPENSATING ──► FAILED_ROLLEDBACK
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public enum FlowState {
 
@@ -45,7 +41,12 @@ public enum FlowState {
     /** Flow has completed backward compensation after a failure. Terminal state. */
     FAILED_ROLLEDBACK(5);
 
-    /** Integer code stored off-heap in the flow context slab. */
+    /**
+     * Numeric encoding of this state — what a binding writes where it cannot hold an enum reference,
+     * and what {@link #fromCode(int)} resolves back.
+     *
+     * @implNote This is the value stored in the off-heap flow context slab.
+     */
     public final int code;
 
     FlowState(int code) {
@@ -71,7 +72,13 @@ public enum FlowState {
         };
     }
 
-    /** Returns {@code true} if this is a terminal state (no further transitions possible). */
+    /**
+     * Reports whether the instance has finished — one way or the other — and can make no further
+     * transition.
+     *
+     * @return {@code true} for {@link #COMPLETED} and {@link #FAILED_ROLLEDBACK}, {@code false} for
+     *         every other state
+     */
     public boolean isTerminal() {
         return this == COMPLETED || this == FAILED_ROLLEDBACK;
     }

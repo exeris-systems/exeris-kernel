@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.security.identity;
 
@@ -22,13 +18,13 @@ import java.util.Set;
  * PASETO footer here. A driver maps its concrete verified representation onto this view; the kernel
  * never sees the underlying library type (The Wall, ADR-006).
  *
- * <h2>Trust contract</h2>
  * <p>Every accessor returns material from a token whose signature, issuer, audience and time
- * window have <b>already</b> passed validation. Implementations MUST NOT return claims from an
- * unverified or partially-verified token — producing a {@code VerifiedClaims} instance is itself
- * the assertion that verification succeeded.
+ * window have <b>already</b> passed validation — producing a {@code VerifiedClaims} instance is
+ * itself the assertion that verification succeeded.
  *
- * @since 0.10.0
+ * @implSpec Implementations must not return claims from an unverified or partially-verified
+ *           token.
+ * @since 0.10
  * @see TokenValidator
  * @see ClaimsMapper
  */

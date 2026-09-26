@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -33,7 +29,7 @@ import java.util.Objects;
  * <p>Jackson-specific exceptions are wrapped in {@link IllegalStateException} to keep driver-specific
  * types out of any SPI / Core surface (The Wall — ADR-006).
  *
- * @since 0.8.0
+ * @since 0.8
  */
 public final class CommunityJsonRequestBodyEncoder implements HttpRequestBodyEncoder {
 
@@ -63,6 +59,11 @@ public final class CommunityJsonRequestBodyEncoder implements HttpRequestBodyEnc
         return payloadType != null;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws IllegalStateException if JSON serialization fails for {@code payload}
+     */
     @Override
     // CloseResource: the sink's buffer ownership transfers to the returned HttpEncodedBody on success,
     // and the finally releases it on every non-committed exit — no path leaks the off-heap loan.

@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-09-17
 ---
 
 # Policy — The Wall and the module boundary
@@ -23,10 +23,10 @@ the poms disagree, the poms win and this file is the defect.
 |---|---|---|
 | `exeris-kernel-spi` | Contracts + carriers ("The Constitution") | **only `java.*` / `jdk.*`** |
 | `exeris-kernel-core` | Driver-agnostic orchestration, bootstrap; the HTTP codec and runtime currently live here | SPI. **Never** community or enterprise |
-| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI, plus the Core packages it already reaches: `core.bootstrap`, `core.concurrent`, `core.crypto`, `core.events`, `core.flow`, `core.graph`, `core.http`, `core.memory`, `core.persistence`, `core.scheduling`, `core.security`, `core.telemetry`, `core.transport`. A Core package outside that set is a boundary change and needs an ADR |
-| `exeris-kernel-community-kafka` | Kafka/Redpanda event and flow bindings | SPI, community |
+| `exeris-kernel-community` | Open providers (transport, persistence/JDBC, flow, events, security, …) | SPI, plus 15 Core **roots**, sub-packages included: `core.bootstrap`, `core.concurrent`, `core.crypto`, `core.events`, `core.flow`, `core.graph`, `core.http`, `core.memory`, `core.persistence`, `core.scheduling`, `core.security`, `core.storage`, `core.telemetry`, `core.transport`, `core.websocket`. A Core root outside that set is a boundary change and needs an ADR |
+| `exeris-kernel-community-kafka` | Kafka/Redpanda event and flow bindings | SPI, community, plus the Core packages it already reaches: `core.events` and `core.telemetry` (three packages: `core.events`, `core.events.outbox`, `core.telemetry.jfr`). A Core root outside that set is a boundary change and needs an ADR, the same rule the Community row carries. This row read "SPI, community" until 2026-09-17, which the reactor has never matched — `exeris-kernel-community-kafka/pom.xml` declares `exeris-kernel-core` in compile scope. A warm-up seam was built in Community to spare this module an import it was already making |
 | `exeris-kernel-community-testkit` | Shared test fixtures | — |
-| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) and `ExerisArchitectureTest`, the ArchUnit Wall guard | SPI |
+| `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) and `ExerisArchitectureTest`, the ArchUnit Wall guard — **SPI reach only**; the Core/Community half is `KernelTierBanArchitectureTest` in Community | SPI |
 | `exeris-kernel-diagnostics-cli` | Diagnostics tooling (thin, coverage-ungated) | — |
 | `exeris-kernel-bom` / `-parent` / `-build-config` | Build plumbing; build-config ships the lint rulesets and is itself lint-exempt | — |
 
@@ -36,13 +36,36 @@ matched: `exeris-kernel-community/pom.xml` declares `exeris-kernel-core`. It the
 orchestration or bootstrap internals", which is false too — Community main sources import
 `core.bootstrap.BootstrapProviderSelector`, `core.bootstrap.health.KernelHealthMonitor`,
 `core.events.outbox.OutboxOrchestrator` and the `*Bootstrap` entry points of flow, graph, scheduling,
-persistence and events. Measured on this branch: **93 import statements across 66 distinct
-types**, in the 13 packages listed above. The rule that can be checked is the set; regenerate
-it with
+persistence and events.
+
+**The row enumerates roots, not exact packages.** The reach is one level finer than the list:
+30 distinct Core packages, all of them nesting under the 15 roots — `core.crypto` itself is never
+imported, only `core.crypto.openssl` and `core.crypto.tls`, and seven `*.jfr` and driver
+sub-packages (`core.http.jfr`, `core.security.jfr`, `core.transport.jfr`, `core.transport.syscall`,
+`core.transport.scheduler`, `core.telemetry.jfr`, `core.bootstrap.health`) are reached without being
+named. Read as exact packages, the list would make each of those an undeclared boundary change; read
+as roots, which is what it has always been, nothing sits outside it.
+
+**Measured on `fix/tck064-jfr-event-class-init-pinning`, 2026-09-17: 115 import statements across 82
+distinct types, in 30 packages under those 15 roots.** A count in prose goes out of date on a cadence
+nothing here enforces — the same commands answer 113 and 80 on that branch's merge base — which is
+why the rule is the root set and the count is only evidence of when it was last taken. Re-measure
+before trusting it; do not re-stamp `last-verified` without doing so.
+
+Regenerate both. The exact reach, which is what a review of one import wants:
 
 ```bash
 grep -rho 'import eu\.exeris\.kernel\.core\.[A-Za-z0-9_.]*;' exeris-kernel-community/src/main/java \
   | sort -u
+```
+
+And the roll-up to roots, which is the form comparable to the row — the command above emits 82 lines
+that cannot be checked against 15 entries by eye:
+
+```bash
+grep -rho 'import eu\.exeris\.kernel\.core\.[A-Za-z0-9_.]*;' exeris-kernel-community/src/main/java \
+  | sed 's/^import eu\.exeris\.kernel\.//; s/;$//' \
+  | sed 's/^\(core\.[a-z0-9_]*\).*/\1/' | sort -u
 ```
 
 **The direction is what a guard actually enforces**: `coreDoesNotDependOnCommunity` in

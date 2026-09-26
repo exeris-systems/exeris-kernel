@@ -1,22 +1,20 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.graph.algorithm;
 
 import java.util.UUID;
 
 /**
- * Valhalla-Ready: Function to calculate weight for a graph edge.
+ * SPI: Computes the traversal cost of one graph edge, given its stored weight and
+ * properties.
  *
- * <p>Avoid identity operations. Will migrate to {@code value} interface
- * when JEP 401 is mainline.
+ * <h2>Valhalla Readiness</h2>
+ * <p>Will migrate to a {@code value} interface once JEP 401 is mainline. Avoid identity
+ * operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @FunctionalInterface
 public interface EdgeWeightFunction {
@@ -55,7 +53,7 @@ public interface EdgeWeightFunction {
             1.0 / Math.max(weight, INVERSE_MIN_WEIGHT);
 
     /**
-     * Calculates weight for an edge.
+     * Returns the traversal cost for one edge.
      *
      * @param source     source node ID
      * @param target     target node ID

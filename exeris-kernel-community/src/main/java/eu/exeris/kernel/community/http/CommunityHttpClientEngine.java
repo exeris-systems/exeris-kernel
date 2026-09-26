@@ -1,24 +1,23 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
+import eu.exeris.kernel.spi.exceptions.http.HttpException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -30,28 +29,35 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Community HTTP/1.x client engine — drives outbound requests over a single
  * {@link TransportConnection} per call, blocking the calling virtual thread.
  *
- * <h2>Decomposition (v0.8 Sprint 3 QA-015)</h2>
+ * <h2>Decomposition</h2>
  * <p>Request byte layout lives in {@link CommunityHttpClientRequestEncoder};
  * response parsing + completeness helpers live in
- * {@link CommunityHttpClientResponseDecoder}. This class retains the
+ * {@link CommunityHttpClientResponseDecoder}; the response read loop lives in
+ * {@link CommunityHttpClientResponseReader}. This class retains the
  * {@code TransportEngine} lifecycle (start/close/isRunning), the per-request
- * connection orchestration, the response read loop, and dependency
- * resolution (allocator + transport).
+ * connection orchestration, and dependency resolution (allocator + transport).
  *
- * @since 0.5.0
+ * <p><b>Ownership:</b> owns the {@code TransportEngine} for this engine's life, starting it in
+ * {@link #start()} and closing it in {@link #close()}; owns the {@link MemoryAllocator} only when
+ * none was already bound to {@link KernelProviders#MEMORY_ALLOCATOR} at construction, in which
+ * case {@link #close()} closes it too.
+ *
+ * @since 0.5
  */
-@SuppressWarnings("PMD.CyclomaticComplexity") // multi-state response read loop is intrinsically cohesive.
+// TooManyMethods: SPI contract surface — the count is intrinsic. Every method here but
+// resolvePeer/sendRequest/readResponse implements HttpClientEngine, and ADR-074 added
+// defaultAuthority() to that interface; PersistenceConnection carries the same disposition.
+@SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 final class CommunityHttpClientEngine implements HttpClientEngine {
 
-    private static final String ENGINE_NAME = "community-http-client";
-    private static final int READ_CHUNK_BYTES = 8 * 1024;
+    /* default */ static final String ENGINE_NAME = "community-http-client";
 
     private final HttpConfig config;
     private final MemoryAllocator allocator;
     private final TransportEngine transport;
     private final boolean closeAllocatorOnClose;
-    private final String targetHost;
-    private final int targetPort;
+    private final String defaultAuthority;
+    private final CommunityHttpClientConnectionPool connectionPool;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
@@ -64,22 +70,29 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
                 deps.allocator(),
                 deps.transport(),
                 deps.closeAllocatorOnClose(),
-                config.bindHost(),
-                config.port());
+                config.defaultAuthority());
     }
 
     /* default */ CommunityHttpClientEngine(HttpConfig config,
                                             MemoryAllocator allocator,
                                             TransportEngine transport,
                                             boolean closeAllocatorOnClose,
-                                            String targetHost,
-                                            int targetPort) {
+                                            String defaultAuthority) {
+        this(config, allocator, transport, closeAllocatorOnClose, defaultAuthority, null);
+    }
+
+    /* default */ CommunityHttpClientEngine(HttpConfig config,
+                                            MemoryAllocator allocator,
+                                            TransportEngine transport,
+                                            boolean closeAllocatorOnClose,
+                                            String defaultAuthority,
+                                            TimeSource timeSource) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.transport = Objects.requireNonNull(transport, "transport must not be null");
         this.closeAllocatorOnClose = closeAllocatorOnClose;
-        this.targetHost = targetHost;
-        this.targetPort = targetPort;
+        this.defaultAuthority = defaultAuthority;
+        this.connectionPool = new CommunityHttpClientConnectionPool(config, timeSource);
     }
 
     @Override
@@ -107,18 +120,102 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         if (!running.get() || closed.get()) {
             throw new IllegalStateException("Client engine is not running");
         }
-        if (targetHost == null || targetHost.isBlank()) {
-            throw new IllegalStateException("Client target host must be configured in HttpConfig.bindHost");
+        CommunityHttpClientPeer peer = resolvePeer(request);
+
+        CommunityHttpClientConnectionPool.PooledConnection pooled = connectionPool.acquire(peer.authority());
+        if (pooled != null) {
+            return executeExchange(pooled.connection(), pooled.stream(), request, peer);
         }
-        if (targetPort <= 0) {
-            throw new IllegalStateException("Client target port must be configured in HttpConfig.port");
+        return sendFresh(request, peer);
+    }
+
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    private HttpResponse sendFresh(HttpRequest request, CommunityHttpClientPeer peer) {
+        TransportConnection connection;
+        try {
+            connection = transport.connect(peer.host(), peer.port());
+        } catch (Throwable t) {
+            if (t instanceof Error err) {
+                throw err;
+            }
+            if (t instanceof HttpException httpException) {
+                throw httpException;
+            }
+            throw HttpException.clientConnectFailure(ENGINE_NAME, peer.host(), peer.port(), t);
         }
 
-        try (TransportConnection connection = transport.connect(targetHost, targetPort);
-             TransportStream stream = connection.openStream()) {
-            sendRequest(stream, request, connection);
-            return readResponse(stream, request.version(), request.method() == HttpMethod.HEAD);
+        TransportStream stream = null;
+        try {
+            stream = connection.openStream();
+            return executeExchange(connection, stream, request, peer);
+        } catch (Throwable t) {
+            CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
+            if (t instanceof ExerisKernelException kernelException) {
+                throw kernelException;
+            }
+            if (t instanceof Error err) {
+                throw err;
+            }
+            throw TransportException.sendFailure(ENGINE_NAME, 0L, t);
         }
+    }
+
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    private HttpResponse executeExchange(TransportConnection connection,
+                                         TransportStream stream,
+                                         HttpRequest request,
+                                         CommunityHttpClientPeer peer) {
+        try {
+            sendRequest(stream, request, peer.authority());
+            HttpResponse response = readResponse(stream, request.method() == HttpMethod.HEAD);
+            if (CommunityHttpClientResponseDecoder.isKeepAlive(request, response, connection)
+                    && !stream.hasPendingData()) {
+                connectionPool.release(peer.authority(), connection, stream);
+            } else {
+                CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
+                connectionPool.pruneIfEmpty(peer.authority());
+            }
+            return response;
+        } catch (Throwable t) {
+            CommunityHttpClientConnectionPool.closeQuietly(stream, connection);
+            connectionPool.pruneIfEmpty(peer.authority());
+            if (t instanceof ExerisKernelException kernelException) {
+                throw kernelException;
+            }
+            if (t instanceof Error err) {
+                throw err;
+            }
+            throw TransportException.sendFailure(ENGINE_NAME, 0L, t);
+        }
+    }
+
+    /**
+     * Resolves the peer this request is addressed to: the request's own authority, or the engine's
+     * configured default when it carries none.
+     *
+     * <p>Before ADR-074 this read {@code HttpConfig.bindHost} — the SERVER/DUAL <em>listener</em>
+     * address — so the client dialled the address its own server listened on, and a config built by
+     * {@code HttpConfig.defaultClient()} (bindHost {@code null}, port {@code -1}) produced an engine
+     * that could not send at all. Refusing an unaddressed request is the correct failure: the
+     * alternative is dialling somewhere the caller never named.
+     *
+     * <p>The port is required rather than defaulted. {@link HttpRequest} carries no scheme, so there
+     * is no basis for choosing 80 over 443 — and defaulting to the listener port is precisely what
+     * this decision removed.
+     */
+    private CommunityHttpClientPeer resolvePeer(HttpRequest request) {
+        String authority = request.authority() != null ? request.authority() : defaultAuthority;
+        if (authority == null || authority.isBlank()) {
+            throw new IllegalStateException(
+                    "Request carries no authority and no http.client.defaultAuthority is configured; "
+                            + "set one, or address the request with HttpRequest.withAuthority(host:port)");
+        }
+        return CommunityHttpClientPeer.parse(authority);
+    }
+
+    @Override
+    public String defaultAuthority() {
+        return defaultAuthority;
     }
 
     @Override
@@ -139,65 +236,60 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         }
         running.set(false);
         try {
-            transport.close();
+            connectionPool.close();
         } finally {
-            if (closeAllocatorOnClose) {
-                allocator.close();
+            try {
+                transport.close();
+            } finally {
+                if (closeAllocatorOnClose) {
+                    allocator.close();
+                }
             }
         }
     }
 
-    private void sendRequest(TransportStream stream, HttpRequest request, TransportConnection connection) {
+    private void sendRequest(TransportStream stream, HttpRequest request, String effectiveAuthority) {
         int bodyBytes = request.hasBody() ? (int) request.body().size() : 0;
         int capacity = 512 + request.headers().size() * 128 + bodyBytes;
         try (LoanedBuffer outbound = allocator.allocateNetwork(capacity)) {
             long pos = CommunityHttpClientRequestEncoder.writeRequest(
-                    outbound.segment(), request, connection, bodyBytes);
+                    outbound.segment(), request, effectiveAuthority, bodyBytes);
             outbound.setSize(pos);
             stream.write(outbound.segment(), (int) outbound.size());
         }
     }
 
-    private HttpResponse readResponse(TransportStream stream, HttpVersion requestVersion,
-                                      boolean bodyless) {
-        try (LoanedBuffer aggregate = allocator.allocateNetwork(resolveAggregateCapacity())) {
-            long total = 0;
-            long headerTerminator = -1;
-            long expectedTotal = -1;
-            boolean endOfStream = false;
-            boolean responseComplete = false;
-            while (total < aggregate.capacity() && !endOfStream && !responseComplete) {
-                int remaining = (int) (aggregate.capacity() - total);
-                int chunk = Math.min(READ_CHUNK_BYTES, remaining);
-                int read = stream.read(aggregate.segment().asSlice(total, chunk), chunk);
-                if (read != 0) {
-                    if (read < 0) {
-                        endOfStream = true;
-                    } else {
-                        total += read;
-                        aggregate.setSize(total);
-                        headerTerminator = CommunityHttpClientResponseDecoder.resolveHeaderTerminator(
-                                headerTerminator, aggregate.segment(), total);
-                        expectedTotal = CommunityHttpClientResponseDecoder.resolveExpectedTotal(
-                                expectedTotal, aggregate.segment(), total, headerTerminator, bodyless);
-                        responseComplete = CommunityHttpClientResponseDecoder.isResponseComplete(total, expectedTotal);
-                    }
-                }
-            }
-
-            if (total == 0) {
-                throw new IllegalStateException("Remote peer returned an empty HTTP response");
-            }
-
-            return CommunityHttpClientResponseDecoder.decodeResponse(
-                    allocator, aggregate, total, requestVersion, bodyless);
+    private HttpResponse readResponse(TransportStream stream, boolean bodyless) {
+        try (CommunityHttpClientResponseReader reader = new CommunityHttpClientResponseReader(
+                allocator, resolveAggregateCapacity(), bodyless)) {
+            reader.readFrom(stream);
+            return reader.decode();
         }
     }
 
-    private int resolveAggregateCapacity() {
-        long configured = config.maxRequestBodyBytes();
-        long bounded = configured < 0 ? 64L * 1024L : configured + 8L * 1024L;
-        return (int) Math.max(bounded, 8L * 1024L);
+    /**
+     * The largest a response read may become — the CEILING, not the size it starts at.
+     * {@link CommunityHttpClientResponseReader} starts small and grows to what the response
+     * declares; this bounds that growth, and reaching it still ends the read and leaves the
+     * decoder to refuse the overrun.
+     *
+     * <p>Package-private so the ceiling it derives can be asserted without opening a socket, the
+     * same reason {@code CommunityHttpTransportFactory.buildTransportConfig} is: the value an
+     * operator configures is worth a test that does not depend on a live peer to reach it.
+     *
+     * @return the aggregate ceiling in bytes
+     */
+    /* default */ int resolveAggregateCapacity() {
+        // The RESPONSE ceiling, not the request one. Reading a response against the limit that
+        // bounds what this server accepts made an ingress setting retune an outbound client
+        // (ADR-071 amendment); they are opposite directions on different sockets.
+        // HttpConfig refuses anything outside (0, Integer.MAX_VALUE], so there is no unlimited
+        // branch to handle here: -1 does not reach this method.
+        long bounded = config.maxResponseBodyBytes() + 8L * 1024L;
+        // Clamped, not cast. The header allowance pushes a ceiling near the int range past it,
+        // where a bare cast lands on a negative number the allocator refuses — the first response
+        // of a deployment that set a large limit failed on the limit itself.
+        return Math.clamp(bounded, 8 * 1024, Integer.MAX_VALUE);
     }
 
     private static MemoryAllocator resolveAllocator(HttpConfig config) {

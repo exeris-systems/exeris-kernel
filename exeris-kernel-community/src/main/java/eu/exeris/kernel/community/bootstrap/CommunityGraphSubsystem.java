@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -21,6 +17,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.UnaryOperator;
 
+/**
+ * Bootstraps the Community graph engine, defaulting to the PostgreSQL-backed
+ * {@code graph.backendType} with an optional Neo4j configuration read alongside it.
+ *
+ * <p>Depends on {@code memory} and {@code persistence}, and runs in the SERVICES phase: sessions
+ * opened against the discovered {@link GraphEngine} read {@code KernelProviders.MEMORY_ALLOCATOR}
+ * and, for the relational backend, {@code KernelProviders.PERSISTENCE_ENGINE}. {@link
+ * #buildGraphConfig} reads the Neo4j connection properties ({@code graph.neo4j.uri}, {@code .user},
+ * {@code .password}, {@code .database}) only when they are present in config, so a PostgreSQL-only
+ * deployment configures none of them.
+ */
 final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
 
     private GraphProvider graphProvider;
@@ -52,6 +59,10 @@ final class CommunityGraphSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
+        // No driver warm-up here: this module declares no JFR event class for the graph subsystem,
+        // so CommunityJfrEventCatalogue has no "graph" group and a warmHotPath call would resolve to
+        // an empty list on every boot. The Core graph events are warmed by the orchestrator, behind
+        // isRunning() below.
         markRunning(graphEngine != null && graphEngine.isRunning());
     }
 

@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.core.scheduling.SchedulingBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -32,7 +29,7 @@ import java.util.function.UnaryOperator;
  * can influence. A dependency declared for narrative tidiness constrains the boot graph on a fiction
  * and buys nothing.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunitySchedulingSubsystem extends AbstractCommunitySubsystem {
 
@@ -67,6 +64,12 @@ final class CommunitySchedulingSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public void start() {
+        if (scheduler != null) {
+            // This driver's hot-path JFR event classes initialise here, on the thread that starts
+            // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
+            // it. Behind the same check markRunning takes, because a subsystem with no scheduler emits none of them.
+            CommunityJfrEventCatalogue.warmHotPath(name());
+        }
         // The scheduler's dispatcher starts with the scheduler itself — createScheduler returns a
         // running instance — so there is no second start step to perform here.
         markRunning(scheduler != null);

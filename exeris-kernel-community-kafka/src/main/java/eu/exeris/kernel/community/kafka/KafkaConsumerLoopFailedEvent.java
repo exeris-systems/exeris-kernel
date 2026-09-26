@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -15,6 +11,14 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Emitted when the Kafka consumer poll loop inside {@code KafkaEventEngine.ConsumerLoop} exits via
+ * an unhandled exception (broker disconnect, deserialisation error, {@code KafkaException}). The
+ * consumer-side counterpart to {@link KafkaPublishFailedEvent}.
+ *
+ * <p>Captures the engine name, consumer group id, and the failing exception's class and message;
+ * the payload bytes and Kafka credentials are never recorded.
+ */
 @Name("eu.exeris.kernel.events.kafka.ConsumerLoopFailed")
 @Label("Kafka Consumer Loop Failed")
 @Category({"Exeris Kernel", "Events", "Kafka"})

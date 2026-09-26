@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -20,7 +16,7 @@ import java.util.Objects;
  * then throws today's {@code unknown-kid} deny). This resolver never rotates and
  * never throws a terminal deny of its own.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 /* default */ final class StaticJwksKeyResolver implements JwksKeyResolver {
 
@@ -30,6 +26,12 @@ import java.util.Objects;
         this.keysByKid = Map.copyOf(Objects.requireNonNull(keysByKid, "keysByKid must not be null"));
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @implNote Looks up {@code kid} in the fixed map supplied at construction; an unmapped
+     *           {@code kid} returns {@code null} rather than throwing.
+     */
     @Override
     public RSAPublicKey resolve(String kid) {
         return keysByKid.get(kid);

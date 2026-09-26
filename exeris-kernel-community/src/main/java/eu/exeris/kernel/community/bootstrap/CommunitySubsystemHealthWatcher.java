@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -44,8 +40,17 @@ public final class CommunitySubsystemHealthWatcher {
     private final Map<String, HealthSource> sources = new ConcurrentHashMap<>();
     private final long intervalNanos;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Thread thread;
 
+    /**
+     * Creates a watcher bound to one {@link KernelHealthMonitor}, polling at the given interval once
+     * {@link #start()} is called.
+     *
+     * @param monitor       the monitor whose {@code RUNNING}/{@code DEGRADED} axis this watcher drives
+     * @param intervalNanos the delay between poll passes, in nanoseconds; must be positive
+     * @throws IllegalArgumentException if {@code intervalNanos} is not positive
+     */
     public CommunitySubsystemHealthWatcher(KernelHealthMonitor monitor, long intervalNanos) {
         this.monitor = Objects.requireNonNull(monitor, "monitor");
         if (intervalNanos <= 0) {
@@ -54,7 +59,12 @@ public final class CommunitySubsystemHealthWatcher {
         this.intervalNanos = intervalNanos;
     }
 
-    /** Registers a concrete subsystem's health source under its monitor name. */
+    /**
+     * Registers a concrete subsystem's health source under its monitor name.
+     *
+     * @param subsystemName the name {@code monitor} tracks this subsystem's state under
+     * @param source        reports whether that subsystem is currently healthy
+     */
     public void register(String subsystemName, HealthSource source) {
         Objects.requireNonNull(subsystemName, "subsystemName");
         Objects.requireNonNull(source, "source");
@@ -133,6 +143,11 @@ public final class CommunitySubsystemHealthWatcher {
     /** Health of one concrete subsystem; {@code true} = serving, {@code false} = impaired. */
     @FunctionalInterface
     public interface HealthSource {
+        /**
+         * Reports whether the registered subsystem can currently serve requests.
+         *
+         * @return {@code true} when serving, {@code false} when impaired
+         */
         boolean healthy();
     }
 }

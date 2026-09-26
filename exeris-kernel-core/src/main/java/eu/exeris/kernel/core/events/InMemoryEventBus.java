@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.events;
 
@@ -62,13 +58,11 @@ import java.util.concurrent.atomic.AtomicLong;
  *       (ADR-066).</li>
  *   <li>{@link #publish} — a handler observes <b>no</b> bindings. A plain
  *       {@code Thread.ofVirtual().start(...)} does not inherit {@code ScopedValue} bindings; only
- *       a fork inside a structured scope does. This has always been the behaviour of this path;
- *       the previous claim here that both paths inherit was measured false and corrected in
- *       v0.11.</li>
+ *       a fork inside a structured scope does.</li>
  * </ul>
  * <p>Zero {@code ThreadLocal} either way.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // CouplingBetweenObjects: EventBus coordinates registry, handlers and JFR — inherent to the bus role
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CloseResource"})
@@ -198,8 +192,11 @@ public final class InMemoryEventBus implements EventBus {
      * delays its successors. Callers that want fan-out have {@link #publish}, which is
      * fire-and-forget and unchanged.
      *
-     * <p>Failure handling is unchanged — every handler runs, failures are collected, and the first
-     * is thrown once all have finished.
+     * <p>A handler that throws a {@code RuntimeException} does not stop its successors: every
+     * handler runs, and once all have finished the bus throws one {@link EventBusException}
+     * ({@code EX-EVENT-6010}, {@code rawArgs [eventTypeOrdinal, failedHandlerCount]}) with each
+     * handler's exception attached as suppressed, in subscription order. An {@code Error} out of a
+     * handler is rethrown as it is, after the remaining payload references are released.
      */
     // java:S1181 — the same exemption the five other release-before-rethrow sites carry (see
     // NativeCipherContext, SecurityInterceptor, PaqsScheduler). The Throwable is not handled here:
@@ -248,7 +245,7 @@ public final class InMemoryEventBus implements EventBus {
             closeUnclosed(wrappers);
             throw escaped;
         }
-        throwIfFailed(failures);
+        throwIfFailed(descriptor.eventTypeOrdinal(), failures);
     }
 
     // =========================================================================
@@ -262,9 +259,7 @@ public final class InMemoryEventBus implements EventBus {
 
         int ordinal = registry.ordinalOf(eventType);
         if (ordinal < 0) {
-            throw new EventBusException(
-                    "Cannot subscribe to unregistered event type: '" + eventType + "'. "
-                    + "Register it in EventRegistry before subscribing.");
+            throw EventBusException.subscriptionRejected(eventType);
         }
 
         long seq  = subscriptionSeq.incrementAndGet();
@@ -332,12 +327,12 @@ public final class InMemoryEventBus implements EventBus {
         }
     }
 
-    private static void throwIfFailed(List<Throwable> failures) {
+    private static void throwIfFailed(int eventTypeOrdinal, List<Throwable> failures) {
         if (failures.isEmpty()) {
             return;
         }
         EventBusException busException =
-                new EventBusException("One or more event handlers failed during publishAndAwait");
+                EventBusException.handlersFailed(eventTypeOrdinal, failures.size());
         failures.forEach(busException::addSuppressed);
         throw busException;
     }

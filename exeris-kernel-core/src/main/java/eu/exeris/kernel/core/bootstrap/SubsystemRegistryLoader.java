@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.bootstrap;
 
@@ -30,8 +26,9 @@ import java.util.Set;
  * Package-private discovery and selector-closure resolution used by
  * {@link SubsystemOrchestrator}.
  *
- * <p>Extracted from {@link SubsystemOrchestrator} in v0.8 Sprint 3 (QA-018b)
- * to close the orchestrator's God-class suppression block. Owns:
+ * <p>Kept separate from {@link SubsystemOrchestrator} so registry discovery and
+ * selector-closure resolution can be reasoned about — and tested — independently
+ * of subsystem lifecycle. Owns:
  * <ul>
  *   <li>{@link #loadRegistry} — {@link ServiceLoader} discovery of all
  *       {@link SubsystemProvider}s, priority-sorted (descending), merged into

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.sse;
 
@@ -31,7 +27,7 @@ import java.util.function.Supplier;
  * so production wires {@code () -> arbiter.decide(Context.TRANSPORT_IO)} while keeping no test-only
  * construction seam in the production {@code ResourceArbiter}.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class StreamAdmissionController {
 
@@ -47,6 +43,7 @@ public final class StreamAdmissionController {
      * @param shedDecision the PAQS shed decision consulted on every NEW stream-open (typically
      *                     {@code () -> arbiter.decide(Context.TRANSPORT_IO)}); must not be {@code null}
      * @param engineName   the transport engine name, recorded on the shed event; must not be {@code null}
+     * @throws NullPointerException if {@code shedDecision} or {@code engineName} is {@code null}
      */
     public StreamAdmissionController(Supplier<ResourceArbiter.Action> shedDecision, String engineName) {
         this.shedDecision = Objects.requireNonNull(shedDecision, "shedDecision must not be null");

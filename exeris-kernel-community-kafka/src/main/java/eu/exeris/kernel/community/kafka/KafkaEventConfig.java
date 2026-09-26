@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -38,7 +34,7 @@ import java.util.Objects;
  * @param consumerPollTimeout how long each {@code consumer.poll} call may block; bounded so
  *                            shutdown remains responsive even under empty topics
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public record KafkaEventConfig(
         String   bootstrapServers,
@@ -81,6 +77,8 @@ public record KafkaEventConfig(
      *
      * @param bootstrapServers comma-separated {@code host:port} list
      * @param consumerGroupId  consumer group id
+     * @return a {@link KafkaEventConfig} with an empty topic prefix, {@code requireAllAcks=true},
+     *         a 5&nbsp;ms producer linger, and a 250&nbsp;ms consumer poll timeout
      */
     public static KafkaEventConfig defaults(String bootstrapServers, String consumerGroupId) {
         return new KafkaEventConfig(

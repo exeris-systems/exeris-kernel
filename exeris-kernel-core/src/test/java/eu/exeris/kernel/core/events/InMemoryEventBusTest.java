@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.events;
 
@@ -13,7 +9,10 @@ import eu.exeris.kernel.core.events.projection.ProjectionEngine;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventRegistry;
+import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,6 +26,7 @@ import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Unit: {@link InMemoryEventBus} + {@link ProjectionEngine} — RAII, routing, projections.
@@ -76,10 +76,59 @@ class InMemoryEventBusTest {
     }
 
     @Test
-    @DisplayName("Subscribe to unregistered type throws EventBusException")
+    @DisplayName("Subscribe to unregistered type throws EX-EVENT-6011 carrying the type name")
     void subscribeToUnregisteredTypeThrows() {
-        assertThatThrownBy(() -> fixture.bus().subscribe("UNKNOWN_TYPE", (d, p) -> p.close()))
-                .isInstanceOf(eu.exeris.kernel.spi.exceptions.events.EventBusException.class);
+        InMemoryEventBus bus = fixture.bus();
+        EventHandler handler = (d, p) -> p.close();
+
+        EventBusException ex = assertThrows(EventBusException.class,
+                () -> bus.subscribe("UNKNOWN_TYPE", handler));
+
+        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6011);
+        assertThat(ex.rawArgs()).containsExactly("UNKNOWN_TYPE");
+    }
+
+    @Test
+    @DisplayName("publishAndAwait: failing handlers raise one EX-EVENT-6010 after every handler ran")
+    @Timeout(value = 5, unit = TimeUnit.SECONDS)
+    void handlerFailuresRaiseHandlersFailed() {
+        InMemoryEventBus bus = fixture.bus();
+        IllegalStateException first  = new IllegalStateException("first handler failed");
+        IllegalArgumentException third = new IllegalArgumentException("third handler failed");
+        AtomicInteger secondRan = new AtomicInteger(0);
+
+        bus.subscribe(TYPE_ORDER, (d, p) -> {
+            try (p) {
+                throw first;
+            }
+        });
+        bus.subscribe(TYPE_ORDER, (d, p) -> {
+            try (p) {
+                secondRan.incrementAndGet();
+            }
+        });
+        bus.subscribe(TYPE_ORDER, (d, p) -> {
+            try (p) {
+                throw third;
+            }
+        });
+        EventDescriptor descriptor = descriptor(ORD_ORDER);
+        EventPayload payload = EventPayload.empty();
+
+        EventBusException ex = assertThrows(EventBusException.class,
+                () -> bus.publishAndAwait(descriptor, payload));
+
+        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6010);
+        assertThat(ex.rawArgs())
+                .as("[eventTypeOrdinal, failedHandlerCount] — two of the three handlers threw")
+                .containsExactly(ORD_ORDER, 2);
+        assertThat(ex.getSuppressed())
+                .as("each handler's failure is attached, in subscription order")
+                .containsExactly(first, third);
+        assertThat(ex.getCause()).isNull();
+        assertThat(secondRan.get())
+                .as("the event was delivered: a failing handler does not stop its successors")
+                .isEqualTo(1);
     }
 
     @Test

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.storage;
 
@@ -36,7 +32,16 @@ import java.util.List;
  * absence of one. Closing an uncommitted handle releases the buffer and the store never hears about it,
  * which is the strongest form of "no partial object is left visible" (ADR-056 §3).
  *
- * @since 0.11.0
+ * <p><b>Allocation:</b> none — the staging buffer is allocated by the store before this handle exists
+ * ({@code MemoryAllocator.allocateNetwork}, sized from the declared content length); {@link #write}
+ * only copies into it.
+ * <p><b>Thread confinement:</b> owner thread — matches {@link BlobUploadHandle}'s contract that one
+ * upload is driven by one thread; the handle keeps no internal synchronization.
+ * <p><b>Ownership:</b> this handle owns the staging buffer and releases it exactly once, in
+ * {@link #close()}, whether that follows a {@link #commit()} or an abort; a zero-length upload has no
+ * buffer to release.
+ *
+ * @since 0.11
  */
 final class CommunityS3UploadHandle implements BlobUploadHandle {
 

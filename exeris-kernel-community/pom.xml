@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community</artifactId>
@@ -18,8 +18,10 @@
         CommunityKernelCryptoProvider (OpenSSL 3.x / TCP-only, no QUIC),
         CommunityTelemetryProvider (Console, JFR, File sinks).
     </description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.community</exeris.module.name>
         <!-- Empty by default; can be set to run only selected @Tag groups -->
         <includedGroups/>
         <!--
@@ -94,8 +96,6 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-tck</artifactId>
-            <classifier>tests</classifier>
-            <type>test-jar</type>
             <scope>test</scope>
         </dependency>
         <!-- JMH — required for JMH @State / @Benchmark annotations in benchmark classes -->
@@ -146,6 +146,11 @@
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <scope>test</scope>
         </dependency>
         <!-- Community persistence: PostgreSQL JDBC driver (optional runtime) -->
         <dependency>
@@ -199,6 +204,7 @@
 
     <build>
         <plugins>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -350,7 +356,6 @@
                                     <executable>java</executable>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
-                                        <argument>--enable-preview</argument>
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>${benchmark.jvm.gc}</argument>
                                         <argument>-Dbenchmark.jvmArgs=${benchmark.jvmArgs}</argument>

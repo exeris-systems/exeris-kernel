@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.diagnostics;
 
@@ -39,47 +35,77 @@ import java.util.Optional;
  * Linux cgroup-v2 hierarchy / procfs via {@link CommunityRuntimeErgonomics}; absent data degrades to
  * {@code Optional.empty()} rather than throwing.
  *
+ * <p><b>Audit.</b> Each method emits its JFR audit event as its first statement, before any work
+ * (ADR-033 Obligation 8, "on call"), so a call that throws is audited exactly like one that returns.
+ *
  * <p>All four methods are cold-path: each captures its own {@code capturedAt} and allocates fresh
  * records (ADR-033 Obligations 2 &amp; 7). When read outside a bound kernel scope the subsystem slot is
  * unbound and those snapshots are returned empty rather than throwing.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 final class CommunityKernelDiagnostics implements KernelDiagnostics {
 
+    /**
+     * Emits a JFR audit event with code {@code EX-DIAG-1001}, then delegates to
+     * {@link CommunityProviderInventory#snapshot()}.
+     *
+     * @return the provider inventory snapshot
+     */
     @Override
     public ProvidersSnapshot listProviders() {
-        ProvidersSnapshot snapshot = CommunityProviderInventory.snapshot();
         CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1001, "listProviders");
-        return snapshot;
+        return CommunityProviderInventory.snapshot();
     }
 
+    /**
+     * Emits a JFR audit event with code {@code EX-DIAG-1003}, then builds one {@link DagNode} per
+     * subsystem currently bound to {@link KernelProviders#SUBSYSTEMS} — an empty snapshot when that
+     * scope is unbound.
+     *
+     * @return the bootstrap DAG snapshot
+     */
     @Override
     public BootstrapDagSnapshot getBootstrapDag() {
+        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1003, "getBootstrapDag");
         List<DagNode> nodes = new ArrayList<>();
         for (Subsystem subsystem : subsystems()) {
             nodes.add(toDagNode(subsystem));
         }
-        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1003, "getBootstrapDag");
         return BootstrapDagSnapshot.capture(nodes);
     }
 
+    /**
+     * Emits a JFR audit event with code {@code EX-DIAG-1004}, then looks up {@code name} among the
+     * subsystems currently bound to {@link KernelProviders#SUBSYSTEMS} — no match when that scope is
+     * unbound. The event precedes the argument check, so a call with a {@code null} name is audited
+     * like any other.
+     *
+     * @param name subsystem name to look up
+     * @return a snapshot whose subsystem detail is empty when no subsystem named {@code name} is found
+     * @throws NullPointerException if {@code name} is {@code null}
+     */
     @Override
     public SubsystemSnapshot describeSubsystem(String name) {
+        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1004, "describeSubsystem");
         Objects.requireNonNull(name, "name");
         Optional<SubsystemDescriptor> detail = subsystems().stream()
                 .filter(s -> name.equals(s.name()))
                 .findFirst()
                 .map(CommunityKernelDiagnostics::toDescriptor);
-        CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1004, "describeSubsystem");
         return SubsystemSnapshot.capture(name, detail);
     }
 
+    /**
+     * Emits a JFR audit event with code {@code EX-DIAG-1005}, then delegates to
+     * {@link CommunityRuntimeErgonomics#capture()}.
+     *
+     * @return the JVM and container ergonomics snapshot
+     */
     @Override
     public RuntimeErgonomicsSnapshot getJvmErgonomics() {
-        RuntimeErgonomicsSnapshot snapshot = CommunityRuntimeErgonomics.capture();
         CommunityKernelDiagnosticsEvent.emit(KernelErrorCodes.EX_DIAG_1005, "getJvmErgonomics");
-        return snapshot;
+        return CommunityRuntimeErgonomics.capture();
     }
 
     private static List<Subsystem> subsystems() {

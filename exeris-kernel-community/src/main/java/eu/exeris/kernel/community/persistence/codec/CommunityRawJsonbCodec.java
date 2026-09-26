@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence.codec;
 
@@ -21,13 +17,23 @@ import java.lang.foreign.MemorySegment;
  * <p>This codec may still cross the JDBC heap boundary, but it keeps
  * the SPI contract explicit by encoding/decoding through {@link LoanedBuffer}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityRawJsonbCodec implements EntityEncoder<MemorySegment>, EntityDecoder<MemorySegment> {
 
     private static final String CODEC_STATE = "CODEC";
     private static final long ZERO_OFFSET = 0L;
     private static final long EMPTY_PAYLOAD_BYTES = 0L;
+
+    /**
+     * Built once by {@link eu.exeris.kernel.community.persistence.CommunityPersistenceProvider} and
+     * held as a shared constant: stateless, so the same instance serves every raw-JSONB
+     * {@link java.lang.foreign.MemorySegment} column the provider encodes or decodes.
+     */
+    public CommunityRawJsonbCodec() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     public int encode(MemorySegment entity, LoanedBuffer target) {

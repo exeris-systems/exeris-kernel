@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.storage.blob;
 
@@ -27,7 +23,7 @@ import java.util.Objects;
  *
  * @param container the logical container; non-blank
  * @param key       the object key within the container; non-blank, and free of traversal syntax
- * @since 0.11.0
+ * @since 0.11
  */
 public record BlobRef(String container, String key) {
 

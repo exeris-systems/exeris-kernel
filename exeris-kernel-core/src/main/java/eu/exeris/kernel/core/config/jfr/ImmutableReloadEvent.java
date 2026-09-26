@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.config.jfr;
 
@@ -24,7 +20,7 @@ import jdk.jfr.StackTrace;
  * an attacker with write access to the config mount) attempted to mutate a sealed trust
  * anchor at runtime. The refusal carries the file and key name only; never the value.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 public final class ImmutableReloadEvent {
 
@@ -41,13 +37,26 @@ public final class ImmutableReloadEvent {
     @StackTrace(false)
     public static final class ImmutableReloadRefusedEvent extends Event {
 
+        /** Name of the config file whose on-disk change attempted to mutate the sealed key. */
         @Label("File")
         @Description("Config file that carried the change to the sealed key")
         public String file;
 
+        /** Dot-path key of the sealed {@code @Immutable} field the change targeted; never the value. */
         @Label("Key")
         @Description("Dot-path key of the sealed @Immutable field (never the value)")
         public String key;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ImmutableReloadRefusedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     /**

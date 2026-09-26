@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -23,6 +19,9 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeSource;
+
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -34,13 +33,12 @@ import java.util.Objects;
  * ({@code kid → key → algorithm → signature → issuer → audience → time}) over a JWT, producing
  * format-blind {@link VerifiedClaims}.
  *
- * <p>Extracted from the former {@code CommunityJwksValidator}: the cryptographic pipeline is
- * unchanged (static-map path byte-for-byte), but tenant-isolation → {@code StorageContext} mapping
- * and principal assembly now live above this seam (in
+ * <p>This validator owns only cryptographic verification. Tenant-isolation →
+ * {@code StorageContext} mapping and principal assembly live above this seam, in
  * {@link eu.exeris.kernel.spi.security.identity.IdentityStorageMapping} and
- * {@link CommunityClaimsMapper}).
+ * {@link CommunityClaimsMapper} respectively.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
 final class CommunityOidcTokenValidator implements TokenValidator {
@@ -53,9 +51,18 @@ final class CommunityOidcTokenValidator implements TokenValidator {
     private final String expectedAudience;
     private final Clock clock;
 
+    /**
+     * Defaults to the kernel's bound {@link TimeSource} rather than {@code Clock.systemUTC()}
+     * (ADR-082) — these no-clock constructors are what {@code CommunityOidcIdentityProvider}'s
+     * simple factories use, so a bound {@link TimeSource} governs token expiry through them.
+     *
+     * <p>Resolved at CONSTRUCTION: a validator is built during security bootstrap, inside the
+     * carrier scope, while validation runs on a request thread that inherits no {@code ScopedValue}
+     * binding. The adapter is live, so a virtual source advanced after construction is still seen.
+     */
     /* default */ CommunityOidcTokenValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience) {
-        this(keysByKid, expectedIssuer, expectedAudience, Clock.systemUTC());
+        this(keysByKid, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
@@ -66,7 +73,7 @@ final class CommunityOidcTokenValidator implements TokenValidator {
 
     /* default */ CommunityOidcTokenValidator(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
-        this(keyResolver, expectedIssuer, expectedAudience, Clock.systemUTC());
+        this(keyResolver, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
@@ -78,9 +85,14 @@ final class CommunityOidcTokenValidator implements TokenValidator {
     }
 
     /**
-     * Reads the compact JWT string out of a caller-owned {@link LoanedBuffer}, applying the same
-     * size guards as the legacy provider edge. Shared by {@link #validate(LoanedBuffer)} and the
-     * provider's {@code canAttempt} routing peek.
+     * Reads the compact JWT string out of a caller-owned {@link LoanedBuffer}, denying a
+     * {@code null} buffer, one whose size is indeterminate, or one that is empty. Shared by
+     * {@link #validate(LoanedBuffer)} and the provider's {@code canAttempt} routing peek.
+     *
+     * @param rawToken the caller-owned token buffer; not retained beyond this call
+     * @return the compact JWT as UTF-8 text
+     * @throws SecurityAuthenticationException ({@code EX-SEC-2002}) if {@code rawToken} is
+     *         {@code null}, reports an indeterminate size, or is empty
      */
     /* default */ static String readCompactJwt(LoanedBuffer rawToken) {
         if (rawToken == null) {
@@ -97,6 +109,16 @@ final class CommunityOidcTokenValidator implements TokenValidator {
         return new String(tokenBytes, StandardCharsets.UTF_8);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws SecurityAuthenticationException ({@code EX-SEC-2002}) at the first pipeline step
+     *         that rejects the token
+     * @implNote Denies with {@code EX-SEC-2002} at the first failing step of the ordered
+     *           pipeline — {@code kid} presence, key resolution, algorithm pin, signature,
+     *           issuer, audience, expiry, then isolation-claim typing — with no step skipped
+     *           and no partial result returned on failure.
+     */
     @Override
     public VerifiedClaims validate(LoanedBuffer rawToken) {
         SignedJWT signedJwt = parseJwt(readCompactJwt(rawToken));

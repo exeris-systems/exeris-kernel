@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions;
 
@@ -31,7 +27,7 @@ package eu.exeris.kernel.spi.exceptions;
  * [ID]     – 4-digit monotonic identifier within the domain
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("unused") // Codes are API contracts — referenced by future exception subclasses and external scrapers
 public final class KernelErrorCodes {
@@ -53,20 +49,38 @@ public final class KernelErrorCodes {
     public static final String EX_MEM_1001 = "EX-MEM-1001";
 
     /**
-     * Off-heap arena leak detected: a {@code MemorySegment} was not returned
-     * to its parent arena before the arena's lifecycle ended.
+     * Off-heap buffer leak detected: a {@code LoanedBuffer} tracked under
+     * {@code LeakDetectionMode.SAMPLED} or {@code LeakDetectionMode.PARANOID} became
+     * unreachable without being closed, so its off-heap segment was never returned to the pool.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code long} segmentAddress</li>
-     *   <li>index 1 – {@code long} segmentByteSize</li>
-     * </ul>
+     * <p><b>Reported, never thrown.</b> Detection happens after the buffer is collected, on a
+     * thread its owner does not control, so there is no caller to throw to. No exception carries
+     * this code and it has no {@code rawArgs} layout.
+     *
+     * @implNote The kernel's Core leak tracker records each detection as the JFR event
+     *           {@code eu.exeris.kernel.core.BufferLeak}, whose typed fields are read by name:
+     *           {@code bufferLabel} ({@code String}, the buffer's identity hash in hex),
+     *           {@code allocationStack} ({@code String}, the allocating stack under
+     *           {@code PARANOID}, the placeholder {@code "<sampled>"} under {@code SAMPLED}) and
+     *           {@code capacityBytes} ({@code long}). The event has no error-code field; this code
+     *           appears in the event type's description.
      */
     public static final String EX_MEM_1002 = "EX-MEM-1002";
 
     /**
-     * Allocation hint conflict: two subsystems requested incompatible
-     * {@code AllocationHint} tiers for the same buffer slot.
+     * Peek-view ownership misuse: {@code retain()} or {@code addCloseAction(Runnable)} was called
+     * on the non-owning view returned by {@code LoanedBuffer.peek(long, long)}. A peek view owns no
+     * reference, so {@code retain()} increments nothing and {@code addCloseAction} is rejected
+     * with {@code UnsupportedOperationException}; a caller that relied on either to keep the
+     * memory alive risks a use-after-free once the parent is released.
+     *
+     * <p><b>Reported, never thrown under this code.</b> No exception carries it and it has no
+     * {@code rawArgs} layout.
+     *
+     * @implNote The kernel's Core buffer records each misuse as the JFR event
+     *           {@code eu.exeris.kernel.core.PeekViewMisuse}, whose typed fields are read by name:
+     *           {@code errorCode} ({@code String}, this code) and {@code callerMethod}
+     *           ({@code String}, {@code "retain"} or {@code "addCloseAction"}).
      */
     public static final String EX_MEM_1003 = "EX-MEM-1003";
 
@@ -82,30 +96,42 @@ public final class KernelErrorCodes {
      * <p>This is an <em>unrecoverable architectural defect</em>. The kernel halts
      * immediately; no degraded mode or partial boot is attempted.
      *
-     * <p>Semantically associated with
-     * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}:
-     * because that exception is a pure pre-telemetry panic type (plain {@code RuntimeException},
-     * no {@code rawArgs}), the bootstrap orchestrator catches it and translates the failure
-     * into Glass-Box telemetry using this error code.
+     * <p>The exception thrown for it,
+     * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException}, is a
+     * plain {@code RuntimeException}, not an {@code ExerisKernelException}: it carries this code in
+     * its message and in its {@code ERROR_CODE} constant, and it has no {@code rawArgs}. The cycle's
+     * members are read from
+     * {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException#cycleMembers()},
+     * an insertion-ordered {@code Set<String>}.
      *
-     * <p><b>rawArgs layout for Glass-Box</b> (emitted by the orchestrator, not by the exception):
-     * <ul>
-     *   <li>index 0 – {@code String[]} cycleMembers — ordered subsystem names forming the cycle,
-     *       typically derived from
-     *       {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException#cycleMembers()}</li>
-     * </ul>
+     * @implNote The kernel's Core bootstrap orchestrator also records the failure, before
+     *           re-throwing the exception, as the JFR event
+     *           {@code eu.exeris.kernel.bootstrap.CircularDependencyDetected}, whose typed fields
+     *           are read by name: {@code cycleMembers}, a single {@code String} holding the names
+     *           from {@code cycleMembers()} in the same order, joined with {@code ", "} (comma and
+     *           space); and {@code errorCode} ({@code String}, this code).
      */
     public static final String EX_BOOT_0001 = "EX-BOOT-0001";
 
     /**
-     * Subsystem initialization or startup failure.
+     * Subsystem lifecycle failure: a subsystem failed during {@code initialize()},
+     * {@code start()} or {@code stop()}.
+     *
+     * <p>Carried by {@link eu.exeris.kernel.spi.exceptions.SubsystemException}, whose two
+     * constructors both fill the same fixed layout.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
-     * <p>This code is shared across multiple bootstrap pathways and therefore
-     * does not expose a stable {@code rawArgs} layout for Glass-Box decoding.
-     * Callers may attach implementation-specific {@code rawArgs}, but
-     * Glass-Box consumers must treat them as opaque and must not rely on a
-     * particular arity or field order.</p>
+     * <ul>
+     *   <li>index 0 – {@code String} subsystemName (logical name of the failing subsystem)</li>
+     *   <li>index 1 – {@link eu.exeris.kernel.spi.exceptions.SubsystemException.Phase} phase
+     *       ({@code INITIALIZE}, {@code START} or {@code STOP})</li>
+     *   <li>index 2 – {@code String} detail (static detail string)</li>
+     * </ul>
+     *
+     * @implNote The kernel's Core bootstrap sorter also cites this code in the message text of
+     *           the checked exception it raises for a {@code dependsOn()} entry naming a subsystem
+     *           that is not registered. That exception is not an {@code ExerisKernelException}
+     *           and carries no {@code rawArgs}.
      */
     public static final String EX_BOOT_0002 = "EX-BOOT-0002";
 
@@ -266,36 +292,39 @@ public final class KernelErrorCodes {
 
     /**
      * PAQS (Priority-Aware Queue Scheduler) load-shedding: an incoming stream was
-     * rejected at the network edge because its priority was below the current
-     * load-shedding threshold.
+     * rejected at the network edge because admitting it would exceed the transport's
+     * stream capacity or memory budget.
      *
      * <p>This is a deliberate, non-fatal policy decision — not a hardware failure.
      * No connection state is allocated for the shed stream.
      *
-     * <p><b>Two surfaces, one code.</b> PAQS request-edge shedding emits this code as the JFR
-     * {@code StreamShedEvent} (typed event fields — streamId, priority, action, transport, occupancy — read
-     * by name, not by rawArgs index). The streaming stream-open shed (ADR-043) additionally <em>throws</em>
+     * <p><b>Two surfaces, one code.</b> The streaming stream-open shed (ADR-043) <em>throws</em>
      * it via {@link eu.exeris.kernel.spi.exceptions.transport.TransportException#streamShed(String, long)};
-     * the rawArgs layout below is that exception carrier's schema.
+     * the rawArgs layout below is that exception carrier's schema. PAQS request-edge shedding
+     * throws nothing and is observable only as a JFR event, described below.
      *
      * <p><b>rawArgs layout for Glass-Box (exception carrier):</b>
      * <ul>
      *   <li>index 0 – {@code String} transportName</li>
      *   <li>index 1 – {@code long}   streamId (identifier of the shed stream)</li>
      * </ul>
+     *
+     * @implNote The kernel's Core transport records every shed, on both surfaces, as the JFR event
+     *           {@code eu.exeris.kernel.core.transport.StreamShed}, whose typed fields are read by
+     *           name: {@code streamId} ({@code long}), {@code priority} ({@code String}, a
+     *           {@code StreamPriority} constant name), {@code shedReason} ({@code String}, the
+     *           admission decision that shed the stream), {@code engineName} ({@code String}) and
+     *           {@code activeStreamCount} ({@code int}). The event has no error-code field.
      */
     public static final String EX_NET_4006 = "EX-NET-4006";
 
     /**
-     * Transport buffer exhaustion: no available {@code LoanedBuffer} segments remain
-     * in the ingress {@code SlabPool}. Backpressure must be initiated.
+     * Transport buffer exhaustion: no {@code LoanedBuffer} segment remains in a transport's
+     * ingress pool.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} transportName</li>
-     *   <li>index 1 – {@code int}    poolCapacity  (total slab slots in the pool)</li>
-     *   <li>index 2 – {@code int}    activeSlabs   (slabs currently in use)</li>
-     * </ul>
+     * <p><b>Reserved.</b> No kernel code path raises this code: no exception is constructed with
+     * it and no event records it. It publishes no {@code rawArgs} layout, because a layout with no
+     * thrower is a promise nothing checks; the layout is defined together with the first thrower.
      */
     public static final String EX_NET_4007 = "EX-NET-4007";
 
@@ -306,20 +335,27 @@ public final class KernelErrorCodes {
     /**
      * Huffman decoding/encoding violation in HPACK string literal processing.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. The shapes in use are a
+     * single offending value (a code length, an input length, or a padding symbol), an offending
+     * value paired with the limit it breached (a write position and a capacity, a padding width and
+     * its maximum), a triple for an encode overflow (bit position, length, capacity in bits), and an
+     * empty array where the violation names no value.
      */
     public static final String EX_HTTP_4001 = "EX-HTTP-4001";
 
     /**
      * HPACK decoding violation (RFC 7541 §3 / §4 / §6).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. Every value-carrying
+     * violation here reports the same shape, an offending value followed by the limit it breached:
+     * a table index and the dynamic table's size, a string-literal length and its maximum, a
+     * requested table size and the protocol maximum, a header-list size and its limit. Violations
+     * that name no value — an integer overflow, an index-zero field, an unknown representation —
+     * contribute an empty array.
      */
     public static final String EX_HTTP_4002 = "EX-HTTP-4002";
 
@@ -338,20 +374,31 @@ public final class KernelErrorCodes {
     /**
      * HTTP/1.1 parse violation (malformed framing or DoS guard breach).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p>Fault origin is contextual: {@link FaultOrigin#CALLER} for inbound server request parsing
+     * (the peer sent malformed framing) and {@link FaultOrigin#SYSTEM} for outbound client response
+     * decoding (the upstream server dependency violated protocol framing, per ADR-083).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. The shapes in use are empty
+     * (0 elements for structural framing terminators), a single offending value (a malformed field's size,
+     * an invalid byte value or status code, or the rejected header name as a {@code String}), an offending
+     * value with the limit it breached (a field size and the maximum header size, a header count and
+     * the maximum, or expected vs actual length), and a triple for an out-of-bounds range
+     * (start, end, and the size that bounds them).
      */
     public static final String EX_HTTP_4004 = "EX-HTTP-4004";
 
     /**
      * HTTP/2 CONTINUATION sequencing violation (RFC 7540 §6.10).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired, in the order its message names them; the detail
+     * message is never among them — it is the exception's own message. The shapes in use are a
+     * single stream identifier or fragment length, a pair (two stream identifiers, or a required
+     * size and the limit it breached), and a triple for a frame-type mismatch (the type seen, the
+     * type required, and the stream it arrived on) or an out-of-bounds fragment (offset, length,
+     * and the source's size).
      */
     public static final String EX_HTTP_4005 = "EX-HTTP-4005";
 
@@ -360,10 +407,12 @@ public final class KernelErrorCodes {
      * Raised when frame type, stream ID, payload size, or frame structure violates
      * protocol constraints during encoding or codec construction.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} detail message</li>
-     * </ul>
+     * <p><b>rawArgs layout for Glass-Box:</b> per violation, not fixed for this code. Each entry is
+     * a domain value of the violation that fired; the detail message is never among them — it is
+     * the exception's own message. Every value-carrying violation here reports exactly one entry,
+     * the rejected value itself: a frame type, a flags byte, a stream identifier, a payload length,
+     * a window increment, a last-stream identifier, or a parameter count. A violation that rejects
+     * a fixed structural rule rather than a value contributes an empty array.
      */
     public static final String EX_HTTP_4006 = "EX-HTTP-4006";
 
@@ -445,6 +494,71 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_HTTP_4012 = "EX-HTTP-4012";
+
+    /**
+     * Inbound request body could not be decoded into the handler's target type — the bytes are
+     * syntactically invalid for the binding, or do not bind to that type. A <em>caller</em> fault,
+     * carried by {@link eu.exeris.kernel.spi.exceptions.http.RequestBodyDecodeException} so a
+     * handler can answer {@code 400 Bad Request} without inspecting a message string.
+     *
+     * <p>Distinct from a decoder that is missing or unregistered, which stays an
+     * {@code IllegalStateException} and is a <em>deployment</em> fault ({@code 5xx}). ADR-036 §2
+     * puts status mapping on the handler; that mapping is only expressible if the two failures are
+     * different types, so the split is part of the SPI contract rather than a driver detail.
+     *
+     * <p>Secret-safe: carries the target type name and the body length only. The body itself is
+     * request content and never reaches telemetry — a guarantee the decoder TCK holds across the
+     * whole {@code getCause()} chain, not just this exception's own message, because consumers log
+     * causes and a binding that quotes the offending input would leak through that path.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} targetTypeName (binary name of the requested payload type)</li>
+     *   <li>index 1 – {@code long}   bodySize (bytes offered to the decoder)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4013 = "EX-HTTP-4013";
+
+    /**
+     * A WebSocket send was attempted on a connection that is no longer writable — the handler
+     * closed it, the peer went away, or the engine closed it on a protocol fault.
+     *
+     * <p>The receive direction deliberately does <em>not</em> raise this: a closed connection is the
+     * ordinary end of a receive loop and returns {@code null}, while a send that cannot happen means
+     * the handler had something to say and could not, which it has to see.
+     *
+     * <p>Secret-safe: carries counters and the close code, never message content — the text a
+     * handler was trying to send is exactly the kind of payload most likely to be sensitive.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code long} connectionAgeMillis (how long the connection had been open)</li>
+     *   <li>index 1 – {@code long} messagesSent (messages successfully sent before this attempt)</li>
+     *   <li>index 2 – {@code int}  closeCode (RFC 6455 close code observed, 0 when none was seen)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4014 = "EX-HTTP-4014";
+
+    /**
+     * A WebSocket peer broke RFC 6455 and the connection is being closed for it — a reserved bit
+     * set, a fragmented control frame, an oversize control payload, a continuation with no message
+     * in progress, a message past the configured ceiling, a binary opcode on a text-only contract,
+     * or a text payload that is not valid UTF-8.
+     *
+     * <p>Caller fault by construction: every case is something the peer put on the wire. The
+     * distinction matters to an operator, who should not page for a malformed client.
+     *
+     * <p>Secret-safe, and deliberately more so than most: the offending frame is exactly the input
+     * most likely to be hostile, so neither the message nor the rawArgs quote any of it. The
+     * diagnostic value is in <em>which rule</em> broke and how the connection was closed, which the
+     * close code carries on its own.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 &ndash; {@code int} closeCode (the RFC 6455 code the connection closes with)</li>
+     * </ul>
+     */
+    public static final String EX_HTTP_4015 = "EX-HTTP-4015";
 
     // -----------------------------------------------------------------------
     // EX-PERS – Persistence subsystem
@@ -539,6 +653,31 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_PERS_5007 = "EX-PERS-5007";
+
+    /**
+     * A converting accessor was asked for a column type it does not implement (ADR-080 §2).
+     *
+     * <p>Refusal rather than a rendering: decoding an unimplemented type's bytes as text produces a
+     * plausible wrong answer on a data path, which is the silent-corruption class ADR-080 exists to
+     * close. The decision is made from the <em>declared</em> column type, never from an OID range —
+     * a native {@code enum} is a text passthrough on the wire and would be rendered correctly by a
+     * range heuristic that then corrupts ranges and composites sharing that range.
+     *
+     * <p>The refusal is a property of the column, not of the row: a SQL NULL in an unsupported
+     * column still refuses, because {@code null} would report "no value here" when the truth is
+     * "this column cannot be rendered".
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} declaredTypeName (the driver's name for the column type,
+     *                                as reported by the result metadata)</li>
+     *   <li>index 1 – {@code Integer} columnIndex (zero-based)</li>
+     *   <li>index 2 – {@code String} accessor (the SPI method that refused, e.g. {@code "getString"})</li>
+     * </ul>
+     *
+     * @since 0.12
+     */
+    public static final String EX_PERS_5008 = "EX-PERS-5008";
 
     // -----------------------------------------------------------------------
     // EX-SEC – Security / Principal context
@@ -647,15 +786,17 @@ public final class KernelErrorCodes {
     /**
      * Generic event engine failure (no specific category).
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} message (human-readable diagnostic)</li>
-     * </ul>
+     * <p><b>No rawArgs layout.</b> This code is set by the message constructors of
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventEngineException} and
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException}, which leave
+     * {@code rawArgs} empty. The human-readable diagnostic is the exception's
+     * {@code getMessage()}, and an upstream failure, when there is one, is its
+     * {@code getCause()}.
      */
     public static final String EX_EVENT_6001 = "EX-EVENT-6001";
 
     /**
-     * Event bus publish failure: queue is full and the implementation cannot accept the event.
+     * Event bus queue overflow: the queue is full and the implementation cannot accept the event.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
@@ -741,6 +882,65 @@ public final class KernelErrorCodes {
      */
     public static final String EX_EVENT_6008 = "EX-EVENT-6008";
 
+    /**
+     * Event bus publish failure: the bus did not accept the event, for a reason other than a full
+     * queue ({@link #EX_EVENT_6002}). Contrast {@link #EX_EVENT_6010}: here the publish itself
+     * failed, so no handler was given the event by this call.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int}    eventTypeOrdinal  (ordinal of the event that was not accepted)</li>
+     *   <li>index 1 – {@code String} reason            (static failure category)</li>
+     * </ul>
+     * <p>An upstream failure, when there is one, is the exception's {@code getCause()}. Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#publishFailed(int, String, Throwable)}.
+     *
+     * @implNote The kernel's bindings emit three {@code reason} values: {@code "delivery-failed"}
+     *           — the binding's queue or broker client threw, and its exception is the cause;
+     *           {@code "interrupted"} — the publishing thread was interrupted while waiting for
+     *           queue space, no cause is attached, and the thread's interrupt status is left set;
+     *           {@code "unregistered-type"} — the descriptor's ordinal is not registered with the
+     *           engine's registry, and no cause is attached.
+     * @since 0.12
+     */
+    public static final String EX_EVENT_6009 = "EX-EVENT-6009";
+
+    /**
+     * Event handler failure: {@code EventBus.publishAndAwait} delivered the event and one or more
+     * handlers threw. Contrast {@link #EX_EVENT_6009}: here the event was delivered, so retrying
+     * the publish runs again the handlers that succeeded.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code int} eventTypeOrdinal    (ordinal of the delivered event)</li>
+     *   <li>index 1 – {@code int} failedHandlerCount  (number of handlers that threw)</li>
+     * </ul>
+     * <p>No cause is set. Each handler's exception is attached with
+     * {@code addSuppressed}, so {@code getSuppressed()} holds {@code failedHandlerCount} entries.
+     * Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#handlersFailed(int, int)}.
+     *
+     * @since 0.12
+     */
+    public static final String EX_EVENT_6010 = "EX-EVENT-6010";
+
+    /**
+     * Event bus subscription rejected: {@code EventBus.subscribe} could not register the handler
+     * for the named event type.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} eventType  (the type name the caller subscribed to)</li>
+     * </ul>
+     * <p>No cause is set. Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#subscriptionRejected(String)}.
+     *
+     * @implNote The kernel's in-memory bus raises it when the type is not registered in the
+     *           {@code EventRegistry}; register the type before subscribing.
+     * @since 0.12
+     */
+    public static final String EX_EVENT_6011 = "EX-EVENT-6011";
+
     // -----------------------------------------------------------------------
     // EX-FLOW – Flow Engine / Saga Orchestration subsystem
     // -----------------------------------------------------------------------
@@ -758,17 +958,23 @@ public final class KernelErrorCodes {
     public static final String EX_FLOW_7001 = "EX-FLOW-7001";
 
     /**
-     * Flow engine lifecycle failure: start, stop, compile, or scheduler operation failed.
+     * Flow engine lifecycle failure: a start, compile, schedule, wake, optimistic-lock or
+     * resume-compatibility operation was refused or failed.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <p><b>rawArgs layout for Glass-Box</b> — filled by the named factories of
+     * {@link eu.exeris.kernel.spi.exceptions.flow.FlowEngineException}, which owns the full
+     * per-phase layout; an instance built by one of its public constructors carries empty
+     * {@code rawArgs}:
      * <ul>
      *   <li>index 0 – {@code String} engineName</li>
-     *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "STOP"},
-     *       {@code "COMPILE"}, {@code "SCHEDULE"}</li>
+     *   <li>index 1 – {@code String} phase — one of: {@code "START"}, {@code "COMPILE"},
+     *       {@code "SCHEDULE"}, {@code "WAKE"}, {@code "OPTIMISTIC_LOCK_CONFLICT"},
+     *       {@code "SCHEMA_MISMATCH"}</li>
      *   <li>index 2 – {@code String} staticReasonCode — e.g. {@code "STARTUP_FAILED"},
      *       {@code "COMPILE_FAILED"}, {@code "QUEUE_FULL"}</li>
      *   <li>index 3 – {@code int}    contextValue — phase-specific numeric context
-     *       (queue depth for SCHEDULE); {@code -1} when not applicable</li>
+     *       (queue depth for SCHEDULE); {@code -1} when not applicable. For {@code "WAKE"},
+     *       indices 3 and 4 are instead the {@code long} halves of the flow instance id.</li>
      * </ul>
      */
     public static final String EX_FLOW_7002 = "EX-FLOW-7002";
@@ -855,11 +1061,17 @@ public final class KernelErrorCodes {
      * refused to apply it. The previous, sealed value remains authoritative — no field is
      * mutated. This is a security-relevant audit signal, not a runtime failure.
      *
-     * <p><b>rawArgs layout for Glass-Box:</b>
-     * <ul>
-     *   <li>index 0 – {@code String} filename (relative path under the config directory)</li>
-     *   <li>index 1 – {@code String} key      (dot-path key of the sealed field; never the value)</li>
-     * </ul>
+     * <p><b>An event code, never thrown.</b> The refusal is not a failure of any caller, so no
+     * exception carries this code and it has no {@code rawArgs} layout. What it identifies is the
+     * refusal event, which names the file and the key only — never the value.
+     *
+     * @implNote The kernel's Core config file watcher logs each refusal at {@code WARNING}, tagged
+     *           with this code, and records it as the JFR event
+     *           {@code eu.exeris.kernel.config.ImmutableReloadRefused}, whose typed fields are read
+     *           by name: {@code file} ({@code String}, the name of the changed file in the watched
+     *           config directory) and {@code key} ({@code String}, the dot-path key of the sealed
+     *           field). The event has no error-code field; this code appears in the event type's
+     *           description.
      */
     public static final String EX_CFG_1004 = "EX-CFG-1004";
 
@@ -994,6 +1206,52 @@ public final class KernelErrorCodes {
      */
     public static final String EX_BLOB_8006 = "EX-BLOB-8006";
 
+    /**
+     * Blob storage was configured, and no {@code BlobStorageProvider} is on the classpath to serve
+     * it. Distinct from {@link #EX_BLOB_8008}: nothing is ambiguous, there is simply nothing to
+     * choose from, and the fix is a dependency rather than a key.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} component — the bootstrap component that looked</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8007 = "EX-BLOB-8007";
+
+    /**
+     * The configured blob provider id does not resolve to exactly one provider on the classpath.
+     *
+     * <p>One code rather than two for "no such id" and "the id is ambiguous", because the operator
+     * action is the same in both: write a different value for one key. The message distinguishes
+     * them; the code is what an alert routes on, and both route to the same person.
+     *
+     * <p>Thrown at boot, never per request — a store nobody could choose is not a runtime condition.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} configKey — the key to set, so a refusal names its own remedy</li>
+     *   <li>index 1 – {@code String} configuredId — what was set, or the empty string when unset</li>
+     *   <li>index 2 – {@code String} availableIds — comma-joined provider ids actually discovered</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8008 = "EX-BLOB-8008";
+
+    /**
+     * Blob storage is switched on and a configuration key it needs is unset.
+     *
+     * <p>Separate from {@link #EX_BLOB_8008} because the rawArgs mean different things and Glass-Box
+     * tooling reads them positionally: 8008's last slot is the list of provider ids that were
+     * available, and a free-text hint in that position would be parsed as ids. Different failure,
+     * different layout, different code.
+     *
+     * <p>rawArgs layout:
+     * <ul>
+     *   <li>index 0 – {@code String} configKey — the key that is unset</li>
+     *   <li>index 1 – {@code String} expected — what a value for it looks like</li>
+     * </ul>
+     */
+    public static final String EX_BLOB_8009 = "EX-BLOB-8009";
+
     // -----------------------------------------------------------------------
     // Scheduling (EX-JOB-9xxx) — ADR-057
     // -----------------------------------------------------------------------
@@ -1039,6 +1297,21 @@ public final class KernelErrorCodes {
      * </ul>
      */
     public static final String EX_JOB_9004 = "EX-JOB-9004";
+
+    // -----------------------------------------------------------------------
+    // EX-UNK – no code of its own
+    // -----------------------------------------------------------------------
+
+    /**
+     * Stamped on a telemetry record that carried no error code — the sink needs something for the
+     * code field and inventing a domain-specific one would be a guess.
+     *
+     * <p>Registered rather than left as a sink-local literal because a scraper meets it in the same
+     * position as every other code and has to be able to look it up. It is the one code that means
+     * "the emitter did not say", and an operator seeing it should look at the emitter, not at this
+     * table.
+     */
+    public static final String EX_UNK_0000 = "EX-UNK-0000";
 
     // -----------------------------------------------------------------------
     // Constructor – utility class, no instantiation

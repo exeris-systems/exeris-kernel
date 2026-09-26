@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.security;
 
@@ -30,8 +26,9 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <h2>Derivation Rules</h2>
  * <ol>
  *   <li>If the active principal carries a {@code tenantId()}, derive a
- *       {@link ImmutableStorageContext#shared(String)} context using
- *       the tenant UUID as the isolation key — the default SHARED/RLS path.</li>
+ *       {@link ImmutableStorageContext#shared(long, long)} context from the UUID's two
+ *       {@code long} halves — the default SHARED/RLS path, without materialising a
+ *       {@link java.util.UUID#toString()}.</li>
  *   <li>If the principal has no {@code tenantId()}, return the pre-allocated
  *       {@link ImmutableStorageContext#GLOBAL} singleton — zero allocation,
  *       no RLS injection.</li>
@@ -67,7 +64,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <p>No JWT library, no token parsing, no database call in this class.
  * Pure SPI-to-SPI translation.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see eu.exeris.kernel.core.security.SecurityInterceptor
  * @see StorageContext
  * @see ImmutableStorageContext
@@ -80,7 +77,7 @@ public final class StorageContextBridge {
      * Derives a {@link StorageContext} from the currently-bound
      * {@link PrincipalContext} in the active scope.
      *
-     * <h2>Derivation logic</h2>
+     * <h4>Derivation logic</h4>
      * <ul>
      *   <li>Tenant present → {@link ImmutableStorageContext#shared(long, long)}</li>
      *   <li>No tenant     → {@link ImmutableStorageContext#GLOBAL} (singleton, zero-alloc)</li>
@@ -88,7 +85,7 @@ public final class StorageContextBridge {
      *
      * @return derived {@link StorageContext}; never {@code null}
      * @throws eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException
-     *         if no {@link PrincipalContext} is bound in the current scope
+     *         ({@code EX-SEC-2001}) if no {@link PrincipalContext} is bound in the current scope
      */
     public static StorageContext deriveFromActivePrincipal() {
         PrincipalContext principal = KernelProviders.principal();
@@ -103,6 +100,8 @@ public final class StorageContextBridge {
      *
      * @param principal the authenticated principal; must not be {@code null}
      * @return derived {@link StorageContext}; never {@code null}
+     * @throws eu.exeris.kernel.spi.exceptions.security.PrincipalContextMissingException
+     *         ({@code EX-SEC-2001}) if {@code principal} is {@code null}
      */
     public static StorageContext derive(PrincipalContext principal) {
         if (principal == null) {

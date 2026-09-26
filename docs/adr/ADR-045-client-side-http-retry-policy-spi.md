@@ -1,3 +1,12 @@
+---
+title: "ADR-045: `HttpRetryPolicy` SPI — Opt-in Client-Side Retry for `KernelWebClient`"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-045
+---
+
 # ADR-045: `HttpRetryPolicy` SPI — Opt-in Client-Side Retry for `KernelWebClient`
 
 **Status:** Accepted
@@ -151,6 +160,11 @@ attempts: the loan from attempt *N* is owned and released by `engine.send` exact
 and attempt *N+1* allocates a fresh loan. This sidesteps cross-attempt buffer-ownership entirely —
 the retry seam never holds a buffer between iterations.
 
+*(2026-09-25: superseded on the owner by ADR-034 Amendment A1. The loan from attempt N is owned
+and released by `KernelWebClient`, once that attempt's `engine.send` returns or throws and before
+the policy is consulted; the engine neither closes nor retains it. Re-encoding per attempt, and
+holding no buffer between iterations, are unchanged.)*
+
 ### Behavioural defaults live in the Community impl, not the SPI
 
 The SPI fixes only the **contract surface** (the part `exeris-tooling` emits against and that must
@@ -277,3 +291,16 @@ record's `retry(boolean)` + `delayMillis(long)` is the smaller surface.
   (no per-entity codegen change; the policy is constructor-injected like the enricher). `.link.md` stub.
 - `exeris-kernel-enterprise` — `.link.md` stub (consumes the SPI; no enterprise-specific retry surface
   introduced here).
+
+## Amendments
+
+- **2026-09-25 — the per-attempt body is released by `KernelWebClient`, not by `engine.send`.**
+  *Body re-buffering* said the loan from attempt N "is owned and released by `engine.send`".
+  ADR-034 Amendment A1 settles the client-side ownership model: the caller of
+  `HttpClientEngine#send` keeps ownership of the request body and releases it after `send` returns
+  or throws; the engine reads it during `send` and neither closes nor retains it. For this ADR that caller is `KernelWebClient`, which releases each
+  attempt's body before `HttpRetryPolicy#decide` runs; a policy therefore sees a request whose body
+  may already be released, which the existing "MUST NOT read, retain, or close" obligation on
+  `decide` already covers. Re-encoding per attempt is unchanged, and is one of the reasons the
+  engine needs no ownership. The section is marked in place, not rewritten (`adr-conventions.md`
+  rule 7).

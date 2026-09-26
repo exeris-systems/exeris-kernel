@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -23,6 +19,17 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
+/**
+ * Community: the {@code ServiceLoader}-discovered {@link HttpProvider} that builds the native TCP
+ * HTTP server engine (HTTP/1.1, plus HTTP/2 via h2c/prior-knowledge upgrade) and an HTTP/1.x-only
+ * client engine, and the default JSON body-codec registries.
+ *
+ * <p>Registers at {@link #priority()} {@code 0}, the Community-tier value in the convention
+ * {@link HttpProvider#priority()} documents; an Enterprise provider on the classpath at a higher
+ * priority is selected instead. Every returned encoder and decoder registry sources its Jackson
+ * mapper per codec quadrant through the {@link CommunityJsonMappers} customization seam; with no
+ * {@code JsonMapperCustomizer} registered, each mapper is the plain Jackson default.
+ */
 public final class CommunityHttpProvider implements HttpProvider {
 
     private static final String PROVIDER_ID = "community-http";
@@ -40,6 +47,16 @@ public final class CommunityHttpProvider implements HttpProvider {
     private static final HttpRequestBodyDecoderRegistry REQUEST_BODY_DECODER_REGISTRY =
             HttpRequestBodyDecoderRegistry.of(List.of(new CommunityJsonRequestBodyDecoder(
                     CommunityJsonMappers.forScope(JsonMapperScope.HTTP_REQUEST_DECODE))));
+
+    /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link HttpProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.http.HttpProvider}.
+     */
+    public CommunityHttpProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     private static HttpResponseBodyEncoderRegistry buildDefaultRegistry() {
         JsonBodyEncoder encoder =

@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS drift_probe (id INT);

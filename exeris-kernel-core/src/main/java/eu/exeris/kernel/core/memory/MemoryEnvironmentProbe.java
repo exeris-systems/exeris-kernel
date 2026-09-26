@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.memory;
 
@@ -33,7 +29,8 @@ import java.nio.file.Path;
  * </ol>
  *
  * <h2>Off-Heap Budget Formula</h2>
- * <p>The recommended off-heap budget = {@code totalMemory - jvmHeapMax - headroomBytes}.
+ * <p>The recommended off-heap budget is
+ * {@code max(0, totalMemory - jvmHeapMax - headroomBytes)}.
  * The default headroom is {@value #DEFAULT_HEADROOM_BYTES} bytes (256 MB) reserved for
  * OS/kernel overhead, JVM internal structures, and native libraries.
  *
@@ -46,7 +43,7 @@ import java.nio.file.Path;
  * <p>Emits a single {@code MemoryEnvironmentProbed} event at probe time for bootstrap
  * waterfall visibility.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class MemoryEnvironmentProbe {
 
@@ -89,6 +86,7 @@ public final class MemoryEnvironmentProbe {
      *
      * @param headroomBytes bytes to reserve for OS/JVM overhead; must be {@code >= 0}
      * @return detected memory boundaries; never {@code null}
+     * @throws IllegalArgumentException if {@code headroomBytes} is negative
      */
     public static MemoryBoundaries probe(long headroomBytes) {
         if (headroomBytes < 0) {
@@ -205,6 +203,15 @@ public final class MemoryEnvironmentProbe {
     ) {
         /**
          * Compact canonical constructor — basic sanity guard.
+         *
+         * @param totalMemoryBytes        total physical or container-constrained memory;
+         *                                must be {@code >= 0}
+         * @param jvmHeapMaxBytes         JVM max heap in bytes as reported by the runtime;
+         *                                must be {@code >= 0}
+         * @param recommendedOffHeapBytes computed off-heap budget; must be {@code >= 0}
+         * @param headroomBytes           headroom reservation used in this calculation;
+         *                                must be {@code >= 0}
+         * @throws IllegalArgumentException if any argument is negative
          */
         public MemoryBoundaries {
             if (totalMemoryBytes < 0) {

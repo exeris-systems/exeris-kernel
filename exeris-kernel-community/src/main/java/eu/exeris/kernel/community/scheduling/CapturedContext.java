@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.scheduling;
 
@@ -20,7 +16,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * @param principal the submitting principal, or {@code null} if none was bound
  * @param storage   the submitting storage context, or {@code null} if none was bound
- * @since 0.11.0
+ * @since 0.11
  */
 record CapturedContext(PrincipalContext principal, StorageContext storage) {
 

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.transport;
 
@@ -96,6 +92,7 @@ class TransportValueTypesTest {
             assertThat(e.totalRejected()).isZero();
             assertThat(e.rttP50Micros()).isZero();
             assertThat(e.rttP95Micros()).isZero();
+            assertThat(e.acceptFaults()).isZero();
         }
 
         @Test
@@ -132,6 +129,33 @@ class TransportValueTypesTest {
             TransportStats a = new TransportStats(1, 10L, 100L, 0L, 200L, 500L);
             TransportStats b = new TransportStats(1, 10L, 100L, 0L, 200L, 999L);
             assertThat(a).isNotEqualTo(b);
+        }
+
+        @Test
+        @DisplayName("Different acceptFaults yields inequality")
+        void differentAcceptFaultsNotEqual() {
+            TransportStats a = new TransportStats(1, 10L, 100L, 0L, 200L, 800L, 0L);
+            TransportStats b = new TransportStats(1, 10L, 100L, 0L, 200L, 800L, 7L);
+            assertThat(a)
+                    .as("two snapshots that differ only in how many connections broke during setup "
+                            + "are not the same snapshot")
+                    .isNotEqualTo(b);
+        }
+
+        @Test
+        @DisplayName("The six-argument constructor reports no accept faults, and that is a claim")
+        void sixArgumentConstructorReportsNoFaults() {
+            TransportStats bridged = new TransportStats(5, 100L, 1000L, 3L, 500L, 2000L);
+
+            assertThat(bridged.acceptFaults())
+                    .as("the shape retained for drivers with no accept-setup path must say zero, "
+                            + "not leave the component to whatever a future default becomes")
+                    .isZero();
+            assertThat(bridged)
+                    .as("and it must agree with the canonical form spelled out in full — a bridge "
+                            + "that lands values in different components is the failure it exists "
+                            + "to prevent")
+                    .isEqualTo(new TransportStats(5, 100L, 1000L, 3L, 500L, 2000L, 0L));
         }
 
         @Test

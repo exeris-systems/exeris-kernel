@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -16,6 +12,14 @@ import jdk.jfr.Label;
 import jdk.jfr.Name;
 import jdk.jfr.StackTrace;
 
+/**
+ * Emitted once, during kernel startup, when {@link FlowBootstrap#loadWithProvider} selects the
+ * {@link eu.exeris.kernel.spi.flow.FlowProvider} this JVM's flow subsystem binds to.
+ *
+ * <p>Carries the ServiceLoader-selection outcome — the winning provider's class, priority and
+ * stable identifier, plus the engine name it was configured with — so an operator can confirm
+ * which flow binding started without inferring it from which JAR happens to be on the classpath.
+ */
 @Name("eu.exeris.kernel.flow.BootstrapSelected")
 @Label("Flow Bootstrap - Provider Selected")
 @Category({"Exeris Kernel", "Flow"})
@@ -39,6 +43,17 @@ final class FlowBootstrapSelectedEvent extends Event {
     @Description("Human-readable engine name from FlowEngineConfig.engineName()")
     /* default */ String engineName;
 
+    /**
+     * Begins, populates and commits this event, unless Flight Recorder is not initialized or the
+     * event type is disabled, in which case this is a no-op.
+     *
+     * @param providerClass fully qualified class name of the selected {@link
+     *                      eu.exeris.kernel.spi.flow.FlowProvider}
+     * @param priority      the provider's {@link eu.exeris.kernel.spi.flow.FlowProvider#priority()}
+     * @param providerId    the provider's stable {@link
+     *                      eu.exeris.kernel.spi.flow.FlowProvider#providerId()}
+     * @param engineName    the configured {@link eu.exeris.kernel.spi.flow.FlowEngineConfig#engineName()}
+     */
     /* default */ static void emit(String providerClass, int priority,
                                    String providerId, String engineName) {
         FlowBootstrapSelectedEvent event = BootstrapJfrEvents.beginIfEnabled(

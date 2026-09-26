@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -14,6 +10,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.spi.persistence.TransactionIsolation;
+import eu.exeris.kernel.spi.security.StorageContext;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -27,9 +24,27 @@ import java.util.Optional;
  *
  * <p>NOT thread-safe — designed for single-VT-per-request access within a ScopedValue scope.
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> allocates one wrapper object per {@link #requestScopedConnection()} call;
+ * the backing {@link PersistenceConnection} itself is acquired at most once per box instance, on
+ * the first {@link #getOrAcquire()}.
+ * <p><b>Thread confinement:</b> owner thread — a box is created and used by the single virtual
+ * thread executing the request inside whose {@code ScopedValue} scope it is bound; it holds no
+ * internal synchronization, so concurrent use from more than one thread is undefined.
+ * <p><b>Ownership:</b> the box owns the acquired connection from {@link #getOrAcquire()} until
+ * {@link #release()}; every {@link PersistenceConnection} handed out through
+ * {@link #requestScopedConnection()} is a non-owning view whose {@code close()} is a no-op, so
+ * only {@link #release()} returns the physical connection to the pool.
+ *
+ * @since 0.5
  */
 public final class PersistenceSessionBox {
+
+    /**
+     * Binds the session box active for the current request, for the lifetime of one HTTP
+     * dispatch.
+     *
+     * @see #currentOrNull()
+     */
     public static final ScopedValue<PersistenceSessionBox> REQUEST_SESSION =
             ScopedValue.newInstance();
 
@@ -41,7 +56,17 @@ public final class PersistenceSessionBox {
     private RequestPersistenceSession session;
     private String sessionScopeKey;
     private boolean released;
+    private boolean acquiredWithSystemScope;
 
+    /**
+     * Creates an unacquired session box for one request; no connection is opened until the
+     * first {@link #getOrAcquire()}.
+     *
+     * @param engine    the engine to acquire the backing connection from; a {@code null} engine
+     *                  makes every acquire attempt a no-op that returns {@code null}
+     * @param isolation the transaction isolation requested when the connection is acquired
+     * @param readOnly  the read-only hint requested when the connection is acquired
+     */
     public PersistenceSessionBox(PersistenceEngine engine,
                                         TransactionIsolation isolation,
                                         boolean readOnly) {
@@ -50,37 +75,92 @@ public final class PersistenceSessionBox {
         this.readOnly = readOnly;
     }
 
+    /**
+     * Returns the session box bound to the current request scope.
+     *
+     * @return the bound box, or {@code null} when {@link #REQUEST_SESSION} is not bound
+     */
     public static PersistenceSessionBox currentOrNull() {
         return REQUEST_SESSION.isBound() ? REQUEST_SESSION.get() : null;
     }
 
+    /**
+     * Whether this box was created for {@code candidate} — the check a caller makes before
+     * reusing a request-scoped session instead of acquiring its own connection.
+     *
+     * @param candidate the engine to compare against this box's engine
+     * @return {@code true} when this box has a non-{@code null} engine equal to {@code candidate}
+     */
     public boolean belongsTo(PersistenceEngine candidate) {
         return engine != null && Objects.equals(engine, candidate);
     }
 
     /**
      * Returns the shared-scope session for this request, acquiring a connection on first call.
-     * Returns {@code null} if no {@code PersistenceEngine} is available or if an existing
-     * request session was already acquired under a different scope key.
+     *
+     * @return the active session; {@code null} if no {@code PersistenceEngine} is available, or
+     *         if an existing request session was already acquired under a different scope key
      */
     public RequestPersistenceSession getOrAcquire() {
         return getOrAcquire(this::openBackingConnection);
     }
 
+    /**
+     * Returns the shared-scope session for this request, opening the backing connection through
+     * {@code opener} on first call instead of the engine's default.
+     *
+     * @param opener supplies the backing connection when none is acquired yet; not invoked
+     *               again once a session exists
+     * @return the active session; {@code null} if an existing request session was already
+     *         acquired under a different scope key
+     */
     public RequestPersistenceSession getOrAcquire(ConnectionOpener opener) {
-        return getOrAcquireInternal(SHARED_SCOPE_KEY, opener, true);
+        return getOrAcquireInternal(SHARED_SCOPE_KEY, null, opener, true);
     }
 
     /**
-     * Returns request session if absent-or-matching for a given scope key.
-     * If session already exists with a different scope key, returns {@code null}.
+     * Returns the request session, acquiring one under {@code scopeKey} on first call.
+     *
+     * @param scopeKey the isolation/tenant scope key the caller is addressing
+     * @param opener   supplies the backing connection when none is acquired yet; not invoked
+     *                 again once a session exists
+     * @return the active session; {@code null} if an existing request session was already
+     *         acquired under a different scope key
+     * @throws NullPointerException if {@code scopeKey} is {@code null}
      */
     public RequestPersistenceSession getOrAcquireIfScopeMatches(String scopeKey, ConnectionOpener opener) {
         Objects.requireNonNull(scopeKey, "scopeKey must not be null");
-        return getOrAcquireInternal(scopeKey, opener, true);
+        return getOrAcquireInternal(scopeKey, null, opener, true);
+    }
+
+    /**
+     * Returns the request session, acquiring one under {@code scopeKey} for {@code storageContext}
+     * on first call.
+     *
+     * <p>{@code storageContext} is the context the opener configures the connection for; the box
+     * reads it only to record, on acquire, whether it declares a tenant (see
+     * {@link #acquiredWithSystemScope()}).
+     *
+     * @param scopeKey       the isolation/tenant scope key the caller is addressing
+     * @param storageContext the context the backing connection is opened for
+     * @param opener         supplies the backing connection when none is acquired yet; not invoked
+     *                       again once a session exists
+     * @return the active session; {@code null} if an existing request session was already
+     *         acquired under a different scope key
+     * @throws NullPointerException if {@code scopeKey} or {@code storageContext} is {@code null}
+     */
+    public RequestPersistenceSession getOrAcquireIfScopeMatches(String scopeKey,
+                                                                StorageContext storageContext,
+                                                                ConnectionOpener opener) {
+        return getOrAcquireInternal(
+                Objects.requireNonNull(scopeKey, "scopeKey must not be null"),
+                Objects.requireNonNull(storageContext, "storageContext must not be null"),
+                opener,
+                true);
     }
 
     private RequestPersistenceSession getOrAcquireInternal(String scopeKey,
+                                                          StorageContext storageContext,
                                                           ConnectionOpener opener,
                                                           boolean requireScopeMatch) {
         Objects.requireNonNull(opener, "opener must not be null");
@@ -103,6 +183,10 @@ public final class PersistenceSessionBox {
         if (session == null) {
             session = openRequestSession(opener);
             sessionScopeKey = scopeKey;
+            // A context whose isolation key is absent or blank has its tenant key published as '';
+            // an acquire that names no context declares no tenant either.
+            String isolationKey = storageContext == null ? null : storageContext.isolationKey().orElse(null);
+            acquiredWithSystemScope = isolationKey == null || isolationKey.isBlank();
             RequestSessionLifecycleEvent.emit(
                     "ACQUIRE",
                     isolation,
@@ -125,6 +209,38 @@ public final class PersistenceSessionBox {
         return session;
     }
 
+    /**
+     * Whether this box's session was acquired for a context that declares no tenant.
+     *
+     * <p>Recorded once, when the backing connection is acquired, from the context the connection
+     * was opened for — not from whatever is bound to {@code KernelProviders.STORAGE_CONTEXT}. A
+     * context declares no tenant when its isolation key is absent or blank, the same test
+     * {@code RlsConnectionInterceptor} applies before publishing the tenant key as {@code ''}:
+     * {@code ImmutableStorageContext.GLOBAL} is one, and so is any context built without a key. The
+     * ambient-context overload of the engine resolves to {@code GLOBAL} when no context is bound,
+     * so a public route that reaches persistence that way is recorded, and so is a handler that
+     * chose the system context explicitly. An acquire that names no context at all
+     * ({@link #getOrAcquire()}, {@link #getOrAcquire(ConnectionOpener)} and the two-argument
+     * {@link #getOrAcquireIfScopeMatches(String, ConnectionOpener)}) is recorded as well, because
+     * nothing the box was given declares a tenant.
+     *
+     * <p>The box records the fact and does not act on it; the caller that owns the request decides
+     * what to report.
+     *
+     * @return {@code true} if a session was acquired for a context declaring no tenant, or for no
+     *         context; {@code false} if none was acquired, or if it was acquired for a tenant
+     */
+    public boolean acquiredWithSystemScope() {
+        return acquiredWithSystemScope;
+    }
+
+    /**
+     * Acquires (or reuses) the shared-scope session and returns a non-owning view over its
+     * connection.
+     *
+     * @return a connection whose {@code close()} is a no-op, or {@code null} under the same
+     *         conditions as {@link #getOrAcquire()}
+     */
     public PersistenceConnection requestScopedConnection() {
         RequestPersistenceSession activeSession = getOrAcquire();
         if (activeSession == null) {
@@ -133,6 +249,14 @@ public final class PersistenceSessionBox {
         return requestScopedConnection(activeSession);
     }
 
+    /**
+     * Wraps {@code requestSession}'s connection in a non-owning view whose {@code close()} is a
+     * no-op — this box, not the caller, remains responsible for returning the connection to the
+     * pool through {@link #release()}.
+     *
+     * @param requestSession the session to wrap; may be {@code null}
+     * @return the wrapped connection, or {@code null} when {@code requestSession} is {@code null}
+     */
     public PersistenceConnection requestScopedConnection(RequestPersistenceSession requestSession) {
         if (requestSession == null) {
             return null;
@@ -183,8 +307,17 @@ public final class PersistenceSessionBox {
         session.connection().close();
     }
 
+    /**
+     * Supplies the backing connection a session box acquires on first use.
+     */
     @FunctionalInterface
     public interface ConnectionOpener {
+
+        /**
+         * Opens a new backing connection.
+         *
+         * @return a freshly opened connection
+         */
         PersistenceConnection open();
     }
 
