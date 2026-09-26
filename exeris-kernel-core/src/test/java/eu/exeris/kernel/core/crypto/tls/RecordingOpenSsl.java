@@ -35,6 +35,11 @@ final class RecordingOpenSsl {
     int shutdownResult = 1;
     int errorResult = CoreOpenSslLoader.SSL_ERROR_WANT_READ;
     int setFdResult = 1;
+    long verifyResult = 0L;
+    int set1HostResult = 1;
+    int set1IpResult = 1;
+    long ctrlResult = 1L;
+    long paramPtr = 0xBEEFL;
 
     List<String> calls() {
         return calls;
@@ -74,7 +79,17 @@ final class RecordingOpenSsl {
                 null);
         CoreSslHandles.ErrorQueueHandles errorQueue = new CoreSslHandles.ErrorQueueHandles(
                 bind("errClearError", void.class));
-        return CoreSslHandlesTestFactory.build(ctx, handshake, io, errorQueue);
+        CoreSslHandles.PeerVerificationHandles verification = new CoreSslHandles.PeerVerificationHandles(
+                bind("ctxSet1CertStore", void.class, long.class, long.class),
+                bind("get0Param", long.class, long.class),
+                bind("paramSet1Host", int.class, long.class, long.class, long.class),
+                bind("paramSetHostflags", void.class, long.class, int.class),
+                bind("paramSet1Ip", int.class, long.class, long.class, long.class),
+                bind("sslCtrl", long.class, long.class, int.class, long.class, long.class),
+                bind("getVerifyResult", long.class, long.class),
+                bind("verifyCertErrorString", long.class, long.class));
+        return CoreSslHandlesTestFactory.build(ctx, handshake, io, errorQueue, verification,
+                CoreSslHandlesTestFactory.unsupportedTrustStore());
     }
 
     MethodHandle sslSetFd() {
@@ -154,6 +169,52 @@ final class RecordingOpenSsl {
     @SuppressWarnings("unused")
     private void errClearError() {
         calls.add("ERR_clear_error");
+    }
+
+    @SuppressWarnings("unused")
+    private void ctxSet1CertStore(long ctx, long store) {
+        calls.add("SSL_CTX_set1_cert_store");
+    }
+
+    @SuppressWarnings("unused")
+    private long get0Param(long ssl) {
+        calls.add("SSL_get0_param");
+        return paramPtr;
+    }
+
+    @SuppressWarnings("unused")
+    private int paramSet1Host(long param, long name, long length) {
+        calls.add("X509_VERIFY_PARAM_set1_host:" + length);
+        return set1HostResult;
+    }
+
+    @SuppressWarnings("unused")
+    private void paramSetHostflags(long param, int flags) {
+        calls.add("X509_VERIFY_PARAM_set_hostflags:0x" + Integer.toHexString(flags));
+    }
+
+    @SuppressWarnings("unused")
+    private int paramSet1Ip(long param, long ip, long length) {
+        calls.add("X509_VERIFY_PARAM_set1_ip:" + length);
+        return set1IpResult;
+    }
+
+    @SuppressWarnings("unused")
+    private long sslCtrl(long ssl, int cmd, long larg, long parg) {
+        calls.add("SSL_ctrl:" + cmd + ":" + larg);
+        return ctrlResult;
+    }
+
+    @SuppressWarnings("unused")
+    private long getVerifyResult(long ssl) {
+        calls.add("SSL_get_verify_result");
+        return verifyResult;
+    }
+
+    @SuppressWarnings("unused")
+    private long verifyCertErrorString(long code) {
+        calls.add("X509_verify_cert_error_string");
+        return 0L;
     }
 
     @SuppressWarnings("unused")

@@ -22,9 +22,10 @@ import jdk.jfr.StackTrace;
  * critical diagnostic value with no throughput cost.
  *
  * <h2>Mapping to Error Codes</h2>
- * <p>The {@code errorCode} field carries the Exeris error code string
- * (e.g., {@code "EX-NET-2002"}) to align with the binary Glass-Box telemetry contract
- * defined in {@code docs/subsystems/crypto.md}.
+ * <p>The {@code errorCode} field carries the Exeris error code string ({@code "EX-NET-2001"}, the
+ * handshake-side code {@code TlsHandshakeException} carries) to align with the binary Glass-Box
+ * telemetry contract defined in {@code docs/subsystems/crypto.md}. {@code verifyResult} is the
+ * {@code X509_V_*} code of a client that expected a peer, and {@code -1} otherwise.
  *
  * @since 0.5
  */
@@ -42,7 +43,7 @@ final class TlsHandshakeFailureEvent extends Event {
     /* default */ String mode; // "SERVER" or "CLIENT"
 
     @Label("Error Code")
-    /* default */ String errorCode; // e.g. "EX-NET-2002"
+    /* default */ String errorCode; // "EX-NET-2001"
 
     @Label("Failure Reason")
     /* default */ String failureReason;
@@ -50,18 +51,24 @@ final class TlsHandshakeFailureEvent extends Event {
     @Label("SSL Error Code")
     /* default */ int sslErrorCode;
 
+    @Label("Peer Verification Result")
+    /* default */ long verifyResult;
+
     /**
      * Emits a handshake-failure event.
      *
      * @param sslPtr        raw {@code SSL*} address
      * @param server        {@code true} for server mode, {@code false} for client
      * @param errorCode     Exeris error code from {@link KernelErrorCodes}
-     *                      (e.g. {@link KernelErrorCodes#EX_NET_2002})
+     *                      ({@link KernelErrorCodes#EX_NET_2001})
      * @param failureReason human-readable failure reason
      * @param sslErrorCode  raw {@code SSL_get_error()} result code
+     * @param verifyResult  {@code SSL_get_verify_result()} of a client that expected a peer, else
+     *                      {@code -1}
      */
     /* default */ static void emit(long sslPtr, boolean server,
-                                   String errorCode, String failureReason, int sslErrorCode) {
+                                   String errorCode, String failureReason, int sslErrorCode,
+                                   long verifyResult) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -74,6 +81,7 @@ final class TlsHandshakeFailureEvent extends Event {
         event.errorCode     = errorCode;
         event.failureReason = failureReason;
         event.sslErrorCode  = sslErrorCode;
+        event.verifyResult  = verifyResult;
         event.commit();
     }
 }

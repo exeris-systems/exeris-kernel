@@ -20,10 +20,18 @@ import java.lang.invoke.MethodHandle;
  *   <li>{@link HandshakeHandles}  — connection setup (new/free/accept/connect/doHandshake)</li>
  *   <li>{@link IoHandles}         — data transfer (read/write/shutdown/error/alpn)</li>
  *   <li>{@link ErrorQueueHandles} — the calling thread's OpenSSL error queue</li>
+ *   <li>{@link PeerVerificationHandles} — the identity a client expects of its server, and the
+ *       result of checking it</li>
+ *   <li>{@link TrustStoreHandles} — the {@code X509_STORE} a client verifies against</li>
  * </ul>
  * Each record stays under the PMD {@code CyclomaticComplexity} class threshold.
  * Callers access via {@link #ctx()}, {@link #handshake()}, {@link #ioHandles()},
- * {@link #errorQueue()}.
+ * {@link #errorQueue()}, {@link #peerVerification()}, {@link #trustStore()}.
+ *
+ * <h2>C {@code long}</h2>
+ * <p>A handle whose native signature uses C {@code long} is bound with the platform's canonical
+ * {@code long} layout and then cast to a fixed {@code long}-typed Java signature, so every
+ * {@code invokeExact} below has the same shape on LP64 and LLP64.
  *
  * <h2>Zero-Copy Contract</h2>
  * <p>All buffer addresses passed as raw {@code long} — no heap wrapper allocation per call.
@@ -36,13 +44,19 @@ public final class CoreSslHandles {
     private final HandshakeHandles handshake;
     private final IoHandles ioHandles;
     private final ErrorQueueHandles errorQueue;
+    private final PeerVerificationHandles peerVerification;
+    private final TrustStoreHandles trustStore;
 
     /* package */ CoreSslHandles(CtxHandles ctx, HandshakeHandles handshake,
-                                 IoHandles ioHandles, ErrorQueueHandles errorQueue) {
+                                 IoHandles ioHandles, ErrorQueueHandles errorQueue,
+                                 PeerVerificationHandles peerVerification,
+                                 TrustStoreHandles trustStore) {
         this.ctx = ctx;
         this.handshake = handshake;
         this.ioHandles = ioHandles;
         this.errorQueue = errorQueue;
+        this.peerVerification = peerVerification;
+        this.trustStore = trustStore;
     }
 
     /**
@@ -80,6 +94,27 @@ public final class CoreSslHandles {
      */
     public ErrorQueueHandles errorQueue() {
         return errorQueue;
+    }
+
+    /**
+     * Returns the handles that set the identity a client expects of its server and read the
+     * verification result.
+     *
+     * @return the peer-verification handle group
+     * @since 0.12
+     */
+    public PeerVerificationHandles peerVerification() {
+        return peerVerification;
+    }
+
+    /**
+     * Returns the handles that build and fill an {@code X509_STORE}.
+     *
+     * @return the trust-store handle group
+     * @since 0.12
+     */
+    public TrustStoreHandles trustStore() {
+        return trustStore;
     }
 
     // =========================================================================
@@ -604,6 +639,317 @@ public final class CoreSslHandles {
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 FfmErrors.rethrowIfError(t);
                 throw new TlsException("ERR_clear_error failed", t);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Peer verification handles
+    // =========================================================================
+
+    /**
+     * Handles for client-side server verification: the trust a context verifies against, the
+     * identity a session expects, the server name it sends, and the result.
+     *
+     * <p>{@code sslGet0Param} returns a borrowed {@code X509_VERIFY_PARAM*} that the {@code SSL}
+     * owns; a caller never frees it. {@code X509_VERIFY_PARAM_set1_host},
+     * {@code X509_VERIFY_PARAM_set1_ip} and {@code SSL_ctrl(SSL_CTRL_SET_TLSEXT_HOSTNAME)} copy
+     * their input, so the buffer a caller passes may be released as soon as the call returns.
+     * {@code SSL_CTX_set1_cert_store} takes its own reference to the store.
+     *
+     * @param sslCtxSet1CertStore   bound to {@code SSL_CTX_set1_cert_store};
+     *                              {@code (long ctxPtr, long storePtr) -> void}
+     * @param sslGet0Param          bound to {@code SSL_get0_param}; {@code (long sslPtr) -> long}
+     * @param paramSet1Host         bound to {@code X509_VERIFY_PARAM_set1_host};
+     *                              {@code (long paramPtr, long nameAddr, long nameLen) -> int}
+     * @param paramSetHostflags     bound to {@code X509_VERIFY_PARAM_set_hostflags};
+     *                              {@code (long paramPtr, int flags) -> void}
+     * @param paramSet1Ip           bound to {@code X509_VERIFY_PARAM_set1_ip};
+     *                              {@code (long paramPtr, long ipAddr, long ipLen) -> int}
+     * @param sslCtrl               bound to {@code SSL_ctrl}, cast to
+     *                              {@code (long sslPtr, int cmd, long larg, long parg) -> long}
+     * @param sslGetVerifyResult    bound to {@code SSL_get_verify_result}, cast to
+     *                              {@code (long sslPtr) -> long}
+     * @param verifyCertErrorString bound to {@code X509_verify_cert_error_string}, cast to
+     *                              {@code (long code) -> long}, returning a constant C string
+     * @since 0.12
+     */
+    public record PeerVerificationHandles(
+            MethodHandle sslCtxSet1CertStore,
+            MethodHandle sslGet0Param,
+            MethodHandle paramSet1Host,
+            MethodHandle paramSetHostflags,
+            MethodHandle paramSet1Ip,
+            MethodHandle sslCtrl,
+            MethodHandle sslGetVerifyResult,
+            MethodHandle verifyCertErrorString) {
+
+        /**
+         * {@code SSL_CTX_set1_cert_store(ctxPtr, storePtr)} — the context takes its own reference.
+         *
+         * @param ctxPtr   the {@code SSL_CTX*} pointer
+         * @param storePtr the {@code X509_STORE*} pointer
+         */
+        public void invokeCtxSet1CertStore(long ctxPtr, long storePtr) {
+            try {
+                sslCtxSet1CertStore.invokeExact(ctxPtr, storePtr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_CTX_set1_cert_store failed", t);
+            }
+        }
+
+        /**
+         * {@code SSL_get0_param(sslPtr)} — the session's own verification parameters, borrowed.
+         *
+         * @param sslPtr the {@code SSL*} pointer
+         * @return the {@code X509_VERIFY_PARAM*} pointer; never to be freed by the caller
+         */
+        public long invokeGet0Param(long sslPtr) {
+            try {
+                return (long) sslGet0Param.invokeExact(sslPtr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_get0_param failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_VERIFY_PARAM_set1_host(paramPtr, nameAddr, nameLen)} → 1 on success.
+         *
+         * @param paramPtr the {@code X509_VERIFY_PARAM*} pointer
+         * @param nameAddr address of the host name bytes
+         * @param nameLen  the name's length in bytes, never {@code 0}: OpenSSL reads a zero length
+         *                 as "measure with strlen", and an empty result as "check no host"
+         * @return {@code 1} on success, {@code 0} otherwise
+         */
+        public int invokeParamSet1Host(long paramPtr, long nameAddr, long nameLen) {
+            try {
+                return (int) paramSet1Host.invokeExact(paramPtr, nameAddr, nameLen);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_VERIFY_PARAM_set1_host failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_VERIFY_PARAM_set_hostflags(paramPtr, flags)}.
+         *
+         * @param paramPtr the {@code X509_VERIFY_PARAM*} pointer
+         * @param flags    {@code X509_CHECK_FLAG_*} bits
+         */
+        public void invokeParamSetHostflags(long paramPtr, int flags) {
+            try {
+                paramSetHostflags.invokeExact(paramPtr, flags);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_VERIFY_PARAM_set_hostflags failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_VERIFY_PARAM_set1_ip(paramPtr, ipAddr, ipLen)} → 1 on success.
+         *
+         * @param paramPtr the {@code X509_VERIFY_PARAM*} pointer
+         * @param ipAddr   address of the address bytes, in network order
+         * @param ipLen    {@code 4} or {@code 16}
+         * @return {@code 1} on success, {@code 0} otherwise
+         */
+        public int invokeParamSet1Ip(long paramPtr, long ipAddr, long ipLen) {
+            try {
+                return (int) paramSet1Ip.invokeExact(paramPtr, ipAddr, ipLen);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_VERIFY_PARAM_set1_ip failed", t);
+            }
+        }
+
+        /**
+         * {@code SSL_ctrl(sslPtr, cmd, larg, parg)}.
+         *
+         * @param sslPtr the {@code SSL*} pointer
+         * @param cmd    an {@code SSL_CTRL_*} command
+         * @param larg   the command's integer argument
+         * @param parg   the command's pointer argument
+         * @return the command's result
+         */
+        public long invokeCtrl(long sslPtr, int cmd, long larg, long parg) {
+            try {
+                return (long) sslCtrl.invokeExact(sslPtr, cmd, larg, parg);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_ctrl failed", t);
+            }
+        }
+
+        /**
+         * {@code SSL_get_verify_result(sslPtr)} → an {@code X509_V_*} code.
+         *
+         * @param sslPtr the {@code SSL*} pointer
+         * @return {@code X509_V_OK} ({@code 0}) or the first verification error
+         */
+        public long invokeGetVerifyResult(long sslPtr) {
+            try {
+                return (long) sslGetVerifyResult.invokeExact(sslPtr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_get_verify_result failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_verify_cert_error_string(code)} → address of a constant C string.
+         *
+         * @param code an {@code X509_V_*} code
+         * @return the address of a NUL-terminated string OpenSSL owns and never frees
+         */
+        public long invokeVerifyCertErrorString(long code) {
+            try {
+                return (long) verifyCertErrorString.invokeExact(code);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_verify_cert_error_string failed", t);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Trust store handles
+    // =========================================================================
+
+    /**
+     * Handles for the {@code X509_STORE} a client context verifies its server against, and for the
+     * locations OpenSSL reads when told to use its default trust.
+     *
+     * <p>{@code X509_STORE_new} returns a store holding one reference, which the creator releases
+     * with {@code X509_STORE_free}. The {@code X509_get_default_cert_*} functions return constant
+     * strings OpenSSL owns.
+     *
+     * @param storeNew             bound to {@code X509_STORE_new}; {@code () -> long}
+     * @param storeFree            bound to {@code X509_STORE_free}; {@code (long storePtr) -> void}
+     * @param storeSetDefaultPaths bound to {@code X509_STORE_set_default_paths};
+     *                             {@code (long storePtr) -> int}
+     * @param storeLoadFile        bound to {@code X509_STORE_load_file};
+     *                             {@code (long storePtr, long pathAddr) -> int}
+     * @param defaultCertFile      bound to {@code X509_get_default_cert_file}; {@code () -> long}
+     * @param defaultCertDir       bound to {@code X509_get_default_cert_dir}; {@code () -> long}
+     * @param defaultCertFileEnv   bound to {@code X509_get_default_cert_file_env};
+     *                             {@code () -> long}
+     * @param defaultCertDirEnv    bound to {@code X509_get_default_cert_dir_env}; {@code () -> long}
+     * @since 0.12
+     */
+    public record TrustStoreHandles(
+            MethodHandle storeNew,
+            MethodHandle storeFree,
+            MethodHandle storeSetDefaultPaths,
+            MethodHandle storeLoadFile,
+            MethodHandle defaultCertFile,
+            MethodHandle defaultCertDir,
+            MethodHandle defaultCertFileEnv,
+            MethodHandle defaultCertDirEnv) {
+
+        /**
+         * {@code X509_STORE_new()} → store pointer or 0.
+         *
+         * @return the new {@code X509_STORE*}, holding one reference, or {@code 0}
+         */
+        public long invokeStoreNew() {
+            try {
+                return (long) storeNew.invokeExact();
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_STORE_new failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_STORE_free(storePtr)} — releases one reference.
+         *
+         * @param storePtr the {@code X509_STORE*} pointer
+         */
+        public void invokeStoreFree(long storePtr) {
+            try {
+                storeFree.invokeExact(storePtr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_STORE_free failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_STORE_set_default_paths(storePtr)} → 1 on success.
+         *
+         * @param storePtr the {@code X509_STORE*} pointer
+         * @return {@code 1} on success, {@code 0} otherwise
+         */
+        public int invokeStoreSetDefaultPaths(long storePtr) {
+            try {
+                return (int) storeSetDefaultPaths.invokeExact(storePtr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_STORE_set_default_paths failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_STORE_load_file(storePtr, pathAddr)} → 1 on success.
+         *
+         * @param storePtr the {@code X509_STORE*} pointer
+         * @param pathAddr address of the NUL-terminated file path
+         * @return {@code 1} on success, {@code 0} otherwise
+         */
+        public int invokeStoreLoadFile(long storePtr, long pathAddr) {
+            try {
+                return (int) storeLoadFile.invokeExact(storePtr, pathAddr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("X509_STORE_load_file failed", t);
+            }
+        }
+
+        /**
+         * {@code X509_get_default_cert_file()} → address of a constant C string.
+         *
+         * @return the compiled-in default CA file path's address
+         */
+        public long invokeDefaultCertFile() {
+            return invokeConstantString(defaultCertFile, "X509_get_default_cert_file failed");
+        }
+
+        /**
+         * {@code X509_get_default_cert_dir()} → address of a constant C string.
+         *
+         * @return the compiled-in default CA directory path's address
+         */
+        public long invokeDefaultCertDir() {
+            return invokeConstantString(defaultCertDir, "X509_get_default_cert_dir failed");
+        }
+
+        /**
+         * {@code X509_get_default_cert_file_env()} → address of a constant C string.
+         *
+         * @return the address of the name of the environment variable overriding the default file
+         */
+        public long invokeDefaultCertFileEnv() {
+            return invokeConstantString(defaultCertFileEnv, "X509_get_default_cert_file_env failed");
+        }
+
+        /**
+         * {@code X509_get_default_cert_dir_env()} → address of a constant C string.
+         *
+         * @return the address of the name of the environment variable overriding the default
+         *         directory
+         */
+        public long invokeDefaultCertDirEnv() {
+            return invokeConstantString(defaultCertDirEnv, "X509_get_default_cert_dir_env failed");
+        }
+
+        private static long invokeConstantString(MethodHandle handle, String failure) {
+            try {
+                return (long) handle.invokeExact();
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException(failure, t);
             }
         }
     }

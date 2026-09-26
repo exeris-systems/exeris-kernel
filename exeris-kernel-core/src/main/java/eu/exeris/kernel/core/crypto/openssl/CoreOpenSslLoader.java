@@ -11,7 +11,10 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -54,6 +57,21 @@ public final class CoreOpenSslLoader {
     public static final int SSL_FILETYPE_PEM   = 1;
     /** {@code SSL_VERIFY_NONE = 0} — no peer certificate verification. */
     public static final int SSL_VERIFY_NONE    = 0;
+    /**
+     * {@code SSL_VERIFY_PEER = 1} — a client aborts the handshake when the server's certificate
+     * fails verification.
+     */
+    public static final int SSL_VERIFY_PEER    = 1;
+    /** {@code SSL_CTRL_SET_TLSEXT_HOSTNAME = 55}, the {@code SSL_ctrl} command that sets SNI. */
+    public static final int SSL_CTRL_SET_TLSEXT_HOSTNAME = 55;
+    /** {@code TLSEXT_NAMETYPE_host_name = 0}, the only SNI name type. */
+    public static final int TLSEXT_NAMETYPE_HOST_NAME = 0;
+    /** {@code X509_V_OK = 0} — the {@code SSL_get_verify_result} of a verified peer. */
+    public static final int X509_V_OK = 0;
+    /** {@code X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS = 0x4} — {@code f*.example.test} matches nothing. */
+    public static final int X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS = 0x4;
+    /** {@code X509_CHECK_FLAG_NEVER_CHECK_SUBJECT = 0x20} — the subject common name is never a host. */
+    public static final int X509_CHECK_FLAG_NEVER_CHECK_SUBJECT = 0x20;
     /**
      * {@code SSL_ERROR_SSL = 1} — fatal protocol error (e.g. non-TLS bytes on a TLS port).
      * An {@code SSL_get_error} return code; unrelated to {@link #SSL_FILETYPE_PEM} (same value {@code 1},
@@ -250,8 +268,69 @@ public final class CoreOpenSslLoader {
         CoreSslHandles.ErrorQueueHandles errorQueue = new CoreSslHandles.ErrorQueueHandles(
                 req(linker, crypto.lookup(), "ERR_clear_error", FunctionDescriptor.ofVoid()));
 
-        CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles, errorQueue);
+        CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles, errorQueue,
+                peerVerificationHandles(linker, ssl.lookup(), crypto.lookup()),
+                trustStoreHandles(linker, crypto.lookup()));
         return new CoreOpenSslRuntime(linker, ssl.lookup(), crypto.lookup(), handles);
+    }
+
+    /**
+     * Binds the client verification symbols. Every one is present, outside any deprecation guard,
+     * from 3.0.0 through 4.0; {@code SSL_set1_host}, which 4.0 deprecates, is not used.
+     */
+    private static CoreSslHandles.PeerVerificationHandles peerVerificationHandles(
+            Linker linker, SymbolLookup ssl, SymbolLookup crypto) {
+        ValueLayout cLong = cLong(linker);
+        return new CoreSslHandles.PeerVerificationHandles(
+                req(linker, ssl, "SSL_CTX_set1_cert_store",
+                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG)),
+                req(linker, ssl, "SSL_get0_param",
+                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)),
+                req(linker, crypto, "X509_VERIFY_PARAM_set1_host",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG)),
+                req(linker, crypto, "X509_VERIFY_PARAM_set_hostflags",
+                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_INT)),
+                req(linker, crypto, "X509_VERIFY_PARAM_set1_ip",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG)),
+                withLongs(req(linker, ssl, "SSL_ctrl",
+                                FunctionDescriptor.of(cLong, JAVA_LONG, JAVA_INT, cLong, JAVA_LONG)),
+                        MethodType.methodType(long.class, long.class, int.class, long.class, long.class)),
+                withLongs(req(linker, ssl, "SSL_get_verify_result",
+                                FunctionDescriptor.of(cLong, JAVA_LONG)),
+                        MethodType.methodType(long.class, long.class)),
+                withLongs(req(linker, crypto, "X509_verify_cert_error_string",
+                                FunctionDescriptor.of(JAVA_LONG, cLong)),
+                        MethodType.methodType(long.class, long.class)));
+    }
+
+    private static CoreSslHandles.TrustStoreHandles trustStoreHandles(Linker linker, SymbolLookup crypto) {
+        return new CoreSslHandles.TrustStoreHandles(
+                req(linker, crypto, "X509_STORE_new", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_STORE_free", FunctionDescriptor.ofVoid(JAVA_LONG)),
+                req(linker, crypto, "X509_STORE_set_default_paths",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
+                req(linker, crypto, "X509_STORE_load_file",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_file", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_dir", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_file_env", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_dir_env", FunctionDescriptor.of(JAVA_LONG)));
+    }
+
+    /**
+     * The platform's C {@code long}: 64 bits on LP64 Linux and macOS, 32 bits on LLP64 Windows.
+     */
+    private static ValueLayout cLong(Linker linker) {
+        return (ValueLayout) linker.canonicalLayouts().get("long");
+    }
+
+    /**
+     * Casts a handle whose C {@code long} positions follow the platform to the fixed
+     * {@code long}-typed {@code type}, so a caller's {@code invokeExact} has one shape everywhere.
+     * On LP64 the cast is the identity; on LLP64 it narrows arguments and widens the result.
+     */
+    private static MethodHandle withLongs(MethodHandle handle, MethodType type) {
+        return MethodHandles.explicitCastArguments(handle, type);
     }
 
     /**

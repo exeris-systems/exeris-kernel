@@ -35,7 +35,25 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   retries occur on connection failures (preserving ADR-045 / ADR-026 retry boundaries). Observability is
   provided via JFR event `eu.exeris.kernel.community.http.HttpClientPool`.
 
+- **A Core TLS client engine can be told which server it expects** (ADR-074 §4).
+  `OffHeapTlsEngine#expectPeer` takes a `TlsPeerIdentity`, which `TlsPeerIdentity.of` classifies
+  from an authority host without a DNS lookup. A DNS name is checked against the certificate's DNS
+  subject alternative names, with no partial wildcards and never against the subject common name,
+  and is sent as the server name indication. An IP literal is checked against IP entries only and
+  sends no server name. A handshake that completes with a verification result other than
+  `X509_V_OK` is refused, so the engine never becomes `ACTIVE` unverified, whatever its context's
+  verify mode. A failed handshake leaves its `SSL_get_error` code and `X509_V_*` result on
+  `TlsHandshakeFailureCodes`. An engine given no identity behaves as before. The Core OpenSSL
+  runtime binds 16 more symbols for this, all present from OpenSSL 3.0 through 4.0 outside any
+  deprecation guard.
+
 ### Changed
+
+- **`eu.exeris.kernel.tls.HandshakeFailure` reports `EX-NET-2001` and the verification result.**
+  The event carried `EX-NET-2002`, the provider-bootstrap code, although a failed handshake is what
+  `TlsHandshakeException` (`EX-NET-2001`) reports. It gains `verifyResult`: the `X509_V_*` code of a
+  client that expected a peer, `-1` otherwise, and its `failureReason` is OpenSSL's text for that
+  code when verification failed.
 
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
   total over the measured type set — returning the server's `<type>_out` rendering for every Tier A

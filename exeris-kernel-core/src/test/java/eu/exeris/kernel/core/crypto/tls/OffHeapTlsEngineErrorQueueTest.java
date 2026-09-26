@@ -161,6 +161,85 @@ class OffHeapTlsEngineErrorQueueTest {
     }
 
     @Nested
+    @DisplayName("beginHandshake with an expected peer")
+    class ExpectedPeer {
+
+        private OffHeapTlsEngine clientExpecting(TlsPeerIdentity peer) {
+            OffHeapTlsEngine engine = new OffHeapTlsEngine(openSsl.handles(), 0x1234L, false, ALLOC);
+            engine.expectPeer(peer);
+            engine.notifyBound();
+            openSsl.forget();
+            return engine;
+        }
+
+        @Test
+        @DisplayName("a failed step reads the verification result, then clears once")
+        void fatalStepClearsAfterTheVerifyResult() {
+            try (OffHeapTlsEngine engine = clientExpecting(TlsPeerIdentity.of("localhost"))) {
+                openSsl.connectResult = -1;
+                openSsl.errorResult = CoreOpenSslLoader.SSL_ERROR_SSL;
+                openSsl.verifyResult = 18L;
+
+                assertThat(engine.beginHandshake(scratch)).isEqualTo(TlsStatus.CLOSED);
+
+                assertClearedOnceAfterTheErrorWasRead();
+                assertThat(openSsl.indexOf(CLEAR))
+                        .as("the clear follows SSL_get_verify_result; calls were %s", openSsl.calls())
+                        .isGreaterThan(openSsl.indexOf("SSL_get_verify_result"));
+                assertThat(engine.handshakeFailureSslError()).isEqualTo(CoreOpenSslLoader.SSL_ERROR_SSL);
+                assertThat(engine.peerVerificationResult()).isEqualTo(18L);
+            }
+        }
+
+        @Test
+        @DisplayName("a completed handshake whose verification failed is refused, and clears once")
+        void completedButUnverifiedHandshakeIsRefused() {
+            try (OffHeapTlsEngine engine = clientExpecting(TlsPeerIdentity.of("localhost"))) {
+                openSsl.connectResult = 1;
+                openSsl.verifyResult = 62L;
+
+                assertThat(engine.beginHandshake(scratch)).isEqualTo(TlsStatus.CLOSED);
+
+                assertThat(engine.phase()).isEqualTo(eu.exeris.kernel.spi.crypto.TlsPhase.ERROR);
+                assertThat(engine.isHandshakeComplete()).isFalse();
+                assertThat(openSsl.count(CLEAR)).as("calls were %s", openSsl.calls()).isEqualTo(1);
+                assertThat(openSsl.indexOf(CLEAR)).isGreaterThan(openSsl.indexOf("SSL_get_verify_result"));
+                assertThat(engine.handshakeFailureSslError()).isEqualTo(CoreOpenSslLoader.SSL_ERROR_SSL);
+                assertThat(engine.peerVerificationResult()).isEqualTo(62L);
+            }
+        }
+
+        @Test
+        @DisplayName("a verified handshake completes and reports X509_V_OK")
+        void verifiedHandshakeCompletes() {
+            try (OffHeapTlsEngine engine = clientExpecting(TlsPeerIdentity.of("127.0.0.1"))) {
+                openSsl.connectResult = 1;
+                openSsl.verifyResult = 0L;
+
+                assertThat(engine.beginHandshake(scratch)).isEqualTo(TlsStatus.FINISHED);
+
+                assertThat(engine.peerVerificationResult()).isZero();
+                assertThat(engine.handshakeFailureSslError()).isZero();
+            }
+        }
+
+        @Test
+        @DisplayName("an engine with no expected peer never reads a verification result")
+        void noExpectedPeerReadsNoVerifyResult() {
+            try (OffHeapTlsEngine engine = boundClient()) {
+                openSsl.connectResult = -1;
+                openSsl.errorResult = CoreOpenSslLoader.SSL_ERROR_SSL;
+
+                assertThat(engine.beginHandshake(scratch)).isEqualTo(TlsStatus.CLOSED);
+
+                assertThat(openSsl.count("SSL_get_verify_result")).isZero();
+                assertThat(engine.peerVerificationResult()).isEqualTo(-1L);
+                assertThat(engine.handshakeFailureSslError()).isEqualTo(CoreOpenSslLoader.SSL_ERROR_SSL);
+            }
+        }
+    }
+
+    @Nested
     @DisplayName("unwrap")
     class Unwrap {
 
