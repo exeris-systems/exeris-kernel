@@ -41,7 +41,8 @@ public final class CommunityJfrEventCatalogue {
                     "eu.exeris.kernel.community.transport.CommunityConnectionRefusedEvent",
                     "eu.exeris.kernel.community.transport.CommunityReactorDispatchFaultEvent",
                     "eu.exeris.kernel.community.transport.CommunityTransportDrainEvent",
-                    "eu.exeris.kernel.community.transport.TransportTlsDeclinedEvent")),
+                    "eu.exeris.kernel.community.transport.TransportTlsDeclinedEvent",
+                    "eu.exeris.kernel.community.transport.TransportTlsClientPostureEvent")),
             // http — per routed request and per pooled connection; a rapid-reset flood arrives
             // as a burst by definition.
             Map.entry("http", List.of(

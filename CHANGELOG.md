@@ -16,6 +16,31 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [0.12.0] — 2026-09-03
 
+### Security
+
+- **The Community TLS client verifies the server it dials** (ADR-074 §4, Amendment A1). Outbound
+  TLS used `SSL_VERIFY_NONE`: it encrypted, loaded no trust, sent no server name and checked no
+  host, so any certificate was accepted. A `CLIENT` or `DUAL` carrier that dials TLS now verifies
+  the server before any request byte is sent: the certificate chain against its trust, and the
+  certificate's subject alternative names against the host of the authority it dialled — for the
+  HTTP client, the request's authority, else `http.client.defaultAuthority`. A DNS host is matched
+  against DNS entries with no partial wildcards, never against the subject common name, and is sent
+  as the server name indication; an IP literal is matched against IP entries and sends none. A
+  server that fails is refused with `TlsHandshakeException` (`EX-NET-2001`), detail
+  `peer certificate verification failed` and the `X509_V_*` code; a host that is neither a name nor
+  an address is refused before any socket opens. The trust is `crypto.tls.client.trustFile` (the
+  kernel configuration, else `-Dexeris.crypto.tls.client.trustFile`), which replaces OpenSSL's
+  default trust, or that default (`SSL_CERT_FILE`, `SSL_CERT_DIR`) when the key is unset. No setting
+  keeps TLS and skips verification. Outbound TLS is armed only where a crypto provider is bound when
+  the carrier is built and `exeris.transport.tls` is not `false`; an engine built anywhere else dials
+  plaintext, and each carrier records which in the new
+  `eu.exeris.kernel.transport.TransportTlsClientPosture` event and an INFO line (a WARNING when the
+  default trust has neither file nor directory). A bound crypto provider that cannot verify an
+  outbound peer fails a `CLIENT` carrier at construction and a `DUAL` carrier's `connect`.
+  **Upgrade:** a client that talks to a private-CA or self-signed server needs
+  `crypto.tls.client.trustFile` naming the issuing CA (with any intermediates, since the Community
+  server does not send them) or the server's own certificate.
+
 ### Added
 
 - **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
@@ -48,6 +73,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   deprecation guard.
 
 ### Changed
+
+- **A Community client engine from `createTlsEngine` with a client configuration refuses its
+  handshake.** It names no server to verify, so once bound its `beginHandshake` throws
+  `TlsHandshakeException` (`EX-NET-2001`, detail `client engine has no expected peer identity`)
+  instead of completing unauthenticated; it still binds, reports its phase and closes. The SPI states
+  this on `KernelCryptoProvider#createTlsEngine` and `TlsEngine#beginHandshake`, javadoc only. A
+  client that handshakes builds its engine with `CommunityKernelCryptoProvider#createClientTlsEngine`,
+  which takes the trust (`openClientTrust`) and the expected peer (`TlsPeerIdentity`).
+
+- **A `DUAL` carrier dials out as a client.** Its outbound connections were built from the listener's
+  configuration, so they ran the server side of the handshake with the listener's certificate. They
+  now take the carrier's client TLS decision like a `CLIENT` carrier's.
 
 - **`eu.exeris.kernel.tls.HandshakeFailure` reports `EX-NET-2001` and the verification result.**
   The event carried `EX-NET-2002`, the provider-bootstrap code, although a failed handshake is what

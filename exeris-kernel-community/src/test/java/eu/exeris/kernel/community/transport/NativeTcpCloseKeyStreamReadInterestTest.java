@@ -57,7 +57,8 @@ class NativeTcpCloseKeyStreamReadInterestTest {
         // Port is irrelevant — the carrier is never started/bound; closeKeyStream only manipulates
         // the supplied SelectionKey. A valid SERVER-mode port just satisfies config validation.
         NativeTcpCarrier carrier =
-                new NativeTcpCarrier(TransportConfig.serverDefaults(8443), ALLOCATOR, null, null);
+                new NativeTcpCarrier(TransportConfig.serverDefaults(8443), ALLOCATOR, null, null,
+                        NativeTcpClientTls.none());
         try (ServerSocketChannel listener = ServerSocketChannel.open();
              Selector selector = Selector.open()) {
             listener.bind(new InetSocketAddress("127.0.0.1", 0));

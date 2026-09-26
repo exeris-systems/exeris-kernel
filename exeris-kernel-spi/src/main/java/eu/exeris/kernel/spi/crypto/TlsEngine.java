@@ -84,10 +84,13 @@ public interface TlsEngine extends AutoCloseable {
      * engine's write buffer into {@code outbound} after this method returns.
      *
      * @param outbound buffer for outbound handshake bytes; always empty in socket-owner mode
-     * @return status after this call ({@code NEED_UNWRAP}, {@code NEED_WRAP}, {@code FINISHED})
+     * @return status after this call ({@code NEED_UNWRAP}, {@code NEED_WRAP}, {@code FINISHED}),
+     *         or {@code CLOSED} once the handshake has failed — a protocol error or a server
+     *         certificate that failed verification
      * @throws TlsHandshakeException ({@code EX-NET-2001}) if the handshake cannot be initiated —
      *         the session was never bound, is already closed, or has entered
-     *         {@link TlsPhase#ERROR}
+     *         {@link TlsPhase#ERROR}, or it is a client engine with no expected peer identity from
+     *         a provider that refuses unauthenticated handshakes
      */
     TlsStatus beginHandshake(LoanedBuffer outbound);
 

@@ -31,7 +31,7 @@ public final class CommunityTlsEngineTestAccess {
         OffHeapTlsEngine delegate = new OffHeapTlsEngine(openSsl.handles(), 0x1L, false, allocator);
         delegate.expectPeer(peer);
         CommunityTlsEngine engine = new CommunityTlsEngine(delegate, openSsl.sslSetFd(),
-                openSsl.handles().ctx(), 0x1L, null, false);
+                openSsl.handles().ctx(), 0x1L, null, false, false);
         engine.bindFileDescriptor(3);
         return engine;
     }

@@ -18,11 +18,11 @@ import java.util.Map;
  * interpret as a storage topology.
  *
  * <h2>Cleartext only, and said out loud</h2>
- * <p>The Community HTTP client engine has no client-side TLS: {@code CommunityHttpTransportFactory}
- * wires certificate material for listeners only, so a {@code CLIENT}-mode engine speaks cleartext
- * whatever the endpoint scheme says. An {@code https://} endpoint is therefore rejected at
- * construction rather than silently downgraded — sending SigV4 credentials in the clear because a
- * scheme was ignored is exactly the failure that must never be quiet. This driver targets a
+ * <p>A Community HTTP client engine takes TLS from where it is built, never from an endpoint: it
+ * speaks TLS when a crypto provider is bound there and {@code exeris.transport.tls} allows it, and a
+ * request carries no scheme. So this driver cannot honour an {@code https://} endpoint, and rejects
+ * one at construction rather than silently downgrading it — sending SigV4 credentials in the clear
+ * because a scheme was ignored is exactly the failure that must never be quiet. This driver targets a
  * MinIO-compatible endpoint reached over a trusted network path; a public S3 endpoint needs the
  * Enterprise transport.
  *
@@ -163,8 +163,8 @@ import java.util.Map;
         }
         if (!HTTP_SCHEME.equalsIgnoreCase(endpoint.getScheme())) {
             throw new IllegalArgumentException(
-                    "location must use the http scheme — the Community HTTP client engine has no "
-                            + "client-side TLS, so an https endpoint would be sent in the clear; got: "
+                    "location must use the http scheme — this driver takes no TLS from an endpoint "
+                            + "scheme, so an https endpoint could be sent in the clear; got: "
                             + endpoint.getScheme());
         }
         if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {

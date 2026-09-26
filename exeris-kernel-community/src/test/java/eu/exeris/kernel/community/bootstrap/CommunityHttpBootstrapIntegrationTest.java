@@ -178,12 +178,16 @@ class CommunityHttpBootstrapIntegrationTest {
         String previousPort = System.getProperty("exeris.http.port");
         String previousCert = System.getProperty("exeris.transport.certPath");
         String previousKey = System.getProperty("exeris.transport.keyPath");
+        String previousTrust = System.getProperty("exeris.crypto.tls.client.trustFile");
 
         System.setProperty("exeris.http.mode", "SERVER");
         System.setProperty("exeris.http.bindHost", "127.0.0.1");
         System.setProperty("exeris.http.port", Integer.toString(port));
         System.setProperty("exeris.transport.certPath", certPath.toString());
         System.setProperty("exeris.transport.keyPath", keyPath.toString());
+        // The client verifies the server: it trusts the server's self-signed certificate, and dials
+        // 127.0.0.1, the certificate's IP subject alternative name.
+        System.setProperty("exeris.crypto.tls.client.trustFile", certPath.toString());
 
         try {
             KernelBootstrap.builder()
@@ -245,6 +249,7 @@ class CommunityHttpBootstrapIntegrationTest {
             restoreProperty("exeris.http.port", previousPort);
             restoreProperty("exeris.transport.certPath", previousCert);
             restoreProperty("exeris.transport.keyPath", previousKey);
+            restoreProperty("exeris.crypto.tls.client.trustFile", previousTrust);
         }
     }
 

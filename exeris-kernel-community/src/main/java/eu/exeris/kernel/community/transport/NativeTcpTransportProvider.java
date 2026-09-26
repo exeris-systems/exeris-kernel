@@ -11,7 +11,10 @@ import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
+import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportProvider;
+
+import java.nio.file.Path;
 
 /**
  * Community transport provider backed by {@link NativeTcpCarrier}.
@@ -19,16 +22,31 @@ import eu.exeris.kernel.spi.transport.TransportProvider;
  * <p>Implementation is intentionally protocol-blind at the SPI level and uses only
  * provider slots from {@link KernelProviders}.
  *
+ * <h2>Client TLS</h2>
+ * <p>A {@code CLIENT} or {@code DUAL} carrier's outbound connections speak TLS when
+ * {@code exeris.transport.tls} is not {@code false} and a crypto provider is bound where the carrier
+ * is built — for {@code DUAL}, only when its listener holds certificate material too. They then
+ * verify the server against {@code crypto.tls.client.trustFile} (the kernel configuration first, then
+ * the {@code exeris.crypto.tls.client.trustFile} system property), which replaces OpenSSL's default
+ * trust, or against that default when the key is unset. A bound provider that cannot verify an
+ * outbound peer fails a {@code CLIENT} carrier's construction and every {@code DUAL} carrier's
+ * connect. There is no setting that keeps TLS and skips verification. Each {@code CLIENT} or
+ * {@code DUAL} carrier records its decision as {@link TransportTlsClientPostureEvent} and an INFO
+ * log line.
+ *
  * @since 0.5
  */
 @SuppressWarnings("PMD.AvoidCatchingGenericException")
 public final class NativeTcpTransportProvider implements TransportProvider {
 
+    /** The kernel configuration key naming the client trust file. */
+    public static final String CLIENT_TRUST_FILE_KEY = "crypto.tls.client.trustFile";
+
+    /* default */ static final String PROVIDER_NAME = "ExerisCommunity/NativeTcpCarrier";
+
     private static final String PROVIDER_ID = "community-transport";
     /** Opt-out from TLS for any transport that would otherwise have it; anything but "false" leaves it on. */
     private static final String TLS_PROPERTY = "exeris.transport.tls";
-
-    private static final String PROVIDER_NAME = "ExerisCommunity/NativeTcpCarrier";
 
     /**
      * Instantiated reflectively by {@code ServiceLoader} through this module's
@@ -42,13 +60,16 @@ public final class NativeTcpTransportProvider implements TransportProvider {
 
     /**
      * Builds a {@link NativeTcpCarrier} for the given configuration, resolving the bound
-     * {@link MemoryAllocator} and, if present, the bound {@link KernelCryptoProvider} and its TLS
-     * configuration for this transport.
+     * {@link MemoryAllocator} and, if present, the bound {@link KernelCryptoProvider}, the TLS
+     * configuration of its listener and what it does with outbound connections.
      *
      * @param config the transport configuration to build an engine for
      * @return a new, unstarted {@link NativeTcpCarrier}
-     * @throws TransportException if no {@link MemoryAllocator} is bound, the TLS material is
-     *                             misconfigured, or carrier construction fails ({@code EX-NET-4004})
+     * @throws TransportException ({@code EX-NET-4004}) if no {@link MemoryAllocator} is bound, the
+     *                             TLS material is misconfigured, {@code crypto.tls.client.trustFile}
+     *                             cannot be used as client trust, a {@code CLIENT} carrier's bound
+     *                             crypto provider cannot verify an outbound peer, or carrier
+     *                             construction fails
      */
     @Override
     public TransportEngine createEngine(TransportConfig config) {
@@ -63,10 +84,12 @@ public final class NativeTcpTransportProvider implements TransportProvider {
         KernelCryptoProvider cryptoProvider =
                 KernelProviders.CRYPTO_PROVIDER.isBound() ? KernelProviders.CRYPTO_PROVIDER.get() : null;
 
-        CryptoProviderConfig cryptoConfig = resolveCryptoConfig(config);
+        CryptoProviderConfig listenerConfig = resolveListenerCryptoConfig(config);
+        NativeTcpClientTls clientTls = NativeTcpClientTlsResolver.resolve(config, cryptoProvider, listenerConfig);
         try {
-            return new NativeTcpCarrier(config, allocator, cryptoProvider, cryptoConfig);
+            return new NativeTcpCarrier(config, allocator, cryptoProvider, listenerConfig, clientTls);
         } catch (RuntimeException cause) {
+            clientTls.close();
             throw TransportException.bootstrapFailure(PROVIDER_NAME, "Failed to create NativeTcpCarrier", cause);
         }
     }
@@ -112,35 +135,27 @@ public final class NativeTcpTransportProvider implements TransportProvider {
     /**
      * Whether TLS is wanted, given that the transport could have it.
      *
-     * <p>The two sides cannot key on the same signal, and the codebase demonstrates why: the TLS
-     * end-to-end tests build the server with a certificate and the client with {@code null, null},
-     * and both speak TLS. A client holds no server material — that is normal, not a gap — so
-     * material can gate the server and cannot gate the client. Keying the client on it was tried and
-     * broke those tests, which is the clearest statement of the rule there is.
-     *
-     * <p>So each side keeps the only signal it has, and this knob is the opt-out both were missing.
-     * TLS stays on wherever the transport can do it: material present for a server or dual, a bound
-     * crypto provider for a client. What changes is that the client's answer is now a stated default
-     * with a way out, instead of a consequence of another subsystem starting that nothing could
-     * override — a kernel booting crypto to serve HTTPS previously could not make a plaintext
-     * outbound call at all.
+     * <p>A listener is gated by its material, which it holds or does not. A client holds no
+     * material of its own, so its default is TLS wherever a crypto provider is bound, and this
+     * property is the one way to decline it. It is read from the JVM's system properties only, so
+     * it applies to every listener and client in the process at once.
      *
      * <p>Read at construction, never in a static initialiser: a field resolved at class load freezes
      * whatever was set when the class was first touched (ADR-071).
      */
-    private static boolean tlsWanted() {
+    /* default */ static boolean tlsWanted() {
         return !"false".equalsIgnoreCase(System.getProperty(TLS_PROPERTY));
     }
 
-    private static CryptoProviderConfig resolveCryptoConfig(TransportConfig config) {
-        if (config == null) {
+    /**
+     * The listener's TLS configuration: {@code null} for a {@code CLIENT}, which listens on nothing,
+     * and for a listener with no material or whose TLS was declined.
+     */
+    private static CryptoProviderConfig resolveListenerCryptoConfig(TransportConfig config) {
+        if (config == null || config.mode() == TransportMode.CLIENT) {
             return null;
         }
-        if (config.mode() == eu.exeris.kernel.spi.transport.TransportMode.CLIENT) {
-            // A client holds no material of its own, so the decision is all there is.
-            return tlsWanted() ? CryptoProviderConfig.tcpClient() : null;
-        }
-        return resolveListenerCryptoConfig(config);
+        return resolveListenerMaterial(config);
     }
 
     /**
@@ -150,7 +165,7 @@ public final class NativeTcpTransportProvider implements TransportProvider {
      * mistake and stays a boot failure even when TLS was declined, because the next deployment that
      * drops the decline would otherwise start with a broken pair and no warning.
      */
-    private static CryptoProviderConfig resolveListenerCryptoConfig(TransportConfig config) {
+    private static CryptoProviderConfig resolveListenerMaterial(TransportConfig config) {
         String certPath = config.certPath();
         String keyPath = config.keyPath();
         if (certPath == null && keyPath == null) {
@@ -170,8 +185,6 @@ public final class NativeTcpTransportProvider implements TransportProvider {
             TransportTlsDeclinedEvent.emit(config.mode().name(), TLS_PROPERTY);
             return null;
         }
-        return CryptoProviderConfig.httpsServer(
-                java.nio.file.Path.of(certPath),
-                java.nio.file.Path.of(keyPath));
+        return CryptoProviderConfig.httpsServer(Path.of(certPath), Path.of(keyPath));
     }
 }

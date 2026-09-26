@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.TlsTestCertificate;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
@@ -65,7 +66,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
              MemoryAllocator allocator = createAllocator();
              CommunityTlsEngine serverEngine = createServerEngine(provider, certKey);
-             CommunityTlsEngine clientEngine = createClientEngine(provider, false);
+             CommunityTlsEngine clientEngine = createClientEngine(provider, certKey, false);
              ServerSocketChannel listen = ServerSocketChannel.open();
              SocketChannel clientChannel = SocketChannel.open()) {
 
@@ -105,7 +106,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
              MemoryAllocator allocator = createAllocator();
              CommunityTlsEngine serverEngine = createServerEngine(provider, certKey);
-             CommunityTlsEngine clientEngine = createClientEngine(provider, false);
+             CommunityTlsEngine clientEngine = createClientEngine(provider, certKey, false);
              ServerSocketChannel listen = ServerSocketChannel.open();
              SocketChannel clientChannel = SocketChannel.open()) {
 
@@ -170,7 +171,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
                 try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
                      MemoryAllocator allocator = createAllocator();
                      CommunityTlsEngine serverEngine = createServerEngine(provider, certKey);
-                     CommunityTlsEngine clientEngine = createClientEngine(provider, true);
+                     CommunityTlsEngine clientEngine = createClientEngine(provider, certKey, true);
                      ServerSocketChannel listen = ServerSocketChannel.open();
                      SocketChannel clientChannel = SocketChannel.open()) {
 
@@ -234,7 +235,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
 
                 try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
                      MemoryAllocator allocator = createAllocator();
-                     CommunityTlsEngine clientEngine = createClientEngine(provider, true);
+                     CommunityTlsEngine clientEngine = createClientEngine(provider, generatedCertKey(), true);
                      LoanedBuffer outbound = allocator.allocate(AllocationHint.MEDIUM)) {
 
                     assertThatThrownBy(() -> clientEngine.beginHandshake(outbound))
@@ -279,8 +280,14 @@ class CommunityTlsEngineLoopbackIntegrationTest {
                 CryptoProviderConfig.httpsServer(certKey.cert(), certKey.key()));
     }
 
+    /**
+     * A client that trusts the server's self-signed certificate and expects {@code 127.0.0.1}, its
+     * IP subject alternative name. The trust closes here: the engine's context holds its own
+     * reference to the store.
+     */
     private static CommunityTlsEngine createClientEngine(
             CommunityKernelCryptoProvider provider,
+            CertKeyPaths certKey,
             boolean jfrEnabled) {
         CryptoProviderConfig clientConfig = new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.TCP_TLS,
@@ -290,7 +297,9 @@ class CommunityTlsEngineLoopbackIntegrationTest {
                 0,
                 jfrEnabled,
                 CryptoProviderConfig.TLS_1_3);
-        return (CommunityTlsEngine) provider.createTlsEngine(clientConfig);
+        try (CommunityTlsClientTrust trust = provider.openClientTrust(certKey.cert())) {
+            return provider.createClientTlsEngine(clientConfig, trust, TlsPeerIdentity.of("127.0.0.1"));
+        }
     }
 
     /**

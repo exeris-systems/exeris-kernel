@@ -57,7 +57,7 @@
             Making it CI-gateable (reactor/handler scheduling robustness under scarce carriers) is a
             tracked follow-up.
         -->
-        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback,default-trust</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
@@ -270,6 +270,34 @@
                             -->
                             <groups>transport-pinning-recv</groups>
                             <excludedGroups>flamegraph,integration,stress</excludedGroups>
+                        </configuration>
+                    </execution>
+                    <!--
+                        Client TLS against OpenSSL's default trust (CommunityTlsDefaultTrustTest,
+                        @Tag("default-trust")). SSL_CERT_FILE and SSL_CERT_DIR decide what that
+                        default is, and they can only be set for a whole JVM, so the class runs in its
+                        own fork where they name a CA file the test writes and an empty directory.
+                        Elsewhere the tag is excluded, and the class fails rather than skips if it is
+                        run without these variables. Run alone with
+                        `mvn -pl exeris-kernel-community surefire:test@default-trust`.
+                    -->
+                    <execution>
+                        <id>default-trust</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>**/CommunityTlsDefaultTrustTest.java</include>
+                            </includes>
+                            <groups>default-trust</groups>
+                            <excludedGroups>flamegraph</excludedGroups>
+                            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+                            <environmentVariables>
+                                <SSL_CERT_FILE>${project.build.directory}/default-trust/ca.pem</SSL_CERT_FILE>
+                                <SSL_CERT_DIR>${project.build.directory}/default-trust/empty</SSL_CERT_DIR>
+                            </environmentVariables>
                         </configuration>
                     </execution>
                 </executions>
