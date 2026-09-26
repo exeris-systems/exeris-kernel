@@ -126,6 +126,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   or later binds a forwarder that implements the interface and hands its stream handlers the event
   bus through their constructors; both changes are in `exeris-tooling`.
 
+- **The SPI no longer says a boot binding reaches every virtual thread.** `KernelProviders`, several
+  of its slots, `HttpKernelProviders`, `ConfigProvider` and the `events` package documentation said
+  that a slot bound at boot is inherited by every virtual thread started inside the kernel scope. A
+  `ScopedValue` binding reaches the thread that established it and the subtasks forked inside its
+  scope, and no thread started with `Thread.ofVirtual()` or `Thread.ofPlatform()`, which is how the
+  Community driver runs request and stream handlers. The Javadoc now says so, and that a handler
+  takes any provider its driver does not bind for the call through its constructor. Javadoc only.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
