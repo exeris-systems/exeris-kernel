@@ -95,7 +95,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   substituted the default only inside `send`, after enrichment: the request reached the configured
   peer, but an enricher binding an outbound credential's audience to that peer (ADR-040) saw `null`.
   The engine now answers from the configuration it builds its delegate from, before `start()` as well
-  as after it. A client engine built directly from an `HttpProvider` was not affected.
+  as after it, and its `send` addresses an unaddressed request to that same default before handing it
+  to the delegate, so the peer it reports is the peer reached whichever provider's engine it wraps.
+  A client engine built directly from an `HttpProvider` was not affected.
 
 - **The loopback TCK checks the `Host` field the server receives** (ADR-074 decision 3).
   `AbstractHttpProviderLoopbackTck$PeerAddressing#hostFollowsTheRequestAuthority` and

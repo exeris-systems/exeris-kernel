@@ -6,16 +6,20 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpProvider;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpServerEngine;
+import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,7 +29,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>{@code CommunityHttpSubsystem#providerBindings} publishes this engine before {@code start()}
  * builds a delegate, and a caller resolving the peer ahead of enrichment (ADR-074) reads
  * {@link HttpClientEngine#defaultAuthority()} from it. What these cases pin is where that answer
- * comes from: the configuration, whether or not a delegate exists and whatever the delegate says.
+ * comes from, the configuration, whether or not a delegate exists and whatever the delegate says;
+ * and that an unaddressed request sent through the engine reaches the delegate addressed to that
+ * same default, while any other request reaches it unchanged.
  */
 @DisplayName("DeferredHttpClientEngine: default authority")
 class DeferredHttpClientEngineTest {
@@ -33,7 +39,8 @@ class DeferredHttpClientEngineTest {
     private static final String CONFIGURED = "peer.internal:8443";
 
     private final AtomicInteger created = new AtomicInteger();
-    private final HttpProvider provider = new CountingProvider(created);
+    private final AtomicReference<HttpRequest> delivered = new AtomicReference<>();
+    private final HttpProvider provider = new CountingProvider(created, delivered);
 
     @Test
     @DisplayName("reports the configured default peer before start, without building a delegate")
@@ -73,6 +80,54 @@ class DeferredHttpClientEngineTest {
         assertThat(engine.defaultAuthority()).isEqualTo(CONFIGURED);
     }
 
+    @Test
+    @DisplayName("sends an unaddressed request to the configured default peer, even when the delegate reads no default")
+    void addressesAnUnaddressedRequestToTheConfiguredDefault() {
+        try (DeferredHttpClientEngine engine = new DeferredHttpClientEngine(provider, clientConfig(CONFIGURED))) {
+            engine.start();
+
+            engine.send(get());
+
+            assertThat(delivered.get().authority())
+                    .as("the peer the engine reports as its default is the peer an unaddressed request reaches")
+                    .isEqualTo(CONFIGURED);
+        }
+    }
+
+    @Test
+    @DisplayName("passes a request that names its peer to the delegate unchanged")
+    void leavesAnAddressedRequestUnchanged() {
+        HttpRequest addressed = get().withAuthority("named.internal:9443");
+        try (DeferredHttpClientEngine engine = new DeferredHttpClientEngine(provider, clientConfig(CONFIGURED))) {
+            engine.start();
+
+            engine.send(addressed);
+
+            assertThat(delivered.get())
+                    .as("a request naming its peer overrides the default, so it must not be readdressed")
+                    .isSameAs(addressed);
+        }
+    }
+
+    @Test
+    @DisplayName("passes an unaddressed request unchanged when no default is configured, so the delegate refuses it")
+    void leavesAnUnaddressedRequestUnchangedWithoutADefault() {
+        HttpRequest unaddressed = get();
+        try (DeferredHttpClientEngine engine = new DeferredHttpClientEngine(provider, clientConfig(null))) {
+            engine.start();
+
+            engine.send(unaddressed);
+
+            assertThat(delivered.get())
+                    .as("with no default there is no peer to supply; the delegate's refusal must stay reachable")
+                    .isSameAs(unaddressed);
+        }
+    }
+
+    private static HttpRequest get() {
+        return HttpRequest.noBody(HttpMethod.GET, "/", HttpVersion.HTTP_1_1, List.of());
+    }
+
     private static HttpConfig clientConfig(String defaultAuthority) {
         return new HttpConfig(
                 HttpMode.CLIENT,
@@ -91,7 +146,8 @@ class DeferredHttpClientEngineTest {
                 HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
     }
 
-    private record CountingProvider(AtomicInteger created) implements HttpProvider {
+    private record CountingProvider(AtomicInteger created, AtomicReference<HttpRequest> delivered)
+            implements HttpProvider {
 
         @Override
         public HttpServerEngine createServerEngine(HttpConfig config) {
@@ -101,7 +157,7 @@ class DeferredHttpClientEngineTest {
         @Override
         public HttpClientEngine createClientEngine(HttpConfig config) {
             created.incrementAndGet();
-            return new DefaultlessEngine();
+            return new DefaultlessEngine(delivered);
         }
 
         @Override
@@ -115,10 +171,18 @@ class DeferredHttpClientEngineTest {
         }
     }
 
-    /** A delegate that leaves {@link HttpClientEngine#defaultAuthority()} at the interface default. */
+    /**
+     * A delegate that leaves {@link HttpClientEngine#defaultAuthority()} at the interface default and
+     * records the request it is given.
+     */
     private static final class DefaultlessEngine implements HttpClientEngine {
 
+        private final AtomicReference<HttpRequest> delivered;
         private boolean running;
+
+        DefaultlessEngine(AtomicReference<HttpRequest> delivered) {
+            this.delivered = delivered;
+        }
 
         @Override
         public void start() {
@@ -127,7 +191,8 @@ class DeferredHttpClientEngineTest {
 
         @Override
         public HttpResponse send(HttpRequest request) {
-            throw new UnsupportedOperationException("not exercised");
+            delivered.set(request);
+            return HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1);
         }
 
         @Override
