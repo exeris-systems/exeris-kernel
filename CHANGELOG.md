@@ -331,10 +331,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   bound is the one the key names, in both directions: the case naming `blob-s3-community`,
   discovered second, fails against a selection that checks the id and then takes the first driver
   discovered, and the case naming `blob-fs-community`, discovered first, fails against one that
-  takes the last; each asserts the discovery order it depends on. An id matching no driver refuses
-  the boot with `EX-BLOB-8008`. Removing the subsystem from the provider fails every case, dropping
-  `memory` from `dependsOn` fails the unconfigured case and each case naming the S3 driver, and
-  swallowing the refusal fails the unknown-id case.
+  takes the last; each asserts the discovery order it depends on. A store reference the application
+  kept refuses work once `boot()` returns. An id matching no driver refuses the boot with
+  `EX-BLOB-8008`. Removing the subsystem from the provider fails every case, dropping `memory` from
+  `dependsOn` fails the unconfigured case and each case naming the S3 driver, swallowing the refusal
+  fails the unknown-id case, and a `stop()` that does not close the store fails the kept-reference
+  case.
 
 ### Changed
 

@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.storage.blob.BlobAccess;
 import eu.exeris.kernel.spi.storage.blob.BlobRef;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
+import eu.exeris.kernel.spi.storage.blob.BlobStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -26,12 +27,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * The storage subsystem boots by name through {@link KernelBootstrap} (ADR-056).
@@ -54,6 +57,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * driver discovered first. One configured case therefore names the driver discovered second and the
  * other the driver discovered first, and each asserts the discovery order it relies on rather than
  * assuming it.
+ *
+ * <p>{@code boot()} stops what it started once the application returns. That is checked on a store
+ * reference the application kept, not on the {@code BLOB_STORE} slot: a {@code ScopedValue} binding
+ * never outlives the frame that bound it, so the slot reads unbound after {@code boot()} returns
+ * whether or not the store was closed.
  *
  * <p>The S3 cases need no endpoint: creating the store parses its settings and builds a client without
  * dialling, and a presigned URL is computed locally. The URL is what shows a store was created from the
@@ -167,9 +175,27 @@ class CommunityStorageBootstrapIntegrationTest {
                 .as("the key names %s, and a selection preferring a later driver binds another",
                         FS_PROVIDER)
                 .isEqualTo(FS_PROVIDER);
-        assertThat(KernelProviders.BLOB_STORE.isBound())
-                .as("the store is bound inside boot() only")
-                .isFalse();
+    }
+
+    @Test
+    @DisplayName("shutdown: a store the application kept past boot() refuses work")
+    void storeKeptPastBootRefusesWork() throws Exception {
+        AtomicReference<BlobStore> kept = new AtomicReference<>();
+        AtomicReference<URI> signedInsideBoot = new AtomicReference<>();
+
+        withProperties(s3Properties(true), () -> bootStorage(() -> {
+            kept.set(KernelProviders.BLOB_STORE.get());
+            signedInsideBoot.set(signReport(kept.get()).orElse(null));
+        }));
+
+        assertThat(signedInsideBoot.get())
+                .as("the same reference answers while the kernel runs")
+                .isNotNull();
+        assertThat(catchThrowable(() -> signReport(kept.get())))
+                .as("boot() stops storage when the application returns, and a store the application "
+                        + "kept refuses work instead of answering from a released driver")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Blob store is closed");
     }
 
     @Test
@@ -205,12 +231,7 @@ class CommunityStorageBootstrapIntegrationTest {
 
         withProperties(s3Properties(true), () -> bootStorage(() -> {
             providerId.set(KernelProviders.BLOB_STORAGE_PROVIDER.get().providerId());
-            signed.set(ScopedValue.where(KernelProviders.STORAGE_CONTEXT,
-                            ImmutableStorageContext.shared("tenant-a"))
-                    .call(() -> KernelProviders.BLOB_STORE.get()
-                            .signedUrl(new BlobRef("reports", "q3.pdf"), BlobAccess.READ,
-                                    Duration.ofMinutes(5))
-                            .orElseThrow()));
+            signed.set(signReport(KernelProviders.BLOB_STORE.get()).orElseThrow());
         }));
 
         assertThat(providerId.get()).isEqualTo(S3_PROVIDER);
@@ -255,6 +276,13 @@ class CommunityStorageBootstrapIntegrationTest {
         List<String> ids = new ArrayList<>();
         ServiceLoader.load(BlobStorageProvider.class).forEach(provider -> ids.add(provider.providerId()));
         return ids;
+    }
+
+    /** A READ URL for {@code reports/q3.pdf}, signed by {@code store} for tenant {@code tenant-a}. */
+    private static Optional<URI> signReport(BlobStore store) {
+        return ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared("tenant-a"))
+                .call(() -> store.signedUrl(new BlobRef("reports", "q3.pdf"), BlobAccess.READ,
+                        Duration.ofMinutes(5)));
     }
 
     private static void bootStorage(Runnable kernelMain) throws KernelBootstrap.BootstrapException {
