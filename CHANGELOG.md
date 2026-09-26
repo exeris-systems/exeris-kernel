@@ -312,6 +312,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed — verification
 
+- **The last two TLS suites gated on a certificate directory no commit contains now generate their
+  material and run.** `CommunityHttpBootstrapIntegrationTest#httpSubsystemServesHealthEndpointOverTls`
+  and the three handshake cases of `CommunityTlsEngineLoopbackIntegrationTest` read
+  `../native-libs/certs` behind an `assumeTrue` and skipped in every build. Both now write a
+  per-run certificate through `TlsTestCertificate`. The recovered bootstrap case also names the
+  client's `defaultAuthority`, which ADR-074 made mandatory for an unaddressed request; with it, the
+  booted kernel serves `/health`, `/health/live` and `/health/ready` to a Community client over TLS.
+
 - **The HTTP boot fixture had never carried a request body.** Every case sent a bodyless `GET`, so
   the decoder binding and the request-scoped allocator the fixture exists to prove were exercised by
   nothing. A parameterized case now sends `POST`, `PUT`, `PATCH` and `DELETE` with a body and asserts

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
@@ -52,10 +54,13 @@ class CommunityTlsEngineLoopbackIntegrationTest {
     private static final int HANDSHAKE_MAX_STEPS = 64;
     private static final int PAYLOAD_SIZE = 512;
 
+    @TempDir
+    /* default */ static Path tlsMaterialDir;
+
     @Test
     @DisplayName("handshake completes and both engines become ACTIVE")
     void handshakeCompletesAndBothEnginesBecomeActive() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = generatedCertKey();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
              MemoryAllocator allocator = createAllocator();
@@ -95,7 +100,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
     @Test
     @DisplayName("full round-trip both directions data matches for 512-byte payload")
     void fullRoundTripBothDirectionsDataMatches() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = generatedCertKey();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
              MemoryAllocator allocator = createAllocator();
@@ -153,7 +158,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
     @Test
     @DisplayName("JFR emits bootstrap and successful handshake events")
     void jfrEmitsBootstrapAndHandshakeEventsOnSuccess() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = generatedCertKey();
         Path recordingPath = Files.createTempFile("community-loopback-success-", ".jfr");
 
         try {
@@ -288,19 +293,13 @@ class CommunityTlsEngineLoopbackIntegrationTest {
         return (CommunityTlsEngine) provider.createTlsEngine(clientConfig);
     }
 
-    private static CertKeyPaths resolveCertKeyOrSkip() {
-        Path cwd = Path.of("").toAbsolutePath().normalize();
-        Path moduleDir = "exeris-kernel-community".equals(String.valueOf(cwd.getFileName()))
-                ? cwd
-                : cwd.resolve("exeris-kernel-community").normalize();
-
-        Path cert = moduleDir.resolve("../native-libs/certs/server.crt").normalize();
-        Path key = moduleDir.resolve("../native-libs/certs/server.key").normalize();
-
-        assumeTrue(Files.isRegularFile(cert) && Files.isRegularFile(key),
-                "TLS test cert/key not found at ../native-libs/certs - skipping integration test");
-
-        return new CertKeyPaths(cert, key);
+    /**
+     * Generated per class rather than located: the {@code ../native-libs/certs} path this used to
+     * probe is in no commit, so the three cases that needed it skipped everywhere.
+     */
+    private static CertKeyPaths generatedCertKey() {
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+        return new CertKeyPaths(certificate.certificate(), certificate.privateKey());
     }
 
     private static void driveHandshakeConcurrently(

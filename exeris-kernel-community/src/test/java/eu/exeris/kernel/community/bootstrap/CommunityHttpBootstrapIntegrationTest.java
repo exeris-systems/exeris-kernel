@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.crypto.CommunityKernelCryptoProvider;
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
@@ -18,6 +19,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -162,14 +164,13 @@ class CommunityHttpBootstrapIntegrationTest {
 
     @Test
     @DisplayName("KernelBootstrap with crypto+http serves /health over TLS to Community HttpClientEngine")
-    void httpSubsystemServesHealthEndpointOverTls() throws Exception {
+    void httpSubsystemServesHealthEndpointOverTls(@TempDir Path tlsMaterialDir) throws Exception {
         CommunityKernelCryptoProvider provider = createProviderOrSkip();
         provider.close();
 
-        Path certPath = Path.of("..", "native-libs", "certs", "server.crt").normalize();
-        Path keyPath = Path.of("..", "native-libs", "certs", "server.key").normalize();
-        assumeTrue(Files.isRegularFile(certPath) && Files.isRegularFile(keyPath),
-                "TLS test cert/key not found — skipping HTTPS bootstrap test");
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+        Path certPath = certificate.certificate();
+        Path keyPath = certificate.privateKey();
 
         int port = nextFreePort();
         String previousMode = System.getProperty("exeris.http.mode");
@@ -199,7 +200,11 @@ class CommunityHttpBootstrapIntegrationTest {
                                 HttpConfig.DEFAULT_MAX_HEADER_SIZE,
                                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                                 false,
-                                HttpVersion.HTTP_1_1
+                                HttpVersion.HTTP_1_1,
+                                "127.0.0.1:" + port,
+                                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE
                         );
                         try (HttpClientEngine client = new CommunityHttpProvider().createClientEngine(clientConfig)) {
                             client.start();
