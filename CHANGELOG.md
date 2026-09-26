@@ -104,7 +104,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `#hostFollowsTheConfiguredDefaultAuthority` require exactly one `Host`, equal to the authority the
   request names or, for an unaddressed request, to the configured default. Both address the server
   by host name, so a `Host` built from the address the client's connection reports differs from it
-  wherever the dialled connection reports an address, which the transport TCK checks (next entry).
+  wherever the dialled connection reports an address, which the transport TCK checks (see "A dialled
+  TCP connection reports the address it reached" below).
   No case read `Host` before, so a client sending any value passed. The `clientConfig` fixture no longer
   copies the default peer into `bindHost` and `port`; it carries none and the `-1` sentinel, so a
   client that dials its listener address no longer passes the unaddressed cases.
