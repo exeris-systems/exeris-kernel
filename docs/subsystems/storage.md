@@ -217,11 +217,11 @@ on.
 | `s3.region` | `us-east-1` | SigV4 credential-scope region |
 | `s3.maxObjectBytes` | 8 MiB | Ceiling on a single object. Bounded above at just under 2 GiB and refused at construction beyond it — the single-buffer design addresses an object with an `int`, so a larger ceiling could not be honoured |
 
-**Cleartext only.** `CommunityHttpTransportFactory` wires certificate material for listeners, not for
-client connections, so a `CLIENT`-mode engine speaks cleartext whatever the endpoint scheme says. An
-`https://` endpoint is therefore **rejected at construction** rather than silently downgraded — sending
-SigV4 credentials in the clear because a scheme was ignored is not a failure that may be quiet. The
-target is a MinIO-compatible endpoint over a trusted network path.
+**Cleartext only.** A Community HTTP client engine takes TLS from where it is built — a bound crypto
+provider and `exeris.transport.tls` — never from an endpoint, since a request carries no scheme. An
+`https://` endpoint is therefore **rejected at construction** rather than honoured or downgraded by
+accident — sending SigV4 credentials in the clear because a scheme was ignored is not a failure that
+may be quiet. The target is a MinIO-compatible endpoint over a trusted network path.
 
 **The ceiling is a memory budget, not just a limit.** The driver holds an object in one buffer for the
 length of a transfer, because a single `PUT` must declare `Content-Length` before its first body byte and

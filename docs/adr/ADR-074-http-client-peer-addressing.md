@@ -128,6 +128,9 @@ itself, and the spike shows that set currently includes every application.
 4. **TLS peer verification follows the authority too** — SNI and certificate hostname matching are
    performed against the effective authority, for the same reason.
 
+   *(Amendment A1, 2026-09-26: this decision states how the Community client implements it, and
+   where it holds — see [Amendments](#amendments).)*
+
 5. **Ordering is fixed as authority-then-enrich-then-send.** The enricher observes the final
    authority, so an outbound credential's audience can be bound to the peer it is actually sent to
    (ADR-040). An enricher that rewrites the authority is out of contract.
@@ -191,3 +194,41 @@ should not, this is the clause to revisit first.
   free: revert the encoder line and the test must redden.
 - No `ServiceResolver` type, package, or configuration key is introduced. A resolver-shaped name
   appearing in this slice is scope creep into a post-1.0 seam.
+
+## Amendments
+
+- **2026-09-26 — A1: §4 is implemented, and its scope and mechanism are stated.** The Community TLS
+  client used `SSL_VERIFY_NONE` for every context, loaded no trust, sent no server name and checked
+  no host, so §4 did not hold. From 0.12.0 it does, where TLS is armed:
+  - **Mechanism.** A client context verifies its server (`SSL_VERIFY_PEER`) against an
+    `X509_STORE` the carrier opens once and shares across its connections under a reference-counted
+    lease. Each connection's engine expects the host of the authority it dialled, classified without
+    a DNS lookup (`TlsPeerIdentity`). A DNS name is checked with `X509_VERIFY_PARAM_set1_host` under
+    `X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS` and `X509_CHECK_FLAG_NEVER_CHECK_SUBJECT` — the subject
+    common name is never consulted and `f*.example` matches nothing — and is sent as the server name
+    indication. An IP literal is checked with `X509_VERIFY_PARAM_set1_ip` against IP entries only,
+    and no server name is sent. A handshake that completes with a verification result other than
+    `X509_V_OK` is refused whatever the context's verify mode.
+  - **Trust.** `crypto.tls.client.trustFile` (the kernel configuration, else
+    `-Dexeris.crypto.tls.client.trustFile`) names a PEM file that **replaces** OpenSSL's default
+    trust. Unset, the carrier uses OpenSSL's default locations, which `SSL_CERT_FILE` and
+    `SSL_CERT_DIR` override. `X509_V_FLAG_PARTIAL_CHAIN` is off: a chain must end at a certificate the
+    trust holds as an anchor.
+  - **Failure.** A server that fails verification fails the handshake before any request byte is
+    sent, with `TlsHandshakeException` (`EX-NET-2001`), detail `peer certificate verification failed`
+    and the `X509_V_*` code. A host that is neither a DNS name nor an IP literal is refused before
+    any socket opens.
+  - **No opt-out.** No setting keeps TLS and skips verification. `-Dexeris.transport.tls=false`
+    declines TLS altogether, process-wide.
+  - **Scope.** Outbound TLS is armed only where a crypto provider is bound when the transport is
+    built and `exeris.transport.tls` is not `false`. An engine built anywhere else — outside a booted
+    kernel's scope, or before its crypto subsystem binds — dials plaintext. Each `CLIENT` or `DUAL`
+    carrier records its decision in the `eu.exeris.kernel.transport.TransportTlsClientPosture` JFR
+    event and an INFO log line, so the plaintext case is visible rather than inferred.
+  - **A provider that cannot verify.** A bound crypto provider other than the Community one fails a
+    `CLIENT` carrier at construction and a `DUAL` carrier's `connect`, rather than dialling
+    unverified.
+  - **Not decided here.** No CRL or OCSP checking, and no trust reload without a restart. The
+    Community server sends its leaf certificate only, not its intermediates, so an Exeris client
+    talking to an Exeris server whose certificate is chained needs those intermediates in its
+    `trustFile`. The Enterprise client is outside this amendment.

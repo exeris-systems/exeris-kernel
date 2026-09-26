@@ -200,6 +200,29 @@ Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persis
 - **No Implicit Transport Retries (ADR-045 / ADR-026):** `CommunityHttpClientEngine` performs zero silent or transport-level retries on failed pooled connections. If a pooled connection is closed or fails during an exchange, the connection is closed and the exception is propagated immediately to caller. Application-level or policy-driven retries remain strictly the responsibility of `KernelWebClient` and `HttpRetryPolicy`.
 - **JFR Telemetry:** `CommunityHttpClientPoolEvent` (`eu.exeris.kernel.community.http.HttpClientPool`) records pool lifecycle events: `ACQUIRE_HIT`, `ACQUIRE_MISS`, `RELEASE`, `EVICT_IDLE`, and `EVICT_CAPACITY` with authority and active pool size.
 
+### Client TLS (since v0.12.0 — [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) §4, Amendment A1)
+
+A request carries no scheme, so whether `CommunityHttpClientEngine` speaks TLS is decided by its
+transport, once, when the engine starts: TLS when `exeris.transport.tls` is not `false` and a crypto
+provider is bound where the engine is built, plaintext otherwise
+([transport.md](transport.md#client-tls) lists the postures and the event that records them). The
+client engine's transport is always a `CLIENT` transport, with no listener and no certificate, whatever
+`HttpMode` says; in `DUAL` the server engine's transport is the one that listens.
+
+Over TLS the engine verifies the server before any request byte is sent: the certificate chain
+against its trust (`crypto.tls.client.trustFile`, else OpenSSL's default), and the certificate's
+subject alternative names against the host of the effective authority — `HttpRequest#authority()`,
+else `HttpClientEngine#defaultAuthority()`. A DNS host is matched against DNS entries, never against
+the subject common name, and is sent as the server name indication; an IP literal is matched against
+IP entries and sends none. A server that fails is refused with `TlsHandshakeException`
+(`EX-NET-2001`, detail `peer certificate verification failed`, `rawArgs[0]` the `X509_V_*` code), which
+`send` throws unwrapped. `HttpClientEngine#send` states this
+obligation in its `@implSpec`; the Community engine meets it, the Enterprise engine is outside it.
+
+`CommunityHttpRetryPolicy` classifies any transport failure of an idempotent request as retryable,
+and a verification failure is one: `KernelWebClient` retries it, so the outcome is still the refusal,
+but it arrives after the policy's backoff and each attempt runs another handshake.
+
 ### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))
 
 The Community JSON codecs (`JsonBodyEncoder` + the three ADR-034/036 body codecs) each accept an

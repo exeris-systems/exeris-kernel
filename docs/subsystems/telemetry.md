@@ -227,7 +227,8 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `TlsPhaseTransitionEvent` | Every `TlsStateMachine` phase transition | `fromPhase`, `toPhase` |
 | `TlsEngineCloseEvent` | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
 | `TlsHandshakeEvent` | Start and end of TLS handshake | `sslPtr`, `mode`, `protocol`, `cipher`, `negotiatedAlpn`, `durationNanos` |
-| `TlsHandshakeFailureEvent` | Handshake exception | `sslPtr`, `mode`, `errorCode`, `failureReason`, `sslErrorCode` |
+| `TlsHandshakeFailureEvent` *(JFR event name `eu.exeris.kernel.tls.HandshakeFailure`)* | A handshake step failed, or a completed client handshake was refused because verification failed | `sslPtr`, `mode`, `errorCode` (`EX-NET-2001`), `failureReason` (OpenSSL's text for a verification failure), `sslErrorCode`, `verifyResult` (`X509_V_*` for a client that expected a peer, else `-1`) |
+| `TransportTlsClientPostureEvent` *(community module; JFR event name `eu.exeris.kernel.transport.TransportTlsClientPosture`; since 0.12.0)* | Once per `CLIENT` or `DUAL` carrier, when it is built: what its outbound connections do | `transportMode`, `posture` (`VERIFIED`, `PLAINTEXT_DECLINED`, `PLAINTEXT_NO_CRYPTO_PROVIDER`, `PLAINTEXT_NO_LISTENER_MATERIAL`, `REFUSED_FOREIGN_PROVIDER`), `trustSource`, `configBound`, `defaultCertFile`, `defaultCertDir`, `defaultTrustPresent` |
 | `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
 | `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
 | `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |

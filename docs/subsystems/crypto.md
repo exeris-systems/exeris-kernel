@@ -121,6 +121,79 @@ virtual dispatch on the cipher hot-path. The `JAVA_LONG` layout choice (rather t
 deliberate: it is what lets `wrap()`/`unwrap()` pass a raw address without the JVM constructing a
 `MemorySegment` for the call, matching the zero-wrapper-object claim in Overview above.
 
+### Client Peer Verification
+
+A Community TLS client verifies the server it dials (ADR-074 §4, Amendment A1). The context is
+`SSL_VERIFY_PEER`; the carrier opens one `X509_STORE` and hands it to each connection's context; the
+engine expects the host of the authority it dialled. `CommunityKernelCryptoProvider#createClientTlsEngine`
+builds that engine from a `CommunityTlsClientTrust` (opened by `openClientTrust`) and a
+`TlsPeerIdentity`. An engine from `createTlsEngine` with a client configuration expects no peer, and
+its `beginHandshake` refuses once bound (`EX-NET-2001`, detail `client engine has no expected peer
+identity`).
+
+**Identity.** `TlsPeerIdentity.of(host)` classifies without a DNS lookup. A bracketed host, or one
+`InetAddress#ofLiteral` accepts, is an IP address — the bytes the dial connects to, IPv6 scope
+dropped. Anything else is a DNS name: one trailing dot removed, lower-cased, ASCII, 1–253 characters
+in labels of 1–63 letters, digits, hyphens or underscores (an internationalised name in its A-label
+form). `OffHeapTlsEngine#expectPeer` applies it once, to an unbound client engine:
+
+| Identity  | Calls                                                                                         | Server name indication |
+|:----------|:----------------------------------------------------------------------------------------------|:-----------------------|
+| DNS name  | `X509_VERIFY_PARAM_set_hostflags(NO_PARTIAL_WILDCARDS \| NEVER_CHECK_SUBJECT)`, then `X509_VERIFY_PARAM_set1_host` with an explicit length | `SSL_ctrl(SSL_CTRL_SET_TLSEXT_HOSTNAME)` |
+| IP address | `X509_VERIFY_PARAM_set1_ip` with the 4 or 16 address bytes                                   | none                   |
+
+The subject common name is never consulted, `f*.example.test` matches nothing, and an identity of
+one kind never matches a subject alternative name of the other. A handshake that OpenSSL completes
+with an `SSL_get_verify_result` other than `X509_V_OK` is refused anyway, so the engine never becomes
+`ACTIVE` unverified, whatever the context's verify mode.
+
+**Trust.** `crypto.tls.client.trustFile` names a PEM file that **replaces** OpenSSL's default trust
+(`X509_STORE_load_file`). Unset, the store takes OpenSSL's default locations
+(`X509_STORE_set_default_paths`), which `SSL_CERT_FILE` and `SSL_CERT_DIR` override; the carrier
+reports the effective file and directory, and whether either exists. `X509_V_FLAG_PARTIAL_CHAIN` is
+off: a chain must end at an anchor the trust holds, so a trust file holding only an intermediate does
+not anchor a chain. No CRL or OCSP is consulted, and the trust is read once per carrier.
+
+**Symbols.** Bound by `CoreOpenSslLoader` into `CoreSslHandles.PeerVerificationHandles` and
+`TrustStoreHandles`; every one is present, outside any deprecation guard, from OpenSSL 3.0 through
+4.0. `size_t` is bound as `JAVA_LONG` and given an explicit length; C `long` uses the linker's
+canonical layout, cast with `MethodHandles.explicitCastArguments` to a fixed `long` signature, so a
+call site has one shape on LP64 and LLP64 (the LLP64 case has no CI).
+
+| Group | Symbols |
+|:------|:--------|
+| Peer verification | `SSL_CTX_set1_cert_store`, `SSL_get0_param`, `X509_VERIFY_PARAM_set1_host`, `X509_VERIFY_PARAM_set_hostflags`, `X509_VERIFY_PARAM_set1_ip`, `SSL_ctrl`, `SSL_get_verify_result`, `X509_verify_cert_error_string` |
+| Trust store | `X509_STORE_new`, `X509_STORE_free`, `X509_STORE_set_default_paths`, `X509_STORE_load_file`, `X509_get_default_cert_file`, `X509_get_default_cert_dir`, `X509_get_default_cert_file_env`, `X509_get_default_cert_dir_env` |
+| Error queue | `ERR_clear_error` |
+
+`SSL_set1_host` (deprecated in 4.0), `SSL_set1_dnsname`/`SSL_set1_ipaddr` (4.0 only) and
+`X509_VERIFY_PARAM_set1_ip_asc` (its address parser differs from the JDK's) are deliberately not bound.
+
+**Ownership.**
+- The `X509_STORE` belongs to `CommunityTlsClientTrust`: its creator holds one reference, and each
+  context takes its own through `SSL_CTX_set1_cert_store`, so a context outlives the trust's
+  `close()`. The trust is handed over under a lease (`retainStore`/`release`, CAS-counted like
+  `NativeCipherContext`); a `close()` while a lease is out defers `X509_STORE_free` to the last
+  release, and a lease taken after `close()` is refused. The carrier closes its trust in `close()`.
+- The `X509_VERIFY_PARAM` from `SSL_get0_param` is the session's own: borrowed, never freed.
+- The host name and address bytes are staged in an `allocateInfrastructure` buffer released before
+  `expectPeer` returns; OpenSSL copies them.
+- The store's certificates live on OpenSSL's heap, which `WatermarkManager` does not track. A
+  default-trust store parses the whole system bundle, once per verifying carrier.
+
+**Error queue.** OpenSSL keeps its error queue per OS thread, and `SSL_get_error` reports
+`SSL_ERROR_SSL` whenever that queue holds an entry, whichever connection left it. Every outcome of
+`beginHandshake`, `unwrap`, `wrap`, `initiateShutdown` and `bindTransportFd` other than a
+`WANT_READ`/`WANT_WRITE` retry empties the calling thread's queue, after `SSL_get_error` and, for a
+client with an expected peer, `SSL_get_verify_result`, and before any event or exception. No park
+point lies between those reads and the clear: a virtual thread that unmounted there would clear one
+carrier's queue and leave another's entry behind. A failed context or trust load clears the queue
+too. A retry and a successful record make no extra downcall.
+
+**Failure.** A failed handshake leaves its `SSL_get_error` code and `X509_V_*` result on
+`TlsHandshakeFailureCodes`; the Community stream turns them into `TlsHandshakeException` for the
+caller (see [Error Codes](#error-codes)).
+
 ### Per-Packet Encrypt Path (Zero Allocation)
 
 `OffHeapTlsEngine.wrap()` below is the actual Core implementation. Note two things that a
@@ -375,13 +448,29 @@ fallback is a Community implementation detail.
 
 | Code          | Path          | Meaning                            | Glass-Box Payload (`rawArgs`)                        |
 |:--------------|:--------------|:-----------------------------------|:-----------------------------------------------------|
-| `EX-NET-2001` | **wrap** (encrypt) | `SSL_write` failure / BIO error | `[0] int nativeErrorCode, [1] String detail`    |
+| `EX-NET-2001` | **wrap** (encrypt), handshake | `SSL_write` failure / BIO error; a failed or refused handshake | `[0] int nativeErrorCode, [1] String detail`    |
 | `EX-NET-2002` | Bootstrap     | Crypto Provider init failure       | `[0] String providerName, [1] String reason`         |
 | `EX-NET-2003` | **unwrap** (decrypt) | `SSL_read` failure / alert received | `[0] int nativeErrorCode, [1] String detail` |
 
 The split between `EX-NET-2001` and `EX-NET-2003` preserves the **one-code-one-schema invariant**
 required by the binary Glass-Box telemetry contract: decoders can distinguish encrypt-side from
 decrypt-side failures without parsing the `detail` string.
+
+A client handshake refusal carries one of the fixed `detail` strings in `TlsFailureDetail`, and
+`[0]` holds what that detail names:
+
+| `detail` (`TlsFailureDetail`)                                          | `rawArgs[0]`                 |
+|:-----------------------------------------------------------------------|:-----------------------------|
+| `peer certificate verification failed` (`PEER_VERIFICATION_FAILED`)    | the `X509_V_*` code, e.g. `18` self-signed, `20` untrusted issuer, `62` host mismatch, `64` IP mismatch |
+| `handshake failed` (`HANDSHAKE_FAILED`)                                | the `SSL_get_error` code     |
+| `peer identity rejected` (`PEER_IDENTITY_REJECTED`)                    | `-1`                         |
+| `authority host is neither a DNS name nor an IP literal` (`INVALID_PEER_NAME`) | `-1`                 |
+| `client engine has no expected peer identity` (`NO_PEER_IDENTITY`)     | `-1`                         |
+| `bound crypto provider cannot verify an outbound peer` (`NO_PEER_VERIFIER`) | `-1`                    |
+
+`INVALID_PEER_NAME` and `NO_PEER_VERIFIER` reach a caller of `TransportEngine#connect` as the cause
+of `TransportException` `EX-NET-4001`, before any socket opens; the others reach the stream's first
+read or write.
 
 ---
 
@@ -407,7 +496,7 @@ pair lives under `eu.exeris.kernel.community.crypto`.
 | Event Class                | JFR Category                                         | When Emitted                     | Key Fields                                  |
 |:---------------------------|:-----------------------------------------------------|:---------------------------------|:--------------------------------------------|
 | `TlsHandshakeEvent`        | `eu.exeris.kernel.tls.TlsHandshake`                  | Handshake start and completion   | `sslPtr`, `mode`, `negotiatedAlpn`, `durationNanos` |
-| `TlsHandshakeFailureEvent` | `eu.exeris.kernel.tls.TlsHandshakeFailure`           | Handshake exception              | `sslPtr`, `mode`, `errorCode`, `sslErrorCode` |
+| `TlsHandshakeFailureEvent` | `eu.exeris.kernel.tls.HandshakeFailure`              | Handshake step failed, or a completed handshake refused because verification failed | `sslPtr`, `mode`, `errorCode` (`EX-NET-2001`), `failureReason`, `sslErrorCode`, `verifyResult` (`X509_V_*` for a client that expected a peer, else `-1`) |
 | `TlsEngineBindEvent`       | `eu.exeris.kernel.tls.EngineBind`                    | `notifyBound()` call             | `sslPtr`, `mode`                            |
 | `TlsEngineCloseEvent`      | `eu.exeris.kernel.tls.EngineClose`                   | `close()` call                   | `sslPtr`, `graceful`, `finalPhase`          |
 | `TlsPhaseTransitionEvent`  | `eu.exeris.kernel.tls.PhaseTransition`               | Per state-machine transition     | `fromPhase`, `toPhase`                      |

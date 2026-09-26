@@ -240,6 +240,40 @@ the worse of the two.
 The fault event carries the exception **class** and never its message, matching
 `CommunityReactorDispatchFault` — a message can carry request-derived text.
 
+## Client TLS
+
+A listener serves TLS when it holds certificate material. What a `CLIENT` or `DUAL` carrier does with
+its **outbound** connections is decided once, when `NativeTcpTransportProvider` builds it:
+
+| Posture | When | Outbound connections |
+|:--|:--|:--|
+| `VERIFIED` | `exeris.transport.tls` is not `false`, a crypto provider is bound where the carrier is built, and — for `DUAL` — the listener holds material | TLS, verifying the server (below) |
+| `PLAINTEXT_DECLINED` | `-Dexeris.transport.tls=false` | plaintext |
+| `PLAINTEXT_NO_CRYPTO_PROVIDER` | no crypto provider bound where the carrier is built | plaintext |
+| `PLAINTEXT_NO_LISTENER_MATERIAL` | a `DUAL` carrier whose listener has no certificate | plaintext |
+| `REFUSED_FOREIGN_PROVIDER` | the bound crypto provider is not the Community one, so it cannot verify an outbound peer | a `CLIENT` carrier fails construction (`EX-NET-4004`); a `DUAL` carrier's `connect` fails before any socket opens (`EX-NET-4001`, cause detail `bound crypto provider cannot verify an outbound peer`) |
+
+Each decision is recorded as `eu.exeris.kernel.transport.TransportTlsClientPosture` and an INFO log
+line, with where the trust came from, whether the kernel configuration was bound, and — for OpenSSL's
+default trust — the effective default file and directory and whether either exists (a WARNING when
+neither does). The decision matters because it is invisible from outside: an engine built outside a
+booted kernel's scope, or before its crypto subsystem binds, dials plaintext.
+
+A verifying carrier opens one trust store — `crypto.tls.client.trustFile`, else OpenSSL's default —
+and shares it across its connections; `close()` releases it after the engines built from it are done
+with it. `connect(host, port)` classifies `host` before any socket opens: a host that is neither a
+DNS name nor an IP literal fails with `EX-NET-4001` (cause detail
+`authority host is neither a DNS name nor an IP literal`). The connection's engine verifies the
+server's chain against the trust and its subject alternative names against `host`, as
+[crypto.md](crypto.md#client-peer-verification) describes. A `DUAL` carrier dials as a client too;
+only accepted connections use the listener's material.
+
+The handshake runs on the stream's first read or write, on whichever thread drives it — often a
+reactor. A failure is recorded under the stream's TLS lock before the stream closes, and every later
+`read`, `write` or `queueWrite` throws it as `TlsHandshakeException` (`EX-NET-2001`), built on the
+caller's thread: detail `peer certificate verification failed` with the `X509_V_*` code, or
+`handshake failed` with the `SSL_get_error` code.
+
 ## Core Philosophy
 
 ### 1. Carrier Loop Architecture
@@ -650,6 +684,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 | `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.transport.IngressQueueDepth` | Current queue depth metric |
 | `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
 | `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |
+| `TransportTlsClientPostureEvent` | `eu.exeris.kernel.transport.TransportTlsClientPosture` | Once per `CLIENT` or `DUAL` carrier: whether its outbound connections verify TLS, dial plaintext or are refused (`posture`), the trust's origin (`trustSource`), `configBound`, and OpenSSL's effective `defaultCertFile`/`defaultCertDir` and `defaultTrustPresent` |
 
 ### Event classes are initialised at start-up, not at the first emit
 

@@ -166,6 +166,11 @@ rather than leaving each driver to guess how much it may assume.
       Accepting an `https` endpoint would send SigV4 credentials in the clear because a scheme was
       ignored. The driver targets a MinIO-compatible endpoint over a trusted network path; a public S3
       endpoint needs the Enterprise transport.*
+
+      *(Amended 2026-09-26, with ADR-074 Amendment A1: the Community HTTP client engine now speaks
+      TLS, and verifies its server, where a crypto provider is bound when the engine is built. It still
+      takes no TLS from an endpoint scheme, since a request carries none, so the rule stands for the
+      same reason: an `https` endpoint is refused rather than honoured by accident.)*
     - ***A configurable single-object ceiling (`s3.maxObjectBytes`, default 8 MiB) replaces an implicit
       one.** Without multipart upload an object is held in one buffer for the length of a transfer, so a
       ceiling exists whether or not it is named; naming it makes the refusal loud (`EX-BLOB-8005`, before
