@@ -87,6 +87,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A failed TLS handshake no longer takes down healthy connections served by the same thread.**
+  OpenSSL keeps its error queue per OS thread, and on the 3.x line `SSL_get_error` reports
+  `SSL_ERROR_SSL` whenever that queue holds an entry, whichever connection left it. Nothing emptied
+  it, so a client that spoke plaintext to a TLS listener — or any failed handshake, read, write or
+  shutdown — left an entry on the reactor thread, and the next healthy connection on that reactor
+  whose read would have blocked was closed as if it had failed. `OffHeapTlsEngine` now empties the
+  calling thread's queue on every outcome of a handshake step, read, write, shutdown or descriptor
+  bind that is not a `WANT_READ`/`WANT_WRITE` retry, after reading `SSL_get_error`; the Community
+  crypto provider does the same when an `SSL_CTX` fails to load its certificate or key. A retry and
+  a successful record make no extra native call. On OpenSSL 4.0 the stale entry stayed on the queue
+  but did not turn a neighbour's retry into a failure.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection

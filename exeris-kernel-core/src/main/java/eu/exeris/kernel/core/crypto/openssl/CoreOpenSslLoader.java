@@ -247,7 +247,10 @@ public final class CoreOpenSslLoader {
                 opt(linker, lookup, "SSL_CIPHER_get_name",
                         FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)));
 
-        CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles);
+        CoreSslHandles.ErrorQueueHandles errorQueue = new CoreSslHandles.ErrorQueueHandles(
+                req(linker, crypto.lookup(), "ERR_clear_error", FunctionDescriptor.ofVoid()));
+
+        CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles, errorQueue);
         return new CoreOpenSslRuntime(linker, ssl.lookup(), crypto.lookup(), handles);
     }
 

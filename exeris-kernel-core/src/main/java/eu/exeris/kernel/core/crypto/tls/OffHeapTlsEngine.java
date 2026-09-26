@@ -73,6 +73,17 @@ import java.lang.invoke.VarHandle;
  *   <li>{@link TlsEngineCloseEvent} — emitted once at {@link #close()}</li>
  * </ul>
  *
+ * <h2>OpenSSL Error Queue</h2>
+ * <p>OpenSSL keeps its error queue per OS thread, and {@code SSL_get_error} reports
+ * {@code SSL_ERROR_SSL} whenever that queue is non-empty, whichever connection left the entry. So
+ * every outcome of {@link #beginHandshake}, {@link #unwrap}, {@link #wrap},
+ * {@link #initiateShutdown} and {@link #bindTransportFd} other than a
+ * {@code WANT_READ}/{@code WANT_WRITE} retry empties the calling thread's queue before this engine
+ * returns or throws. It does so after reading {@code SSL_get_error}. No park point lies between that
+ * read and the clear: a virtual thread that unmounted there would clear one carrier's queue and
+ * leave another's entry behind. A {@code WANT_*} retry and a successful read or write leave the
+ * queue alone, so the record-layer hot path makes no extra downcall.
+ *
  * <h2>Closed-state Idempotency</h2>
  * <p>{@link #close()} is guarded by a {@link VarHandle} CAS on {@code closedFlag} —
  * multiple concurrent {@code close()} calls are safe; exactly one will invoke
@@ -244,7 +255,11 @@ public final class OffHeapTlsEngine implements TlsEngine {
         checkNotClosed();
         long ptr = cipherCtx.retainSslPointer();
         try {
-            return (int) sslSetFd.invokeExact(ptr, fileDescriptor);
+            int result = (int) sslSetFd.invokeExact(ptr, fileDescriptor);
+            if (result != SSL_SUCCESS) {
+                clearErrorQueue();
+            }
+            return result;
         } catch (TlsHandshakeException handshakeException) {
             throw handshakeException;
         } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
@@ -353,17 +368,18 @@ public final class OffHeapTlsEngine implements TlsEngine {
             }
 
             int sslErr = handles.ioHandles().invokeGetError(ptr, ret);
-            if (sslErr != CoreOpenSslLoader.SSL_ERROR_WANT_READ
-                    && sslErr != CoreOpenSslLoader.SSL_ERROR_WANT_WRITE) {
-                TlsHandshakeFailureEvent.emit(ptr, serverMode,
-                        KernelErrorCodes.EX_NET_2002, "SSL handshake step failed", sslErr);
-                // Self-guard: a fatal code ({@link #mapSslError} → CLOSED) leaves a broken
-                // session. Forcing ERROR makes a re-entrant beginHandshake() fail fast on the
-                // wrong-state guard rather than re-driving SSL_accept, so engine teardown no
-                // longer depends solely on the transport calling close() on the CLOSED status.
-                stateMachine.forceError();
+            if (isRetry(sslErr)) {
+                return mapSslError(sslErr);
             }
-            return mapSslError(sslErr);
+            clearErrorQueue();
+            TlsHandshakeFailureEvent.emit(ptr, serverMode,
+                    KernelErrorCodes.EX_NET_2002, "SSL handshake step failed", sslErr);
+            // Self-guard: a fatal code ({@link #mapSslError} → CLOSED) leaves a broken
+            // session. Forcing ERROR makes a re-entrant beginHandshake() fail fast on the
+            // wrong-state guard rather than re-driving SSL_accept, so engine teardown does
+            // not depend solely on the transport calling close() on the CLOSED status.
+            stateMachine.forceError();
+            return TlsStatus.CLOSED;
 
         } finally {
             cipherCtx.release();
@@ -380,6 +396,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @return {@link TlsStatus#FINISHED}
      */
     private TlsStatus completeHandshake(long ptr) {
+        clearErrorQueue();
         negotiatedAlpn = AlpnReader.read(ptr, handles.ioHandles(), allocator);
         String cipherName = CipherNameReader.read(ptr, handles.ioHandles());
         stateMachine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
@@ -439,18 +456,20 @@ public final class OffHeapTlsEngine implements TlsEngine {
             int sslErr = handles.ioHandles().invokeGetError(sslPtr, bytesRead);
 
             if (sslErr == CoreOpenSslLoader.SSL_ERROR_ZERO_RETURN) {
+                clearErrorQueue();
                 stateMachine.transitionTo(TlsPhase.ACTIVE, TlsPhase.SHUTDOWN_INITIATED);
                 return TlsStatus.CLOSED;
             }
 
-            TlsStatus status = mapSslError(sslErr);
-            if (status == TlsStatus.CLOSED) {
-                // Fatal read error (not a clean ZERO_RETURN) on an active session: force ERROR
-                // so a subsequent read/renegotiation fails fast on a broken session, mirroring
-                // the beginHandshake() self-guard. WANT_READ/WANT_WRITE stay non-terminal.
-                stateMachine.forceError();
+            if (isRetry(sslErr)) {
+                return mapSslError(sslErr);
             }
-            return status;
+            // Fatal read error (not a clean ZERO_RETURN) on an active session: force ERROR
+            // so a subsequent read/renegotiation fails fast on a broken session, mirroring
+            // the beginHandshake() self-guard. WANT_READ/WANT_WRITE stay non-terminal.
+            clearErrorQueue();
+            stateMachine.forceError();
+            return TlsStatus.CLOSED;
 
         } finally {
             cipherCtx.release();
@@ -497,6 +516,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
             }
 
             int sslErr = handles.ioHandles().invokeGetError(sslPtr, bytesWritten);
+            if (!isRetry(sslErr)) {
+                clearErrorQueue();
+            }
             return mapSslError(sslErr);
 
         } finally {
@@ -599,6 +621,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
         if (result == SSL_SUCCESS) {
             stateMachine.transitionTo(TlsPhase.SHUTDOWN_INITIATED, TlsPhase.SHUTDOWN_COMPLETE);
         } else if (result < 0) {
+            clearErrorQueue();
             stateMachine.forceError();
         }
     }
@@ -704,6 +727,25 @@ public final class OffHeapTlsEngine implements TlsEngine {
             case CoreOpenSslLoader.SSL_ERROR_WANT_WRITE -> TlsStatus.NEED_WRAP;
             default -> TlsStatus.CLOSED;
         };
+    }
+
+    /**
+     * Whether {@code sslErrorCode} asks for more I/O rather than reporting a failure.
+     *
+     * @param sslErrorCode raw {@code SSL_get_error} result code
+     * @return {@code true} for {@code SSL_ERROR_WANT_READ} and {@code SSL_ERROR_WANT_WRITE}
+     */
+    private static boolean isRetry(int sslErrorCode) {
+        return sslErrorCode == CoreOpenSslLoader.SSL_ERROR_WANT_READ
+                || sslErrorCode == CoreOpenSslLoader.SSL_ERROR_WANT_WRITE;
+    }
+
+    /**
+     * Empties the calling thread's OpenSSL error queue, so an entry this session's failure left
+     * cannot surface as {@code SSL_ERROR_SSL} on the next session this thread drives.
+     */
+    private void clearErrorQueue() {
+        handles.errorQueue().invokeClearError();
     }
 
     /**

@@ -187,6 +187,7 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		long methodPtr = serverMode ? ctx.invokeServerMethod() : ctx.invokeClientMethod();
 		long sslCtxPtr = ctx.invokeCtxNew(methodPtr);
 		if (sslCtxPtr == NULL_PTR) {
+			clearErrorQueue();
 			throw new CryptoBootstrapException(PROVIDER_NAME, "SSL_CTX_new returned NULL");
 		}
 		boolean contextReady = false;
@@ -238,9 +239,16 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 			return sslCtxPtr;
 		} finally {
 			if (!contextReady) {
+				// A failed load leaves entries on this thread's OpenSSL error queue, and the next
+				// SSL_get_error this thread asks would read them as a fatal error of its own.
+				clearErrorQueue();
 				ctx.invokeCtxFree(sslCtxPtr);
 			}
 		}
+	}
+
+	private void clearErrorQueue() {
+		runtime.handles().errorQueue().invokeClearError();
 	}
 
 	private static PathCString toCString(java.nio.file.Path path, MemoryAllocator allocator) {

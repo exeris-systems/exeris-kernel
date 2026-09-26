@@ -14,14 +14,16 @@ import java.lang.invoke.MethodHandle;
 /**
  * Immutable carrier for core OpenSSL Panama FFM method handles.
  *
- * <h2>Split Design — three inner records</h2>
+ * <h2>Split Design — one inner record per concern</h2>
  * <ul>
- *   <li>{@link CtxHandles}       — {@code SSL_CTX_*} lifecycle</li>
- *   <li>{@link HandshakeHandles} — connection setup (new/free/accept/connect/doHandshake)</li>
- *   <li>{@link IoHandles}        — data transfer (read/write/shutdown/error/alpn)</li>
+ *   <li>{@link CtxHandles}        — {@code SSL_CTX_*} lifecycle</li>
+ *   <li>{@link HandshakeHandles}  — connection setup (new/free/accept/connect/doHandshake)</li>
+ *   <li>{@link IoHandles}         — data transfer (read/write/shutdown/error/alpn)</li>
+ *   <li>{@link ErrorQueueHandles} — the calling thread's OpenSSL error queue</li>
  * </ul>
  * Each record stays under the PMD {@code CyclomaticComplexity} class threshold.
- * Callers access via {@link #ctx()}, {@link #handshake()}, {@link #ioHandles()}.
+ * Callers access via {@link #ctx()}, {@link #handshake()}, {@link #ioHandles()},
+ * {@link #errorQueue()}.
  *
  * <h2>Zero-Copy Contract</h2>
  * <p>All buffer addresses passed as raw {@code long} — no heap wrapper allocation per call.
@@ -33,12 +35,14 @@ public final class CoreSslHandles {
     private final CtxHandles ctx;
     private final HandshakeHandles handshake;
     private final IoHandles ioHandles;
+    private final ErrorQueueHandles errorQueue;
 
     /* package */ CoreSslHandles(CtxHandles ctx, HandshakeHandles handshake,
-                                 IoHandles ioHandles) {
+                                 IoHandles ioHandles, ErrorQueueHandles errorQueue) {
         this.ctx = ctx;
         this.handshake = handshake;
         this.ioHandles = ioHandles;
+        this.errorQueue = errorQueue;
     }
 
     /**
@@ -66,6 +70,16 @@ public final class CoreSslHandles {
      */
     public IoHandles ioHandles() {
         return ioHandles;
+    }
+
+    /**
+     * Returns the handle that empties the calling thread's OpenSSL error queue.
+     *
+     * @return the error-queue handle group
+     * @since 0.12
+     */
+    public ErrorQueueHandles errorQueue() {
+        return errorQueue;
     }
 
     // =========================================================================
@@ -558,6 +572,38 @@ public final class CoreSslHandles {
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CIPHER_get_name failed", t);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Error queue handles
+    // =========================================================================
+
+    /**
+     * Handle for {@code ERR_clear_error} — empties the error queue OpenSSL keeps per OS thread.
+     *
+     * <p>{@code SSL_get_error} reports {@code SSL_ERROR_SSL} for a failed or retryable call whenever
+     * that queue holds an entry, whichever connection left it there. An entry one connection leaves
+     * behind therefore turns a neighbour's {@code SSL_ERROR_WANT_READ} into a fatal error on the
+     * same thread, which is why every fatal outcome empties the queue before returning.
+     *
+     * @param errClearError bound to {@code ERR_clear_error}; {@code () -> void}
+     * @since 0.12
+     */
+    public record ErrorQueueHandles(MethodHandle errClearError) {
+
+        /**
+         * {@code ERR_clear_error()} — empties the calling OS thread's OpenSSL error queue.
+         *
+         * @throws TlsException wrapping any FFM-layer throwable that is not an {@link Error}
+         */
+        public void invokeClearError() {
+            try {
+                errClearError.invokeExact();
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("ERR_clear_error failed", t);
             }
         }
     }
