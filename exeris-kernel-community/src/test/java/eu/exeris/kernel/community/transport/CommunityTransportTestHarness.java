@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 final class CommunityTransportTestHarness {
 
     private static final long CONNECT_TIMEOUT_SECONDS = 5L;
+    private static final int DEFAULT_MAX_CONNECTIONS = 1024;
 
     private CommunityTransportTestHarness() {
     }
@@ -56,6 +57,21 @@ final class CommunityTransportTestHarness {
     }
 
     static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount) {
+        return openLoopbackPair(allocator, drainingServerHandler, reactorCount, DEFAULT_MAX_CONNECTIONS);
+    }
+
+    /**
+     * Opens a loopback pair whose server admits up to {@code maxConnections} connections, for a
+     * caller that dials further client streams through {@link Pair#connectClientStream()}.
+     *
+     * @param allocator             allocator bound to both engines
+     * @param drainingServerHandler whether each accepted server stream is read until it ends
+     * @param reactorCount          reactors per engine
+     * @param maxConnections        the server's connection ceiling
+     * @return the started pair, with one client and one server stream already open
+     */
+    static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount,
+                                 int maxConnections) {
         int port = nextFreePort();
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
 
@@ -70,7 +86,7 @@ final class CommunityTransportTestHarness {
                     reactorCount,
                     null,
                     null,
-                    1024,
+                    maxConnections,
                     30_000
             ));
 
@@ -126,7 +142,8 @@ final class CommunityTransportTestHarness {
         TransportStream serverStream = serverConnection.openStream();
 
         return new Pair(
-            serverEngine,
+                port,
+                serverEngine,
                 clientEngine,
                 serverConnection,
                 clientConnection,
@@ -214,6 +231,7 @@ final class CommunityTransportTestHarness {
 
     static final class Pair {
 
+        private final int port;
         private final TransportEngine serverEngine;
         private final TransportEngine clientEngine;
         private final TransportConnection serverConnection;
@@ -221,12 +239,14 @@ final class CommunityTransportTestHarness {
         private final TransportStream serverStream;
         private final TransportStream clientStream;
 
-        private Pair(TransportEngine serverEngine,
+        private Pair(int port,
+                     TransportEngine serverEngine,
                      TransportEngine clientEngine,
                      TransportConnection serverConnection,
                      TransportConnection clientConnection,
                      TransportStream serverStream,
                      TransportStream clientStream) {
+            this.port = port;
             this.serverEngine = serverEngine;
             this.clientEngine = clientEngine;
             this.serverConnection = serverConnection;
@@ -257,6 +277,17 @@ final class CommunityTransportTestHarness {
 
         TransportStream clientStream() {
             return clientStream;
+        }
+
+        /**
+         * Dials one more connection from the client engine to this pair's server and returns its
+         * stream — a stream no other caller holds, for a test that needs one owner per stream.
+         * The caller owns the returned stream and closes it.
+         *
+         * @return the new connection's stream
+         */
+        TransportStream connectClientStream() {
+            return clientEngine.connect("127.0.0.1", port).openStream();
         }
 
         void closeConnections() {
