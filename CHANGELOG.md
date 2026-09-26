@@ -306,6 +306,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the observed size, the bound allocator and the bound decoders — one case per method, because a
   single one cannot show that method dispatch is not what carries the body.
 
+- **No test booted storage by name, which is the form a generated application writes.**
+  `CommunityStorageSubsystemTest` drives the subsystem with a hand-bound config, and the one real
+  boot that included storage used `BootstrapSelector.all()` and asserted on memory alone: with
+  `CommunityStorageSubsystem` removed from `CommunitySubsystemProvider`, every test in the Community
+  bootstrap package still passed (127 run, 1 skipped for an absent TLS certificate).
+  `CommunityStorageBootstrapIntegrationTest` boots `KernelBootstrap` with
+  `BootstrapSelector.forNames("storage")` and sets the keys as the `exeris.storage.blob.*` system
+  properties `CommunityConfigProvider` reads. Unset, the dependency closure brings `memory` up with
+  storage and neither `BLOB_STORE` nor `BLOB_STORAGE_PROVIDER` is bound; `blob-fs-community` with a
+  location binds `BLOB_STORE` inside `boot()` and names that driver; an id matching no driver refuses
+  the boot with `EX-BLOB-8008`. The same removal now fails all three cases, dropping `memory` from
+  `dependsOn` fails the first, and swallowing the refusal fails the third.
+
 ### Changed
 
 - **SonarQube analysis moves from the standalone CLI scanner to the Maven one, and stops guessing
