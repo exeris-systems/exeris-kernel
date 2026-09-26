@@ -65,15 +65,17 @@ rather than leaving each driver to guess how much it may assume.
    (`PersistenceProvider`, `EventProvider`, `FlowProvider`, `TransportProvider`, `MemoryProvider`) is a
    ServiceLoader discovery handle carrying `providerId()` / `providerName()` / `priority()` and a
    `createEngine(config)` factory. This SPI keeps that shape: **`BlobStorageProvider`** discovers and
-   constructs, **`BlobStore`** performs operations. Bootstrap will expose both through the established
+   constructs, **`BlobStore`** performs operations. Bootstrap exposes both through the established
    slot pair, `KernelProviders.BLOB_STORAGE_PROVIDER` and `KernelProviders.BLOB_STORE`. The ROADMAP
    wording is a naming sketch predating the type set; consistency with sixteen sibling packages wins
    over it.
 
-   *(Amended 2026-07-30, with the SPI: stated in the future tense, because the slot pair does not exist
-   yet. The SPI and the first driver land ahead of bootstrap wiring, as `GraphProvider` did; the slots
-   and the config binding land with the second driver, where a provider-selection decision first has
-   something to select between. Until then a `BlobStore` is constructed directly by its caller.)*
+   *(Amended 2026-07-30, with the SPI: the SPI and the first driver landed ahead of bootstrap wiring,
+   as `GraphProvider` did.)* The slot pair landed in 0.12 with the storage subsystem.
+   `StorageBootstrap` selects the driver named by `storage.blob.provider` and creates
+   its store, and does not rank by `priority()` — the two Community drivers share a priority and are
+   not interchangeable. `CommunityStorageSubsystem` binds both slots from its `providerBindings()`.
+   With the key unset, storage is off and neither slot is bound.
 
 3. **Bytes move on `LoanedBuffer`; the SPI exposes no `byte[]` and no `InputStream` on the transfer
    path.** *(Amended 2026-07-30, with the SPI. The original text set out a `retain()`/`close()`
