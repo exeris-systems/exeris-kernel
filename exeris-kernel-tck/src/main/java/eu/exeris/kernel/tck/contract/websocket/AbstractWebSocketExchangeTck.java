@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -198,10 +199,14 @@ public abstract class AbstractWebSocketExchangeTck {
     private static final class Captured {
         final BlockingQueue<String> received = new ArrayBlockingQueue<>(64);
         final AtomicReference<WebSocketSession> session = new AtomicReference<>();
-        final AtomicReference<RuntimeException> sendFailure = new AtomicReference<>();
+        /** Counted down only when {@code receive()} returned {@code null} and the loop fell through. */
+        final CountDownLatch receiveReturnedNull = new CountDownLatch(1);
     }
 
-    /** A handler that records what it saw and echoes every message back. */
+    /**
+     * A handler that records what it saw, echoes every message back, and signals when
+     * {@code receive()} ends its loop by returning {@code null}.
+     */
     private static WebSocketHandler echo(Captured captured) {
         return exchange -> {
             captured.session.set(exchange.session());
@@ -216,11 +221,13 @@ public abstract class AbstractWebSocketExchangeTck {
                 }
                 try {
                     exchange.send(message);
-                } catch (WebSocketClosedException closed) {
-                    captured.sendFailure.set(closed);
+                } catch (WebSocketClosedException _) {
+                    // The peer closed between this receive and its echo. The loop ends here, not
+                    // through receive() returning null, so receiveReturnedNull stays unsignalled.
                     return;
                 }
             }
+            captured.receiveReturnedNull.countDown();
         };
     }
 
@@ -303,20 +310,18 @@ public abstract class AbstractWebSocketExchangeTck {
 
         @Test
         @DisplayName("receive() returns null once the peer closes, so the handler falls out of its loop")
-        void receiveEndsOnClose() {
+        void receiveEndsOnClose() throws InterruptedException {
             Captured captured = new Captured();
             try (WebSocketScenario scenario = connect(config(), echo(captured), null, ALLOWED_ORIGIN)) {
                 scenario.sendFromClient("one");
                 assertThat(scenario.receiveOnClient(WIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
                         .isEqualTo("one");
                 scenario.closeClient(WebSocketCloseCode.NORMAL_CLOSURE);
-                // This establishes only that a normal close never surfaces to the handler as a send
-                // failure. It does not observe whether receive() actually returned null and the
-                // handler's loop exited: a handler left blocked in receive() forever after the close
-                // would leave sendFailure at its initial null value just the same.
-                assertThat(captured.sendFailure.get())
-                        .as("a normal close must not surface as a send failure")
-                        .isNull();
+                // Awaited inside the scenario: closing it tears the connection down, which would
+                // end a receive() that ignored the close frame and pass for the wrong reason.
+                assertThat(captured.receiveReturnedNull.await(WIRE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
+                        .as("receive() must return null once the peer closes, ending the handler's loop")
+                        .isTrue();
             }
         }
 

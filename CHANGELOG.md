@@ -96,6 +96,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   returns `null` once the close frame is processed, and the engine closes the connection when the
   handler returns.
 
+- **The WebSocket close case observes the handler's loop end, not a field that never moves.**
+  `AbstractWebSocketExchangeTck.Close#receiveEndsOnClose` asserted that a send failure recorded by
+  its echo handler was still `null` after the client closed — its initial value, written only by a
+  send after the close, which the case never makes — so it passed against a binding whose
+  `receive()` never returned. The echo handler now counts down a latch once `receive()` returns
+  `null` and its loop ends, and the case awaits it for `WIRE_TIMEOUT_SECONDS` after the client's
+  close, before the scenario tears the connection down. **For anyone binding the TCK:** no hook or
+  signature changed; a binding whose `receive()` stays blocked after the peer's close frame now
+  fails this case.
+
 - **An event-bus failure carries the code of what failed, not queue overflow.** Every
   `EventBusException` built through a message constructor carried `EX-EVENT-6002`, the queue
   overflow code, without the `[eventType, queueDepth, queueCapacity]` layout that code documents, so
