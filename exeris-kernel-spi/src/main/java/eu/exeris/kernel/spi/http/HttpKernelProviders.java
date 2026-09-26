@@ -76,10 +76,15 @@ public final class HttpKernelProviders {
     public static final ScopedValue<HttpServerEngine> HTTP_SERVER_ENGINE = ScopedValue.newInstance();
 
     /**
-     * Optional bootstrap-time override for the server {@link HttpHandler}.
+     * The application's root server {@link HttpHandler}: the seam through which it hands the kernel
+     * what it serves.
      *
-     * <p>When bound, HTTP bootstrap may use this handler instead of the default
-     * subsystem handler. Intended for deterministic integration-test fixtures.
+     * <p>Bound around boot and read once when the HTTP subsystem starts; when unbound, a driver may
+     * serve a default of its own. Respond-once requests go to {@link HttpHandler#handle}. A driver
+     * that serves stream routes ({@link HttpStreamHandler}) resolves them through the Core routing
+     * layer's stream-resolution contract, consulted on this handler before {@code handle}; a bound
+     * handler that does not implement that contract serves respond-once routes only, so a handler
+     * that wraps another carries stream resolution through as well as {@code handle}.
      */
     public static final ScopedValue<HttpHandler> HTTP_SERVER_HANDLER = ScopedValue.newInstance();
 
@@ -175,9 +180,9 @@ public final class HttpKernelProviders {
     }
 
     /**
-     * Returns an optional bootstrap-time server handler override.
+     * Returns the application's root server handler, the value of {@link #HTTP_SERVER_HANDLER}.
      *
-     * @return an {@link Optional} containing the override when bound, or empty otherwise
+     * @return an {@link Optional} containing the handler when bound, or empty otherwise
      */
     public static Optional<HttpHandler> httpServerHandler() {
         return HTTP_SERVER_HANDLER.isBound()
