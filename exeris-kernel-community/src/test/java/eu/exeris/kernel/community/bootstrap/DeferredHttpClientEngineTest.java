@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The default peer of the deferred client engine, against a counting provider rather than a socket.
@@ -31,9 +32,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@link HttpClientEngine#defaultAuthority()} from it. What these cases pin is where that answer
  * comes from, the configuration, whether or not a delegate exists and whatever the delegate says;
  * and that an unaddressed request sent through the engine reaches the delegate addressed to that
- * same default, while any other request reaches it unchanged.
+ * same default, while any other request reaches it unchanged. A null request is refused as an
+ * argument error in every lifecycle state and never reaches the delegate.
  */
-@DisplayName("DeferredHttpClientEngine: default authority")
+@DisplayName("DeferredHttpClientEngine: default authority and the request argument")
 class DeferredHttpClientEngineTest {
 
     private static final String CONFIGURED = "peer.internal:8443";
@@ -122,6 +124,44 @@ class DeferredHttpClientEngineTest {
                     .as("with no default there is no peer to supply; the delegate's refusal must stay reachable")
                     .isSameAs(unaddressed);
         }
+    }
+
+    @Test
+    @DisplayName("refuses a null request with NullPointerException before start, without building a delegate")
+    void refusesANullRequestBeforeStart() {
+        DeferredHttpClientEngine engine = new DeferredHttpClientEngine(provider, clientConfig(CONFIGURED));
+
+        assertThatThrownBy(() -> engine.send(null))
+                .as("a null request is an argument error whatever the lifecycle state")
+                .isInstanceOf(NullPointerException.class);
+        assertThat(created.get()).isZero();
+    }
+
+    @Test
+    @DisplayName("refuses a null request with NullPointerException while running, without passing it on")
+    void refusesANullRequestWhileRunning() {
+        try (DeferredHttpClientEngine engine = new DeferredHttpClientEngine(provider, clientConfig(CONFIGURED))) {
+            engine.start();
+
+            assertThatThrownBy(() -> engine.send(null))
+                    .as("a null request is an argument error whatever the lifecycle state")
+                    .isInstanceOf(NullPointerException.class);
+            assertThat(delivered.get())
+                    .as("the delegate never receives a null request")
+                    .isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("refuses a null request with NullPointerException after close")
+    void refusesANullRequestAfterClose() {
+        DeferredHttpClientEngine engine = new DeferredHttpClientEngine(provider, clientConfig(CONFIGURED));
+        engine.start();
+        engine.close();
+
+        assertThatThrownBy(() -> engine.send(null))
+                .as("a null request is an argument error whatever the lifecycle state")
+                .isInstanceOf(NullPointerException.class);
     }
 
     private static HttpRequest get() {

@@ -99,6 +99,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   to the delegate, so the peer it reports is the peer reached whichever provider's engine it wraps.
   A client engine built directly from an `HttpProvider` was not affected.
 
+- **A booted kernel's HTTP client engine refuses a `null` request with `NullPointerException`
+  before it is started, as `HttpClientEngine#send` requires.** `DeferredHttpClientEngine` checked
+  its lifecycle first, so `send(null)` threw `IllegalStateException` until `start()` had built a
+  delegate. It now rejects `null` first, in every state. `DeferredHttpClientEngineTckTest` binds
+  `AbstractHttpClientEngineTck` over the wrapper the Community HTTP subsystem publishes as
+  `HTTP_CLIENT_ENGINE`, with `CommunityHttpProvider` behind it, so the engine contract is checked on
+  the engine an application reaches and not only on the provider's own.
+
 - **The loopback TCK checks the `Host` field the server receives** (ADR-074 decision 3).
   `AbstractHttpProviderLoopbackTck$PeerAddressing#hostFollowsTheRequestAuthority` and
   `#hostFollowsTheConfiguredDefaultAuthority` require exactly one `Host`, equal to the authority the

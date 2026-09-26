@@ -10,6 +10,7 @@ import eu.exeris.kernel.spi.http.HttpProvider;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -57,10 +58,12 @@ final class DeferredHttpClientEngine implements HttpClientEngine {
      *
      * @param request outbound request; must not be {@code null}
      * @return the delegate's response
+     * @throws NullPointerException  if {@code request} is {@code null}, in every lifecycle state
      * @throws IllegalStateException if the engine has not been started or has been closed
      */
     @Override
     public HttpResponse send(HttpRequest request) {
+        Objects.requireNonNull(request, "request must not be null");
         if (closed.get()) {
             throw new IllegalStateException("Client engine is closed");
         }
