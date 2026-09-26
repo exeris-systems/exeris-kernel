@@ -41,6 +41,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *   <li>{@code send(null)} throws {@link NullPointerException}</li>
  *   <li>{@code close()} is idempotent — multiple calls do not throw</li>
  *   <li>{@code start()} after {@code close()} throws {@link IllegalStateException}</li>
+ *   <li>{@code defaultAuthority()} of a started engine is the configured
+ *       {@link HttpConfig#defaultAuthority()}, and {@code null} when none is configured</li>
  *   <li>{@code send} of a request naming no peer authority is refused with
  *       {@link IllegalStateException} when the engine carries no configured default authority</li>
  *   <li>{@code send} of a request whose authority carries no explicit port is refused with
@@ -144,6 +146,36 @@ public abstract class AbstractHttpClientEngineTck {
     @DisplayName("Peer addressing (ADR-074)")
     class PeerAddressing {
 
+        /** A default peer the cases configure and read back; nothing dials it. */
+        private static final String CONFIGURED_DEFAULT = "peer.invalid:8443";
+
+        @Test
+        @DisplayName("defaultAuthority() reports the configured default peer")
+        void reportsTheConfiguredDefaultAuthority() {
+            // A caller that resolves the peer before enrichment reads it here and nowhere else, so an
+            // engine that sends an unaddressed request to its configured default must also report
+            // that default; one that reports null hides the peer from the enricher.
+            try (HttpClientEngine configured = createEngine(configWithDefaultAuthority(CONFIGURED_DEFAULT))) {
+                configured.start();
+
+                assertThat(configured.defaultAuthority())
+                        .as("an engine configured with a default peer must report that peer")
+                        .isEqualTo(CONFIGURED_DEFAULT);
+            }
+        }
+
+        @Test
+        @DisplayName("defaultAuthority() is null when no default peer is configured")
+        void reportsNoDefaultAuthorityWhenNoneIsConfigured() {
+            try (HttpClientEngine unconfigured = createEngine(configWithDefaultAuthority(null))) {
+                unconfigured.start();
+
+                assertThat(unconfigured.defaultAuthority())
+                        .as("an engine configured with no default peer must not report one")
+                        .isNull();
+            }
+        }
+
         @Test
         @DisplayName("An unaddressed request with no configured default peer is refused, not guessed")
         void unaddressedRequestWithNoDefaultIsRefused() {
@@ -172,6 +204,30 @@ public abstract class AbstractHttpClientEngineTck {
                     .withAuthority("service.internal")))
                     .as("an authority carrying no port must be refused rather than assigned one")
                     .isInstanceOf(IllegalStateException.class);
+        }
+
+        /**
+         * Returns {@link #testConfig()} with its default authority replaced, every other component
+         * kept, so a binding's own configuration still applies.
+         */
+        private HttpConfig configWithDefaultAuthority(String defaultAuthority) {
+            HttpConfig base = testConfig();
+            return new HttpConfig(
+                    base.mode(),
+                    base.bindHost(),
+                    base.port(),
+                    base.maxConnections(),
+                    base.idleTimeoutMillis(),
+                    base.maxRequestHeaderCount(),
+                    base.maxRequestHeaderSize(),
+                    base.maxRequestBodyBytes(),
+                    base.h2cUpgradeEnabled(),
+                    base.maxVersion(),
+                    defaultAuthority,
+                    base.maxHeaderBlockSize(),
+                    base.maxHeaderListSize(),
+                    base.maxStringLiteralSize(),
+                    base.maxResponseBodyBytes());
         }
     }
 

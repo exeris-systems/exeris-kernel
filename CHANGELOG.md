@@ -112,6 +112,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   from the default when the request names a peer, or from `bindHost`, or dials `bindHost` for an
   unaddressed request, now fails.
 
+- **The HTTP client engine TCK checks `defaultAuthority()`** (ADR-074 decision 5).
+  `AbstractHttpClientEngineTck$PeerAddressing#reportsTheConfiguredDefaultAuthority` requires a
+  started engine to report the configured `HttpConfig#defaultAuthority()`, and
+  `#reportsNoDefaultAuthorityWhenNoneIsConfigured` requires `null` when none is configured. No case
+  read the method before, so an engine that sends an unaddressed request to its configured default
+  while inheriting the interface's `null` passed, and `KernelWebClient` then hands the request
+  enricher no authority. **For anyone binding the TCK:** an engine with a configured default peer
+  must report it from `defaultAuthority()`, and so must an engine that wraps one.
+
 - **A dialled TCP connection reports the address it reached, not the name it was dialled by.**
   `NativeTcpCarrier#connect` built the `NativeTcpConnection` from the host string it was given, so
   `TransportConnection#remoteAddress()` on a Community client connection dialled as `localhost`

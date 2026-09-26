@@ -140,6 +140,13 @@ public final class CoreHttpProviderFixture implements HttpProvider {
             return HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1);
         }
 
+        // The peer send() substitutes for an unaddressed request, reported so a caller resolving the
+        // peer before enrichment sees the same one.
+        @Override
+        public String defaultAuthority() {
+            return config.defaultAuthority();
+        }
+
         @Override
         public boolean isRunning() {
             return running;
