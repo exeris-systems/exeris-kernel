@@ -839,7 +839,7 @@ public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCod
     /**
      * Returns the raw {@code SSL*} pointer for diagnostic logging and JFR events.
      *
-     * <p><b>Must NOT be used to call OpenSSL functions directly.</b>
+     * <p><b>Must NOT be passed to OpenSSL functions directly.</b>
      * Use {@link NativeCipherContext#retainSslPointer()} for that — this accessor
      * bypasses the reference count and is intended solely for log/JFR correlation.
      *

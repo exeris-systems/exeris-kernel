@@ -400,6 +400,8 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	interface ClientPeerBinder {
 
 		/**
+		 * Makes {@code peer} the identity {@code engine}'s server must present.
+		 *
 		 * @param engine the engine
 		 * @param peer   the identity its server must present
 		 */

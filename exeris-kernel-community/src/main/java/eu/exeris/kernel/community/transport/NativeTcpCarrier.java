@@ -180,6 +180,9 @@ public final class NativeTcpCarrier implements TransportEngine {
             channelRuntimeRegistry.channelOwner;
 
     /**
+     * Creates a carrier that is not running: it binds no listener and dials nothing until
+     * {@link #start()}.
+     *
      * @param config               the transport configuration
      * @param allocator            the allocator every stream borrows from
      * @param cryptoProvider       the provider that builds listener engines, or {@code null}
