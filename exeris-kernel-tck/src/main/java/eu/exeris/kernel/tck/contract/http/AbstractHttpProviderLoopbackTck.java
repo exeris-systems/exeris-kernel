@@ -101,8 +101,8 @@ public abstract class AbstractHttpProviderLoopbackTck {
      * {@link eu.exeris.kernel.tck.contract.transport.AbstractTransportConnectionTck}.
      *
      * @return a loopback host name; defaults to {@code "localhost"}
-     * @apiNote Override together with {@link #loopbackHost()}: the client dials this name and must
-     *          reach the server bound to that address.
+     * @implSpec Override together with {@link #loopbackHost()}: the client dials this name and must
+     *           reach the server bound to that address.
      * @since 0.12
      */
     protected String loopbackHostName() {
@@ -171,9 +171,9 @@ public abstract class AbstractHttpProviderLoopbackTck {
      *         {@code bindHost} and the {@code -1} port sentinel
      * @apiNote The default authority is a dial address supplied to the client (ADR-074),
      *          distinct from a server's bind address; a request naming its own authority
-     *          overrides it. An override must keep the peer out of {@code bindHost} and
-     *          {@code port}, or a client dialling its listener address passes the unaddressed
-     *          cases.
+     *          overrides it.
+     * @implSpec An override keeps the peer out of {@code bindHost} and {@code port}, or a client
+     *           dialling its listener address passes the unaddressed cases.
      */
     protected HttpConfig clientConfig(String host, int port) {
         // The default authority is the only place this configuration names the peer. bindHost and
