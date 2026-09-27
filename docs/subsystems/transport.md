@@ -260,9 +260,10 @@ neither does). The decision matters because it is invisible from outside: an eng
 booted kernel's scope, or before its crypto subsystem binds, dials plaintext.
 
 A verifying carrier opens one trust store — `crypto.tls.client.trustFile`, else OpenSSL's default —
-and shares it across its connections; `close()` releases it after the engines built from it are done
-with it. `connect(host, port)` classifies `host` before any socket opens: a host that is neither a
-DNS name nor an IP literal fails with `EX-NET-4001` (cause detail
+and shares it across its connections; `close()` gives up the carrier's reference, and each engine
+built from the store holds its own, so the store is freed when the last of them closes.
+`connect(host, port)` classifies `host` before any socket opens: a host that is neither a DNS name
+nor an IP literal fails with `EX-NET-4001` (cause detail
 `authority host is neither a DNS name nor an IP literal`). The connection's engine verifies the
 server's chain against the trust and its subject alternative names against `host`, as
 [crypto.md](crypto.md#client-peer-verification) describes. A `DUAL` carrier dials as a client too;
@@ -854,6 +855,7 @@ consumes heap, CPU, or a Virtual Thread.
 ## Owning ADRs
 
 - [ADR-071](../adr/ADR-071-operational-limit-configuration-path.md) — Give operational limits a configuration path, and rule what a zero means
+- [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) §4, Amendment A1 — a `CLIENT` or `DUAL` carrier verifies the server it dials, and records where it does not
 - [ADR-081](../adr/ADR-081-accept-time-connection-cap.md) — The connection cap and stream shedding are layers, and neither answers with a status
 
 ## Stability

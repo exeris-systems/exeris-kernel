@@ -12,8 +12,8 @@ last-verified: 2026-09-08
 **Physical Layout:**
 
 - SPI: `eu.exeris.kernel.spi.crypto.*` (`KernelCryptoProvider`, `TlsEngine`, `TlsStatus`, `CryptoProviderConfig`, `TlsHandshakeResult`, `TlsPhase`, `TlsSessionState`, `TlsShutdownResult`)
-- Core: `eu.exeris.kernel.core.crypto.*` (`CoreOpenSslLoader`, `NativeCipherContext`, `TlsStateMachine`, `OffHeapTlsEngine`, `CoreSslHandles`, `CoreOpenSslRuntime`; plus internal helpers: `AlpnReader`, `CipherNameReader`, `FfmErrors`)
-- Community: Portable Off-Heap TLS (OpenSSL 3.x/4.x via Panama FFM on standard TCP)
+- Core: `eu.exeris.kernel.core.crypto.*` (`CoreOpenSslLoader`, `NativeCipherContext`, `TlsStateMachine`, `OffHeapTlsEngine`, `CoreSslHandles`, `CoreOpenSslRuntime`, and for client peer verification `TlsPeerIdentity`, `TlsFailureDetail`, `TlsHandshakeFailureCodes`; plus internal helpers: `AlpnReader`, `CipherNameReader`, `FfmErrors`)
+- Community: Portable Off-Heap TLS (OpenSSL 3.x/4.x via Panama FFM on standard TCP); `CommunityTlsClientTrust` holds a client's trust store
 
 **Layer:** L1 (Data & Integrity)  
 **Status:** Integration-Tested Prototype (TRL-4)
@@ -152,7 +152,19 @@ with an `SSL_get_verify_result` other than `X509_V_OK` is refused anyway, so the
 (`X509_STORE_set_default_paths`), which `SSL_CERT_FILE` and `SSL_CERT_DIR` override; the carrier
 reports the effective file and directory, and whether either exists. `X509_V_FLAG_PARTIAL_CHAIN` is
 off: a chain must end at an anchor the trust holds, so a trust file holding only an intermediate does
-not anchor a chain. No CRL or OCSP is consulted, and the trust is read once per carrier.
+not anchor a chain. No CRL or OCSP is consulted. The trust is read once per carrier, when the carrier
+is built, and never reloaded: a changed file reaches only the carriers built after the change.
+
+**Where it holds.** The transport arms a verifying client only where a crypto provider is bound when
+the carrier is built and `exeris.transport.tls` is not `false` (for a `DUAL` carrier, only when its
+listener holds certificate material); anywhere else the carrier dials plaintext, and its
+`TransportTlsClientPosture` event says so ([transport.md](transport.md#client-tls)). No setting
+keeps TLS and skips verification.
+
+**Server chains.** The Community server loads its certificate with `SSL_CTX_use_certificate_file`,
+which takes the first certificate of the file, so it presents its leaf and no intermediates. A client
+of a server whose certificate is chained holds those intermediates in its trust file, next to the
+root.
 
 **Symbols.** Bound by `CoreOpenSslLoader` into `CoreSslHandles.PeerVerificationHandles` and
 `TrustStoreHandles`; every one is present, outside any deprecation guard, from OpenSSL 3.0 through
@@ -182,13 +194,14 @@ call site has one shape on LP64 and LLP64 (the LLP64 case has no CI).
   default-trust store parses the whole system bundle, once per verifying carrier.
 
 **Error queue.** OpenSSL keeps its error queue per OS thread, and `SSL_get_error` reports
-`SSL_ERROR_SSL` whenever that queue holds an entry, whichever connection left it. Every outcome of
-`beginHandshake`, `unwrap`, `wrap`, `initiateShutdown` and `bindTransportFd` other than a
-`WANT_READ`/`WANT_WRITE` retry empties the calling thread's queue, after `SSL_get_error` and, for a
-client with an expected peer, `SSL_get_verify_result`, and before any event or exception. No park
-point lies between those reads and the clear: a virtual thread that unmounted there would clear one
-carrier's queue and leave another's entry behind. A failed context or trust load clears the queue
-too. A retry and a successful record make no extra downcall.
+`SSL_ERROR_SSL` whenever that queue holds an entry, whichever connection left it. A completed
+handshake, and every outcome of `beginHandshake`, `unwrap`, `wrap`, `initiateShutdown` and
+`bindTransportFd` that fails or ends the session, empties the calling thread's queue: after
+`SSL_get_error` where the step reads it and, for a client with an expected peer,
+`SSL_get_verify_result`, and before any event or exception. No park point lies between those reads
+and the clear: a virtual thread that unmounted there would clear one carrier's queue and leave
+another's entry behind. A failed context or trust load clears the queue too. A
+`WANT_READ`/`WANT_WRITE` retry and every other success make no extra downcall.
 
 **Failure.** A failed handshake leaves its `SSL_get_error` code and `X509_V_*` result on
 `TlsHandshakeFailureCodes`; the Community stream turns them into `TlsHandshakeException` for the
@@ -350,7 +363,8 @@ Session End:
 
 | Object                    | Memory Owner                         | Lifecycle Authority                                    |
 |:--------------------------|:--------------------------------------|:--------------------------------------------------------|
-| `SSL_CTX`                 | `Arena.global()`                     | `CoreOpenSslLoader` (bootstrap, lives until JVM exit)  |
+| `SSL_CTX` per engine      | OpenSSL's own native heap            | The Community engine built with it — `CommunityKernelCryptoProvider` creates one per engine, so one per connection, and `CommunityTlsEngine#close` frees it |
+| `X509_STORE` per verifying carrier | OpenSSL's own native heap, not tracked by `WatermarkManager` | `CommunityTlsClientTrust`'s reference plus one per `SSL_CTX` it was handed to (see Client Peer Verification) |
 | `SSL*` per session        | OpenSSL's own native heap; accounted via a `MemoryAllocator` (SESSION hint) slab | `NativeCipherContext`'s own `VarHandle`-CAS ref-count |
 | Plaintext `LoanedBuffer`  | `MemoryAllocator` (carrier slab)     | Transport pipeline (RAII)                              |
 | Ciphertext `LoanedBuffer` | `MemoryAllocator` (network slab)     | Transport pipeline (RAII)                              |
@@ -495,7 +509,7 @@ pair lives under `eu.exeris.kernel.community.crypto`.
 
 | Event Class                | JFR Category                                         | When Emitted                     | Key Fields                                  |
 |:---------------------------|:-----------------------------------------------------|:---------------------------------|:--------------------------------------------|
-| `TlsHandshakeEvent`        | `eu.exeris.kernel.tls.TlsHandshake`                  | Handshake start and completion   | `sslPtr`, `mode`, `negotiatedAlpn`, `durationNanos` |
+| `TlsHandshakeEvent`        | `eu.exeris.kernel.tls.Handshake`                     | Handshake start and completion   | `sslPtr`, `mode`, `protocol`, `cipher`, `negotiatedAlpn`, `durationNanos` |
 | `TlsHandshakeFailureEvent` | `eu.exeris.kernel.tls.HandshakeFailure`              | Handshake step failed, or a completed handshake refused because verification failed | `sslPtr`, `mode`, `errorCode` (`EX-NET-2001`), `failureReason`, `sslErrorCode`, `verifyResult` (`X509_V_*` for a client that expected a peer, else `-1`) |
 | `TlsEngineBindEvent`       | `eu.exeris.kernel.tls.EngineBind`                    | `notifyBound()` call             | `sslPtr`, `mode`                            |
 | `TlsEngineCloseEvent`      | `eu.exeris.kernel.tls.EngineClose`                   | `close()` call                   | `sslPtr`, `graceful`, `finalPhase`          |
@@ -557,10 +571,41 @@ or `mvn install`. OpenSSL 3.x or 4.x must be present on the CI host for Linux ta
   - Simulates Community tier: `SSL_set_fd` resolved as a separate Community-owned handle,
     called before `notifyBound()` — Core engine has zero knowledge of the fd.
   - Full TLS 1.3 handshake over a real `ServerSocketChannel`/`SocketChannel` loopback pair
-    with a self-signed cert generated by the `openssl` CLI — both engines reach `ACTIVE`.
+    with a certificate `TlsTestCertificate` generates per run, which the client engine
+    (`createClientTlsEngine`, expecting `127.0.0.1`) trusts — both engines reach `ACTIVE`.
   - Round-trip: full round-trip in both directions matches for a 512-byte payload.
   - Asserts the `CommunityProviderBootstrap` and `CommunityTlsHandshake` JFR events (see JFR Events
     above) are emitted on bootstrap and on a successful/failed handshake.
+
+### Client Peer Verification and the Error Queue
+
+- `OffHeapTlsEngineErrorQueueTest` (Core, stub handles): each step's failure, a read that ends the
+  session and a completed handshake clear the queue once, after `SSL_get_error` where the step reads
+  it; a retry and every other success make no clear.
+- `OffHeapTlsEngineErrorQueueIT` and `OffHeapTlsEnginePeerVerificationIT` (Core, Failsafe; they fail
+  rather than skip when OpenSSL cannot be loaded): the failing thread's queue is empty
+  (`ERR_peek_error`) on every major; which certificates a client accepts, which it refuses with which
+  `X509_V_*` code, and what server name it sends.
+- `TlsPeerIdentityTest`: how an authority host is classified, and which hosts are refused.
+- `CommunityTlsClientTrustTest`: the store lease — a `close()` with a lease out frees nothing until
+  the release, and a lease after `close()` is refused.
+- `CommunityTlsServerErrorQueueTest`: a failed handshake on a listener's reactor does not close the
+  healthy connections that reactor serves (on the 3.x line, where the stale entry did).
+- `CommunityTlsPeerVerificationTest` (real carriers): the refusal codes through the stream, a read
+  that reports the refusal, a host refused before the dial, a `DUAL` carrier dialling as a client, and
+  the plain client engine refusing its handshake.
+- `CommunityTlsDefaultTrustTest`: OpenSSL's default trust, and a configured file replacing it. It runs
+  only in the forked `default-trust` Surefire execution, which sets `SSL_CERT_FILE` and `SSL_CERT_DIR`
+  (`mvn -pl exeris-kernel-community surefire:test@default-trust`).
+- `AbstractHttpClientTlsPeerVerificationTck`, bound by `CommunityHttpClientTlsPeerVerificationTckTest`:
+  the contract at the HTTP client ([http.md](http.md)).
+
+Every suite above runs in the default build, against the runner's own OpenSSL:
+`CommunityTlsDefaultTrustTest` in its fork, which is bound to the `test` phase beside the module's
+other Surefire executions. The `tls-openssl-matrix` CI job runs the ones that load OpenSSL — the two
+Core ITs, the Community carrier suites, the `default-trust` fork and the TCK binding — on each
+pinned OpenSSL major, and fails an entry for a listed suite that has no report, ran no test or
+skipped one.
 
 ### Integration Tests (TCK)
 
@@ -595,6 +640,7 @@ or `mvn install`. OpenSSL 3.x or 4.x must be present on the CI host for Linux ta
 ## Owning ADRs
 
 - [ADR-008](../adr/ADR-008-open-core-strategy-and-commoditization-of-off-heap-tls.md) — Open-Core Strategy & Commoditization of Off-Heap TLS
+- [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) §4, Amendment A1 — a TLS client verifies its server against the effective authority
 
 ## Stability
 

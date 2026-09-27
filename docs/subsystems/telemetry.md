@@ -128,7 +128,7 @@ EX-BOOT-0002 Subsystem lifecycle failure    rawArgs[0]=String subsystemName,    
 EX-BOOT-0003 Bootstrap deadline exceeded    rawArgs[0]=String subsystemName,    [1]=long deadlineMs
 EX-BOOT-0004 Memory provider bootstrap      rawArgs[0]=String providerName,     [1]=long requestedBytes
 EX-BOOT-3001 Telemetry provider failure     rawArgs[0]=String providerName,     [1]=String reason
-EX-NET-2001  TLS wrap (encrypt) failure     rawArgs[0]=int nativeErrorCode,     [1]=String detail
+EX-NET-2001  TLS wrap/handshake failure     rawArgs[0]=int nativeErrorCode,     [1]=String detail          (a client refusal's detail names what [0] holds; see crypto.md → Error Codes)
 EX-NET-2002  Crypto provider bootstrap      rawArgs[0]=String providerName,     [1]=String reason
 EX-NET-2003  TLS unwrap (decrypt) failure   rawArgs[0]=int nativeErrorCode,     [1]=String detail
 EX-NET-4001  Transport bind/handshake       rawArgs[0]=String transportName,    [1]=int port
