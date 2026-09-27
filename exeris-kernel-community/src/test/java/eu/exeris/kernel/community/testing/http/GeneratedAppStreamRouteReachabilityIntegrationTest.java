@@ -69,10 +69,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code true} there means the kernel's scope encloses it.
  *
  * <p>The boot case pins what the nesting leaves out: nothing the kernel binds at boot reaches a stream
- * handler. {@link KernelProviders#CURRENT_CONFIG} is bound around the whole boot and
- * {@link HttpKernelProviders#HTTP_SERVER_ENGINE} by the HTTP subsystem, where the fixture reads it;
- * the thread a stream handler runs on inherits neither, which is why a stream handler receives the
- * providers it needs through its constructor.
+ * handler. It reads {@link KernelProviders#CURRENT_CONFIG}, bound around the whole boot, and
+ * {@link HttpKernelProviders#HTTP_SERVER_ENGINE}, bound by the HTTP subsystem, with one probe in two
+ * places: inside the boot, through the fixture's {@code runInKernelScope}, where both must read bound,
+ * and on the thread a stream handler runs on, which inherits neither. The first reading is what makes
+ * the second one a finding, and the second is why a stream handler receives the providers it needs
+ * through its constructor.
  *
  * <p>One boot serves every case, and each case sets the slot before it sends anything. Every request
  * sends {@code Connection: close} and the client reads to end of stream, so an SSE response is read
@@ -108,8 +110,7 @@ class GeneratedAppStreamRouteReachabilityIntegrationTest {
                             + " allocator=" + KernelProviders.MEMORY_ALLOCATOR.isBound()
                             + " registry=" + registryOrigin()))
             .streamRoute(HttpMethod.GET, "/orders/boot/stream",
-                    exchange -> emitAndClose(exchange, "config=" + KernelProviders.CURRENT_CONFIG.isBound()
-                            + " server=" + HttpKernelProviders.HTTP_SERVER_ENGINE.isBound()))
+                    exchange -> emitAndClose(exchange, bootSlots()))
             .build();
 
     private EmbeddedHttpEngineFixture fixture;
@@ -244,9 +245,11 @@ class GeneratedAppStreamRouteReachabilityIntegrationTest {
     @DisplayName("(f) a slot bound at boot does not reach a stream handler")
     void slotBoundAtBootDoesNotReachAStreamHandler() {
         slot.set(router);
-        assertThat(fixture.engine())
-                .as("control: HTTP_SERVER_ENGINE is bound inside the boot, where the fixture read it")
-                .isNotNull();
+        AtomicReference<String> insideTheBoot = new AtomicReference<>();
+        fixture.runInKernelScope(() -> insideTheBoot.set(bootSlots()));
+        assertThat(insideTheBoot.get())
+                .as("control: the same probe inside the boot the engine runs in reads both slots bound")
+                .isEqualTo("config=true server=true");
 
         Response response = send("GET", "/orders/boot/stream");
 
@@ -309,6 +312,12 @@ class GeneratedAppStreamRouteReachabilityIntegrationTest {
     private static void emitAndClose(HttpStreamExchange exchange, String data) {
         exchange.emit(StreamEvent.of(data));
         exchange.close();
+    }
+
+    /** One probe for both sides of the boot case, so the two readings cannot differ in what they ask. */
+    private static String bootSlots() {
+        return "config=" + KernelProviders.CURRENT_CONFIG.isBound()
+                + " server=" + HttpKernelProviders.HTTP_SERVER_ENGINE.isBound();
     }
 
     private static String tenant() {
