@@ -9,8 +9,10 @@ last-verified: 2026-09-08
 
 # Storage Subsystem — Blob Contract
 
-**Status:** SPI + two Community drivers shipped in v0.11 (ADR-056). Post-1.0 per the ROADMAP's
-narrowed-core decision — 1.0 GA is not gated on this subsystem.
+**Status:** SPI + two Community drivers shipped in v0.11 (ADR-056); the subsystem boots from 0.12,
+opt-in through `storage.blob.provider` — unset, storage is off and nothing is bound (see *Bootstrap
+and provider selection*). The SPI is a `preview` surface, outside the stable core the ROADMAP's
+narrowed-core decision holds 1.0 to, so 1.0 GA is not gated on it.
 
 **SPI package:** `eu.exeris.kernel.spi.storage.blob`
 **Drivers:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider`. Two bindings
