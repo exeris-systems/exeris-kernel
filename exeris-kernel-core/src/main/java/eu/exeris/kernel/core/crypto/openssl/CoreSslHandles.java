@@ -631,7 +631,7 @@ public final class CoreSslHandles {
         /**
          * {@code ERR_clear_error()} — empties the calling OS thread's OpenSSL error queue.
          *
-         * @throws TlsException wrapping any FFM-layer throwable that is not an {@link Error}
+         * @throws TlsException ({@code EX-NET-2001}) wrapping any FFM-layer throwable that is not an {@link Error}
          */
         public void invokeClearError() {
             try {
