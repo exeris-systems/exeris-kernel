@@ -221,7 +221,8 @@ should not, this is the clause to revisit first.
   - **No opt-out.** No setting keeps TLS and skips verification. `-Dexeris.transport.tls=false`
     declines TLS altogether, process-wide.
   - **Scope.** Outbound TLS is armed only where a crypto provider is bound when the transport is
-    built and `exeris.transport.tls` is not `false`. An engine built anywhere else — outside a booted
+    built and `exeris.transport.tls` is not `false` — and, for a `DUAL` carrier, only when its
+    listener holds certificate material. An engine built anywhere else — outside a booted
     kernel's scope, or before its crypto subsystem binds — dials plaintext. Each `CLIENT` or `DUAL`
     carrier records its decision in the `eu.exeris.kernel.transport.TransportTlsClientPosture` JFR
     event and an INFO log line, so the plaintext case is visible rather than inferred.

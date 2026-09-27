@@ -32,14 +32,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   kernel configuration, else `-Dexeris.crypto.tls.client.trustFile`), which replaces OpenSSL's
   default trust, or that default (`SSL_CERT_FILE`, `SSL_CERT_DIR`) when the key is unset. No setting
   keeps TLS and skips verification. Outbound TLS is armed only where a crypto provider is bound when
-  the carrier is built and `exeris.transport.tls` is not `false`; an engine built anywhere else dials
-  plaintext, and each carrier records which in the new
-  `eu.exeris.kernel.transport.TransportTlsClientPosture` event and an INFO line (a WARNING when the
-  default trust has neither file nor directory). A bound crypto provider that cannot verify an
-  outbound peer fails a `CLIENT` carrier at construction and a `DUAL` carrier's `connect`.
-  **Upgrade:** a client that talks to a private-CA or self-signed server needs
-  `crypto.tls.client.trustFile` naming the issuing CA (with any intermediates, since the Community
-  server does not send them) or the server's own certificate.
+  the carrier is built and `exeris.transport.tls` is not `false` (for a `DUAL` carrier, only when its
+  listener holds certificate material); an engine built anywhere else dials plaintext, and each
+  carrier records which in the new `eu.exeris.kernel.transport.TransportTlsClientPosture` event and
+  an INFO line (a WARNING when the default trust has neither file nor directory). A bound crypto
+  provider that cannot verify an outbound peer fails a `CLIENT` carrier at construction and a `DUAL`
+  carrier's `connect`. `HttpClientEngine#send` states the obligation in its `@implSpec` (javadoc
+  only, no signature moved); the Enterprise client is outside it. **Upgrade:** a client that talks
+  to a private-CA or self-signed server needs `crypto.tls.client.trustFile` naming the issuing CA
+  (with any intermediates, since the Community server does not send them) or the server's own
+  certificate.
 
 ### Added
 
