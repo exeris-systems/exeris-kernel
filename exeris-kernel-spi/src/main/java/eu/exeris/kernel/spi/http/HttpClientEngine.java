@@ -59,8 +59,8 @@ public interface HttpClientEngine extends AutoCloseable {
      * @implSpec MUST NOT close or retain {@code request.body()} on any path, success or exception.
      *           The caller releases it after {@code send} returns or throws, and may send the same
      *           request again before it does.
-     * @implSpec When the engine carries the request over TLS — its configuration decides that,
-     *           since a request has no scheme — it verifies the server before any request byte is
+     * @implSpec When the engine carries the request over TLS — the engine decides that, not the
+     *           request, which has no scheme — it verifies the server before any request byte is
      *           sent: the certificate chain against the engine's trust, and the certificate's
      *           subject alternative names against the host of the effective authority
      *           ({@link HttpRequest#authority()}, else {@link #defaultAuthority()}). A DNS host is
