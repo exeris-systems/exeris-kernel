@@ -116,6 +116,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   fixture per subsystem, and `KernelScopePump` moves to the testkit root package where a consumer can
   reach it.
 
+- **The HTTP test fixture runs work inside the boot it holds open.**
+  `EmbeddedHttpEngineFixture#runInKernelScope(Runnable)` carries a body to that thread and throws
+  whatever the body threw on the caller's, as the persistence and runtime fixtures already do. A
+  test reads the boot's own `ScopedValue` bindings there, since the threads a driver runs handlers
+  on do not carry them. A class outside the kernel that implements the interface adds the method.
+
 ### Fixed
 
 - **A stream route resolves when the bound handler wraps the router** (ADR-043 Amendment A1). The
