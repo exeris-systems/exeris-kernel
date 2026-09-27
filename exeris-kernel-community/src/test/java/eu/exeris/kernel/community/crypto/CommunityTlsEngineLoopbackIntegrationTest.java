@@ -303,8 +303,8 @@ class CommunityTlsEngineLoopbackIntegrationTest {
     }
 
     /**
-     * Generated per class rather than located: the {@code ../native-libs/certs} path this used to
-     * probe is in no commit, so the three cases that needed it skipped everywhere.
+     * A fresh self-signed pair in the class's temporary directory, so no case depends on material
+     * that has to exist on disk before the run.
      */
     private static CertKeyPaths generatedCertKey() {
         TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);

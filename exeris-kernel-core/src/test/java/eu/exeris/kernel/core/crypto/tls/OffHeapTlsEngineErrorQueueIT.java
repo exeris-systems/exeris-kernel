@@ -40,8 +40,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * After a real handshake failure, the thread that drove it has an empty OpenSSL error queue.
  *
  * <p>The assertion reads the queue with {@code ERR_peek_error} on the same OS thread, so it holds
- * on every OpenSSL major the loader accepts — including those whose {@code SSL_get_error} no longer
- * lets a stale entry turn a neighbour's retry into a fatal error. A missing clear leaves the entry
+ * on every OpenSSL major the loader accepts — including 4.x, whose {@code SSL_get_error} does not
+ * let a stale entry turn a neighbour's retry into a fatal error. A missing clear leaves the entry
  * that the failure pushed, and this test reads it.
  *
  * <p>Fails, rather than skips, when OpenSSL cannot be loaded.
