@@ -219,6 +219,16 @@ IP entries and sends none. A server that fails is refused with `TlsHandshakeExce
 `send` throws unwrapped. `HttpClientEngine#send` states this
 obligation in its `@implSpec`; the Community engine meets it, the Enterprise engine is outside it.
 
+`AbstractHttpClientTlsPeerVerificationTck` is the executable form of that `@implSpec`, a suite apart
+from `AbstractHttpClientEngineTck` so that a provider binds it once its client verifies. It runs the
+client against the JDK's own TLS server and a ClientHello probe: trust and its absence (a configured
+anchor, and the default trust refusing a private authority), a DNS host against DNS entries only and
+never the common name, an IP literal against IP entries only (a DNS entry spelling the address does
+not match), the request's authority over the engine's default, the server name for a DNS host and
+none for an IP literal, and no request read by a server the client refused.
+`CommunityHttpClientTlsPeerVerificationTckTest` binds it and also asserts the `X509_V_*` code of each
+refusal.
+
 `CommunityHttpRetryPolicy` classifies any transport failure of an idempotent request as retryable,
 and a verification failure is one: `KernelWebClient` retries it, so the outcome is still the refusal,
 but it arrives after the policy's backoff and each attempt runs another handshake.

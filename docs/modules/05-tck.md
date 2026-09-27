@@ -96,6 +96,13 @@ HTTP SPI contract coverage is present in `exeris-kernel-tck` via abstract suites
 
 These suites validate provider discovery, lifecycle semantics, and handler/exchange contract behavior at SPI level.
 
+`AbstractHttpClientTlsPeerVerificationTck` (since 0.12) judges the TLS clause of `HttpClientEngine#send`:
+the server is verified against the engine's trust and against the host of the effective authority before
+any request byte is sent. It is a suite apart from `AbstractHttpClientEngineTck`, so a provider binds it
+when its client verifies; the Community client binds it (`CommunityHttpClientTlsPeerVerificationTckTest`),
+and the Core fixture client, which speaks no TLS, does not. Its servers are the JDK's TLS stack and a
+ClientHello probe, so no case depends on the provider's own server.
+
 ### Current Core Binding Coverage (HTTP)
 
 Concrete Core bindings now present:

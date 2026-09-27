@@ -72,6 +72,22 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   runtime binds 16 more symbols for this, all present from OpenSSL 3.0 through 4.0 outside any
   deprecation guard.
 
+- **`AbstractHttpClientTlsPeerVerificationTck` judges the TLS clause of `HttpClientEngine#send`**
+  (ADR-074 §4, Amendment A1). A client that carries a request over TLS is run against the JDK's own
+  TLS server and a ClientHello probe: a leaf from an untrusted issuer, and a private authority under
+  the default trust, are refused with `TlsHandshakeException` (`EX-NET-2001`) and the server reads no
+  request; a DNS host matches DNS entries only, never the subject common name; an IP literal matches
+  IP entries only, and a DNS entry spelling the address does not match it; the request's authority is
+  verified over the engine's default, and the default when the request names none; a DNS host is
+  sent as the server name and an IP literal sends none, read from a ClientHello the probe parsed to
+  its last extension. The suite first checks that the binding's fixtures differ from an accepted leaf
+  in exactly the respect each case names. `CommunityHttpClientTlsPeerVerificationTckTest` binds it.
+  **For anyone binding the TCK:** it is a class apart from `AbstractHttpClientEngineTck`, so a
+  provider whose client does not verify yet is not forced red; a binding supplies `fixtures` (PEM
+  files, shapes in `TlsPeerFixtures`) and `startClient(trustAnchor, defaultAuthority)`, and may
+  override `assertRefusalDetail` to check its own `rawArgs[0]`. The Enterprise client does not bind
+  it.
+
 ### Changed
 
 - **A Community client engine from `createTlsEngine` with a client configuration refuses its

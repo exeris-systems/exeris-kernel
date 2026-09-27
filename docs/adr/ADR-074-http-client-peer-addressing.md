@@ -228,6 +228,10 @@ should not, this is the clause to revisit first.
   - **A provider that cannot verify.** A bound crypto provider other than the Community one fails a
     `CLIENT` carrier at construction and a `DUAL` carrier's `connect`, rather than dialling
     unverified.
+  - **Verification.** The contract is the `@implSpec` of `HttpClientEngine#send`, and
+    `AbstractHttpClientTlsPeerVerificationTck` judges it: a suite of its own, apart from
+    `AbstractHttpClientEngineTck`, so that a provider binds it once its client verifies rather than
+    the general client contract going red first. The Community client binds it.
   - **Not decided here.** No CRL or OCSP checking, and no trust reload without a restart. The
     Community server sends its leaf certificate only, not its intermediates, so an Exeris client
     talking to an Exeris server whose certificate is chained needs those intermediates in its
