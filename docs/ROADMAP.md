@@ -3213,10 +3213,11 @@ resolves through `StreamRouteResolver`, pinned by `CommunityStreamResolutionDele
 a real boot with a forwarder of the generated application's shape bound, by
 `GeneratedAppStreamRouteReachabilityIntegrationTest`, which runs untagged in the default build; a miss
 through a forwarder allocates nothing unless its method has a stream route and its path carries a
-query string (`StreamResolutionMissAllocationTest`); `spi-api-diff` shows no SPI change against the
-release base. Generated applications stream once a tooling release built on kernel 0.12 or later
-ships the resolving forwarder and the constructor-injected event bus. HTTP/2 serves no stream route
-(next entry). The Enterprise HTTP engine serves none either: its streaming binding, which resolves
+query string (`StreamResolutionMissAllocationTest`); `spi-api-diff` shows no SPI API change against
+the `development/0.12.0` base (against v0.11.0 the SPI does change, through other 0.12 work).
+Generated applications stream once a tooling release built on kernel 0.12 or later ships the
+resolving forwarder and the constructor-injected event bus. HTTP/2 serves no stream route (next
+entry). The Enterprise HTTP engine serves none either: its streaming binding, which resolves
 through the same interface when it is built, is an `exeris-kernel-enterprise` obligation (ADR-043
 Amendment A1, Scope).
 
