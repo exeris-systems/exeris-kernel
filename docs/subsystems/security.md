@@ -428,7 +428,10 @@ For mTLS requirements, operate an mTLS-terminating proxy (e.g., Envoy, Nginx) in
 the authority's host (ADR-074 Amendment A1; [transport.md](transport.md#client-tls)). It presents no
 client certificate and consults no CRL or OCSP. A client is armed only where a crypto provider is
 bound when its engine is built and `exeris.transport.tls` is not `false`; an engine built anywhere
-else dials plaintext. `CommunityOidcIdentityProvider.overJwksEndpoint` fetches its JWKS key set
+else dials plaintext. The S3 blob client is the exception: its endpoint's scheme decides, so an
+`http://` endpoint is plaintext even where a crypto provider is bound, and an `https://` endpoint is
+verified TLS or no store ([storage.md](storage.md#s3-compatible-driver-notes)).
+`CommunityOidcIdentityProvider.overJwksEndpoint` fetches its JWKS key set
 through the `KernelWebClient` the application supplies, so the keys travel over a verified
 connection only when that client's engine was built with a crypto provider bound. Its carrier's
 `eu.exeris.kernel.transport.TransportTlsClientPosture` event records which: `VERIFIED`, or the

@@ -33,16 +33,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   default trust, or that default (`SSL_CERT_FILE`, `SSL_CERT_DIR`) when the key is unset. No setting
   keeps TLS and skips verification. Outbound TLS is armed only where a crypto provider is bound when
   the carrier is built and `exeris.transport.tls` is not `false` (for a `DUAL` carrier, only when its
-  listener holds certificate material); an engine built anywhere else dials plaintext, and each
-  carrier records which in the new `eu.exeris.kernel.transport.TransportTlsClientPosture` event and
-  an INFO line (a WARNING when the default trust has neither file nor directory). A bound crypto
-  provider that cannot verify an outbound peer fails a `CLIENT` carrier at construction and a `DUAL`
-  carrier's `connect`. `HttpClientEngine#send` states the obligation in its `@implSpec` (javadoc
-  only, no signature moved); the Enterprise client is outside it. **Upgrade:** a client that talks
-  to a private-CA or self-signed server needs `crypto.tls.client.trustFile` naming the issuing CA
-  (with any intermediates, since the Community server does not send them) or, for a self-signed
-  server, that certificate; a CA-issued server certificate alone in the file does not anchor its
-  chain.
+  listener holds certificate material); an engine built anywhere else dials plaintext, the S3 blob
+  client excepted, whose endpoint scheme decides; and each carrier records which in the new
+  `eu.exeris.kernel.transport.TransportTlsClientPosture` event and an INFO line (a WARNING when the
+  default trust has neither file nor directory). A bound crypto provider that cannot verify an
+  outbound peer fails a `CLIENT` carrier at construction and a `DUAL` carrier's `connect`, unless the
+  carrier's owner requires plaintext. `HttpClientEngine#send` states the obligation in its
+  `@implSpec` (javadoc only, no signature moved); the Enterprise client is outside it.
+  **Upgrade:** a client that talks to a private-CA or self-signed server needs
+  `crypto.tls.client.trustFile` naming the issuing CA (with any intermediates, since the Community
+  server does not send them) or, for a self-signed server, that certificate; a CA-issued server
+  certificate alone in the file does not anchor its chain.
 
 ### Added
 
@@ -90,6 +91,21 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   files, shapes in `TlsPeerFixtures`) and `startClient(trustAnchor, defaultAuthority)`, and may
   override `assertRefusalDetail` to check its own `rawArgs[0]`. The Enterprise client does not bind
   it.
+
+- **The S3 driver takes an `https://` endpoint** (ADR-056 §10 amendment). The endpoint's scheme now
+  decides the store's transport, wherever the store is built: `https://` is TLS that verifies the
+  server against `crypto.tls.client.trustFile`, else OpenSSL's default trust, and against the
+  endpoint host, sent as the server name; `http://` is plaintext even where a crypto provider is
+  bound, where it took TLS from the provider bound where the store was built. An `https` store needs
+  the Community crypto provider bound where it is built: with none, with a provider that cannot
+  verify an outbound peer, or under `-Dexeris.transport.tls=false`, `createStore` throws
+  `TransportException` `EX-NET-4004` and never downgrades. The default port follows the scheme (80,
+  443). The driver states the scheme to its transport through Community-only overloads —
+  `NativeTcpTransportProvider#createEngine(TransportConfig, CommunityOutboundTls)` and
+  `CommunityHttpProvider#createClientEngine(HttpConfig, CommunityOutboundTls)` — so no SPI type
+  changes; `TransportTlsClientPosture` gains `requirement` and the postures `PLAINTEXT_REQUIRED`,
+  `REFUSED_DECLINED` and `REFUSED_NO_CRYPTO_PROVIDER`. `CommunityS3BlobStorageTlsTckIT` runs
+  `AbstractBlobStorageTck` against MinIO over `https`.
 
 ### Changed
 
@@ -160,6 +176,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   reach it.
 
 ### Fixed
+
+- **The S3 driver's signed `Host` and presigned URLs omit the scheme's default port.** The driver
+  signed and sent `Host: host:port` for every endpoint, and a presigned URL began with `http://` and
+  the same `host:port`. A browser or curl sends `Host` without the default port, so a presigned URL
+  for an endpoint on its scheme's default port was signed over a `Host` its holder never sends. The
+  signed `Host` is now the host alone on the default port, a presigned URL starts with the
+  endpoint's scheme, and the engine still dials `host:port`. A header-signed request is signed and
+  sent with the same value; for an `http://host` endpoint with no port that value is `host`, not
+  `host:80`.
 
 - **A kernel booted with `http.mode=DUAL` starts, and its client engine dials out as a client.**
   `CommunityHttpTransportFactory` derived each engine's transport mode from the subsystem's

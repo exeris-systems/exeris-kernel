@@ -167,10 +167,16 @@ rather than leaving each driver to guess how much it may assume.
       ignored. The driver targets a MinIO-compatible endpoint over a trusted network path; a public S3
       endpoint needs the Enterprise transport.*
 
-      *(Amended 2026-09-26, with ADR-074 Amendment A1: the Community HTTP client engine now speaks
-      TLS, and verifies its server, where a crypto provider is bound when the engine is built. It still
-      takes no TLS from an endpoint scheme, since a request carries none, so the rule stands for the
-      same reason: an `https` endpoint is refused rather than honoured by accident.)*
+      *(Amended 2026-09-27: an `https://` endpoint is honoured, over TLS that verifies the server
+      against the endpoint host (ADR-074 Amendment A1), and an `http://` endpoint is plaintext even
+      where a crypto provider is bound. The driver's client engine states the endpoint's scheme to its
+      transport — `CommunityOutboundTls`, a Community-only requirement on no SPI type — instead of
+      taking TLS from where the store is built. An `https` store needs the Community crypto provider
+      bound where it is built: with none, with a provider that cannot verify an outbound peer, or
+      under `-Dexeris.transport.tls=false`, creation fails with `EX-NET-4004` rather than downgrading.
+      The default port follows the scheme and is omitted from the signed `Host`. Addressing stays
+      path-style, so the verified name is the endpoint host for every bucket; an endpoint that refuses
+      path-style addressing is still out of scope.)*
     - ***A configurable single-object ceiling (`s3.maxObjectBytes`, default 8 MiB) replaces an implicit
       one.** Without multipart upload an object is held in one buffer for the length of a transfer, so a
       ceiling exists whether or not it is named; naming it makes the refusal loud (`EX-BLOB-8005`, before

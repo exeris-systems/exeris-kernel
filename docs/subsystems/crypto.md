@@ -158,8 +158,10 @@ is built, and never reloaded: a changed file reaches only the carriers built aft
 **Where it holds.** The transport arms a verifying client only where a crypto provider is bound when
 the carrier is built and `exeris.transport.tls` is not `false` (for a `DUAL` carrier, only when its
 listener holds certificate material); anywhere else the carrier dials plaintext, and its
-`TransportTlsClientPosture` event says so ([transport.md](transport.md#client-tls)). No setting
-keeps TLS and skips verification.
+`TransportTlsClientPosture` event says so ([transport.md](transport.md#client-tls)). A carrier's
+owner may instead require plaintext, or require verified TLS, which refuses the carrier where TLS
+cannot be armed rather than building it plaintext; the S3 blob client requires what its endpoint's
+scheme names. No setting keeps TLS and skips verification.
 
 **Server chains.** The Community server loads its certificate with `SSL_CTX_use_certificate_file`,
 which takes the first certificate of the file, so it presents its leaf and no intermediates. A client

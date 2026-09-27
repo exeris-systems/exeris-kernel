@@ -223,12 +223,15 @@ should not, this is the clause to revisit first.
   - **Scope.** Outbound TLS is armed only where a crypto provider is bound when the transport is
     built and `exeris.transport.tls` is not `false` — and, for a `DUAL` carrier, only when its
     listener holds certificate material. An engine built anywhere else — outside a booted
-    kernel's scope, or before its crypto subsystem binds — dials plaintext. Each `CLIENT` or `DUAL`
-    carrier records its decision in the `eu.exeris.kernel.transport.TransportTlsClientPosture` JFR
-    event and an INFO log line, so the plaintext case is visible rather than inferred.
+    kernel's scope, or before its crypto subsystem binds — dials plaintext. Both hold except where
+    the engine's owner states the scheme of the peer it dials (the S3 blob client): plaintext for
+    `http`, verified TLS or no engine for `https`. Each `CLIENT` or `DUAL` carrier records its
+    decision, and the requirement it was held to, in the
+    `eu.exeris.kernel.transport.TransportTlsClientPosture` JFR event and an INFO log line, so the
+    plaintext case is visible rather than inferred.
   - **A provider that cannot verify.** A bound crypto provider other than the Community one fails a
     `CLIENT` carrier at construction and a `DUAL` carrier's `connect`, rather than dialling
-    unverified.
+    unverified; a carrier whose owner requires plaintext is built.
   - **Verification.** The contract is the `@implSpec` of `HttpClientEngine#send`, and
     `AbstractHttpClientTlsPeerVerificationTck` judges it: a suite of its own, apart from
     `AbstractHttpClientEngineTck`, so that a provider binds it once its client verifies rather than
