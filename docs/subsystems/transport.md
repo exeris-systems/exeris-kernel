@@ -246,7 +246,7 @@ A listener serves TLS when it holds certificate material. What a `CLIENT` or `DU
 its **outbound** connections is decided once, when `NativeTcpTransportProvider` builds it:
 
 | Posture | When | Outbound connections |
-|:--|:--|:--|
+| :-- | :-- | :-- |
 | `VERIFIED` | `exeris.transport.tls` is not `false`, a crypto provider is bound where the carrier is built, and — for `DUAL` — the listener holds material | TLS, verifying the server (below) |
 | `PLAINTEXT_DECLINED` | `-Dexeris.transport.tls=false` | plaintext |
 | `PLAINTEXT_NO_CRYPTO_PROVIDER` | no crypto provider bound where the carrier is built | plaintext |

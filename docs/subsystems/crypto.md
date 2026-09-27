@@ -137,10 +137,10 @@ dropped. Anything else is a DNS name: one trailing dot removed, lower-cased, ASC
 in labels of 1–63 letters, digits, hyphens or underscores (an internationalised name in its A-label
 form). `OffHeapTlsEngine#expectPeer` applies it once, to an unbound client engine:
 
-| Identity  | Calls                                                                                         | Server name indication |
-|:----------|:----------------------------------------------------------------------------------------------|:-----------------------|
-| DNS name  | `X509_VERIFY_PARAM_set_hostflags(NO_PARTIAL_WILDCARDS \| NEVER_CHECK_SUBJECT)`, then `X509_VERIFY_PARAM_set1_host` with an explicit length | `SSL_ctrl(SSL_CTRL_SET_TLSEXT_HOSTNAME)` |
-| IP address | `X509_VERIFY_PARAM_set1_ip` with the 4 or 16 address bytes                                   | none                   |
+| Identity | Calls | Server name indication |
+| :-- | :-- | :-- |
+| DNS name | `X509_VERIFY_PARAM_set_hostflags(NO_PARTIAL_WILDCARDS \| NEVER_CHECK_SUBJECT)`, then `X509_VERIFY_PARAM_set1_host` with an explicit length | `SSL_ctrl(SSL_CTRL_SET_TLSEXT_HOSTNAME)` |
+| IP address | `X509_VERIFY_PARAM_set1_ip` with the 4 or 16 address bytes | none |
 
 The subject common name is never consulted, `f*.example.test` matches nothing, and an identity of
 one kind never matches a subject alternative name of the other. A handshake that OpenSSL completes
@@ -175,7 +175,7 @@ canonical layout, cast with `MethodHandles.explicitCastArguments` to a fixed `lo
 call site has one shape on LP64 and LLP64 (the LLP64 case has no CI).
 
 | Group | Symbols |
-|:------|:--------|
+| :-- | :-- |
 | Peer verification | `SSL_CTX_set1_cert_store`, `SSL_get0_param`, `X509_VERIFY_PARAM_set1_host`, `X509_VERIFY_PARAM_set_hostflags`, `X509_VERIFY_PARAM_set1_ip`, `SSL_ctrl`, `SSL_get_verify_result`, `X509_verify_cert_error_string` |
 | Trust store | `X509_STORE_new`, `X509_STORE_free`, `X509_STORE_set_default_paths`, `X509_STORE_load_file`, `X509_get_default_cert_file`, `X509_get_default_cert_dir`, `X509_get_default_cert_file_env`, `X509_get_default_cert_dir_env` |
 | Error queue | `ERR_clear_error` |
@@ -184,6 +184,7 @@ call site has one shape on LP64 and LLP64 (the LLP64 case has no CI).
 `X509_VERIFY_PARAM_set1_ip_asc` (its address parser differs from the JDK's) are deliberately not bound.
 
 **Ownership.**
+
 - The `X509_STORE` belongs to `CommunityTlsClientTrust`: its creator holds one reference, and each
   context takes its own through `SSL_CTX_set1_cert_store`, so a context outlives the trust's
   `close()`. The trust is handed over under a lease (`retainStore`/`release`, CAS-counted like
@@ -475,14 +476,14 @@ decrypt-side failures without parsing the `detail` string.
 A client handshake refusal carries one of the fixed `detail` strings in `TlsFailureDetail`, and
 `[0]` holds what that detail names:
 
-| `detail` (`TlsFailureDetail`)                                          | `rawArgs[0]`                 |
-|:-----------------------------------------------------------------------|:-----------------------------|
-| `peer certificate verification failed` (`PEER_VERIFICATION_FAILED`)    | the `X509_V_*` code, e.g. `18` self-signed, `20` untrusted issuer, `62` host mismatch, `64` IP mismatch |
-| `handshake failed` (`HANDSHAKE_FAILED`)                                | the `SSL_get_error` code     |
-| `peer identity rejected` (`PEER_IDENTITY_REJECTED`)                    | `-1`                         |
-| `authority host is neither a DNS name nor an IP literal` (`INVALID_PEER_NAME`) | `-1`                 |
-| `client engine has no expected peer identity` (`NO_PEER_IDENTITY`)     | `-1`                         |
-| `bound crypto provider cannot verify an outbound peer` (`NO_PEER_VERIFIER`) | `-1`                    |
+| `detail` (`TlsFailureDetail`) | `rawArgs[0]` |
+| :-- | :-- |
+| `peer certificate verification failed` (`PEER_VERIFICATION_FAILED`) | the `X509_V_*` code, e.g. `18` self-signed, `20` untrusted issuer, `62` host mismatch, `64` IP mismatch |
+| `handshake failed` (`HANDSHAKE_FAILED`) | the `SSL_get_error` code |
+| `peer identity rejected` (`PEER_IDENTITY_REJECTED`) | `-1` |
+| `authority host is neither a DNS name nor an IP literal` (`INVALID_PEER_NAME`) | `-1` |
+| `client engine has no expected peer identity` (`NO_PEER_IDENTITY`) | `-1` |
+| `bound crypto provider cannot verify an outbound peer` (`NO_PEER_VERIFIER`) | `-1` |
 
 Where each surfaces:
 
