@@ -183,6 +183,21 @@ class CommunityS3EndpointSchemeTest {
     }
 
     @Test
+    @DisplayName("https to a server that reads plaintext: it receives a TLS record, and never a request")
+    void httpsEndpointSendsNoRequestInTheClear() throws Exception {
+        try (S3StubServer stub = S3StubServer.plaintext();
+             BlobStore store = createStore("https://localhost:" + stub.port(), crypto,
+                     trustKey(trusted.certificate()))) {
+            Throwable failure = catchThrowable(() -> asTenant(() -> store.stat(MISSING)));
+
+            assertThat(stub.requests()).as("no request, and so no signed credential, crossed in the clear")
+                    .isEmpty();
+            assertThat(stub.tlsRecordsRefused()).as("the connection opened with a TLS record").isPositive();
+            assertThat(failure).as("a server that never answers the handshake fails the call").isNotNull();
+        }
+    }
+
+    @Test
     @DisplayName("https: a server whose chain the trust does not anchor is refused with 20, before any request")
     void httpsEndpointRefusesAnUntrustedServer() throws Exception {
         TlsTestAuthority.Issued leaf = untrusted.issue(TlsTestAuthority.dns("localhost"));
