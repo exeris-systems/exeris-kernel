@@ -213,6 +213,11 @@ final class NativeTcpReactor {
         if (key.isWritable()) {
             host.flushStream(attached, key);
         }
+        if (attached.isRemoteClosed() && key.isValid()) {
+            // A socket at end-of-stream stays readable on a level-triggered selector. With nothing
+            // left to read, OP_READ would select the key on every turn until the stream closes.
+            key.interestOps(key.interestOps() & ~SelectionKey.OP_READ);
+        }
     }
 
     private boolean drainPendingRequests() {

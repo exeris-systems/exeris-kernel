@@ -775,7 +775,8 @@ final class NativeTcpStream implements TransportStream {
     // hot ingress path. Same pattern in decryptIngress below.
     @SuppressWarnings("PMD.UseTryWithResources")
     /* default */ LoanedBuffer readTlsIngressFromFd() {
-        if (tlsEngine == null) {
+        // After the peer's close an unwrap throws, and a throw here resets the stream over its queued bytes.
+        if (tlsEngine == null || remoteClosed.get()) {
             return null;
         }
         if (!ensureTlsReady(false)) {

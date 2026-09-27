@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.core.crypto.openssl;
 
+import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -13,7 +14,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A scripted OpenSSL for Community tests that need a real {@code OffHeapTlsEngine} whose handshake
- * outcome is chosen by the test rather than by a peer.
+ * outcome, and what it reads after the handshake, are chosen by the test rather than by a peer.
  *
  * <p>Lives in Core's package, in the Community test tree, because {@link CoreSslHandles} is built
  * only through its package-private constructor. Every return value is a field; every handle is bound
@@ -26,6 +27,8 @@ public final class ScriptedOpenSsl {
 
     private final Deque<Integer> connectResults = new ArrayDeque<>();
     private final AtomicInteger connectCalls = new AtomicInteger();
+    private final Deque<byte[]> readRecords = new ArrayDeque<>();
+    private final AtomicInteger readCalls = new AtomicInteger();
     private final AtomicInteger clears = new AtomicInteger();
     private volatile int errorResult = CoreOpenSslLoader.SSL_ERROR_WANT_READ;
     private volatile long verifyResult = CoreOpenSslLoader.X509_V_OK;
@@ -42,6 +45,21 @@ public final class ScriptedOpenSsl {
     public synchronized ScriptedOpenSsl connectResults(int... results) {
         for (int result : results) {
             connectResults.addLast(result);
+        }
+        return this;
+    }
+
+    /**
+     * Queues the plaintext the next {@code SSL_read} calls return, one record per call; once the
+     * queue is empty, each call returns {@code -1} and {@link #errorResult(int)} decides what that
+     * means.
+     *
+     * @param records the plaintext of each record, each no longer than the caller's buffer
+     * @return this
+     */
+    public synchronized ScriptedOpenSsl readRecords(byte[]... records) {
+        for (byte[] record : records) {
+            readRecords.addLast(record.clone());
         }
         return this;
     }
@@ -84,6 +102,11 @@ public final class ScriptedOpenSsl {
         return connectCalls.get();
     }
 
+    /** @return how many times {@code SSL_read} ran */
+    public int readCalls() {
+        return readCalls.get();
+    }
+
     /** @return how many times {@code ERR_clear_error} ran */
     public int clears() {
         return clears.get();
@@ -104,7 +127,7 @@ public final class ScriptedOpenSsl {
                 bind("sslConnect", int.class, long.class),
                 bind("sslAccept", int.class, long.class));
         CoreSslHandles.IoHandles io = new CoreSslHandles.IoHandles(
-                bind("sslReadWrite", int.class, long.class, long.class, int.class),
+                bind("sslRead", int.class, long.class, long.class, int.class),
                 bind("sslReadWrite", int.class, long.class, long.class, int.class),
                 bind("sslAccept", int.class, long.class),
                 bind("zero", int.class, long.class),
@@ -167,6 +190,20 @@ public final class ScriptedOpenSsl {
         connectCalls.incrementAndGet();
         Integer next = connectResults.pollFirst();
         return next == null ? -1 : next;
+    }
+
+    @SuppressWarnings("unused")
+    private synchronized int sslRead(long ssl, long buffer, int length) {
+        readCalls.incrementAndGet();
+        byte[] record = readRecords.pollFirst();
+        if (record == null) {
+            return -1;
+        }
+        if (record.length > length) {
+            throw new AssertionError("a scripted record of " + record.length + " bytes does not fit " + length);
+        }
+        MemorySegment.ofAddress(buffer).reinterpret(record.length).copyFrom(MemorySegment.ofArray(record));
+        return record.length;
     }
 
     @SuppressWarnings("unused")

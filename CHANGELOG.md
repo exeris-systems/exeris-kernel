@@ -198,6 +198,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   a successful record make no extra native call. On OpenSSL 4.0 the stale entry stayed on the queue
   but did not turn a neighbour's retry into a failure.
 
+- **What a TLS peer sends before it closes stays readable.** A socket at end-of-stream stays
+  readable, so after a Community stream's engine reported the peer's close the reactor unwrapped it
+  again on its next turn; the engine threw, the reactor handled the throw as a dispatch fault, and
+  resetting the stream discarded the bytes still queued for the reader, who saw end-of-stream
+  instead. An HTTP client whose server sent a whole response and closed could fail with
+  `EX-NET-4002` (`remote peer closed connection without returning HTTP response`). A stream no
+  longer unwraps after its engine reported the peer's close, and the reactor stops selecting a
+  connection for read once its stream has seen the peer's close, TLS or plaintext, instead of on
+  every turn until the stream closes. A peer's close no longer emits
+  `eu.exeris.kernel.transport.CommunityReactorDispatchFault`.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
