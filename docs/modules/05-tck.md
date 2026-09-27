@@ -1,77 +1,93 @@
+---
+title: "Physical Tier: TCK (The Judge)"
+type: module
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-27
+---
+
 # Physical Tier: TCK (The Judge)
 
 **Module:** `exeris-kernel-tck` (Technology Compatibility Kit)
-**Dependencies:** `exeris-kernel-spi` (compile)
+**Dependencies:** `exeris-kernel-spi` (compile); JUnit Jupiter, AssertJ, Mockito and JMH, also at
+compile scope, because the suites are this module's main sources.
 
-> **Dependency direction:** `exeris-kernel-tck` depends **only** on `exeris-kernel-spi`.
-> It is `exeris-kernel-core`, `exeris-kernel-community`, and `exeris-kernel-enterprise` that
-> each consume `exeris-kernel-tck` as a `test-jar` dependency — not the other way around.
+> **Dependency direction:** the only Exeris module `exeris-kernel-tck` depends on is
+> `exeris-kernel-spi`. It is `exeris-kernel-core`, `exeris-kernel-community` and
+> `exeris-kernel-community-kafka` that consume `exeris-kernel-tck`, at `test` scope — not the other
+> way around. They take its main jar; the module publishes no test-jar.
 
-## 🗺️ Contract Verification Architecture: One Suite, Two Implementations
+## 🗺️ Contract Verification Architecture: One Suite, Many Bindings
 
-The TCK enforces that every SPI contract produces identical observable results, regardless of whether
-the underlying implementation is Community or Enterprise. A single abstract test class is executed
-against both implementations in CI — **both must pass, or neither ships**.
+An abstract suite states a contract once, in SPI types, and leaves the provider under test to its
+template methods. An implementation binds the suite with a concrete subclass that supplies that
+provider, so each binding is judged by the suite's assertions rather than its own. The bindings in
+this repository are Core's and Community's. Enterprise is not in this repository
+([Enterprise](04-enterprise.md)), and its bindings are not described here.
+
+The diagram shows the suites this page names and the bindings that run them here.
 
 ```mermaid
 graph TD
-    subgraph "exeris-kernel-tck (Abstract Suites — SPI-only)"
-        TLS_TCK["AbstractCryptoEngineTck + CryptoZeroAllocTck\n─────────────────\n(illustrative — see in-repo class for actual test names)\ntestHandshakeCompletes()\ntestZeroAllocBoundedOnCommunity()\ntestSessionResumption()\ntestDoubleFreeDetection()"]
-        MEM_TCK["AbstractMemoryAllocatorTck\n─────────────────\n(illustrative — see in-repo class for actual test names)\ntestAllocateAndRelease()\ntestSlabPoolExhaustion()\ntestLeakDetectionParanoid()\ntestNUMALocalAlloc()"]
-        REPO_TCK["AbstractPersistenceEngineTck\n─────────────────\n(illustrative — see in-repo class for actual test names)\ntestSaveAndLoad()\ntestTransactionRollback()\ntestConcurrentWriters()"]
+    subgraph "exeris-kernel-tck (abstract suites, SPI types only)"
+        TLS_TCK["AbstractCryptoEngineTck"]
+        ZA_TCK["CryptoZeroAllocTck"]
+        MEM_TCK["AbstractMemoryAllocatorTck"]
+        REPO_TCK["AbstractPersistenceEngineTck"]
     end
 
-    subgraph "exeris-kernel-core (Test Orchestration Suites — test-jar)"
-        PAQS_TCK["AbstractPaqsSchedulerTck\n─────────────────\n(illustrative — see in-repo class for actual test names)\ntestAdmitUnderWatermark()\ntestLoadShedAboveCeiling()\ntestPriorityOrdering()\ntestRefCountOnShed()\n<i>(eu.exeris.kernel.core.transport.tck)</i>"]
+    subgraph "exeris-kernel-core src/test (Core types, not published)"
+        PAQS_TCK["AbstractPaqsSchedulerTck<br/>eu.exeris.kernel.core.transport.tck"]
     end
 
-    subgraph "Community Implementations (OSS)"
-        C_PAQS["CommunityPaqsScheduler\n(conceptual placeholder — TRL-4)"]
-        C_TLS["CommunityTlsEngine / OffHeapTlsEngine\n(conceptual placeholder — TRL-4)"]
-        C_MEM["PanamaArenaAllocator\n(conceptual placeholder — TRL-4)"]
-        C_REPO["JdbcPersistenceEngine\n(conceptual placeholder — TRL-4)"]
+    subgraph "Core bindings"
+        C_TLS["CoreOffHeapTlsEngineTckTest<br/>OffHeapTlsEngine"]
+        C_ZA["CoreOffHeapTlsEngineZeroAllocTckTest<br/>OffHeapTlsEngine, guard path"]
+        C_PAQS["CorePaqsSchedulerTckTest<br/>Core PaqsScheduler, stub allocator"]
     end
 
-    subgraph "Enterprise Implementations (Proprietary — out-of-repo)"
-        E_PAQS["EnterprisePaqsScheduler\n(conceptual placeholder)"]
-        E_TLS["EnterpriseTlsEngine / OffHeapTlsEngine\n(conceptual placeholder)"]
-        E_MEM["GlobalMemoryArbiter\n(conceptual placeholder)"]
-        E_REPO["NativePersistenceEngine\n(conceptual placeholder)"]
+    subgraph "Community bindings"
+        M_TLS["CommunityKernelCryptoProviderTckTest<br/>CommunityKernelCryptoProvider"]
+        M_MEM["CommunityMemoryAllocatorTckTest<br/>CommunityMemoryProvider"]
+        M_REPO["CommunityPersistenceEngineTckTest<br/>CommunityPersistenceProvider"]
     end
 
-    PAQS_TCK -->|"executed against"| C_PAQS & E_PAQS
-    TLS_TCK  -->|"executed against"| C_TLS  & E_TLS
-    MEM_TCK  -->|"executed against"| C_MEM  & E_MEM
-    REPO_TCK -->|"executed against"| C_REPO & E_REPO
+    TLS_TCK  -->|"bound by"| C_TLS & M_TLS
+    ZA_TCK   -->|"bound by"| C_ZA
+    MEM_TCK  -->|"bound by"| M_MEM
+    REPO_TCK -->|"bound by"| M_REPO
+    PAQS_TCK -->|"bound by"| C_PAQS
 
-    style PAQS_TCK fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
     style TLS_TCK  fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
+    style ZA_TCK   fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
     style MEM_TCK  fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
     style REPO_TCK fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
-    style C_PAQS fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
-    style C_TLS  fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
-    style C_MEM  fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
-    style C_REPO fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
-    style E_PAQS fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
-    style E_TLS  fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
-    style E_MEM  fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
-    style E_REPO fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+    style PAQS_TCK fill:#1a3a2a,color:#e0e0ff,stroke:#2ecc71
+    style C_TLS  fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+    style C_ZA   fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+    style C_PAQS fill:#2a1a4a,color:#e0e0ff,stroke:#9b59b6
+    style M_TLS  fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
+    style M_MEM  fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
+    style M_REPO fill:#0f3460,color:#e0e0ff,stroke:#4a90d9
 ```
 
-## 📊 SLO Enforcement Matrix
+## 📊 What the Suites Assert
 
-The following limits are **hard gates** in the TCK. A test failure means the implementation violates
-the Performance Contract and must not be merged, regardless of functional correctness.
+Allocation and buffer leaks are asserted from measurements, and a breach fails the bound test with
+an assertion error:
 
-| Contract                        | Measurement Method              | Community Limit           | Enterprise Limit          | Failure Mode         |
-|:--------------------------------|:--------------------------------|:--------------------------|:--------------------------|:---------------------|
-| **Zero-Heap on TLS Hot Path**   | JFR allocation profiler (`CryptoZeroAllocTck`) | 0 bytes (network path) — best-effort bounded | 0 bytes (full path) — hard guarantee | `AssertionError`     |
-| **Request Latency P99**         | JMH `@Benchmark` + histogram    | ≤ 200 µs                  | ≤ 50 µs                   | `AssertionError`     |
-| **LoanedBuffer Leak**           | `LeakDetectionMode.PARANOID`    | 0 unreleased segments     | 0 unreleased segments     | `LeakDetectedError`  |
-| **PAQS Load-Shed Latency**      | Nanosecond timer in TCK         | ≤ 5 µs decision           | ≤ 5 µs decision           | `AssertionError`     |
-| **MemoryAllocator O(1)**        | JMH + allocation counter        | O(1) per alloc/release    | O(1) per alloc/release    | PMD rule violation   |
-| **ABI Symbol Resolution**       | Planned: ABI symbol TCK (OpenSSL/FFM) | All symbols present       | All symbols present       | `UnsatisfiedLinkError` |
-| **Bootstrap Latency**           | JFR `BootstrapJfrEvents.KernelBootReadyEvent` | ≤ 500 ms cold start       | ≤ 800 ms cold start       | `AssertionError`     |
+| Contract | Suite | Assertion | In-repository binding |
+| :-- | :-- | :-- | :-- |
+| Allocation on the TLS path | `CryptoZeroAllocTck`, over `JfrAllocationMonitor` (JFR) | No `eu.exeris.*` heap allocation per iteration when the binding overrides `supportsZeroGcHotPath()` to return `true`; otherwise at most `maxExerisAllocationsPerIteration()` per iteration (default 5) | `CoreOffHeapTlsEngineZeroAllocTckTest`: the zero contract, measured on the guard path; the steady-state cipher path is not measured |
+| `LoanedBuffer` leaks | `AbstractMemoryLeakDetectionTck` | The allocator runs in `LeakDetectionMode.PARANOID`; `allocatedBytes()` returns to 0 once every chunk is closed; `leakCount()` rises after GC for a buffer left open on purpose | `CommunityMemoryLeakDetectionParanoidTckTest` |
+
+`CryptoZeroAllocTck` extends `AbstractSubsystemZeroAllocTck`, the base other subsystems' allocation
+suites share; each binding chooses its tier and its per-iteration budget.
+
+Latency, load-shedding time, bootstrap time and allocator complexity are not TCK gates. The abstract
+JMH benchmarks in `eu.exeris.kernel.tck.perf` measure those paths against targets their own Javadoc
+states, and assert nothing.
 
 > **Adding a new SPI contract?** You MUST implement a corresponding `Abstract*Tck` class in `exeris-kernel-tck`
 > before the PR is mergeable. A contract without a TCK suite is an unverified contract.
@@ -80,9 +96,11 @@ the Performance Contract and must not be merged, regardless of functional correc
 
 1. **Verification, Not Implementation:** TCK provides test suites that verify if a given Driver (Community/Enterprise)
    correctly implements the SPI.
-2. **SLO Enforcement:** Contains JMH benchmarks and JFR inspectors to verify that a driver does not violate the
-   "Zero-Allocation" or "Latency < 200µs" rules.
-3. **Leak Detection:** Tests must run with `LeakDetectionMode.PARANOID` to catch unclosed off-heap memory segments.
+2. **Measured, then asserted:** allocation and carrier pinning are asserted from JFR recordings
+   (`JfrAllocationMonitor`; `AbstractCarrierPinningTck` over `JfrPinningMonitor`). The benchmarks
+   measure and do not assert (above).
+3. **Leak Detection:** `AbstractMemoryLeakDetectionTck` forces `LeakDetectionMode.PARANOID` to catch
+   unclosed off-heap memory segments; `AbstractLeakDetectionSampledTck` states the `SAMPLED` contract.
 
 ## HTTP TCK (Current Repository State)
 
@@ -113,6 +131,10 @@ Concrete Core bindings now present:
 - `CoreHttpHandlerTckTest` → `AbstractHttpHandlerTck`
 - `CoreHttpExchangeTckTest` → `AbstractHttpExchangeTck`
 
+Community binds the same five suites in `exeris-kernel-community` (`CommunityHttpProviderTckTest`,
+`CommunityHttpServerEngineTckTest`, `CommunityHttpClientEngineTckTest`, `CommunityHttpHandlerTckTest`,
+`CommunityHttpExchangeTckTest`).
+
 Binding mechanics:
 
 - `CoreHttpProviderFixture` provides test-only minimal SPI fixtures for provider/server/client/exchange.
@@ -121,7 +143,7 @@ Binding mechanics:
 ```mermaid
 graph TD
     A[AbstractHttp*Tck in exeris-kernel-tck] --> B[CoreHttp*TckTest in exeris-kernel-core tests]
-    B --> C[CoreHttpProviderFixture (test-only)]
+    B --> C["CoreHttpProviderFixture (test-only)"]
     C --> D[SPI contract assertions]
 ```
 
@@ -132,5 +154,6 @@ Non-goal of these bindings:
 
 ## Stability
 
-The `Abstract*Tck` suites listed here back the 'TCK coverage' column of the
-[SPI Stability Matrix](../stability-matrix.md).
+The 'TCK coverage' column of the [SPI Stability Matrix](../stability-matrix.md) names, per SPI
+package, the `Abstract*Tck` suites that pin its behavior; this page describes how those suites are
+built and bound.
