@@ -4,6 +4,12 @@
  */
 package eu.exeris.kernel.community.storage;
 
+import javax.net.ssl.ExtendedSSLSession;
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SNIHostName;
+import javax.net.ssl.SNIServerName;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -13,6 +19,17 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.KeyStore;
+import java.security.PrivateKey;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -28,9 +45,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>It answers {@code PUT}, {@code HEAD}, {@code GET} and {@code DELETE} on a request target from an
  * in-memory map, checks no signature, and keeps each connection alive until the client closes it. It
- * records every request's method, target and {@code Host}, and every connection it accepts. A
- * connection whose first byte opens a TLS record ({@code 0x16}) is counted and closed unread, so a
- * client that dials TLS here fails at once instead of waiting on a server that waits for a request.
+ * records every request's method, target and {@code Host}, and every connection it accepts.
+ *
+ * <p>{@link #plaintext()} counts and closes unread a connection whose first byte opens a TLS record
+ * ({@code 0x16}), so a client that dials TLS there fails at once instead of waiting on a server that
+ * waits for a request. {@link #tls} serves over the JDK's own TLS stack, independent of the provider
+ * under test, records the server name each completed handshake requested, and counts a handshake
+ * that fails as a connection that served nothing.
  */
 final class S3StubServer implements AutoCloseable {
 
@@ -63,16 +84,22 @@ final class S3StubServer implements AutoCloseable {
         }
     }
 
+    private static final char[] KEY_PASSWORD = "stub".toCharArray();
+
     private final ServerSocket listener;
+    private final boolean tls;
     private final Thread acceptor;
     private final AtomicInteger accepted = new AtomicInteger();
     private final AtomicInteger tlsRecordsRefused = new AtomicInteger();
+    private final AtomicInteger handshakesFailed = new AtomicInteger();
+    private final List<String> serverNames = new CopyOnWriteArrayList<>();
     private final List<Request> requests = new CopyOnWriteArrayList<>();
     private final Map<String, StoredObject> objects = new ConcurrentHashMap<>();
     private final List<Socket> open = new CopyOnWriteArrayList<>();
 
-    private S3StubServer(ServerSocket listener) {
+    private S3StubServer(ServerSocket listener, boolean tls) {
         this.listener = listener;
+        this.tls = tls;
         this.acceptor = Thread.ofPlatform().daemon().name("s3-stub-acceptor").unstarted(this::acceptAll);
     }
 
@@ -83,7 +110,38 @@ final class S3StubServer implements AutoCloseable {
      * @throws IOException if the port cannot be bound
      */
     static S3StubServer plaintext() throws IOException {
-        S3StubServer server = new S3StubServer(new ServerSocket(0, 16, InetAddress.getByName("localhost")));
+        S3StubServer server = new S3StubServer(new ServerSocket(0, 16, InetAddress.getByName("localhost")), false);
+        server.acceptor.start();
+        return server;
+    }
+
+    /**
+     * Starts a TLS stub on an ephemeral port of {@code localhost}, presenting {@code certificate}.
+     *
+     * @param certificate the PEM certificate to present
+     * @param privateKey  its PEM PKCS#8 key
+     * @return the started stub
+     * @throws IOException              if the port cannot be bound or a file cannot be read
+     * @throws GeneralSecurityException if the material cannot be loaded
+     */
+    static S3StubServer tls(Path certificate, Path privateKey) throws IOException, GeneralSecurityException {
+        X509Certificate leaf;
+        try (InputStream in = Files.newInputStream(certificate)) {
+            leaf = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(in);
+        }
+        String pem = Files.readString(privateKey, StandardCharsets.US_ASCII);
+        String body = pem.replaceAll("-----(BEGIN|END) PRIVATE KEY-----", "").replaceAll("\\s", "");
+        PrivateKey key = KeyFactory.getInstance(leaf.getPublicKey().getAlgorithm())
+                .generatePrivate(new PKCS8EncodedKeySpec(Base64.getDecoder().decode(body)));
+        KeyStore store = KeyStore.getInstance("PKCS12");
+        store.load(null, null);
+        store.setKeyEntry("leaf", key, KEY_PASSWORD, new Certificate[]{leaf});
+        KeyManagerFactory keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+        keys.init(store, KEY_PASSWORD);
+        SSLContext context = SSLContext.getInstance("TLS");
+        context.init(keys.getKeyManagers(), null, null);
+        S3StubServer server = new S3StubServer(context.getServerSocketFactory()
+                .createServerSocket(0, 16, InetAddress.getByName("localhost")), true);
         server.acceptor.start();
         return server;
     }
@@ -105,6 +163,16 @@ final class S3StubServer implements AutoCloseable {
     /** The requests read, in arrival order. */
     List<Request> requests() {
         return List.copyOf(requests);
+    }
+
+    /** The server name each completed TLS handshake requested, {@code null} for none, in order. */
+    List<String> serverNames() {
+        return List.copyOf(serverNames);
+    }
+
+    /** TLS handshakes that failed, each on a connection that served nothing. */
+    int handshakesFailed() {
+        return handshakesFailed.get();
     }
 
     @Override
@@ -137,14 +205,15 @@ final class S3StubServer implements AutoCloseable {
     private void serve(Socket socket) {
         try (socket) {
             socket.setSoTimeout(SOCKET_TIMEOUT_MILLIS);
+            if (tls && !handshake((SSLSocket) socket)) {
+                return;
+            }
             InputStream in = new BufferedInputStream(socket.getInputStream());
             OutputStream out = socket.getOutputStream();
-            in.mark(1);
-            if (in.read() == TLS_HANDSHAKE_RECORD) {
+            if (!tls && opensWithTlsRecord(in)) {
                 tlsRecordsRefused.incrementAndGet();
                 return;
             }
-            in.reset();
             Head head;
             while ((head = readHead(in)) != null) {
                 byte[] body = in.readNBytes(head.contentLength());
@@ -156,6 +225,26 @@ final class S3StubServer implements AutoCloseable {
         } finally {
             open.remove(socket);
         }
+    }
+
+    /** Completes the server side of the handshake and records the requested server name. */
+    private boolean handshake(SSLSocket socket) {
+        try {
+            socket.startHandshake();
+        } catch (IOException refused) {
+            handshakesFailed.incrementAndGet();
+            return false;
+        }
+        List<SNIServerName> requested = ((ExtendedSSLSession) socket.getSession()).getRequestedServerNames();
+        serverNames.add(requested.isEmpty() ? null : ((SNIHostName) requested.getFirst()).getAsciiName());
+        return true;
+    }
+
+    private static boolean opensWithTlsRecord(InputStream in) throws IOException {
+        in.mark(1);
+        boolean record = in.read() == TLS_HANDSHAKE_RECORD;
+        in.reset();
+        return record;
     }
 
     private void respond(OutputStream out, Head head, byte[] body) throws IOException {

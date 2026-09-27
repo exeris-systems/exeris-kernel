@@ -39,7 +39,9 @@ import java.util.Optional;
  * Head-of-line isolation is why this engine is private.
  *
  * <p>The engine's transport follows the endpoint's scheme ({@link CommunityS3Settings.Scheme#outboundTls()}),
- * not what is bound where the store is built.
+ * not what is bound where the store is built: plaintext for {@code http}, and for {@code https} TLS
+ * that verifies the server against the endpoint host — the host of the dialled authority, which the
+ * signed {@code Host} header names too — or no engine.
  *
  * @since 0.11
  */

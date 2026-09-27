@@ -9,25 +9,34 @@ import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Locale;
 import java.util.Map;
 
 /**
  * What the S3-compatible driver needs, read once out of {@link BlobStorageConfig} (ADR-056 §10).
  *
- * <p>{@code location} carries the endpoint — {@code http://host:port} — and everything else arrives
- * through {@code properties}, because the SPI record deliberately has no field the kernel could
- * interpret as a storage topology.
+ * <p>{@code location} carries the endpoint — {@code http://host[:port]} or
+ * {@code https://host[:port]} — and everything else arrives through {@code properties}, because the
+ * SPI record deliberately has no field the kernel could interpret as a storage topology.
  *
- * <h2>Cleartext only, and said out loud</h2>
- * <p>An {@code http://} endpoint is plaintext wherever the store is built: its client engine
- * requires plaintext of its transport ({@link Scheme#outboundTls()}), whatever crypto provider is
- * bound there. An {@code https://} endpoint is rejected at construction rather than silently
- * downgraded — sending SigV4 credentials in the clear because a scheme was ignored is exactly the
- * failure that must never be quiet. This driver targets a MinIO-compatible endpoint reached over a
- * trusted network path; a public S3 endpoint needs the Enterprise transport.
+ * <h2>The scheme decides</h2>
+ * <p>The client engine requires of its transport what the scheme says ({@link Scheme#outboundTls()}),
+ * wherever the store is built. {@code http://} is plaintext, even where a crypto provider is bound.
+ * {@code https://} is TLS that verifies the server against the endpoint host, or no store: without the
+ * Community crypto provider bound where the store is built, or under
+ * {@code -Dexeris.transport.tls=false}, the store is not created. It is never downgraded — sending SigV4
+ * credentials in the clear because a scheme was ignored is exactly the failure that must never be
+ * quiet. The default port follows the scheme.
+ *
+ * <p>The host is read once, lower-cased and without a trailing dot, and every authority the driver
+ * uses is built from it: the dialled one ({@link #dialAuthority()}), the signed {@code Host}
+ * ({@link #hostHeader()}) and a presigned URL's ({@link #origin()}). The name the transport verifies
+ * and sends as the server name is the host of the dialled authority, so all four agree. Addressing is
+ * path-style, so no bucket enters a host name.
  *
  * @param scheme         endpoint scheme, which decides the client engine's transport
- * @param host           endpoint host
+ * @param host           endpoint host, lower-cased, without a trailing dot; an IPv6 literal keeps its
+ *                       brackets
  * @param port           endpoint port
  * @param bucket         bucket every object lands in; tenants are separated by key prefix, not by bucket
  * @param accessKey      SigV4 access key id
@@ -129,11 +138,11 @@ import java.util.Map;
      */
     /* default */ static CommunityS3Settings from(BlobStorageConfig config) {
         URI endpoint = parseEndpoint(config.location());
-        Scheme scheme = Scheme.HTTP;
+        Scheme scheme = Scheme.of(endpoint.getScheme());
         Map<String, String> properties = config.properties();
         return new CommunityS3Settings(
                 scheme,
-                endpoint.getHost(),
+                normalisedHost(endpoint, config.location()),
                 endpoint.getPort() < 0 ? scheme.defaultPort() : endpoint.getPort(),
                 required(properties, BUCKET),
                 required(properties, ACCESS_KEY),
@@ -195,16 +204,24 @@ import java.util.Map;
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("location must be an endpoint URI, got: " + location, e);
         }
-        if (!Scheme.HTTP.token().equalsIgnoreCase(endpoint.getScheme())) {
-            throw new IllegalArgumentException(
-                    "location must use the http scheme — this driver takes no TLS from an endpoint "
-                            + "scheme, so an https endpoint could be sent in the clear; got: "
-                            + endpoint.getScheme());
-        }
+        Scheme.of(endpoint.getScheme());
         if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {
             throw new IllegalArgumentException("location must carry a host, got: " + location);
         }
         return endpoint;
+    }
+
+    /**
+     * The endpoint host in the form the transport verifies a name in: lower-cased, one trailing dot
+     * removed.
+     */
+    private static String normalisedHost(URI endpoint, String location) {
+        String host = endpoint.getHost().toLowerCase(Locale.ROOT);
+        String withoutDot = host.endsWith(".") ? host.substring(0, host.length() - 1) : host;
+        if (withoutDot.isEmpty()) {
+            throw new IllegalArgumentException("location must carry a host, got: " + location);
+        }
+        return withoutDot;
     }
 
     private static String required(Map<String, String> properties, String key) {
@@ -279,6 +296,24 @@ import java.util.Map;
          */
         /* default */ CommunityOutboundTls outboundTls() {
             return outboundTls;
+        }
+
+        /**
+         * The scheme an endpoint URI names, in any case.
+         *
+         * @param token the URI's scheme, or {@code null}
+         * @return the scheme
+         * @throws IllegalArgumentException if {@code token} is neither {@code http} nor {@code https}
+         */
+        // 'of' is the standard Java factory idiom (cf. List.of, Path.of)
+        @SuppressWarnings("PMD.ShortMethodName")
+        /* default */ static Scheme of(String token) {
+            for (Scheme scheme : values()) {
+                if (scheme.token.equalsIgnoreCase(token)) {
+                    return scheme;
+                }
+            }
+            throw new IllegalArgumentException("location must use the http or https scheme, got: " + token);
         }
     }
 }

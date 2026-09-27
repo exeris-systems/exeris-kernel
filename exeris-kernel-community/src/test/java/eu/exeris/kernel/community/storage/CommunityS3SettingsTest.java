@@ -31,6 +31,13 @@ class CommunityS3SettingsTest {
 
     private static final String ENDPOINT = "http://minio.internal:9000";
 
+    private static BlobStorageConfig endpoint(String location) {
+        return new BlobStorageConfig(location, BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
+                Map.of(CommunityS3Settings.BUCKET, "bucket",
+                        CommunityS3Settings.ACCESS_KEY, "access",
+                        CommunityS3Settings.SECRET_KEY, "secret"));
+    }
+
     private static BlobStorageConfig configWith(Map<String, String> overrides) {
         Map<String, String> properties = new HashMap<>(Map.of(
                 CommunityS3Settings.BUCKET, "bucket",
@@ -100,19 +107,49 @@ class CommunityS3SettingsTest {
     class Endpoint {
 
         @Test
-        @DisplayName("an https endpoint is refused rather than downgraded to cleartext")
-        void httpsRefused() {
-            BlobStorageConfig config = new BlobStorageConfig("https://s3.example.com",
-                    BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
-                    Map.of(CommunityS3Settings.BUCKET, "bucket",
-                            CommunityS3Settings.ACCESS_KEY, "access",
-                            CommunityS3Settings.SECRET_KEY, "secret"));
+        @DisplayName("an https endpoint is accepted, on 443 by default, and requires verified TLS")
+        void httpsAccepted() {
+            CommunityS3Settings settings = CommunityS3Settings.from(endpoint("HTTPS://s3.example.com"));
 
-            assertThatThrownBy(() -> CommunityS3Settings.from(config))
-                    .as("the client engine has no TLS, so accepting this would send SigV4 credentials "
-                            + "in the clear because a scheme was ignored")
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("http scheme");
+            assertThat(settings.scheme()).isEqualTo(CommunityS3Settings.Scheme.HTTPS);
+            assertThat(settings.port()).isEqualTo(443);
+            assertThat(settings.scheme().outboundTls()).isEqualTo(CommunityOutboundTls.VERIFIED);
+        }
+
+        @Test
+        @DisplayName("a scheme other than http or https, or none, is refused")
+        void otherSchemesRefused() {
+            for (String location : new String[]{"ftp://s3.example.com", "s3://bucket", "minio.internal",
+                    "//minio.internal:9000"}) {
+                assertThatThrownBy(() -> CommunityS3Settings.from(endpoint(location)))
+                        .as(location)
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("location must use the http or https scheme");
+            }
+        }
+
+        @Test
+        @DisplayName("the host is lower-cased and loses one trailing dot, the form a TLS peer name is checked in")
+        void hostIsNormalised() {
+            CommunityS3Settings settings = CommunityS3Settings.from(endpoint("https://S3.Example.COM."));
+
+            assertThat(settings.host()).isEqualTo("s3.example.com");
+            assertThat(settings.dialAuthority()).isEqualTo("s3.example.com:443");
+            assertThat(settings.hostHeader()).isEqualTo("s3.example.com");
+            assertThat(settings.origin()).isEqualTo("https://s3.example.com");
+        }
+
+        @Test
+        @DisplayName("an IPv6 endpoint keeps its brackets in every authority")
+        void ipv6KeepsItsBrackets() {
+            CommunityS3Settings explicit = CommunityS3Settings.from(endpoint("https://[::1]:9000"));
+            assertThat(explicit.dialAuthority()).isEqualTo("[::1]:9000");
+            assertThat(explicit.hostHeader()).isEqualTo("[::1]:9000");
+            assertThat(explicit.origin()).isEqualTo("https://[::1]:9000");
+
+            CommunityS3Settings onDefault = CommunityS3Settings.from(endpoint("https://[::1]"));
+            assertThat(onDefault.dialAuthority()).isEqualTo("[::1]:443");
+            assertThat(onDefault.hostHeader()).isEqualTo("[::1]");
         }
 
         @Test
