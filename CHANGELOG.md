@@ -122,9 +122,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `stream`, and a per-action stream `POST` answered `404`. The dispatcher now resolves through
   `StreamRouteResolver` on the bound handler, which `HttpRouter` implements and a wrapper implements
   by delegating. A handler that does not implement it, such as a lambda over a router, is still
-  served respond-once. A generated application streams once a tooling release built on kernel 0.12
-  or later binds a forwarder that implements the interface and hands its stream handlers the event
-  bus through their constructors; both changes are in `exeris-tooling`.
+  served respond-once. Resolution runs on the HTTP/1.1 path only: a stream route requested over
+  HTTP/2 is still served respond-once (release notes, *Carry-over*, for the workaround). A generated
+  application streams once a tooling release built on kernel 0.12 or later binds a forwarder that
+  implements the interface and hands its stream handlers the event bus through their constructors;
+  both changes are in `exeris-tooling`.
 
 - **The SPI no longer says a boot binding reaches every virtual thread.** `KernelProviders`, several
   of its slots, `HttpKernelProviders`, `ConfigProvider` and the `events` package documentation said
