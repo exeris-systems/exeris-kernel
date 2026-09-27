@@ -232,6 +232,7 @@ public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCod
     private long handshakeStartNanos;
 
     /** The identity the server must present; {@code null} until {@link #expectPeer} succeeds. */
+    @SuppressWarnings("java:S3077") // an immutable record, published once
     private volatile TlsPeerIdentity expectedPeer;
 
     /** {@link #handshakeFailureSslError()}; written by the thread that drove the failed step. */
