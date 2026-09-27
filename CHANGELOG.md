@@ -138,7 +138,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `ScopedValue` binding reaches the thread that established it and the subtasks forked inside its
   scope, and no thread started with `Thread.ofVirtual()` or `Thread.ofPlatform()`, which is how the
   Community driver runs request and stream handlers. The Javadoc now says so, and that a handler
-  takes any provider its driver does not bind for the call through its constructor. Javadoc only.
+  takes any provider its driver does not bind for the call through its constructor. It also says
+  that the inheriting fork is `StructuredTaskScope`, a preview API on JDK 25 that nothing on this
+  line forks through: the kernel's own `StructuredScope` subtasks carry only the bindings their
+  opener passes (ADR-066). Javadoc only.
 
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a

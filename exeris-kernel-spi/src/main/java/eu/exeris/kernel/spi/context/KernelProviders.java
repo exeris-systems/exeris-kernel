@@ -51,8 +51,11 @@ import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
  *
  * <h2>Context Propagation Model (JEP 506)</h2>
  * <p>A binding is visible to code running inside its scope on the thread that established it, and
- * to every subtask forked inside that scope through {@code StructuredTaskScope}. A thread started
- * any other way ({@link Thread#ofVirtual()}, {@link Thread#ofPlatform()},
+ * to every subtask forked inside that scope through {@code StructuredTaskScope}. That is a preview
+ * API on JDK 25, and nothing on this distribution line forks through it: the kernel forks through
+ * {@code eu.exeris.kernel.core.concurrent.StructuredScope}, whose subtasks carry only the bindings
+ * its opener passes and inherit none (ADR-066). A thread started any other way
+ * ({@link Thread#ofVirtual()}, {@link Thread#ofPlatform()},
  * {@link Thread#startVirtualThread(Runnable)}) inherits no binding, wherever it is started. A
  * driver may run request and stream handlers on threads it starts that way, so a handler relies
  * only on the bindings the driver documents for that call, and receives any provider it needs
@@ -83,8 +86,10 @@ import eu.exeris.kernel.spi.scheduling.JobSchedulerProvider;
  * {@code orElse}) allocates nothing; the {@link Optional}-returning accessors on this class
  * allocate one {@code Optional} per call when the slot they read is bound.
  * <p><b>Thread confinement:</b> any thread — every slot is readable from code executing inside the
- * binding scope, on the thread that established it or in a subtask forked within it; a thread
- * started any other way, like code outside that scope, sees every slot unbound.
+ * binding scope, on the thread that established it or in a {@code StructuredTaskScope} subtask
+ * forked within it (a preview API on JDK 25 that this distribution line does not fork through; see
+ * the propagation model above); a thread started any other way, like code outside that scope, sees
+ * every slot unbound.
  * <p><b>Ownership:</b> the kernel bootstrapper owns each bound provider, engine and context,
  * and their lifecycle; a reader borrows the reference for the duration of the binding scope
  * and neither closes nor restarts it. A resource obtained <em>from</em> a bound instance — a

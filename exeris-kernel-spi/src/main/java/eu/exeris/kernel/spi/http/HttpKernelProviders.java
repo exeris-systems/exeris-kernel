@@ -43,8 +43,9 @@ import java.util.Optional;
  *
  * <p><b>Thread confinement:</b> any thread inside the binding scope — a {@code ScopedValue} binding
  * is visible to the binding thread and to every subtask forked inside that scope through
- * {@code StructuredTaskScope}; a thread started any other way, like a thread outside the scope,
- * reads the slot as unbound rather than as empty
+ * {@code StructuredTaskScope}, a preview API on JDK 25 that this distribution line does not fork
+ * through ({@link eu.exeris.kernel.spi.context.KernelProviders} states the model); a thread started
+ * any other way, like a thread outside the scope, reads the slot as unbound rather than as empty.
  *
  * @apiNote Read a slot through its accessor rather than through {@code get()} where one exists: the
  *          optional slots are unbound in perfectly healthy deployments, and
