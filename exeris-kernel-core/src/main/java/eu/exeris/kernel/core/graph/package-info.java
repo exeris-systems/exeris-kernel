@@ -9,8 +9,10 @@
  * <ul>
  *   <li>{@link eu.exeris.kernel.core.graph.GraphBootstrap} — ServiceLoader bootstrap,
  *       selects the highest-priority {@link eu.exeris.kernel.spi.graph.GraphProvider}</li>
- *   <li>{@link eu.exeris.kernel.core.graph.MatchDslTranspiler} — converts MATCH DSL
- *       traversal requests into dialect-specific query strings (SQL:2023 PGQ or Cypher)</li>
+ *   <li>{@link eu.exeris.kernel.core.graph.MatchDslTranspiler} — returns the query string a
+ *       {@link eu.exeris.kernel.spi.graph.GraphDialect} builds for a traversal or shortest-path
+ *       request. It is not wired into any session or backend: the graph backends build the
+ *       queries they execute through the dialect themselves, and only tests call this class</li>
  *   <li>{@link eu.exeris.kernel.core.graph.GraphSyncService} — dual-write consistency
  *       orchestrator ensuring L1 Persistence changes are reflected in L2 graph</li>
  *   <li>{@link eu.exeris.kernel.core.graph.AlgoOrchestrator} — delegates Dijkstra,

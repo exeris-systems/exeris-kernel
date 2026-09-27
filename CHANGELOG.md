@@ -164,6 +164,26 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   memory, telemetry and transport documents follow; the bootstrap and events documents are
   verified separately.
 
+- **`MatchDslTranspiler` is documented as the unwired class it is.** Its class Javadoc and the
+  `eu.exeris.kernel.core.graph` package documentation called it the brain of the MATCH abstraction,
+  producing strings a `GraphSession` executes, and credited it with a `GRAPH_TABLE` syntax, a
+  `ServiceLoader` dialect selection and an allocation bound that belong to whichever `GraphDialect`
+  it is given. No session, engine or backend calls it — the graph backends build the queries they
+  execute through `GraphDialect` themselves — and only tests do. The Javadoc and
+  `docs/subsystems/graph.md` now say so. No code changed; whether the class is superseded or a seam
+  to wire is a 0.13 decision.
+
+- **Four TCK benchmark templates publish no performance figure.**
+  `AbstractEventBusDispatchLatencyBenchmark`, `AbstractGraphEngineBenchmark`,
+  `AbstractSecurityProviderBenchmark` and `AbstractTlsEngineBenchmark` stated throughput and p99
+  targets in the Javadoc of the published TCK jar, where they read as part of the contract, and the
+  kernel ships no binding of any of them to measure one. A figure outside a benchmark report cites
+  that report (`claims-and-evidence.md` rule 1), and these have none, so the figures are removed
+  rather than relabelled: each class now states that it sets and asserts no target and that the
+  kernel ships no binding of it. The classes and their benchmark methods are unchanged. The
+  event-bus template also describes the Community publish path as it runs — one virtual thread per
+  handler — rather than as a `StructuredTaskScope`-backed queue.
+
 - **The Community-only crypto checks are skipped for another tier, not passed.**
   `AbstractCryptoEngineTck`'s `communityPriorityIsZero()`, `communityDoesNotSupportQuic()` and
   `communityRejectsQuicConfig()` returned early when `isCommunityTier()` was `false`, so a binding
