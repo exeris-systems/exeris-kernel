@@ -22,15 +22,16 @@ import java.util.Optional;
  * A {@link BlobStore} that exists at {@code initialize()} and is created at {@code start()} — the
  * storage counterpart of {@link DeferredHttpClientEngine}, for the same reason.
  *
- * <p>Bootstrap runs every subsystem's {@code initialize()} before it composes {@code
- * providerBindings()}, so {@code KernelProviders.MEMORY_ALLOCATOR} is not bound while
+ * <p>Bootstrap builds the kernel scope from {@code providerBindings()} only after every subsystem's
+ * {@code initialize()} has run, so {@code KernelProviders.MEMORY_ALLOCATOR} is not bound while
  * {@link CommunityStorageSubsystem} is initialising: {@code dependsOn("memory")} orders the phases, it
  * does not make the binding visible earlier. The S3 driver's {@code createStore} refuses without that
  * binding, and the store's HTTP client engine takes its buffers from the same allocator. The reference
- * must exist by then anyway, because {@code providerBindings()} publishes it as {@code BLOB_STORE};
- * holding the provider and the configuration, and creating the real store in {@link #start()} — which
- * bootstrap runs inside the kernel scope — satisfies both. A driver that rejects its configuration
- * therefore rejects it in {@code start()}, which still fails the boot before the application runs.
+ * must exist at {@code initialize()} anyway, because bootstrap reads {@code providerBindings()}
+ * straight after it and publishes the reference as {@code BLOB_STORE}; holding the provider and the
+ * configuration, and creating the real store in {@link #start()} — which bootstrap runs inside the
+ * kernel scope — satisfies both. A driver that rejects its configuration therefore rejects it in
+ * {@code start()}, which still fails the boot before the application runs.
  *
  * <p>Every operation before {@link #start()} or after {@link #close()} is refused with
  * {@link IllegalStateException}: there is no store to answer it, and an empty answer would read as a
