@@ -36,7 +36,6 @@ import java.util.Optional;
  * {@link IllegalStateException}: there is no store to answer it, and an empty answer would read as a
  * missing object.
  */
-@SuppressWarnings("PMD.CloseResource")
 final class DeferredBlobStore implements BlobStore {
 
     private final BlobStorageProvider provider;
@@ -102,6 +101,7 @@ final class DeferredBlobStore implements BlobStore {
      * so a store created concurrently with a close cannot outlive it.
      */
     @Override
+    @SuppressWarnings("PMD.CloseResource") // the local aliases the owned delegate, not a new resource
     public synchronized void close() {
         if (closed) {
             return;
