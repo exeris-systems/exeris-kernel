@@ -100,10 +100,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   A client engine built directly from an `HttpProvider` was not affected.
 
 - **A booted kernel's HTTP client engine refuses a `null` request with `NullPointerException`
-  before it is started, as `HttpClientEngine#send` requires.** `DeferredHttpClientEngine` checked
-  its lifecycle first, so `send(null)` threw `IllegalStateException` until `start()` had built a
-  delegate. It now rejects `null` first, in every state. `DeferredHttpClientEngineTckTest` binds
-  `AbstractHttpClientEngineTck` over the wrapper the Community HTTP subsystem publishes as
+  before it is started, as the client engine TCK requires.**
+  `AbstractHttpClientEngineTck$CreatedState#sendNullThrows` asserts it on an engine that has not
+  been started, so the argument check must precede the lifecycle check. `DeferredHttpClientEngine`
+  checked its lifecycle first, so `send(null)` threw `IllegalStateException` before `start()` and
+  after `close()`. It now rejects `null` first, in every state. `DeferredHttpClientEngineTckTest`
+  binds `AbstractHttpClientEngineTck` over the wrapper the Community HTTP subsystem publishes as
   `HTTP_CLIENT_ENGINE`, with `CommunityHttpProvider` behind it, so the engine contract is checked on
   the engine an application reaches and not only on the provider's own.
 
