@@ -4,23 +4,38 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.community.crypto.CommunityKernelCryptoProvider;
+import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.community.transport.MapConfigProvider;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportMode;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * An HTTP engine's transport takes the engine's role, not the subsystem's {@link HttpMode}.
+ * An HTTP engine's transport takes the engine's role, not the subsystem's {@link HttpMode}, and a
+ * client engine's outbound TLS requirement.
  *
  * <p>Asserted in both directions for {@code DUAL}, the mode that builds one engine of each: the
  * server engine gets a listener with the configured material, and the client engine gets neither.
@@ -29,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CommunityHttpTransportFactoryRoleTest {
 
     private static final int PORT = 8443;
+    private static final String POSTURE_EVENT = "eu.exeris.kernel.transport.TransportTlsClientPosture";
     private static final MapConfigProvider MATERIAL = new MapConfigProvider(
             Map.of("transport.certPath", "/etc/tls/server.crt", "transport.keyPath", "/etc/tls/server.key"),
             Map.of());
@@ -75,5 +91,38 @@ class CommunityHttpTransportFactoryRoleTest {
 
             assertThat(transport.mode()).as("role %s", role).isEqualTo(TransportMode.DISABLED);
         }
+    }
+
+    @Test
+    @DisplayName("a client engine's outbound TLS requirement reaches its transport, and a server engine takes none")
+    void outboundRequirementReachesTheClientTransportOnly(@TempDir Path recordings) throws Exception {
+        CommunityKernelCryptoProvider crypto = new CommunityKernelCryptoProvider();
+        Path dump = Files.createTempFile(recordings, "posture", ".jfr");
+        try (MemoryAllocator allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
+             Recording recording = new Recording()) {
+            recording.enable(POSTURE_EVENT).withoutStackTrace();
+            recording.start();
+            ScopedValue.where(KernelProviders.CRYPTO_PROVIDER, crypto)
+                    .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
+                    .run(() -> new CommunityHttpProvider()
+                            .createClientEngine(config(HttpMode.CLIENT), CommunityOutboundTls.PLAINTEXT)
+                            .close());
+            recording.stop();
+            recording.dump(dump);
+
+            assertThatThrownBy(() -> CommunityHttpTransportFactory.buildTransport(config(HttpMode.SERVER),
+                    PORT, allocator, CommunityHttpTransportFactory.Role.SERVER, CommunityOutboundTls.VERIFIED))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("a server engine dials nothing");
+        }
+
+        List<RecordedEvent> postures = RecordingFile.readAllEvents(dump).stream()
+                .filter(event -> POSTURE_EVENT.equals(event.getEventType().getName()))
+                .toList();
+        assertThat(postures).hasSize(1);
+        assertThat(postures.getFirst().getString("requirement")).isEqualTo("PLAINTEXT");
+        assertThat(postures.getFirst().getString("posture"))
+                .as("plaintext although the Community crypto provider is bound")
+                .isEqualTo("PLAINTEXT_REQUIRED");
     }
 }

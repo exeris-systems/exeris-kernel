@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -62,6 +63,9 @@ final class CommunityHttpTransportFactory {
      * {@code allocator} to {@link KernelProviders#MEMORY_ALLOCATOR} for the call when nothing is
      * already bound there.
      *
+     * <p>{@link #buildTransport(HttpConfig, int, MemoryAllocator, Role, CommunityOutboundTls)} with
+     * {@link CommunityOutboundTls#AMBIENT}.
+     *
      * @param config    the HTTP engine configuration to derive transport settings from
      * @param port      the port to bind, ignored for a client transport
      * @param allocator the allocator to bind if none is already bound
@@ -70,16 +74,39 @@ final class CommunityHttpTransportFactory {
      */
     /* default */ static TransportEngine buildTransport(HttpConfig config, int port, MemoryAllocator allocator,
                                                         Role role) {
+        return buildTransport(config, port, allocator, role, CommunityOutboundTls.AMBIENT);
+    }
+
+    /**
+     * As {@link #buildTransport(HttpConfig, int, MemoryAllocator, Role)}, with the transport's
+     * outbound connections held to {@code outboundTls}, which the transport provider receives
+     * unchanged.
+     *
+     * @param config      the HTTP engine configuration to derive transport settings from
+     * @param port        the port to bind, ignored for a client transport
+     * @param allocator   the allocator to bind if none is already bound
+     * @param role        the side of the wire the owning engine serves
+     * @param outboundTls what the owning engine requires of its outbound connections
+     * @return a transport engine ready to {@code start()}
+     * @throws IllegalArgumentException if {@code role} is {@link Role#SERVER} and {@code outboundTls}
+     *                                  is not {@link CommunityOutboundTls#AMBIENT}
+     */
+    /* default */ static TransportEngine buildTransport(HttpConfig config, int port, MemoryAllocator allocator,
+                                                        Role role, CommunityOutboundTls outboundTls) {
+        if (role == Role.SERVER && outboundTls != CommunityOutboundTls.AMBIENT) {
+            throw new IllegalArgumentException("a server engine dials nothing, so it takes no outbound TLS "
+                    + "requirement; got " + outboundTls);
+        }
         ConfigProvider configProvider = KernelProviders.CURRENT_CONFIG.isBound()
             ? KernelProviders.CURRENT_CONFIG.get()
             : null;
         TransportConfig transportConfig = buildTransportConfig(config, port, configProvider, role);
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            return provider.createEngine(transportConfig);
+            return provider.createEngine(transportConfig, outboundTls);
         }
         return ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator)
-                .call(() -> provider.createEngine(transportConfig));
+                .call(() -> provider.createEngine(transportConfig, outboundTls));
     }
 
     /**

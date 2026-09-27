@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.http.HttpException;
@@ -62,7 +63,17 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /* default */ CommunityHttpClientEngine(HttpConfig config) {
-        this(config, resolveDeps(config));
+        this(config, CommunityOutboundTls.AMBIENT);
+    }
+
+    /**
+     * An engine whose transport holds its outbound connections to {@code outboundTls}.
+     *
+     * @param config      the engine configuration
+     * @param outboundTls what the engine's owner requires of its outbound connections
+     */
+    /* default */ CommunityHttpClientEngine(HttpConfig config, CommunityOutboundTls outboundTls) {
+        this(config, resolveDeps(config, outboundTls));
     }
 
     private CommunityHttpClientEngine(HttpConfig config, ResolvedHttpClientDeps deps) {
@@ -300,11 +311,11 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         return new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
     }
 
-    private static ResolvedHttpClientDeps resolveDeps(HttpConfig config) {
+    private static ResolvedHttpClientDeps resolveDeps(HttpConfig config, CommunityOutboundTls outboundTls) {
         MemoryAllocator allocator = resolveAllocator(config);
         boolean closeAllocatorOnClose = !KernelProviders.MEMORY_ALLOCATOR.isBound();
         TransportEngine transport = CommunityHttpTransportFactory.buildTransport(
-                config, config.port(), allocator, CommunityHttpTransportFactory.Role.CLIENT);
+                config, config.port(), allocator, CommunityHttpTransportFactory.Role.CLIENT, outboundTls);
         return new ResolvedHttpClientDeps(allocator, transport, closeAllocatorOnClose);
     }
 
