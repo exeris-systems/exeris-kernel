@@ -11,9 +11,10 @@ slug: adr/ADR-074
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED**                                                                              |
+| **Status**      | **ACCEPTED — REVISED 2026-09-27**                                                         |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-08-26                                                                                |
+| **Revised**     | 2026-09-27 — [Amendments](#amendments)                                                    |
 | **Scope**       | `kernel/http`                                                                             |
 | **Owning Repo** | `exeris-kernel`                                                                           |
 | **Driven By**   | [RFC-2026-06-29](../rfc/RFC-2026-06-29-webclient-service-addressing.md) Open Question 1; 1.0 scope per its split disposition |
