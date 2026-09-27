@@ -324,3 +324,23 @@ implementation slices:
 
 Obligations 1, 2, and 9 are reviewable by inspection from the first SPI PR. Obligations 3–8 are only
 proven by the TCK, so the SPI slice is not done until both bindings are green against it.
+
+## Amendments
+
+Each amendment is marked in place at the obligation or protocol item it changes, not rewritten
+(`adr-conventions.md` rule 7). This section indexes them.
+
+- **2026-07-30 — with the SPI.** Obligation 2 is stated in the future tense, because the slot pair
+  lands after the SPI and its first driver. Obligation 3's per-direction `retain()`/`close()`
+  protocol is replaced by the stronger rule that the caller owns its buffers throughout, and the
+  trade-off it carried is retired in Consequences. Obligation 6 is discharged by `BlobRef`'s
+  constructor rather than by each driver, so Engineering Protocol item 1 tests key-injection
+  rejection in `BlobRefTest`, not in the TCK. Engineering Protocol item 6 adds the JFR failure events
+  the original list omitted.
+- **2026-08-01 — with the S3 binding.** Obligation 10 records what building the S3 driver settled:
+  the authentication subset, an `http://`-only endpoint, the `s3.maxObjectBytes` single-object
+  ceiling, and the `HEAD` framing fix in the HTTP client. Engineering Protocol item 3 adds no CI gate;
+  the existing community integration job runs the MinIO suite.
+- **2026-09-27 — with the storage subsystem.** Obligation 2: the slot pair exists from 0.12,
+  selected by `storage.blob.provider` through `StorageBootstrap` without ranking by `priority()` and
+  bound by `CommunityStorageSubsystem`; an unset key binds nothing.

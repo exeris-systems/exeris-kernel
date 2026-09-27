@@ -212,3 +212,13 @@ should not, this is the clause to revisit first.
   free: revert the encoder line and the test must redden.
 - No `ServiceResolver` type, package, or configuration key is introduced. A resolver-shaped name
   appearing in this slice is scope creep into a post-1.0 seam.
+
+## Amendments
+
+Each amendment is marked in place at the decision it changes, not rewritten (`adr-conventions.md`
+rule 7). This section indexes them.
+
+- **2026-09-26 — decision 1: the port is required.** Settled during implementation in v0.12: an
+  authority is `host:port`, with an IPv6 address bracketed, because `HttpRequest` carries no scheme
+  to default a port from. A `defaultAuthority` without a port is refused when `HttpConfig` is
+  constructed, and a request authority without one is refused at send.
