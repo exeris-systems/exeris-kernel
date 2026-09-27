@@ -101,7 +101,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   verify an outbound peer, or under `-Dexeris.transport.tls=false`, `createStore` throws
   `TransportException` `EX-NET-4004` and never downgrades. A Community HTTP client engine whose
   transport is refused this way closes the allocator it created for itself, when none was bound,
-  before it throws. The default port follows the scheme (80,
+  before it throws, and a store whose engine fails to start closes that engine, and the trust it
+  opened, before `createStore` throws. The default port follows the scheme (80,
   443). The driver states the scheme to its transport through Community-only overloads —
   `NativeTcpTransportProvider#createEngine(TransportConfig, CommunityOutboundTls)` and
   `CommunityHttpProvider#createClientEngine(HttpConfig, CommunityOutboundTls)` — so no SPI type

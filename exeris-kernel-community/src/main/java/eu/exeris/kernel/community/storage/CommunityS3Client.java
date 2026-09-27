@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.storage;
 
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHeader;
@@ -24,6 +25,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BiFunction;
 
 /**
  * The wire half of the S3-compatible driver: one signed request, one response.
@@ -71,10 +73,25 @@ final class CommunityS3Client implements AutoCloseable {
 
     /* default */ CommunityS3Client(CommunityS3Settings settings, Duration maxSignedUrlTtl,
                                     Clock clock) {
+        this(settings, maxSignedUrlTtl, clock, new CommunityHttpProvider()::createClientEngine);
+    }
+
+    /**
+     * Builds the client over the engine {@code engineFactory} returns, and starts that engine. The
+     * client owns the engine from the moment it is built: an engine whose {@code start()} throws is
+     * closed before the failure propagates, since no client exists to close it.
+     *
+     * @param settings        the endpoint, bucket and credentials
+     * @param maxSignedUrlTtl the longest lifetime a presigned URL may be given
+     * @param clock           the signing clock
+     * @param engineFactory   builds the private engine from its configuration and outbound TLS
+     */
+    /* default */ CommunityS3Client(CommunityS3Settings settings, Duration maxSignedUrlTtl, Clock clock,
+                                    BiFunction<HttpConfig, CommunityOutboundTls, HttpClientEngine> engineFactory) {
         this.settings = settings;
         this.maxSignedUrlTtl = maxSignedUrlTtl;
         this.signer = new CommunityS3Signer(settings, clock);
-        this.engine = new CommunityHttpProvider().createClientEngine(new HttpConfig(
+        this.engine = startOrClose(engineFactory.apply(new HttpConfig(
                 HttpMode.CLIENT,
                 settings.host(),
                 settings.port(),
@@ -90,8 +107,24 @@ final class CommunityS3Client implements AutoCloseable {
                 settings.dialAuthority(),
                 HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
                 HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
-                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE), settings.scheme().outboundTls());
-        this.engine.start();
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE), settings.scheme().outboundTls()));
+    }
+
+    // AvoidCatchingGenericException: the engine is closed on any start failure, then the failure
+    // rethrown; a failed close is attached to it, never allowed to replace it.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private static HttpClientEngine startOrClose(HttpClientEngine engine) {
+        try {
+            engine.start();
+            return engine;
+        } catch (RuntimeException | Error startFailure) {
+            try {
+                engine.close();
+            } catch (RuntimeException | Error closeFailure) {
+                startFailure.addSuppressed(closeFailure);
+            }
+            throw startFailure;
+        }
     }
 
     /**
