@@ -482,9 +482,19 @@ A client handshake refusal carries one of the fixed `detail` strings in `TlsFail
 | `client engine has no expected peer identity` (`NO_PEER_IDENTITY`)     | `-1`                         |
 | `bound crypto provider cannot verify an outbound peer` (`NO_PEER_VERIFIER`) | `-1`                    |
 
-`INVALID_PEER_NAME` and `NO_PEER_VERIFIER` reach a caller of `TransportEngine#connect` as the cause
-of `TransportException` `EX-NET-4001`, before any socket opens; the others reach the stream's first
-read or write.
+Where each surfaces:
+
+- `INVALID_PEER_NAME` and `NO_PEER_VERIFIER` reach a caller of `TransportEngine#connect` as the
+  cause of `TransportException` `EX-NET-4001`, before any socket opens.
+- `PEER_IDENTITY_REJECTED` is thrown by `OffHeapTlsEngine#expectPeer`, and so by
+  `createClientTlsEngine`, when OpenSSL refuses an identity that `TlsPeerIdentity` accepted. On a
+  carrier, `NativeTcpCarrier#connect` builds the engine after the socket connects; it closes the
+  socket and throws that `TlsHandshakeException` unwrapped, not as the cause of `EX-NET-4001`.
+- `PEER_VERIFICATION_FAILED` and `HANDSHAKE_FAILED` reach the stream's first read or write, and
+  every one after it.
+- `NO_PEER_IDENTITY` never reaches a carrier stream: it is thrown by `beginHandshake` of a client
+  engine from `CommunityKernelCryptoProvider#createTlsEngine`, which names no peer, while a carrier
+  builds its outbound engines through `createClientTlsEngine`.
 
 ---
 

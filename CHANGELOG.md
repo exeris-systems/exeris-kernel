@@ -40,8 +40,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   carrier's `connect`. `HttpClientEngine#send` states the obligation in its `@implSpec` (javadoc
   only, no signature moved); the Enterprise client is outside it. **Upgrade:** a client that talks
   to a private-CA or self-signed server needs `crypto.tls.client.trustFile` naming the issuing CA
-  (with any intermediates, since the Community server does not send them) or the server's own
-  certificate.
+  (with any intermediates, since the Community server does not send them) or, for a self-signed
+  server, that certificate; a CA-issued server certificate alone in the file does not anchor its
+  chain.
 
 ### Added
 
