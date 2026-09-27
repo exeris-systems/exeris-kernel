@@ -1715,8 +1715,8 @@ dispatcher's per-request rebind, which reddens every case.
 
 **1.0 disposition:** **1.0-RECOMMENDED** — both are small, concrete kernel fixes that block the Entity-First "a generated app runs over a real boot" demonstration end-to-end (by-id CRUD + `@Action`s + writes). Path-parameter routing especially is load-bearing for the entire generated CRUD table. Targetable in v0.10 alongside the SSE boot-path work. Stream routes are not covered by this entry: they are v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable".
 
-**Related (cross-repo / informational, not kernel gaps on their own):**
-- **Generated SSE stream routes unreachable on a real boot (finding T23).** The root cause is in the kernel. The Community stream dispatcher (`CommunityHttpStreamDispatcher#resolveStreamHandler`) resolved a stream route only when the handler bound to `HTTP_SERVER_HANDLER` was an `HttpRouter` instance, and a generated application cannot bind one: its router is built inside the boot callback, after the HTTP subsystem has read the slot, so it binds a forwarder over the router. Every generated stream route was therefore served respond-once on a real boot — a `GET {base}/stream` by the by-id route, a per-action stream `POST` with `404` — and no generator-side change could reach it: setting the router instance into the forwarder's slot changes what the forwarder calls, not what the kernel sees. Fixed kernel-side in v0.12; see v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable".
+**Related (cross-repo / informational; neither is tracked by this entry):**
+- **Generated SSE stream routes unreachable on a real boot (finding T23).** The root cause is in the kernel. The Community stream dispatcher (`CommunityHttpStreamDispatcher#resolveStreamHandler`) resolved a stream route only when the handler bound to `HTTP_SERVER_HANDLER` was an `HttpRouter` instance, and a generated application cannot bind one: its router is built inside the boot callback, after the HTTP subsystem has read the slot, so it binds a forwarder over the router. Every generated stream route was therefore served respond-once on a real boot — a `GET {base}/stream` by the by-id route, a per-action stream `POST` with `404` — and no generator-side change could reach it: setting the router instance into the forwarder's slot changes what the forwarder calls, not what the kernel sees. Fixed kernel-side in v0.12; a generated application streams once a tooling release built on kernel 0.12 binds a forwarder that implements the new contract and hands its event-stream handlers the event bus through their constructors. See v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable".
 - **`--enable-preview` at runtime to boot the kernel (K-boot).** kernel-core bootstrap classes are preview-compiled (`SubsystemOrchestrator` class-file minor `0xFFFF`) while the persistence classes are not (`TransactionOrchestrator` minor `0`); embedding the persistence stack needs only JDK 26, but *booting* the kernel needs `--enable-preview`. Resolved by the Platform-Baseline preview-clean work (see below) for the default artifact; until then, generated-app run scripts / poms must set the flag, and this is a documentation point for downstream boot consumers.
 
 All three were surfaced during downstream dogfooding (a closed-source downstream consumer multi-service build, re-verified against `origin/development/0.10.0` on 2026-06-24).
@@ -1879,7 +1879,7 @@ alternative anticipated.
 
 **Merge Gate:** Fail-fast property enforced (template resolution or `IllegalArgumentException` at registration — no third state). If template matching lands: router unit coverage for stream-template resolve + exact-over-template precedence, plus a streaming TCK (or router-level) case proving a `{id}` stream route opens an `HttpStreamExchange` for a concrete id; ADR-043 obligation 7 stays true (streaming resolves only via `resolveStream`, never through `handle`). Tooling lockstep (ADR-044 Slice 2 per-action driver impl) tracked in `exeris-tooling`, non-gating for the kernel merge.
 
-See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note).
+See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note); v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable" (T23's kernel root cause).
 
 ---
 
@@ -3176,7 +3176,7 @@ gate does and does not cover.
 
 ---
 
-### HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable (finding T23, surfaced 2026-09-26)
+### HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable (root cause of finding T23, surfaced 2026-09-26)
 
 **Gap:** `CommunityHttpStreamDispatcher#resolveStreamHandler` resolved a stream route only when the
 handler bound to `HttpKernelProviders.HTTP_SERVER_HANDLER` was an `HttpRouter` instance, and served
@@ -3212,10 +3212,13 @@ test binds a forwarder, never the router; the SPI is unchanged; ADR-043 is amend
 resolves through `StreamRouteResolver`, pinned by `CommunityStreamResolutionDelegationTest` and, over
 a real boot with a forwarder of the generated application's shape bound, by
 `GeneratedAppStreamRouteReachabilityIntegrationTest`, which runs untagged in the default build; a miss
-through a forwarder allocates nothing (`StreamResolutionMissAllocationTest`); `spi-api-diff` shows no
-SPI change against the release base. Generated applications stream once a tooling release built on
-kernel 0.12 or later ships the resolving forwarder and the constructor-injected event bus. The
-Enterprise HTTP engine and HTTP/2 serve no stream routes (next entry).
+through a forwarder allocates nothing unless its method has a stream route and its path carries a
+query string (`StreamResolutionMissAllocationTest`); `spi-api-diff` shows no SPI change against the
+release base. Generated applications stream once a tooling release built on kernel 0.12 or later
+ships the resolving forwarder and the constructor-injected event bus. HTTP/2 serves no stream route
+(next entry). The Enterprise HTTP engine serves none either: its streaming binding, which resolves
+through the same interface when it is built, is an `exeris-kernel-enterprise` obligation (ADR-043
+Amendment A1, Scope).
 
 ---
 
@@ -3224,13 +3227,14 @@ Enterprise HTTP engine and HTTP/2 serve no stream routes (next entry).
 **Gap:** ADR-043 decided that SSE "rides the existing HTTP/1.1 + h2 server"; Community resolves
 stream routes on its HTTP/1.1 path only. `CommunityHttp2SessionProcessor` has no stream resolution,
 so a request for a stream route that arrives over HTTP/2 goes to `handle` and is answered by
-whichever respond-once route matches its path, or `404`. There are two ways onto HTTP/2. With TLS
-terminated by the kernel, `CommunityAlpnSelector#selectCallback` selects `h2` whenever the client
-offers it and reads no configuration, so a browser `EventSource` over kernel-terminated TLS is on
-HTTP/2. On a connection without TLS, an `h2c` upgrade is handed to the HTTP/2 session before stream
-resolution runs. Workarounds today: terminate TLS upstream and speak HTTP/1.1 to the kernel; without
-TLS, set `http.maxVersion=HTTP_1_1`, which disables the `h2c` upgrade. Because `http.maxVersion`
-does not reach ALPN selection, no setting keeps a TLS client on HTTP/1.1.
+whichever respond-once route matches its path, or `404`. A connection reaches HTTP/2 with or without
+TLS. With TLS terminated by the kernel, `CommunityAlpnSelector#selectCallback` selects `h2` whenever
+the client offers it and reads no configuration, so a browser `EventSource` over kernel-terminated
+TLS is on HTTP/2. On a connection without TLS, an `h2c` upgrade or a prior-knowledge HTTP/2 preface
+is handed to the HTTP/2 session before stream resolution runs. Workarounds today: terminate TLS
+upstream and speak HTTP/1.1 to the kernel; without TLS, set `http.maxVersion=HTTP_1_1`, which
+disables both of those paths to HTTP/2. Because `http.maxVersion` does not reach ALPN selection, no
+setting keeps a TLS client on HTTP/1.1.
 
 **Owner:** HTTP subsystem (the Community HTTP/2 session and the Core SSE engine).
 
