@@ -56,8 +56,14 @@
               mvn test -Dtest=CommunityHttpStreamExchangeTckTest (targeted-test-run profile)
             Making it CI-gateable (reactor/handler scheduling robustness under scarce carriers) is a
             tracked follow-up.
+
+            default-trust (CommunityTlsDefaultTrustTest) runs in its own forked execution below,
+            which sets SSL_CERT_FILE and SSL_CERT_DIR for it. openssl-matrix
+            (CommunityOpenSslPinnedMajorTest) runs only in the tls-openssl-matrix CI job, which
+            selects it by name with -Dexeris.test.expectedOpenSslMajor set; without that property it
+            has nothing to assert, and it fails rather than skips.
         -->
-        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback,default-trust</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback,default-trust,openssl-matrix</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.

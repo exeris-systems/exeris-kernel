@@ -884,9 +884,12 @@ jobs:
       # suddenly EXCLUDE every untagged core test — including the
       # CoreOpenSslPinnedVersionAssertionTest 4.0-vs-fallback-3.x false-green guard.
       # The split removes that dependency on the undeclared pom asymmetry: the core
-      # guards run as plain Surefire selection (no group flags), the loopback IT runs
-      # via Failsafe (verify phase), and the community @Tag("integration") loopback
-      # runs with the group flag scoped to the one module that honors it.
+      # guards run as plain Surefire selection (no group flags), the core ITs run via
+      # Failsafe (verify phase), and the community suites run as plain -Dtest selection
+      # too, which the community targeted-test-run profile turns into "exclude
+      # flamegraph only", so the tagged loopback and pin classes named there run. A
+      # final step reads the reports and fails on a listed class that skipped or ran
+      # nothing, since either reports green.
       # ---------------------------------------------------------------------------
       - name: Run core crypto/TLS guards against OpenSSL ${{ matrix.openssl_version }}
         # HARD-RUN: the pinned lib is present and selected via env override, so the
@@ -908,35 +911,101 @@ jobs:
             -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
             test -B -e
 
-      - name: Run core TLS loopback IT against OpenSSL ${{ matrix.openssl_version }}
-        # Belt-and-braces end-to-end proof (finding #2): the loopback IT is a Failsafe
-        # test (**/*IT.java, integration-test/verify phase). It was previously listed
-        # under `-Dtest` on a `test`-phase invocation, so it NEVER ran. Run it explicitly
-        # via the verify phase + -Dit.test so the full SSL_accept/SSL_connect round-trip
-        # is exercised against each pinned major. The assumeTrue OpenSSL guard does not
-        # skip here because the pinned lib is present via the env override.
+      - name: Run core TLS ITs against OpenSSL ${{ matrix.openssl_version }}
+        # End-to-end proof: the full SSL_accept/SSL_connect round-trip, the thread's error queue
+        # after a refused handshake, and a client's verification of its server, against each
+        # pinned major. These are Failsafe tests (**/*IT.java), selected by -Dit.test, never by
+        # -Dtest. The Failsafe goals are invoked directly, on the classes the install and the
+        # previous step compiled, because the verify lifecycle would run Surefire first:
+        # Surefire 3.2.5 has no property that skips it without skipping Failsafe too
+        # (surefire.skip is not one of its properties), so a lifecycle run re-runs the whole Core
+        # unit suite and overwrites the previous step's reports, the pinned-version guard's among
+        # them, with a run that has no -Dexeris.test.expectedOpenSslMajor. The OpenSSL guards do
+        # not skip here because the pinned lib is present via the env override.
         env:
           EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
           EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
         run: |
           mvn -pl exeris-kernel-core \
-            -Dsurefire.skip=true \
-            -Dit.test=OffHeapTlsEngineLoopbackIT \
-            verify -B -e
+            -Dit.test='OffHeapTlsEngineLoopbackIT,OffHeapTlsEngineErrorQueueIT,OffHeapTlsEnginePeerVerificationIT' \
+            failsafe:integration-test failsafe:verify -B -e
 
-      - name: Run community TLS loopback integration against OpenSSL ${{ matrix.openssl_version }}
-        # Community @Tag("integration") loopback — the group flag is scoped to the one
-        # module whose pom wires <groups>${includedGroups}</groups>, so it behaves as
-        # intended here (unlike the cross-module single-call form).
+      - name: Run community TLS suites against OpenSSL ${{ matrix.openssl_version }}
+        # Selected purely by -Dtest, with NO group flags: -Dtest activates this module's
+        # targeted-test-run profile, which excludes only flamegraph, so the @Tag("integration")
+        # loopback and the @Tag("openssl-matrix") pin run beside the untagged suites.
+        # CommunityOpenSslPinnedMajorTest does for this JVM what CoreOpenSslPinnedVersionAssertionTest
+        # does for Core's: it fails unless the Community provider bound the pinned major, so an env
+        # override that stops reaching this module cannot turn the other suites into a run against
+        # the runner's own OpenSSL. CommunityTlsDefaultTrustTest is not listed: its tag would run it
+        # here without the SSL_CERT_* variables it needs; the next step runs it in its own fork.
+        # -Dsurefire.failIfNoSpecifiedTests=false keeps the module's other executions, which select
+        # none of these classes, from failing; the report check below is what refuses a class that
+        # ran nothing.
         env:
           EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
           EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
         run: |
           mvn -pl exeris-kernel-community \
-            -DincludedGroups=integration \
-            -DexcludedGroups= \
-            -Dtest='CommunityTlsEngineLoopbackIntegrationTest' \
+            -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest='CommunityOpenSslPinnedMajorTest,CommunityTlsEngineLoopbackIntegrationTest,CommunityHttpClientTlsPeerVerificationTckTest,CommunityTlsPeerVerificationTest,CommunityTlsServerErrorQueueTest,CommunityServerContextErrorQueueTest,CommunityClientTrustOpeningTest,CommunityClientEngineAssemblyTest,NativeTcpTransportProviderClientTlsTest,TransportTlsDecisionTest,CommunityHttpDualSelfDialTest,NativeTcpCarrierCloseRacesConnectTest' \
             test -B -e
+
+      - name: Run community default-trust suite against OpenSSL ${{ matrix.openssl_version }}
+        # The default-trust Surefire execution forks a JVM whose SSL_CERT_FILE and SSL_CERT_DIR
+        # name a CA file the suite writes and an empty directory, so a client with no configured
+        # trust verifies against the pinned build's default trust as those variables define it.
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-community surefire:test@default-trust -B -e
+
+      - name: Refuse skipped or empty TLS suites for OpenSSL ${{ matrix.openssl_version }}
+        # A skipped test reports green, and so does a -Dtest pattern that matched nothing. Every
+        # class named here must have a report, at least one test run and none skipped. The Core
+        # TCK bindings (CoreOffHeapTlsEngineTckTest, CoreOffHeapTlsEngineZeroAllocTckTest) are not
+        # listed: they skip cases by design.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          failed=0
+          require_ran() {
+            local dir=$1 cls=$2 tests=0 skipped=0 file head t s
+            local files=("$dir"/TEST-*."$cls".xml "$dir"/TEST-*."$cls"'$'*.xml)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "::error::$cls: no report in $dir"
+              failed=1
+              return
+            fi
+            for file in "${files[@]}"; do
+              head=$(grep -m1 -o '<testsuite [^>]*' "$file" || true)
+              t=$(grep -o ' tests="[0-9]*"' <<<"$head" | tr -dc '0-9' || true)
+              s=$(grep -o ' skipped="[0-9]*"' <<<"$head" | tr -dc '0-9' || true)
+              tests=$((tests + ${t:-0}))
+              skipped=$((skipped + ${s:-0}))
+            done
+            echo "$cls: tests=$tests skipped=$skipped"
+            if [ "$tests" -eq 0 ] || [ "$skipped" -gt 0 ]; then
+              echo "::error::$cls ran $tests tests and skipped $skipped against OpenSSL ${{ matrix.openssl_version }}"
+              failed=1
+            fi
+          }
+          require_ran exeris-kernel-core/target/surefire-reports CoreOpenSslPinnedVersionAssertionTest
+          for cls in OffHeapTlsEngineLoopbackIT OffHeapTlsEngineErrorQueueIT OffHeapTlsEnginePeerVerificationIT; do
+            require_ran exeris-kernel-core/target/failsafe-reports "$cls"
+          done
+          for cls in CommunityOpenSslPinnedMajorTest CommunityTlsEngineLoopbackIntegrationTest \
+                     CommunityHttpClientTlsPeerVerificationTckTest CommunityTlsPeerVerificationTest \
+                     CommunityTlsServerErrorQueueTest CommunityServerContextErrorQueueTest \
+                     CommunityClientTrustOpeningTest CommunityClientEngineAssemblyTest \
+                     NativeTcpTransportProviderClientTlsTest TransportTlsDecisionTest \
+                     CommunityHttpDualSelfDialTest NativeTcpCarrierCloseRacesConnectTest \
+                     CommunityTlsDefaultTrustTest; do
+            require_ran exeris-kernel-community/target/surefire-reports "$cls"
+          done
+          exit "$failed"
 
       - name: Upload OpenSSL ${{ matrix.openssl_version }} TLS JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'

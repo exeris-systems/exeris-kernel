@@ -408,6 +408,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed — verification
 
+- **The OpenSSL matrix runs the peer-verification suites on each pinned major and fails a listed
+  suite that skipped or ran nothing.** Each `tls-openssl-matrix` entry now runs the Core error-queue
+  and peer-verification ITs, the Community TLS suites and the HTTP peer-verification TCK binding, and
+  the `default-trust` fork, then reads the Surefire and Failsafe reports: a listed class with no
+  report, zero tests or any skip fails the entry, since each of those reports green. A new
+  `CommunityOpenSslPinnedMajorTest` does for the Community test JVM what
+  `CoreOpenSslPinnedVersionAssertionTest` does for Core's, so the Community suites cannot pass against
+  the runner's own OpenSSL. The Core IT step invoked the `verify` lifecycle with
+  `-Dsurefire.skip=true`, which is not a Surefire property: every entry re-ran the whole Core unit
+  suite and replaced the pinned-version guard's report with a skipped run. It now invokes the Failsafe
+  goals directly.
+
 - **The last two TLS suites gated on a certificate directory no commit contains now generate their
   material and run.** `CommunityHttpBootstrapIntegrationTest#httpSubsystemServesHealthEndpointOverTls`
   and the three handshake cases of `CommunityTlsEngineLoopbackIntegrationTest` read
