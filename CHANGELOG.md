@@ -87,20 +87,6 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
-- **Storage boots with the S3 driver named** (ADR-056). A kernel booted with
-  `storage.blob.provider=blob-s3-community` and the driver's required keys failed in the storage
-  subsystem's `initialize()` with `IllegalStateException: KernelProviders.MEMORY_ALLOCATOR is not
-  bound`: bootstrap composes `providerBindings()` only after every subsystem has initialised, so the
-  `memory` dependency ordered the boot without making the allocator visible, and the S3 driver
-  refuses to create a store without it. `CommunityStorageSubsystem` now selects the driver in
-  `initialize()` and creates the store in `start()`, which runs inside the kernel scope, behind a
-  `DeferredBlobStore` bound to `BLOB_STORE` — the shape `DeferredHttpServerEngine` already gives the
-  HTTP engines. An id naming no driver (`EX-BLOB-8008`) and an unset `storage.blob.location`
-  (`EX-BLOB-8009`) are still refused in `initialize()`. A driver refusing its own configuration, such
-  as S3 without `storage.blob.s3.bucket`, is refused in `start()` and still fails the boot before the
-  application runs. `eu.exeris.kernel.storage.StorageBootstrapSelected` is recorded when the driver
-  is selected, before its store is created.
-
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
@@ -852,11 +838,23 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   and nothing binds, which is what every deployment to date has been doing; set means the choice has
   been stated. An id matching no driver fails at boot with `EX-BLOB-8008`, carrying the key, the
   value and the ids that were available; a classpath with no driver at all is `EX-BLOB-8007`. Also
-  reads `storage.blob.location` (required once storage is on) and
+  reads `storage.blob.location` (required once storage is on; unset is `EX-BLOB-8009`) and
   `storage.blob.maxSignedUrlTtlSeconds`. For the S3 driver, `storage.blob.location` is the
   **endpoint** and `storage.blob.s3.bucket` / `.accessKey` / `.secretKey` (plus optional `.region`
   and `.maxObjectBytes`) are forwarded into the driver's properties. The subsystem declares
   `dependsOn("memory")`, because the S3 store stages transfers through the kernel allocator.
+
+  **The driver is selected in `initialize()`; its store is created in `start()`.** Bootstrap builds
+  the kernel scope from `providerBindings()` only after every subsystem has initialised, so
+  `dependsOn("memory")` orders the boot without making the allocator visible during `initialize()`.
+  The three `EX-BLOB` refusals above are raised in `initialize()`; the store is created in `start()`,
+  inside the kernel scope, where the S3 driver finds the allocator it refuses to be created without.
+  `BLOB_STORE` holds a `DeferredBlobStore` wrapping that store — the shape `DeferredHttpServerEngine`
+  and `DeferredHttpClientEngine` give the HTTP engines — which refuses work before `start()` and after
+  `close()`. A driver refusing
+  its own configuration, such as S3 without `storage.blob.s3.bucket`, is refused in `start()` and
+  still fails the boot before the application runs. `StorageBootstrapSelected` is recorded at
+  selection, so a boot whose driver then refuses still records one.
 
 
 - **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**
