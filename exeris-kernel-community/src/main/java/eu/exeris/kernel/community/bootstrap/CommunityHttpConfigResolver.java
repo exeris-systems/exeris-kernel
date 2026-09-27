@@ -93,9 +93,6 @@ final class CommunityHttpConfigResolver {
         boolean h2cUpgradeEnabled = configProvider.getBoolean("http.h2cUpgradeEnabled")
             .orElse(true);
         HttpVersion maxVersion = resolveMaxVersion(configProvider);
-        // ADR-074. A DIAL address, deliberately distinct from http.bindHost, which is a LISTEN
-        // address and never read by the client. No default: an unaddressed request is refused
-        // rather than sent to whatever the server happens to bind.
         // ADR-071's tail: the HTTP/1 header keys are a per-field size and a field count, while
         // HTTP/2 bounds an assembled header BLOCK — different quantities, so this is its own key
         // rather than a product of the other two, which would have loosened the default twelvefold.
@@ -110,6 +107,9 @@ final class CommunityHttpConfigResolver {
             .orElse(HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE);
         int maxStringLiteralSize = configProvider.getInt("http.maxStringLiteralSize")
             .orElse(HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
+        // ADR-074. A DIAL address, deliberately distinct from http.bindHost, which is a LISTEN
+        // address and never dialled by the client. No default: an unaddressed request is refused
+        // rather than sent to whatever the server happens to bind.
         String defaultAuthority = configProvider.getString("http.client.defaultAuthority")
             .map(String::strip)
             .filter(value -> !value.isEmpty())
