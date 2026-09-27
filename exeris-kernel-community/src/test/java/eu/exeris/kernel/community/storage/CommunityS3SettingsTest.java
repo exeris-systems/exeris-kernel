@@ -135,6 +135,24 @@ class CommunityS3SettingsTest {
         }
 
         @Test
+        @DisplayName("the Host value and the origin omit the scheme's default port, and keep any other")
+        void hostHeaderAndOriginOmitOnlyTheDefaultPort() {
+            CommunityS3Settings explicit = CommunityS3Settings.from(configWith(Map.of()));
+            assertThat(explicit.hostHeader()).isEqualTo("minio.internal:9000");
+            assertThat(explicit.origin()).isEqualTo("http://minio.internal:9000");
+
+            BlobStorageConfig defaultPort = new BlobStorageConfig("http://minio.internal:80",
+                    BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
+                    Map.of(CommunityS3Settings.BUCKET, "bucket",
+                            CommunityS3Settings.ACCESS_KEY, "access",
+                            CommunityS3Settings.SECRET_KEY, "secret"));
+            CommunityS3Settings onDefault = CommunityS3Settings.from(defaultPort);
+            assertThat(onDefault.hostHeader()).isEqualTo("minio.internal");
+            assertThat(onDefault.origin()).isEqualTo("http://minio.internal");
+            assertThat(onDefault.dialAuthority()).isEqualTo("minio.internal:80");
+        }
+
+        @Test
         @DisplayName("an http endpoint requires plaintext of the client engine's transport")
         void httpIsPlaintext() {
             CommunityS3Settings settings = CommunityS3Settings.from(configWith(Map.of()));

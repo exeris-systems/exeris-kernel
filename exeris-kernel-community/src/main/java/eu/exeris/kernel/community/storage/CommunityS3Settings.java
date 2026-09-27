@@ -165,6 +165,29 @@ import java.util.Map;
         return host + ":" + port;
     }
 
+    /**
+     * The {@code Host} value the signer signs and sends: the host alone on the scheme's default port,
+     * otherwise {@code host:port}.
+     *
+     * <p>RFC 9110 reads both as the same authority as {@link #dialAuthority()}. The port-less form is
+     * the one a browser or curl sends for a presigned URL on the default port, so a signature over
+     * {@code host:443} would verify against nothing it sends.
+     *
+     * @return the {@code Host} value
+     */
+    /* default */ String hostHeader() {
+        return port == scheme.defaultPort() ? host : host + ":" + port;
+    }
+
+    /**
+     * The scheme and authority a presigned URL starts with: {@code scheme://} and {@link #hostHeader()}.
+     *
+     * @return the origin, with no trailing slash
+     */
+    /* default */ String origin() {
+        return scheme.token() + "://" + hostHeader();
+    }
+
     private static URI parseEndpoint(String location) {
         URI endpoint;
         try {
