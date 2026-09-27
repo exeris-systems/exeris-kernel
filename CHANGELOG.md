@@ -60,9 +60,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **A path template rejects a request on its literal prefix before walking segments.** Everything
   before a template's first placeholder is literal, so a path that does not start with it cannot
   match. Both route tables use it. In a generated application's table a `POST` is rejected by one
-  prefix comparison against every other entity's stream template instead of a segment walk: the
-  stream probe for a collection `POST` went from a median 199 ns to 29 ns at 10 entities and from
-  678 ns to 104 ns at 30, over three fresh JVMs each.
+  prefix comparison against every other entity's stream template instead of a segment walk, which
+  makes the stream probe for a collection `POST` about 6.5 to 7 times cheaper by median, with
+  allocation unchanged. The figures are indicative, not JMH: `HttpRoutingAllocationResearch` keeps the
+  best of two interleaved passes of a best-of-5 `System.nanoTime` loop, run in three fresh JVMs per
+  side at load average 1.9 to 12.4.
+  The medians went from 199 ns to 29 ns at 10 entities (per JVM, 193–201 ns to 28–30 ns) and from
+  678 ns to 104 ns at 30 (643–790 ns to 81–163 ns).
 
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
   total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
@@ -124,9 +128,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   by delegating. A handler that does not implement it, such as a lambda over a router, is still
   served respond-once. Resolution runs on the HTTP/1.1 path only: a stream route requested over
   HTTP/2 is still served respond-once (release notes, *Carry-over*, for the workaround). A generated
-  application streams once a tooling release built on kernel 0.12 or later binds a forwarder that
-  implements the interface and hands its stream handlers the event bus through their constructors;
-  both changes are in `exeris-tooling`.
+  application streams only once its forwarder implements the interface and its stream handlers
+  receive the event bus through their constructors. Both are `exeris-tooling` changes, which need a
+  tooling release built on kernel 0.12 or later.
 
 - **The SPI no longer says a boot binding reaches every virtual thread.** `KernelProviders`, several
   of its slots, `HttpKernelProviders`, `ConfigProvider` and the `events` package documentation said
