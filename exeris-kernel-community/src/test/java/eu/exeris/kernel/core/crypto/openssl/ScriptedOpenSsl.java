@@ -30,9 +30,11 @@ public final class ScriptedOpenSsl {
     private final Deque<byte[]> readRecords = new ArrayDeque<>();
     private final AtomicInteger readCalls = new AtomicInteger();
     private final AtomicInteger clears = new AtomicInteger();
+    private final AtomicInteger ctxFrees = new AtomicInteger();
     private volatile int errorResult = CoreOpenSslLoader.SSL_ERROR_WANT_READ;
     private volatile long verifyResult = CoreOpenSslLoader.X509_V_OK;
     private volatile int set1HostResult = 1;
+    private volatile int setFdResult = 1;
 
     /**
      * Queues the results of the next {@code SSL_connect} calls; once the queue is empty, each call
@@ -97,6 +99,22 @@ public final class ScriptedOpenSsl {
         return this;
     }
 
+    /**
+     * Sets what {@code SSL_set_fd} returns.
+     *
+     * @param result {@code 1} to bind the descriptor, anything else to fail the bind
+     * @return this
+     */
+    public ScriptedOpenSsl setFdResult(int result) {
+        this.setFdResult = result;
+        return this;
+    }
+
+    /** @return how many times {@code SSL_CTX_free} ran */
+    public int ctxFrees() {
+        return ctxFrees.get();
+    }
+
     /** @return how many times {@code SSL_connect} ran */
     public int connectCalls() {
         return connectCalls.get();
@@ -119,7 +137,7 @@ public final class ScriptedOpenSsl {
      */
     public CoreSslHandles handles() {
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
-                null, null, null, bind("ctxFree", void.class, long.class), null, null, null, null, null, null);
+                null, null, null, bind("sslCtxFree", void.class, long.class), null, null, null, null, null, null);
         CoreSslHandles.HandshakeHandles handshake = new CoreSslHandles.HandshakeHandles(
                 bind("sslNew", long.class, long.class),
                 bind("ctxFree", void.class, long.class),
@@ -150,9 +168,9 @@ public final class ScriptedOpenSsl {
     }
 
     /**
-     * {@code SSL_set_fd}, accepting any descriptor.
+     * {@code SSL_set_fd}, returning {@link #setFdResult(int)} for any descriptor.
      *
-     * @return a handle that returns {@code 1}
+     * @return a handle that returns {@code 1} unless the script says otherwise
      */
     public MethodHandle sslSetFd() {
         return bind("setFd", int.class, long.class, int.class);
@@ -178,6 +196,11 @@ public final class ScriptedOpenSsl {
     @SuppressWarnings("unused")
     private void ctxFree(long pointer) {
         // nothing to free
+    }
+
+    @SuppressWarnings("unused")
+    private void sslCtxFree(long pointer) {
+        ctxFrees.incrementAndGet();
     }
 
     @SuppressWarnings("unused")
@@ -268,6 +291,6 @@ public final class ScriptedOpenSsl {
 
     @SuppressWarnings("unused")
     private int setFd(long ssl, int fd) {
-        return 1;
+        return setFdResult;
     }
 }

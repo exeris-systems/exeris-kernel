@@ -205,6 +205,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   engine is built after `close()` has released the carrier's client trust, which threw
   `IllegalStateException` (`client trust is closed`); the socket it dialled is closed either way.
 
+- **An accepted TLS connection whose engine cannot bind to the socket releases the engine and the
+  socket.** `NativeTcpCarrier` built the listener's TLS engine for an accepted socket and then bound
+  it to the socket's descriptor; when the bind threw, no stream owned either, so the accept fault was
+  recorded and both the engine's native `SSL_CTX` and the socket stayed open. The carrier now closes
+  the engine on any failure after it is built, and closes the socket through whichever owner holds it
+  at that point, the stream once one exists and the socket itself before that.
+
 - **A failed TLS handshake reaches the caller with its cause.** A Community stream whose handshake
   failed closed itself, and the caller then saw `IllegalStateException` (`stream closed`) from a
   write, or end-of-stream or `IllegalStateException` from a read, depending on which thread had

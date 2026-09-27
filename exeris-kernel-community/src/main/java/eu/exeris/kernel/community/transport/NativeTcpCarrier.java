@@ -897,6 +897,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         while (acceptedChannel != null && running.get()) {
             SocketChannel currentChannel = acceptedChannel;
             NativeTcpConnection connection = null;
+            NativeTcpStream stream = null;
             boolean slotReserved = false;
             boolean connectionManagedByStreamLifecycle = false;
             try {
@@ -915,17 +916,13 @@ public final class NativeTcpCarrier implements TransportEngine {
                         remote.getAddress().getHostAddress(),
                         remote.getPort());
 
-                NativeTcpStream stream = buildAcceptedStream(currentChannel, connection);
+                stream = buildAcceptedStream(currentChannel, connection);
                 connection.bindSingleStream(stream);
                 connectionManagedByStreamLifecycle = true;
                 registerConnection(connection, stream, currentChannel);
             } catch (RuntimeException exception) {
                 recordAcceptFault(exception);
-                if (connection != null) {
-                    connection.close();
-                } else {
-                    closeQuietly(currentChannel);
-                }
+                releaseFailedAccept(currentChannel, connection, stream, connectionManagedByStreamLifecycle);
             } finally {
                 if (slotReserved && !connectionManagedByStreamLifecycle) {
                     activeConnections.decrementAndGet();
@@ -958,23 +955,63 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    /**
+     * Closes what an accepted connection whose setup threw holds, each resource once, through its
+     * owner at that point: a stream bound to the connection closes through the connection, and
+     * closes the socket and its TLS engine with it; a stream built but not bound closes itself; with
+     * no stream, the socket is closed here. The connection owns no resource of its own, so closing
+     * it without a stream only marks it closed.
+     *
+     * @param channel     the accepted socket
+     * @param connection  the connection built for it, or {@code null} if setup failed before that
+     * @param stream      the stream built for it, or {@code null} if setup failed before that
+     * @param streamBound whether {@code stream} is bound to {@code connection}
+     */
+    private static void releaseFailedAccept(SocketChannel channel,
+                                            NativeTcpConnection connection,
+                                            NativeTcpStream stream,
+                                            boolean streamBound) {
+        if (connection != null) {
+            connection.close();
+        }
+        if (stream == null) {
+            closeQuietly(channel);
+        } else if (!streamBound) {
+            stream.close();
+        }
+    }
+
+    /**
+     * Builds the stream for an accepted socket, with a listener TLS engine when the carrier serves
+     * TLS. The returned stream owns the engine. If anything after the engine is created throws, the
+     * engine is closed before the failure propagates; the socket stays the caller's.
+     *
+     * @param channel    the accepted socket
+     * @param connection the connection the stream belongs to
+     * @return the stream, which owns {@code channel}'s TLS engine if there is one
+     */
     private NativeTcpStream buildAcceptedStream(SocketChannel channel, NativeTcpConnection connection) {
         TlsEngine tlsEngine = createListenerTlsEngine();
-        bindTlsFdIfRequired(tlsEngine, channel);
-        NativeTcpStream stream = new NativeTcpStream(
-                engineName(),
-                streamSeq.getAndIncrement(),
-                channel,
-                connection,
-                allocator,
-                tlsEngine,
-                () -> requestWriteInterest(channel),
-                () -> onStreamClosed(channel),
-                backend.socketHandles());
-        if (tlsEngine instanceof CommunityTlsEngine) {
-            stream.markTlsBoundFromCarrier();
+        try {
+            bindTlsFdIfRequired(tlsEngine, channel);
+            NativeTcpStream stream = new NativeTcpStream(
+                    engineName(),
+                    streamSeq.getAndIncrement(),
+                    channel,
+                    connection,
+                    allocator,
+                    tlsEngine,
+                    () -> requestWriteInterest(channel),
+                    () -> onStreamClosed(channel),
+                    backend.socketHandles());
+            if (tlsEngine instanceof CommunityTlsEngine) {
+                stream.markTlsBoundFromCarrier();
+            }
+            return stream;
+        } catch (RuntimeException | Error failure) {
+            closeQuietly(tlsEngine);
+            throw failure;
         }
-        return stream;
     }
 
     /**
