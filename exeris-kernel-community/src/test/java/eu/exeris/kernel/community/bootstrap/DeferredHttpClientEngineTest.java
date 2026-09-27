@@ -18,6 +18,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -42,7 +43,8 @@ class DeferredHttpClientEngineTest {
 
     private final AtomicInteger created = new AtomicInteger();
     private final AtomicReference<HttpRequest> delivered = new AtomicReference<>();
-    private final HttpProvider provider = new CountingProvider(created, delivered);
+    private final AtomicInteger sends = new AtomicInteger();
+    private final HttpProvider provider = new CountingProvider(created, delivered, sends);
 
     @Test
     @DisplayName("reports the configured default peer before start, without building a delegate")
@@ -143,12 +145,15 @@ class DeferredHttpClientEngineTest {
         try (DeferredHttpClientEngine engine = new DeferredHttpClientEngine(provider, clientConfig(CONFIGURED))) {
             engine.start();
 
+            // Holds one direction: a running engine refuses a null request itself and never hands it
+            // to the delegate. The delegate refuses null as the SPI requires, so the exception type
+            // cannot tell a refused request from a forwarded one; the delegate's send count can.
             assertThatThrownBy(() -> engine.send(null))
                     .as("a null request is an argument error whatever the lifecycle state")
                     .isInstanceOf(NullPointerException.class);
-            assertThat(delivered.get())
+            assertThat(sends.get())
                     .as("the delegate never receives a null request")
-                    .isNull();
+                    .isZero();
         }
     }
 
@@ -186,7 +191,8 @@ class DeferredHttpClientEngineTest {
                 HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE);
     }
 
-    private record CountingProvider(AtomicInteger created, AtomicReference<HttpRequest> delivered)
+    private record CountingProvider(AtomicInteger created, AtomicReference<HttpRequest> delivered,
+                                    AtomicInteger sends)
             implements HttpProvider {
 
         @Override
@@ -197,7 +203,7 @@ class DeferredHttpClientEngineTest {
         @Override
         public HttpClientEngine createClientEngine(HttpConfig config) {
             created.incrementAndGet();
-            return new DefaultlessEngine(delivered);
+            return new DefaultlessEngine(delivered, sends);
         }
 
         @Override
@@ -212,16 +218,19 @@ class DeferredHttpClientEngineTest {
     }
 
     /**
-     * A delegate that leaves {@link HttpClientEngine#defaultAuthority()} at the interface default and
-     * records the request it is given.
+     * A delegate that leaves {@link HttpClientEngine#defaultAuthority()} at the interface default,
+     * counts every {@link #send(HttpRequest)} call, null included, records the request it is given,
+     * and refuses a {@code null} request as {@link HttpClientEngine#send(HttpRequest)} requires.
      */
     private static final class DefaultlessEngine implements HttpClientEngine {
 
         private final AtomicReference<HttpRequest> delivered;
+        private final AtomicInteger sends;
         private boolean running;
 
-        DefaultlessEngine(AtomicReference<HttpRequest> delivered) {
+        DefaultlessEngine(AtomicReference<HttpRequest> delivered, AtomicInteger sends) {
             this.delivered = delivered;
+            this.sends = sends;
         }
 
         @Override
@@ -231,7 +240,8 @@ class DeferredHttpClientEngineTest {
 
         @Override
         public HttpResponse send(HttpRequest request) {
-            delivered.set(request);
+            sends.incrementAndGet();
+            delivered.set(Objects.requireNonNull(request, "request must not be null"));
             return HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1);
         }
 
