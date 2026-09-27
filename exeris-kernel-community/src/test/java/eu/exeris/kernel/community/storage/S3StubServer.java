@@ -29,7 +29,9 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -165,9 +167,12 @@ final class S3StubServer implements AutoCloseable {
         return List.copyOf(requests);
     }
 
-    /** The server name each completed TLS handshake requested, {@code null} for none, in order. */
+    /**
+     * The server name each completed TLS handshake requested, {@code null} for none, in order. The
+     * copy keeps a {@code null}, so a handshake that named no server is reported, not thrown on.
+     */
     List<String> serverNames() {
-        return List.copyOf(serverNames);
+        return Collections.unmodifiableList(new ArrayList<>(serverNames));
     }
 
     /** TLS handshakes that failed, each on a connection that served nothing. */
