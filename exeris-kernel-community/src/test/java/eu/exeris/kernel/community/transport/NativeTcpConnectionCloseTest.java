@@ -23,9 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * {@link NativeTcpConnection#close()} closes its stream even when the peer closed first.
  *
- * <p>The carrier marks a connection closed when it reads the peer's end of stream, without closing
- * the stream. A {@code close()} that returned early on that flag left the stream open — and its
- * socket, key and queues with it — until the idle reaper or the engine's own close came round.
+ * <p>The carrier marks a connection closed when it reads the peer's end of stream and leaves the
+ * stream open, so that mark releases nothing the stream holds. A {@code close()} on the connection
+ * afterwards closes the stream — its socket, selection key and queues — and the stream then refuses
+ * a write; a repeated {@code close()} leaves it closed.
  */
 class NativeTcpConnectionCloseTest {
 
