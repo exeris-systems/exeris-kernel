@@ -111,6 +111,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final long ACCEPT_RETRY_BASE_MILLIS = 25L;
     private static final long ACCEPT_RETRY_MAX_MILLIS = 1_000L;
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
+    /** What {@link #connect} says, as an {@code IllegalStateException}, when the engine is not running. */
+    private static final String ENGINE_NOT_RUNNING = "Engine is not running";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
     // Advisory TCP reset code for an abortive teardown driven by a reactor dispatch fault
@@ -381,7 +383,8 @@ public final class NativeTcpCarrier implements TransportEngine {
      * @param port remote port to connect to
      * @return the established connection, with its stream already registered on a reactor
      * @throws IllegalStateException if the mode does not support outbound connect, or the engine
-     *                                is not running
+     *                                is not running, including one closed while this connect was
+     *                                in flight
      * @throws TransportException    if the connection could not be established ({@code EX-NET-4001}),
      *                                including, before any socket opens, a {@code host} that is
      *                                neither a DNS name nor an IP literal while this carrier dials
@@ -394,7 +397,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             throw new IllegalStateException("Transport mode does not support outbound connect");
         }
         if (!running.get()) {
-            throw new IllegalStateException("Engine is not running");
+            throw new IllegalStateException(ENGINE_NOT_RUNNING);
         }
         if (clientTls.refusesOutbound()) {
             throw TransportException.bindFailure(engineName(), port,
@@ -423,7 +426,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             channel.connect(new InetSocketAddress(host, port));
             channel.configureBlocking(false);
             if (peer != null) {
-                tlsEngine = clientTls.newEngine(peer);
+                tlsEngine = newClientEngine(peer);
             }
             bindTlsFdIfRequired(tlsEngine, channel);
             final SocketChannel connectedChannel = channel;
@@ -462,6 +465,26 @@ public final class NativeTcpCarrier implements TransportEngine {
             closeQuietly(tlsEngine);
             closeQuietly(channel);
             throw e;
+        }
+    }
+
+    /**
+     * A client engine that verifies the server against {@code peer}. {@link #close()} closes the
+     * client TLS only after {@link #stop()}, so an engine build refused once the client TLS is
+     * closed belongs to a connect that lost to that close, and is reported as the engine not running.
+     *
+     * @param peer the identity the server must present
+     * @return a new engine the caller owns
+     * @throws IllegalStateException ({@code Engine is not running}) if the client TLS was closed
+     */
+    private TlsEngine newClientEngine(TlsPeerIdentity peer) {
+        try {
+            return clientTls.newEngine(peer);
+        } catch (IllegalStateException refused) {
+            if (clientTls.isClosed()) {
+                throw new IllegalStateException(ENGINE_NOT_RUNNING, refused);
+            }
+            throw refused;
         }
     }
 
@@ -1041,10 +1064,10 @@ public final class NativeTcpCarrier implements TransportEngine {
         try {
             reactor = reactors.get(index);
         } catch (IndexOutOfBoundsException cleared) {
-            throw new IllegalStateException("Engine is not running", cleared);
+            throw new IllegalStateException(ENGINE_NOT_RUNNING, cleared);
         }
         if (reactor == null) {
-            throw new IllegalStateException("Engine is not running");
+            throw new IllegalStateException(ENGINE_NOT_RUNNING);
         }
         return reactor;
     }

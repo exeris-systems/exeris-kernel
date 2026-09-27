@@ -199,7 +199,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   reactor by reading the reactor list's size and then an element, while `stop()` may be clearing
   that list; the read could fail with `IndexOutOfBoundsException`, or hand back an empty slot, outside
   `connect`'s contract. Both now throw `IllegalStateException` (`Engine is not running`), the
-  exception `connect` documents for an engine that is not running.
+  exception `connect` documents for an engine that is not running. So does a verifying connect whose
+  engine is built after `close()` has released the carrier's client trust, which threw
+  `IllegalStateException` (`client trust is closed`); the socket it dialled is closed either way.
 
 - **A failed TLS handshake reaches the caller with its cause.** A Community stream whose handshake
   failed closed itself, and the caller then saw `IllegalStateException` (`stream closed`) from a

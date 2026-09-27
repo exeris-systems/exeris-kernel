@@ -76,6 +76,8 @@ final class NativeTcpClientTls implements AutoCloseable {
     private final CommunityTlsClientTrust trust;
     private final CryptoProviderConfig engineConfig;
     private final TrustOrigin trustOrigin;
+    // Set before the trust is closed: a caller whose engine build the closed trust refused reads true.
+    private volatile boolean closed;
 
     private NativeTcpClientTls(Posture posture,
                                CommunityKernelCryptoProvider provider,
@@ -189,11 +191,22 @@ final class NativeTcpClientTls implements AutoCloseable {
     }
 
     /**
+     * Whether {@link #close()} has begun releasing the trust. It reads {@code true} before the trust
+     * is closed, so a caller whose {@link #newEngine} the closed trust refused sees it.
+     *
+     * @return {@code true} once {@link #close()} has begun on a carrier that has a trust
+     */
+    /* default */ boolean isClosed() {
+        return closed;
+    }
+
+    /**
      * Releases the trust store, if there is one. Idempotent.
      */
     @Override
     public void close() {
         if (trust != null) {
+            closed = true;
             trust.close();
         }
     }
