@@ -47,7 +47,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * What {@link NativeTcpTransportProvider} decides for a carrier's outbound connections, read from the
  * {@code TransportTlsClientPosture} event it records: where the trust comes from, when outbound TLS is
- * not armed, and what a crypto provider that cannot verify a peer does to each mode.
+ * not armed, what a crypto provider that cannot verify a peer does to each mode, and what a
+ * {@link CommunityOutboundTls} requirement holds the decision to.
  */
 @DisplayName("NativeTcpTransportProvider — the client TLS decision and its posture event")
 class NativeTcpTransportProviderClientTlsTest {
@@ -105,6 +106,9 @@ class NativeTcpTransportProviderClientTlsTest {
         RecordedEvent posture = onePosture(() -> build(TransportMode.CLIENT, community, trustKey(anchor)));
 
         assertPosture(posture, "CLIENT", "VERIFIED", "CONFIG_KEY");
+        assertThat(posture.getString("requirement"))
+                .as("TransportProvider#createEngine states no requirement")
+                .isEqualTo("AMBIENT");
         assertThat(posture.getBoolean("configBound")).isTrue();
         assertThat(posture.getString("defaultCertFile")).isNull();
     }
@@ -237,6 +241,109 @@ class NativeTcpTransportProviderClientTlsTest {
                 });
     }
 
+    @Test
+    @DisplayName("PLAINTEXT required: plaintext although the Community provider is bound, and said so")
+    void plaintextRequirementIgnoresABoundCommunityProvider() throws Exception {
+        RecordedEvent posture = onePosture(() ->
+                build(TransportMode.CLIENT, community, trustKey(anchor), CommunityOutboundTls.PLAINTEXT));
+
+        assertPosture(posture, "CLIENT", "PLAINTEXT_REQUIRED", "NONE");
+        assertThat(posture.getString("requirement")).isEqualTo("PLAINTEXT");
+    }
+
+    @Test
+    @DisplayName("PLAINTEXT required: a foreign provider builds the carrier")
+    void plaintextRequirementBuildsUnderAForeignProvider() throws Exception {
+        RecordedEvent posture = onePosture(() ->
+                build(TransportMode.CLIENT, new ForeignCryptoProvider(), emptyConfig(),
+                        CommunityOutboundTls.PLAINTEXT));
+
+        assertPosture(posture, "CLIENT", "PLAINTEXT_REQUIRED", "NONE");
+    }
+
+    @Test
+    @DisplayName("PLAINTEXT required: a trust file that is not a readable file still fails construction")
+    void plaintextRequirementStillChecksTheTrustFile() {
+        Path missing = material.resolve("missing-under-plaintext.pem");
+
+        assertThatThrownBy(() ->
+                build(TransportMode.CLIENT, community, trustKey(missing), CommunityOutboundTls.PLAINTEXT))
+                .isInstanceOf(TransportException.class)
+                .satisfies(e -> assertThat(((TransportException) e).rawArgs())
+                        .contains("crypto.tls.client.trustFile cannot be used as client trust"));
+    }
+
+    @Test
+    @DisplayName("VERIFIED required with the Community provider bound: a verifying carrier")
+    void verifiedRequirementWithTheCommunityProviderVerifies() throws Exception {
+        RecordedEvent posture = onePosture(() ->
+                build(TransportMode.CLIENT, community, trustKey(anchor), CommunityOutboundTls.VERIFIED));
+
+        assertPosture(posture, "CLIENT", "VERIFIED", "CONFIG_KEY");
+        assertThat(posture.getString("requirement")).isEqualTo("VERIFIED");
+    }
+
+    @Test
+    @DisplayName("VERIFIED required with no provider bound: construction fails, and the refusal is recorded")
+    void verifiedRequirementWithoutAProviderIsRefused() throws Exception {
+        assertRefusedAndRecorded(null, NativeTcpClientTlsResolver.VERIFIED_BUT_NO_CRYPTO_PROVIDER,
+                "REFUSED_NO_CRYPTO_PROVIDER");
+    }
+
+    @Test
+    @DisplayName("VERIFIED required under exeris.transport.tls=false: construction fails, neither downgraded "
+            + "nor armed")
+    void verifiedRequirementUnderTheOptOutIsRefused() throws Exception {
+        System.setProperty(TLS_PROPERTY, "false");
+
+        assertRefusedAndRecorded(community, NativeTcpClientTlsResolver.VERIFIED_BUT_DECLINED, "REFUSED_DECLINED");
+    }
+
+    @Test
+    @DisplayName("VERIFIED required with a foreign provider bound: construction fails, and the refusal is recorded")
+    void verifiedRequirementWithAForeignProviderIsRefused() throws Exception {
+        assertRefusedAndRecorded(new ForeignCryptoProvider(), TlsFailureDetail.NO_PEER_VERIFIER,
+                "REFUSED_FOREIGN_PROVIDER");
+    }
+
+    @Test
+    @DisplayName("a requirement on a SERVER or DUAL transport is refused before anything is built")
+    void aRequirementOnANonClientTransportIsRefused() throws Exception {
+        for (TransportMode mode : List.of(TransportMode.SERVER, TransportMode.DUAL)) {
+            for (CommunityOutboundTls requirement
+                    : List.of(CommunityOutboundTls.PLAINTEXT, CommunityOutboundTls.VERIFIED)) {
+                List<RecordedEvent> postures = postures(() -> {
+                    assertThatThrownBy(() -> build(mode, community, trustKey(anchor), requirement))
+                            .as("%s with %s", mode, requirement)
+                            .isInstanceOf(IllegalArgumentException.class)
+                            .hasMessageContaining("CLIENT transport only");
+                    return null;
+                });
+                assertThat(postures).as("%s with %s records nothing", mode, requirement).isEmpty();
+            }
+        }
+    }
+
+    private void assertRefusedAndRecorded(KernelCryptoProvider provider, String reason, String refusal)
+            throws Exception {
+        List<RecordedEvent> postures = postures(() -> {
+            assertThatThrownBy(() ->
+                    build(TransportMode.CLIENT, provider, trustKey(anchor), CommunityOutboundTls.VERIFIED))
+                    .isInstanceOf(TransportException.class)
+                    .satisfies(e -> {
+                        TransportException failure = (TransportException) e;
+                        assertThat(failure.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4004);
+                        assertThat(failure.rawArgs()).contains(reason);
+                        assertThat(failure.getCause()).isNull();
+                    });
+            return null;
+        });
+
+        assertThat(postures).as("the refusal is recorded once").hasSize(1);
+        assertPosture(postures.getFirst(), "CLIENT", refusal, "NONE");
+        assertThat(postures.getFirst().getString("requirement")).isEqualTo("VERIFIED");
+    }
+
     private static void assertPosture(RecordedEvent posture, String mode, String decision, String trustSource) {
         assertThat(posture.getString("transportMode")).isEqualTo(mode);
         assertThat(posture.getString("posture")).isEqualTo(decision);
@@ -245,11 +352,24 @@ class NativeTcpTransportProviderClientTlsTest {
 
     private static TransportEngine build(TransportMode mode, KernelCryptoProvider provider, ConfigProvider config)
             throws Exception {
-        TransportConfig transportConfig = new TransportConfig(mode, "127.0.0.1",
-                mode == TransportMode.CLIENT ? 0 : freePort(), 1, null, null, 1024, 30_000);
+        TransportConfig transportConfig = transportConfig(mode);
         TransportEngine engine = within(provider, config, () -> new NativeTcpTransportProvider().createEngine(transportConfig));
         engine.close();
         return engine;
+    }
+
+    private static TransportEngine build(TransportMode mode, KernelCryptoProvider provider, ConfigProvider config,
+                                         CommunityOutboundTls requirement) throws Exception {
+        TransportConfig transportConfig = transportConfig(mode);
+        TransportEngine engine = within(provider, config,
+                () -> new NativeTcpTransportProvider().createEngine(transportConfig, requirement));
+        engine.close();
+        return engine;
+    }
+
+    private static TransportConfig transportConfig(TransportMode mode) throws IOException {
+        return new TransportConfig(mode, "127.0.0.1",
+                mode == TransportMode.CLIENT ? 0 : freePort(), 1, null, null, 1024, 30_000);
     }
 
     private static TransportEngine within(KernelCryptoProvider provider, ConfigProvider config,

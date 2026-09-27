@@ -15,6 +15,7 @@ import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportProvider;
 
 import java.nio.file.Path;
+import java.util.Objects;
 
 /**
  * Community transport provider backed by {@link NativeTcpCarrier}.
@@ -33,6 +34,14 @@ import java.nio.file.Path;
  * connect. There is no setting that keeps TLS and skips verification. Each {@code CLIENT} or
  * {@code DUAL} carrier records its decision as {@link TransportTlsClientPostureEvent} and an INFO
  * log line.
+ *
+ * <p>An owner that knows the scheme of the peer its {@code CLIENT} carrier dials states it through
+ * {@link #createEngine(TransportConfig, CommunityOutboundTls)} instead of taking the decision above.
+ * {@link CommunityOutboundTls#PLAINTEXT} dials plaintext whatever crypto provider is bound.
+ * {@link CommunityOutboundTls#VERIFIED} verifies the server as above, or fails the carrier's
+ * construction when {@code exeris.transport.tls} is {@code false}, no crypto provider is bound, or
+ * the bound one cannot verify an outbound peer; it never dials plaintext. The posture event records
+ * the requirement beside the decision.
  *
  * @since 0.5
  */
@@ -63,6 +72,9 @@ public final class NativeTcpTransportProvider implements TransportProvider {
      * {@link MemoryAllocator} and, if present, the bound {@link KernelCryptoProvider}, the TLS
      * configuration of its listener and what it does with outbound connections.
      *
+     * <p>{@link #createEngine(TransportConfig, CommunityOutboundTls)} with
+     * {@link CommunityOutboundTls#AMBIENT}.
+     *
      * @param config the transport configuration to build an engine for
      * @return a new, unstarted {@link NativeTcpCarrier}
      * @throws TransportException ({@code EX-NET-4004}) if no {@link MemoryAllocator} is bound, the
@@ -73,6 +85,32 @@ public final class NativeTcpTransportProvider implements TransportProvider {
      */
     @Override
     public TransportEngine createEngine(TransportConfig config) {
+        return createEngine(config, CommunityOutboundTls.AMBIENT);
+    }
+
+    /**
+     * Builds a {@link NativeTcpCarrier} as {@link #createEngine(TransportConfig)} does, with its
+     * outbound connections held to what its owner requires.
+     *
+     * <p>Community-internal, and not a {@link TransportProvider} method: for an owner whose
+     * {@code CLIENT} carrier dials peers of one known scheme, such as the S3 blob client. A
+     * requirement other than {@link CommunityOutboundTls#AMBIENT} applies to a {@code CLIENT}
+     * configuration only, since a listener's TLS follows its certificate material.
+     *
+     * @param config      the transport configuration to build an engine for
+     * @param requirement what the owner requires of outbound connections
+     * @return a new, unstarted {@link NativeTcpCarrier}
+     * @throws IllegalArgumentException if {@code requirement} is not {@code AMBIENT} and
+     *                                  {@code config} is not a {@code CLIENT} configuration
+     * @throws TransportException       ({@code EX-NET-4004}) as {@link #createEngine(TransportConfig)},
+     *                                  and, for {@link CommunityOutboundTls#VERIFIED}, if
+     *                                  {@code exeris.transport.tls} is {@code false}, no crypto
+     *                                  provider is bound, or the bound one cannot verify an
+     *                                  outbound peer
+     * @since 0.12
+     */
+    public TransportEngine createEngine(TransportConfig config, CommunityOutboundTls requirement) {
+        requireApplicable(config, requirement);
         if (!KernelProviders.MEMORY_ALLOCATOR.isBound()) {
             throw TransportException.bootstrapFailure(
                     PROVIDER_NAME,
@@ -85,7 +123,8 @@ public final class NativeTcpTransportProvider implements TransportProvider {
                 KernelProviders.CRYPTO_PROVIDER.isBound() ? KernelProviders.CRYPTO_PROVIDER.get() : null;
 
         CryptoProviderConfig listenerConfig = resolveListenerCryptoConfig(config);
-        NativeTcpClientTls clientTls = NativeTcpClientTlsResolver.resolve(config, cryptoProvider, listenerConfig);
+        NativeTcpClientTls clientTls =
+                NativeTcpClientTlsResolver.resolve(config, cryptoProvider, listenerConfig, requirement);
         try {
             return new NativeTcpCarrier(config, allocator, cryptoProvider, listenerConfig, clientTls);
         } catch (RuntimeException cause) {
@@ -130,6 +169,16 @@ public final class NativeTcpTransportProvider implements TransportProvider {
     @Override
     public boolean isAvailable() {
         return true;
+    }
+
+    /** A requirement other than {@code AMBIENT} is for a {@code CLIENT} transport only. */
+    private static void requireApplicable(TransportConfig config, CommunityOutboundTls requirement) {
+        Objects.requireNonNull(requirement, "requirement must not be null");
+        if (requirement != CommunityOutboundTls.AMBIENT
+                && (config == null || config.mode() != TransportMode.CLIENT)) {
+            throw new IllegalArgumentException("an outbound TLS requirement applies to a CLIENT transport only; got "
+                    + requirement + " for " + (config == null ? "no configuration" : config.mode()));
+        }
     }
 
     /**

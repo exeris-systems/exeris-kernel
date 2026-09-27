@@ -252,12 +252,28 @@ its **outbound** connections is decided once, when `NativeTcpTransportProvider` 
 | `PLAINTEXT_NO_CRYPTO_PROVIDER` | no crypto provider bound where the carrier is built | plaintext |
 | `PLAINTEXT_NO_LISTENER_MATERIAL` | a `DUAL` carrier whose listener has no certificate | plaintext |
 | `REFUSED_FOREIGN_PROVIDER` | the bound crypto provider is not the Community one, so it cannot verify an outbound peer | a `CLIENT` carrier fails construction (`EX-NET-4004`); a `DUAL` carrier's `connect` fails before any socket opens (`EX-NET-4001`, cause detail `bound crypto provider cannot verify an outbound peer`) |
+| `PLAINTEXT_REQUIRED` | the carrier's owner requires plaintext (`CommunityOutboundTls.PLAINTEXT`, below) | plaintext, whatever crypto provider is bound |
+| `REFUSED_DECLINED` | the owner requires verified TLS (`CommunityOutboundTls.VERIFIED`) and `-Dexeris.transport.tls=false` | none: the carrier fails construction (`EX-NET-4004`, `the peer requires TLS, and exeris.transport.tls=false declines it`) |
+| `REFUSED_NO_CRYPTO_PROVIDER` | the owner requires verified TLS and no crypto provider is bound | none: the carrier fails construction (`EX-NET-4004`, `the peer requires TLS, and no crypto provider is bound`) |
 
 Each decision is recorded as `eu.exeris.kernel.transport.TransportTlsClientPosture` and an INFO log
-line, with where the trust came from, whether the kernel configuration was bound, and — for OpenSSL's
-default trust — the effective default file and directory and whether either exists (a WARNING when
-neither does). The decision matters because it is invisible from outside: an engine built outside a
-booted kernel's scope, or before its crypto subsystem binds, dials plaintext.
+line, with the owner's requirement, where the trust came from, whether the kernel configuration was
+bound, and — for OpenSSL's default trust — the effective default file and directory and whether
+either exists (a WARNING when neither does). The decision matters because it is invisible from
+outside: an engine built outside a booted kernel's scope, or before its crypto subsystem binds, dials
+plaintext.
+
+**The owner's requirement.** An owner that knows the scheme of the peer its `CLIENT` carrier dials
+states what the carrier's outbound connections must be, through
+`NativeTcpTransportProvider#createEngine(TransportConfig, CommunityOutboundTls)`. That method is
+Community's own, not a `TransportProvider` method, and a requirement other than `AMBIENT` on any mode
+but `CLIENT` throws `IllegalArgumentException`. `AMBIENT`, which `TransportProvider#createEngine`
+passes, is the decision in the table. `PLAINTEXT` dials plaintext whatever is bound. `VERIFIED`
+verifies the server as a `VERIFIED` carrier does, or fails construction with `EX-NET-4004` and
+records why, checked in this order: `REFUSED_DECLINED`, `REFUSED_NO_CRYPTO_PROVIDER`, then
+`REFUSED_FOREIGN_PROVIDER` (detail `bound crypto provider cannot verify an outbound peer`). It never
+dials plaintext. A configured `crypto.tls.client.trustFile` is checked under every requirement, as it
+is when TLS is not armed.
 
 A verifying carrier opens one trust store — `crypto.tls.client.trustFile`, else OpenSSL's default —
 and shares it across its connections; `close()` gives up the carrier's reference, and each engine

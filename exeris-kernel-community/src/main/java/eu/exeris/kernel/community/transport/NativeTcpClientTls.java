@@ -24,15 +24,36 @@ final class NativeTcpClientTls implements AutoCloseable {
     /** The outcome of the client TLS decision for one carrier. */
     /* default */ enum Posture {
         /** Outbound connections speak TLS and verify the server. */
-        VERIFIED,
+        VERIFIED(false),
         /** {@code exeris.transport.tls=false}: outbound connections are plaintext. */
-        PLAINTEXT_DECLINED,
+        PLAINTEXT_DECLINED(false),
         /** No crypto provider was bound where the carrier was built: outbound connections are plaintext. */
-        PLAINTEXT_NO_CRYPTO_PROVIDER,
+        PLAINTEXT_NO_CRYPTO_PROVIDER(false),
         /** A DUAL carrier whose listener holds no certificate: it serves and dials plaintext. */
-        PLAINTEXT_NO_LISTENER_MATERIAL,
+        PLAINTEXT_NO_LISTENER_MATERIAL(false),
+        /** The carrier's owner requires plaintext: outbound connections are plaintext, whatever is bound. */
+        PLAINTEXT_REQUIRED(false),
         /** The bound crypto provider cannot verify an outbound peer: outbound connections are refused. */
-        REFUSED_FOREIGN_PROVIDER
+        REFUSED_FOREIGN_PROVIDER(true),
+        /** The owner requires verified TLS and {@code exeris.transport.tls=false} declines it: no carrier. */
+        REFUSED_DECLINED(true),
+        /** The owner requires verified TLS and no crypto provider is bound: no carrier. */
+        REFUSED_NO_CRYPTO_PROVIDER(true);
+
+        private final boolean refusing;
+
+        Posture(boolean refusing) {
+            this.refusing = refusing;
+        }
+
+        /**
+         * Whether this posture refuses outbound connections.
+         *
+         * @return {@code true} for every {@code REFUSED_*} posture
+         */
+        /* default */ boolean refusing() {
+            return refusing;
+        }
     }
 
     /** Where the trust a verifying carrier uses was named. */
@@ -80,7 +101,7 @@ final class NativeTcpClientTls implements AutoCloseable {
     /**
      * Outbound connections are plaintext, or refused, for the stated reason.
      *
-     * @param posture one of the {@code PLAINTEXT_*} postures, or {@link Posture#REFUSED_FOREIGN_PROVIDER}
+     * @param posture one of the {@code PLAINTEXT_*} or {@code REFUSED_*} postures
      * @return the decision
      */
     /* default */ static NativeTcpClientTls unarmed(Posture posture) {
@@ -147,10 +168,10 @@ final class NativeTcpClientTls implements AutoCloseable {
     /**
      * Whether outbound connections are refused.
      *
-     * @return {@code true} for {@link Posture#REFUSED_FOREIGN_PROVIDER}
+     * @return {@code true} for every {@code REFUSED_*} posture
      */
     /* default */ boolean refusesOutbound() {
-        return posture == Posture.REFUSED_FOREIGN_PROVIDER;
+        return posture != null && posture.refusing();
     }
 
     /**

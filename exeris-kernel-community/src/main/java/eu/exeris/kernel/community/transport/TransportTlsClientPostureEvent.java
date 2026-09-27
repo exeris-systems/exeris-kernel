@@ -18,7 +18,8 @@ import jdk.jfr.StackTrace;
  *
  * <p>Outbound TLS is armed only where a crypto provider is bound when the carrier is built and
  * {@code exeris.transport.tls} is not {@code false}. An engine built anywhere else dials plaintext,
- * and from outside the process a plaintext dial looks like any other. This event makes the decision,
+ * unless its owner required plaintext or verified TLS ({@code requirement}), and from outside the
+ * process a plaintext dial looks like any other. This event makes the decision, what it was held to,
  * and the trust a verifying carrier uses, visible.
  *
  * @since 0.12
@@ -35,9 +36,14 @@ final class TransportTlsClientPostureEvent extends Event {
     @Description("CLIENT or DUAL")
     /* default */ String transportMode;
 
+    @Label("Requirement")
+    @Description("What the carrier's owner required: AMBIENT when it stated nothing and the decision follows "
+            + "what is bound where the carrier is built, PLAINTEXT, or VERIFIED")
+    /* default */ String requirement;
+
     @Label("Posture")
-    @Description("VERIFIED, PLAINTEXT_DECLINED, PLAINTEXT_NO_CRYPTO_PROVIDER, PLAINTEXT_NO_LISTENER_MATERIAL "
-            + "or REFUSED_FOREIGN_PROVIDER")
+    @Description("VERIFIED, PLAINTEXT_DECLINED, PLAINTEXT_NO_CRYPTO_PROVIDER, PLAINTEXT_NO_LISTENER_MATERIAL, "
+            + "PLAINTEXT_REQUIRED, REFUSED_FOREIGN_PROVIDER, REFUSED_DECLINED or REFUSED_NO_CRYPTO_PROVIDER")
     /* default */ String posture;
 
     @Label("Trust Source")
@@ -62,8 +68,9 @@ final class TransportTlsClientPostureEvent extends Event {
     @Description("Whether the default file or directory exists; a default trust without either verifies no server")
     /* default */ boolean defaultTrustPresent;
 
-    /* default */ static void emit(String transportMode, String posture, String trustSource, boolean configBound,
-                                   String defaultCertFile, String defaultCertDir, boolean defaultTrustPresent) {
+    /* default */ static void emit(String transportMode, String requirement, String posture, String trustSource,
+                                   boolean configBound, String defaultCertFile, String defaultCertDir,
+                                   boolean defaultTrustPresent) {
         if (!FlightRecorder.isInitialized()) {
             return;
         }
@@ -72,6 +79,7 @@ final class TransportTlsClientPostureEvent extends Event {
             return;
         }
         event.transportMode = transportMode;
+        event.requirement = requirement;
         event.posture = posture;
         event.trustSource = trustSource;
         event.configBound = configBound;
