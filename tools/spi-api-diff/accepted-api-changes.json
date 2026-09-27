@@ -1,0 +1,14 @@
+[
+  {
+    "signature": "eu.exeris.kernel.core.http.routing.HttpRouter$StreamMatch",
+    "since": "0.12",
+    "adr": "ADR-043",
+    "justification": "Core, not SPI: the nested record moves to the top-level eu.exeris.kernel.core.http.routing.StreamMatch so that StreamRouteResolver, which a handler wrapping a router implements by delegating, returns a type that does not name the concrete router (ADR-043 Amendment A1). Code compiled against 0.11 that names HttpRouter.StreamMatch is recompiled against 0.12; the release notes carry the upgrade step. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.http.routing.HttpRouter#resolveStream(eu.exeris.kernel.spi.http.HttpMethod, java.lang.String)",
+    "since": "0.12",
+    "adr": "ADR-043",
+    "justification": "Core, not SPI: the method keeps its name and parameters and now returns the top-level StreamMatch, as HttpRouter's implementation of StreamRouteResolver (ADR-043 Amendment A1). The changed return type changes the method descriptor, so a caller compiled against 0.11 is recompiled against 0.12; the release notes carry the upgrade step. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  }
+]
