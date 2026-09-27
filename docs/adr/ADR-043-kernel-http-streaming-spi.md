@@ -81,7 +81,8 @@ contract, and it carries three rules:
 1. **Where it runs.** On the thread the driver reads the request on, once per request, before route
    authorization and outside the bindings the kernel establishes around a handler. An implementation
    decides from the method and the path as received, reads no `ScopedValue`, is thread-safe, does
-   not block and does not throw. A miss, the common case, allocates nothing.
+   not block and does not throw. A miss is the common case, so an implementation keeps it free of
+   allocation.
 2. **How a wrapper extends its bindings to a stream.** It delegates, wraps the handler it gets back,
    derives any per-request value inside that wrapper, and forwards the captured parameters
    unchanged. The driver runs the returned handler inside the bindings it establishes for the
@@ -100,11 +101,12 @@ as it stands.
 **Scope.**
 - Community resolves stream routes over HTTP/1.1.
 - Community's HTTP/2 path resolves none. With TLS terminated by the kernel, ALPN selects `h2`
-  whenever the client offers it, and on a connection without TLS an `h2c` upgrade is diverted to
-  the HTTP/2 session before resolution runs. This is an **unmet part of the Decision's "HTTP/1.1 +
-  h2"**, not a narrowing of it. A browser `EventSource` against TLS the kernel terminates is served
-  respond-once. Workarounds: terminate TLS upstream and speak HTTP/1.1 to the kernel, or, without
-  TLS, set `http.maxVersion=HTTP_1_1`, which disables the `h2c` upgrade.
+  whenever the client offers it, and on a connection without TLS an `h2c` upgrade or a
+  prior-knowledge HTTP/2 preface is diverted to the HTTP/2 session before resolution runs. This is
+  an **unmet part of the Decision's "HTTP/1.1 + h2"**, not a narrowing of it. A browser
+  `EventSource` against TLS the kernel terminates is served respond-once. Workarounds: terminate
+  TLS upstream and speak HTTP/1.1 to the kernel, or, without TLS, set `http.maxVersion=HTTP_1_1`,
+  which disables both of those paths to HTTP/2. `http.maxVersion` does not reach ALPN selection.
 - The Enterprise native streaming binding, still listed under *What is NOT in scope*, resolves
   through the same interface when it is built. Today the Enterprise HTTP engine serves respond-once
   routes only.
@@ -119,10 +121,12 @@ one event for an exact, a templated and a query-bearing stream route, where the 
 twin would otherwise answer; a wrapper's binding reaches the stream route inside the kernel's
 bindings, no slot bound at boot reaches it, and a handler that does not implement the interface is
 served respond-once.
-`StreamMatchTest` pins the record's null checks; `StreamResolutionMissAllocationTest` pins that a
-miss through a forwarder allocates nothing; `HttpRouterTest#streamTemplateOnlyMethodResolves` and
-`HttpRouterTest#leadingPlaceholderTemplateMatches` pin the per-method early return and the literal
-prefix.
+`StreamMatchTest` pins the record's null checks; `StreamResolutionMissAllocationTest` pins, through
+a forwarder, the `HttpRouter` cost the contract's Javadoc states: a miss allocates nothing unless its
+method has a stream route and its path carries a query string, and that miss is asserted to allocate;
+`HttpRouterTest.StreamingRegistration#streamTemplateOnlyMethodResolves` and
+`HttpRouterTest.StreamingRegistration#leadingPlaceholderTemplateMatches` pin the per-method early
+return and the literal prefix.
 
 ## Consequences
 
