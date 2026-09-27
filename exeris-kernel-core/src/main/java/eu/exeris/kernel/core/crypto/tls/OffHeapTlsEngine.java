@@ -97,7 +97,7 @@ import java.util.Objects;
  * verification result other than {@code X509_V_OK} is refused here, so the engine never becomes
  * {@link TlsPhase#ACTIVE} with a failed verification. A failed handshake leaves its codes on
  * {@link TlsHandshakeFailureCodes}. An engine that is never given an identity checks nothing
- * beyond what its context does, as before.
+ * beyond what its context does.
  *
  * <h2>Closed-state Idempotency</h2>
  * <p>{@link #close()} is guarded by a {@link VarHandle} CAS on {@code closedFlag} —
