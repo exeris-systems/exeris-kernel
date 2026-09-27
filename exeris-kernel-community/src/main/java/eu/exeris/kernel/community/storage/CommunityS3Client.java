@@ -38,6 +38,9 @@ import java.util.Optional;
  * the pool that serves application traffic would let one upload sit in front of every other request.
  * Head-of-line isolation is why this engine is private.
  *
+ * <p>The engine's transport follows the endpoint's scheme ({@link CommunityS3Settings.Scheme#outboundTls()}),
+ * not what is bound where the store is built.
+ *
  * @since 0.11
  */
 final class CommunityS3Client implements AutoCloseable {
@@ -80,13 +83,12 @@ final class CommunityS3Client implements AutoCloseable {
                 settings.engineBodyCeiling(),
                 false,
                 HttpVersion.HTTP_1_1,
-                // ADR-074. Until 0.12 the engine dialled bindHost, so this client reached its
-                // endpoint by setting a LISTEN address to a DIAL value — the coincidence the ADR
-                // removed. The value is unchanged; it is now stated where it is read.
-                settings.host() + ":" + settings.port(),
+                // ADR-074: every request dials this authority, and the carrier verifies a TLS peer
+                // against its host, the host the signed Host header names.
+                settings.dialAuthority(),
                 HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
                 HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
-                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE));
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE), settings.scheme().outboundTls());
         this.engine.start();
     }
 

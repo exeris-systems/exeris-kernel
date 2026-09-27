@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.storage;
 
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -120,6 +121,7 @@ class CommunityS3SettingsTest {
             CommunityS3Settings settings = CommunityS3Settings.from(configWith(Map.of()));
             assertThat(settings.host()).isEqualTo("minio.internal");
             assertThat(settings.port()).isEqualTo(9000);
+            assertThat(settings.dialAuthority()).isEqualTo("minio.internal:9000");
 
             BlobStorageConfig portless = new BlobStorageConfig("http://minio.internal",
                     BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
@@ -127,6 +129,18 @@ class CommunityS3SettingsTest {
                             CommunityS3Settings.ACCESS_KEY, "access",
                             CommunityS3Settings.SECRET_KEY, "secret"));
             assertThat(CommunityS3Settings.from(portless).port()).isEqualTo(80);
+            assertThat(CommunityS3Settings.from(portless).dialAuthority())
+                    .as("the client engine dials an explicit port")
+                    .isEqualTo("minio.internal:80");
+        }
+
+        @Test
+        @DisplayName("an http endpoint requires plaintext of the client engine's transport")
+        void httpIsPlaintext() {
+            CommunityS3Settings settings = CommunityS3Settings.from(configWith(Map.of()));
+
+            assertThat(settings.scheme()).isEqualTo(CommunityS3Settings.Scheme.HTTP);
+            assertThat(settings.scheme().outboundTls()).isEqualTo(CommunityOutboundTls.PLAINTEXT);
         }
     }
 

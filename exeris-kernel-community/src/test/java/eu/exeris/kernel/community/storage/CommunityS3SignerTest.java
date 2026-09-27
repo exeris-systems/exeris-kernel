@@ -50,7 +50,8 @@ class CommunityS3SignerTest {
     private static final Instant FIXED = Instant.parse("2026-08-01T12:00:00Z");
 
     private static CommunityS3Settings settings(String secret) {
-        return new CommunityS3Settings("minio.internal", 9000, "bucket", "access-key", secret,
+        return new CommunityS3Settings(CommunityS3Settings.Scheme.HTTP, "minio.internal", 9000, "bucket",
+                "access-key", secret,
                 "us-east-1", CommunityS3Settings.DEFAULT_MAX_OBJECT_BYTES);
     }
 

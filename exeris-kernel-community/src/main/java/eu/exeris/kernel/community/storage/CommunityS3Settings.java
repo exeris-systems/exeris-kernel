@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.storage;
 
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 
 import java.net.URI;
@@ -18,14 +19,14 @@ import java.util.Map;
  * interpret as a storage topology.
  *
  * <h2>Cleartext only, and said out loud</h2>
- * <p>A Community HTTP client engine takes TLS from where it is built, never from an endpoint: it
- * speaks TLS when a crypto provider is bound there and {@code exeris.transport.tls} allows it, and a
- * request carries no scheme. So this driver cannot honour an {@code https://} endpoint, and rejects
- * one at construction rather than silently downgrading it — sending SigV4 credentials in the clear
- * because a scheme was ignored is exactly the failure that must never be quiet. This driver targets a
- * MinIO-compatible endpoint reached over a trusted network path; a public S3 endpoint needs the
- * Enterprise transport.
+ * <p>An {@code http://} endpoint is plaintext wherever the store is built: its client engine
+ * requires plaintext of its transport ({@link Scheme#outboundTls()}), whatever crypto provider is
+ * bound there. An {@code https://} endpoint is rejected at construction rather than silently
+ * downgraded — sending SigV4 credentials in the clear because a scheme was ignored is exactly the
+ * failure that must never be quiet. This driver targets a MinIO-compatible endpoint reached over a
+ * trusted network path; a public S3 endpoint needs the Enterprise transport.
  *
+ * @param scheme         endpoint scheme, which decides the client engine's transport
  * @param host           endpoint host
  * @param port           endpoint port
  * @param bucket         bucket every object lands in; tenants are separated by key prefix, not by bucket
@@ -35,7 +36,7 @@ import java.util.Map;
  * @param maxObjectBytes ceiling on a single object, in bytes
  * @since 0.11
  */
-/* default */ record CommunityS3Settings(String host, int port, String bucket, String accessKey,
+/* default */ record CommunityS3Settings(Scheme scheme, String host, int port, String bucket, String accessKey,
                                          String secretKey, String region, long maxObjectBytes) {
 
     /** Property key: the bucket every object lands in. */
@@ -79,8 +80,6 @@ import java.util.Map;
      */
     /* default */ static final long DEFAULT_MAX_OBJECT_BYTES = 8L * 1024 * 1024;
 
-    private static final String HTTP_SCHEME = "http";
-    private static final int DEFAULT_HTTP_PORT = 80;
     private static final long HEADER_HEADROOM_BYTES = 64L * 1024;
 
     /**
@@ -130,10 +129,12 @@ import java.util.Map;
      */
     /* default */ static CommunityS3Settings from(BlobStorageConfig config) {
         URI endpoint = parseEndpoint(config.location());
+        Scheme scheme = Scheme.HTTP;
         Map<String, String> properties = config.properties();
         return new CommunityS3Settings(
+                scheme,
                 endpoint.getHost(),
-                endpoint.getPort() < 0 ? DEFAULT_HTTP_PORT : endpoint.getPort(),
+                endpoint.getPort() < 0 ? scheme.defaultPort() : endpoint.getPort(),
                 required(properties, BUCKET),
                 required(properties, ACCESS_KEY),
                 required(properties, SECRET_KEY),
@@ -154,6 +155,16 @@ import java.util.Map;
         return maxObjectBytes + HEADER_HEADROOM_BYTES;
     }
 
+    /**
+     * The authority every request dials: {@code host:port}, with the port always stated, since the
+     * client engine requires one.
+     *
+     * @return the dialled authority
+     */
+    /* default */ String dialAuthority() {
+        return host + ":" + port;
+    }
+
     private static URI parseEndpoint(String location) {
         URI endpoint;
         try {
@@ -161,7 +172,7 @@ import java.util.Map;
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("location must be an endpoint URI, got: " + location, e);
         }
-        if (!HTTP_SCHEME.equalsIgnoreCase(endpoint.getScheme())) {
+        if (!Scheme.HTTP.token().equalsIgnoreCase(endpoint.getScheme())) {
             throw new IllegalArgumentException(
                     "location must use the http scheme — this driver takes no TLS from an endpoint "
                             + "scheme, so an https endpoint could be sent in the clear; got: "
@@ -195,6 +206,56 @@ import java.util.Map;
             return Long.parseLong(value.strip());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(MAX_OBJECT_BYTES + " must be a number, got: " + value, e);
+        }
+    }
+
+    /**
+     * An endpoint scheme, and what it decides: the default port, and what the client engine requires
+     * of its transport.
+     */
+    /* default */ enum Scheme {
+
+        /** Plaintext, whatever crypto provider is bound where the store is built. */
+        HTTP("http", 80, CommunityOutboundTls.PLAINTEXT),
+
+        /** TLS that verifies the endpoint host, or no store. */
+        HTTPS("https", 443, CommunityOutboundTls.VERIFIED);
+
+        private final String token;
+        private final int defaultPort;
+        private final CommunityOutboundTls outboundTls;
+
+        Scheme(String token, int defaultPort, CommunityOutboundTls outboundTls) {
+            this.token = token;
+            this.defaultPort = defaultPort;
+            this.outboundTls = outboundTls;
+        }
+
+        /**
+         * The scheme as a URI spells it.
+         *
+         * @return {@code http} or {@code https}
+         */
+        /* default */ String token() {
+            return token;
+        }
+
+        /**
+         * The port an endpoint that states none is reached on.
+         *
+         * @return {@code 80} or {@code 443}
+         */
+        /* default */ int defaultPort() {
+            return defaultPort;
+        }
+
+        /**
+         * What the client engine requires of its transport for an endpoint of this scheme.
+         *
+         * @return {@link CommunityOutboundTls#PLAINTEXT} or {@link CommunityOutboundTls#VERIFIED}
+         */
+        /* default */ CommunityOutboundTls outboundTls() {
+            return outboundTls;
         }
     }
 }
