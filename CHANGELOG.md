@@ -140,6 +140,22 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the code:** a filter on `EX-EVENT-6002` now matches only queue overflow — see the stability
   matrix's behavioural note.
 
+- **`EventBus.publishAndAwait` awaits handlers on a bus that dispatches them itself, and says
+  what a brokered bus awaits instead.** The Kafka bus's `publishAndAwait` returns once the broker
+  has acknowledged the record — to the durability `KafkaEventConfig.requireAllAcks()` configures —
+  while its local handlers run later, on the consumer loop, so it never waited for a handler and
+  could never raise `EX-EVENT-6010`, and no TCK bound it. The SPI now scopes the wait on handlers,
+  `EX-EVENT-6010`, the in-thread `ScopedValue` inheritance and the zero-copy retain protocol to a
+  bus that is not brokered, and states what a brokered bus owes: the broker's acknowledgement, and
+  the caller's payload reference released exactly once before the call returns or throws. The
+  additive default method `EventBus.isBrokered()` (returning `false`) says which kind a bus is; the
+  Kafka bus returns `true`. `AbstractEventBusTck` reads it and skips its five in-process cases on a
+  brokered bus through an assumption, never a silent pass, and gains one case every bus runs:
+  after `publishAndAwait` with three closing handlers returns, the payload's `close()` calls equal
+  one plus its `retain()` calls. `KafkaEventBusTckTest` binds the suite to the Kafka bus in the
+  default build, over a mock producer and a mock consumer, with no broker. In-process callers are
+  unaffected; see the stability matrix's behavioural note.
+
 - **A diagnostics call is audited when it is made, including one that throws** (ADR-033
   Obligation 8). `CommunityKernelDiagnostics` committed each method's `EX-DIAG` JFR audit event
   after the method's work, so a call that threw — a provider failing `ServiceLoader` discovery in
