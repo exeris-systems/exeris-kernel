@@ -204,6 +204,22 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the code:** a filter on `EX-EVENT-6002` now matches only queue overflow — see the stability
   matrix's behavioural note.
 
+- **`EventBus.publishAndAwait` awaits handlers on a bus that dispatches them itself, and says
+  what a brokered bus awaits instead.** The Kafka bus's `publishAndAwait` returns once the broker
+  has acknowledged the record — to the durability `KafkaEventConfig.requireAllAcks()` configures —
+  while its local handlers run later, on the consumer loop, so it never waited for a handler and
+  could never raise `EX-EVENT-6010`, and no TCK bound it. The SPI now scopes the wait on handlers,
+  `EX-EVENT-6010`, the in-thread `ScopedValue` inheritance and the zero-copy retain protocol to a
+  bus that is not brokered, and states what a brokered bus owes: the broker's acknowledgement, and
+  the caller's payload reference released exactly once before the call returns or throws. The
+  additive default method `EventBus.isBrokered()` (returning `false`) says which kind a bus is; the
+  Kafka bus returns `true`. `AbstractEventBusTck` reads it and skips its five in-process cases on a
+  brokered bus through an assumption, never a silent pass, and gains one case every bus runs:
+  after `publishAndAwait` with three closing handlers returns, the payload's `close()` calls equal
+  one plus its `retain()` calls. `KafkaEventBusTckTest` binds the suite to the Kafka bus in the
+  default build, over a mock producer and a mock consumer, with no broker. In-process callers are
+  unaffected; see the stability matrix's behavioural note.
+
 - **A diagnostics call is audited when it is made, including one that throws** (ADR-033
   Obligation 8). `CommunityKernelDiagnostics` committed each method's `EX-DIAG` JFR audit event
   after the method's work, so a call that threw — a provider failing `ServiceLoader` discovery in
@@ -227,6 +243,26 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   No constant, signature or runtime behaviour changed. The code tables in the exceptions, flow,
   memory, telemetry and transport documents follow; the bootstrap and events documents are
   verified separately.
+
+- **`MatchDslTranspiler` is documented as the unwired class it is.** Its class Javadoc and the
+  `eu.exeris.kernel.core.graph` package documentation called it the brain of the MATCH abstraction,
+  producing strings a `GraphSession` executes, and credited it with a `GRAPH_TABLE` syntax, a
+  `ServiceLoader` dialect selection and an allocation bound that belong to whichever `GraphDialect`
+  it is given. No session, engine or backend calls it — the graph backends build the queries they
+  execute through `GraphDialect` themselves — and only tests do. The Javadoc and
+  `docs/subsystems/graph.md` now say so. No code changed; whether the class is superseded or a seam
+  to wire is a 0.13 decision.
+
+- **Four TCK benchmark templates publish no performance figure.**
+  `AbstractEventBusDispatchLatencyBenchmark`, `AbstractGraphEngineBenchmark`,
+  `AbstractSecurityProviderBenchmark` and `AbstractTlsEngineBenchmark` stated throughput and p99
+  targets in the Javadoc of the published TCK jar, where they read as part of the contract, and the
+  kernel ships no binding of any of them to measure one. A figure outside a benchmark report cites
+  that report (`claims-and-evidence.md` rule 1), and these have none, so the figures are removed
+  rather than relabelled: each class now states that it sets and asserts no target and that the
+  kernel ships no binding of it. The classes and their benchmark methods are unchanged. The
+  event-bus template also describes the Community publish path as it runs — one virtual thread per
+  handler — rather than as a `StructuredTaskScope`-backed queue.
 
 - **The Community-only crypto checks are skipped for another tier, not passed.**
   `AbstractCryptoEngineTck`'s `communityPriorityIsZero()`, `communityDoesNotSupportQuic()` and
@@ -361,6 +397,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   a `while` with no loop-carried exit as infinite; the exit is the interrupt, and saying so at the
   suppression is cheaper for a future reader than a false positive resolved in a web UI where the
   code is not.
+
+- **`KernelProviders.MEMORY_ALLOCATOR` is bound inside an HTTP handler.** The kernel binds it around
+  the boot callback, and the thread a request or a stream runs on inherits no `ScopedValue` binding,
+  so a handler resolving it threw `NoSuchElementException` — which a handler classifying failures by
+  exception type reported as a `400`. `CommunityHttpRequestDispatcher` now rebinds it per request and
+  per stream, beside the request-body decoder registry. An application that bound an allocator per
+  request to work around this can remove that binding.
 
 ### Fixed — verification
 
@@ -1124,6 +1167,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   constructor as a bridge — the SPI gate reports `stable-breaks=0` against `v0.11.0`, measured.
   A new `http.client.defaultAuthority` key supplies the peer for requests that name none.
 
+### Changed
+
+- **The HTTP client no longer reads `http.bindHost` and `http.port` as its destination** (ADR-074).
+  Those keys are the listener's address. A `CLIENT` or `DUAL` deployment names its peer with
+  `http.client.defaultAuthority` (`host:port`, port required) or addresses each request through
+  `KernelWebClient.withAuthority` or `HttpRequest.withAuthority`. With neither, the kernel still
+  boots and an unaddressed send is refused with `IllegalStateException`. The upgrade step is in the
+  release notes, `docs/release/v0.12.0-release-notes.md`.
+
 ### Fixed
 
 - **The graph churn-to-data TCK measured a coin flip, not a ratio.** `GraphChurnRatioTck` is the
@@ -1182,16 +1234,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   manifest are first observable, and where the distributed artifact's preview-cleanliness (ADR-066)
   becomes an executed claim rather than a scanned one.
 
-- **The HTTP client dialled the address its own server listened on.** Not "single-host", which is
-  what every document said: `CommunityHttpClientEngine` has no public constructor, its only
-  reachable path took `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL
-  *listener* address — and no client-target key existed anywhere. An application could not address
-  the *first* external peer, and `HttpConfig.defaultClient()` (bindHost `null`, port `-1`) produced
-  an engine that could not send at all. An unaddressed request is now refused rather than sent
-  somewhere the caller never named, and `Host` follows the request's authority instead of
-  `TransportConnection.remoteAddress()`, whose SPI contract documents it as an *address*
-  (`e.g. 192.168.1.1`) — building the header that selects a name-based virtual host out of an
-  address breaks vhosting by construction.
+- **The HTTP client dialled the address its own server listened on.** Every document called the
+  client "single-host", and each engine did reach one host, but it read that host from a listen
+  address: `CommunityHttpClientEngine` has no public constructor, its only reachable path took
+  `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL *listener* address — and
+  no client-target key existed anywhere. So the engine the kernel binds as `HTTP_CLIENT_ENGINE`,
+  built from `http.bindHost` and `http.port`, dialled its own listener in `DUAL` mode, and in
+  `CLIENT` mode the one peer written into those keys. Any other peer took an engine of its own, built
+  through `HttpProvider.createClientEngine` with that peer's host and port written into
+  `HttpConfig.bindHost` and `port` — one engine per peer, as the S3 driver below did.
+  `HttpConfig.defaultClient()` (bindHost `null`, port `-1`) produced an engine that could not send
+  at all. An unaddressed request is now refused rather than sent somewhere the caller never named,
+  and `Host` follows the request's authority instead of `TransportConnection.remoteAddress()`, whose
+  SPI contract documents it as an *address* (`e.g. 192.168.1.1`) — building the header that selects
+  a name-based virtual host out of an address breaks vhosting by construction.
 - **The S3 blob-storage driver and the OIDC JWKS fetch both reached their endpoint by the same
   coincidence**, and both now state it. Each built a CLIENT engine with `bindHost` set to the
   address it wanted to dial. `CommunityS3Client`'s own javadoc gave that as the load-bearing reason
@@ -1247,11 +1303,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **ADR-074 — a request names its own peer.** Discharges the one question RFC-2026-06-29 left
   explicitly owed: its split disposition made multi-peer addressing 1.0 scope but fixed *when*, not
   *how*. A code spike moved the problem before the option table was written. Every document here
-  calls the client *single-host*; it is narrower. `CommunityHttpClientEngine` has **zero public
-  constructors**, its only reachable path takes `targetHost` from `HttpConfig.bindHost` — documented
-  as the SERVER/DUAL **listener** address — and no client-target configuration key exists anywhere in
-  the tree. The client dials the address its own server listens on, so an application cannot address
-  even the *first* external peer. Decision: `HttpRequest` gains a nullable `authority` component with
+  calls the client *single-host*; each engine does reach one host, but reads it from a listen
+  address. `CommunityHttpClientEngine` has **zero public constructors**, its only reachable path
+  takes `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL **listener** address
+  — and no client-target configuration key exists anywhere in the tree. The engine the kernel binds
+  dials `http.bindHost:http.port` — its own listener in `DUAL` mode, and in `CLIENT` mode the one
+  peer written into those keys — and any other peer needs an engine of its own with that peer's
+  address written into `HttpConfig.bindHost`, one engine per peer.
+  Decision: `HttpRequest` gains a nullable `authority` component with
   the previous canonical constructor retained as a bridge; `Host` and TLS peer verification follow
   the authority rather than the connection; the enricher observes the final authority so an outbound
   credential's audience can bind to the peer it is sent to. Two spike findings decided it against the

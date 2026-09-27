@@ -185,6 +185,27 @@ body and releases it after `send` returns or throws; the engine reads it during 
 closes nor retains it. `KernelWebClient`, as that caller, releases each attempt's encoded body before
 any retry wait (ADR-034 Amendment A1).
 
+### Client peer addressing (since v0.12.0, [ADR-074](../adr/ADR-074-http-client-peer-addressing.md))
+
+An outbound request names the peer it is sent to. `CommunityHttpClientEngine` resolves the
+destination of each send in this order:
+
+1. the request's own authority — `HttpRequest.withAuthority(String)`, or
+   `KernelWebClient.withAuthority(String)` for every request a derived client builds;
+2. otherwise the engine's configured default, `HttpConfig.defaultAuthority()`, read from
+   `http.client.defaultAuthority`;
+3. otherwise the send is refused with `IllegalStateException` naming that key.
+
+An authority is `host:port`. The port is required, because `HttpRequest` carries no scheme and so
+gives no basis for choosing 80 or 443, and an IPv6 address is bracketed (`[::1]:8443`). The key's
+value is checked when `HttpConfig` is built, where a missing port, an unbracketed IPv6 address, or a
+scheme or path fails at startup (a blank value reads as unset); that the port is a number from 1 to
+65535 is checked at send, and so are the port and bracket rules for an authority set on a request. `http.bindHost`
+and `http.port` are the server's listen address and play no part in choosing the destination: a
+`CLIENT` or `DUAL` kernel with no default authority boots cleanly and refuses its first unaddressed
+send. Unless the request carries its own `Host` header, the one the client writes is the effective
+authority, not the connection's remote address.
+
 ### Client connection pooling and keep-alive (since v0.12.0)
 
 Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persistent TCP connection reuse via `CommunityHttpClientConnectionPool`:
