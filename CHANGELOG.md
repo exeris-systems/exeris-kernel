@@ -100,14 +100,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   A client engine built directly from an `HttpProvider` was not affected.
 
 - **A booted kernel's HTTP client engine refuses a `null` request with `NullPointerException`
-  before it is started, as the client engine TCK requires.**
-  `AbstractHttpClientEngineTck$CreatedState#sendNullThrows` asserts it on an engine that has not
-  been started, so the argument check must precede the lifecycle check. `DeferredHttpClientEngine`
-  checked its lifecycle first, so `send(null)` threw `IllegalStateException` before `start()` and
-  after `close()`. It now rejects `null` first, in every state. `DeferredHttpClientEngineTckTest`
-  binds `AbstractHttpClientEngineTck` over the wrapper the Community HTTP subsystem publishes as
-  `HTTP_CLIENT_ENGINE`, with `CommunityHttpProvider` behind it, so the engine contract is checked on
-  the engine an application reaches and not only on the provider's own.
+  before it is started, as `HttpClientEngine#send` states and the client engine TCK asserts.**
+  The SPI Javadoc lists the exception for a `null` request in every lifecycle state, checked before
+  the lifecycle, so it takes precedence over the `IllegalStateException` of an engine that is not
+  running; `AbstractHttpClientEngineTck$CreatedState#sendNullThrows` asserts it on an engine that
+  has not been started. The `@throws` is Javadoc only, with no signature change.
+  `DeferredHttpClientEngine` checked its lifecycle first, so `send(null)` threw
+  `IllegalStateException` before `start()` and after `close()`. It now rejects `null` first, in
+  every state. `DeferredHttpClientEngineTckTest` binds `AbstractHttpClientEngineTck` over the
+  wrapper the Community HTTP subsystem publishes as `HTTP_CLIENT_ENGINE`, with
+  `CommunityHttpProvider` behind it, so the engine contract is checked on the engine an application
+  reaches and not only on the provider's own.
 
 - **The loopback TCK checks the `Host` field the server receives** (ADR-074 decision 3).
   `AbstractHttpProviderLoopbackTck$PeerAddressing#hostFollowsTheRequestAuthority` and

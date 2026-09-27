@@ -53,6 +53,10 @@ public interface HttpClientEngine extends AutoCloseable {
      *
      * @param request outbound request; must not be {@code null}
      * @return the server's response; never {@code null}
+     * @throws NullPointerException if {@code request} is {@code null}, whatever the engine's state:
+     *         the argument is checked before the lifecycle, so an engine that has not been started,
+     *         or has been closed, refuses a {@code null} request with this and not with
+     *         {@link IllegalStateException}
      * @throws IllegalStateException if the engine has not been started or has been closed
      * @implSpec MUST NOT close or retain {@code request.body()} on any path, success or exception.
      *           The caller releases it after {@code send} returns or throws, and may send the same
