@@ -99,7 +99,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   bound, where it took TLS from the provider bound where the store was built. An `https` store needs
   the Community crypto provider bound where it is built: with none, with a provider that cannot
   verify an outbound peer, or under `-Dexeris.transport.tls=false`, `createStore` throws
-  `TransportException` `EX-NET-4004` and never downgrades. The default port follows the scheme (80,
+  `TransportException` `EX-NET-4004` and never downgrades. A Community HTTP client engine whose
+  transport is refused this way closes the allocator it created for itself, when none was bound,
+  before it throws. The default port follows the scheme (80,
   443). The driver states the scheme to its transport through Community-only overloads —
   `NativeTcpTransportProvider#createEngine(TransportConfig, CommunityOutboundTls)` and
   `CommunityHttpProvider#createClientEngine(HttpConfig, CommunityOutboundTls)` — so no SPI type

@@ -25,6 +25,7 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 /**
  * Community HTTP/1.x client engine — drives outbound requests over a single
@@ -41,7 +42,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p><b>Ownership:</b> owns the {@code TransportEngine} for this engine's life, starting it in
  * {@link #start()} and closing it in {@link #close()}; owns the {@link MemoryAllocator} only when
  * none was already bound to {@link KernelProviders#MEMORY_ALLOCATOR} at construction, in which
- * case {@link #close()} closes it too.
+ * case {@link #close()} closes it too, and a construction that fails closes it before throwing.
  *
  * @since 0.5
  */
@@ -73,7 +74,22 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
      * @param outboundTls what the engine's owner requires of its outbound connections
      */
     /* default */ CommunityHttpClientEngine(HttpConfig config, CommunityOutboundTls outboundTls) {
-        this(config, resolveDeps(config, outboundTls));
+        this(config, outboundTls, CommunityHttpClientEngine::createOwnAllocator);
+    }
+
+    /**
+     * As {@link #CommunityHttpClientEngine(HttpConfig, CommunityOutboundTls)}, with the allocator
+     * the engine creates for itself, when none is bound, taken from {@code ownAllocator}.
+     *
+     * @param config       the engine configuration
+     * @param outboundTls  what the engine's owner requires of its outbound connections
+     * @param ownAllocator creates the allocator the engine owns; called only when
+     *                     {@link KernelProviders#MEMORY_ALLOCATOR} is unbound
+     */
+    /* default */ CommunityHttpClientEngine(HttpConfig config,
+                                            CommunityOutboundTls outboundTls,
+                                            Supplier<MemoryAllocator> ownAllocator) {
+        this(config, resolveDeps(config, outboundTls, ownAllocator));
     }
 
     private CommunityHttpClientEngine(HttpConfig config, ResolvedHttpClientDeps deps) {
@@ -303,20 +319,44 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         return Math.clamp(bounded, 8 * 1024, Integer.MAX_VALUE);
     }
 
-    private static MemoryAllocator resolveAllocator(HttpConfig config) {
-        Objects.requireNonNull(config, "config must not be null");
-        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            return KernelProviders.MEMORY_ALLOCATOR.get();
-        }
+    private static MemoryAllocator createOwnAllocator() {
         return new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
     }
 
-    private static ResolvedHttpClientDeps resolveDeps(HttpConfig config, CommunityOutboundTls outboundTls) {
-        MemoryAllocator allocator = resolveAllocator(config);
-        boolean closeAllocatorOnClose = !KernelProviders.MEMORY_ALLOCATOR.isBound();
-        TransportEngine transport = CommunityHttpTransportFactory.buildTransport(
-                config, config.port(), allocator, CommunityHttpTransportFactory.Role.CLIENT, outboundTls);
-        return new ResolvedHttpClientDeps(allocator, transport, closeAllocatorOnClose);
+    /**
+     * The allocator and transport of a new engine. An allocator created here has no other owner
+     * until the engine exists, so a transport that cannot be built closes it; a bound allocator
+     * belongs to its binder and is left open.
+     */
+    // AvoidCatchingGenericException: the owned allocator is closed on any failure, then the failure rethrown.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private static ResolvedHttpClientDeps resolveDeps(HttpConfig config,
+                                                      CommunityOutboundTls outboundTls,
+                                                      Supplier<MemoryAllocator> ownAllocator) {
+        Objects.requireNonNull(config, "config must not be null");
+        boolean ownsAllocator = !KernelProviders.MEMORY_ALLOCATOR.isBound();
+        MemoryAllocator allocator = ownsAllocator ? ownAllocator.get() : KernelProviders.MEMORY_ALLOCATOR.get();
+        try {
+            TransportEngine transport = CommunityHttpTransportFactory.buildTransport(
+                    config, config.port(), allocator, CommunityHttpTransportFactory.Role.CLIENT, outboundTls);
+            return new ResolvedHttpClientDeps(allocator, transport, ownsAllocator);
+        } catch (RuntimeException | Error failure) {
+            if (ownsAllocator) {
+                closeOwnedAllocator(allocator, failure);
+            }
+            throw failure;
+        }
+    }
+
+    // AvoidCatchingGenericException: a failed close is attached to the failure being reported, never
+    // allowed to replace it.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private static void closeOwnedAllocator(MemoryAllocator allocator, Throwable failure) {
+        try {
+            allocator.close();
+        } catch (RuntimeException closeFailure) {
+            failure.addSuppressed(closeFailure);
+        }
     }
 
     private record ResolvedHttpClientDeps(MemoryAllocator allocator,
