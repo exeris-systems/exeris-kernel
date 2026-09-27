@@ -130,16 +130,15 @@ class CommunityStorageSubsystemTest {
         @Test
         @DisplayName("the S3 driver binds too — the half a filesystem-only suite cannot see")
         void s3DriverIsBound() {
-            // The whole point of this subsystem is a tie between two drivers, so proving one of them
-            // boots proves half of it. This case was absent on the first pass and the S3 path was
-            // broken end-to-end underneath it: the subsystem forwarded no properties, and
-            // CommunityS3Settings requires s3.bucket, s3.accessKey and s3.secretKey out of them, so
-            // naming the S3 driver failed at boot every time. No live endpoint is needed — the store
-            // parses settings and constructs a client without connecting.
+            // The subsystem exists to settle a tie between two drivers, so a case binding only the
+            // filesystem driver covers half of it; this one binds the S3 driver. It depends on the
+            // subsystem forwarding storage.blob.s3.* into the driver's properties, from which
+            // CommunityS3Settings requires s3.bucket, s3.accessKey and s3.secretKey. No live endpoint
+            // is needed — the store parses settings and constructs a client without connecting.
             //
             // The allocator is bound around start() and not around initialize(), because that is
-            // where a kernel boot binds it: providerBindings() are composed only after every
-            // subsystem has initialised.
+            // where a kernel boot binds it: the kernel scope is built from providerBindings() only
+            // after every subsystem has initialised.
             CommunityStorageSubsystem subsystem = new CommunityStorageSubsystem();
 
             ScopedValue.where(KernelProviders.CURRENT_CONFIG, s3Config()).run(() -> {
