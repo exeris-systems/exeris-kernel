@@ -72,9 +72,8 @@ rather than leaving each driver to guess how much it may assume.
 
    *(Amended 2026-07-30, with the SPI: the SPI and the first driver landed ahead of bootstrap wiring,
    as `GraphProvider` did.)* The slot pair landed in 0.12 with the storage subsystem.
-   `StorageBootstrap` selects the driver named by `storage.blob.provider` and creates
-   its store, and does not rank by `priority()` — the two Community drivers share a priority and are
-   not interchangeable. `CommunityStorageSubsystem` binds both slots from its `providerBindings()`.
+   `StorageBootstrap` selects the driver named by `storage.blob.provider` and does not rank by
+   `priority()` — the two Community drivers share a priority and are not interchangeable. `CommunityStorageSubsystem` binds both slots from its `providerBindings()`.
    With the key unset, storage is off and neither slot is bound.
 
 3. **Bytes move on `LoanedBuffer`; the SPI exposes no `byte[]` and no `InputStream` on the transfer
