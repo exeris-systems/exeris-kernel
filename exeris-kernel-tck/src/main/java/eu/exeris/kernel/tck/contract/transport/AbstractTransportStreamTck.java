@@ -7,6 +7,7 @@ package eu.exeris.kernel.tck.contract.transport;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.transport.TransportConnection;
 import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
@@ -25,6 +26,7 @@ import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
 
@@ -38,6 +40,9 @@ import static org.assertj.core.api.Assertions.fail;
  *       the caller MUST NOT close the buffer after a successful call, and MUST close it after a
  *       thrown one</li>
  *   <li>{@code close()} is idempotent</li>
+ *   <li>{@code connection().close()} closes the stream even after the stream has read the peer's
+ *       end of stream: {@code write()} and {@code queueWrite()} are then refused with
+ *       {@link IllegalStateException}</li>
  *   <li>{@code streamId()} returns a non-negative identifier</li>
  *   <li>{@code connection()} returns non-null parent</li>
  * </ul>
@@ -463,6 +468,50 @@ public abstract class AbstractTransportStreamTck {
                 MemorySegment seg = buf.segment();
                 assertThatThrownBy(() -> writer.write(seg, 1))
                         .isInstanceOf(IllegalStateException.class);
+            }
+        }
+
+        @Test
+        @DisplayName("connection().close() after the peer's close closes the stream")
+        @Timeout(value = 5, unit = TimeUnit.SECONDS)
+        void connectionCloseAfterRemoteCloseClosesStream() {
+            TransportStream reader = streams.reader();
+            TransportConnection connection = reader.connection();
+
+            // The peer's close reaches the reader as end of stream. A transport may record that
+            // on the connection too, but such a record releases nothing the stream holds: the
+            // connection's own close() still has to close its child streams.
+            streams.writer().close();
+            int endOfStream = 0;
+            boolean readerOpenAfterPeerClose = true;
+            try (LoanedBuffer sink = allocator.allocate(AllocationHint.MICRO)) {
+                endOfStream = reader.read(sink.segment(), 1);
+            } catch (IllegalStateException _) {
+                readerOpenAfterPeerClose = false;
+            }
+            Assumptions.assumeTrue(readerOpenAfterPeerClose,
+                    "the binding's writer.close() also closes the reader stream locally, so no open "
+                            + "stream is left for connection().close() to release");
+            assertThat(endOfStream)
+                    .as("precondition: the reader observes the peer's close as end of stream")
+                    .isEqualTo(-1);
+
+            connection.close();
+
+            assertThat(connection.isOpen())
+                    .as("a closed connection is not open")
+                    .isFalse();
+            try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
+                MemorySegment seg = buf.segment();
+                assertThatExceptionOfType(IllegalStateException.class)
+                        .as("connection().close() closes its streams, so a write() on one is refused")
+                        .isThrownBy(() -> reader.write(seg, 1));
+                assertThatExceptionOfType(IllegalStateException.class)
+                        .as("and so is a queueWrite(), which leaves the buffer with the caller")
+                        .isThrownBy(() -> reader.queueWrite(buf, 1));
+                assertThat(buf.isAlive())
+                        .as("the caller still owns the buffer after the throw")
+                        .isTrue();
             }
         }
     }

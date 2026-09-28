@@ -87,6 +87,35 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **Closing a connection the peer already closed closes its stream.** The Community carrier marks
+  a `NativeTcpConnection` closed when it reads the peer's end of stream, without closing the
+  stream, and `close()` returned early on that flag. The stream — its socket, selection key and
+  queues — stayed open until the idle reaper or the engine's own close. `close()` now closes the
+  stream on every call; the stream's close is idempotent and its terminal teardown runs once, so a
+  repeated call releases nothing twice.
+
+- **The carrier-pinning TCK holds a binding to one stream per slot.** `TransportCarrierPinningTck`
+  writes every slot from its own virtual thread, and its `createWritableStream()` hook asks for one
+  stream per slot; the three Community bindings returned the same stream for all 1 200 slots, so
+  the case ran 1 200 concurrent producers against one stream. `bootstrapSubsystem()` now fails a
+  binding that returns a stream an earlier slot already holds, and the Community bindings dial one
+  loopback connection per slot. They also stop the server after the contract's drain instead of
+  before it, so the drain asserts that queued writes reach a live peer rather than that a closed
+  peer discarded them. **For anyone binding the TCK:** no hook or signature changed; a binding that
+  returns one shared stream now fails in setup.
+
+- **A write queued while another producer's flush empties the stream is written, not stranded.**
+  `NativeTcpStream.queueWrite` raises the outbound depth before it offers the write, and only the
+  producer that raises it from zero flushes. A producer suspended between the two was therefore not
+  a flusher, and the flush then in progress could not see its write; that flusher signalled the
+  reactor only when its own flush stalled, so the write stayed queued on a key armed for reads
+  alone until the idle reaper reset the stream and discarded it. The flusher now re-reads
+  the depth after releasing the consumer slot and hands a non-zero depth to the reactor, which keeps
+  write interest armed until it reads the depth at zero. Reaching the window takes two producers on
+  one stream, which the `TransportStream` contract rules out — a stream is owned by one virtual
+  thread — so a conforming caller never reached it; the carrier-pinning TCK bindings did (see the
+  carrier-pinning entry). The cost on the uncontended path is one volatile read.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
