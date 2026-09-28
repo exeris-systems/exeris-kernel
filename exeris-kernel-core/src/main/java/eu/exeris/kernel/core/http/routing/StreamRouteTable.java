@@ -6,6 +6,7 @@ package eu.exeris.kernel.core.http.routing;
 
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
+import eu.exeris.kernel.spi.http.StreamMatch;
 
 import java.util.ArrayList;
 import java.util.EnumMap;

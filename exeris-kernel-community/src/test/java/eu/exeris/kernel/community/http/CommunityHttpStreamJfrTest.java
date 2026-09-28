@@ -4,7 +4,6 @@
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.core.http.routing.StreamMatch;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
@@ -13,6 +12,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.http.StreamEvent;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.transport.StreamHandler;

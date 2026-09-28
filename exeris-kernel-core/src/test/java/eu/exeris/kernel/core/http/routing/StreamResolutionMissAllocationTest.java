@@ -10,6 +10,8 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
+import eu.exeris.kernel.spi.http.StreamMatch;
+import eu.exeris.kernel.spi.http.StreamRouteResolver;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,13 +22,14 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The Cost section of {@link StreamRouteResolver} names when {@link HttpRouter} allocates on a miss,
- * and every request of an application that serves stream routes pays that call. These cases hold the
- * router to what the section says, measured through a forwarder of the shape an application binds to
- * {@code HTTP_SERVER_HANDLER}, on a table of the shape a generated application registers.
+ * {@link HttpRouter#resolveStream} names when the router allocates on a miss, within what the
+ * Allocation line of {@link StreamRouteResolver} admits, and every request of an application that
+ * serves stream routes pays that call. These cases hold the router to what it states, measured
+ * through a forwarder of the shape an application binds to {@code HTTP_SERVER_HANDLER}, on a table of
+ * the shape a generated application registers.
  *
  * <p>Bytes are exact per-thread counts from {@link ThreadMXBean#getCurrentThreadAllocatedBytes()}.
- * The allocation the Cost section admits, a query-bearing miss on a method that has stream routes,
+ * The allocation that contract admits, a query-bearing miss on a method that has stream routes,
  * is measured here too, so a counter that reads zero for everything cannot pass the other cases.
  */
 @DisplayName("Stream resolution: allocation on a miss")
@@ -86,7 +89,7 @@ class StreamResolutionMissAllocationTest {
         assertThat(forwarder.resolveStream(HttpMethod.GET, "/api/e1/42?x=1")).isNull();
 
         assertThat(bytesPerCall(HttpMethod.GET, "/api/e1/42?x=1"))
-                .as("the one allocation the Cost section admits on a miss; a counter that sees it "
+                .as("the one allocation the contract admits on a miss; a counter that sees it "
                         + "is a counter that would see any other")
                 .isGreaterThan(0L);
     }

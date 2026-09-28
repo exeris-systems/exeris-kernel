@@ -90,10 +90,10 @@ public final class HttpKernelProviders {
      *
      * <p>Bound around boot and read once when the HTTP subsystem starts; when unbound, a driver may
      * serve a default of its own. Respond-once requests go to {@link HttpHandler#handle}. A driver
-     * that serves stream routes ({@link HttpStreamHandler}) resolves them through the Core routing
-     * layer's stream-resolution contract, consulted on this handler before {@code handle}; a bound
-     * handler that does not implement that contract serves respond-once routes only, so a handler
-     * that wraps another carries stream resolution through as well as {@code handle}.
+     * that serves stream routes ({@link HttpStreamHandler}) resolves them through
+     * {@link StreamRouteResolver}, consulted on this handler before {@code handle}; a bound handler
+     * that does not implement it serves respond-once routes only, so a handler that wraps another
+     * carries stream resolution through as well as {@code handle}.
      */
     public static final ScopedValue<HttpHandler> HTTP_SERVER_HANDLER = ScopedValue.newInstance();
 

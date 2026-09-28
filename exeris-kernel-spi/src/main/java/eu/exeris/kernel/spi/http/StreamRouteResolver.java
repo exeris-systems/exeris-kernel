@@ -2,21 +2,27 @@
  * Copyright (C) 2025-2026 Exeris Systems.
  * SPDX-License-Identifier: Apache-2.0
  */
-package eu.exeris.kernel.core.http.routing;
-
-import eu.exeris.kernel.spi.http.HttpMethod;
+package eu.exeris.kernel.spi.http;
 
 /**
- * Resolves a request to a streaming (SSE) route, or answers that it is not one.
+ * SPI: resolves a request to a streaming (SSE) route, or answers that it is not one.
  *
  * <p>A driver that serves stream routes consults the handler bound to
- * {@link eu.exeris.kernel.spi.http.HttpKernelProviders#HTTP_SERVER_HANDLER} through this interface,
- * once per request and before dispatch (ADR-043 obligation 7, amendment A1): a non-{@code null}
- * answer opens an {@link eu.exeris.kernel.spi.http.HttpStreamExchange} and runs the returned handler;
- * {@code null} sends the request to {@link eu.exeris.kernel.spi.http.HttpHandler#handle}. A bound
- * handler that does not implement this interface serves respond-once routes only: a stream route
- * behind it is never matched. {@link HttpRouter} implements it; a handler that wraps a router
- * implements it by delegating.
+ * {@link HttpKernelProviders#HTTP_SERVER_HANDLER} through this interface, once per request and
+ * before dispatch (ADR-043 obligation 7, amendment A1): a non-{@code null} answer opens an
+ * {@link HttpStreamExchange} and runs the returned handler; {@code null} sends the request to
+ * {@link HttpHandler#handle}. A bound handler that does not implement this interface serves
+ * respond-once routes only: a stream route behind it is never matched. A router implements it for
+ * its own stream table; a handler that wraps a router implements it by delegating.
+ *
+ * <h2>What a resolution answers</h2>
+ * <p>A route registered as a stream resolves here and only here; a respond-once route never
+ * resolves here, whatever its path. Matching is on {@code method} and {@code path}; a query string
+ * on {@code path} takes no part in it. A stream route's path is exact, or a template whose
+ * {@code {name}} segments each capture one non-empty request segment; the captured values are
+ * {@link StreamMatch#params()}, keyed by name, and an exact route captures nothing. When an exact
+ * route and a template both match, the exact route wins: a table that registers both meant the
+ * literal to be the special case.
  *
  * <h2>Where it runs</h2>
  * <p>On the thread the driver reads the request on, before route authorization, and outside the
@@ -26,13 +32,6 @@ import eu.exeris.kernel.spi.http.HttpMethod;
  * handler it returns, which runs after authorization and inside those bindings. It is called
  * concurrently for every connection, so an implementation is thread-safe; it does not block and does
  * not throw, and a driver is not required to answer a throw from here with a response.
- *
- * <h2>Cost</h2>
- * <p>Every request pays for this call and most requests are not streams, so a miss is the common
- * case and an implementation keeps it free of allocation. {@link HttpRouter} allocates nothing on a
- * miss when the request's method has no stream route or the path carries no query string; otherwise
- * it copies the path once to drop the query. A wrapper that delegates adds nothing to a miss. A hit
- * may allocate; it is paid once per stream, not per event.
  *
  * <h2>Wrapping a router</h2>
  * <p>A wrapper delegates. When a binding of its own must reach the stream handler, it wraps the
@@ -53,8 +52,8 @@ import eu.exeris.kernel.spi.http.HttpMethod;
  * nesting is the respond-once one: kernel outermost, then the wrapper, then the route. A wrapper that
  * rebinds a slot the kernel also binds shadows the kernel's value for that stream. The driver applies
  * {@code params} to the exchange it passes in, so a wrapper that drops them hands the route an empty
- * {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}. A wrapper with nothing to bind
- * returns its delegate's match unchanged.
+ * {@link HttpStreamExchange#pathParams()}. A wrapper with nothing to bind returns its delegate's
+ * match unchanged.
  *
  * <h2>A binding around a stream lives as long as the stream</h2>
  * <p>A stream handler runs for the stream's whole life, minutes rather than milliseconds, so whatever
@@ -66,8 +65,14 @@ import eu.exeris.kernel.spi.http.HttpMethod;
  * providers it needs through its constructor, because the stream's thread does not carry the
  * kernel's boot bindings.
  *
- * <p>Core API: the SPI compatibility gate and {@code docs/stability-matrix.md} cover
- * {@code exeris-kernel-spi} only.
+ * <p><b>Allocation:</b> allocates (on a hit, the returned {@link StreamMatch} and its captured
+ * parameters, once per stream rather than per event); a miss, the common case since most requests
+ * are not streams, allocates nothing beyond one copy of {@code path} to drop a query string, and a
+ * wrapper that delegates adds nothing to a miss
+ * <p><b>Thread confinement:</b> any thread — called concurrently, one call per request, on the thread
+ * the driver reads the request on
+ * <p><b>Ownership:</b> the resolver retains nothing from a call; the driver holds the returned match
+ * for the stream's life, runs its handler, and releases nothing through it
  *
  * @since 0.12
  */

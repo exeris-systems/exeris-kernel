@@ -2,18 +2,20 @@
  * Copyright (C) 2025-2026 Exeris Systems.
  * SPDX-License-Identifier: Apache-2.0
  */
-package eu.exeris.kernel.core.http.routing;
-
-import eu.exeris.kernel.spi.http.HttpStreamHandler;
+package eu.exeris.kernel.spi.http;
 
 import java.util.Map;
 import java.util.Objects;
 
 /**
- * A resolved streaming route: the handler a driver runs, and the path parameters its template captured.
+ * SPI: a resolved streaming route — the handler a driver runs, and the path parameters its template
+ * captured. {@link StreamRouteResolver#resolveStream} returns one on a hit.
  *
  * <p>{@code params} is held, not copied: pass an unmodifiable map. A driver applies it to the
- * exchange it hands the handler, as {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}.
+ * exchange it hands the handler, as {@link HttpStreamExchange#pathParams()}.
+ *
+ * <p><b>Ownership:</b> the carrier owns nothing — it holds references to the handler and the
+ * parameter map it was given, and neither copies nor releases them
  *
  * @param handler the streaming handler to run; never {@code null}
  * @param params  the captured path parameters, empty for an exact route; never {@code null}

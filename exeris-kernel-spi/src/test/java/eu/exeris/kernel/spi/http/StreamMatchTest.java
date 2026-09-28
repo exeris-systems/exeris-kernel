@@ -2,9 +2,8 @@
  * Copyright (C) 2025-2026 Exeris Systems.
  * SPDX-License-Identifier: Apache-2.0
  */
-package eu.exeris.kernel.core.http.routing;
+package eu.exeris.kernel.spi.http;
 
-import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

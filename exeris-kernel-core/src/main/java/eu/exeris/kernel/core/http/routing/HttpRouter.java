@@ -9,6 +9,8 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
+import eu.exeris.kernel.spi.http.StreamMatch;
+import eu.exeris.kernel.spi.http.StreamRouteResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -79,6 +81,11 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
      * <p>Exact stream routes win over template stream routes, mirroring the respond-once precedence:
      * a deployment that registers both a literal and a templated path meant the literal to be special.
      * A method with no stream route answers {@code null} without examining the path.
+     *
+     * <p>Cost: a miss allocates nothing when the request's method has no stream route or the path
+     * carries no query string; otherwise it copies the path once to drop the query, which is the one
+     * allocation {@link StreamRouteResolver} admits on a miss. A hit allocates the returned
+     * {@link StreamMatch}, and for a template the captured parameter map.
      *
      * @param method request method
      * @param path   request path as received; it may carry a query string, which takes no part in
