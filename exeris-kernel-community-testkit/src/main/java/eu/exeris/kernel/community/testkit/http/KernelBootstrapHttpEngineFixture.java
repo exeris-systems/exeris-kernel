@@ -18,7 +18,7 @@ import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpServerEngine;
 
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
+import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -214,9 +214,9 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
     }
 
     private static int reserveLoopbackPort() {
-        try (ServerSocket socket = new ServerSocket()) {
-            socket.bind(new InetSocketAddress(LOOPBACK_HOST, 0));
-            return socket.getLocalPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress(LOOPBACK_HOST, 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (java.io.IOException exception) {
             throw new IllegalStateException("Unable to reserve loopback HTTP port", exception);
         }

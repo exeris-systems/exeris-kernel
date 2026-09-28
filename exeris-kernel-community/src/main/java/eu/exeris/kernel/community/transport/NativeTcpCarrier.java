@@ -13,7 +13,10 @@ import eu.exeris.kernel.core.memory.ResourceArbiter;
 import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
 import eu.exeris.kernel.core.transport.scheduler.PaqsScheduler;
+import eu.exeris.kernel.core.transport.scheduler.StreamExecutionBackend;
 import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
+import eu.exeris.kernel.core.transport.scheduler.locality.ExerisCarrierGroup;
+import eu.exeris.kernel.core.transport.scheduler.locality.RoundRobinCarrierExecutionBackend;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
@@ -30,6 +33,7 @@ import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportStats;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.StandardSocketOptions;
 import java.nio.channels.AsynchronousCloseException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
@@ -458,12 +462,43 @@ public final class NativeTcpCarrier implements TransportEngine {
         ResourceArbiter arbiter = new ResourceArbiter(watermarkManager);
         AdmissionController admissionController = new AdmissionController(arbiter);
         StreamLoadShedder shedder = new StreamLoadShedder(engineName());
-        this.paqs = new PaqsScheduler(
-                admissionController,
-                shedder,
-                streamHandler,
-                stream -> StreamPriority.NORMAL,
-                engineName());
+        StreamExecutionBackend executionBackend = resolveExecutionBackend();
+        this.paqs = executionBackend != null
+                ? new PaqsScheduler(
+                        admissionController,
+                        shedder,
+                        streamHandler,
+                        stream -> StreamPriority.NORMAL,
+                        engineName(),
+                        executionBackend)
+                : new PaqsScheduler(
+                        admissionController,
+                        shedder,
+                        streamHandler,
+                        stream -> StreamPriority.NORMAL,
+                        engineName());
+    }
+
+    private StreamExecutionBackend resolveExecutionBackend() {
+        boolean locality = Boolean.getBoolean("exeris.transport.locality")
+                || "locality-aware".equalsIgnoreCase(System.getProperty("exeris.transport.backend"))
+                || "locality-aware".equalsIgnoreCase(System.getProperty("exeris.transport.executionBackend"));
+        if (!locality) {
+            return null;
+        }
+        if (RoundRobinCarrierExecutionBackend.isAvailable()) {
+            RoundRobinCarrierExecutionBackend backend = RoundRobinCarrierExecutionBackend.createIfAvailable();
+            if (backend != null) {
+                LOG.log(System.Logger.Level.INFO,
+                        "[NativeTcpCarrier] Locality-aware execution enabled with {0} carriers",
+                        backend.group().size());
+                return backend;
+            }
+        }
+        LOG.log(System.Logger.Level.WARNING,
+                "[NativeTcpCarrier] Locality requested but ExerisCarrierScheduler is not installed; "
+                        + "falling back to default VT-per-stream");
+        return null;
     }
 
     /**
@@ -488,6 +523,10 @@ public final class NativeTcpCarrier implements TransportEngine {
 
             serverChannel = ServerSocketChannel.open();
             serverChannel.configureBlocking(true);
+            serverChannel.setOption(StandardSocketOptions.SO_REUSEADDR, true);
+            if (serverChannel.supportedOptions().contains(StandardSocketOptions.SO_REUSEPORT)) {
+                serverChannel.setOption(StandardSocketOptions.SO_REUSEPORT, true);
+            }
             serverChannel.bind(new InetSocketAddress(config.bindAddress(), config.port()), listenerBacklog());
 
             startReactors(Math.max(1, config.reactorCount()));
@@ -512,7 +551,29 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    private void applyAcceptorAffinity() {
+        String affinityProp = System.getProperty("exeris.reactor.affinity");
+        if (affinityProp == null || affinityProp.isBlank()) {
+            affinityProp = System.getProperty("exeris.transport.reactorAffinity");
+        }
+        if (affinityProp != null && !affinityProp.isBlank()) {
+            try {
+                String[] parts = affinityProp.split(",");
+                int[] cores = new int[parts.length];
+                for (int i = 0; i < parts.length; i++) {
+                    cores[i] = Integer.parseInt(parts[i].trim());
+                }
+                if (cores.length > 0) {
+                    eu.exeris.kernel.core.transport.scheduler.locality.ExerisCarrierThread.bindToCores(cores);
+                }
+            } catch (Exception _) {
+                // best effort
+            }
+        }
+    }
+
     private void runAcceptorLoop() {
+        applyAcceptorAffinity();
         while (running.get()) {
             try {
                 acceptPendingConnections();

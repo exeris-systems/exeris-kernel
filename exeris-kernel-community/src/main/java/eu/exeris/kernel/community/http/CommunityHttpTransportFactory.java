@@ -19,7 +19,8 @@ import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 
 import java.io.IOException;
-import java.net.ServerSocket;
+import java.net.InetSocketAddress;
+import java.nio.channels.SocketChannel;
 
 final class CommunityHttpTransportFactory {
 
@@ -73,8 +74,9 @@ final class CommunityHttpTransportFactory {
     }
 
     /* default */ static int nextFreePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress("127.0.0.1", 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException e) {
             throw new IllegalStateException("Unable to allocate free TCP port", e);
         }

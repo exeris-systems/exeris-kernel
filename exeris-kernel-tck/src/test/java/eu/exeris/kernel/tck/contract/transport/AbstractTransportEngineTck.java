@@ -23,8 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -297,8 +297,9 @@ public abstract class AbstractTransportEngineTck {
     }
 
     private static int freePort() {
-        try (ServerSocket probe = new ServerSocket(0)) {
-            return probe.getLocalPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress("127.0.0.1", 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException e) {
             throw new IllegalStateException("unable to allocate a free TCP port", e);
         }

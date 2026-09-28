@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
@@ -212,9 +213,9 @@ class NativeTcpCarrierBackendSelectionTest {
     }
 
     private static int nextFreePort() {
-        try (ServerSocketChannel server = ServerSocketChannel.open()) {
-            server.bind(new InetSocketAddress(LOOPBACK_HOST, 0));
-            return ((InetSocketAddress) server.getLocalAddress()).getPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress(LOOPBACK_HOST, 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException e) {
             throw new IllegalStateException("Unable to allocate free TCP port", e);
         }

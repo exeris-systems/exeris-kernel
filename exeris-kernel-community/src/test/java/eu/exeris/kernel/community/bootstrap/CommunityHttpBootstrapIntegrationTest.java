@@ -28,8 +28,8 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -275,9 +275,9 @@ class CommunityHttpBootstrapIntegrationTest {
     }
 
     private static int nextFreePort() {
-        try (ServerSocket socket = new ServerSocket()) {
-            socket.bind(new InetSocketAddress("127.0.0.1", 0));
-            return socket.getLocalPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress("127.0.0.1", 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (Exception ex) {
             throw new IllegalStateException("Unable to allocate free TCP port", ex);
         }

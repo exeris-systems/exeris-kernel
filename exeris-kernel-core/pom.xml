@@ -118,15 +118,97 @@
         </resources>
         <plugins>
             <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>compile-loom-stubs</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>javac</executable>
+                            <arguments>
+                                <argument>--enable-preview</argument>
+                                <argument>--release</argument>
+                                <argument>28</argument>
+                                <argument>--patch-module</argument>
+                                <argument>java.base=${project.basedir}/src/compile-stub/java</argument>
+                                <argument>-d</argument>
+                                <argument>${project.build.directory}/loom-stubs</argument>
+                                <argument>${project.basedir}/src/compile-stub/java/java/lang/Thread.java</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-compile</id>
+                        <configuration>
+                            <compilerArgs>
+                                <arg>${jdk.preview.enable}</arg>
+                                <arg>--patch-module</arg>
+                                <arg>java.base=${project.build.directory}/loom-stubs</arg>
+                            </compilerArgs>
+                            <annotationProcessorPaths>
+                                <path>
+                                    <groupId>org.openjdk.jmh</groupId>
+                                    <artifactId>jmh-generator-annprocess</artifactId>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>default-testCompile</id>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                        <configuration>
+                            <useModulePath>false</useModulePath>
+                            <compilerArgs>
+                                <arg>${jdk.preview.enable}</arg>
+                                <arg>--patch-module</arg>
+                                <arg>java.base=${project.build.directory}/loom-stubs</arg>
+                            </compilerArgs>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-loom-runtime-stubs</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/loom-runtime-stubs/java/lang</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>${project.build.directory}/loom-stubs/java/lang</directory>
+                                    <includes>
+                                        <include>Thread$VirtualThread*.class</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <annotationProcessorPaths>
-                        <path>
-                            <groupId>org.openjdk.jmh</groupId>
-                            <artifactId>jmh-generator-annprocess</artifactId>
-                        </path>
-                    </annotationProcessorPaths>
+                    <argLine>@{coverage.argLine} ${jvm.args} --patch-module java.base=${project.build.directory}/loom-runtime-stubs</argLine>
                 </configuration>
             </plugin>
             <plugin>
@@ -134,7 +216,7 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-                    <argLine>@{coverage.argLine} ${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
+                    <argLine>@{coverage.argLine} ${jvm.args} --patch-module java.base=${project.build.directory}/loom-runtime-stubs --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
                     <includes>
                         <include>**/*IT.java</include>
                     </includes>

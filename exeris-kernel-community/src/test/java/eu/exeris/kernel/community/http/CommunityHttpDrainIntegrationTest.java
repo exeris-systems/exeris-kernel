@@ -226,8 +226,9 @@ class CommunityHttpDrainIntegrationTest {
     }
 
     private static int nextFreePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
+        try (java.nio.channels.SocketChannel probe = java.nio.channels.SocketChannel.open()) {
+            probe.bind(new java.net.InetSocketAddress("127.0.0.1", 0));
+            return ((java.net.InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to allocate free TCP port", ex);
         }

@@ -34,7 +34,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.ServerSocket;
+import java.net.InetSocketAddress;
+import java.nio.channels.SocketChannel;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -443,8 +444,9 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
     }
 
     private static int nextFreePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress("127.0.0.1", 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to allocate free TCP port", ex);
         }

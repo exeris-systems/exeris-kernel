@@ -20,6 +20,7 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
+import java.nio.channels.SocketChannel;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -172,9 +173,9 @@ final class CommunityTransportTestHarness {
     }
 
     static int nextFreePort() {
-        try (ServerSocketChannel server = ServerSocketChannel.open()) {
-            server.bind(new InetSocketAddress("127.0.0.1", 0));
-            return ((InetSocketAddress) server.getLocalAddress()).getPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress("127.0.0.1", 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException ioException) {
             throw new IllegalStateException("Unable to allocate free TCP port", ioException);
         }

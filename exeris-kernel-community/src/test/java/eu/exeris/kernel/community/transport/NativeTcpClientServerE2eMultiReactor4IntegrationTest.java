@@ -232,9 +232,9 @@ class NativeTcpClientServerE2eMultiReactor4IntegrationTest {
     }
 
     private static int nextFreePort() {
-        try (ServerSocketChannel server = ServerSocketChannel.open()) {
-            server.bind(new InetSocketAddress("127.0.0.1", 0));
-            return ((InetSocketAddress) server.getLocalAddress()).getPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress("127.0.0.1", 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException e) {
             throw new IllegalStateException("Unable to allocate free TCP port", e);
         }

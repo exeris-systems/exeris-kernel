@@ -40,7 +40,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.lang.foreign.MemorySegment;
-import java.net.ServerSocket;
+import java.net.InetSocketAddress;
+import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -269,8 +270,9 @@ class KernelWebClientIntegrationTest {
     }
 
     private static int nextFreePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
+        try (SocketChannel probe = SocketChannel.open()) {
+            probe.bind(new InetSocketAddress("127.0.0.1", 0));
+            return ((InetSocketAddress) probe.getLocalAddress()).getPort();
         } catch (IOException ex) {
             throw new IllegalStateException("Unable to allocate free TCP port", ex);
         }

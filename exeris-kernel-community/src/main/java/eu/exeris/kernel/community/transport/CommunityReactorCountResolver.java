@@ -31,6 +31,15 @@ public final class CommunityReactorCountResolver {
     /* default */
     static int resolve(ConfigProvider configProvider, int availableProcessors) {
         int cpu = Math.max(1, availableProcessors);
+        Integer sysTransport = Integer.getInteger("transport.reactorCount");
+        if (sysTransport != null && sysTransport > 0) {
+            return sysTransport;
+        }
+        Integer sysExeris = Integer.getInteger("exeris.transport.reactorCount");
+        if (sysExeris != null && sysExeris > 0) {
+            return sysExeris;
+        }
+
         if (configProvider == null) {
             return Math.max(1, cpu - defaultReserveCores(cpu));
         }
