@@ -41,11 +41,18 @@ import java.util.Optional;
  * HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
  * }
  *
+ * <p><b>Allocation:</b> zero-alloc on the hot path — reading a slot ({@code get()} or
+ * {@code orElse}) allocates nothing; the {@link Optional}-returning accessors on this class
+ * allocate one {@code Optional} per call when the slot they read is bound.
  * <p><b>Thread confinement:</b> any thread inside the binding scope — a {@code ScopedValue} binding
  * is visible to the binding thread and to every subtask forked inside that scope through
  * {@code StructuredTaskScope}, a preview API on JDK 25 that this distribution line does not fork
  * through ({@link eu.exeris.kernel.spi.context.KernelProviders} states the model); a thread started
  * any other way, like a thread outside the scope, reads the slot as unbound rather than as empty.
+ * <p><b>Ownership:</b> whoever binds a slot owns the bound instance and its lifecycle — the kernel
+ * bootstrapper for the provider, the engines and the codec registries, the application for the
+ * handler and the route policy it supplies; a reader borrows the reference for the duration of the
+ * binding scope and neither closes nor restarts it.
  *
  * @apiNote Read a slot through its accessor rather than through {@code get()} where one exists: the
  *          optional slots are unbound in perfectly healthy deployments, and
