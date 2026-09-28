@@ -277,8 +277,8 @@ class HttpConfigTest {
         @Test
         @DisplayName("a peer without a port is refused at construction, not at the first request")
         void missingPortIsRefused() {
-            // HttpRequest carries no scheme, so there is no basis for choosing 80 over 443 — and
-            // defaulting to the listener port is exactly what ADR-074 removed.
+            // HttpRequest carries no scheme, so there is no basis for choosing 80 over 443, and
+            // the listener port is not the peer's (ADR-074).
             assertThatThrownBy(() -> client("payments.internal"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("explicit port");

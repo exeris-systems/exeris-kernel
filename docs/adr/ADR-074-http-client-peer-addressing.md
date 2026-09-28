@@ -134,6 +134,7 @@ engine per peer — see [Amendments](#amendments).)*
 3. **`Host` follows the authority, not the connection.** The encoder derives the header from the
    request's effective authority. Today the two agree; stating it now means a resolver that separates
    a logical name from a dialled endpoint inherits a correct rule instead of a latent bug.
+   *(Amendment A2, 2026-09-27: the two do not agree — see [Amendments](#amendments).)*
 
 4. **TLS peer verification follows the authority too** — SNI and certificate hostname matching are
    performed against the effective authority, for the same reason.
@@ -158,6 +159,7 @@ this reason.
 request carrying an authority reaches that peer, that a `null` authority reaches the configured
 default, and that `Host` reflects the effective authority — the last one being the assertion that
 would fail if an implementation kept deriving it from the connection.
+*(Amendment A2, 2026-09-27: the `Host` assertion sits in the loopback TCK, not here — see [Amendments](#amendments).)*
 
 **A documented-but-wrong configuration key stops being both.** `bindHost` returns to meaning what
 `HttpConfig` says it means. Any deployment that relied on the client reaching its own server keeps
@@ -200,6 +202,7 @@ should not, this is the clause to revisit first.
 - The TCK assertion for `Host`-follows-authority must be **mutation-checked** against an
   implementation that derives it from the connection. That is the current behaviour, so the check is
   free: revert the encoder line and the test must redden.
+  *(Amendment A2, 2026-09-27: the check is not free — see [Amendments](#amendments).)*
 - No `ServiceResolver` type, package, or configuration key is introduced. A resolver-shaped name
   appearing in this slice is scope creep into a post-1.0 seam.
 
@@ -236,3 +239,27 @@ rule 7). This section indexes them.
     not by `0.0.0.0`: the authority is a dial address, and it is also what the `Host` header
     carries. A deployment that does neither boots cleanly, and its first unaddressed request is
     refused.
+- **2026-09-27 — A2: the two ends differ, and the `Host` assertion needs a peer.** Settled while
+  implementing the TCK clause:
+  - **Decision 3.** "Today the two agree" does not hold. The request's effective authority and the
+    connection differ whenever the caller names its peer by host name:
+    `TransportConnection#remoteAddress()` is an IP address literal on both ends, so a dialled
+    connection reports the address it reached, while `Host` selects a name-based virtual host and has
+    to carry the name the caller wrote. A resolver that separates a logical name from a dialled
+    endpoint therefore inherits a rule that already holds rather than introducing one.
+  - **Where the TCK asserts it.** It is asserted where a peer exists:
+    `AbstractHttpProviderLoopbackTck$PeerAddressing` runs a provider's client against that provider's
+    server and asserts that a request carrying an authority reaches that peer rather than the
+    configured default, that an unaddressed request reaches the configured default, and that the
+    server receives exactly one `Host`, equal to the effective authority
+    (`hostFollowsTheRequestAuthority`, `hostFollowsTheConfiguredDefaultAuthority`). Both `Host` cases
+    address the server by host name, so they are the assertions that fail if an implementation
+    derives `Host` from the connection, whose `remoteAddress()` is the address literal
+    `AbstractTransportConnectionTck` checks. `AbstractHttpClientEngineTck` supplies no server and its
+    Core binding never dials, so it asserts what an engine shows on its own: `defaultAuthority()`
+    reports the configured default, and `null` when none is configured; a request naming no
+    authority on an engine with no default, and an authority carrying no port, are refused.
+  - **The mutation check.** With the encoder writing `Host` from the connection's `remoteAddress()`
+    and `remotePort()`, both `Host` cases must redden. They can only on a transport whose dialled end
+    reports the address it reached rather than the name it was dialled by, which is why
+    `AbstractTransportConnectionTck` checks that end.

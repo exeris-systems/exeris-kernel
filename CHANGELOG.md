@@ -87,6 +87,70 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A booted kernel's HTTP client shows the request enricher its configured default peer**
+  (ADR-074 decision 5). `DeferredHttpClientEngine`, the engine `CommunityHttpSubsystem` binds as
+  `HTTP_CLIENT_ENGINE`, did not override `HttpClientEngine#defaultAuthority`, so it answered the
+  interface's `null` even with `http.client.defaultAuthority` set. `KernelWebClient` therefore handed
+  an unaddressed request to the `HttpClientRequestEnricher` with no authority, and the delegate
+  substituted the default only inside `send`, after enrichment: the request reached the configured
+  peer, but an enricher binding an outbound credential's audience to that peer (ADR-040) saw `null`.
+  The engine now answers from the configuration it builds its delegate from, before `start()` as well
+  as after it, and its `send` addresses an unaddressed request to that same default before handing it
+  to the delegate, so the peer it reports is the peer reached whichever provider's engine it wraps.
+  A client engine built directly from an `HttpProvider` was not affected.
+
+- **A booted kernel's HTTP client engine refuses a `null` request with `NullPointerException`
+  before it is started, as `HttpClientEngine#send` states and the client engine TCK asserts.**
+  The SPI Javadoc lists the exception for a `null` request in every lifecycle state, checked before
+  the lifecycle, so it takes precedence over the `IllegalStateException` of an engine that is not
+  running; `AbstractHttpClientEngineTck$CreatedState#sendNullThrows` asserts it on an engine that
+  has not been started. The `@throws` is Javadoc only, with no signature change.
+  `DeferredHttpClientEngine` checked its lifecycle first, so `send(null)` threw
+  `IllegalStateException` before `start()` and after `close()`. It now rejects `null` first, in
+  every state. `DeferredHttpClientEngineTckTest` binds `AbstractHttpClientEngineTck` over the
+  wrapper the Community HTTP subsystem publishes as `HTTP_CLIENT_ENGINE`, with
+  `CommunityHttpProvider` behind it, so the engine contract is checked on the engine an application
+  reaches and not only on the provider's own.
+
+- **The loopback TCK checks the `Host` field the server receives** (ADR-074 decision 3).
+  `AbstractHttpProviderLoopbackTck$PeerAddressing#hostFollowsTheRequestAuthority` and
+  `#hostFollowsTheConfiguredDefaultAuthority` require exactly one `Host`, equal to the authority the
+  request names or, for an unaddressed request, to the configured default. Both address the server
+  by host name, so a `Host` built from the address the client's connection reports differs from it
+  wherever the dialled connection reports an address, which the transport TCK checks (see "A dialled
+  TCP connection reports the address it reached" below).
+  No case read `Host` before, so a client sending any value passed. The `clientConfig` fixture no longer
+  copies the default peer into `bindHost` and `port`; it carries none and the `-1` sentinel, so a
+  client that dials its listener address no longer passes the unaddressed cases.
+  `requestAuthorityOverridesTheConfiguredDefaultPeer` moves into the same `PeerAddressing` group.
+  **For anyone binding the TCK:** the new hook `loopbackHostName()` (default `localhost`) must
+  resolve to `loopbackHost()`; a binding whose client derives `Host` from the connection's address,
+  from the default when the request names a peer, or from `bindHost`, or dials `bindHost` for an
+  unaddressed request, now fails.
+
+- **The HTTP client engine TCK checks `defaultAuthority()`** (ADR-074 decision 5).
+  `AbstractHttpClientEngineTck$PeerAddressing#reportsTheConfiguredDefaultAuthority` requires a
+  started engine to report the configured `HttpConfig#defaultAuthority()`, and
+  `#reportsNoDefaultAuthorityWhenNoneIsConfigured` requires `null` when none is configured. No case
+  read the method before, so an engine that sends an unaddressed request to its configured default
+  while inheriting the interface's `null` passed, and `KernelWebClient` then hands the request
+  enricher no authority. **For anyone binding the TCK:** an engine with a configured default peer
+  must report it from `defaultAuthority()`, and so must an engine that wraps one.
+
+- **A dialled TCP connection reports the address it reached, not the name it was dialled by.**
+  `NativeTcpCarrier#connect` built the `NativeTcpConnection` from the host string it was given, so
+  `TransportConnection#remoteAddress()` on a Community client connection dialled as `localhost`
+  returned `localhost`, where the SPI documents the peer's address (`192.168.1.1`) and an accepted
+  connection reports one. It now reports the address the channel connected to, and `remotePort()`
+  the port it connected to. A caller that needs the name it dialled keeps it; the HTTP client already
+  writes `Host` from the request's authority. `AbstractTransportConnectionTck$RemoteEndpoint` checks
+  both ends: `#acceptedEndReportsAnAddress` and `#dialledEndReportsAnAddress` require an IP address
+  literal. Until now only the accepted end was checked, and only for being non-blank. **For anyone
+  binding the TCK:** a binding whose dialled connection reports a host name now fails, and
+  `createConnectionPair` should open the client end by host name where the transport dials by name,
+  as the Community bindings now do, since the dialled-end case cannot tell a name from an address
+  otherwise.
+
 - **Closing a connection the peer already closed closes its stream.** The Community carrier marks
   a `NativeTcpConnection` closed when it reads the peer's end of stream, without closing the
   stream, and `close()` returned early on that flag. The stream — its socket, selection key and

@@ -80,9 +80,8 @@ final class CommunityS3Client implements AutoCloseable {
                 settings.engineBodyCeiling(),
                 false,
                 HttpVersion.HTTP_1_1,
-                // ADR-074. Until 0.12 the engine dialled bindHost, so this client reached its
-                // endpoint by setting a LISTEN address to a DIAL value — the coincidence the ADR
-                // removed. The value is unchanged; it is now stated where it is read.
+                // ADR-074: the engine dials the endpoint through this default authority. The
+                // bindHost and port above are LISTEN fields, which a CLIENT-mode engine never dials.
                 settings.host() + ":" + settings.port(),
                 HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
                 HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
