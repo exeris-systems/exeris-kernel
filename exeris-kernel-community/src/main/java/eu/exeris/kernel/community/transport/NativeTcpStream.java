@@ -445,8 +445,14 @@ final class NativeTcpStream implements TransportStream {
         }
 
         try {
-            boolean drained = tryFlushPendingWritesNow();
-            if (!drained && hasPendingData()) {
+            flushPendingWrites();
+            // Re-checked after the consumer slot is released, whatever the flush returned. The
+            // depth counter is raised before the write reaches the queue, so another producer can
+            // sit between its increment and its offer while this flush empties the queue: that
+            // producer saw a non-empty depth, so it is not a flusher, and this flush never saw its
+            // write. A depth still above zero here hands the stream to the reactor, which keeps
+            // write interest armed until it observes the depth at zero.
+            if (hasPendingData()) {
                 writeInterestCallback.run();
             }
         } catch (RuntimeException error) {
@@ -606,6 +612,26 @@ final class NativeTcpStream implements TransportStream {
         } finally {
             NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), owner);
         }
+    }
+
+    /**
+     * Test-only: performs the first half of an enqueue — the depth increment — without offering
+     * a write, leaving the stream in the state of a producer suspended between the two. Pair with
+     * {@link #publishReservedWriteForTest}. Not called from production code.
+     */
+    /* default */ void reserveOutboundWriteForTest() {
+        outboundQueueDepth.getAndIncrement();
+    }
+
+    /**
+     * Test-only: the second half of an enqueue begun by {@link #reserveOutboundWriteForTest()} —
+     * offers the write and returns without flushing or signalling, as a producer that observed a
+     * non-empty queue and no consumer does. Takes ownership of {@code buffer}.
+     *
+     * @return whether the queue accepted the write
+     */
+    /* default */ boolean publishReservedWriteForTest(LoanedBuffer buffer, int length) {
+        return outboundQueue.offer(newPendingWrite(buffer, length));
     }
 
     /* default */ void offerIngress(LoanedBuffer ingressBuffer) {
@@ -831,10 +857,6 @@ final class NativeTcpStream implements TransportStream {
         } finally {
             NativeTcpStreamConsumerGate.releaseSingleConsumer(runtime.outboundConsumer(), currentThread);
         }
-    }
-
-    private boolean tryFlushPendingWritesNow() {
-        return flushPendingWrites();
     }
 
     private boolean drainPendingWrites() {
