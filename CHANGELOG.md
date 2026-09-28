@@ -442,6 +442,24 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the observed size, the bound allocator and the bound decoders — one case per method, because a
   single one cannot show that method dispatch is not what carries the body.
 
+- **No test booted storage by name, which is the form a generated application writes.**
+  `CommunityStorageSubsystemTest` drives the subsystem with a hand-bound config, and the one real
+  boot that included storage used `BootstrapSelector.all()` and asserted on memory alone: with
+  `CommunityStorageSubsystem` removed from `CommunitySubsystemProvider`, every test in the Community
+  bootstrap package still passed. `CommunityStorageBootstrapIntegrationTest` boots `KernelBootstrap`
+  with `BootstrapSelector.forNames("storage")` and sets the keys as the `exeris.storage.blob.*`
+  system properties `CommunityConfigProvider` reads. Unset, the dependency closure brings `memory`
+  up with storage and neither `BLOB_STORE` nor `BLOB_STORAGE_PROVIDER` is bound. Set, the driver
+  bound is the one the key names, in both directions: the case naming `blob-s3-community`,
+  discovered second, fails against a selection that checks the id and then takes the first driver
+  discovered, and the case naming `blob-fs-community`, discovered first, fails against one that
+  takes the last; each asserts the discovery order it depends on. A store reference the application
+  kept refuses work once `boot()` returns. An id matching no driver refuses the boot with
+  `EX-BLOB-8008`. Removing the subsystem from the provider fails every case, dropping `memory` from
+  `dependsOn` fails the unconfigured case and each case naming the S3 driver, swallowing the refusal
+  fails the unknown-id case, and a `stop()` that does not close the store fails the kept-reference
+  case.
+
 ### Changed
 
 - **SonarQube analysis moves from the standalone CLI scanner to the Maven one, and stops guessing
@@ -956,11 +974,23 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   and nothing binds, which is what every deployment to date has been doing; set means the choice has
   been stated. An id matching no driver fails at boot with `EX-BLOB-8008`, carrying the key, the
   value and the ids that were available; a classpath with no driver at all is `EX-BLOB-8007`. Also
-  reads `storage.blob.location` (required once storage is on) and
+  reads `storage.blob.location` (required once storage is on; unset is `EX-BLOB-8009`) and
   `storage.blob.maxSignedUrlTtlSeconds`. For the S3 driver, `storage.blob.location` is the
   **endpoint** and `storage.blob.s3.bucket` / `.accessKey` / `.secretKey` (plus optional `.region`
   and `.maxObjectBytes`) are forwarded into the driver's properties. The subsystem declares
   `dependsOn("memory")`, because the S3 store stages transfers through the kernel allocator.
+
+  **The driver is selected in `initialize()`; its store is created in `start()`.** Bootstrap builds
+  the kernel scope from `providerBindings()` only after every subsystem has initialised, so
+  `dependsOn("memory")` orders the boot without making the allocator visible during `initialize()`.
+  The three `EX-BLOB` refusals above are raised in `initialize()`; the store is created in `start()`,
+  inside the kernel scope, where the S3 driver finds the allocator it refuses to be created without.
+  `BLOB_STORE` holds a `DeferredBlobStore` wrapping that store — the shape `DeferredHttpServerEngine`
+  and `DeferredHttpClientEngine` give the HTTP engines — which refuses work before `start()` and after
+  `close()`. A driver refusing
+  its own configuration, such as S3 without `storage.blob.s3.bucket`, is refused in `start()` and
+  still fails the boot before the application runs. `StorageBootstrapSelected` is recorded at
+  selection, so a boot whose driver then refuses still records one.
 
 
 - **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**
