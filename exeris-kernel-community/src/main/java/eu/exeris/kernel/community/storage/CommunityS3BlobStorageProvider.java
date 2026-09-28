@@ -20,11 +20,11 @@ import java.time.Clock;
  * why an {@code https} endpoint is refused rather than downgraded.
  *
  * <h2>Selection</h2>
- * <p>Registered alongside the filesystem provider, and at the same Community priority. Nothing in this
- * repository loads {@link BlobStorageProvider} through {@code ServiceLoader} yet, so which of the two a
- * deployment gets is settled by constructing the provider it wants. When a storage subsystem does
- * bootstrap the SPI, two providers at one priority will need a configured choice rather than a
- * discovery order — that is a gap this slice records rather than closes.
+ * <p>Registered alongside the filesystem provider, and at the same Community priority, so ranking cannot
+ * choose between the two: {@code StorageBootstrap} selects by the configured {@code storage.blob.provider}
+ * id, and this driver's is {@code blob-s3-community}. The storage subsystem calls {@link #createStore} in
+ * its {@code start()}, inside the kernel scope, because the store takes the kernel's
+ * {@code MEMORY_ALLOCATOR}.
  *
  * @since 0.11
  */

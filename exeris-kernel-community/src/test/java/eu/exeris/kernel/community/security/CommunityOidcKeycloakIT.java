@@ -223,8 +223,8 @@ class CommunityOidcKeycloakIT {
                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
                 HttpVersion.HTTP_1_1,
-                // ADR-074: the JWKS fetch used to reach Keycloak because the engine dialled
-                // bindHost. Same value, now stated as the dial address it always was.
+                // ADR-074: the JWKS fetch reaches Keycloak through this default authority. The
+                // bindHost and port above are LISTEN fields, which a CLIENT-mode engine never dials.
                 KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(KC_PORT),
                 HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
                 HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,

@@ -19,6 +19,7 @@ import eu.exeris.kernel.spi.http.HttpServerEngine;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -44,6 +45,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@link HttpClientEngine#send(HttpRequest)} on the success path: the server receives the body's
  * bytes, and once {@code send} has returned the body is still alive, holds its one caller reference
  * and was never closed — the caller releases it.
+ *
+ * <p>It verifies peer addressing (ADR-074) as the peer observes it: a request naming an authority
+ * reaches that peer rather than the configured default, and the server receives exactly one
+ * {@code Host} field equal to the request's effective authority — the request's own authority, or
+ * the configured default when it names none. The authority is a host name
+ * ({@link #loopbackHostName()}), so a {@code Host} taken from the configured default instead of the
+ * request, or from the configuration's {@code bindHost}, differs from it. A {@code Host} built from
+ * the connection differs from it too, because
+ * {@link eu.exeris.kernel.spi.transport.TransportConnection#remoteAddress()} reports an address on
+ * the dialled end as on the accepted one; that part holds on a transport that passes
+ * {@link eu.exeris.kernel.tck.contract.transport.AbstractTransportConnectionTck}, which checks it.
+ * The client fixture carries no {@code bindHost} and the {@code -1} port sentinel, so the configured
+ * default authority is the only peer a client can reach unaddressed.
  *
  * @since 0.5
  */
@@ -76,6 +90,23 @@ public abstract class AbstractHttpProviderLoopbackTck {
      */
     protected String loopbackHost() {
         return "127.0.0.1";
+    }
+
+    /**
+     * Returns a host name, not an address literal, that resolves to {@link #loopbackHost()}.
+     *
+     * <p>The {@code Host} cases address the server by this name, so the effective authority differs
+     * from the address the client's connection reports: the address the name resolved to, on a
+     * transport that passes
+     * {@link eu.exeris.kernel.tck.contract.transport.AbstractTransportConnectionTck}.
+     *
+     * @return a loopback host name; defaults to {@code "localhost"}
+     * @implSpec Override together with {@link #loopbackHost()}: the client dials this name and must
+     *           reach the server bound to that address.
+     * @since 0.12
+     */
+    protected String loopbackHostName() {
+        return "localhost";
     }
 
     /**
@@ -134,23 +165,25 @@ public abstract class AbstractHttpProviderLoopbackTck {
     /**
      * Returns the {@link HttpConfig} used to create the fixture's client engine.
      *
-     * @param host the server's address, used as the client's default dial authority
-     * @param port the server's port, used as the client's default dial authority
-     * @return a client-mode configuration whose default authority is {@code host:port}
+     * @param host the host of the client's default peer
+     * @param port the port of the client's default peer
+     * @return a client-mode configuration whose default authority is {@code host:port}, with no
+     *         {@code bindHost} and the {@code -1} port sentinel
      * @apiNote The default authority is a dial address supplied to the client (ADR-074),
      *          distinct from a server's bind address; a request naming its own authority
      *          overrides it.
+     * @implSpec An override keeps the peer out of {@code bindHost} and {@code port}, or a client
+     *           dialling its listener address passes the unaddressed cases.
      */
     protected HttpConfig clientConfig(String host, int port) {
-        // ADR-074: the peer is now a DIAL address the client is given, not the SERVER/DUAL listener
-        // address it used to read out of bindHost. This fixture happened to work before only
-        // because the two were the same value — a coincidence, now a setting. bindHost/port stay
-        // populated so the rest of the fixture is unchanged; defaultAuthority is what the client
-        // actually dials.
+        // The default authority is the only place this configuration names the peer. bindHost and
+        // port carry the CLIENT-mode values HttpConfig documents (none, and the -1 sentinel), so a
+        // client that dials its listener address instead reaches nothing and fails every
+        // unaddressed case, rather than reaching the server through a copy of the same value.
         return new HttpConfig(
                 eu.exeris.kernel.spi.http.HttpMode.CLIENT,
-                host,
-                port,
+                null,
+                -1,
                 HttpConfig.DEFAULT_MAX_CONNECTIONS,
                 HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
                 HttpConfig.DEFAULT_MAX_HEADER_COUNT,
@@ -271,51 +304,131 @@ public abstract class AbstractHttpProviderLoopbackTck {
         }
     }
 
-    @Test
-    @DisplayName("A request's authority overrides the engine's configured default peer (ADR-074)")
-    void requestAuthorityOverridesTheConfiguredDefaultPeer() {
-        HttpProvider provider = createProvider();
-        String host = loopbackHost();
-        int defaultPort = nextFreePort();
-        int addressedPort = nextFreePort();
+    @Nested
+    @DisplayName("Peer addressing (ADR-074)")
+    class PeerAddressing {
 
-        // Two servers. The client is configured to default to the FIRST and the request names the
-        // SECOND, so only a client that reads the request's authority can reach it. Before ADR-074
-        // the engine took its peer from HttpConfig.bindHost at construction and never looked at the
-        // request at all — this case is therefore unreachable on the previous behaviour rather than
-        // merely differently-answered.
-        AtomicReference<String> reachedBy = new AtomicReference<>();
-        HttpHandler defaultHandler = exchange -> {
-            reachedBy.set("default");
-            exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
-        };
-        HttpHandler addressedHandler = exchange -> {
-            reachedBy.set("addressed");
-            exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
-        };
+        @Test
+        @DisplayName("A request's authority overrides the engine's configured default peer (ADR-074)")
+        void requestAuthorityOverridesTheConfiguredDefaultPeer() {
+            HttpProvider provider = createProvider();
+            String host = loopbackHost();
+            int defaultPort = nextFreePort();
+            int addressedPort = nextFreePort();
 
-        try (HttpServerEngine defaultServer = createServerEngine(provider, serverConfig(host, defaultPort));
-             HttpServerEngine addressedServer = createServerEngine(provider, serverConfig(host, addressedPort));
-             HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, defaultPort))) {
-            defaultServer.setHandler(defaultHandler);
-            addressedServer.setHandler(addressedHandler);
-            defaultServer.start();
-            addressedServer.start();
-            clientEngine.start();
+            // Two servers. The client is configured to default to the FIRST and the request names the
+            // SECOND, so only a client that reads the request's authority can reach it; a client that
+            // takes its peer from configuration alone reaches the first or nothing.
+            AtomicReference<String> reachedBy = new AtomicReference<>();
+            HttpHandler defaultHandler = exchange -> {
+                reachedBy.set("default");
+                exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+            };
+            HttpHandler addressedHandler = exchange -> {
+                reachedBy.set("addressed");
+                exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+            };
 
-            HttpResponse response = clientEngine.send(
-                    HttpRequest.noBody(HttpMethod.GET, requestPath(), requestVersion(), List.of())
-                            .withAuthority(host + ":" + addressedPort));
+            try (HttpServerEngine defaultServer = createServerEngine(provider, serverConfig(host, defaultPort));
+                 HttpServerEngine addressedServer = createServerEngine(provider, serverConfig(host, addressedPort));
+                 HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, defaultPort))) {
+                defaultServer.setHandler(defaultHandler);
+                addressedServer.setHandler(addressedHandler);
+                defaultServer.start();
+                addressedServer.start();
+                clientEngine.start();
 
-            assertThat(response.status().code()).isEqualTo(expectedStatus().code());
-            if (response.body() != null) {
-                response.body().close();
+                HttpResponse response = clientEngine.send(
+                        HttpRequest.noBody(HttpMethod.GET, requestPath(), requestVersion(), List.of())
+                                .withAuthority(host + ":" + addressedPort));
+
+                assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+                if (response.body() != null) {
+                    response.body().close();
+                }
             }
+
+            assertThat(reachedBy.get())
+                    .as("the request named the second peer, so the second peer must be the one reached")
+                    .isEqualTo("addressed");
         }
 
-        assertThat(reachedBy.get())
-                .as("the request named the second peer, so the second peer must be the one reached")
-                .isEqualTo("addressed");
+        @Test
+        @DisplayName("Host is the request's authority, not the connection's address or the default peer (ADR-074)")
+        void hostFollowsTheRequestAuthority() {
+            HttpProvider provider = createProvider();
+            String host = loopbackHost();
+            int port = nextFreePort();
+            int defaultPort = nextFreePort();
+            String authority = loopbackHostName() + ":" + port;
+
+            // The request names the server by host name, while the configured default is a different
+            // peer nobody listens on. Host must be the name the request wrote, not the address the
+            // connection reports and not the default, which names another port.
+            AtomicReference<List<String>> hostFields = new AtomicReference<>();
+            try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(host, port));
+                 HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(host, defaultPort))) {
+                serverEngine.setHandler(hostRecordingHandler(hostFields));
+                serverEngine.start();
+                clientEngine.start();
+
+                HttpResponse response = clientEngine.send(
+                        HttpRequest.noBody(HttpMethod.GET, requestPath(), HttpVersion.HTTP_1_1, List.of())
+                                .withAuthority(authority));
+                try (var _ = response.body()) {
+                    assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+                }
+            }
+
+            assertThat(hostFields.get())
+                    .as("the server must receive exactly one Host field, equal to the request's authority")
+                    .containsExactly(authority);
+        }
+
+        @Test
+        @DisplayName("Host of an unaddressed request is the configured default authority (ADR-074)")
+        void hostFollowsTheConfiguredDefaultAuthority() {
+            HttpProvider provider = createProvider();
+            int port = nextFreePort();
+            String defaultAuthority = loopbackHostName() + ":" + port;
+
+            // The request names no peer, so the configured default is its effective authority. That
+            // default is a host name and the fixture carries no bindHost, so Host must be the configured
+            // name rather than the address the connection reports or anything taken from bindHost/port.
+            AtomicReference<List<String>> hostFields = new AtomicReference<>();
+            try (HttpServerEngine serverEngine = createServerEngine(provider, serverConfig(loopbackHost(), port));
+                 HttpClientEngine clientEngine = createClientEngine(provider, clientConfig(loopbackHostName(), port))) {
+                serverEngine.setHandler(hostRecordingHandler(hostFields));
+                serverEngine.start();
+                clientEngine.start();
+
+                HttpResponse response = clientEngine.send(
+                        HttpRequest.noBody(HttpMethod.GET, requestPath(), HttpVersion.HTTP_1_1, List.of()));
+                try (var _ = response.body()) {
+                    assertThat(response.status().code()).isEqualTo(expectedStatus().code());
+                }
+            }
+
+            assertThat(hostFields.get())
+                    .as("the server must receive exactly one Host field, equal to the configured default authority")
+                    .containsExactly(defaultAuthority);
+        }
+
+        /**
+         * A handler that records every {@code Host} field value the server received, then responds.
+         *
+         * <p>The cases send HTTP/1.1, where RFC 9112 §3.2 requires exactly one {@code Host} field, so
+         * recording all of them lets a duplicate fail the case rather than hide behind the first match.
+         */
+        private HttpHandler hostRecordingHandler(AtomicReference<List<String>> hostFields) {
+            return exchange -> {
+                hostFields.set(exchange.request().headers().stream()
+                        .filter(header -> header.nameEqualsIgnoreCase("Host"))
+                        .map(HttpHeader::value)
+                        .toList());
+                exchange.respond(HttpResponse.noBody(expectedStatus(), exchange.request().version()));
+            };
+        }
     }
 
     @Test

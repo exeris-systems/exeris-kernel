@@ -88,7 +88,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
-| `…spi.events` | **preview** | 0.5.0 | — | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
+| `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
@@ -149,9 +149,14 @@ next reader inherits the finding instead of rediscovering it.
 > rather than asserted.** `HttpRequest` gained `authority` and `HttpConfig` gained
 > `defaultAuthority`; both retain their previous canonical constructor as a bridge, so the SPI
 > compatibility gate reports **`stable-breaks=0` / `stable-src-breaks=0`** against `v0.11.0`.
-> The residual risk the gate cannot see is source-level and out-of-tree: a record **deconstruction
+> One residual risk the gate cannot see is source-level and out-of-tree: a record **deconstruction
 > pattern** (`case HttpRequest(m, p, v, h, b)`) or a `HttpRequest::new` canonical-constructor
 > reference would not compile. Neither appears anywhere in this repository — checked, not assumed.
+> The other is behavioural, which no signature check can see: `HttpConfig`'s bridge yields an engine
+> with no default peer, and `HttpRequest`'s a request naming none, so an unaddressed request sent
+> through such an engine is refused at send where v0.11 dialled `bindHost:port`. The code compiles
+> unchanged and fails at its first unaddressed send; the v0.12.0 release notes' upgrade step names
+> the fix (an `HttpConfig` constructor taking `defaultAuthority`, or `withAuthority` per request).
 
 Because this package is `mixed`, the breakdown is **exhaustive**: every class in
 `eu.exeris.kernel.spi.http` appears in exactly one row. A class named in no row would be neither
@@ -162,7 +167,7 @@ gated nor reported by the compatibility gate, so completeness here is enforced, 
 |---|---|---|---|---|
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
 | Request/response carriers: `HttpRequest`, `HttpResponse`, `HttpTypedResponse`, `HttpStatus`, `HttpMethod`, `HttpVersion`, `HttpHeader` | **stable** | 0.5.0 | ADR-009 | exercised through the engine/exchange/handler TCKs above |
-| ↳ `HttpRequest.authority()` / `HttpConfig.defaultAuthority()` / `HttpClientEngine.defaultAuthority()` | **stable** | 0.12.0 | ADR-074 | `AbstractHttpClientEngineTck$PeerAddressing`, `AbstractHttpProviderLoopbackTck`, `KernelWebClientRetryTest#enricherObservesTheResolvedAuthority` |
+| ↳ `HttpRequest.authority()` / `HttpConfig.defaultAuthority()` / `HttpClientEngine.defaultAuthority()` | **stable** | 0.12.0 | ADR-074 | `AbstractHttpClientEngineTck$PeerAddressing` (also bound to the engine a booted kernel binds, by `DeferredHttpClientEngineTckTest`), `AbstractHttpProviderLoopbackTck`, `KernelWebClientRetryTest#enricherObservesTheResolvedAuthority`, `CommunityHttpBootstrapIntegrationTest#bootedClientEnricherSeesConfiguredDefaultAuthority` (the engine a booted kernel binds) |
 | ↳ `HttpClientEngine.send(HttpRequest)` request-body ownership: the caller of `send` keeps ownership of the request body and releases it after `send` returns or throws; the engine reads it during `send` and neither closes nor retains it | **stable** | 0.12.0 | ADR-034 (A1) | `AbstractHttpClientEngineTck$RequestBodyOwnership`, `AbstractHttpProviderLoopbackTck` |
 | `HttpConfigValidation` | _internal_ | 0.12.0 | ADR-074 | — (package-private; `HttpConfig`'s own construction-time validation, extracted rather than published) |
 | Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck` |
@@ -268,3 +273,17 @@ maturity change here.
     changes, so the API-diff gate sees only the additions; the note is here because an out-of-tree
     caller of those constructors, or a filter keyed on `EX-EVENT-6002`, observes a different code
     with no change a diff reports.
+
+[^eventbusawait]: **Behavioural note, 0.12.** `EventBus.publishAndAwait`'s promise to block until
+    every handler has finished, and its `EX-EVENT-6010` for failed handlers, are scoped to a bus
+    that is not brokered, and the additive default method `EventBus.isBrokered()` (returning
+    `false`) says which kind a bus is. On a brokered bus `publishAndAwait` blocks until the broker
+    has acknowledged the publication, promises nothing about any handler, never throws
+    `EX-EVENT-6010`, and its handlers observe none of the publisher's `ScopedValue` bindings; the
+    broadcast retain protocol applies to the payload such a bus creates on consume, while the
+    caller's reference is released exactly once. The Community Kafka bus reports `true`, and this
+    is how it already behaved; the in-memory buses report `false` and are unchanged. The API-diff
+    gate reports the new method; the note is here because the narrowed meaning of an existing
+    method is the change, and no diff reports that. `AbstractEventBusTck` skips its five
+    in-process cases on a brokered bus, through an assumption on `isBrokered()`, and adds one case
+    every bus runs.

@@ -293,6 +293,12 @@ Inside your application, read config with `KernelProviders.CURRENT_CONFIG.get()`
 `http.maxVersion`, `http.client.defaultAuthority`, `http.maxHeaderBlockSize`,
 `http.maxHeaderListSize`, `http.maxStringLiteralSize`.
 
+`http.bindHost` and `http.port` are **listen** addresses and never address the HTTP client. In
+`CLIENT` or `DUAL` mode the client's only configured destination is `http.client.defaultAuthority` —
+`host:port`, port required, IPv6 bracketed, no default — used for a request that names no peer of its
+own. A request with no peer and no default is refused at send with `IllegalStateException`, while the
+kernel itself boots cleanly.
+
 The two body limits are **separate keys because they bound opposite directions on different
 sockets**: `http.maxRequestBodyBytes` is what this server accepts from callers,
 `http.maxResponseBodyBytes` is what this application's HTTP client will read back from someone

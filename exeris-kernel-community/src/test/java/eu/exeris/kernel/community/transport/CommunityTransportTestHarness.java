@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 final class CommunityTransportTestHarness {
 
     private static final long CONNECT_TIMEOUT_SECONDS = 5L;
+    private static final int DEFAULT_MAX_CONNECTIONS = 1024;
 
     private CommunityTransportTestHarness() {
     }
@@ -56,6 +57,52 @@ final class CommunityTransportTestHarness {
     }
 
     static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount) {
+        return openLoopbackPair(allocator, drainingServerHandler, reactorCount, "127.0.0.1",
+                DEFAULT_MAX_CONNECTIONS);
+    }
+
+    /**
+     * Opens a loopback pair whose client end dials the server at {@code dialHost}.
+     *
+     * @param dialHost the host the client end dials; must resolve to {@code 127.0.0.1}, where the
+     *                 server listens. A host name here lets a case see whether the dialled
+     *                 connection reports the address it reached or the name it was given.
+     */
+    static Pair openLoopbackPair(MemoryAllocator allocator,
+                                 boolean drainingServerHandler,
+                                 int reactorCount,
+                                 String dialHost) {
+        return openLoopbackPair(allocator, drainingServerHandler, reactorCount, dialHost, DEFAULT_MAX_CONNECTIONS);
+    }
+
+    /**
+     * Opens a loopback pair whose server admits up to {@code maxConnections} connections, for a
+     * caller that dials further client streams through {@link Pair#connectClientStream()}.
+     *
+     * @param allocator             allocator bound to both engines
+     * @param drainingServerHandler whether each accepted server stream is read until it ends
+     * @param reactorCount          reactors per engine
+     * @param maxConnections        the server's connection ceiling
+     * @return the started pair, with one client and one server stream already open
+     */
+    static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount,
+                                 int maxConnections) {
+        return openLoopbackPair(allocator, drainingServerHandler, reactorCount, "127.0.0.1", maxConnections);
+    }
+
+    /**
+     * Opens a loopback pair whose client end dials {@code dialHost} and whose server admits up to
+     * {@code maxConnections} connections.
+     *
+     * @param allocator             allocator bound to both engines
+     * @param drainingServerHandler whether each accepted server stream is read until it ends
+     * @param reactorCount          reactors per engine
+     * @param dialHost              the host the client end dials; must resolve to {@code 127.0.0.1}
+     * @param maxConnections        the server's connection ceiling
+     * @return the started pair, with one client and one server stream already open
+     */
+    static Pair openLoopbackPair(MemoryAllocator allocator, boolean drainingServerHandler, int reactorCount,
+                                 String dialHost, int maxConnections) {
         int port = nextFreePort();
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
 
@@ -70,7 +117,7 @@ final class CommunityTransportTestHarness {
                     reactorCount,
                     null,
                     null,
-                    1024,
+                    maxConnections,
                     30_000
             ));
 
@@ -107,7 +154,7 @@ final class CommunityTransportTestHarness {
         serverEngine.start();
         clientEngine.start();
 
-        TransportConnection clientConnection = clientEngine.connect("127.0.0.1", port);
+        TransportConnection clientConnection = clientEngine.connect(dialHost, port);
         try {
             if (!serverConnectionReady.await(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
                 throw new IllegalStateException("Server did not accept connection within timeout");
@@ -126,7 +173,8 @@ final class CommunityTransportTestHarness {
         TransportStream serverStream = serverConnection.openStream();
 
         return new Pair(
-            serverEngine,
+                port,
+                serverEngine,
                 clientEngine,
                 serverConnection,
                 clientConnection,
@@ -214,6 +262,7 @@ final class CommunityTransportTestHarness {
 
     static final class Pair {
 
+        private final int port;
         private final TransportEngine serverEngine;
         private final TransportEngine clientEngine;
         private final TransportConnection serverConnection;
@@ -221,12 +270,14 @@ final class CommunityTransportTestHarness {
         private final TransportStream serverStream;
         private final TransportStream clientStream;
 
-        private Pair(TransportEngine serverEngine,
+        private Pair(int port,
+                     TransportEngine serverEngine,
                      TransportEngine clientEngine,
                      TransportConnection serverConnection,
                      TransportConnection clientConnection,
                      TransportStream serverStream,
                      TransportStream clientStream) {
+            this.port = port;
             this.serverEngine = serverEngine;
             this.clientEngine = clientEngine;
             this.serverConnection = serverConnection;
@@ -257,6 +308,17 @@ final class CommunityTransportTestHarness {
 
         TransportStream clientStream() {
             return clientStream;
+        }
+
+        /**
+         * Dials one more connection from the client engine to this pair's server and returns its
+         * stream — a stream no other caller holds, for a test that needs one owner per stream.
+         * The caller owns the returned stream and closes it.
+         *
+         * @return the new connection's stream
+         */
+        TransportStream connectClientStream() {
+            return clientEngine.connect("127.0.0.1", port).openStream();
         }
 
         void closeConnections() {

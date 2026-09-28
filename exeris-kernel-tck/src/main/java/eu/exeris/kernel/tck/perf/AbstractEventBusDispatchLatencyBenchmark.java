@@ -26,18 +26,13 @@ import java.util.concurrent.TimeUnit;
 /**
  * JMH Benchmark: EventBus dispatch latency and throughput.
  *
- * <p>Measures end-to-end publish-to-handle latency of {@link EventBus#publish} with a single
+ * <p>Measures the caller-side latency and throughput of {@link EventBus#publish} with a single
  * registered handler, single-threaded and unthrottled: the benchmark loop calls {@code publish}
  * as fast as it can, it does not pace itself to any particular message rate.
  *
- * <h2>SLO targets</h2>
- * <p>These are the production-load targets this benchmark is calibrated to read against, not
- * figures the benchmark drives or asserts — JMH does not fail the build on either being missed,
- * so conformance means comparing the printed report to these numbers by hand.
- * <ul>
- *   <li>Average throughput: {@code ≥ 100 000 ops/s}</li>
- *   <li>p99 latency: {@code ≤ 200 µs}, read against a 100 000 msg/s production target</li>
- * </ul>
+ * <h2>Results</h2>
+ * <p>This template sets no performance target and asserts none: JMH reports what a binding
+ * measures, and nothing fails on the result. The kernel ships no binding of this template.
  *
  * <h2>Measurement methodology</h2>
  * <p>A single pre-registered handler processes every published event (registered at
@@ -120,12 +115,8 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
      * Hot path: single publish call with the pre-allocated descriptor, sampled by JMH's
      * {@code SampleTime} mode to report latency percentiles.
      *
-     * <p>Community: enqueues to a StructuredTaskScope-backed queue.
-     * Enterprise: single CAS write to the off-heap lock-free ring buffer.
-     *
-     * <p><b>SLO target:</b> p99 latency target is {@code ≤ 200 µs} against a 100k ops/s
-     * production load; this is not enforced by the benchmark and must be checked against
-     * the printed percentile report.
+     * <p>Community: starts one virtual thread per subscribed handler and returns without
+     * waiting for it. Enterprise: single CAS write to the off-heap lock-free ring buffer.
      *
      * @param bh JMH blackhole — prevents the JIT from eliminating the descriptor reference
      */
@@ -138,8 +129,6 @@ public abstract class AbstractEventBusDispatchLatencyBenchmark extends AbstractE
 
     /**
      * Throughput baseline: measures raw publish throughput.
-     *
-     * <p>Throughput target is {@code ≥ 100 000 ops/s}; not enforced by the benchmark.
      *
      * @param bh JMH blackhole — prevents the JIT from eliminating the descriptor reference
      */
