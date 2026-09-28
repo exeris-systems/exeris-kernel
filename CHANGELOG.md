@@ -87,6 +87,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The bootstrap and events subsystem pages describe the code, and carry the date they were checked.**
+  Both pages had no frontmatter and were verified in full against the code. `bootstrap.md` no longer
+  describes a `SIGTERM` handler, an orchestrator-level drain, an `exit(0)` or an `EX-BOOT-0003` deadline,
+  none of which exist: the kernel installs no signal handler or shutdown hook, `shutdown()` runs when
+  `kernelMain` returns, and the one bounded drain is the transport's (`PaqsScheduler.close()`, 60 s). Its
+  Boot DAG is the twelve Community subsystems with their real `dependsOn()` edges, websocket included;
+  the default provider priority is `0`; `DEGRADE` drops only optional non-foundation subsystems. `events.md`
+  gains `EX-EVENT-6009`/`6010`/`6011` and the brokered `publishAndAwait` contract, corrects the
+  `EX-EVENT-6001` row, the bus and emitter class names, the Kafka client version, the DLQ trigger and the
+  outbox DDL, and marks what no test here exercises. Both pages carry `last-verified: 2026-09-28`.
+
 - **Closing a connection the peer already closed closes its stream.** The Community carrier marks
   a `NativeTcpConnection` closed when it reads the peer's end of stream, without closing the
   stream, and `close()` returned early on that flag. The stream — its socket, selection key and
