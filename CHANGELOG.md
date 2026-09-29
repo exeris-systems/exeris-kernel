@@ -247,6 +247,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **`EX-BOOT-0003` is reserved.** The registry published an initialization-deadline code with a
+  `[subsystemName, deadlineMs]` layout, but the orchestrator imposes no deadline on `initialize()` or
+  `start()` and nothing raises the code. It is now marked reserved with no layout, the way `EX-NET-4007`
+  is, and the exceptions and telemetry code tables follow. A subsystem that never returns from
+  `initialize()` holds the boot until it does.
+
 - **The bootstrap and events subsystem pages describe the code, and carry the date they were checked.**
   Both pages had no frontmatter and were verified in full against the code. `bootstrap.md` no longer
   describes a `SIGTERM` handler, an orchestrator-level drain, an `exit(0)` or an `EX-BOOT-0003` deadline,
