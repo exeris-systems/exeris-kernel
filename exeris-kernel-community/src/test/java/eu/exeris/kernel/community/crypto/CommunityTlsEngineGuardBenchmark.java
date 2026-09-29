@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
@@ -90,7 +91,12 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 
 		serverEngine = (CommunityTlsEngine) provider.createTlsEngine(
 				CryptoProviderConfig.httpsServer(certPath, keyPath));
-		clientEngine = (CommunityTlsEngine) provider.createTlsEngine(CryptoProviderConfig.tcpClient());
+		// The client trusts the server's self-signed certificate and dials 127.0.0.1, its IP SAN; the
+		// engine's context keeps its own reference to the store, so the trust closes here.
+		try (CommunityTlsClientTrust trust = provider.openClientTrust(certPath)) {
+			clientEngine = provider.createClientTlsEngine(
+					CryptoProviderConfig.tcpClient(), trust, TlsPeerIdentity.of("127.0.0.1"));
+		}
 
 		try {
 			serverListenChannel = ServerSocketChannel.open();
@@ -321,7 +327,8 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 						"-keyout", keyFile.toString(),
 						"-out", certFile.toString(),
 						"-days", "1", "-nodes",
-						"-subj", "/CN=exeris-benchmark");
+						"-subj", "/CN=exeris-benchmark",
+						"-addext", "subjectAltName=IP:127.0.0.1");
 				pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
 				pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 				Process proc = pb.start();

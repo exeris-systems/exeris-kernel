@@ -189,6 +189,19 @@ class PathTemplateTest {
             assertFalse(PathTemplate.compile("/api/{id}").matches("/apix/42"));
             assertFalse(PathTemplate.compile("/apix/{id}").matches("/api/42"));
         }
+
+        @Test
+        @DisplayName("the literal prefix is everything before the first placeholder, and no more")
+        void literalPrefixStopsAtTheFirstPlaceholder() {
+            // What matches() rejects on before walking a segment, so it must never reach into a
+            // placeholder: a prefix carrying the '{' would reject every concrete id.
+            assertEquals("/api/orders/",
+                    PathTemplate.compile("/api/orders/{id}/lines/{line}").literalPrefix());
+            assertEquals("/", PathTemplate.compile("/{tenant}/orders").literalPrefix());
+            assertEquals("", PathTemplate.compile("{tenant}").literalPrefix());
+            assertEquals("/health", PathTemplate.compile("/health").literalPrefix());
+            assertTrue(PathTemplate.compile("/{tenant}/orders").matches("/acme/orders"));
+        }
     }
 
     @Nested

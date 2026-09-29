@@ -9,7 +9,9 @@ import eu.exeris.kernel.community.http.CommunityHttpProvider;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMethod;
@@ -75,26 +77,46 @@ class TransportTlsDecisionTest {
         try {
             // The opt-out: the escape hatch that did not exist. A crypto-booted kernel can now
             // reach a plaintext peer, which it previously could not do at all.
-            assertThat(statusAgainstPlaintextServer(crypto, allocator, "false"))
-                    .as("opt-out must produce a plaintext client, which the plaintext peer answers")
+            Outcome declined = againstPlaintextServer(crypto, allocator, "false");
+            assertThat(declined.status())
+                    .as("opt-out must produce a plaintext client, which the plaintext peer answers; failure: %s",
+                            declined.failure())
                     .isEqualTo(HttpStatus.OK.code());
 
             // The default, deliberately unchanged: a bound crypto provider still arms TLS, so the
             // plaintext peer yields nothing. Asserting the failure is what keeps the case above from
             // passing against a client that simply never arms TLS — and it pins the default the TLS
             // end-to-end tests depend on, since their client carries no certificate of its own.
-            assertThat(statusAgainstPlaintextServer(crypto, allocator, null))
+            Outcome armed = againstPlaintextServer(crypto, allocator, null);
+            assertThat(armed.status())
                     .as("default must still arm TLS, so a plaintext peer yields no status")
                     .isEqualTo(-1);
+            // The handshake is what fails, which only an armed client runs: the plaintext peer either
+            // answers bytes that are not TLS (EX-NET-2001) or waits for a request line the ClientHello
+            // never completes, and the handshake times out (EX-NET-4003). A client that failed to
+            // construct (EX-NET-4004) would also yield -1, and is not an armed client.
+            assertThat(armed.failure())
+                    .as("and the refusal is the handshake's, not a construction failure passing as armed")
+                    .isInstanceOf(ExerisKernelException.class);
+            assertThat(((ExerisKernelException) armed.failure()).errorCode())
+                    .isIn(KernelErrorCodes.EX_NET_2001, KernelErrorCodes.EX_NET_4003);
         } finally {
             allocator.close();
         }
     }
 
-    /** Returns the response status, or {@code -1} when the exchange did not complete. */
-    private int statusAgainstPlaintextServer(KernelCryptoProvider crypto,
-                                             MemoryAllocator allocator,
-                                             String optOut) throws Exception {
+    /**
+     * What one exchange produced.
+     *
+     * @param status  the response status, or {@code -1} when the exchange did not complete
+     * @param failure what the exchange threw, or {@code null}
+     */
+    private record Outcome(int status, Throwable failure) {
+    }
+
+    private Outcome againstPlaintextServer(KernelCryptoProvider crypto,
+                                           MemoryAllocator allocator,
+                                           String optOut) throws Exception {
         String previous = System.getProperty(TLS_PROPERTY);
         if (optOut == null) {
             System.clearProperty(TLS_PROPERTY);
@@ -103,10 +125,11 @@ class TransportTlsDecisionTest {
         }
         int port = freePort();
         AtomicReference<Integer> status = new AtomicReference<>(-1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
         try {
             ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator)
                     .where(KernelProviders.CRYPTO_PROVIDER, crypto)
-                    .run(() -> exchange(port, status));
+                    .run(() -> exchange(port, status, failure));
         } finally {
             if (previous == null) {
                 System.clearProperty(TLS_PROPERTY);
@@ -114,10 +137,10 @@ class TransportTlsDecisionTest {
                 System.setProperty(TLS_PROPERTY, previous);
             }
         }
-        return status.get();
+        return new Outcome(status.get(), failure.get());
     }
 
-    private void exchange(int port, AtomicReference<Integer> status) {
+    private void exchange(int port, AtomicReference<Integer> status, AtomicReference<Throwable> failure) {
         CommunityHttpProvider provider = new CommunityHttpProvider();
         // No certificate anywhere, so the server is plaintext whatever the client decides.
         try (HttpServerEngine server = provider.createServerEngine(config(HttpMode.SERVER, port, null));
@@ -131,9 +154,10 @@ class TransportTlsDecisionTest {
             if (response.body() != null) {
                 response.body().close();
             }
-        } catch (RuntimeException _) {
+        } catch (RuntimeException refused) {
             // A TLS client against a plaintext peer does not complete; -1 records that.
             status.set(-1);
+            failure.set(refused);
         }
     }
 

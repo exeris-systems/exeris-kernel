@@ -66,7 +66,7 @@ Additional follow-ups (mechanism works; refinement deferred):
 - **Wire framing** — the SSE body is written as a raw, close-delimited HTTP/1.1 response (`Connection: close`, no `Content-Length`, no chunk framing; RFC 9112 §6.3). `Transfer-Encoding: chunked` per-event framing (so SSE streams through buffering reverse proxies / CDNs that hold length-unknown responses) and an HTTP/2 `DATA`-frame path are follow-ups. The response head is HTTP/1.1-specific today.
 - ~~**Zero-copy emit**~~ — **done in v0.10.0.** `SseEventEncoder` frames each event as two passes over one shared traversal: `encodedLength(StreamEvent)` measures the UTF-8 block and `encodeInto(StreamEvent, MemorySegment, long)` writes it field-by-field straight into the egress `LoanedBuffer` — no intermediate `StringBuilder`/`String`/`byte[]` and no array→segment copy. `HttpStreamEngine` calls both on the emit path. The heap `encode(StreamEvent)` wrapper is retained for tests and non-hot-path callers only.
 
-**Test gating.** The streaming contract is verified two ways. The fast, deterministic layer gates CI: `SseEventEncoderTest` (wire framing), `HttpRouterTest` streaming-registration, and the ArchTest Wall pin. The real-NIO loopback suite (`AbstractHttpStreamExchangeTck` bound by `CommunityHttpStreamExchangeTckTest` + the JFR `RecordingStream` test, `@Tag("stream-loopback")`) is run **on demand / locally**, not in the CI gate — like the `stress`/`flamegraph` suites it starves and times out on constrained 2-vCPU CI runners (server reactor + per-stream VT + client) even though it passes deterministically on many-core boxes. Run it with `mvn test -DincludedGroups=stream-loopback -DexcludedGroups=` (or `-Dtest=CommunityHttpStreamExchangeTckTest`). Making the loopback robust under scarce carriers so it can gate CI is a tracked follow-up.
+**Test gating.** The streaming contract is verified at three layers. The fast, deterministic layer gates CI: `SseEventEncoderTest` (wire framing), `HttpRouterTest` streaming registration and resolution, `AbstractStreamRouteResolverTck` (bound to `HttpRouter` by `CoreStreamRouteResolverTckTest` and to a forwarder over a router slot by `CommunityStreamRouteResolverTckTest`), `CommunityStreamResolutionDelegationTest` (resolution through a bound handler that is not an `HttpRouter`), and the ArchTest Wall pin. One real-boot stream test gates CI as well: `GeneratedAppStreamRouteReachabilityIntegrationTest` boots the kernel with a forwarder of the generated application's shape bound to `HTTP_SERVER_HANDLER` and reads over a socket one SSE event per stream route, next to the respond-once twin that answers when a stream route is not resolved; one of its routes also shows that no slot bound at boot reaches a stream handler. Each of its streams emits one event and closes, and its client reads to end of stream, so it holds no stream open and asserts no timing window. It passed all 12 cases in each of 20 fresh JVMs on a many-core host with the carriers held to two (`-XX:ActiveProcessorCount=2 -Djdk.virtualThreadScheduler.parallelism=2 -Djdk.virtualThreadScheduler.maxPoolSize=2`), in 10 more with the JVM also pinned to two CPUs by `taskset`, and in the module's full build under `-P coverage`, and it is untagged. The real-NIO loopback suite (`AbstractHttpStreamExchangeTck` bound by `CommunityHttpStreamExchangeTckTest` + the JFR `RecordingStream` test, `@Tag("stream-loopback")`) is run **on demand / locally**, not in the CI gate — like the `stress`/`flamegraph` suites it starves and times out on constrained 2-vCPU CI runners (server reactor + per-stream VT + client) even though it passes deterministically on many-core boxes. Run it with `mvn test -DincludedGroups=stream-loopback -DexcludedGroups=` (or `-Dtest=CommunityHttpStreamExchangeTckTest`). Making the loopback robust under scarce carriers so it can gate CI is a tracked follow-up, and the real-boot measurement above does not settle it: the loopback cases hold streams open and assert disconnect, backpressure-park and JFR timing within bounded windows, none of which the real-boot test does.
 
 HTTP exceptions in SPI:
 
@@ -93,6 +93,8 @@ Implemented components:
 - **HTTP/1.1 codec:** `http1.*`
 - **Routing:** `routing/` — `HttpRouter` — transport-agnostic `HttpHandler` implementation with exact, path-template (`{name}` placeholder), and prefix routing plus HEAD→GET fallback (RFC 9110 §9.3.2). Resolution precedence is exact → template → prefix; a template hit captures each placeholder and exposes it to the handler via `HttpExchange.pathParams()` (the router wraps the exchange in a `PathParamHttpExchange` decorator — Core never depends on a concrete transport-side exchange). `HttpRouterRegisteredEvent` (JFR) records exact/template/prefix route counts.
   The **streaming table follows the same rules** — exact before template, same `{name}` syntax, captured values reaching the handler through `HttpStreamExchange.pathParams()` via a `PathParamStreamExchange` decorator. It did not always: until v0.11 the streaming table was an exact-match map while the tooling generator emitted templated stream paths, so a per-action stream route registered successfully and then never matched a concrete request. A registration that cannot match is now unrepresentable — a malformed brace throws at `Builder.streamRoute`, and a well-formed one compiles to a template. Both tables share one compiled `PathTemplate`, so they cannot drift into disagreeing about what `/x/{id}` means.
+  **A driver resolves stream routes through the bound handler** ([ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md) Amendment A1). Once per request, before route authorization and before `handle`, the Community driver asks the handler bound to `HTTP_SERVER_HANDLER` for a stream route through `StreamRouteResolver`, an SPI contract in `eu.exeris.kernel.spi.http` (`preview`, held by `AbstractStreamRouteResolverTck`) whose answer is the SPI record `StreamMatch`; `HttpRouter` is one implementation of it, and a handler that does not — a lambda over a router, for example — is served respond-once only, so its stream routes never match. A handler that wraps a router implements `StreamRouteResolver` by delegating. When a binding of its own must reach the stream handler, it wraps the handler it gets back, derives any per-request value inside that wrapper and forwards the captured parameters unchanged; the driver runs the returned handler inside the bindings it establishes for the stream, so the kernel's scope is outermost, then the wrapper's, then the route's. A binding around a stream is held for the stream's whole life, so a wrapper binds immutable or stateless values (a tenant, a storage context) and nothing pooled or lazily acquired (a persistence session). The thread a stream handler runs on carries exactly these bindings: the transport's per-stream `TransportScopes` slots (`STREAM_PRIORITY`, `STREAM_ID`, `ENGINE_NAME`, `DRAIN_COORDINATOR`, `STREAM_WORK`), which `PaqsScheduler` binds around every transport stream it runs; `KernelProviders.MEMORY_ALLOCATOR`; `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY`, when the provider exposes one; `KernelProviders.PRINCIPAL_CONTEXT` and `STORAGE_CONTEXT`, when the route's requirement ran the security interceptor; and whatever the wrapper added. No other slot bound at boot reaches it — not `EVENT_ENGINE`, not `PERSISTENCE_ENGINE` — so a stream handler receives those through its constructor.
+  **HTTP/2 serves no stream route.** Stream resolution runs on the HTTP/1.1 path only: with TLS terminated by the kernel, ALPN selects `h2` whenever the client offers it, and on a connection without TLS an `h2c` upgrade or a prior-knowledge HTTP/2 preface is handed to the HTTP/2 session before resolution runs, so a request for a stream route that arrives over HTTP/2 goes to `handle`, which answers it with whichever respond-once route matches the path, or `404`. A browser `EventSource` against TLS the kernel terminates is in that case. Terminate TLS upstream and speak HTTP/1.1 to the kernel, or, without TLS, set `http.maxVersion=HTTP_1_1`, which disables both of those paths to HTTP/2; `http.maxVersion` does not reach ALPN selection.
 
 Current placement reality:
 
@@ -118,6 +120,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttpExchangeTck`
 - `AbstractHttpProviderLoopbackTck` — verifies real transport round-trip; bound at Community tier (`CommunityHttpProviderLoopbackTckTest`)
 - `AbstractHealthEndpointTck` (since 0.7.0) — pins the readiness/liveness endpoint contract for any `HttpHandler` binding that surfaces a `HealthProbe`. Bound at Community tier (`CommunityHealthEndpointTckTest`).
+- `AbstractHttpClientTlsPeerVerificationTck` (since 0.12.0, [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) Amendment A1) — the TLS clause of `HttpClientEngine#send`, a suite apart from `AbstractHttpClientEngineTck`; bound at Community tier (`CommunityHttpClientTlsPeerVerificationTckTest`), not by the Core fixture client, which speaks no TLS, nor by Enterprise. See *Client TLS* below.
 - `AbstractHttpStreamExchangeTck` (since 0.10.0, [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, no respond-once regression, and (v0.11) `pathParams()` being non-null and immutable — the map is routing state, so a handler able to write to it could change what a later request resolves to. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
@@ -220,6 +223,45 @@ Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persis
   4. Neither request nor response carries `Connection: close` (including comma-separated token lists).
 - **No Implicit Transport Retries (ADR-045 / ADR-026):** `CommunityHttpClientEngine` performs zero silent or transport-level retries on failed pooled connections. If a pooled connection is closed or fails during an exchange, the connection is closed and the exception is propagated immediately to caller. Application-level or policy-driven retries remain strictly the responsibility of `KernelWebClient` and `HttpRetryPolicy`.
 - **JFR Telemetry:** `CommunityHttpClientPoolEvent` (`eu.exeris.kernel.community.http.HttpClientPool`) records pool lifecycle events: `ACQUIRE_HIT`, `ACQUIRE_MISS`, `RELEASE`, `EVICT_IDLE`, and `EVICT_CAPACITY` with authority and active pool size.
+
+### Client TLS (since v0.12.0 — [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) §4, Amendment A1)
+
+A request carries no scheme, so whether `CommunityHttpClientEngine` speaks TLS is decided by its
+transport, once, when the engine is built (a booted kernel builds it when the `http` subsystem
+starts): TLS when `exeris.transport.tls` is not `false` and a crypto provider is bound there,
+plaintext otherwise
+([transport.md](transport.md#client-tls) lists the postures and the event that records them). The
+client engine's transport is always a `CLIENT` transport, with no listener and no certificate, whatever
+`HttpMode` says; in `DUAL` the server engine's transport is the one that listens.
+
+Over TLS the engine verifies the server before any request byte is sent: the certificate chain
+against its trust (`crypto.tls.client.trustFile`, else OpenSSL's default), and the certificate's
+subject alternative names against the host of the effective authority — `HttpRequest#authority()`,
+else `HttpClientEngine#defaultAuthority()`. A DNS host is matched against DNS entries, never against
+the subject common name, and is sent as the server name indication; an IP literal is matched against
+IP entries and sends none. A server that fails is refused with `TlsHandshakeException`
+(`EX-NET-2001`, detail `peer certificate verification failed`, `rawArgs[0]` the `X509_V_*` code), which
+`send` throws unwrapped. An authority host that is neither a DNS name nor an IP literal is refused
+earlier, at connect and before any socket opens: `send` throws `HttpException` (`EX-HTTP-4009`),
+caused by `TransportException` (`EX-NET-4001`), caused by `TlsHandshakeException` (detail
+`authority host is neither a DNS name nor an IP literal`). `HttpClientEngine#send` states this
+obligation in its `@implSpec`; the Community engine meets it, the Enterprise engine is outside it.
+
+`AbstractHttpClientTlsPeerVerificationTck` is the executable form of that `@implSpec`, a suite apart
+from `AbstractHttpClientEngineTck` so that a provider binds it once its client verifies. It runs the
+client against the JDK's own TLS server and a ClientHello probe: trust and its absence (a configured
+anchor, and the default trust refusing a private authority), a DNS host against DNS entries only and
+never the common name, an IP literal against IP entries only (a DNS entry spelling the address does
+not match), the request's authority over the engine's default, the server name for a DNS host and
+none for an IP literal, and no request read by a server the client refused.
+`CommunityHttpClientTlsPeerVerificationTckTest` binds it and also asserts the `X509_V_*` code of each
+refusal.
+
+`CommunityHttpRetryPolicy` classifies any transport failure of an idempotent request as retryable,
+and a verification failure is one: a `KernelWebClient` built with that policy retries it, so the
+outcome is still the refusal, but it arrives after the policy's backoff and each attempt runs another
+handshake. A `KernelWebClient` built without a policy (`HttpRetryPolicy.none()`) reports the first
+refusal.
 
 ### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))
 

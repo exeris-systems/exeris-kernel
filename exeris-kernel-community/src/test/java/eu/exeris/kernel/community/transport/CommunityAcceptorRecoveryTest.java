@@ -265,7 +265,8 @@ class CommunityAcceptorRecoveryTest {
                         "unused.pem", "unused.key", 1024, 30_000),
                 ALLOCATOR,
                 null,
-                CryptoProviderConfig.httpsServer(tmp.resolve("cert.pem"), tmp.resolve("key.pem")));
+                CryptoProviderConfig.httpsServer(tmp.resolve("cert.pem"), tmp.resolve("key.pem")),
+                NativeTcpClientTls.none());
     }
 
     private static int freePort() throws IOException {

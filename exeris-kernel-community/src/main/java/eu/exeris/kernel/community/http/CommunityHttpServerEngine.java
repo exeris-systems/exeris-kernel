@@ -52,7 +52,8 @@ final class CommunityHttpServerEngine implements HttpServerEngine {
                 : nonNullConfig.port();
         this.config = nonNullConfig;
         this.allocator = CommunityHttpTransportFactory.resolveAllocator();
-        this.transport = CommunityHttpTransportFactory.buildTransport(nonNullConfig, resolvedPort, this.allocator);
+        this.transport = CommunityHttpTransportFactory.buildTransport(
+                nonNullConfig, resolvedPort, this.allocator, CommunityHttpTransportFactory.Role.SERVER);
         this.listenPort = resolvedPort;
         this.encoderRegistry = Objects.requireNonNull(encoderRegistry, "encoderRegistry must not be null");
     }

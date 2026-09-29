@@ -128,7 +128,7 @@ EX-BOOT-0002 Subsystem lifecycle failure    rawArgs[0]=String subsystemName,    
 EX-BOOT-0003 Bootstrap deadline exceeded    rawArgs[0]=String subsystemName,    [1]=long deadlineMs
 EX-BOOT-0004 Memory provider bootstrap      rawArgs[0]=String providerName,     [1]=long requestedBytes
 EX-BOOT-3001 Telemetry provider failure     rawArgs[0]=String providerName,     [1]=String reason
-EX-NET-2001  TLS wrap (encrypt) failure     rawArgs[0]=int nativeErrorCode,     [1]=String detail
+EX-NET-2001  TLS wrap/handshake failure     rawArgs[0]=int nativeErrorCode,     [1]=String detail          (a client refusal's detail names what [0] holds; see crypto.md → Error Codes)
 EX-NET-2002  Crypto provider bootstrap      rawArgs[0]=String providerName,     [1]=String reason
 EX-NET-2003  TLS unwrap (decrypt) failure   rawArgs[0]=int nativeErrorCode,     [1]=String detail
 EX-NET-4001  Transport bind/handshake       rawArgs[0]=String transportName,    [1]=int port
@@ -227,7 +227,8 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 | `TlsPhaseTransitionEvent` | Every `TlsStateMachine` phase transition | `fromPhase`, `toPhase` |
 | `TlsEngineCloseEvent` | `OffHeapTlsEngine` → CLOSED | `sslPtr`, `graceful`, `finalPhase` |
 | `TlsHandshakeEvent` | Start and end of TLS handshake | `sslPtr`, `mode`, `protocol`, `cipher`, `negotiatedAlpn`, `durationNanos` |
-| `TlsHandshakeFailureEvent` | Handshake exception | `sslPtr`, `mode`, `errorCode`, `failureReason`, `sslErrorCode` |
+| `TlsHandshakeFailureEvent` *(JFR event name `eu.exeris.kernel.tls.HandshakeFailure`)* | A handshake step failed, or a completed client handshake was refused because verification failed | `sslPtr`, `mode`, `errorCode` (`EX-NET-2001`), `failureReason` (OpenSSL's text for a verification failure), `sslErrorCode`, `verifyResult` (`X509_V_*` for a client that expected a peer, else `-1`) |
+| `TransportTlsClientPostureEvent` *(community module; JFR event name `eu.exeris.kernel.transport.TransportTlsClientPosture`; since 0.12.0)* | Once per `CLIENT` or `DUAL` carrier, when it is built: what its outbound connections do | `transportMode`, `requirement` (`AMBIENT`, `PLAINTEXT`, `VERIFIED`: what the carrier's owner required), `posture` (`VERIFIED`, `PLAINTEXT_DECLINED`, `PLAINTEXT_NO_CRYPTO_PROVIDER`, `PLAINTEXT_NO_LISTENER_MATERIAL`, `PLAINTEXT_REQUIRED`, `REFUSED_FOREIGN_PROVIDER`, `REFUSED_DECLINED`, `REFUSED_NO_CRYPTO_PROVIDER`), `trustSource`, `configBound`, `defaultCertFile`, `defaultCertDir`, `defaultTrustPresent` |
 | `ConfigHotReloadEvent` *(planned, TRL‑4 target; not yet implemented)* | `@Dynamic` config key updated | `configKey`, `providerName`, `succeeded` |
 | `OutboxDlqTransferEvent` *(planned, TRL‑4 target; not yet implemented)* | Outbox record moved to DLQ after max retries | `eventType`, `outboxRecordId`, `attempt` |
 | `SagaLifecycleEvent` *(planned, TRL‑4 target; not yet implemented)* | Saga state transition | `sagaType`, `status`, `durationNanos`, `stepIndex` |

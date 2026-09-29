@@ -134,9 +134,13 @@ engine per peer — see [Amendments](#amendments).)*
 3. **`Host` follows the authority, not the connection.** The encoder derives the header from the
    request's effective authority. Today the two agree; stating it now means a resolver that separates
    a logical name from a dialled endpoint inherits a correct rule instead of a latent bug.
+   *(Amendment A2, 2026-09-27: the two do not agree — see [Amendments](#amendments).)*
 
 4. **TLS peer verification follows the authority too** — SNI and certificate hostname matching are
    performed against the effective authority, for the same reason.
+
+   *(Amendment A1, 2026-09-26: this decision states how the Community client implements it, and
+   where it holds — see [Amendments](#amendments).)*
 
 5. **Ordering is fixed as authority-then-enrich-then-send.** The enricher observes the final
    authority, so an outbound credential's audience can be bound to the peer it is actually sent to
@@ -158,6 +162,7 @@ this reason.
 request carrying an authority reaches that peer, that a `null` authority reaches the configured
 default, and that `Host` reflects the effective authority — the last one being the assertion that
 would fail if an implementation kept deriving it from the connection.
+*(Amendment A2, 2026-09-27: the `Host` assertion sits in the loopback TCK, not here — see [Amendments](#amendments).)*
 
 **A documented-but-wrong configuration key stops being both.** `bindHost` returns to meaning what
 `HttpConfig` says it means. Any deployment that relied on the client reaching its own server keeps
@@ -200,6 +205,7 @@ should not, this is the clause to revisit first.
 - The TCK assertion for `Host`-follows-authority must be **mutation-checked** against an
   implementation that derives it from the connection. That is the current behaviour, so the check is
   free: revert the encoder line and the test must redden.
+  *(Amendment A2, 2026-09-27: the check is not free — see [Amendments](#amendments).)*
 - No `ServiceResolver` type, package, or configuration key is introduced. A resolver-shaped name
   appearing in this slice is scope creep into a post-1.0 seam.
 
@@ -213,6 +219,50 @@ rule 7). This section indexes them.
   to default a port from, and the listener's port is the default this decision removes. A
   `defaultAuthority` without a port is refused when `HttpConfig` is constructed, and a request
   authority without one is refused at send, which `AbstractHttpClientEngineTck` asserts.
+- **2026-09-26 — A1: §4 is implemented, and its scope and mechanism are stated.** The Community TLS
+  client used `SSL_VERIFY_NONE` for every context, loaded no trust, sent no server name and checked
+  no host, so §4 did not hold. From 0.12.0 it does, where TLS is armed:
+  - **Mechanism.** A client context verifies its server (`SSL_VERIFY_PEER`) against an
+    `X509_STORE` the carrier opens once and shares across its connections under a reference-counted
+    lease. Each connection's engine expects the host of the authority it dialled, classified without
+    a DNS lookup (`TlsPeerIdentity`). A DNS name is checked with `X509_VERIFY_PARAM_set1_host` under
+    `X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS` and `X509_CHECK_FLAG_NEVER_CHECK_SUBJECT` — the subject
+    common name is never consulted and `f*.example` matches nothing — and is sent as the server name
+    indication. An IP literal is checked with `X509_VERIFY_PARAM_set1_ip` against IP entries only,
+    and no server name is sent. A handshake that completes with a verification result other than
+    `X509_V_OK` is refused whatever the context's verify mode.
+  - **Trust.** `crypto.tls.client.trustFile` (the kernel configuration, else
+    `-Dexeris.crypto.tls.client.trustFile`) names a PEM file that **replaces** OpenSSL's default
+    trust. Unset, the carrier uses OpenSSL's default locations, which `SSL_CERT_FILE` and
+    `SSL_CERT_DIR` override. `X509_V_FLAG_PARTIAL_CHAIN` is off: a chain must end at a certificate the
+    trust holds as an anchor.
+  - **Failure.** A server that fails verification fails the handshake before any request byte is
+    sent, with `TlsHandshakeException` (`EX-NET-2001`), detail `peer certificate verification failed`
+    and the `X509_V_*` code. A host that is neither a DNS name nor an IP literal is refused before
+    any socket opens.
+  - **No opt-out.** No setting keeps TLS and skips verification. `-Dexeris.transport.tls=false`
+    declines TLS altogether, process-wide.
+  - **Scope.** Outbound TLS is armed only where a crypto provider is bound when the transport is
+    built and `exeris.transport.tls` is not `false` — and, for a `DUAL` carrier, only when its
+    listener holds certificate material. An engine built anywhere else — outside a booted
+    kernel's scope, or before its crypto subsystem binds — dials plaintext. Both hold except where
+    the engine's owner states the scheme of the peer it dials (the S3 blob client): plaintext for
+    `http`, verified TLS or no engine for `https`. Each `CLIENT` or `DUAL` carrier records its
+    decision, and the requirement it was held to, in the
+    `eu.exeris.kernel.transport.TransportTlsClientPosture` JFR event and an INFO log line, so the
+    plaintext case is visible rather than inferred.
+  - **A provider that cannot verify.** A bound crypto provider other than the Community one fails a
+    `CLIENT` carrier at construction and a `DUAL` carrier's `connect`, rather than dialling
+    unverified; a carrier whose owner requires plaintext is built.
+  - **Verification.** The contract is the `@implSpec` of `HttpClientEngine#send`, and
+    `AbstractHttpClientTlsPeerVerificationTck` judges it: a suite of its own, apart from
+    `AbstractHttpClientEngineTck`, so that a provider binds it once its client verifies rather than
+    the general client contract going red first. The Community client binds it.
+  - **Not decided here.** No CRL or OCSP checking, and no trust reload without a restart. The
+    Community server sends its leaf certificate only, not its intermediates, so an Exeris client
+    talking to an Exeris server whose certificate is chained needs those intermediates in its
+    `trustFile`. The Enterprise client is outside this amendment: bringing the Enterprise HTTP
+    clients and transport up to A1 and A2 is pending in the Enterprise tier.
 - **2026-09-27 — what the spike found, and what existing deployments observe.** Checked against
   v0.11.0 while writing the 0.12 upgrade notes:
   - **The Context and the options.** Each engine does reach one host, but it reads that host from a
@@ -236,3 +286,27 @@ rule 7). This section indexes them.
     not by `0.0.0.0`: the authority is a dial address, and it is also what the `Host` header
     carries. A deployment that does neither boots cleanly, and its first unaddressed request is
     refused.
+- **2026-09-27 — A2: the two ends differ, and the `Host` assertion needs a peer.** Settled while
+  implementing the TCK clause:
+  - **Decision 3.** "Today the two agree" does not hold. The request's effective authority and the
+    connection differ whenever the caller names its peer by host name:
+    `TransportConnection#remoteAddress()` is an IP address literal on both ends, so a dialled
+    connection reports the address it reached, while `Host` selects a name-based virtual host and has
+    to carry the name the caller wrote. A resolver that separates a logical name from a dialled
+    endpoint therefore inherits a rule that already holds rather than introducing one.
+  - **Where the TCK asserts it.** It is asserted where a peer exists:
+    `AbstractHttpProviderLoopbackTck$PeerAddressing` runs a provider's client against that provider's
+    server and asserts that a request carrying an authority reaches that peer rather than the
+    configured default, that an unaddressed request reaches the configured default, and that the
+    server receives exactly one `Host`, equal to the effective authority
+    (`hostFollowsTheRequestAuthority`, `hostFollowsTheConfiguredDefaultAuthority`). Both `Host` cases
+    address the server by host name, so they are the assertions that fail if an implementation
+    derives `Host` from the connection, whose `remoteAddress()` is the address literal
+    `AbstractTransportConnectionTck` checks. `AbstractHttpClientEngineTck` supplies no server and its
+    Core binding never dials, so it asserts what an engine shows on its own: `defaultAuthority()`
+    reports the configured default, and `null` when none is configured; a request naming no
+    authority on an engine with no default, and an authority carrying no port, are refused.
+  - **The mutation check.** With the encoder writing `Host` from the connection's `remoteAddress()`
+    and `remotePort()`, both `Host` cases must redden. They can only on a transport whose dialled end
+    reports the address it reached rather than the name it was dialled by, which is why
+    `AbstractTransportConnectionTck` checks that end.

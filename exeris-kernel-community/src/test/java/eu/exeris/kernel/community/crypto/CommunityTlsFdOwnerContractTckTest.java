@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.TlsTestCertificate;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.memory.AllocationHint;
@@ -57,8 +58,9 @@ class CommunityTlsFdOwnerContractTckTest {
              MemoryAllocator allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
              CommunityTlsEngine serverEngine = (CommunityTlsEngine) provider.createTlsEngine(
                      CryptoProviderConfig.httpsServer(certKey.cert(), certKey.key()));
-             CommunityTlsEngine clientEngine = (CommunityTlsEngine) provider.createTlsEngine(
-                     CryptoProviderConfig.tcpClient());
+             CommunityTlsClientTrust trust = provider.openClientTrust(certKey.cert());
+             CommunityTlsEngine clientEngine = provider.createClientTlsEngine(
+                     CryptoProviderConfig.tcpClient(), trust, TlsPeerIdentity.of("127.0.0.1"));
              ServerSocketChannel listener = ServerSocketChannel.open();
              SocketChannel clientChannel = SocketChannel.open()) {
 

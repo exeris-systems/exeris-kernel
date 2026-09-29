@@ -120,6 +120,9 @@ public record CryptoProviderConfig(
     /**
      * Builds the configuration for a client that presents no certificate of its own.
      *
+     * <p>It names no server to verify, so a provider that verifies server identity returns an
+     * engine from it that refuses its handshake; see {@link KernelCryptoProvider#createTlsEngine}.
+     *
      * @return a client configuration selecting {@link Protocol#TCP_TLS} with no certificate or
      *         private key, no ALPN offer, the session cache disabled and JFR events off
      */

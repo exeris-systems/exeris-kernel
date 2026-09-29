@@ -81,3 +81,11 @@ both are now asserted against:
 
 Neither check is decorative; both were live defects that produced green output over known-breaking
 revision pairs.
+
+## Accepted incompatible changes
+
+[`accepted-api-changes.json`](accepted-api-changes.json) records each incompatible change the project
+accepted, one entry per change — `signature`, `since`, `adr`, `justification` — as
+`exeris-docs` `standards/changelog-conventions.md` rule 3 requires. The gate above diffs
+`exeris-kernel-spi` only, so an entry for a Core type is a record for the release notes and review,
+not an exclusion: the script reads nothing from the file.

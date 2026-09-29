@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.storage;
 
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -29,6 +30,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CommunityS3SettingsTest {
 
     private static final String ENDPOINT = "http://minio.internal:9000";
+
+    private static BlobStorageConfig endpoint(String location) {
+        return new BlobStorageConfig(location, BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
+                Map.of(CommunityS3Settings.BUCKET, "bucket",
+                        CommunityS3Settings.ACCESS_KEY, "access",
+                        CommunityS3Settings.SECRET_KEY, "secret"));
+    }
 
     private static BlobStorageConfig configWith(Map<String, String> overrides) {
         Map<String, String> properties = new HashMap<>(Map.of(
@@ -99,19 +107,49 @@ class CommunityS3SettingsTest {
     class Endpoint {
 
         @Test
-        @DisplayName("an https endpoint is refused rather than downgraded to cleartext")
-        void httpsRefused() {
-            BlobStorageConfig config = new BlobStorageConfig("https://s3.example.com",
-                    BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
-                    Map.of(CommunityS3Settings.BUCKET, "bucket",
-                            CommunityS3Settings.ACCESS_KEY, "access",
-                            CommunityS3Settings.SECRET_KEY, "secret"));
+        @DisplayName("an https endpoint is accepted, on 443 by default, and requires verified TLS")
+        void httpsAccepted() {
+            CommunityS3Settings settings = CommunityS3Settings.from(endpoint("HTTPS://s3.example.com"));
 
-            assertThatThrownBy(() -> CommunityS3Settings.from(config))
-                    .as("the client engine has no TLS, so accepting this would send SigV4 credentials "
-                            + "in the clear because a scheme was ignored")
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("http scheme");
+            assertThat(settings.scheme()).isEqualTo(CommunityS3Settings.Scheme.HTTPS);
+            assertThat(settings.port()).isEqualTo(443);
+            assertThat(settings.scheme().outboundTls()).isEqualTo(CommunityOutboundTls.VERIFIED);
+        }
+
+        @Test
+        @DisplayName("a scheme other than http or https, or none, is refused")
+        void otherSchemesRefused() {
+            for (String location : new String[]{"ftp://s3.example.com", "s3://bucket", "minio.internal",
+                    "//minio.internal:9000"}) {
+                assertThatThrownBy(() -> CommunityS3Settings.from(endpoint(location)))
+                        .as(location)
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining("location must use the http or https scheme");
+            }
+        }
+
+        @Test
+        @DisplayName("the host is lower-cased and loses one trailing dot, the form a TLS peer name is checked in")
+        void hostIsNormalised() {
+            CommunityS3Settings settings = CommunityS3Settings.from(endpoint("https://S3.Example.COM."));
+
+            assertThat(settings.host()).isEqualTo("s3.example.com");
+            assertThat(settings.dialAuthority()).isEqualTo("s3.example.com:443");
+            assertThat(settings.hostHeader()).isEqualTo("s3.example.com");
+            assertThat(settings.origin()).isEqualTo("https://s3.example.com");
+        }
+
+        @Test
+        @DisplayName("an IPv6 endpoint keeps its brackets in every authority")
+        void ipv6KeepsItsBrackets() {
+            CommunityS3Settings explicit = CommunityS3Settings.from(endpoint("https://[::1]:9000"));
+            assertThat(explicit.dialAuthority()).isEqualTo("[::1]:9000");
+            assertThat(explicit.hostHeader()).isEqualTo("[::1]:9000");
+            assertThat(explicit.origin()).isEqualTo("https://[::1]:9000");
+
+            CommunityS3Settings onDefault = CommunityS3Settings.from(endpoint("https://[::1]"));
+            assertThat(onDefault.dialAuthority()).isEqualTo("[::1]:443");
+            assertThat(onDefault.hostHeader()).isEqualTo("[::1]");
         }
 
         @Test
@@ -120,6 +158,7 @@ class CommunityS3SettingsTest {
             CommunityS3Settings settings = CommunityS3Settings.from(configWith(Map.of()));
             assertThat(settings.host()).isEqualTo("minio.internal");
             assertThat(settings.port()).isEqualTo(9000);
+            assertThat(settings.dialAuthority()).isEqualTo("minio.internal:9000");
 
             BlobStorageConfig portless = new BlobStorageConfig("http://minio.internal",
                     BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
@@ -127,6 +166,36 @@ class CommunityS3SettingsTest {
                             CommunityS3Settings.ACCESS_KEY, "access",
                             CommunityS3Settings.SECRET_KEY, "secret"));
             assertThat(CommunityS3Settings.from(portless).port()).isEqualTo(80);
+            assertThat(CommunityS3Settings.from(portless).dialAuthority())
+                    .as("the client engine dials an explicit port")
+                    .isEqualTo("minio.internal:80");
+        }
+
+        @Test
+        @DisplayName("the Host value and the origin omit the scheme's default port, and keep any other")
+        void hostHeaderAndOriginOmitOnlyTheDefaultPort() {
+            CommunityS3Settings explicit = CommunityS3Settings.from(configWith(Map.of()));
+            assertThat(explicit.hostHeader()).isEqualTo("minio.internal:9000");
+            assertThat(explicit.origin()).isEqualTo("http://minio.internal:9000");
+
+            BlobStorageConfig defaultPort = new BlobStorageConfig("http://minio.internal:80",
+                    BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL,
+                    Map.of(CommunityS3Settings.BUCKET, "bucket",
+                            CommunityS3Settings.ACCESS_KEY, "access",
+                            CommunityS3Settings.SECRET_KEY, "secret"));
+            CommunityS3Settings onDefault = CommunityS3Settings.from(defaultPort);
+            assertThat(onDefault.hostHeader()).isEqualTo("minio.internal");
+            assertThat(onDefault.origin()).isEqualTo("http://minio.internal");
+            assertThat(onDefault.dialAuthority()).isEqualTo("minio.internal:80");
+        }
+
+        @Test
+        @DisplayName("an http endpoint requires plaintext of the client engine's transport")
+        void httpIsPlaintext() {
+            CommunityS3Settings settings = CommunityS3Settings.from(configWith(Map.of()));
+
+            assertThat(settings.scheme()).isEqualTo(CommunityS3Settings.Scheme.HTTP);
+            assertThat(settings.scheme().outboundTls()).isEqualTo(CommunityOutboundTls.PLAINTEXT);
         }
     }
 

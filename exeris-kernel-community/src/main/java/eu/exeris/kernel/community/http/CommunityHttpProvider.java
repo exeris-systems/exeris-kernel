@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpProvider;
@@ -30,6 +31,9 @@ import java.util.Optional;
  * mapper per codec quadrant through the {@link CommunityJsonMappers} customization seam; with no
  * {@code JsonMapperCustomizer} registered, each mapper is the plain Jackson default.
  */
+// TooManyMethods: SPI contract surface. Every public method but the two-argument createClientEngine
+// implements HttpProvider, and that overload is the Community-internal outbound TLS requirement.
+@SuppressWarnings("PMD.TooManyMethods")
 public final class CommunityHttpProvider implements HttpProvider {
 
     private static final String PROVIDER_ID = "community-http";
@@ -90,9 +94,38 @@ public final class CommunityHttpProvider implements HttpProvider {
                 Objects.requireNonNull(config, "config must not be null"), ENCODER_REGISTRY);
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link #createClientEngine(HttpConfig, CommunityOutboundTls)} with
+     * {@link CommunityOutboundTls#AMBIENT}: the engine's transport decides its outbound TLS from what
+     * is bound where the engine is built.
+     */
     @Override
     public HttpClientEngine createClientEngine(HttpConfig config) {
-        return new CommunityHttpClientEngine(Objects.requireNonNull(config, "config must not be null"));
+        return createClientEngine(config, CommunityOutboundTls.AMBIENT);
+    }
+
+    /**
+     * Builds a client engine whose transport holds its outbound connections to {@code outboundTls}.
+     *
+     * <p>Community-internal, and not an {@link HttpProvider} method: for an owner whose engine dials
+     * peers of one known scheme, such as the S3 blob client. {@link CommunityOutboundTls#PLAINTEXT}
+     * dials plaintext whatever crypto provider is bound; {@link CommunityOutboundTls#VERIFIED} dials
+     * TLS that verifies the server, or builds no engine.
+     *
+     * @param config      the engine configuration
+     * @param outboundTls what the owner requires of the engine's outbound connections
+     * @return a new, unstarted client engine
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException ({@code EX-NET-4004}) when
+     *         the engine's transport cannot be built, including a {@code VERIFIED} requirement that
+     *         cannot be met: {@code exeris.transport.tls=false}, no crypto provider bound, or a bound
+     *         provider that cannot verify an outbound peer
+     * @since 0.12
+     */
+    public HttpClientEngine createClientEngine(HttpConfig config, CommunityOutboundTls outboundTls) {
+        return new CommunityHttpClientEngine(Objects.requireNonNull(config, "config must not be null"),
+                Objects.requireNonNull(outboundTls, "outboundTls must not be null"));
     }
 
     @Override

@@ -123,8 +123,7 @@ public final class CoreHttpProviderFixture implements HttpProvider {
             // so this fixture honours it too — a TCK case only one binding can satisfy is not a
             // contract. The rule is deliberately narrow: resolve the peer, refuse when there is
             // none, refuse an authority carrying no port (HttpRequest has no scheme, so there is no
-            // basis for defaulting to 80 or 443, and defaulting to the listener port is exactly what
-            // this ADR removed).
+            // basis for defaulting to 80 or 443, and the listener port is not the peer's).
             String authority = request.authority() != null ? request.authority() : config.defaultAuthority();
             if (authority == null || authority.isBlank()) {
                 throw new IllegalStateException("Request carries no authority and no default is configured");
@@ -138,6 +137,13 @@ public final class CoreHttpProviderFixture implements HttpProvider {
                 throw new IllegalStateException("IPv6 authority must be bracketed as [address]:port, got: " + authority);
             }
             return HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1);
+        }
+
+        // The peer send() substitutes for an unaddressed request, reported so a caller resolving the
+        // peer before enrichment sees the same one.
+        @Override
+        public String defaultAuthority() {
+            return config.defaultAuthority();
         }
 
         @Override

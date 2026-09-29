@@ -55,6 +55,23 @@ public interface EmbeddedHttpEngineFixture extends AutoCloseable {
     boolean isRunning();
 
     /**
+     * Runs {@code body} on the thread that holds the boot open, inside the kernel scope the engine
+     * was started in.
+     *
+     * <p>For code that reads kernel {@code ScopedValue} slots as the boot bound them. A handler the
+     * engine dispatches to runs on a thread the driver starts, which carries only the bindings the
+     * driver establishes for the call, so a test observes the boot's own bindings here and not from
+     * a handler. Exceptions propagate to the caller, so an assertion failing inside {@code body} fails the test
+     * rather than disappearing onto another thread.
+     *
+     * @param body the work to run inside the kernel scope
+     * @throws IllegalStateException if the fixture has not been started, or if {@code body} does not
+     *                               complete within the fixture's start timeout
+     * @since 0.12
+     */
+    void runInKernelScope(Runnable body);
+
+    /**
      * Stops the engine this fixture started, releasing the bound port. A no-op if the fixture was
      * never started.
      */

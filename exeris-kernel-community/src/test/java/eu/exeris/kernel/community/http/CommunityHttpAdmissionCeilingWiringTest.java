@@ -34,7 +34,8 @@ class CommunityHttpAdmissionCeilingWiringTest {
                 HttpConfig.defaultServer(),
                 8080,
                 MapConfigProvider.ofInts(
-                        Map.of(CommunityAdmissionCeilingResolver.KEY, 128)));
+                        Map.of(CommunityAdmissionCeilingResolver.KEY, 128)),
+                CommunityHttpTransportFactory.Role.SERVER);
 
         assertThat(config.maxActiveStreams()).isEqualTo(128);
     }
@@ -43,7 +44,7 @@ class CommunityHttpAdmissionCeilingWiringTest {
     @DisplayName("with no provider bound the listener carries the pre-key default")
     void noProviderKeepsDefault() {
         TransportConfig config = CommunityHttpTransportFactory.buildTransportConfig(
-                HttpConfig.defaultServer(), 8080, null);
+                HttpConfig.defaultServer(), 8080, null, CommunityHttpTransportFactory.Role.SERVER);
 
         assertThat(config.maxActiveStreams())
                 .isEqualTo(TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS);

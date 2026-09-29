@@ -1692,7 +1692,7 @@ See also: ADR-012 (isolation model); `exeris-sdk/docs/rfc/RFC-2026-06-24-univers
 
 **Gap:** Two distinct kernel-side gaps surface only when a generated Entity-First app is driven over a *real* kernel HTTP boot (not a handler unit test) — the exact thing a downstream generated-app HTTP boot test does, and which substring assertions on emitted `RuntimeLifecycle` text cannot see:
 - **Path-parameter routing (finding T21, High).** `HttpRouter.resolve()` (`exeris-kernel-core/.../http/routing/HttpRouter.java`) matches by exact `path.equals` + opt-in prefix only — there is **no `{id}` placeholder capture**. The generated `RuntimeLifecycle` registers `GET/PUT/DELETE /x/{id}`, so `{id}` is matched *literally*: `/x/<uuid>` never equals `/x/{id}` and every by-id / update / delete route — plus every `@Action` route, which is also id-bearing (finding T1) — **404s on a real boot**; only collection routes serve. The generated handler is correct (`extractPathId` parses the trailing segment) — it just never gets called. Latent because the handler unit test invokes `handleGetById(exchange)` directly, bypassing the router. Confirmed still open on `0.10.0-SNAPSHOT` (the SSE work did not touch it; SSE routes are collection-level `{base}/stream` and sidestep it).
-- **Request-decoder request-scope (write-over-HTTP, High).** The server-side request-body decoder quadrant shipped in v0.8 (ADR-036: `HttpRequestBodyDecoderRegistry` + the `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` ScopedValue slot), and Community ships `CommunityJsonRequestBodyDecoder`. But the community testkit boot fixture `KernelBootstrapHttpEngineFixture` binds only `HttpKernelProviders.HTTP_SERVER_HANDLER` into request scope — **not** the decoder registry — so a `POST` with a JSON body through the testkit boot returns **500** (the decoder is never in the handler's request scope). Notably asymmetric: the *response* encoder is effective (reads serialize to JSON over the wire) and **SSE works**, but request decoding does not — so server-side validation-over-HTTP (finding T10) and action-`POST`-create cannot be exercised through the testkit boot. Whether this is a fixture gap (it does not bind the codec registries a real app boot would) or a scope-propagation issue is the open question to pin down.
+- **Request-decoder request-scope (write-over-HTTP, High).** The server-side request-body decoder quadrant shipped in v0.8 (ADR-036: `HttpRequestBodyDecoderRegistry` + the `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` ScopedValue slot), and Community ships `CommunityJsonRequestBodyDecoder`. But the community testkit boot fixture `KernelBootstrapHttpEngineFixture` binds only `HttpKernelProviders.HTTP_SERVER_HANDLER` into request scope — **not** the decoder registry — so a `POST` with a JSON body through the testkit boot returns **500** (the decoder is never in the handler's request scope). Notably asymmetric: the *response* encoder is effective (reads serialize to JSON over the wire) and **SSE works** with the router itself bound to `HTTP_SERVER_HANDLER` (behind a forwarder no stream route resolved; see v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable"), but request decoding does not — so server-side validation-over-HTTP (finding T10) and action-`POST`-create cannot be exercised through the testkit boot. Whether this is a fixture gap (it does not bind the codec registries a real app boot would) or a scope-propagation issue is the open question to pin down.
 
 **Owner:** HTTP / transport (path-parameter routing in `HttpRouter`); Community testkit + bootstrap request-scope wiring (decoder-registry binding on the `http` boot path).
 
@@ -1716,10 +1716,10 @@ and the pre-start guards, so no test in the repository had ever sent a body thro
 all four facts; mutation-checked by removing the dispatcher's per-request rebind, which reddens
 every case.
 
-**1.0 disposition:** **1.0-RECOMMENDED** — both are small, concrete kernel fixes that block the Entity-First "a generated app runs over a real boot" demonstration end-to-end (by-id CRUD + `@Action`s + writes). Path-parameter routing especially is load-bearing for the entire generated CRUD table. Targetable in v0.10 alongside the SSE boot-path work.
+**1.0 disposition:** **1.0-RECOMMENDED** — both are small, concrete kernel fixes that block the Entity-First "a generated app runs over a real boot" demonstration end-to-end (by-id CRUD + `@Action`s + writes). Path-parameter routing especially is load-bearing for the entire generated CRUD table. Targetable in v0.10 alongside the SSE boot-path work. Stream routes are not covered by this entry: they are v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable".
 
-**Related (cross-repo / informational, not kernel gaps on their own):**
-- **Generated SSE stream routes unreachable on a real boot (finding T23).** The kernel stream dispatcher (`CommunityHttpStreamDispatcher`) resolves a streaming route only when the engine's active handler **is** an `HttpRouter` (`handler instanceof HttpRouter router → router.resolveStream(...)`). The generated boot publishes a `router::handle` **lambda** (and `Application` forwards a lambda), so the `HttpRouter` type is lost and every generated stream route falls back to respond-once / 404 on a real boot — even though the handler and route are emitted. The fix is on the generator side (hand the engine the `HttpRouter` *instance*: `handlerSlot.set(router)` — the router already implements `HttpHandler`, so respond-once is unaffected). Kernel-side it is worth a deliberate note on whether stream resolution should remain coupled to a concrete-type `instanceof` (`exeris-tooling` follow-up; kernel design note).
+**Related (cross-repo / informational; neither is tracked by this entry):**
+- **Generated SSE stream routes unreachable on a real boot (finding T23).** The root cause is in the kernel. The Community stream dispatcher (`CommunityHttpStreamDispatcher#resolveStreamHandler`) resolved a stream route only when the handler bound to `HTTP_SERVER_HANDLER` was an `HttpRouter` instance, and a generated application cannot bind one: its router is built inside the boot callback, after the HTTP subsystem has read the slot, so it binds a forwarder over the router. Every generated stream route was therefore served respond-once on a real boot — a `GET {base}/stream` by the by-id route, a per-action stream `POST` with `404` — and no generator-side change could reach it: setting the router instance into the forwarder's slot changes what the forwarder calls, not what the kernel sees. Fixed kernel-side in v0.12; a generated application streams once a tooling release built on kernel 0.12 binds a forwarder that implements the new contract and hands its event-stream handlers the event bus through their constructors. See v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable".
 - **`--enable-preview` at runtime to boot the kernel (K-boot).** kernel-core bootstrap classes are preview-compiled (`SubsystemOrchestrator` class-file minor `0xFFFF`) while the persistence classes are not (`TransactionOrchestrator` minor `0`); embedding the persistence stack needs only JDK 26, but *booting* the kernel needs `--enable-preview`. Resolved by the Platform-Baseline preview-clean work (see below) for the default artifact; until then, generated-app run scripts / poms must set the flag, and this is a documentation point for downstream boot consumers.
 
 All three were surfaced during downstream dogfooding (a closed-source downstream consumer multi-service build, re-verified against `origin/development/0.10.0` on 2026-06-24).
@@ -1782,7 +1782,7 @@ S3-compatible driver against MinIO — the merge gate's two-binding requirement 
 scope is recorded as an ADR-056 §10 amendment rather than left to folklore: header signing over
 `host` / `x-amz-content-sha256` / `x-amz-date` plus query-signed presigned URLs, no multipart, no chunked
 payload signing; an `https://` endpoint is **rejected at construction** because the Community HTTP client
-engine has no client-side TLS; and the single-object ceiling is a named knob (`s3.maxObjectBytes`, default
+engine takes no TLS from an endpoint scheme; and the single-object ceiling is a named knob (`s3.maxObjectBytes`, default
 8 MiB) rather than an implicit one, refused loudly through `EX-BLOB-8005` before any allocation.
 
 Two things this slice deliberately did **not** close, both tracked below: bootstrap wiring for the
@@ -1866,7 +1866,7 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 
 ### HTTP: Stream-Route Table Is Exact-Path Only — Generated Per-Action Stream Routes Unreachable
 
-**Gap:** The router's streaming table is exact-match only: `streamRoutes` is a `Map<StreamRouteKey, HttpStreamHandler>` and `resolveStream` / `isStreamRoute` are plain map lookups (`HttpRouter.java:52,80-93`); the `streamRoute(...)` Javadoc pins "exact request path". The W7 `{id}` path-template machinery (`PathTemplateRoute`) applies only to respond-once `route(...)` registrations (`HttpRouter.java:231-237`). The `exeris-tooling` generator emits `streamRoute(POST, "<base>/{id}/actions/<kebab>")` for per-action streams (ADR-044 Slice 2; `KernelApplicationGenerator.java:488`), so the literal `{id}` map key never matches a concrete id and every generated per-action stream 404s on a real boot — the same dead-route failure class T23 fixed one layer below. Aggravating detail: `Builder.streamRoute` silently accepts `{` in a path today, so the dead registration is invisible at build time. Not yet user-visible only because the per-action driver is still a keep-alive scaffold. Surfaced during downstream dogfooding (EV1-stream, 2026-07).
+**Gap:** The router's streaming table is exact-match only: `streamRoutes` is a `Map<StreamRouteKey, HttpStreamHandler>` and `resolveStream` / `isStreamRoute` are plain map lookups (`HttpRouter#resolveStream`, `HttpRouter#isStreamRoute`); the `streamRoute(...)` Javadoc pins "exact request path". The W7 `{id}` path-template machinery (`PathTemplateRoute`) applies only to respond-once `route(...)` registrations (`HttpRouter.Builder#route`). The `exeris-tooling` generator emits `streamRoute(POST, "<base>/{id}/actions/<kebab>")` for per-action streams (ADR-044 Slice 2; `KernelApplicationGenerator#buildRunMethod` in `exeris-tooling`), so the literal `{id}` map key never matches a concrete id and every generated per-action stream 404s on a real boot — the same dead-route class as T23 (registered, never matched). Aggravating detail: `Builder.streamRoute` silently accepts `{` in a path today, so the dead registration is invisible at build time. Not yet user-visible only because the per-action driver is still a keep-alive scaffold. Surfaced during downstream dogfooding (EV1-stream, 2026-07).
 
 **Owner:** HTTP subsystem (router); shape decision shared with `exeris-tooling` (ADR-044 EV1-stream slice).
 
@@ -1884,7 +1884,7 @@ alternative anticipated.
 
 **Merge Gate:** Fail-fast property enforced (template resolution or `IllegalArgumentException` at registration — no third state). If template matching lands: router unit coverage for stream-template resolve + exact-over-template precedence, plus a streaming TCK (or router-level) case proving a `{id}` stream route opens an `HttpStreamExchange` for a concrete id; ADR-043 obligation 7 stays true (streaming resolves only via `resolveStream`, never through `handle`). Tooling lockstep (ADR-044 Slice 2 per-action driver impl) tracked in `exeris-tooling`, non-gating for the kernel merge.
 
-See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note).
+See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note); v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable" (T23's kernel root cause).
 
 ---
 
@@ -3178,6 +3178,89 @@ gate does and does not cover.
    in `ramp`, errors in `strict`, which is why CI runs `ramp`. Of seventeen `subsystem` pages, the
    two added for websocket and diagnostics carry the four required sections and the other fifteen do
    not, which is why CI passes `--no-section-check`.
+
+---
+
+### HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable (root cause of finding T23, surfaced 2026-09-26)
+
+**Gap:** `CommunityHttpStreamDispatcher#resolveStreamHandler` resolved a stream route only when the
+handler bound to `HttpKernelProviders.HTTP_SERVER_HANDLER` was an `HttpRouter` instance, and served
+every other handler respond-once. A generated application binds a forwarder over its router, and has
+to: the router is built inside the boot callback, after the HTTP subsystem has read the slot. So on
+a real boot none of its stream routes resolved, whatever `RuntimeComponents.decorate` returned — a
+`GET {base}/stream` reached the by-id route with the id `stream`, and a per-action stream `POST`
+answered `404`. A wrapper that adds bindings of its own, such as a tenant or a storage context, lost
+the router's stream routes the same way. Nothing showed it: every kernel stream test handed the
+dispatcher a real `HttpRouter`, and the generated boot guard checked the forwarder's slot rather
+than the handler the kernel sees. Reported by a downstream Entity-First consumer as finding T23 (see
+v0.10 §"HTTP: Generated-App Boot-Path Reachability").
+
+**Owner:** HTTP subsystem (the SPI stream-resolution contract, the Core router and the Community
+dispatcher). The generated
+forwarder, its boot guard, the EV1 stream scaffold and the kernel pin are `exeris-tooling`'s.
+
+**Resolution:** an SPI contract, `eu.exeris.kernel.spi.http.StreamRouteResolver` (`preview`), that
+`HttpRouter` implements and a wrapper implements by delegating; a driver resolves stream routes
+through it on the bound handler ([ADR-043](adr/ADR-043-kernel-http-streaming-spi.md) Amendment A1).
+`StreamMatch` becomes a top-level SPI record so that a handler which is not a router can return one.
+Both are SPI because drivers consume the interface and applications and generated code implement
+it; `AbstractStreamRouteResolverTck` holds the contract. A wrapper extends its
+own bindings to a stream by wrapping the handler it gets back and forwarding the parameters; no kernel
+hook is needed, because `ScopedValue` bindings are lexical. The tooling half: the generated
+forwarder implements the interface; the boot guard probes `resolveStream` for every generated
+stream route instead of testing the slot's class; an EV1 stream handler receives the event bus
+through its constructor, because a stream's thread carries no boot binding; and the kernel pin
+moves to 0.12.
+
+**Merge Gate:** the dispatcher resolves through the interface for a handler that is not an
+`HttpRouter`, with a mutation back to the concrete-class test turning the cases red; a real-boot SSE
+test binds a forwarder, never the router; the SPI change is additive and classified `preview`, with
+an `Abstract*Tck` bound by Core and Community and red against a mutation of each binding; ADR-043 is
+amended.
+
+**Status (v0.12): DELIVERED kernel-side.** `CommunityHttpStreamDispatcher#resolveStreamHandler`
+resolves through `StreamRouteResolver`, pinned by `CommunityStreamResolutionDelegationTest` and, over
+a real boot with a forwarder of the generated application's shape bound, by
+`GeneratedAppStreamRouteReachabilityIntegrationTest`, which runs untagged in the default build; a miss
+through a forwarder allocates nothing unless its method has a stream route and its path carries a
+query string (`StreamResolutionMissAllocationTest`); `spi-api-diff` against the `development/0.12.0`
+base reports two added `preview` types and no break (`stable-breaks=0`, `preview-breaks=0`).
+Generated applications stream once a tooling release built on kernel 0.12 or later ships the
+resolving forwarder and the constructor-injected event bus. HTTP/2 serves no stream route (next
+entry). The Enterprise HTTP engine serves none either: its streaming binding, which resolves
+through the same interface when it is built, is an `exeris-kernel-enterprise` obligation (ADR-043
+Amendment A1, Scope).
+
+---
+
+### HTTP: Stream Routes Are HTTP/1.1-Only (h2 via ALPN, h2c) (surfaced 2026-09-26)
+
+**Gap:** ADR-043 decided that SSE "rides the existing HTTP/1.1 + h2 server"; Community resolves
+stream routes on its HTTP/1.1 path only. `CommunityHttp2SessionProcessor` has no stream resolution,
+so a request for a stream route that arrives over HTTP/2 goes to `handle` and is answered by
+whichever respond-once route matches its path, or `404`. A connection reaches HTTP/2 with or without
+TLS. With TLS terminated by the kernel, `CommunityAlpnSelector#selectCallback` selects `h2` whenever
+the client offers it and reads no configuration, so a browser `EventSource` over kernel-terminated
+TLS is on HTTP/2. On a connection without TLS, an `h2c` upgrade or a prior-knowledge HTTP/2 preface
+is handed to the HTTP/2 session before stream resolution runs. Workarounds today: terminate TLS
+upstream and speak HTTP/1.1 to the kernel; without TLS, set `http.maxVersion=HTTP_1_1`, which
+disables both of those paths to HTTP/2. Because `http.maxVersion` does not reach ALPN selection, no
+setting keeps a TLS client on HTTP/1.1.
+
+**Owner:** HTTP subsystem (the Community HTTP/2 session and the Core SSE engine).
+
+**Resolution:** resolve stream routes in `CommunityHttp2SessionProcessor` through the same
+`StreamRouteResolver`, and give the stream engine an HTTP/2 path: a response `HEADERS` frame, then
+`DATA` frames per event, with the stream's flow-control window as the credit `emit` parks on.
+Separately, make ALPN selection honour `http.maxVersion`, so that a deployment can keep TLS clients
+on HTTP/1.1 in the meantime.
+
+**Merge Gate:** a client that negotiates `h2` over TLS receives a `text/event-stream` response and
+one event per `emit`; the backpressure park is exercised against the HTTP/2 flow-control window; a
+request over `h2c` resolves the same route.
+
+**Status (v0.12): OPEN.** Recorded by ADR-043 Amendment A1 as an unmet part of the Decision's
+"HTTP/1.1 + h2", not a narrowing of it.
 
 ---
 

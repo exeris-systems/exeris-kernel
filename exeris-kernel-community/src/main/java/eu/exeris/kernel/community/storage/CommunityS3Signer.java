@@ -87,7 +87,7 @@ final class CommunityS3Signer {
     /* default */ CommunityS3Signer(CommunityS3Settings settings, Clock clock) {
         this.settings = settings;
         this.clock = clock;
-        this.hostHeader = settings.host() + ":" + settings.port();
+        this.hostHeader = settings.hostHeader();
     }
 
     /**
@@ -185,7 +185,7 @@ final class CommunityS3Signer {
         String signature = signatureOf(canonicalRequest, amzDateTime,
                 AMZ_DATE.format(now), scope);
 
-        return "http://" + hostHeader + encodedPath + "?" + canonicalQuery
+        return settings.origin() + encodedPath + "?" + canonicalQuery
                 + "&X-Amz-Signature=" + signature;
     }
 

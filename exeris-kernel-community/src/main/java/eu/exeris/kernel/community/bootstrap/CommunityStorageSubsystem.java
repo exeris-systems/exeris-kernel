@@ -12,7 +12,6 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.storage.BlobStorageException;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
-import eu.exeris.kernel.spi.storage.blob.BlobStore;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -57,7 +56,7 @@ final class CommunityStorageSubsystem extends AbstractCommunitySubsystem {
             "s3.bucket", "s3.accessKey", "s3.secretKey", "s3.region", "s3.maxObjectBytes");
 
     private BlobStorageProvider storageProvider;
-    private BlobStore store;
+    private DeferredBlobStore store;
 
     @Override
     public String name() {
@@ -83,15 +82,18 @@ final class CommunityStorageSubsystem extends AbstractCommunitySubsystem {
             return;
         }
 
-        StorageBootstrap.BootstrapResult bootstrap =
-                StorageBootstrap.loadWithProvider(providerId.get(), buildConfig(configProvider));
-        storageProvider = bootstrap.provider();
-        store = bootstrap.store();
+        BlobStorageConfig config = buildConfig(configProvider);
+        storageProvider = StorageBootstrap.loadProvider(providerId.get(), config);
+        // Deferred: the allocator the S3 driver needs is not bound yet — see DeferredBlobStore.
+        store = new DeferredBlobStore(storageProvider, config);
     }
 
     @Override
     public void start() {
         if (store != null) {
+            // The store is created here, inside the kernel scope, where MEMORY_ALLOCATOR is bound. A
+            // driver refusing its configuration throws out of start() and fails the boot.
+            store.start();
             // This driver's hot-path JFR event classes initialise here, on the thread that starts
             // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
             // it. markRunning below is unconditional on purpose — a subsystem with nothing to run has
@@ -99,9 +101,8 @@ final class CommunityStorageSubsystem extends AbstractCommunitySubsystem {
             // pay their class loads either.
             CommunityJfrEventCatalogue.warmHotPath(name());
         }
-        // A store is usable as soon as it is created — the filesystem driver holds a path and the S3
-        // driver a client — so there is no second start step. An unconfigured subsystem is running
-        // too: it has nothing to run, which is not the same as having failed.
+        // An unconfigured subsystem is running too: it has nothing to run, which is not the same as
+        // having failed.
         markRunning(true);
     }
 

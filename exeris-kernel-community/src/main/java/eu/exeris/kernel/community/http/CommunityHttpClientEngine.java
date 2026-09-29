@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.http.HttpException;
@@ -24,6 +25,7 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 /**
  * Community HTTP/1.x client engine — drives outbound requests over a single
@@ -40,13 +42,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <p><b>Ownership:</b> owns the {@code TransportEngine} for this engine's life, starting it in
  * {@link #start()} and closing it in {@link #close()}; owns the {@link MemoryAllocator} only when
  * none was already bound to {@link KernelProviders#MEMORY_ALLOCATOR} at construction, in which
- * case {@link #close()} closes it too.
+ * case {@link #close()} closes it too, and a construction that fails closes it before throwing.
  *
  * @since 0.5
  */
 // TooManyMethods: SPI contract surface — the count is intrinsic. Every method here but
-// resolvePeer/sendRequest/readResponse implements HttpClientEngine, and ADR-074 added
-// defaultAuthority() to that interface; PersistenceConnection carries the same disposition.
+// resolvePeer/sendRequest/readResponse implements HttpClientEngine, defaultAuthority() (ADR-074)
+// included; PersistenceConnection carries the same disposition.
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 final class CommunityHttpClientEngine implements HttpClientEngine {
 
@@ -62,7 +64,32 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     /* default */ CommunityHttpClientEngine(HttpConfig config) {
-        this(config, resolveDeps(config));
+        this(config, CommunityOutboundTls.AMBIENT);
+    }
+
+    /**
+     * An engine whose transport holds its outbound connections to {@code outboundTls}.
+     *
+     * @param config      the engine configuration
+     * @param outboundTls what the engine's owner requires of its outbound connections
+     */
+    /* default */ CommunityHttpClientEngine(HttpConfig config, CommunityOutboundTls outboundTls) {
+        this(config, outboundTls, CommunityHttpClientEngine::createOwnAllocator);
+    }
+
+    /**
+     * As {@link #CommunityHttpClientEngine(HttpConfig, CommunityOutboundTls)}, with the allocator
+     * the engine creates for itself, when none is bound, taken from {@code ownAllocator}.
+     *
+     * @param config       the engine configuration
+     * @param outboundTls  what the engine's owner requires of its outbound connections
+     * @param ownAllocator creates the allocator the engine owns; called only when
+     *                     {@link KernelProviders#MEMORY_ALLOCATOR} is unbound
+     */
+    /* default */ CommunityHttpClientEngine(HttpConfig config,
+                                            CommunityOutboundTls outboundTls,
+                                            Supplier<MemoryAllocator> ownAllocator) {
+        this(config, resolveDeps(config, outboundTls, ownAllocator));
     }
 
     private CommunityHttpClientEngine(HttpConfig config, ResolvedHttpClientDeps deps) {
@@ -193,15 +220,13 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
      * Resolves the peer this request is addressed to: the request's own authority, or the engine's
      * configured default when it carries none.
      *
-     * <p>Before ADR-074 this read {@code HttpConfig.bindHost} — the SERVER/DUAL <em>listener</em>
-     * address — so the client dialled the address its own server listened on, and a config built by
-     * {@code HttpConfig.defaultClient()} (bindHost {@code null}, port {@code -1}) produced an engine
-     * that could not send at all. Refusing an unaddressed request is the correct failure: the
-     * alternative is dialling somewhere the caller never named.
+     * <p>With neither, the request is refused (ADR-074). {@code HttpConfig.bindHost} and
+     * {@code port} are never a fallback: they are the SERVER/DUAL <em>listener</em> address, not a
+     * peer, and a configuration built by {@code HttpConfig.defaultClient()} carries neither. Refusing
+     * is the only failure that does not dial somewhere the caller never named.
      *
      * <p>The port is required rather than defaulted. {@link HttpRequest} carries no scheme, so there
-     * is no basis for choosing 80 over 443 — and defaulting to the listener port is precisely what
-     * this decision removed.
+     * is no basis for choosing 80 over 443, and the listener port is not the peer's.
      */
     private CommunityHttpClientPeer resolvePeer(HttpRequest request) {
         String authority = request.authority() != null ? request.authority() : defaultAuthority;
@@ -292,19 +317,44 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         return Math.clamp(bounded, 8 * 1024, Integer.MAX_VALUE);
     }
 
-    private static MemoryAllocator resolveAllocator(HttpConfig config) {
-        Objects.requireNonNull(config, "config must not be null");
-        if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            return KernelProviders.MEMORY_ALLOCATOR.get();
-        }
+    private static MemoryAllocator createOwnAllocator() {
         return new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
     }
 
-    private static ResolvedHttpClientDeps resolveDeps(HttpConfig config) {
-        MemoryAllocator allocator = resolveAllocator(config);
-        boolean closeAllocatorOnClose = !KernelProviders.MEMORY_ALLOCATOR.isBound();
-        TransportEngine transport = CommunityHttpTransportFactory.buildTransport(config, config.port(), allocator);
-        return new ResolvedHttpClientDeps(allocator, transport, closeAllocatorOnClose);
+    /**
+     * The allocator and transport of a new engine. An allocator created here has no other owner
+     * until the engine exists, so a transport that cannot be built closes it; a bound allocator
+     * belongs to its binder and is left open.
+     */
+    // AvoidCatchingGenericException: the owned allocator is closed on any failure, then the failure rethrown.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private static ResolvedHttpClientDeps resolveDeps(HttpConfig config,
+                                                      CommunityOutboundTls outboundTls,
+                                                      Supplier<MemoryAllocator> ownAllocator) {
+        Objects.requireNonNull(config, "config must not be null");
+        boolean ownsAllocator = !KernelProviders.MEMORY_ALLOCATOR.isBound();
+        MemoryAllocator allocator = ownsAllocator ? ownAllocator.get() : KernelProviders.MEMORY_ALLOCATOR.get();
+        try {
+            TransportEngine transport = CommunityHttpTransportFactory.buildTransport(
+                    config, config.port(), allocator, CommunityHttpTransportFactory.Role.CLIENT, outboundTls);
+            return new ResolvedHttpClientDeps(allocator, transport, ownsAllocator);
+        } catch (RuntimeException | Error failure) {
+            if (ownsAllocator) {
+                closeOwnedAllocator(allocator, failure);
+            }
+            throw failure;
+        }
+    }
+
+    // AvoidCatchingGenericException: a failed close is attached to the failure being reported, never
+    // allowed to replace it.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private static void closeOwnedAllocator(MemoryAllocator allocator, Throwable failure) {
+        try {
+            allocator.close();
+        } catch (RuntimeException closeFailure) {
+            failure.addSuppressed(closeFailure);
+        }
     }
 
     private record ResolvedHttpClientDeps(MemoryAllocator allocator,

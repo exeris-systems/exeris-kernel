@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.testkit.http;
 
 import eu.exeris.kernel.community.testkit.FixtureBootLock;
 import eu.exeris.kernel.community.testkit.FixtureThreads;
+import eu.exeris.kernel.community.testkit.KernelScopePump;
 import eu.exeris.kernel.community.testkit.SystemPropertySnapshot;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
@@ -27,8 +28,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * subsystem.
  *
  * <p>The kernel scope a boot opens is a {@code ScopedValue} binding and cannot outlive the frame
- * that opened it, so a dedicated platform thread stays parked inside the boot for as long as the
- * engine must keep running. {@link #start(HttpHandler)} starts that thread, which binds
+ * that opened it, so a dedicated platform thread stays inside the boot for as long as the engine
+ * must keep running, serving the work {@link #runInKernelScope(Runnable)} carries to it (see
+ * {@link KernelScopePump}). {@link #start(HttpHandler)} starts that thread, which binds
  * {@code handler} to {@code HttpKernelProviders.HTTP_SERVER_HANDLER} for the scope of the boot it
  * runs; the caller blocks until the thread signals the engine bound or failed. {@link #close()}
  * signals the thread to stop and joins it.
@@ -52,7 +54,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
     private final AtomicInteger boundPort = new AtomicInteger(UNBOUND_PORT);
     private final AtomicBoolean started = new AtomicBoolean(false);
 
-    private CountDownLatch stopSignal;
+    private KernelScopePump scopePump;
     private Thread runtimeThread;
 
     /**
@@ -95,7 +97,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
                 "http.port");
 
         CountDownLatch startedSignal = new CountDownLatch(1);
-        CountDownLatch stop = new CountDownLatch(1);
+        KernelScopePump pump = new KernelScopePump();
         AtomicReference<Throwable> startupFailure = new AtomicReference<>();
 
         Thread thread = Thread.ofPlatform()
@@ -109,18 +111,18 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
                         reservedPort,
                         propertySnapshot,
                         startedSignal,
-                        stop,
+                        pump,
                         startupFailure));
 
         try {
             if (!startedSignal.await(START_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                stop.countDown();
+                pump.requestStop();
                 FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
                 throw new IllegalStateException("Timed out while starting kernel HTTP fixture");
             }
         } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();
-            stop.countDown();
+            pump.requestStop();
             FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
             throw new IllegalStateException("Interrupted while starting kernel HTTP fixture",
                     interruptedException);
@@ -128,13 +130,13 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
 
         Throwable failure = startupFailure.get();
         if (failure != null) {
-            stop.countDown();
+            pump.requestStop();
             FixtureThreads.joinQuietly(thread, STOP_TIMEOUT_SECONDS);
             throw new IllegalStateException("Kernel HTTP fixture failed to start", failure);
         }
 
         runtimeThread = thread;
-        stopSignal = stop;
+        scopePump = pump;
         started.set(true);
     }
 
@@ -163,21 +165,34 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
     }
 
     @Override
+    public void runInKernelScope(Runnable body) {
+        Objects.requireNonNull(body, "body must not be null");
+        KernelScopePump pump;
+        synchronized (lifecycleLock) {
+            if (!started.get()) {
+                throw new IllegalStateException("Fixture has not been started");
+            }
+            pump = scopePump;
+        }
+        // Waited on outside the lock, so a body that runs long cannot hold close() out.
+        pump.submitAndWait(body, START_TIMEOUT_SECONDS);
+    }
+
+    @Override
     public void close() {
         Thread threadToJoin;
-        CountDownLatch stopToSignal;
+        KernelScopePump pumpToStop;
 
         synchronized (lifecycleLock) {
             if (!started.get()) {
                 return;
             }
-            stopToSignal = stopSignal;
+            // Non-null here: a boot assigns it before setting started, both under this lock.
+            pumpToStop = scopePump;
             threadToJoin = runtimeThread;
         }
 
-        if (stopToSignal != null) {
-            stopToSignal.countDown();
-        }
+        pumpToStop.requestStop();
         FixtureThreads.joinQuietly(threadToJoin, STOP_TIMEOUT_SECONDS);
 
         synchronized (lifecycleLock) {
@@ -190,7 +205,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
                                    int reservedPort,
                                    SystemPropertySnapshot propertySnapshot,
                                    CountDownLatch startedSignal,
-                                   CountDownLatch stop,
+                                   KernelScopePump pump,
                                    AtomicReference<Throwable> startupFailure) {
         try {
             System.setProperty("exeris.http.mode", "SERVER");
@@ -212,7 +227,7 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
                                 engine.set(HttpKernelProviders.httpServerEngine());
                                 boundPort.set(reservedPort);
                                 startedSignal.countDown();
-                                awaitShutdownSignal(stop);
+                                pump.pumpUntilStopped();
                             });
                         } catch (KernelBootstrap.BootstrapException bootstrapException) {
                             startupFailure.set(bootstrapException);
@@ -221,14 +236,6 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
                     });
         } finally {
             propertySnapshot.restore();
-        }
-    }
-
-    private static void awaitShutdownSignal(CountDownLatch stop) {
-        try {
-            stop.await();
-        } catch (InterruptedException _) {
-            Thread.currentThread().interrupt();
         }
     }
 

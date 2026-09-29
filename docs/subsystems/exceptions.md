@@ -103,7 +103,7 @@ formatting. It implements:
 
 | Code          | Description                 | Glass-Box Payload                                     |
 |:--------------|:----------------------------|:------------------------------------------------------|
-| `EX-NET-2001` | TLS wrap (encrypt) failure  | `[0] int nativeCode, [1] String detail` — `SSL_write` path |
+| `EX-NET-2001` | TLS wrap (encrypt) or handshake failure | `[0] int nativeCode, [1] String detail` — `SSL_write` path, and a failed or refused client handshake, where `[1]` is a `TlsFailureDetail` string and `[0]` what it names: the `X509_V_*` code for `peer certificate verification failed`, the `SSL_get_error` code for `handshake failed`, `-1` for the four refusals (`peer identity rejected`, `authority host is neither a DNS name nor an IP literal`, `client engine has no expected peer identity`, `bound crypto provider cannot verify an outbound peer`); see [crypto.md](crypto.md#error-codes) |
 | `EX-NET-2002` | Crypto Provider Init Failure| `[0] String providerName, [1] String reason`          |
 | `EX-NET-2003` | TLS unwrap (decrypt) failure| `[0] int nativeCode, [1] String detail` — `SSL_read` path |
 | `EX-NET-4001` | Transport Handshake/Bind    | `[0] String transportName, [1] int port`              |
