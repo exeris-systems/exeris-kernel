@@ -55,8 +55,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   takes no part, `{name}` segments captured into `StreamMatch.params()`, exact before template),
   where resolution runs (before authorization, outside the kernel's bindings, reading no
   `ScopedValue`), how a wrapper extends its own bindings to the stream handler, and that anything
-  bound around a stream is held for the stream's whole life. `StreamMatch` refuses a `null` handler
-  or parameter map at construction. `AbstractStreamRouteResolverTck` holds the contract, bound to
+  bound around a stream is held for the stream's whole life. `AbstractStreamRouteResolverTck` holds the contract, bound to
   `HttpRouter` in Core and to a forwarder over a router slot in Community. Additive at the SPI.
 
 - **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
@@ -125,7 +124,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ### Changed
 
 - **`HttpRouter.StreamMatch` is now the SPI record `eu.exeris.kernel.spi.http.StreamMatch`.**
-  Same components and the same `exact(HttpStreamHandler)` factory. It moved out of the final router
+  Same components and the same `exact(HttpStreamHandler)` factory. It now refuses a `null` handler
+  or parameter map at construction with `NullPointerException`, which the nested record checked for
+  neither. It moved out of the final router
   class so that a handler which is not an `HttpRouter` can return one, and into the SPI because the
   interface returning it is SPI. Code compiled against 0.11 that names `HttpRouter.StreamMatch` or
   calls `HttpRouter#resolveStream` is recompiled against 0.12. The removal is a Core change; at the
@@ -565,7 +566,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   up no PAQS. That call runs after the engine's own preconditions and before `initPaqs()` constructs
   a scheduler, so a SERVER-mode engine started without a stream handler no longer pays fourteen class
   loads on its way to throwing, and the scheduler's own constructor does not repeat it. Which classes those are is declared in `CoreJfrEventCatalogue` and
-  `CommunityJfrEventCatalogue` (see the entry above).
+  `CommunityJfrEventCatalogue` (see the next entry).
 
 - **Every JFR event class in the kernel is now classified, and the hot-path ones are initialised
   when their subsystem starts.** A `jdk.jfr.Event` subclass registers itself from its own static
@@ -1237,7 +1238,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `close()`. A driver refusing
   its own configuration, such as S3 without `storage.blob.s3.bucket`, is refused in `start()` and
   still fails the boot before the application runs. `StorageBootstrapSelected` is recorded at
-  selection, so a boot whose driver then refuses still records one.
+  selection, so a boot whose driver then refuses still records one. Storage does not depend on
+  `crypto`, so an S3 store with an `https://` endpoint needs the `crypto` subsystem in the same boot:
+  without it the store is refused in `start()` with `EX-NET-4004` (see "The S3 driver takes an
+  `https://` endpoint").
 
 
 - **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**
@@ -1366,7 +1370,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
-- **Outbound TLS is a decision, not a consequence of crypto booting.** A `CLIENT`-mode transport armed TLS whenever a crypto provider happened to be bound, so a kernel that booted crypto to serve HTTPS could not make a plaintext outbound call at all. `exeris.transport.tls` is the opt-out that was missing, and it covers **server, client and dual**: a listener holding valid certificate and key can now decline TLS, for deployments terminating it at a sidecar. Half-configured material stays a boot failure regardless. A listener that declines while holding material emits `eu.exeris.kernel.transport.TransportTlsDeclined`, because that is the one outcome indistinguishable from any other plaintext socket. Defaults are unchanged.
+- **Outbound TLS is a decision, not a consequence of crypto booting.** A `CLIENT`-mode transport armed TLS whenever a crypto provider happened to be bound, so a kernel that booted crypto to serve HTTPS could not make a plaintext outbound call at all. `exeris.transport.tls` is the opt-out that was missing, and it covers **server, client and dual**: a listener holding valid certificate and key can now decline TLS, for deployments terminating it at a sidecar. Half-configured material stays a boot failure regardless. A listener that declines while holding material emits `eu.exeris.kernel.transport.TransportTlsDeclined`, because that is the one outcome indistinguishable from any other plaintext socket. Defaults are unchanged. The S3 blob client is the one client whose TLS this does not decide: its endpoint's scheme does (see "The S3 driver takes an `https://` endpoint").
 
 ### Added
 
@@ -1545,8 +1549,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   address: `CommunityHttpClientEngine` has no public constructor, its only reachable path took
   `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL *listener* address — and
   no client-target key existed anywhere. So the engine the kernel binds as `HTTP_CLIENT_ENGINE`,
-  built from `http.bindHost` and `http.port`, dialled its own listener in `DUAL` mode, and in
-  `CLIENT` mode the one peer written into those keys. Any other peer took an engine of its own, built
+  built from `http.bindHost` and `http.port`, dialled in `CLIENT` mode the one peer written into
+  those keys. In `DUAL` mode it could not start at all: its transport was a second `DUAL` carrier
+  that nothing gave a stream handler (see "A kernel booted with `http.mode=DUAL` starts", which
+  records that it now does). Any other peer took an engine of its own, built
   through `HttpProvider.createClientEngine` with that peer's host and port written into
   `HttpConfig.bindHost` and `port` — one engine per peer, as the S3 driver below did.
   `HttpConfig.defaultClient()` (bindHost `null`, port `-1`) produced an engine that could not send
@@ -1613,8 +1619,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   address. `CommunityHttpClientEngine` has **zero public constructors**, its only reachable path
   takes `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL **listener** address
   — and no client-target configuration key exists anywhere in the tree. The engine the kernel binds
-  dials `http.bindHost:http.port` — its own listener in `DUAL` mode, and in `CLIENT` mode the one
-  peer written into those keys — and any other peer needs an engine of its own with that peer's
+  dials `http.bindHost:http.port` — in `CLIENT` mode the one peer written into those keys; in `DUAL`
+  mode it could not start (see "A kernel booted with `http.mode=DUAL` starts") — and any other peer
+  needs an engine of its own with that peer's
   address written into `HttpConfig.bindHost`, one engine per peer.
   Decision: `HttpRequest` gains a nullable `authority` component with
   the previous canonical constructor retained as a bridge; `Host` and TLS peer verification follow
