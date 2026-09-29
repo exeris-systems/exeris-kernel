@@ -397,6 +397,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   engine is built after `close()` has released the carrier's client trust, which threw
   `IllegalStateException` (`client trust is closed`); the socket it dialled is closed either way.
 
+- **A connect that loses the race with `stop()` or `close()` leaves nothing open.**
+  `NativeTcpCarrier#connect` registered its stream after `stop()` could already have taken the set
+  of channels it closes. Such a connect either returned a connection that `stop()` and `close()`
+  never closed — its socket, its TLS engine (which kept the client trust store alive after
+  `close()`) and the stream's off-heap buffer — or failed with its stream left registered and
+  unclosed. `stop()` now seals the carrier's channel registry in the same step that takes that set:
+  a connect registered before the seal is closed with the rest, and one that reaches registration
+  after it fails with `IllegalStateException` (`Engine is not running`) and closes its own stream,
+  socket and engine. A connect that fails after registration no longer leaves the connection and
+  stream counts one below zero.
+
 - **An accepted TLS connection whose engine cannot bind to the socket releases the engine and the
   socket.** `NativeTcpCarrier` built the listener's TLS engine for an accepted socket and then bound
   it to the socket's descriptor; when the bind threw, no stream owned either, so the accept fault was

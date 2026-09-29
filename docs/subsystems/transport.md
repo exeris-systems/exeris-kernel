@@ -573,6 +573,9 @@ When PAQS sheds a stream or the Kernel initiates graceful shutdown:
    streams to reach zero, under its 60-second hard deadline. The reactors are deliberately still
    looping here, so a handler that completes during the drain can still have its response flushed.
 3. **Teardown** — reactors are woken and joined, then the selector and all remaining channels close.
+   The carrier's channel registry is sealed in the same step that takes the set of channels to
+   close, so an outbound `connect` still in flight is either in that set or is refused its
+   registration (`Engine is not running`) and closes its own stream, socket and TLS engine.
 
 **Observing zero and committing to teardown are one step.** `DrainCoordinator.sealIfIdle()` is a
 compare-and-set on the busy count, not a read followed by a decision. Read as two steps, a request that

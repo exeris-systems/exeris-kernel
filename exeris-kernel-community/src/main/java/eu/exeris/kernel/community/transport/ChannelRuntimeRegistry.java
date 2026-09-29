@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.transport;
 
 import java.nio.channels.SocketChannel;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -19,6 +20,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * concurrently with a reactor dispatching events for other channels; there is no per-channel
  * confinement. {@link #registerRuntime} is the single admission point and rejects a second
  * registration for the same channel rather than silently overwriting the first.
+ *
+ * <p>A carrier that stops seals the registry and takes its snapshot of registered channels in one
+ * step ({@link #sealAndSnapshot}), under the same lock that admits a registration. A registration
+ * therefore either lands before the seal, and is in the snapshot the stop closes, or finds the
+ * registry sealed and is refused; none can land after the snapshot and be missed by it.
  */
 // CommentDefaultAccessModifier: package-private registry is intentionally scoped to transport internals.
 @SuppressWarnings("PMD.CommentDefaultAccessModifier")
@@ -28,24 +34,55 @@ final class ChannelRuntimeRegistry {
     final ConcurrentMap<SocketChannel, NativeTcpStream> streamByChannel = new ConcurrentHashMap<>();
     final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner = new ConcurrentHashMap<>();
 
+    private final Object admissionLock = new Object();
+    /** Guarded by {@link #admissionLock}. */
+    private boolean sealed;
+
     /**
      * Registers a new channel/stream pair. The single admission point for this registry.
      *
      * @param stream  the stream reading and writing {@code channel}
      * @param channel the channel to register
+     * @param refusal what to report if the registry is sealed
      * @return the runtime state created for this pair
-     * @throws IllegalStateException if {@code channel} is already registered
+     * @throws IllegalStateException if {@code channel} is already registered, or ({@code refusal})
+     *                               if the registry is sealed
      */
-    ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel) {
+    ChannelRuntimeState registerRuntime(NativeTcpStream stream, SocketChannel channel, String refusal) {
         ChannelRuntimeState runtime = new ChannelRuntimeState(channel, stream, channelOwner);
-        ChannelRuntimeState previous = runtimeByChannel.putIfAbsent(channel, runtime);
-        if (previous != null) {
-            throw new IllegalStateException(
-                    "Transport runtime already registered for channel on backend "
-                            + previous.socketBackend() + ": " + channel);
+        synchronized (admissionLock) {
+            if (sealed) {
+                throw new IllegalStateException(refusal);
+            }
+            ChannelRuntimeState previous = runtimeByChannel.putIfAbsent(channel, runtime);
+            if (previous != null) {
+                throw new IllegalStateException(
+                        "Transport runtime already registered for channel on backend "
+                                + previous.socketBackend() + ": " + channel);
+            }
+            streamByChannel.put(channel, stream);
         }
-        streamByChannel.put(channel, stream);
         return runtime;
+    }
+
+    /**
+     * Refuses every later registration and returns the channels registered so far, both in one step
+     * with respect to {@link #registerRuntime}.
+     *
+     * @return the runtime state of every channel registered before the seal
+     */
+    List<ChannelRuntimeState> sealAndSnapshot() {
+        synchronized (admissionLock) {
+            sealed = true;
+            return List.copyOf(runtimeByChannel.values());
+        }
+    }
+
+    /** Admits registrations again, for a carrier that starts after it stopped. */
+    void unseal() {
+        synchronized (admissionLock) {
+            sealed = false;
+        }
     }
 
     ChannelRuntimeState resolveRuntime(SocketChannel channel) {
