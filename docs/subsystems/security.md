@@ -428,14 +428,18 @@ For mTLS requirements, operate an mTLS-terminating proxy (e.g., Envoy, Nginx) in
 the authority's host (ADR-074 Amendment A1; [transport.md](transport.md#client-tls)). It presents no
 client certificate and consults no CRL or OCSP. A client is armed only where a crypto provider is
 bound when its engine is built and `exeris.transport.tls` is not `false`; an engine built anywhere
-else dials plaintext. The S3 blob client is the exception: its endpoint's scheme decides, so an
-`http://` endpoint is plaintext even where a crypto provider is bound, and an `https://` endpoint is
-verified TLS or no store ([storage.md](storage.md#s3-compatible-driver-notes)).
-`CommunityOidcIdentityProvider.overJwksEndpoint` fetches its JWKS key set
-through the `KernelWebClient` the application supplies, so the keys travel over a verified
-connection only when that client's engine was built with a crypto provider bound. Its carrier's
-`eu.exeris.kernel.transport.TransportTlsClientPosture` event records which: `VERIFIED`, or the
-reason it is not, such as `PLAINTEXT_NO_CRYPTO_PROVIDER`.
+else dials plaintext. Two clients are the exception, because what they fetch decides what the
+kernel trusts: their endpoint's scheme decides, so an `http://` endpoint is plaintext even where a
+crypto provider is bound, and an `https://` endpoint is verified TLS or nothing is built. The S3 blob
+client is one ([storage.md](storage.md#s3-compatible-driver-notes)). The other is the JWKS fetch of
+`CommunityOidcIdentityProvider.overJwksEndpoint`, which takes the JWKS URI and builds its own engine:
+a key in that document authenticates every token signed under its `kid`, so a key set is installed
+only from a server the connection authenticated (ADR-012 §4). An `https` URI with no crypto provider
+bound, under `exeris.transport.tls=false`, or with a provider that cannot verify an outbound peer
+builds no provider (`EX-NET-4004`). An `http` URI is plaintext by the application's request, for an
+identity provider on a trusted network or in development. The provider owns that engine and
+`close()` releases it. The carrier's `eu.exeris.kernel.transport.TransportTlsClientPosture` event
+records the outcome: `VERIFIED`, `PLAINTEXT_REQUIRED`, or the `REFUSED_*` reason.
 
 ---
 

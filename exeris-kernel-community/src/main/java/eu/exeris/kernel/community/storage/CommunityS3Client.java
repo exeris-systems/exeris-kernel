@@ -40,7 +40,7 @@ import java.util.function.BiFunction;
  * the pool that serves application traffic would let one upload sit in front of every other request.
  * Head-of-line isolation is why this engine is private.
  *
- * <p>The engine's transport follows the endpoint's scheme ({@link CommunityS3Settings.Scheme#outboundTls()}),
+ * <p>The engine's transport follows the endpoint's scheme ({@link CommunityS3Settings#scheme()}),
  * not what is bound where the store is built: plaintext for {@code http}, and for {@code https} TLS
  * that verifies the server against the endpoint host — the host of the dialled authority, which the
  * signed {@code Host} header names too — or no engine.

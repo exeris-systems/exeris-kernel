@@ -18,12 +18,11 @@ import java.util.Objects;
  *
  * <p>Unlike {@link CommunityJsonResponseBodyDecoder}, this decoder does <em>not</em> map the body
  * through an object mapper: it is the right primitive for opaque documents handed wholesale to a
- * downstream parser — most notably a JWKS document fetched for
- * {@link eu.exeris.kernel.community.security.CommunityOidcIdentityProvider#overJwksEndpoint},
- * where JSON-object mapping the document only to re-serialise it for the JOSE library would be a
- * needless round-trip (No-Waste-Compute). A JWKS endpoint advertises {@code application/json}, so
- * a JSON decoder would otherwise win {@code String.class} resolution and then fail to coerce a
- * JSON object into a {@code String}; give the JWKS client a registry containing only this decoder.
+ * downstream parser — a JSON document fed to a library that parses it itself, for instance, where
+ * JSON-object mapping the document only to re-serialise it would be a needless round-trip
+ * (No-Waste-Compute). Such an endpoint usually advertises {@code application/json}, so a JSON
+ * decoder would otherwise win {@code String.class} resolution and then fail to coerce a JSON object
+ * into a {@code String}; give that client a registry containing only this decoder.
  *
  * <p>Supports {@code String.class} alone, regardless of (and tolerating an absent) content type.
  * Returns {@code null} for an empty body, per the {@link HttpResponseBodyDecoder} contract. Does
@@ -38,8 +37,8 @@ public final class CommunityTextResponseBodyDecoder implements HttpResponseBodyD
 
     /**
      * Built directly by any caller assembling a decoder registry that must resolve
-     * {@code String.class} to raw bytes instead of a JSON-object decoder — most notably the JWKS
-     * fetch registry described above — and by tests exercising this decoder in isolation.
+     * {@code String.class} to raw bytes instead of a JSON-object decoder, as described above, and by
+     * tests exercising this decoder in isolation.
      */
     public CommunityTextResponseBodyDecoder() {
         // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.

@@ -4,7 +4,7 @@
  */
 package eu.exeris.kernel.community.storage;
 
-import eu.exeris.kernel.community.transport.CommunityOutboundTls;
+import eu.exeris.kernel.community.http.CommunityEndpointScheme;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 
 import java.net.URI;
@@ -20,7 +20,7 @@ import java.util.Map;
  * SPI record deliberately has no field the kernel could interpret as a storage topology.
  *
  * <h2>The scheme decides</h2>
- * <p>The client engine requires of its transport what the scheme says ({@link Scheme#outboundTls()}),
+ * <p>The client engine requires of its transport what the scheme says ({@link CommunityEndpointScheme#outboundTls()}),
  * wherever the store is built. {@code http://} is plaintext, even where a crypto provider is bound.
  * {@code https://} is TLS that verifies the server against the endpoint host, or no store: without the
  * Community crypto provider bound where the store is built, or under
@@ -45,8 +45,8 @@ import java.util.Map;
  * @param maxObjectBytes ceiling on a single object, in bytes
  * @since 0.11
  */
-/* default */ record CommunityS3Settings(Scheme scheme, String host, int port, String bucket, String accessKey,
-                                         String secretKey, String region, long maxObjectBytes) {
+/* default */ record CommunityS3Settings(CommunityEndpointScheme scheme, String host, int port, String bucket,
+                                         String accessKey, String secretKey, String region, long maxObjectBytes) {
 
     /** Property key: the bucket every object lands in. */
     /* default */ static final String BUCKET = "s3.bucket";
@@ -90,6 +90,9 @@ import java.util.Map;
     /* default */ static final long DEFAULT_MAX_OBJECT_BYTES = 8L * 1024 * 1024;
 
     private static final long HEADER_HEADROOM_BYTES = 64L * 1024;
+
+    /** What the endpoint is called in a refusal: the {@link BlobStorageConfig} field that carries it. */
+    private static final String LOCATION = "location";
 
     /**
      * What the client engine adds to whatever ceiling it is handed, for the status line and headers it
@@ -138,7 +141,7 @@ import java.util.Map;
      */
     /* default */ static CommunityS3Settings from(BlobStorageConfig config) {
         URI endpoint = parseEndpoint(config.location());
-        Scheme scheme = Scheme.of(endpoint.getScheme());
+        CommunityEndpointScheme scheme = CommunityEndpointScheme.of(endpoint.getScheme(), LOCATION);
         Map<String, String> properties = config.properties();
         return new CommunityS3Settings(
                 scheme,
@@ -204,7 +207,7 @@ import java.util.Map;
         } catch (URISyntaxException e) {
             throw new IllegalArgumentException("location must be an endpoint URI, got: " + location, e);
         }
-        Scheme.of(endpoint.getScheme());
+        CommunityEndpointScheme.of(endpoint.getScheme(), LOCATION);
         if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {
             throw new IllegalArgumentException("location must carry a host, got: " + location);
         }
@@ -246,74 +249,6 @@ import java.util.Map;
             return Long.parseLong(value.strip());
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException(MAX_OBJECT_BYTES + " must be a number, got: " + value, e);
-        }
-    }
-
-    /**
-     * An endpoint scheme, and what it decides: the default port, and what the client engine requires
-     * of its transport.
-     */
-    /* default */ enum Scheme {
-
-        /** Plaintext, whatever crypto provider is bound where the store is built. */
-        HTTP("http", 80, CommunityOutboundTls.PLAINTEXT),
-
-        /** TLS that verifies the endpoint host, or no store. */
-        HTTPS("https", 443, CommunityOutboundTls.VERIFIED);
-
-        private final String token;
-        private final int defaultPort;
-        private final CommunityOutboundTls outboundTls;
-
-        Scheme(String token, int defaultPort, CommunityOutboundTls outboundTls) {
-            this.token = token;
-            this.defaultPort = defaultPort;
-            this.outboundTls = outboundTls;
-        }
-
-        /**
-         * The scheme as a URI spells it.
-         *
-         * @return {@code http} or {@code https}
-         */
-        /* default */ String token() {
-            return token;
-        }
-
-        /**
-         * The port an endpoint that states none is reached on.
-         *
-         * @return {@code 80} or {@code 443}
-         */
-        /* default */ int defaultPort() {
-            return defaultPort;
-        }
-
-        /**
-         * What the client engine requires of its transport for an endpoint of this scheme.
-         *
-         * @return {@link CommunityOutboundTls#PLAINTEXT} or {@link CommunityOutboundTls#VERIFIED}
-         */
-        /* default */ CommunityOutboundTls outboundTls() {
-            return outboundTls;
-        }
-
-        /**
-         * The scheme an endpoint URI names, in any case.
-         *
-         * @param token the URI's scheme, or {@code null}
-         * @return the scheme
-         * @throws IllegalArgumentException if {@code token} is neither {@code http} nor {@code https}
-         */
-        // 'of' is the standard Java factory idiom (cf. List.of, Path.of)
-        @SuppressWarnings("PMD.ShortMethodName")
-        /* default */ static Scheme of(String token) {
-            for (Scheme scheme : values()) {
-                if (scheme.token.equalsIgnoreCase(token)) {
-                    return scheme;
-                }
-            }
-            throw new IllegalArgumentException("location must use the http or https scheme, got: " + token);
         }
     }
 }

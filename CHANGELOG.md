@@ -34,7 +34,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   keeps TLS and skips verification. Outbound TLS is armed only where a crypto provider is bound when
   the carrier is built and `exeris.transport.tls` is not `false` (for a `DUAL` carrier, only when its
   listener holds certificate material); an engine built anywhere else dials plaintext, the S3 blob
-  client excepted, whose endpoint scheme decides; and each carrier records which in the new
+  client and the OIDC provider's JWKS fetch excepted, whose endpoint scheme decides; and each carrier
+  records which in the new
   `eu.exeris.kernel.transport.TransportTlsClientPosture` event and an INFO line (a WARNING when the
   default trust has neither file nor directory). A bound crypto provider that cannot verify an
   outbound peer fails a `CLIENT` carrier at construction and a `DUAL` carrier's `connect`, unless the
@@ -44,6 +45,23 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `crypto.tls.client.trustFile` naming the issuing CA (with any intermediates, since the Community
   server does not send them) or, for a self-signed server, that certificate; a CA-issued server
   certificate alone in the file does not anchor its chain.
+
+- **The OIDC provider fetches its JWKS key set only over a connection that authenticated the
+  server** (ADR-012 §4, ADR-040 §3). `CommunityOidcIdentityProvider.overJwksEndpoint` took a
+  `KernelWebClient` and installed whatever key set it returned, so an engine that dialled plaintext
+  — no crypto provider bound where it was built, or `-Dexeris.transport.tls=false` — let an on-path
+  attacker serve a key of its own and sign tokens that authenticated. It now takes the JWKS `URI`
+  and builds its own client engine from the scheme: `https` is TLS that verifies the server against
+  `crypto.tls.client.trustFile`, else OpenSSL's default trust, and against the URI's host, or no
+  provider (`TransportException` `EX-NET-4004`, never a downgrade); `http` is plaintext the
+  application asked for by writing it, recorded as `PLAINTEXT_REQUIRED`. The signature is
+  `overJwksEndpoint(URI, Map, KeyRotationPolicy, Clock, String, String)`, the provider implements
+  `AutoCloseable` and `close()` releases the engine, and the caller no longer wires a
+  `CommunityTextResponseBodyDecoder`. The scheme rule is the S3 driver's, now shared as
+  `CommunityEndpointScheme`. In 0.10.0 through 0.11.0 no JWKS fetch through a Community engine
+  authenticated its server, since every TLS client context used `SSL_VERIFY_NONE`.
+  **Upgrade:** pass the JWKS URI instead of a client and path, build the provider where the
+  Community crypto provider is bound, and close it with the application.
 
 ### Added
 

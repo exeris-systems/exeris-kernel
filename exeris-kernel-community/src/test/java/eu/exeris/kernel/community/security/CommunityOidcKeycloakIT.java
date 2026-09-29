@@ -5,23 +5,11 @@
 package eu.exeris.kernel.community.security;
 
 import com.nimbusds.jwt.SignedJWT;
-import eu.exeris.kernel.community.http.CommunityHttpProvider;
-import eu.exeris.kernel.community.http.CommunityTextResponseBodyDecoder;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.testkit.security.TestJwt;
-import eu.exeris.kernel.core.http.client.KernelWebClient;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
-import eu.exeris.kernel.spi.http.HttpClientEngine;
-import eu.exeris.kernel.spi.http.HttpConfig;
-import eu.exeris.kernel.spi.http.HttpMode;
-import eu.exeris.kernel.spi.http.HttpProvider;
-import eu.exeris.kernel.spi.http.HttpRequestBodyEncoder;
-import eu.exeris.kernel.spi.http.HttpRequestBodyEncoderRegistry;
-import eu.exeris.kernel.spi.http.HttpResponseBodyDecoder;
-import eu.exeris.kernel.spi.http.HttpResponseBodyDecoderRegistry;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
@@ -46,7 +34,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -61,16 +48,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <h2>What this proves end-to-end</h2>
  * <ul>
- *   <li>{@link CommunityOidcIdentityProvider#overJwksEndpoint} wires a {@link KernelWebClient} → live
- *       JWKS GET → {@code kid → RSAPublicKey} snapshot → RS256 signature verification.</li>
- *   <li>The raw-text JWKS fetch path ({@link CommunityTextResponseBodyDecoder}) round-trips an
- *       {@code application/json} JWKS document into the JOSE parser — the production
- *       {@code client.get(jwksPath, String.class)} contract.</li>
+ *   <li>{@link CommunityOidcIdentityProvider#overJwksEndpoint} builds its own client engine from the
+ *       JWKS URI → live JWKS GET → {@code kid → RSAPublicKey} snapshot → RS256 signature
+ *       verification.</li>
+ *   <li>The raw-text JWKS fetch hands an {@code application/json} JWKS document to the JOSE parser
+ *       as it arrived.</li>
  *   <li>A verified token yields a populated {@code PrincipalContext} (Keycloak {@code sub} → principal
  *       id) with the default {@code security:read} scope and a non-null isolation strategy.</li>
  *   <li>Issuer binding is live: a provider configured for a foreign issuer denies the same
  *       signature-valid token with a terminal {@code EX-SEC-2002} (fail-closed).</li>
  * </ul>
+ *
+ * <p>The URI is {@code http://}: Keycloak's development mode serves plaintext, so the provider is
+ * asked for plaintext by name, which its carrier records as {@code PLAINTEXT_REQUIRED}. That an
+ * {@code https} JWKS URI is fetched only over a connection that verified its server is proved without
+ * Docker, in {@code CommunityOidcJwksTransportTest}.
  *
  * <h2>Execution</h2>
  * <p>Tagged {@code integration} and excluded by default. Run with:
@@ -110,16 +102,7 @@ class CommunityOidcKeycloakIT {
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
-    private static final HttpProvider HTTP = new CommunityHttpProvider();
     private static final ObjectMapper MAPPER = JsonMapper.builder().build();
-
-    // JWKS client decodes String.class as raw response text (NOT JSON-object mapping) per the
-    // overJwksEndpoint contract; GET carries no body, so the encoder registry stays empty.
-    private static final HttpResponseBodyDecoderRegistry TEXT_DECODERS =
-            HttpResponseBodyDecoderRegistry.of(
-                    List.<HttpResponseBodyDecoder>of(new CommunityTextResponseBodyDecoder()));
-    private static final HttpRequestBodyEncoderRegistry NO_ENCODERS =
-            HttpRequestBodyEncoderRegistry.of(List.<HttpRequestBodyEncoder>of());
 
     @AfterAll
     @SuppressWarnings("unused")
@@ -147,13 +130,11 @@ class CommunityOidcKeycloakIT {
                 .as("audience mapper added the kernel audience").contains(AUDIENCE);
 
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() -> {
-            try (HttpClientEngine engine = HTTP.createClientEngine(clientConfig())) {
-                engine.start();
-                KernelWebClient jwksClient = new KernelWebClient(engine, ALLOCATOR, NO_ENCODERS, TEXT_DECODERS);
-
-                CommunityOidcIdentityProvider provider = CommunityOidcIdentityProvider.overJwksEndpoint(
-                        jwksClient, JWKS_PATH, Map.of(), KeyRotationPolicy.defaults(),
-                        Clock.systemUTC(), issuer, AUDIENCE);
+            try (CommunityOidcIdentityProvider provider = CommunityOidcIdentityProvider.overJwksEndpoint(
+                        jwksUri(), Map.of(), KeyRotationPolicy.defaults(), Clock.systemUTC(), issuer, AUDIENCE);
+                 CommunityOidcIdentityProvider foreign = CommunityOidcIdentityProvider.overJwksEndpoint(
+                        jwksUri(), Map.of(), KeyRotationPolicy.defaults(), Clock.systemUTC(),
+                        FOREIGN_ISSUER, AUDIENCE)) {
 
                 try (LoanedBuffer token = TestJwt.bufferOf(accessToken)) {
                     assertThat(provider.canAttempt(token)).as("routing peek matches own issuer").isTrue();
@@ -172,9 +153,6 @@ class CommunityOidcKeycloakIT {
                 }
 
                 // Fail-closed: same signature-valid token, foreign-issuer provider → terminal deny.
-                CommunityOidcIdentityProvider foreign = CommunityOidcIdentityProvider.overJwksEndpoint(
-                        jwksClient, JWKS_PATH, Map.of(), KeyRotationPolicy.defaults(),
-                        Clock.systemUTC(), FOREIGN_ISSUER, AUDIENCE);
                 try (LoanedBuffer token = TestJwt.bufferOf(accessToken)) {
                     assertThatThrownBy(() -> foreign.authenticate(token))
                             .isInstanceOf(SecurityAuthenticationException.class)
@@ -211,24 +189,7 @@ class CommunityOidcKeycloakIT {
         return "http://" + KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(KC_PORT);
     }
 
-    private static HttpConfig clientConfig() {
-        return new HttpConfig(
-                HttpMode.CLIENT,
-                KEYCLOAK.getHost(),
-                KEYCLOAK.getMappedPort(KC_PORT),
-                HttpConfig.DEFAULT_MAX_CONNECTIONS,
-                HttpConfig.DEFAULT_IDLE_TIMEOUT_MS,
-                HttpConfig.DEFAULT_MAX_HEADER_COUNT,
-                HttpConfig.DEFAULT_MAX_HEADER_SIZE,
-                HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
-                false,
-                HttpVersion.HTTP_1_1,
-                // ADR-074: the JWKS fetch reaches Keycloak through this default authority. The
-                // bindHost and port above are LISTEN fields, which a CLIENT-mode engine never dials.
-                KEYCLOAK.getHost() + ":" + KEYCLOAK.getMappedPort(KC_PORT),
-                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
-                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
-                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE
-        );
+    private static URI jwksUri() {
+        return URI.create(baseUrl() + JWKS_PATH);
     }
 }
