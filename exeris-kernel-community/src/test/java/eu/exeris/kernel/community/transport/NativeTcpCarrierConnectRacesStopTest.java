@@ -295,10 +295,10 @@ class NativeTcpCarrierConnectRacesStopTest {
         peer.setSoTimeout(10_000);
         try {
             return peer.getInputStream().read() == -1;
-        } catch (SocketTimeoutException stillOpen) {
-            return false;
-        } catch (IOException reset) {
-            return true;
+        } catch (SocketTimeoutException _) {
+            return false; // nothing arrived and nothing closed it: still open
+        } catch (IOException _) {
+            return true; // reset by the server
         }
     }
 
@@ -317,7 +317,7 @@ class NativeTcpCarrierConnectRacesStopTest {
     private static void awaitQuietly(CountDownLatch latch) {
         try {
             latch.await();
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }

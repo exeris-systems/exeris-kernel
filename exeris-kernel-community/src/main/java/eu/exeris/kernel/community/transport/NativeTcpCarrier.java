@@ -426,7 +426,9 @@ public final class NativeTcpCarrier implements TransportEngine {
 
         SocketChannel channel = null;
         TlsEngine tlsEngine = null;
+        NativeTcpConnection connection = null;
         NativeTcpStream stream = null;
+        boolean connected = false;
         try {
             backend.validateClientSocketBackendOnce(allocator, host, port);
             channel = SocketChannel.open();
@@ -449,7 +451,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             // caller dialled stays the caller's. A layer that needs the name, such as an HTTP client
             // writing Host, takes it from its own request rather than from the connection.
             InetSocketAddress reached = resolveRemoteAddress(connectedChannel);
-            NativeTcpConnection connection = new NativeTcpConnection(
+            connection = new NativeTcpConnection(
                     connectionSeq.getAndIncrement(),
                     reached.getAddress().getHostAddress(),
                     reached.getPort());
@@ -471,33 +473,44 @@ public final class NativeTcpCarrier implements TransportEngine {
             connection.bindSingleStream(stream);
             // Refused once stop() has sealed the registry; admitted before that, the stream is in
             // the set stop() closes. Counted as soon as it is registered, because from then on its
-            // close — by stop(), by the catch below, or by the caller — is what uncounts it.
+            // close — by stop(), by the release below, or by the caller — is what uncounts it.
             ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, connectedChannel);
             afterClientRegistration.run();
             activeConnections.incrementAndGet();
             activeStreams.incrementAndGet();
             registerClientChannel(runtime, connectedChannel);
             totalAccepted.incrementAndGet();
+            connected = true;
             return connection;
         } catch (IOException e) {
-            releaseFailedConnect(stream, tlsEngine, channel);
             throw TransportException.bindFailure(engineName(), port, e);
-        } catch (RuntimeException | Error e) {
-            releaseFailedConnect(stream, tlsEngine, channel);
-            throw e;
+        } finally {
+            // Whatever ended the connect early, including an Error, releases what it had built.
+            if (!connected) {
+                releaseFailedConnect(connection, stream, tlsEngine, channel);
+            }
         }
     }
 
     /**
-     * Closes what a connect that failed holds. A built stream owns the socket and the TLS engine, so
-     * closing it releases both with its own buffers, and removes its registry entry if it has one;
-     * without a stream, the engine and the socket are closed here.
+     * Closes what a connect that failed holds, each resource once, through its owner at that point,
+     * as {@link #releaseFailedAccept} does for an accepted socket. A stream bound to the connection
+     * closes through the connection; a stream built but not bound closes itself. A stream owns the
+     * socket and the TLS engine, so closing it releases both with its own buffers, and removes its
+     * registry entry if it has one; without a stream, the engine and the socket are closed here.
      *
-     * @param stream    the stream built for the connect, or {@code null} if it failed before that
-     * @param tlsEngine the client engine, or {@code null}
-     * @param channel   the socket, or {@code null}
+     * @param connection the connection built for the connect, or {@code null} if it failed before that
+     * @param stream     the stream built for the connect, or {@code null} if it failed before that
+     * @param tlsEngine  the client engine, or {@code null}
+     * @param channel    the socket, or {@code null}
      */
-    private static void releaseFailedConnect(NativeTcpStream stream, TlsEngine tlsEngine, SocketChannel channel) {
+    private static void releaseFailedConnect(NativeTcpConnection connection,
+                                             NativeTcpStream stream,
+                                             TlsEngine tlsEngine,
+                                             SocketChannel channel) {
+        if (connection != null) {
+            connection.close();
+        }
         if (stream != null) {
             stream.close();
             return;
