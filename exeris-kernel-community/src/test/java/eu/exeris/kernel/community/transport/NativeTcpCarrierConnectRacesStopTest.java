@@ -26,6 +26,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -198,6 +200,43 @@ class NativeTcpCarrierConnectRacesStopTest {
     }
 
     @Test
+    @DisplayName("an accept whose registration stop() refuses closes its socket and releases its slot")
+    void acceptRefusedByStopReleasesItsSlot() throws Exception {
+        NativeTcpCarrier listener = (NativeTcpCarrier) server;
+        CountDownLatch held = new CountDownLatch(1);
+        AtomicReference<Thread> acceptor = new AtomicReference<>();
+        listener.beforeAcceptedRegistration(() -> {
+            if (acceptor.compareAndSet(null, Thread.currentThread())) {
+                held.countDown();
+                awaitQuietly(release);
+            }
+        });
+
+        try (Socket peer = new Socket("127.0.0.1", port)) {
+            held.await();
+            // stop() waits out its acceptor join, then seals the registry the held accept registers in.
+            listener.stop();
+            release.countDown();
+            acceptor.get().join();
+
+            assertThat(closedByServer(peer)).as("the accepted socket after a refused registration").isTrue();
+        }
+        assertThat(listener.registeredChannelCount()).as("registered channels after stop()").isZero();
+        listener.start();
+        try {
+            TransportStats stats = listener.stats();
+            assertThat(stats.activeConnections()).as("active connections after restart").isZero();
+            assertThat(stats.activeStreams()).as("active streams after restart").isZero();
+        } finally {
+            listener.close();
+        }
+        MemoryStats memory = serverAllocator.stats();
+        assertThat(memory.releaseCount())
+                .as("server allocator releases (allocations %d)", memory.allocationCount())
+                .isEqualTo(memory.allocationCount());
+    }
+
+    @Test
     @DisplayName("control: a connect released before stop() connects and is closed by it")
     void connectReleasedBeforeStop() throws InterruptedException {
         NativeTcpCarrier client = startClient();
@@ -246,6 +285,21 @@ class NativeTcpCarrierConnectRacesStopTest {
                 outcome.set(failure);
             }
         });
+    }
+
+    /**
+     * Whether the server closed {@code peer}: a read sees end of stream or a reset. A read that times
+     * out means the socket is still open, and fails the check rather than passing as an exception.
+     */
+    private static boolean closedByServer(Socket peer) throws IOException {
+        peer.setSoTimeout(10_000);
+        try {
+            return peer.getInputStream().read() == -1;
+        } catch (SocketTimeoutException stillOpen) {
+            return false;
+        } catch (IOException reset) {
+            return true;
+        }
     }
 
     private void assertEveryLoanReturned() {

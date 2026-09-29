@@ -175,6 +175,10 @@ public final class NativeTcpCarrier implements TransportEngine {
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile Runnable afterClientRegistration = () -> {
     };
+    /** Runs on the acceptor just before an accepted stream is registered; a test seam, a no-op otherwise. */
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile Runnable beforeAcceptedRegistration = () -> {
+    };
 
     /**
      * Compatibility mirrors retained for diagnostics and existing transport tests.
@@ -478,7 +482,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         } catch (IOException e) {
             releaseFailedConnect(stream, tlsEngine, channel);
             throw TransportException.bindFailure(engineName(), port, e);
-        } catch (RuntimeException e) {
+        } catch (RuntimeException | Error e) {
             releaseFailedConnect(stream, tlsEngine, channel);
             throw e;
         }
@@ -586,6 +590,10 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     /* default */ void afterClientRegistration(Runnable hook) {
         this.afterClientRegistration = Objects.requireNonNull(hook, "hook must not be null");
+    }
+
+    /* default */ void beforeAcceptedRegistration(Runnable hook) {
+        this.beforeAcceptedRegistration = Objects.requireNonNull(hook, "hook must not be null");
     }
 
     /* default */ int registeredChannelCount() {
@@ -962,6 +970,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 stream = buildAcceptedStream(currentChannel, connection);
                 connection.bindSingleStream(stream);
                 streamBound = true;
+                beforeAcceptedRegistration.run();
                 ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
                 // Registered: the slot is released by the stream's close from here on, not by the
                 // finally below. A refused registration leaves it to the finally.
