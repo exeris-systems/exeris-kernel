@@ -257,6 +257,35 @@ class CommunityS3SettingsTest {
             assertThat(catchThrowable(() -> CommunityS3Settings.from(endpoint("https://key:secret@s3 example.com"))))
                     .hasCauseInstanceOf(URISyntaxException.class);
         }
+
+        @Test
+        @DisplayName("a password holding a delimiter, or a location without //, still has its userinfo withheld")
+        void userinfoWithheldWhereTheAuthorityIsAmbiguous() {
+            for (String location : new String[]{
+                    "https://AKID:se/cret@s3.example.com",
+                    "https://AKID:se?cret@s3.example.com",
+                    "https://AKID:se#cret@s3.example.com",
+                    "https:AKID:secret@s3.example.com",
+                    "https://AKID:se cret@s3.example.com"}) {
+                Throwable thrown = catchThrowable(() -> CommunityS3Settings.from(endpoint(location)));
+                assertThat(thrown).as(location).isInstanceOf(IllegalArgumentException.class);
+                for (Throwable t = thrown; t != null; t = t.getCause()) {
+                    assertThat(t.getMessage()).as(location + " / " + t.getClass().getName())
+                            .doesNotContain("AKID")
+                            .doesNotContain("cret");
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("a syntax refusal keeps the position of a fault after the userinfo, moved to the redacted text")
+        void syntaxFaultPositionFollowsTheRedaction() {
+            Throwable thrown = catchThrowable(() -> CommunityS3Settings.from(endpoint("https://key:secret@s3 example.com")));
+            URISyntaxException cause = (URISyntaxException) thrown.getCause();
+
+            assertThat(cause.getInput().charAt(cause.getIndex())).isEqualTo(' ');
+            assertThat(cause.getInput()).startsWith("https://<userinfo>@s3");
+        }
     }
 
     @Nested

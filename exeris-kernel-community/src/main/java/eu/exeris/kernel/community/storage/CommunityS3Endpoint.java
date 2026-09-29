@@ -53,12 +53,14 @@ final class CommunityS3Endpoint {
         try {
             endpoint = new URI(location);
         } catch (URISyntaxException cause) {
-            throw new IllegalArgumentException("location must be an endpoint URI, got: " + redacted(location),
-                    redactedCause(location, cause));
+            UserInfo userInfo = UserInfo.withoutAuthority(location);
+            throw new IllegalArgumentException("location must be an endpoint URI, got: "
+                    + userInfo.redact(location), userInfo.redact(cause));
         }
         CommunityEndpointScheme.of(endpoint.getScheme(), LOCATION);
         if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {
-            throw new IllegalArgumentException("location must carry a host, got: " + redacted(location));
+            throw new IllegalArgumentException("location must carry a host, got: "
+                    + UserInfo.withoutAuthority(location).redact(location));
         }
         refuseBeyondTheAuthority(endpoint, location);
         return endpoint;
@@ -77,7 +79,8 @@ final class CommunityS3Endpoint {
         String host = endpoint.getHost().toLowerCase(Locale.ROOT);
         String withoutDot = host.endsWith(".") ? host.substring(0, host.length() - 1) : host;
         if (withoutDot.isEmpty()) {
-            throw new IllegalArgumentException("location must carry a host, got: " + redacted(location));
+            throw new IllegalArgumentException("location must carry a host, got: "
+                    + UserInfo.inServerAuthority(endpoint, location).redact(location));
         }
         return withoutDot;
     }
@@ -85,70 +88,73 @@ final class CommunityS3Endpoint {
     private static void refuseBeyondTheAuthority(URI endpoint, String location) {
         String path = endpoint.getRawPath();
         refuseIf(endpoint.getRawUserInfo() != null, "userinfo", "credentials are "
-                + CommunityS3Settings.ACCESS_KEY + " and " + CommunityS3Settings.SECRET_KEY, location);
+                + CommunityS3Settings.ACCESS_KEY + " and " + CommunityS3Settings.SECRET_KEY, endpoint, location);
         refuseIf(!path.isEmpty() && !"/".equals(path), "a path",
-                "requests are path-style from the bucket and key alone", location);
-        refuseIf(endpoint.getRawQuery() != null, "a query", "the driver sends none", location);
-        refuseIf(endpoint.getRawFragment() != null, "a fragment", "the driver sends none", location);
+                "requests are path-style from the bucket and key alone", endpoint, location);
+        refuseIf(endpoint.getRawQuery() != null, "a query", "the driver sends none", endpoint, location);
+        refuseIf(endpoint.getRawFragment() != null, "a fragment", "the driver sends none", endpoint, location);
     }
 
-    private static void refuseIf(boolean present, String part, String reason, String location) {
+    private static void refuseIf(boolean present, String part, String reason, URI endpoint, String location) {
         if (present) {
             throw new IllegalArgumentException("location must not carry " + part + " — " + reason + "; got: "
-                    + redacted(location));
+                    + UserInfo.inServerAuthority(endpoint, location).redact(location));
         }
     }
 
     /**
-     * The location with any userinfo replaced by {@link #USERINFO_MARKER}.
+     * Where a location's userinfo sits, as the half-open range {@code [start, end)} of its characters, so
+     * a refusal can echo the location with that range replaced by {@link #USERINFO_MARKER}.
      *
-     * <p>Textual rather than through {@link URI}, because it has to work on a location {@link URI}
-     * cannot parse, and on a registry-based authority where {@link URI#getUserInfo()} is {@code null}.
+     * <p>Two ways to find it. Where {@link URI} read a server authority, its raw userinfo is exact and
+     * sits right after {@code //}; an {@code @} in a path stays in the echo. Where it did not (a syntax
+     * failure, a registry-based authority, an opaque URI), nothing marks where the userinfo ends, since a
+     * password may hold an unencoded {@code /}, {@code ?} or {@code #}: everything from the scheme's
+     * {@code :} (and a following {@code //}) to the last {@code @} is withheld.
      */
-    private static String redacted(String location) {
-        int userInfoEnd = userInfoEnd(location);
-        if (userInfoEnd < 0) {
-            return location;
-        }
-        int authorityStart = location.indexOf(AUTHORITY_PREFIX) + AUTHORITY_PREFIX.length();
-        return location.substring(0, authorityStart) + USERINFO_MARKER + location.substring(userInfoEnd);
-    }
+    private record UserInfo(int start, int end) {
 
-    /**
-     * Index of the {@code @} ending the userinfo, or {@code -1} if the location carries none. The
-     * authority runs from {@code ://} to the first {@code /}, {@code ?} or {@code #}, and the userinfo
-     * ends at its last {@code @}.
-     */
-    private static int userInfoEnd(String location) {
-        int schemeEnd = location.indexOf(AUTHORITY_PREFIX);
-        if (schemeEnd < 0) {
-            return -1;
-        }
-        int authorityStart = schemeEnd + AUTHORITY_PREFIX.length();
-        int authorityEnd = location.length();
-        for (int i = authorityStart; i < location.length(); i++) {
-            char delimiter = location.charAt(i);
-            if (delimiter == '/' || delimiter == '?' || delimiter == '#') {
-                authorityEnd = i;
-                break;
+        private static final UserInfo NONE = new UserInfo(-1, -1);
+
+        /* default */ static UserInfo inServerAuthority(URI endpoint, String location) {
+            String raw = endpoint.getRawUserInfo();
+            if (raw == null) {
+                return NONE;
             }
+            int start = location.indexOf(AUTHORITY_PREFIX) + AUTHORITY_PREFIX.length();
+            return new UserInfo(start, start + raw.length());
         }
-        int atSign = location.lastIndexOf('@', authorityEnd - 1);
-        return atSign >= authorityStart ? atSign : -1;
-    }
 
-    /**
-     * The parse failure restated over the redacted location, with its index moved to match; an index
-     * inside the userinfo has no counterpart and is dropped.
-     */
-    private static URISyntaxException redactedCause(String location, URISyntaxException cause) {
-        int userInfoEnd = userInfoEnd(location);
-        if (userInfoEnd < 0) {
-            return cause;
+        /* default */ static UserInfo withoutAuthority(String location) {
+            int atSign = location.lastIndexOf('@');
+            if (atSign < 0) {
+                return NONE;
+            }
+            int colon = location.indexOf(':');
+            if (colon < 0 || colon > atSign) {
+                return new UserInfo(0, atSign);
+            }
+            int start = location.startsWith("//", colon + 1) ? colon + 3 : colon + 1;
+            return new UserInfo(Math.min(start, atSign), atSign);
         }
-        String redacted = redacted(location);
-        int shift = location.length() - redacted.length();
-        int index = cause.getIndex() >= userInfoEnd ? cause.getIndex() - shift : -1;
-        return new URISyntaxException(redacted, cause.getReason(), index);
+
+        /* default */ String redact(String location) {
+            return start < 0 ? location : location.substring(0, start) + USERINFO_MARKER + location.substring(end);
+        }
+
+        /**
+         * The parse failure restated over the redacted location. An index before the userinfo stays, one
+         * after it moves with the text, and one inside it has no counterpart and is dropped.
+         */
+        /* default */ URISyntaxException redact(URISyntaxException cause) {
+            if (start < 0) {
+                return cause;
+            }
+            int index = cause.getIndex();
+            int moved = index < start ? index
+                    : index >= end ? index - (end - start) + USERINFO_MARKER.length()
+                    : -1;
+            return new URISyntaxException(redact(cause.getInput()), cause.getReason(), moved);
+        }
     }
 }
