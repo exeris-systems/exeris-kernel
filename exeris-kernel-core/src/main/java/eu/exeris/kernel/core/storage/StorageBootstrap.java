@@ -51,7 +51,8 @@ public final class StorageBootstrap {
      * {@code eu.exeris.kernel.storage.StorageBootstrapSelected} JFR event. Creates no store.
      *
      * @param providerId the configured provider id; must name a discovered driver
-     * @param config     the store configuration, whose location the selection event records
+     * @param config     the store configuration, whose location the selection event records without
+     *                   its userinfo
      * @return the selected provider; never {@code null}
      * @throws BlobStorageException ({@code EX-BLOB-8007}) if no driver is present, or
      *                               ({@code EX-BLOB-8008}) if none matches {@code providerId}

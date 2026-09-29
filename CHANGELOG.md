@@ -62,6 +62,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   authenticated its server, since every TLS client context used `SSL_VERIFY_NONE`.
   **Upgrade:** pass the JWKS URI instead of a client and path, build the provider where the
   Community crypto provider is bound, and close it with the application.
+- **The `StorageBootstrapSelected` JFR event records a location without its userinfo.** The event is
+  committed before the selected driver reads its configuration, and it recorded `storage.blob.location`
+  verbatim, so `https://key:secret@host` put the credentials in any recording of bootstrap even where
+  the driver then refused the location. The userinfo of a `scheme://` location is now recorded as
+  `<userinfo>`; a directory location, in which `@` is an ordinary character, is recorded as configured.
 
 ### Added
 
