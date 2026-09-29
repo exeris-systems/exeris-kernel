@@ -350,7 +350,9 @@ past `boot()` refuses work as well.
 
 Which driver won is recorded on the `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event, at
 selection in `initialize()` — so a boot whose driver then refuses its configuration in `start()` still
-records a selection.
+records a selection. Its `location` is recorded with the userinfo of a `scheme://` location replaced by
+`<userinfo>`, because the event precedes the driver's own checks; a directory is recorded as
+configured.
 The provider slots are `KernelProviders.BLOB_STORAGE_PROVIDER` and `BLOB_STORE` — named `BLOB_*`
 rather than `STORAGE_*` because `STORAGE_CONTEXT` is ADR-012's tenant-isolation carrier and has
 nothing to do with object storage.
