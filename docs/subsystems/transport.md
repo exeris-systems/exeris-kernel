@@ -273,9 +273,10 @@ verifies the server as a `VERIFIED` carrier does, or fails construction with `EX
 records why, checked in this order: `REFUSED_DECLINED`, `REFUSED_NO_CRYPTO_PROVIDER`, then
 `REFUSED_FOREIGN_PROVIDER` (detail `bound crypto provider cannot verify an outbound peer`). It never
 dials plaintext. A configured `crypto.tls.client.trustFile` is checked under every requirement, as it
-is when TLS is not armed. The S3 blob client states the requirement its endpoint's scheme names:
-`PLAINTEXT` for `http://`, `VERIFIED` for `https://`
-([storage.md](storage.md#s3-compatible-driver-notes)).
+is when TLS is not armed. The S3 blob client and the OIDC provider's JWKS fetch state the
+requirement their endpoint's scheme names (`CommunityEndpointScheme`): `PLAINTEXT` for `http://`,
+`VERIFIED` for `https://` ([storage.md](storage.md#s3-compatible-driver-notes),
+[security.md](security.md)).
 
 A verifying carrier opens one trust store — `crypto.tls.client.trustFile`, else OpenSSL's default —
 and shares it across its connections; `close()` gives up the carrier's reference, and each engine

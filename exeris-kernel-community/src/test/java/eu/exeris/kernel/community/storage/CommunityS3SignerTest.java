@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.storage;
 
+import eu.exeris.kernel.community.http.CommunityEndpointScheme;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import org.junit.jupiter.api.DisplayName;
@@ -50,7 +51,7 @@ class CommunityS3SignerTest {
     private static final Instant FIXED = Instant.parse("2026-08-01T12:00:00Z");
 
     private static CommunityS3Settings settings(String secret) {
-        return new CommunityS3Settings(CommunityS3Settings.Scheme.HTTP, "minio.internal", 9000, "bucket",
+        return new CommunityS3Settings(CommunityEndpointScheme.HTTP, "minio.internal", 9000, "bucket",
                 "access-key", secret,
                 "us-east-1", CommunityS3Settings.DEFAULT_MAX_OBJECT_BYTES);
     }
@@ -221,7 +222,7 @@ class CommunityS3SignerTest {
         @Test
         @DisplayName("the scheme's default port is omitted from the signed Host and from a presigned URL")
         void defaultPortIsOmittedFromTheSignedHost() {
-            CommunityS3Settings https = new CommunityS3Settings(CommunityS3Settings.Scheme.HTTPS, "s3.example.com",
+            CommunityS3Settings https = new CommunityS3Settings(CommunityEndpointScheme.HTTPS, "s3.example.com",
                     443, "bucket", "access-key", SECRET, "us-east-1", CommunityS3Settings.DEFAULT_MAX_OBJECT_BYTES);
             CommunityS3Signer httpsSigner = new CommunityS3Signer(https, Clock.fixed(FIXED, ZoneOffset.UTC));
 
@@ -234,7 +235,7 @@ class CommunityS3SignerTest {
             assertThat(httpsSigner.presign(HttpMethod.GET, PATH, Duration.ofMinutes(5)))
                     .startsWith("https://s3.example.com" + PATH + "?");
 
-            CommunityS3Settings http = new CommunityS3Settings(CommunityS3Settings.Scheme.HTTP, "minio.internal",
+            CommunityS3Settings http = new CommunityS3Settings(CommunityEndpointScheme.HTTP, "minio.internal",
                     80, "bucket", "access-key", SECRET, "us-east-1", CommunityS3Settings.DEFAULT_MAX_OBJECT_BYTES);
             CommunityS3Signer httpSigner = new CommunityS3Signer(http, Clock.fixed(FIXED, ZoneOffset.UTC));
 

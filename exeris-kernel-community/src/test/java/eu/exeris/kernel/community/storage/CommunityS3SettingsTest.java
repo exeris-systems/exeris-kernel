@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.storage;
 
+import eu.exeris.kernel.community.http.CommunityEndpointScheme;
 import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 import org.junit.jupiter.api.DisplayName;
@@ -111,7 +112,7 @@ class CommunityS3SettingsTest {
         void httpsAccepted() {
             CommunityS3Settings settings = CommunityS3Settings.from(endpoint("HTTPS://s3.example.com"));
 
-            assertThat(settings.scheme()).isEqualTo(CommunityS3Settings.Scheme.HTTPS);
+            assertThat(settings.scheme()).isEqualTo(CommunityEndpointScheme.HTTPS);
             assertThat(settings.port()).isEqualTo(443);
             assertThat(settings.scheme().outboundTls()).isEqualTo(CommunityOutboundTls.VERIFIED);
         }
@@ -194,7 +195,7 @@ class CommunityS3SettingsTest {
         void httpIsPlaintext() {
             CommunityS3Settings settings = CommunityS3Settings.from(configWith(Map.of()));
 
-            assertThat(settings.scheme()).isEqualTo(CommunityS3Settings.Scheme.HTTP);
+            assertThat(settings.scheme()).isEqualTo(CommunityEndpointScheme.HTTP);
             assertThat(settings.scheme().outboundTls()).isEqualTo(CommunityOutboundTls.PLAINTEXT);
         }
     }
