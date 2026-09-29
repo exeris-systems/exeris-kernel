@@ -131,6 +131,8 @@ public class ExerisArchitectureTest {
             .that().haveSimpleName("HttpStreamExchange")
             .or().haveSimpleName("HttpStreamHandler")
             .or().haveSimpleName("StreamEvent")
+            .or().haveSimpleName("StreamRouteResolver")
+            .or().haveSimpleName("StreamMatch")
             .should().dependOnClassesThat().resideInAnyPackage(
                     "eu.exeris.kernel.core.http..",
                     "eu.exeris.kernel.community..",
