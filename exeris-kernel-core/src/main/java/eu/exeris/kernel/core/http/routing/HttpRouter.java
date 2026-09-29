@@ -9,6 +9,8 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
+import eu.exeris.kernel.spi.http.StreamMatch;
+import eu.exeris.kernel.spi.http.StreamRouteResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -40,9 +42,11 @@ import java.util.Objects;
  * captured values reaching the handler through
  * {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}. A registration that cannot match
  * is unrepresentable — a malformed brace throws at {@link Builder#streamRoute}, and a well-formed one
- * is compiled as a template.
+ * is compiled as a template. The router is also the {@link StreamRouteResolver} for its own stream
+ * table, so a driver resolves its stream routes through that contract whether the router is bound
+ * directly or reached through a handler that wraps it.
  */
-public final class HttpRouter implements HttpHandler {
+public final class HttpRouter implements HttpHandler, StreamRouteResolver {
 
     private static final HttpHandler DEFAULT_NOT_FOUND = exchange ->
             exchange.respond(HttpStatus.NOT_FOUND);
@@ -76,12 +80,23 @@ public final class HttpRouter implements HttpHandler {
      *
      * <p>Exact stream routes win over template stream routes, mirroring the respond-once precedence:
      * a deployment that registers both a literal and a templated path meant the literal to be special.
+     * A method with no stream route answers {@code null} without examining the path.
+     *
+     * <p>Cost: a miss allocates nothing when the request's method has no stream route or the path
+     * carries no query string; otherwise it copies the path once to drop the query, which is the one
+     * allocation {@link StreamRouteResolver} admits on a miss. A hit allocates the returned
+     * {@link StreamMatch}, and for a template the captured parameter map.
      *
      * @param method request method
-     * @param path   request path (query stripped)
+     * @param path   request path as received; it may carry a query string, which takes no part in
+     *               matching
      * @return the resolved stream route, or {@code null}
      */
+    @Override
     public StreamMatch resolveStream(HttpMethod method, String path) {
+        if (!streamRoutes.serves(method)) {
+            return null;
+        }
         return streamRoutes.resolve(method, stripQuery(path));
     }
 
@@ -89,7 +104,8 @@ public final class HttpRouter implements HttpHandler {
      * Returns {@code true} if {@code (method, path)} is registered as a streaming route.
      *
      * @param method request method
-     * @param path   request path (query stripped)
+     * @param path   request path as received; it may carry a query string, which takes no part in
+     *               matching
      * @return whether the route is streaming
      */
     public boolean isStreamRoute(HttpMethod method, String path) {
@@ -189,25 +205,6 @@ public final class HttpRouter implements HttpHandler {
     }
 
     private record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
-
-    /**
-     * A resolved streaming route: the handler, and whatever its template captured.
-     *
-     * @param handler the streaming handler to drive
-     * @param params  captured path parameters; empty for an exact stream route
-     */
-    public record StreamMatch(HttpStreamHandler handler, Map<String, String> params) {
-
-        /**
-         * A match with nothing captured — what an exact stream route resolves to.
-         *
-         * @param handler the streaming handler
-         * @return the match; never {@code null}
-         */
-        public static StreamMatch exact(HttpStreamHandler handler) {
-            return new StreamMatch(handler, Map.of());
-        }
-    }
 
     /**
      * Mutable accumulator for route registrations, compiled into an immutable {@link HttpRouter} by

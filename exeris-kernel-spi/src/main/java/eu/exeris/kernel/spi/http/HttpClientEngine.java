@@ -53,6 +53,10 @@ public interface HttpClientEngine extends AutoCloseable {
      *
      * @param request outbound request; must not be {@code null}
      * @return the server's response; never {@code null}
+     * @throws NullPointerException if {@code request} is {@code null}, whatever the engine's state:
+     *         the argument is checked before the lifecycle, so an engine that has not been started,
+     *         or has been closed, refuses a {@code null} request with this and not with
+     *         {@link IllegalStateException}
      * @throws IllegalStateException if the engine has not been started or has been closed
      * @throws eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException ({@code EX-NET-2001})
      *         if the request is carried over TLS and the server fails that verification

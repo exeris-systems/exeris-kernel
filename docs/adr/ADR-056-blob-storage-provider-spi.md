@@ -75,6 +75,12 @@ rather than leaving each driver to guess how much it may assume.
    and the config binding land with the second driver, where a provider-selection decision first has
    something to select between. Until then a `BlobStore` is constructed directly by its caller.)*
 
+   *(Amended 2026-09-27, with the storage subsystem: the slot pair exists from 0.12, and it landed with
+   the storage subsystem rather than with a second driver. `StorageBootstrap` selects the driver named
+   by `storage.blob.provider` and does not rank by `priority()` — the two Community drivers share a
+   priority and are not interchangeable. `CommunityStorageSubsystem` binds both slots from its
+   `providerBindings()`. With the key unset, storage is off and neither slot is bound.)*
+
 3. **Bytes move on `LoanedBuffer`; the SPI exposes no `byte[]` and no `InputStream` on the transfer
    path.** *(Amended 2026-07-30, with the SPI. The original text set out a `retain()`/`close()`
    protocol per direction. Implementation showed no hand-off is needed at all, so the protocol is
@@ -327,6 +333,20 @@ proven by the TCK, so the SPI slice is not done until both bindings are green ag
 Each amendment is marked in place at the obligation or protocol item it changes, not rewritten
 (`adr-conventions.md` rule 7). This section indexes them.
 
+- **2026-07-30 — with the SPI.** Obligation 2 is stated in the future tense, because the slot pair
+  lands after the SPI and its first driver. Obligation 3's per-direction `retain()`/`close()`
+  protocol is replaced by the stronger rule that the caller owns its buffers throughout, and the
+  trade-off it carried is retired in Consequences. Obligation 6 is discharged by `BlobRef`'s
+  constructor rather than by each driver, so Engineering Protocol item 1 tests key-injection
+  rejection in `BlobRefTest`, not in the TCK. Engineering Protocol item 6 adds the JFR failure events
+  the original list omitted.
+- **2026-08-01 — with the S3 binding.** Obligation 10 records what building the S3 driver settled:
+  the authentication subset, an `http://`-only endpoint, the `s3.maxObjectBytes` single-object
+  ceiling, and the `HEAD` framing fix in the HTTP client. Engineering Protocol item 3 adds no CI gate;
+  the existing community integration job runs the MinIO suite.
+- **2026-09-27 — with the storage subsystem.** Obligation 2: the slot pair exists from 0.12,
+  selected by `storage.blob.provider` through `StorageBootstrap` without ranking by `priority()` and
+  bound by `CommunityStorageSubsystem`; an unset key binds nothing.
 - **2026-09-27 — obligation 10: the endpoint's scheme decides its transport.** An `https://`
   endpoint is honoured, over TLS that verifies the server against the endpoint host (ADR-074
   Amendment A1), and an `http://` endpoint is plaintext even where a crypto provider is bound. The

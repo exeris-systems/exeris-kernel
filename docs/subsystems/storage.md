@@ -9,8 +9,10 @@ last-verified: 2026-09-08
 
 # Storage Subsystem — Blob Contract
 
-**Status:** SPI + two Community drivers shipped in v0.11 (ADR-056). Post-1.0 per the ROADMAP's
-narrowed-core decision — 1.0 GA is not gated on this subsystem.
+**Status:** SPI + two Community drivers shipped in v0.11 (ADR-056); the subsystem boots from 0.12,
+opt-in through `storage.blob.provider` — unset, storage is off and nothing is bound (see *Bootstrap
+and provider selection*). The SPI is a `preview` surface, outside the stable core the ROADMAP's
+narrowed-core decision holds 1.0 to, so 1.0 GA is not gated on it.
 
 **SPI package:** `eu.exeris.kernel.spi.storage.blob`
 **Drivers:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider`. Two bindings
@@ -326,7 +328,29 @@ A subsystem declares what the drivers it *may* select require, because the boot 
 any configuration is read — there is no point at which the dependency could be made conditional on
 which driver was named.
 
-Which driver won is recorded on the `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event.
+**The driver is selected in `initialize()`; its store is created in `start()`.** Declaring `memory`
+orders the boot without making the allocator visible any earlier: bootstrap builds the kernel scope
+from every subsystem's `providerBindings()` only after all of them have initialised, and runs
+`start()` inside it. `initialize()` therefore reads the keys and calls
+`StorageBootstrap.loadProvider`, which selects the driver and creates no store, so every `EX-BLOB`
+refusal above is raised there. `start()` creates the store through the selected provider, inside the
+scope where `MEMORY_ALLOCATOR` is bound. A driver refusing its own configuration, such as S3 without
+`storage.blob.s3.bucket`, consequently surfaces from `start()`: `SubsystemOrchestrator` reports it as a
+`SubsystemException` in phase `START` whose cause is the driver's own exception — for S3, the
+`IllegalArgumentException` above. The subsystem is not optional, so that still fails the boot before
+the application runs.
+
+`BLOB_STORE` needs a value before `start()` runs, because bootstrap reads `providerBindings()`
+straight after `initialize()`. The value bound is a `DeferredBlobStore` that holds the provider and the
+configuration and creates the real store in `start()` — the answer `DeferredHttpServerEngine` and
+`DeferredWebSocketServerEngine` give to the same ordering (ADR-084 Amendment A2). It refuses every
+operation before `start()` and after `close()` with `IllegalStateException` rather than answering
+empty, which would read as a missing object. `stop()` closes it, so a reference an application kept
+past `boot()` refuses work as well.
+
+Which driver won is recorded on the `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event, at
+selection in `initialize()` — so a boot whose driver then refuses its configuration in `start()` still
+records a selection.
 The provider slots are `KernelProviders.BLOB_STORAGE_PROVIDER` and `BLOB_STORE` — named `BLOB_*`
 rather than `STORAGE_*` because `STORAGE_CONTEXT` is ADR-012's tenant-isolation carrier and has
 nothing to do with object storage.

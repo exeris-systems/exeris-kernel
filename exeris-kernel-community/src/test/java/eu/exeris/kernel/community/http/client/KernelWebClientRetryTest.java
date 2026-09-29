@@ -83,9 +83,9 @@ class KernelWebClientRetryTest {
         KernelWebClient base = client(engine, HttpClientRequestEnricher.noop());
         KernelWebClient payments = base.withAuthority("payments.internal:8443");
 
-        // This is the whole point of putting the authority on the request rather than on the engine,
-        // and until this method existed it was unreachable from the typed surface: every call went
-        // to whatever single peer the engine was configured with.
+        // This is the whole point of putting the authority on the request rather than on the engine:
+        // one engine serves several peers, and withAuthority is how the typed surface names one.
+        // A client that names none sends every call to the engine's configured default.
         payments.get("/charge", Map.class);
         base.get("/health", Map.class);
         payments.get("/refund", Map.class);
@@ -114,11 +114,12 @@ class KernelWebClientRetryTest {
         engine.defaultAuthority = "payments.internal:8443";
         AtomicReference<String> seenByEnricher = new AtomicReference<>();
 
-        // ADR-074 decided the ordering as authority-THEN-enrich-THEN-send, and the reason is not
-        // tidiness: an enricher binding an outbound credential's audience to its peer (ADR-040) has
-        // only the request to read. If the engine substituted its default inside send(), enrichment
-        // would already have run and this would be null on every request — which was the case until
-        // KernelWebClient started resolving it first.
+        // ADR-074 orders a call authority-THEN-enrich-THEN-send, and the reason is not tidiness: an
+        // enricher binding an outbound credential's audience to its peer (ADR-040) has only the
+        // request to read. An engine substitutes its default inside send(), after enrichment has
+        // run, so KernelWebClient resolves the authority from engine.defaultAuthority() before it
+        // enriches, and an unaddressed request reaches the enricher carrying the default the engine
+        // reports.
         HttpClientRequestEnricher recording = request -> {
             seenByEnricher.set(request.authority());
             return request;

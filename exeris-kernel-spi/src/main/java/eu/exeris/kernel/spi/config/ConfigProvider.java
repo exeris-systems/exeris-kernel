@@ -50,8 +50,9 @@ import java.util.function.Supplier;
  * <h2>ScopedValue Propagation (JEP 506)</h2>
  * <p>The resolved {@code ConfigProvider} is bound to
  * {@link eu.exeris.kernel.spi.context.KernelProviders#CURRENT_CONFIG} by the
- * {@code KernelBootstrap} during L0 bootstrap and flows automatically to every
- * virtual thread spawned within the kernel scope — no constructor injection needed.
+ * {@code KernelBootstrap} during L0 bootstrap, for the kernel's lifetime. The binding reaches the
+ * thread that established it and the subtasks forked inside its scope, not a thread started any
+ * other way; {@link eu.exeris.kernel.spi.context.KernelProviders} states the model.
  *
  * <h2>ServiceLoader Registration</h2>
  * {@snippet :

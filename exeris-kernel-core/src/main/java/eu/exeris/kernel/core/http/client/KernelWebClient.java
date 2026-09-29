@@ -210,9 +210,9 @@ public final class KernelWebClient {
      * Returns a client that addresses {@code authority}, sharing this one's engine, allocator,
      * codecs, enricher and retry policy.
      *
-     * <p>ADR-074 put the peer on the request so that one engine can serve many of them; this is the
-     * method that makes that reachable from the typed surface, which until now could only ever send
-     * to the engine's configured default. A view rather than four addressed overloads: the peer is
+     * <p>A request names its own peer (ADR-074), so one engine serves many peers; this method reaches
+     * that from the typed surface, whose verb methods otherwise send to the engine's configured
+     * default. A view rather than four addressed overloads: the peer is
      * usually fixed for a run of calls, and {@code client.withAuthority(payments).get(...)} keeps
      * the verb methods to one shape each. The name mirrors {@link HttpRequest#withAuthority(String)}
      * deliberately — same meaning, same derived-copy shape, one vocabulary rather than two.
@@ -408,8 +408,10 @@ public final class KernelWebClient {
 
     // ADR-074 decision 5: authority, THEN enrich, THEN send. The engine would substitute its default
     // inside send(), which is strictly after enrichment — so an enricher binding an outbound
-    // credential's audience to the peer (ADR-040) would observe null every time. Resolving it here is
-    // what makes that decision true of the only path that exists.
+    // credential's audience to the peer (ADR-040) would observe null every time. Resolving it here
+    // makes the decision hold for every request this client sends, provided engine.defaultAuthority()
+    // reports the default the engine dials: an engine that wraps or defers another answers it from
+    // its own configuration rather than inheriting the interface's null.
     private HttpRequest addressAndEnrich(HttpRequest built) {
         HttpRequest addressed = built.withAuthority(authority);
         if (addressed.authority() == null) {

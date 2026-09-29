@@ -50,7 +50,13 @@
             constrained 2-vCPU runners the loopback (server reactor + handler VT + client) starves
             and even the happy-path round-trip times out, though it passes deterministically on
             many-core boxes. CI gates the fast, non-loopback streaming layer instead
-            (SseEventEncoderTest, HttpRouterTest streaming registration, the ArchTest Wall pin).
+            (SseEventEncoderTest, HttpRouterTest streaming registration,
+            CommunityStreamResolutionDelegationTest, the ArchTest Wall pin), plus one real-boot
+            stream test, GeneratedAppStreamRouteReachabilityIntegrationTest: each of its streams
+            emits one event and closes and its client reads to end of stream, so it holds no stream
+            open and asserts no timing window. It is the default build's only proof that a stream
+            route resolves behind a forwarder over a real boot, so it carries neither this tag nor
+            integration; docs/subsystems/http.md §Test gating records its 2-carrier measurement.
             Run the loopback suite on demand:
               mvn test -DincludedGroups=stream-loopback -DexcludedGroups=
               mvn test -Dtest=CommunityHttpStreamExchangeTckTest (targeted-test-run profile)

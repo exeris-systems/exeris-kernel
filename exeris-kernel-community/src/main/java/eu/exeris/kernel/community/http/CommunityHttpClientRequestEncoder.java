@@ -102,12 +102,10 @@ final class CommunityHttpClientRequestEncoder {
                                                    int bodyBytes) {
         long pos = startPos;
         if (!presence.hasHost()) {
-            // ADR-074: Host follows the AUTHORITY, not the connection. It used to be built from
-            // TransportConnection.remoteAddress(), whose SPI contract documents it as "the remote
-            // peer's address as a string (e.g. 192.168.1.1)" — an address, not a name. Building the
-            // header that selects a name-based virtual host out of an address breaks vhosting by
-            // construction, and would break it again the moment a resolver separates the name a
-            // caller wrote from the endpoint actually dialled.
+            // Host is the request's effective authority (ADR-074), never the connection's peer.
+            // Host selects a name-based virtual host, so it carries the name the caller addressed;
+            // TransportConnection#remoteAddress is the IP address the connection reached, which
+            // names no virtual host and differs from the authority whenever the caller dialled a name.
             pos = Http1ResponseEncoder.writeHeader(seg, pos, HEADER_HOST, effectiveAuthority);
         }
         if (!presence.hasContentLength()) {

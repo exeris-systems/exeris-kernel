@@ -224,8 +224,10 @@ the response encoder — and `respond(HttpStatus)` for a bare status.
 
 ### Routing
 
-You do not have to `switch` on paths. `HttpRouter` **is** an `HttpHandler`
-(`public final class HttpRouter implements HttpHandler`), so it drops into the same slot.
+You do not have to `switch` on paths. `HttpRouter` **is** an `HttpHandler` — it implements
+`HttpHandler` and the SPI's `eu.exeris.kernel.spi.http.StreamRouteResolver` — so it drops into the
+same slot. If you bind something that wraps the router instead, implement `StreamRouteResolver` on
+the wrapper too and delegate to the router, or its `streamRoute` registrations are never matched.
 
 Source: `GeneratedAppBootPathReachabilityIntegrationTest`, in
 `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/testing/http/`
@@ -290,6 +292,12 @@ Inside your application, read config with `KernelProviders.CURRENT_CONFIG.get()`
 `http.maxRequestBodyBytes`, `http.maxResponseBodyBytes`, `http.h2cUpgradeEnabled`,
 `http.maxVersion`, `http.client.defaultAuthority`, `http.maxHeaderBlockSize`,
 `http.maxHeaderListSize`, `http.maxStringLiteralSize`.
+
+`http.bindHost` and `http.port` are **listen** addresses and never address the HTTP client. In
+`CLIENT` or `DUAL` mode the client's only configured destination is `http.client.defaultAuthority` —
+`host:port`, port required, IPv6 bracketed, no default — used for a request that names no peer of its
+own. A request with no peer and no default is refused at send with `IllegalStateException`, while the
+kernel itself boots cleanly.
 
 The two body limits are **separate keys because they bound opposite directions on different
 sockets**: `http.maxRequestBodyBytes` is what this server accepts from callers,
@@ -374,6 +382,7 @@ fixtures deliberately do not cover.
 | Process exits immediately after boot | Your `Runnable` returned. Park inside it. |
 | Nothing listening on the port | `http.mode` and port both unset → `DISABLED`. See the gotcha above. |
 | Only `/health*` responds; everything else unserved | `HTTP_SERVER_HANDLER` was never bound — or was bound *inside* `boot()` instead of around it. |
+| A stream route answers like its by-id route, or `404` | The bound handler does not implement `StreamRouteResolver` (a lambda wrapping the router, for example), or the request arrived over HTTP/2, which serves no stream route. |
 | `BootstrapException` … `[EX-CFG-0001]` | No `ConfigProvider` on the classpath. Add `exeris-kernel-community` — see [01](./01-platform-and-dependencies.md). |
 | Ctrl-C leaves resources open | No signal handling exists. Register your own hook to release the park. |
 | A subsystem you expected is missing | Check your `BootstrapSelector`. `forNames` only records the names you gave it — the orchestrator expands those to their transitive `dependsOn()` closure, but never pulls in an unrelated subsystem. |

@@ -67,9 +67,18 @@ public interface TransportConnection extends AutoCloseable {
     TransportStream openUnidirectionalStream();
 
     /**
-     * Returns the remote peer's address as a string (e.g., {@code "192.168.1.1"}).
+     * Returns the remote peer's IP address in textual form: an IPv4 or IPv6 address literal such as
+     * {@code "192.168.1.1"} or {@code "0:0:0:0:0:0:0:1"}, never a host name.
      *
-     * @return remote address; never {@code null}
+     * <p>On an accepted connection this is the address the peer connected from. On a dialled
+     * connection it is the address the connection reached, not the host name it was dialled by. A
+     * layer that needs the name its caller dialled, such as an HTTP client writing {@code Host} or a
+     * TLS client sending SNI, keeps that name itself; it cannot recover it from the connection.
+     *
+     * @return the remote peer's IP address literal; never {@code null}
+     * @implSpec Every binding reports an address literal on both ends of a connection, including a
+     *           dialled end opened by host name. {@code AbstractTransportConnectionTck} in the kernel
+     *           TCK checks the accepted end and the dialled end.
      */
     String remoteAddress();
 

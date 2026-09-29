@@ -8,9 +8,11 @@ import eu.exeris.kernel.community.testkit.http.EmbeddedHttpEngineFixture;
 import eu.exeris.kernel.community.testkit.http.EmbeddedHttpEngineFixtures;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.HttpServerEngine;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +36,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class KernelBootstrapHttpEngineFixtureIntegrationTest {
 
     private static final String WRITE_PROBE_BODY = "{\"probe\":1}";
+
+    /** A handler that answers every request 200; the runInKernelScope cases send nothing to it. */
+    private static final HttpHandler OK_HANDLER = exchange -> exchange.respond(HttpResponse.noBody(
+            HttpStatus.OK,
+            exchange.request().version()));
 
     @Test
     @DisplayName("start() exposes running engine, deterministic bound port, and serves provided handler")
@@ -88,6 +96,75 @@ class KernelBootstrapHttpEngineFixtureIntegrationTest {
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("has not been started");
             assertThatThrownBy(fixture::boundPort)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("has not been started");
+        }
+    }
+
+    @Test
+    @DisplayName("runInKernelScope() runs off the caller's thread, inside the boot the engine was started in")
+    void runInKernelScopeRunsInsideTheBoot() {
+        try (EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture()) {
+            fixture.start(OK_HANDLER);
+            Thread caller = Thread.currentThread();
+            AtomicReference<Thread> ranOn = new AtomicReference<>();
+            AtomicReference<Boolean> configBound = new AtomicReference<>();
+            AtomicReference<HttpServerEngine> engineBound = new AtomicReference<>();
+            AtomicReference<HttpHandler> handlerBound = new AtomicReference<>();
+
+            fixture.runInKernelScope(() -> {
+                ranOn.set(Thread.currentThread());
+                configBound.set(KernelProviders.CURRENT_CONFIG.isBound());
+                engineBound.set(HttpKernelProviders.HTTP_SERVER_ENGINE.isBound()
+                        ? HttpKernelProviders.HTTP_SERVER_ENGINE.get() : null);
+                handlerBound.set(HttpKernelProviders.HTTP_SERVER_HANDLER.isBound()
+                        ? HttpKernelProviders.HTTP_SERVER_HANDLER.get() : null);
+            });
+
+            assertThat(ranOn.get()).as("ran-guard: the body ran").isNotNull();
+            assertThat(ranOn.get()).as("the body runs on the boot's thread, not the caller's").isNotSameAs(caller);
+            assertThat(configBound.get()).as("CURRENT_CONFIG, bound around the whole boot").isTrue();
+            assertThat(engineBound.get())
+                    .as("HTTP_SERVER_ENGINE, bound by the HTTP subsystem, is the engine the fixture started")
+                    .isSameAs(fixture.engine());
+            assertThat(handlerBound.get())
+                    .as("HTTP_SERVER_HANDLER is the handler start() was given")
+                    .isSameAs(OK_HANDLER);
+            assertThat(KernelProviders.CURRENT_CONFIG.isBound())
+                    .as("the caller's thread is outside the boot")
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("runInKernelScope() rethrows the body's exception on the caller's thread and keeps serving")
+    void runInKernelScopeRethrowsOnTheCaller() {
+        try (EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture()) {
+            fixture.start(OK_HANDLER);
+            IllegalArgumentException thrown = new IllegalArgumentException("thrown inside the boot");
+
+            assertThatThrownBy(() -> fixture.runInKernelScope(() -> {
+                throw thrown;
+            })).isSameAs(thrown);
+
+            AtomicReference<Boolean> ranAfter = new AtomicReference<>(false);
+            fixture.runInKernelScope(() -> ranAfter.set(true));
+            assertThat(ranAfter.get()).as("a body that threw does not stop the next one").isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("runInKernelScope() refuses before start() and after close()")
+    void runInKernelScopeRefusesOutsideALiveBoot() {
+        try (EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootstrapFixture()) {
+            assertThatThrownBy(() -> fixture.runInKernelScope(() -> { }))
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("has not been started");
+
+            fixture.start(OK_HANDLER);
+            fixture.close();
+
+            assertThatThrownBy(() -> fixture.runInKernelScope(() -> { }))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("has not been started");
         }

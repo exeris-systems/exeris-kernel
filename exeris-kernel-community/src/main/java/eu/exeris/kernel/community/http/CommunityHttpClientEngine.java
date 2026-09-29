@@ -47,8 +47,8 @@ import java.util.function.Supplier;
  * @since 0.5
  */
 // TooManyMethods: SPI contract surface — the count is intrinsic. Every method here but
-// resolvePeer/sendRequest/readResponse implements HttpClientEngine, and ADR-074 added
-// defaultAuthority() to that interface; PersistenceConnection carries the same disposition.
+// resolvePeer/sendRequest/readResponse implements HttpClientEngine, defaultAuthority() (ADR-074)
+// included; PersistenceConnection carries the same disposition.
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 final class CommunityHttpClientEngine implements HttpClientEngine {
 
@@ -220,15 +220,13 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
      * Resolves the peer this request is addressed to: the request's own authority, or the engine's
      * configured default when it carries none.
      *
-     * <p>Before ADR-074 this read {@code HttpConfig.bindHost} — the SERVER/DUAL <em>listener</em>
-     * address — so the client dialled the address its own server listened on, and a config built by
-     * {@code HttpConfig.defaultClient()} (bindHost {@code null}, port {@code -1}) produced an engine
-     * that could not send at all. Refusing an unaddressed request is the correct failure: the
-     * alternative is dialling somewhere the caller never named.
+     * <p>With neither, the request is refused (ADR-074). {@code HttpConfig.bindHost} and
+     * {@code port} are never a fallback: they are the SERVER/DUAL <em>listener</em> address, not a
+     * peer, and a configuration built by {@code HttpConfig.defaultClient()} carries neither. Refusing
+     * is the only failure that does not dial somewhere the caller never named.
      *
      * <p>The port is required rather than defaulted. {@link HttpRequest} carries no scheme, so there
-     * is no basis for choosing 80 over 443 — and defaulting to the listener port is precisely what
-     * this decision removed.
+     * is no basis for choosing 80 over 443, and the listener port is not the peer's.
      */
     private CommunityHttpClientPeer resolvePeer(HttpRequest request) {
         String authority = request.authority() != null ? request.authority() : defaultAuthority;

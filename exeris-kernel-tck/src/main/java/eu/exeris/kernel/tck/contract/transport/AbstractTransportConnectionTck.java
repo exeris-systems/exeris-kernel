@@ -11,6 +11,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.net.InetAddress;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -23,6 +25,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *   <li>{@code isOpen()} returns {@code false} after {@code close()}</li>
  *   <li>{@code close()} is idempotent</li>
  *   <li>{@code remoteAddress()} is non-null</li>
+ *   <li>{@code remoteAddress()} is the peer's IP address in textual form on both ends: on the
+ *       accepted end the address the peer connected from, on the dialled end the address the
+ *       connection reached, never the host name it was dialled by</li>
  *   <li>{@code remotePort()} is in valid range</li>
  *   <li>{@code openStream()} returns a valid stream on an open connection</li>
  *   <li>Attachment pattern: set/get works correctly</li>
@@ -37,7 +42,10 @@ public abstract class AbstractTransportConnectionTck {
      *
      * @return a pair whose two ends are already connected to each other
      * @implSpec Both connections must be open and joined to each other on return; the suite
-     *           performs no connection or handshake step of its own.
+     *           performs no connection or handshake step of its own. Where the transport dials by
+     *           name, open the client end by dialling a host name that resolves to the server
+     *           rather than an address literal: the dialled-end address case can tell the address
+     *           a connection reports from the name it was dialled by only when the two differ.
      */
     protected abstract ConnectionPair createConnectionPair();
 
@@ -134,6 +142,28 @@ public abstract class AbstractTransportConnectionTck {
         @DisplayName("remoteAddress() is non-null and non-blank")
         void remoteAddressNonNull() {
             assertThat(pair.server().remoteAddress()).isNotNull().isNotBlank();
+        }
+
+        @Test
+        @DisplayName("remoteAddress() of the accepted end is the peer's IP address")
+        void acceptedEndReportsAnAddress() {
+            String reported = pair.server().remoteAddress();
+            assertThatCode(() -> InetAddress.ofLiteral(reported))
+                    .as("the accepted end must report the address the peer connected from, got %s", reported)
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("remoteAddress() of the dialled end is the peer's IP address, not the name it was dialled by")
+        void dialledEndReportsAnAddress() {
+            // TransportConnection#remoteAddress is an address. A layer above the transport that
+            // needs the name its caller wrote (an HTTP client writing Host, a TLS client sending
+            // SNI) keeps that name itself; the connection reports where it actually connected.
+            String reported = pair.client().remoteAddress();
+            assertThatCode(() -> InetAddress.ofLiteral(reported))
+                    .as("the dialled end must report the address it reached, not the host name it was dialled by, got %s",
+                            reported)
+                    .doesNotThrowAnyException();
         }
 
         @Test

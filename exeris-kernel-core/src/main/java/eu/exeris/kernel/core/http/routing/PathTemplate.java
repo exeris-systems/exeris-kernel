@@ -17,10 +17,12 @@ import java.util.Map;
  * types and nothing else: keeping the placeholder rules in one type is what stops the two tables from
  * drifting into disagreeing about what {@code /x/{id}} means.
  *
- * @param segments   ordered literal and placeholder segments
- * @param paramCount number of placeholder segments, sized once for the capture map
+ * @param segments      ordered literal and placeholder segments
+ * @param paramCount    number of placeholder segments, sized once for the capture map
+ * @param literalPrefix everything before the first placeholder, which every matching path starts
+ *                      with; the whole path when there is no placeholder
  */
-record PathTemplate(List<Segment> segments, int paramCount) {
+record PathTemplate(List<Segment> segments, int paramCount, String literalPrefix) {
 
     /** One compiled path segment: a {@code {name}} placeholder ({@code param=true}) or a literal. */
     /* default */ record Segment(boolean param, String text) {}
@@ -44,7 +46,11 @@ record PathTemplate(List<Segment> segments, int paramCount) {
                 params++;
             }
         }
-        return new PathTemplate(List.copyOf(parsed), params);
+        // A well-formed placeholder is a whole segment, so everything before the first '{' is literal
+        // and a matching path must start with exactly those characters.
+        int brace = path.indexOf('{');
+        String literalPrefix = brace < 0 ? path : path.substring(0, brace);
+        return new PathTemplate(List.copyOf(parsed), params, literalPrefix);
     }
 
     /**
@@ -87,10 +93,17 @@ record PathTemplate(List<Segment> segments, int paramCount) {
      * list — costs nothing at all. A hit walks the segments a second time, which is a handful of
      * comparisons against a map that would otherwise be built and discarded on every miss.
      *
+     * <p>A path that does not start with {@link #literalPrefix()} is rejected before any segment is
+     * walked: in a table of templates that differ in their leading literal, that is one comparison
+     * per template instead of a walk.
+     *
      * @param path the request path, query already stripped
      * @return {@code true} if every literal segment is equal and every placeholder has a non-empty value
      */
     /* default */ boolean matches(String path) {
+        if (!path.startsWith(literalPrefix)) {
+            return false;
+        }
         int count = segments.size();
         int start = 0;
         for (int i = 0; i < count; i++) {

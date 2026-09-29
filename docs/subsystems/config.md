@@ -294,7 +294,7 @@ not listed here.
 
 > **Not exhaustive.** A `configProvider.get*(...)` grep across this repository turns up several
 > dozen real, code-read keys this table does not list — most of `http.*` (`h2cUpgradeEnabled`,
-> `maxHeaderBlockSize`, `maxResponseBodyBytes`, `client.defaultAuthority`, …), most of
+> `maxHeaderBlockSize`, `maxResponseBodyBytes`, …), most of
 > `persistence.*` (`connectionTimeoutMs`, `maxLifetimeMs`, `perTenantPooling`, `rlsEnabled`,
 > `useTls`, `pool.warmup.*`, …), `event.*`, `flow.*`, `graph.*`, `scheduling.schedulerName`,
 > `transport.auto.{minReactors,maxReactors,reserveCores}`, and the plain `network.certPath` /
@@ -337,6 +337,7 @@ not listed here.
 | `network.paqs.sheddingThreshold`                   | `float`   | `0.95`              | ✅ DYNAMIC   | 🔲 planned  | WM `SHEDDING` level (fraction of off-heap budget)        |
 | `network.paqs.endpointPriority.<path>`             | `string`  | `NORMAL`            | ✅ DYNAMIC   | 🔲 planned  | Static `StreamPriority` for path prefix                  |
 | `http.stream.creditWindowBytes`                    | `int`     | `65536`             | ❌ IMMUTABLE | ✅ WIRED    | SSE server-push (ADR-043) egress credit window: outstanding bytes before `emit()` parks the streaming VT. Direct `-D` system property (see note ⁑) |
+| `http.client.defaultAuthority`                     | `string`  | *(none)*            | ❌ IMMUTABLE | ✅ WIRED    | Default peer of the HTTP client in `CLIENT` / `DUAL` mode, as `host:port` (ADR-074): the port is required, an IPv6 address is bracketed (`[::1]:8443`), and a value carrying a scheme or a path is refused at startup. Used for any request that names no authority of its own (`HttpRequest.withAuthority`, `KernelWebClient.withAuthority`). **No default**: unset, such a request is refused at send with `IllegalStateException`, and nothing fails at boot. **`http.bindHost` and `http.port` are listen addresses and do not address the client** — this key is the client's only configured destination (`HttpConfig.defaultAuthority`) |
 | `websocket.enabled`                                | `boolean` | `false`             | ❌ IMMUTABLE | ✅ WIRED    | Whether the `websocket` subsystem boots a listener at all. **Default `false` on purpose**: the subsystem is on every Community classpath from 0.12, and a deployment that merely upgraded must not gain an open socket it never configured. Unlike `http`, the mode is not inferred from a configured port — a duplex endpoint is not the thing an application boots the kernel *for*, so inference would be the wrong default (ADR-084) |
 | `websocket.bindHost`                               | `string`  | `InetAddress.getLoopbackAddress()` (typically `127.0.0.1`) | ❌ IMMUTABLE | ✅ WIRED    | Listen address. Loopback by default, so enabling the subsystem without choosing an address does not publish it to the network — resolved from the JDK rather than a hardcoded literal, so an IPv6-only host gets its own loopback form instead of a failing `127.0.0.1` |
 | `websocket.port`                                   | `int`     | `8081`              | ❌ IMMUTABLE | ✅ WIRED    | Listen port. RFC 6455 defines no default, so this is the kernel's; `0` binds an ephemeral port, which is what the tests use |

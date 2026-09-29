@@ -1692,7 +1692,7 @@ See also: ADR-012 (isolation model); `exeris-sdk/docs/rfc/RFC-2026-06-24-univers
 
 **Gap:** Two distinct kernel-side gaps surface only when a generated Entity-First app is driven over a *real* kernel HTTP boot (not a handler unit test) — the exact thing a downstream generated-app HTTP boot test does, and which substring assertions on emitted `RuntimeLifecycle` text cannot see:
 - **Path-parameter routing (finding T21, High).** `HttpRouter.resolve()` (`exeris-kernel-core/.../http/routing/HttpRouter.java`) matches by exact `path.equals` + opt-in prefix only — there is **no `{id}` placeholder capture**. The generated `RuntimeLifecycle` registers `GET/PUT/DELETE /x/{id}`, so `{id}` is matched *literally*: `/x/<uuid>` never equals `/x/{id}` and every by-id / update / delete route — plus every `@Action` route, which is also id-bearing (finding T1) — **404s on a real boot**; only collection routes serve. The generated handler is correct (`extractPathId` parses the trailing segment) — it just never gets called. Latent because the handler unit test invokes `handleGetById(exchange)` directly, bypassing the router. Confirmed still open on `0.10.0-SNAPSHOT` (the SSE work did not touch it; SSE routes are collection-level `{base}/stream` and sidestep it).
-- **Request-decoder request-scope (write-over-HTTP, High).** The server-side request-body decoder quadrant shipped in v0.8 (ADR-036: `HttpRequestBodyDecoderRegistry` + the `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` ScopedValue slot), and Community ships `CommunityJsonRequestBodyDecoder`. But the community testkit boot fixture `KernelBootstrapHttpEngineFixture` binds only `HttpKernelProviders.HTTP_SERVER_HANDLER` into request scope — **not** the decoder registry — so a `POST` with a JSON body through the testkit boot returns **500** (the decoder is never in the handler's request scope). Notably asymmetric: the *response* encoder is effective (reads serialize to JSON over the wire) and **SSE works**, but request decoding does not — so server-side validation-over-HTTP (finding T10) and action-`POST`-create cannot be exercised through the testkit boot. Whether this is a fixture gap (it does not bind the codec registries a real app boot would) or a scope-propagation issue is the open question to pin down.
+- **Request-decoder request-scope (write-over-HTTP, High).** The server-side request-body decoder quadrant shipped in v0.8 (ADR-036: `HttpRequestBodyDecoderRegistry` + the `HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` ScopedValue slot), and Community ships `CommunityJsonRequestBodyDecoder`. But the community testkit boot fixture `KernelBootstrapHttpEngineFixture` binds only `HttpKernelProviders.HTTP_SERVER_HANDLER` into request scope — **not** the decoder registry — so a `POST` with a JSON body through the testkit boot returns **500** (the decoder is never in the handler's request scope). Notably asymmetric: the *response* encoder is effective (reads serialize to JSON over the wire) and **SSE works** with the router itself bound to `HTTP_SERVER_HANDLER` (behind a forwarder no stream route resolved; see v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable"), but request decoding does not — so server-side validation-over-HTTP (finding T10) and action-`POST`-create cannot be exercised through the testkit boot. Whether this is a fixture gap (it does not bind the codec registries a real app boot would) or a scope-propagation issue is the open question to pin down.
 
 **Owner:** HTTP / transport (path-parameter routing in `HttpRouter`); Community testkit + bootstrap request-scope wiring (decoder-registry binding on the `http` boot path).
 
@@ -1704,19 +1704,22 @@ See also: ADR-012 (isolation model); `exeris-sdk/docs/rfc/RFC-2026-06-24-univers
 
 **Status (v0.12): re-measured, and the fixture is complete.** A later claim held that the fixture binds
 `HTTP_SERVER_HANDLER` only, so `MEMORY_ALLOCATOR` is unbound at request time and every write over HTTP
-answers `400`. It does not reproduce. Driven through the fixture over a socket, `POST`, `PUT`, `PATCH`
-and `DELETE` each answer `200`, the body arrives whole, and both `KernelProviders.MEMORY_ALLOCATOR` and
-`HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` report bound *inside the handler* — which is
-the scope the v0.10 fix above rebinds them into. The gap was that nothing asserted it: the fixture's
-only integration test covered `start()`, `close()` and the pre-start guards, so no test in the
-repository had ever sent a body through it. `KernelBootstrapHttpEngineFixtureIntegrationTest` now
-parameterises the four write methods and pins all four facts; mutation-checked by removing the
-dispatcher's per-request rebind, which reddens every case.
+answers `400`. The attribution to the fixture does not reproduce; the unbound allocator was real on
+0.11.0 and is fixed in 0.12. Driven through the fixture over a socket, `POST`, `PUT`, `PATCH` and
+`DELETE` each answer `200`, the body arrives whole, and both `KernelProviders.MEMORY_ALLOCATOR` and
+`HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY` report bound *inside the handler*. The v0.10
+fix above rebinds the decoder registry per request; `MEMORY_ALLOCATOR` joined that per-request rebind
+in 0.12, in `CommunityHttpRequestDispatcher`, which at 0.11.0 did not bind it at all. The remaining
+gap was that nothing asserted it: the fixture's only integration test covered `start()`, `close()`
+and the pre-start guards, so no test in the repository had ever sent a body through it.
+`KernelBootstrapHttpEngineFixtureIntegrationTest` now parameterises the four write methods and pins
+all four facts; mutation-checked by removing the dispatcher's per-request rebind, which reddens
+every case.
 
-**1.0 disposition:** **1.0-RECOMMENDED** — both are small, concrete kernel fixes that block the Entity-First "a generated app runs over a real boot" demonstration end-to-end (by-id CRUD + `@Action`s + writes). Path-parameter routing especially is load-bearing for the entire generated CRUD table. Targetable in v0.10 alongside the SSE boot-path work.
+**1.0 disposition:** **1.0-RECOMMENDED** — both are small, concrete kernel fixes that block the Entity-First "a generated app runs over a real boot" demonstration end-to-end (by-id CRUD + `@Action`s + writes). Path-parameter routing especially is load-bearing for the entire generated CRUD table. Targetable in v0.10 alongside the SSE boot-path work. Stream routes are not covered by this entry: they are v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable".
 
-**Related (cross-repo / informational, not kernel gaps on their own):**
-- **Generated SSE stream routes unreachable on a real boot (finding T23).** The kernel stream dispatcher (`CommunityHttpStreamDispatcher`) resolves a streaming route only when the engine's active handler **is** an `HttpRouter` (`handler instanceof HttpRouter router → router.resolveStream(...)`). The generated boot publishes a `router::handle` **lambda** (and `Application` forwards a lambda), so the `HttpRouter` type is lost and every generated stream route falls back to respond-once / 404 on a real boot — even though the handler and route are emitted. The fix is on the generator side (hand the engine the `HttpRouter` *instance*: `handlerSlot.set(router)` — the router already implements `HttpHandler`, so respond-once is unaffected). Kernel-side it is worth a deliberate note on whether stream resolution should remain coupled to a concrete-type `instanceof` (`exeris-tooling` follow-up; kernel design note).
+**Related (cross-repo / informational; neither is tracked by this entry):**
+- **Generated SSE stream routes unreachable on a real boot (finding T23).** The root cause is in the kernel. The Community stream dispatcher (`CommunityHttpStreamDispatcher#resolveStreamHandler`) resolved a stream route only when the handler bound to `HTTP_SERVER_HANDLER` was an `HttpRouter` instance, and a generated application cannot bind one: its router is built inside the boot callback, after the HTTP subsystem has read the slot, so it binds a forwarder over the router. Every generated stream route was therefore served respond-once on a real boot — a `GET {base}/stream` by the by-id route, a per-action stream `POST` with `404` — and no generator-side change could reach it: setting the router instance into the forwarder's slot changes what the forwarder calls, not what the kernel sees. Fixed kernel-side in v0.12; a generated application streams once a tooling release built on kernel 0.12 binds a forwarder that implements the new contract and hands its event-stream handlers the event bus through their constructors. See v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable".
 - **`--enable-preview` at runtime to boot the kernel (K-boot).** kernel-core bootstrap classes are preview-compiled (`SubsystemOrchestrator` class-file minor `0xFFFF`) while the persistence classes are not (`TransactionOrchestrator` minor `0`); embedding the persistence stack needs only JDK 26, but *booting* the kernel needs `--enable-preview`. Resolved by the Platform-Baseline preview-clean work (see below) for the default artifact; until then, generated-app run scripts / poms must set the flag, and this is a documentation point for downstream boot consumers.
 
 All three were surfaced during downstream dogfooding (a closed-source downstream consumer multi-service build, re-verified against `origin/development/0.10.0` on 2026-06-24).
@@ -1845,15 +1848,17 @@ One finding from writing it, recorded because it is sharper than the gap this en
 
 ### HTTP Client: Service Discovery & Logical Addressing for `KernelWebClient` — RFC Track
 
-**Gap:** `KernelWebClient` (ADR-034 — the tier-neutral Core facade in `eu.exeris.kernel.core.http.client`, superseding ADR-026's `CommunityWebClient`; on the `HttpClientEngine` SPI) targets a single, statically-configured host: the caller supplies a concrete base URL and the generated typed client emits own-app / relative-host paths only. There is no seam to resolve a *logical* service name (e.g. `billing-service`) to a concrete address at call time — no static service-map config, no DNS/SRV strategy, no registry lookup, no sidecar/mesh hook. The moment an ecosystem splits into N generated applications that must call each other, every caller hard-codes peer hostnames. This is the kernel-side half of the tooling "mesh" gap (T12, owned by `exeris-tooling`): even once the generator can import a cross-app contract, the client has nowhere to resolve the target's address. Surfaced during downstream dogfooding (a multi-service split, 2026-06; finding K4, Medium; kernel touchpoint of T12).
+**Gap (written 2026-06; its single-host premise closed in v0.12 by ADR-074 — see Status (v0.12) below, and read that part as history; the logical-name half stays open):** `KernelWebClient` (ADR-034 — the tier-neutral Core facade in `eu.exeris.kernel.core.http.client`, superseding ADR-026's `CommunityWebClient`; on the `HttpClientEngine` SPI) targets a single, statically-configured host: the caller supplies a concrete base URL and the generated typed client emits own-app / relative-host paths only. There is no seam to resolve a *logical* service name (e.g. `billing-service`) to a concrete address at call time — no static service-map config, no DNS/SRV strategy, no registry lookup, no sidecar/mesh hook. The moment an ecosystem splits into N generated applications that must call each other, every caller hard-codes peer hostnames. This is the kernel-side half of the tooling "mesh" gap (T12, owned by `exeris-tooling`): even once the generator can import a cross-app contract, the client has nowhere to resolve the target's address. Surfaced during downstream dogfooding (a multi-service split, 2026-06; finding K4, Medium; kernel touchpoint of T12).
 
 **Owner:** HTTP subsystem (client addressing). The cross-app contract import / generated-client side is owned by `exeris-tooling` (T12) and tracked there.
 
 **Resolution:** Open an RFC in this repo's `docs/rfc/` — the owning repo holds the RFC for an SPI it will own (#230); `exeris-docs/` hosts only ecosystem-wide and business-shaped RFCs (`RFC-YYYY-MM-DD WebClient Service Addressing.md`, per `exeris-docs/templates/RFC-TEMPLATE.md` — RFC not ADR because the option space is wide and no decision is committed). Scope enumerates the resolution strategies and their boundary cost: (a) static logical-name → endpoint map in config (zero new runtime dependency, no liveness); (b) DNS / DNS-SRV resolution (standard, env-provided, no kernel registry); (c) a `ServiceResolver` SPI seam that `KernelWebClient` consults to turn a logical name into an endpoint (Community static/DNS driver; Enterprise/registry drivers out-of-repo); (d) delegate entirely to a service-mesh sidecar (kernel stays single-host; addressing is an ops concern). Cross-cutting questions: interaction with the existing `HttpClientRequestEnricher` (ADR-032) and the v0.9 IDP outbound-credential decision (identity must survive re-addressing); failure-mode classification (name unresolved / no healthy endpoint / resolution timeout); whether resolution is per-call or cached with TTL; and Wall integrity (no DI container, no `ThreadLocal`, resolution must not couple the client to a concrete registry type). RFC accepted → ADR number reserved when the implementing change reaches its build gate, **not** at RFC acceptance (deferring the reservation keeps the global namespace free of numbers that may never be written) → ADR → SPI/driver lands in a later milestone.
 
-**Status (v0.11): RFC ACCEPTED — shape selected; disposition SPLIT, multi-peer addressing is 1.0 scope and the resolver seam is post-1.0.** [`RFC-2026-06-29`](rfc/RFC-2026-06-29-webclient-service-addressing.md) selects **option (c), a `ServiceResolver` SPI seam**, with (a) static map and (b) DNS-SRV as its two first-party Community drivers and (d) the mesh case reframed as a pass-through driver rather than a kernel non-feature. Its premises were re-verified at acceptance six weeks after drafting and still hold — `KernelWebClient` is still single-host and no resolver surface exists. **The disposition is split, and the split is the correction.** `HttpClientEngine`'s SPI surface never mentions a host and `HttpRequest` carries no authority, so single-host is not a contract decision — it falls out of the carrier having nowhere to put an addressee, forcing the driver to be handed one at construction (`CommunityHttpClientEngine.targetHost`). **Multi-peer addressing is therefore the shape of an existing subsystem, not a new one, and belongs in 1.0**: the narrow-core ruling holds out *new SPIs that are each a real subsystem*, and 1.0 claims to be unbreakable on `http` — a client that structurally cannot address a second peer is incomplete on `http`, and would force every generated application in the composable-unit direction to hard-code its peers. The **`ServiceResolver` seam itself stays post-1.0**, which is what the ruling actually holds out. **The split fixes *when*, not *how*.** It decides a milestone disposition — an interpretation of the narrow-core ruling — and decides nothing about the addressing shape. Whether the addressee rides on `HttpRequest`, whether the client keeps a per-host engine pool, or whether it holds a resolver plus an engine factory is the RFC's own Open Question 1, still open and still gating the pre-ADR spike; that question is **owed its own option table, costs and recorded dissent** before the spike treats it as settled, because none of the RFC's options A–E evaluates addressing-without-a-resolver. What can be said without choosing a shape: the cost is bounded, since `HttpRequest` and `HttpClientEngine` are both in the compatibility gate's `stable` bucket and the mitigations for that bucket already exist in-repo — the retained-canonical-constructor bridge `FlowSnapshot` used three times this milestone, and the refusing `default` `registerMigration` used. That is evidence the disposition is affordable, not that any shape is chosen. Dissent recorded, and narrowed by the split: option (e) do-nothing stays live for the resolver half if T12 does not materialise, since C's justification there rests on its two in-repo drivers supplying the contract pressure a single external consumer would otherwise have to. It does not apply to the 1.0 half, which has a consumer today — any application talking to more than one peer.
+**Status (v0.11): RFC ACCEPTED — shape selected; disposition SPLIT, multi-peer addressing is 1.0 scope and the resolver seam is post-1.0.** [`RFC-2026-06-29`](rfc/RFC-2026-06-29-webclient-service-addressing.md) selects **option (c), a `ServiceResolver` SPI seam**, with (a) static map and (b) DNS-SRV as its two first-party Community drivers and (d) the mesh case reframed as a pass-through driver rather than a kernel non-feature. Its premises were re-verified at acceptance six weeks after drafting and still hold — `KernelWebClient` is still single-host and no resolver surface exists. **The disposition is split, and the split is the correction.** `HttpClientEngine`'s SPI surface never mentions a host and `HttpRequest` carries no authority, so single-host is not a contract decision — it falls out of the carrier having nowhere to put an addressee, forcing the driver to be handed one at construction (`CommunityHttpClientEngine.targetHost`, removed in v0.12). **Multi-peer addressing is therefore the shape of an existing subsystem, not a new one, and belongs in 1.0**: the narrow-core ruling holds out *new SPIs that are each a real subsystem*, and 1.0 claims to be unbreakable on `http` — a client that structurally cannot address a second peer is incomplete on `http`, and would force every generated application in the composable-unit direction to hard-code its peers. The **`ServiceResolver` seam itself stays post-1.0**, which is what the ruling actually holds out. **The split fixes *when*, not *how*.** It decides a milestone disposition — an interpretation of the narrow-core ruling — and decides nothing about the addressing shape. Whether the addressee rides on `HttpRequest`, whether the client keeps a per-host engine pool, or whether it holds a resolver plus an engine factory is the RFC's own Open Question 1, still open and still gating the pre-ADR spike; that question is **owed its own option table, costs and recorded dissent** before the spike treats it as settled, because none of the RFC's options A–E evaluates addressing-without-a-resolver. What can be said without choosing a shape: the cost is bounded, since `HttpRequest` and `HttpClientEngine` are both in the compatibility gate's `stable` bucket and the mitigations for that bucket already exist in-repo — the retained-canonical-constructor bridge `FlowSnapshot` used three times this milestone, and the refusing `default` `registerMigration` used. That is evidence the disposition is affordable, not that any shape is chosen. Dissent recorded, and narrowed by the split: option (e) do-nothing stays live for the resolver half if T12 does not materialise, since C's justification there rests on its two in-repo drivers supplying the contract pressure a single external consumer would otherwise have to. It does not apply to the 1.0 half, which has a consumer today — any application talking to more than one peer.
 
-**Merge Gate (as satisfied):** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). **Implementation gate, with two requirements that post-date the RFC:** `AbstractServiceResolverTck` (logical-name resolve, unresolved-name failure, endpoint-health/timeout behavior); a Community binding; identity propagation preserved across resolution (ADR-032 enricher composes after resolution, so a re-addressed request carries the right audience); The Wall preserved (no framework DI / registry type leak into SPI / Core); **plus** a `docs/stability-matrix.md` row and a `stability-surfaces.conf` entry in the same commit, since ADR-065's gate fails the build on an unclassified SPI class and `…spi.http` is `mixed` — the resolver takes its own row rather than inheriting the package tier; **and** the `HttpClientEngine` per-host-vs-per-request binding question settled by the pre-ADR spike, which the RFC names as the ADR-shape blocker rather than a detail.
+**Status (v0.12): multi-peer half DELIVERED by [ADR-074](adr/ADR-074-http-client-peer-addressing.md); the resolver half stays post-1.0.** ADR-074 settles the RFC's Open Question 1 with its Option 1 — the addressee rides on the request, not on a per-host engine: `HttpRequest.authority` (with `HttpRequest.withAuthority`), a configured default peer on `HttpConfig.defaultAuthority` (read from `http.client.defaultAuthority`) with the `HttpClientEngine.defaultAuthority` accessor on the SPI, and `KernelWebClient.withAuthority` on the typed surface. An unaddressed request with no default peer is refused rather than sent to the listener's address. Pinned by `AbstractHttpProviderLoopbackTck#requestAuthorityOverridesTheConfiguredDefaultPeer` — two servers, and only a client that reads the request's authority reaches the second — and by `AbstractHttpClientEngineTck$PeerAddressing` (an unaddressed request with no default, and an authority without a port, are both refused). The `ServiceResolver` seam is unchanged by this: post-1.0, RFC-gated on the tooling mesh gap T12, and no resolver type or key exists in the tree.
+
+**Merge Gate (as satisfied):** RFC accepted with one shape selected and dissenting positions recorded; no kernel SPI commits in this gate (decision-only track). **Implementation gate, with two requirements that post-date the RFC:** `AbstractServiceResolverTck` (logical-name resolve, unresolved-name failure, endpoint-health/timeout behavior); a Community binding; identity propagation preserved across resolution (ADR-032 enricher composes after resolution, so a re-addressed request carries the right audience); The Wall preserved (no framework DI / registry type leak into SPI / Core); **plus** a `docs/stability-matrix.md` row and a `stability-surfaces.conf` entry in the same commit, since ADR-065's gate fails the build on an unclassified SPI class and `…spi.http` is `mixed` — the resolver takes its own row rather than inheriting the package tier; **and** the `HttpClientEngine` per-host-vs-per-request binding question settled by the pre-ADR spike, which the RFC names as the ADR-shape blocker rather than a detail — **satisfied by ADR-074** (per request: the authority rides on `HttpRequest`).
 
 See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`HttpClientRequestEnricher`); v0.9 §"Security: `IdentityProvider` SPI Direction — RFC Track" (outbound-credential touchpoint).
 
@@ -1861,7 +1866,7 @@ See also: ADR-034 (`KernelWebClient` facade, superseding ADR-026), ADR-032 (`Htt
 
 ### HTTP: Stream-Route Table Is Exact-Path Only — Generated Per-Action Stream Routes Unreachable
 
-**Gap:** The router's streaming table is exact-match only: `streamRoutes` is a `Map<StreamRouteKey, HttpStreamHandler>` and `resolveStream` / `isStreamRoute` are plain map lookups (`HttpRouter.java:52,80-93`); the `streamRoute(...)` Javadoc pins "exact request path". The W7 `{id}` path-template machinery (`PathTemplateRoute`) applies only to respond-once `route(...)` registrations (`HttpRouter.java:231-237`). The `exeris-tooling` generator emits `streamRoute(POST, "<base>/{id}/actions/<kebab>")` for per-action streams (ADR-044 Slice 2; `KernelApplicationGenerator.java:488`), so the literal `{id}` map key never matches a concrete id and every generated per-action stream 404s on a real boot — the same dead-route failure class T23 fixed one layer below. Aggravating detail: `Builder.streamRoute` silently accepts `{` in a path today, so the dead registration is invisible at build time. Not yet user-visible only because the per-action driver is still a keep-alive scaffold. Surfaced during downstream dogfooding (EV1-stream, 2026-07).
+**Gap:** The router's streaming table is exact-match only: `streamRoutes` is a `Map<StreamRouteKey, HttpStreamHandler>` and `resolveStream` / `isStreamRoute` are plain map lookups (`HttpRouter#resolveStream`, `HttpRouter#isStreamRoute`); the `streamRoute(...)` Javadoc pins "exact request path". The W7 `{id}` path-template machinery (`PathTemplateRoute`) applies only to respond-once `route(...)` registrations (`HttpRouter.Builder#route`). The `exeris-tooling` generator emits `streamRoute(POST, "<base>/{id}/actions/<kebab>")` for per-action streams (ADR-044 Slice 2; `KernelApplicationGenerator#buildRunMethod` in `exeris-tooling`), so the literal `{id}` map key never matches a concrete id and every generated per-action stream 404s on a real boot — the same dead-route class as T23 (registered, never matched). Aggravating detail: `Builder.streamRoute` silently accepts `{` in a path today, so the dead registration is invisible at build time. Not yet user-visible only because the per-action driver is still a keep-alive scaffold. Surfaced during downstream dogfooding (EV1-stream, 2026-07).
 
 **Owner:** HTTP subsystem (router); shape decision shared with `exeris-tooling` (ADR-044 EV1-stream slice).
 
@@ -1879,7 +1884,7 @@ alternative anticipated.
 
 **Merge Gate:** Fail-fast property enforced (template resolution or `IllegalArgumentException` at registration — no third state). If template matching lands: router unit coverage for stream-template resolve + exact-over-template precedence, plus a streaming TCK (or router-level) case proving a `{id}` stream route opens an `HttpStreamExchange` for a concrete id; ADR-043 obligation 7 stays true (streaming resolves only via `resolveStream`, never through `handle`). Tooling lockstep (ADR-044 Slice 2 per-action driver impl) tracked in `exeris-tooling`, non-gating for the kernel merge.
 
-See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note).
+See also: ADR-043 (streaming SPI, obligation 7); ADR-044 (`exeris-tooling` SSE emitter shape — Slice 2 ratified, impl pending); v0.10 §"HTTP: generated-app boot-path reachability" (W7 template routing, T23 cross-repo note); v0.12 §"HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable" (T23's kernel root cause).
 
 ---
 
@@ -3173,6 +3178,89 @@ gate does and does not cover.
    in `ramp`, errors in `strict`, which is why CI runs `ramp`. Of seventeen `subsystem` pages, the
    two added for websocket and diagnostics carry the four required sections and the other fifteen do
    not, which is why CI passes `--no-section-check`.
+
+---
+
+### HTTP: A Stream Route Behind a Wrapping Handler Is Unreachable (root cause of finding T23, surfaced 2026-09-26)
+
+**Gap:** `CommunityHttpStreamDispatcher#resolveStreamHandler` resolved a stream route only when the
+handler bound to `HttpKernelProviders.HTTP_SERVER_HANDLER` was an `HttpRouter` instance, and served
+every other handler respond-once. A generated application binds a forwarder over its router, and has
+to: the router is built inside the boot callback, after the HTTP subsystem has read the slot. So on
+a real boot none of its stream routes resolved, whatever `RuntimeComponents.decorate` returned — a
+`GET {base}/stream` reached the by-id route with the id `stream`, and a per-action stream `POST`
+answered `404`. A wrapper that adds bindings of its own, such as a tenant or a storage context, lost
+the router's stream routes the same way. Nothing showed it: every kernel stream test handed the
+dispatcher a real `HttpRouter`, and the generated boot guard checked the forwarder's slot rather
+than the handler the kernel sees. Reported by a downstream Entity-First consumer as finding T23 (see
+v0.10 §"HTTP: Generated-App Boot-Path Reachability").
+
+**Owner:** HTTP subsystem (the SPI stream-resolution contract, the Core router and the Community
+dispatcher). The generated
+forwarder, its boot guard, the EV1 stream scaffold and the kernel pin are `exeris-tooling`'s.
+
+**Resolution:** an SPI contract, `eu.exeris.kernel.spi.http.StreamRouteResolver` (`preview`), that
+`HttpRouter` implements and a wrapper implements by delegating; a driver resolves stream routes
+through it on the bound handler ([ADR-043](adr/ADR-043-kernel-http-streaming-spi.md) Amendment A1).
+`StreamMatch` becomes a top-level SPI record so that a handler which is not a router can return one.
+Both are SPI because drivers consume the interface and applications and generated code implement
+it; `AbstractStreamRouteResolverTck` holds the contract. A wrapper extends its
+own bindings to a stream by wrapping the handler it gets back and forwarding the parameters; no kernel
+hook is needed, because `ScopedValue` bindings are lexical. The tooling half: the generated
+forwarder implements the interface; the boot guard probes `resolveStream` for every generated
+stream route instead of testing the slot's class; an EV1 stream handler receives the event bus
+through its constructor, because a stream's thread carries no boot binding; and the kernel pin
+moves to 0.12.
+
+**Merge Gate:** the dispatcher resolves through the interface for a handler that is not an
+`HttpRouter`, with a mutation back to the concrete-class test turning the cases red; a real-boot SSE
+test binds a forwarder, never the router; the SPI change is additive and classified `preview`, with
+an `Abstract*Tck` bound by Core and Community and red against a mutation of each binding; ADR-043 is
+amended.
+
+**Status (v0.12): DELIVERED kernel-side.** `CommunityHttpStreamDispatcher#resolveStreamHandler`
+resolves through `StreamRouteResolver`, pinned by `CommunityStreamResolutionDelegationTest` and, over
+a real boot with a forwarder of the generated application's shape bound, by
+`GeneratedAppStreamRouteReachabilityIntegrationTest`, which runs untagged in the default build; a miss
+through a forwarder allocates nothing unless its method has a stream route and its path carries a
+query string (`StreamResolutionMissAllocationTest`); `spi-api-diff` against the `development/0.12.0`
+base reports two added `preview` types and no break (`stable-breaks=0`, `preview-breaks=0`).
+Generated applications stream once a tooling release built on kernel 0.12 or later ships the
+resolving forwarder and the constructor-injected event bus. HTTP/2 serves no stream route (next
+entry). The Enterprise HTTP engine serves none either: its streaming binding, which resolves
+through the same interface when it is built, is an `exeris-kernel-enterprise` obligation (ADR-043
+Amendment A1, Scope).
+
+---
+
+### HTTP: Stream Routes Are HTTP/1.1-Only (h2 via ALPN, h2c) (surfaced 2026-09-26)
+
+**Gap:** ADR-043 decided that SSE "rides the existing HTTP/1.1 + h2 server"; Community resolves
+stream routes on its HTTP/1.1 path only. `CommunityHttp2SessionProcessor` has no stream resolution,
+so a request for a stream route that arrives over HTTP/2 goes to `handle` and is answered by
+whichever respond-once route matches its path, or `404`. A connection reaches HTTP/2 with or without
+TLS. With TLS terminated by the kernel, `CommunityAlpnSelector#selectCallback` selects `h2` whenever
+the client offers it and reads no configuration, so a browser `EventSource` over kernel-terminated
+TLS is on HTTP/2. On a connection without TLS, an `h2c` upgrade or a prior-knowledge HTTP/2 preface
+is handed to the HTTP/2 session before stream resolution runs. Workarounds today: terminate TLS
+upstream and speak HTTP/1.1 to the kernel; without TLS, set `http.maxVersion=HTTP_1_1`, which
+disables both of those paths to HTTP/2. Because `http.maxVersion` does not reach ALPN selection, no
+setting keeps a TLS client on HTTP/1.1.
+
+**Owner:** HTTP subsystem (the Community HTTP/2 session and the Core SSE engine).
+
+**Resolution:** resolve stream routes in `CommunityHttp2SessionProcessor` through the same
+`StreamRouteResolver`, and give the stream engine an HTTP/2 path: a response `HEADERS` frame, then
+`DATA` frames per event, with the stream's flow-control window as the credit `emit` parks on.
+Separately, make ALPN selection honour `http.maxVersion`, so that a deployment can keep TLS clients
+on HTTP/1.1 in the meantime.
+
+**Merge Gate:** a client that negotiates `h2` over TLS receives a `text/event-stream` response and
+one event per `emit`; the backpressure park is exercised against the HTTP/2 flow-control window; a
+request over `h2c` resolves the same route.
+
+**Status (v0.12): OPEN.** Recorded by ADR-043 Amendment A1 as an unmet part of the Decision's
+"HTTP/1.1 + h2", not a narrowing of it.
 
 ---
 

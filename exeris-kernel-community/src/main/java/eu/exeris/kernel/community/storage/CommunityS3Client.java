@@ -103,7 +103,8 @@ final class CommunityS3Client implements AutoCloseable {
                 false,
                 HttpVersion.HTTP_1_1,
                 // ADR-074: every request dials this authority, and the carrier verifies a TLS peer
-                // against its host, the host the signed Host header names.
+                // against its host, the host the signed Host header names. The bindHost and port
+                // above are LISTEN fields, which a CLIENT-mode engine never dials.
                 settings.dialAuthority(),
                 HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
                 HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,

@@ -381,7 +381,9 @@ public final class NativeTcpCarrier implements TransportEngine {
      *
      * @param host remote host name or IP address to connect to
      * @param port remote port to connect to
-     * @return the established connection, with its stream already registered on a reactor
+     * @return the established connection, with its stream already registered on a reactor; its
+     *         {@link TransportConnection#remoteAddress()} is the address {@code host} resolved to,
+     *         not {@code host} itself
      * @throws IllegalStateException if the mode does not support outbound connect, or the engine
      *                                is not running, including one closed while this connect was
      *                                in flight
@@ -431,10 +433,15 @@ public final class NativeTcpCarrier implements TransportEngine {
             bindTlsFdIfRequired(tlsEngine, channel);
             final SocketChannel connectedChannel = channel;
 
+            // The connection reports the address the channel reached, as an accepted connection
+            // does: TransportConnection#remoteAddress is the peer's address, and the host name the
+            // caller dialled stays the caller's. A layer that needs the name, such as an HTTP client
+            // writing Host, takes it from its own request rather than from the connection.
+            InetSocketAddress peer = resolveRemoteAddress(connectedChannel);
             NativeTcpConnection connection = new NativeTcpConnection(
                     connectionSeq.getAndIncrement(),
-                    host,
-                    port);
+                    peer.getAddress().getHostAddress(),
+                    peer.getPort());
 
             NativeTcpStream stream = new NativeTcpStream(
                     engineName(),
