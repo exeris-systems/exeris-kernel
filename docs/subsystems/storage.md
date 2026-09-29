@@ -210,7 +210,8 @@ starts with its own prefix would confirm its own last statement. `BlobRef` refus
 segments, and the hex prefix is one opaque segment — the same two properties the filesystem layout rests
 on.
 
-**Configuration.** `location` is the endpoint; the rest arrives as properties.
+**Configuration.** `location` is the endpoint, `http://host[:port]` or `https://host[:port]`; the rest
+arrives as properties.
 
 | Property | Default | Meaning |
 |---|---|---|
@@ -219,11 +220,32 @@ on.
 | `s3.region` | `us-east-1` | SigV4 credential-scope region |
 | `s3.maxObjectBytes` | 8 MiB | Ceiling on a single object. Bounded above at just under 2 GiB and refused at construction beyond it — the single-buffer design addresses an object with an `int`, so a larger ceiling could not be honoured |
 
-**Cleartext only.** `CommunityHttpTransportFactory` wires certificate material for listeners, not for
-client connections, so a `CLIENT`-mode engine speaks cleartext whatever the endpoint scheme says. An
-`https://` endpoint is therefore **rejected at construction** rather than silently downgraded — sending
-SigV4 credentials in the clear because a scheme was ignored is not a failure that may be quiet. The
-target is a MinIO-compatible endpoint over a trusted network path.
+**The endpoint's scheme decides.** The driver's client engine requires of its transport what the
+endpoint's scheme says, wherever the store is built (`CommunityOutboundTls`;
+[transport.md](transport.md#client-tls)):
+
+- `http://` is **plaintext, even where a crypto provider is bound**. The store's transport records
+  `PLAINTEXT_REQUIRED` in the `eu.exeris.kernel.transport.TransportTlsClientPosture` event.
+- `https://` is **TLS that verifies the server** before any request byte is sent: the certificate
+  chain against `crypto.tls.client.trustFile`, else OpenSSL's default trust, and the subject
+  alternative names against the endpoint host — a DNS name against DNS entries, sent as the server
+  name indication; an IP literal against IP entries, with no server name sent. The transport records
+  `VERIFIED`. A server that fails is refused with `TlsHandshakeException` (`EX-NET-2001`) and the
+  `X509_V_*` code ([crypto.md](crypto.md#client-peer-verification)).
+- `https://` **needs the Community crypto provider bound where the store is built.** With no
+  provider bound, with one that cannot verify an outbound peer, or under
+  `-Dexeris.transport.tls=false`, `CommunityS3BlobStorageProvider#createStore` throws
+  `TransportException` `EX-NET-4004` and the posture event records the refusal; a boot that creates
+  the store fails. The endpoint is **never downgraded** — sending SigV4 credentials in the clear
+  because a scheme was ignored is not a failure that may be quiet.
+- **The default port follows the scheme** (80, 443) and is omitted from the signed `Host` and from a
+  presigned URL, which starts with the endpoint's scheme; the engine still dials `host:port`.
+- **Addressing is path-style**, so no bucket enters a host name, and the name verified is the
+  endpoint host for every bucket. The host is read once, lower-cased and without a trailing dot, and
+  the signed `Host`, the server name and the verified name all come from it.
+
+A `crypto.tls.client.trustFile` that is not a readable file fails an `http://` store too: a named
+trust file is checked whether or not the transport arms TLS.
 
 **The ceiling is a memory budget, not just a limit.** The driver holds an object in one buffer for the
 length of a transfer, because a single `PUT` must declare `Content-Length` before its first body byte and
@@ -269,7 +291,7 @@ ServiceLoader order and a class-name tie-break.
 | Key | Meaning |
 |---|---|
 | `storage.blob.provider` | The driver id: `blob-fs-community` or `blob-s3-community`. **Unset means blob storage is off.** |
-| `storage.blob.location` | Driver-interpreted root. A **directory** for the filesystem driver; the **endpoint** `http://host:port` for S3 — not the bucket, which is a property. Required once the provider key is set. |
+| `storage.blob.location` | Driver-interpreted root. A **directory** for the filesystem driver; the **endpoint** `http://host[:port]` or `https://host[:port]` for S3 — not the bucket, which is a property. Required once the provider key is set. |
 | `storage.blob.maxSignedUrlTtlSeconds` | Signed-URL ceiling; defaults to `BlobStorageConfig`'s. |
 | `storage.blob.s3.bucket` | S3 only, **required**. |
 | `storage.blob.s3.accessKey`, `storage.blob.s3.secretKey` | S3 only, **required**. |

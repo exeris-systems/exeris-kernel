@@ -16,6 +16,35 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [0.12.0] — 2026-09-03
 
+### Security
+
+- **The Community TLS client verifies the server it dials** (ADR-074 §4, Amendment A1). Outbound
+  TLS used `SSL_VERIFY_NONE`: it encrypted, loaded no trust, sent no server name and checked no
+  host, so any certificate was accepted. A `CLIENT` or `DUAL` carrier that dials TLS now verifies
+  the server before any request byte is sent: the certificate chain against its trust, and the
+  certificate's subject alternative names against the host of the authority it dialled — for the
+  HTTP client, the request's authority, else `http.client.defaultAuthority`. A DNS host is matched
+  against DNS entries with no partial wildcards, never against the subject common name, and is sent
+  as the server name indication; an IP literal is matched against IP entries and sends none. A
+  server that fails is refused with `TlsHandshakeException` (`EX-NET-2001`), detail
+  `peer certificate verification failed` and the `X509_V_*` code; a host that is neither a name nor
+  an address is refused before any socket opens. The trust is `crypto.tls.client.trustFile` (the
+  kernel configuration, else `-Dexeris.crypto.tls.client.trustFile`), which replaces OpenSSL's
+  default trust, or that default (`SSL_CERT_FILE`, `SSL_CERT_DIR`) when the key is unset. No setting
+  keeps TLS and skips verification. Outbound TLS is armed only where a crypto provider is bound when
+  the carrier is built and `exeris.transport.tls` is not `false` (for a `DUAL` carrier, only when its
+  listener holds certificate material); an engine built anywhere else dials plaintext, the S3 blob
+  client excepted, whose endpoint scheme decides; and each carrier records which in the new
+  `eu.exeris.kernel.transport.TransportTlsClientPosture` event and an INFO line (a WARNING when the
+  default trust has neither file nor directory). A bound crypto provider that cannot verify an
+  outbound peer fails a `CLIENT` carrier at construction and a `DUAL` carrier's `connect`, unless the
+  carrier's owner requires plaintext. `HttpClientEngine#send` states the obligation in its
+  `@implSpec` (javadoc only, no signature moved); the Enterprise client is outside it.
+  **Upgrade:** a client that talks to a private-CA or self-signed server needs
+  `crypto.tls.client.trustFile` naming the issuing CA (with any intermediates, since the Community
+  server does not send them) or, for a self-signed server, that certificate; a CA-issued server
+  certificate alone in the file does not anchor its chain.
+
 ### Added
 
 - **SPI: `eu.exeris.kernel.spi.http.StreamRouteResolver` and `eu.exeris.kernel.spi.http.StreamMatch`,
@@ -26,8 +55,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   takes no part, `{name}` segments captured into `StreamMatch.params()`, exact before template),
   where resolution runs (before authorization, outside the kernel's bindings, reading no
   `ScopedValue`), how a wrapper extends its own bindings to the stream handler, and that anything
-  bound around a stream is held for the stream's whole life. `StreamMatch` refuses a `null` handler
-  or parameter map at construction. `AbstractStreamRouteResolverTck` holds the contract, bound to
+  bound around a stream is held for the stream's whole life. `AbstractStreamRouteResolverTck` holds the contract, bound to
   `HttpRouter` in Core and to a forwarder over a router slot in Community. Additive at the SPI.
 
 - **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
@@ -47,10 +75,58 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   retries occur on connection failures (preserving ADR-045 / ADR-026 retry boundaries). Observability is
   provided via JFR event `eu.exeris.kernel.community.http.HttpClientPool`.
 
+- **A Core TLS client engine can be told which server it expects** (ADR-074 §4).
+  `OffHeapTlsEngine#expectPeer` takes a `TlsPeerIdentity`, which `TlsPeerIdentity.of` classifies
+  from an authority host without a DNS lookup. A DNS name is checked against the certificate's DNS
+  subject alternative names, with no partial wildcards and never against the subject common name,
+  and is sent as the server name indication. An IP literal is checked against IP entries only and
+  sends no server name. A handshake that completes with a verification result other than
+  `X509_V_OK` is refused, so the engine never becomes `ACTIVE` unverified, whatever its context's
+  verify mode. A failed handshake leaves its `SSL_get_error` code and `X509_V_*` result on
+  `TlsHandshakeFailureCodes`. An engine given no identity behaves as before. The Core OpenSSL
+  runtime binds 16 more symbols for this, all present from OpenSSL 3.0 through 4.0 outside any
+  deprecation guard.
+
+- **`AbstractHttpClientTlsPeerVerificationTck` judges the TLS clause of `HttpClientEngine#send`**
+  (ADR-074 §4, Amendment A1). A client that carries a request over TLS is run against the JDK's own
+  TLS server and a ClientHello probe: a leaf from an untrusted issuer, and a private authority under
+  the default trust, are refused with `TlsHandshakeException` (`EX-NET-2001`) and the server reads no
+  request; a DNS host matches DNS entries only, never the subject common name; an IP literal matches
+  IP entries only, and a DNS entry spelling the address does not match it; the request's authority is
+  verified over the engine's default, and the default when the request names none; a DNS host is
+  sent as the server name and an IP literal sends none, read from a ClientHello the probe parsed to
+  its last extension. The suite first checks that the binding's fixtures differ from an accepted leaf
+  in exactly the respect each case names. `CommunityHttpClientTlsPeerVerificationTckTest` binds it.
+  **For anyone binding the TCK:** it is a class apart from `AbstractHttpClientEngineTck`, so a
+  provider whose client does not verify yet is not forced red; a binding supplies `fixtures` (PEM
+  files, shapes in `TlsPeerFixtures`) and `startClient(trustAnchor, defaultAuthority)`, and may
+  override `assertRefusalDetail` to check its own `rawArgs[0]`. The Enterprise client does not bind
+  it.
+
+- **The S3 driver takes an `https://` endpoint** (ADR-056 §10 amendment). The endpoint's scheme now
+  decides the store's transport, wherever the store is built: `https://` is TLS that verifies the
+  server against `crypto.tls.client.trustFile`, else OpenSSL's default trust, and against the
+  endpoint host, sent as the server name; `http://` is plaintext even where a crypto provider is
+  bound, where it took TLS from the provider bound where the store was built. An `https` store needs
+  the Community crypto provider bound where it is built: with none, with a provider that cannot
+  verify an outbound peer, or under `-Dexeris.transport.tls=false`, `createStore` throws
+  `TransportException` `EX-NET-4004` and never downgrades. A Community HTTP client engine whose
+  transport is refused this way closes the allocator it created for itself, when none was bound,
+  before it throws, and a store whose engine fails to start closes that engine, and the trust it
+  opened, before `createStore` throws. The default port follows the scheme (80,
+  443). The driver states the scheme to its transport through Community-only overloads —
+  `NativeTcpTransportProvider#createEngine(TransportConfig, CommunityOutboundTls)` and
+  `CommunityHttpProvider#createClientEngine(HttpConfig, CommunityOutboundTls)` — so no SPI type
+  changes; `TransportTlsClientPosture` gains `requirement` and the postures `PLAINTEXT_REQUIRED`,
+  `REFUSED_DECLINED` and `REFUSED_NO_CRYPTO_PROVIDER`. `CommunityS3BlobStorageTlsTckIT` runs
+  `AbstractBlobStorageTck` against MinIO over `https`.
+
 ### Changed
 
 - **`HttpRouter.StreamMatch` is now the SPI record `eu.exeris.kernel.spi.http.StreamMatch`.**
-  Same components and the same `exact(HttpStreamHandler)` factory. It moved out of the final router
+  Same components and the same `exact(HttpStreamHandler)` factory. It now refuses a `null` handler
+  or parameter map at construction with `NullPointerException`, which the nested record checked for
+  neither. It moved out of the final router
   class so that a handler which is not an `HttpRouter` can return one, and into the SPI because the
   interface returning it is SPI. Code compiled against 0.11 that names `HttpRouter.StreamMatch` or
   calls `HttpRouter#resolveStream` is recompiled against 0.12. The removal is a Core change; at the
@@ -73,6 +149,24 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   side at load average 1.9 to 12.4.
   The medians went from 199 ns to 29 ns at 10 entities (per JVM, 193–201 ns to 28–30 ns) and from
   678 ns to 104 ns at 30 (643–790 ns to 81–163 ns).
+
+- **A Community client engine from `createTlsEngine` with a client configuration refuses its
+  handshake.** It names no server to verify, so once bound its `beginHandshake` throws
+  `TlsHandshakeException` (`EX-NET-2001`, detail `client engine has no expected peer identity`)
+  instead of completing unauthenticated; it still binds, reports its phase and closes. The SPI states
+  this on `KernelCryptoProvider#createTlsEngine` and `TlsEngine#beginHandshake`, javadoc only. A
+  client that handshakes builds its engine with `CommunityKernelCryptoProvider#createClientTlsEngine`,
+  which takes the trust (`openClientTrust`) and the expected peer (`TlsPeerIdentity`).
+
+- **A `DUAL` carrier dials out as a client.** Its outbound connections were built from the listener's
+  configuration, so they ran the server side of the handshake with the listener's certificate. They
+  now take the carrier's client TLS decision like a `CLIENT` carrier's.
+
+- **`eu.exeris.kernel.tls.HandshakeFailure` reports `EX-NET-2001` and the verification result.**
+  The event carried `EX-NET-2002`, the provider-bootstrap code, although a failed handshake is what
+  `TlsHandshakeException` (`EX-NET-2001`) reports. It gains `verifyResult`: the `X509_V_*` code of a
+  client that expected a peer, `-1` otherwise, and its `failureReason` is OpenSSL's text for that
+  code when verification failed.
 
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
   total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
@@ -248,6 +342,72 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   line forks through: the kernel's own `StructuredScope` subtasks carry only the bindings their
   opener passes (ADR-066). Javadoc only.
 
+- **The S3 driver's signed `Host` and presigned URLs omit the scheme's default port.** The driver
+  signed and sent `Host: host:port` for every endpoint, and a presigned URL began with `http://` and
+  the same `host:port`. A browser or curl sends `Host` without the default port, so a presigned URL
+  for an endpoint on its scheme's default port was signed over a `Host` its holder never sends. The
+  signed `Host` is now the host alone on the default port, a presigned URL starts with the
+  endpoint's scheme, and the engine still dials `host:port`. A header-signed request is signed and
+  sent with the same value; for an `http://host` endpoint with no port that value is `host`, not
+  `host:80`.
+
+- **A kernel booted with `http.mode=DUAL` starts, and its client engine dials out as a client.**
+  `CommunityHttpTransportFactory` derived each engine's transport mode from the subsystem's
+  `HttpMode`, so in `DUAL` the client engine got a `DUAL` transport: a listener on the server's
+  port, carrying the server's certificate and key, that nothing gave a stream handler. Its
+  `start()` threw `StreamHandler must be set before start() in SERVER/DUAL mode` and the `http`
+  subsystem failed the boot. The transport now takes the engine's role: the server engine's is
+  `SERVER`, and the client engine's is `CLIENT` with port `0` and no certificate material, whatever
+  `HttpMode` says; only `DISABLED` carries over.
+
+- **A connect that races `close()` fails as "not running".** `NativeTcpCarrier#connect` picks a
+  reactor by reading the reactor list's size and then an element, while `stop()` may be clearing
+  that list; the read could fail with `IndexOutOfBoundsException`, or hand back an empty slot, outside
+  `connect`'s contract. Both now throw `IllegalStateException` (`Engine is not running`), the
+  exception `connect` documents for an engine that is not running. So does a verifying connect whose
+  engine is built after `close()` has released the carrier's client trust, which threw
+  `IllegalStateException` (`client trust is closed`); the socket it dialled is closed either way.
+
+- **An accepted TLS connection whose engine cannot bind to the socket releases the engine and the
+  socket.** `NativeTcpCarrier` built the listener's TLS engine for an accepted socket and then bound
+  it to the socket's descriptor; when the bind threw, no stream owned either, so the accept fault was
+  recorded and both the engine's native `SSL_CTX` and the socket stayed open. The carrier now closes
+  the engine on any failure after it is built, and closes the socket through whichever owner holds it
+  at that point, the stream once one exists and the socket itself before that.
+
+- **A failed TLS handshake reaches the caller with its cause.** A Community stream whose handshake
+  failed closed itself, and the caller then saw `IllegalStateException` (`stream closed`) from a
+  write, or end-of-stream or `IllegalStateException` from a read, depending on which thread had
+  driven the failed step; the reactor drives most of them. The stream now records the failure's
+  codes under its TLS lock before it closes, and every later `read`, `write` or `queueWrite` throws
+  `TlsHandshakeException` (`EX-NET-2001`), built on the calling thread: detail
+  `peer certificate verification failed` with the `X509_V_*` code when the server's certificate
+  failed verification, otherwise `handshake failed` with the `SSL_get_error` code. No handshake step
+  reaches the engine once a failure is recorded.
+
+- **A failed TLS handshake no longer takes down healthy connections served by the same thread.**
+  OpenSSL keeps its error queue per OS thread, and on the 3.x line `SSL_get_error` reports
+  `SSL_ERROR_SSL` whenever that queue holds an entry, whichever connection left it. Nothing emptied
+  it, so a client that spoke plaintext to a TLS listener — or any failed handshake, read, write or
+  shutdown — left an entry on the reactor thread, and the next healthy connection on that reactor
+  whose read would have blocked was closed as if it had failed. `OffHeapTlsEngine` now empties the
+  calling thread's queue on every outcome of a handshake step, read, write, shutdown or descriptor
+  bind that is not a `WANT_READ`/`WANT_WRITE` retry, after reading `SSL_get_error`; the Community
+  crypto provider does the same when an `SSL_CTX` fails to load its certificate or key. A retry and
+  a successful record make no extra native call. On OpenSSL 4.0 the stale entry stayed on the queue
+  but did not turn a neighbour's retry into a failure.
+
+- **What a TLS peer sends before it closes stays readable.** A socket at end-of-stream stays
+  readable, so after a Community stream's engine reported the peer's close the reactor unwrapped it
+  again on its next turn; the engine threw, the reactor handled the throw as a dispatch fault, and
+  resetting the stream discarded the bytes still queued for the reader, who saw end-of-stream
+  instead. An HTTP client whose server sent a whole response and closed could fail with
+  `EX-NET-4002` (`remote peer closed connection without returning HTTP response`). A stream no
+  longer unwraps after its engine reported the peer's close, and the reactor stops selecting a
+  connection for read once its stream has seen the peer's close, TLS or plaintext, instead of on
+  every turn until the stream closes. A peer's close no longer emits
+  `eu.exeris.kernel.transport.CommunityReactorDispatchFault`.
+
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a
   handler reaching persistence through `PersistenceEngine.openConnection()` receives a connection
@@ -406,7 +566,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   up no PAQS. That call runs after the engine's own preconditions and before `initPaqs()` constructs
   a scheduler, so a SERVER-mode engine started without a stream handler no longer pays fourteen class
   loads on its way to throwing, and the scheduler's own constructor does not repeat it. Which classes those are is declared in `CoreJfrEventCatalogue` and
-  `CommunityJfrEventCatalogue` (see the entry above).
+  `CommunityJfrEventCatalogue` (see the next entry).
 
 - **Every JFR event class in the kernel is now classified, and the hot-path ones are initialised
   when their subsystem starts.** A `jdk.jfr.Event` subclass registers itself from its own static
@@ -503,6 +663,26 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   request to work around this can remove that binding.
 
 ### Fixed — verification
+
+- **The OpenSSL matrix runs the peer-verification suites on each pinned major and fails a listed
+  suite that skipped or ran nothing.** Each `tls-openssl-matrix` entry now runs the Core error-queue
+  and peer-verification ITs, the Community TLS suites and the HTTP peer-verification TCK binding, and
+  the `default-trust` fork, then reads the Surefire and Failsafe reports: a listed class with no
+  report, zero tests or any skip fails the entry, since each of those reports green. A new
+  `CommunityOpenSslPinnedMajorTest` does for the Community test JVM what
+  `CoreOpenSslPinnedVersionAssertionTest` does for Core's, so the Community suites cannot pass against
+  the runner's own OpenSSL. The Core IT step invoked the `verify` lifecycle with
+  `-Dsurefire.skip=true`, which is not a Surefire property: every entry re-ran the whole Core unit
+  suite and replaced the pinned-version guard's report with a skipped run. It now invokes the Failsafe
+  goals directly.
+
+- **The last two TLS suites gated on a certificate directory no commit contains now generate their
+  material and run.** `CommunityHttpBootstrapIntegrationTest#httpSubsystemServesHealthEndpointOverTls`
+  and the three handshake cases of `CommunityTlsEngineLoopbackIntegrationTest` read
+  `../native-libs/certs` behind an `assumeTrue` and skipped in every build. Both now write a
+  per-run certificate through `TlsTestCertificate`. The recovered bootstrap case also names the
+  client's `defaultAuthority`, which ADR-074 made mandatory for an unaddressed request; with it, the
+  booted kernel serves `/health`, `/health/live` and `/health/ready` to a Community client over TLS.
 
 - **The HTTP boot fixture had never carried a request body.** Every case sent a bodyless `GET`, so
   the decoder binding and the request-scoped allocator the fixture exists to prove were exercised by
@@ -1058,7 +1238,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `close()`. A driver refusing
   its own configuration, such as S3 without `storage.blob.s3.bucket`, is refused in `start()` and
   still fails the boot before the application runs. `StorageBootstrapSelected` is recorded at
-  selection, so a boot whose driver then refuses still records one.
+  selection, so a boot whose driver then refuses still records one. Storage does not depend on
+  `crypto`, so an S3 store with an `https://` endpoint needs the `crypto` subsystem in the same boot:
+  without it the store is refused in `start()` with `EX-NET-4004` (see "The S3 driver takes an
+  `https://` endpoint").
 
 
 - **`http.maxResponseBodyBytes` — the HTTP client stops borrowing the server's ingress limit**
@@ -1187,7 +1370,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
-- **Outbound TLS is a decision, not a consequence of crypto booting.** A `CLIENT`-mode transport armed TLS whenever a crypto provider happened to be bound, so a kernel that booted crypto to serve HTTPS could not make a plaintext outbound call at all. `exeris.transport.tls` is the opt-out that was missing, and it covers **server, client and dual**: a listener holding valid certificate and key can now decline TLS, for deployments terminating it at a sidecar. Half-configured material stays a boot failure regardless. A listener that declines while holding material emits `eu.exeris.kernel.transport.TransportTlsDeclined`, because that is the one outcome indistinguishable from any other plaintext socket. Defaults are unchanged.
+- **Outbound TLS is a decision, not a consequence of crypto booting.** A `CLIENT`-mode transport armed TLS whenever a crypto provider happened to be bound, so a kernel that booted crypto to serve HTTPS could not make a plaintext outbound call at all. `exeris.transport.tls` is the opt-out that was missing, and it covers **server, client and dual**: a listener holding valid certificate and key can now decline TLS, for deployments terminating it at a sidecar. Half-configured material stays a boot failure regardless. A listener that declines while holding material emits `eu.exeris.kernel.transport.TransportTlsDeclined`, because that is the one outcome indistinguishable from any other plaintext socket. Defaults are unchanged. The S3 blob client is the one client whose TLS this does not decide: its endpoint's scheme does (see "The S3 driver takes an `https://` endpoint").
 
 ### Added
 
@@ -1366,8 +1549,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   address: `CommunityHttpClientEngine` has no public constructor, its only reachable path took
   `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL *listener* address — and
   no client-target key existed anywhere. So the engine the kernel binds as `HTTP_CLIENT_ENGINE`,
-  built from `http.bindHost` and `http.port`, dialled its own listener in `DUAL` mode, and in
-  `CLIENT` mode the one peer written into those keys. Any other peer took an engine of its own, built
+  built from `http.bindHost` and `http.port`, dialled in `CLIENT` mode the one peer written into
+  those keys. In `DUAL` mode it could not start at all: its transport was a second `DUAL` carrier
+  that nothing gave a stream handler (see "A kernel booted with `http.mode=DUAL` starts", which
+  records that it now does). Any other peer took an engine of its own, built
   through `HttpProvider.createClientEngine` with that peer's host and port written into
   `HttpConfig.bindHost` and `port` — one engine per peer, as the S3 driver below did.
   `HttpConfig.defaultClient()` (bindHost `null`, port `-1`) produced an engine that could not send
@@ -1434,8 +1619,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   address. `CommunityHttpClientEngine` has **zero public constructors**, its only reachable path
   takes `targetHost` from `HttpConfig.bindHost` — documented as the SERVER/DUAL **listener** address
   — and no client-target configuration key exists anywhere in the tree. The engine the kernel binds
-  dials `http.bindHost:http.port` — its own listener in `DUAL` mode, and in `CLIENT` mode the one
-  peer written into those keys — and any other peer needs an engine of its own with that peer's
+  dials `http.bindHost:http.port` — in `CLIENT` mode the one peer written into those keys; in `DUAL`
+  mode it could not start (see "A kernel booted with `http.mode=DUAL` starts") — and any other peer
+  needs an engine of its own with that peer's
   address written into `HttpConfig.bindHost`, one engine per peer.
   Decision: `HttpRequest` gains a nullable `authority` component with
   the previous canonical constructor retained as a bridge; `Host` and TLS peer verification follow

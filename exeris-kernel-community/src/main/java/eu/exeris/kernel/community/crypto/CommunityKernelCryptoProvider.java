@@ -9,6 +9,7 @@ import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.tls.OffHeapTlsEngine;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
@@ -22,7 +23,9 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Objects;
 
 /**
@@ -34,10 +37,17 @@ import java.util.Objects;
  * {@code 0}; per {@link KernelCryptoProvider}'s discovery contract, a higher-priority provider on
  * the classpath is selected instead.
  *
+ * <h2>Client verification</h2>
+ * <p>A client engine verifies its server. {@link #createClientTlsEngine} builds one that expects a
+ * given peer and verifies against a {@link CommunityTlsClientTrust}; {@link #createTlsEngine} with a
+ * client configuration names no peer, so the engine it returns refuses its handshake with
+ * {@code TlsHandshakeException} ({@code EX-NET-2001}) instead of completing unauthenticated.
+ *
  * @since 0.5
  */
 @SuppressWarnings({
-	"PMD.CyclomaticComplexity"
+	"PMD.CyclomaticComplexity",
+	"PMD.TooManyMethods"      // the SPI surface, the client entry points and the ordered native set-up steps
 })
 public final class CommunityKernelCryptoProvider implements KernelCryptoProvider, AutoCloseable {
 
@@ -45,7 +55,8 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	private static final int SSL_SUCCESS = 1;
 	private static final long NULL_PTR = 0L;
 	private final CoreOpenSslRuntime runtime;
-	private final java.lang.invoke.MethodHandle sslSetFd;
+	private final MethodHandle sslSetFd;
+	private final ClientPeerBinder peerBinder;
 
 	/**
 	 * Loads the Community OpenSSL runtime and resolves the {@code SSL_set_fd} symbol.
@@ -54,6 +65,17 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	 *         loaded, or if it does not export {@code SSL_set_fd}
 	 */
 	public CommunityKernelCryptoProvider() {
+		this(OffHeapTlsEngine::expectPeer);
+	}
+
+	/**
+	 * As {@link #CommunityKernelCryptoProvider()}, with the step that gives a client engine its
+	 * expected peer replaced, so a test can make that step fail.
+	 *
+	 * @param peerBinder applies the expected peer to a freshly built engine
+	 */
+	/* default */ CommunityKernelCryptoProvider(ClientPeerBinder peerBinder) {
+		this.peerBinder = Objects.requireNonNull(peerBinder, "peerBinder must not be null");
 		runtime = CoreOpenSslLoader.load(Arena.global());
 		FunctionDescriptor setFdDescriptor =
 				FunctionDescriptor.of(
@@ -81,6 +103,12 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	 * engine owns and closes; when it is bound, the returned engine uses it without taking
 	 * ownership.
 	 *
+	 * <p>A client engine from this method has no expected peer. Its context verifies the server
+	 * ({@code SSL_VERIFY_PEER}) against an empty store, and its {@link TlsEngine#beginHandshake}
+	 * throws {@code TlsHandshakeException} ({@code EX-NET-2001}) once it is bound, so it never
+	 * completes a handshake unauthenticated. It binds, reports its phase and closes like any other
+	 * engine; {@link #createClientTlsEngine} is the entry point for a client that connects.
+	 *
 	 * @param config cryptographic configuration, or {@code null} for {@link CryptoProviderConfig#tcpClient()}
 	 * @return a TLS engine ready for {@link TlsEngine#beginHandshake}
 	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) for {@code Protocol.QUIC}, for a
@@ -88,17 +116,9 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	 *         the native SSL context cannot be created or configured
 	 */
 	@Override
-	@SuppressWarnings({
-		"PMD.CloseResource",      // allocator/delegate ownership is transferred into CommunityTlsEngine
-		"PMD.UseTryWithResources", // lifecycle uses explicit ownership transfer across success/failure paths
-		"java:S2093"             // false positive: no heap resources are used, so no risk of GC finalizer delay
-	})
 	public TlsEngine createTlsEngine(CryptoProviderConfig config) {
 		CryptoProviderConfig safeConfig = config != null ? config : CryptoProviderConfig.tcpClient();
-		if (safeConfig.protocol() == CryptoProviderConfig.Protocol.QUIC) {
-			throw new CryptoBootstrapException(PROVIDER_NAME,
-					"Community does not support QUIC. Upgrade to Enterprise tier.");
-		}
+		requireTcp(safeConfig);
 		boolean hasCert = safeConfig.certChainPath() != null;
 		boolean hasKey = safeConfig.privateKeyPath() != null;
 		if (hasCert ^ hasKey) {
@@ -107,42 +127,67 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 					"Invalid TLS server configuration: "
 							+ "both certChainPath and privateKeyPath must be set together");
 		}
-
-		long startedAt = System.nanoTime();
-		boolean ownsAllocator = !KernelProviders.MEMORY_ALLOCATOR.isBound();
-		MemoryAllocator allocator = ownsAllocator
-			? new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults())
-			: KernelProviders.MEMORY_ALLOCATOR.get();
 		boolean serverMode = hasCert && hasKey;
+		return buildEngine(safeConfig, serverMode, null, !serverMode);
+	}
 
-		long sslCtxPtr = NULL_PTR;
-		boolean engineCreated = false;
-		try {
-			sslCtxPtr = createSslCtx(safeConfig, allocator, serverMode);
-			OffHeapTlsEngine delegate =
-					new OffHeapTlsEngine(runtime.handles(), sslCtxPtr, serverMode, allocator);
-
-			CommunityProviderBootstrapEvent.emit(PROVIDER_NAME, System.nanoTime() - startedAt);
-
-			CommunityTlsEngine engine = new CommunityTlsEngine(
-					delegate,
-					sslSetFd,
-					runtime.handles().ctx(),
-					sslCtxPtr,
-					ownsAllocator ? allocator : null,
-					safeConfig.jfrEnabled());
-			engineCreated = true;
-			return engine;
-		} finally {
-			if (!engineCreated) {
-				if (sslCtxPtr != NULL_PTR) {
-					runtime.handles().ctx().invokeCtxFree(sslCtxPtr);
-				}
-				if (ownsAllocator) {
-					allocator.close();
-				}
-			}
+	/**
+	 * Creates a client engine that verifies its server: the certificate chain against
+	 * {@code trust}, and the certificate's subject alternative names against {@code peer}. A DNS
+	 * name is matched against DNS entries and an IP address against IP entries; the subject common
+	 * name is never consulted, and a wildcard matches one whole leftmost label only. A DNS name is
+	 * sent as the server name indication; an IP address is not. A server that fails verification
+	 * fails the handshake, which the engine reports as {@code CLOSED} with the {@code X509_V_*} code
+	 * on {@link eu.exeris.kernel.core.crypto.tls.TlsHandshakeFailureCodes}.
+	 *
+	 * <p>{@code trust} may be closed while the engine lives: the engine's context holds its own
+	 * reference to the store. Allocator ownership follows {@link #createTlsEngine}.
+	 *
+	 * @param config a client configuration, or {@code null} for {@link CryptoProviderConfig#tcpClient()}
+	 * @param trust  the store the server's chain is verified against
+	 * @param peer   the identity the server's certificate must carry
+	 * @return the engine, with its peer expected and ready to bind
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) for {@code Protocol.QUIC}, for a
+	 *         configuration carrying a certificate or key, or if the native context cannot be
+	 *         created
+	 * @throws IllegalStateException if {@code trust} has been closed
+	 * @throws eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException ({@code EX-NET-2001})
+	 *         if OpenSSL refuses {@code peer}
+	 * @since 0.12
+	 */
+	@SuppressWarnings("PMD.AvoidCatchingGenericException") // the engine is closed on any failure, then rethrown
+	public CommunityTlsEngine createClientTlsEngine(
+			CryptoProviderConfig config, CommunityTlsClientTrust trust, TlsPeerIdentity peer) {
+		Objects.requireNonNull(trust, "trust must not be null");
+		Objects.requireNonNull(peer, "peer must not be null");
+		CryptoProviderConfig safeConfig = config != null ? config : CryptoProviderConfig.tcpClient();
+		requireTcp(safeConfig);
+		if (safeConfig.certChainPath() != null || safeConfig.privateKeyPath() != null) {
+			throw new CryptoBootstrapException(PROVIDER_NAME,
+					"a client engine presents no certificate or key of its own");
 		}
+		CommunityTlsEngine engine = buildEngine(safeConfig, false, trust, false);
+		try {
+			peerBinder.bind(engine.delegate(), peer);
+		} catch (RuntimeException | Error failure) {
+			engine.close();
+			throw failure;
+		}
+		return engine;
+	}
+
+	/**
+	 * Opens the store client engines verify against: {@code trustFile} alone when it is given
+	 * (the defaults are not added), OpenSSL's default locations otherwise.
+	 *
+	 * @param trustFile a PEM file of trusted certificates, or {@code null} for the defaults
+	 * @return the trust; the caller closes it
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) if {@code trustFile} is not a readable
+	 *         regular file, holds no certificate OpenSSL can load, or the store cannot be created
+	 * @since 0.12
+	 */
+	public CommunityTlsClientTrust openClientTrust(Path trustFile) {
+		return CommunityTlsClientTrustLoader.open(runtime.handles(), trustFile, PROVIDER_NAME);
 	}
 
 	/**
@@ -178,6 +223,80 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		// Provider keeps only shared runtime handles bound to Arena.global().
 	}
 
+	private static void requireTcp(CryptoProviderConfig config) {
+		if (config.protocol() == CryptoProviderConfig.Protocol.QUIC) {
+			throw new CryptoBootstrapException(PROVIDER_NAME,
+					"Community does not support QUIC. Upgrade to Enterprise tier.");
+		}
+	}
+
+	/**
+	 * Builds the context and the engine that owns it. On any failure before the engine exists, the
+	 * context, the delegate and an allocator created here are released.
+	 */
+	@SuppressWarnings({
+		"PMD.CloseResource",      // allocator/delegate ownership is transferred into CommunityTlsEngine
+		"PMD.UseTryWithResources", // lifecycle uses explicit ownership transfer across success/failure paths
+		"java:S2093"             // false positive: no heap resources are used, so no risk of GC finalizer delay
+	})
+	private CommunityTlsEngine buildEngine(CryptoProviderConfig config, boolean serverMode,
+			CommunityTlsClientTrust trust, boolean noPeerIdentity) {
+		long startedAt = System.nanoTime();
+		boolean ownsAllocator = !KernelProviders.MEMORY_ALLOCATOR.isBound();
+		MemoryAllocator allocator = ownsAllocator
+			? new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults())
+			: KernelProviders.MEMORY_ALLOCATOR.get();
+
+		long sslCtxPtr = NULL_PTR;
+		OffHeapTlsEngine delegate = null;
+		CommunityTlsEngine engine = null;
+		try {
+			sslCtxPtr = createSslCtx(config, allocator, serverMode);
+			if (trust != null) {
+				installTrust(sslCtxPtr, trust);
+			}
+			delegate = new OffHeapTlsEngine(runtime.handles(), sslCtxPtr, serverMode, allocator);
+
+			CommunityProviderBootstrapEvent.emit(PROVIDER_NAME, System.nanoTime() - startedAt);
+
+			engine = new CommunityTlsEngine(
+					delegate,
+					sslSetFd,
+					runtime.handles().ctx(),
+					sslCtxPtr,
+					ownsAllocator ? allocator : null,
+					config.jfrEnabled(),
+					noPeerIdentity);
+			return engine;
+		} finally {
+			if (engine == null) {
+				if (delegate != null) {
+					delegate.close();
+				}
+				if (sslCtxPtr != NULL_PTR) {
+					runtime.handles().ctx().invokeCtxFree(sslCtxPtr);
+				}
+				if (ownsAllocator) {
+					allocator.close();
+				}
+			}
+		}
+	}
+
+	/**
+	 * Hands {@code trust}'s store to the context under a lease, so a concurrent
+	 * {@link CommunityTlsClientTrust#close()} cannot free it mid-call; the context keeps its own
+	 * reference afterwards.
+	 */
+	private void installTrust(long sslCtxPtr, CommunityTlsClientTrust trust) {
+		long store = trust.retainStore();
+		try {
+			runtime.handles().peerVerification().invokeCtxSet1CertStore(sslCtxPtr, store);
+		} finally {
+			trust.release();
+		}
+	}
+
 	// explicit cert/key cleanup keeps native failure path deterministic
 	private long createSslCtx(
 			CryptoProviderConfig config,
@@ -187,71 +306,105 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		long methodPtr = serverMode ? ctx.invokeServerMethod() : ctx.invokeClientMethod();
 		long sslCtxPtr = ctx.invokeCtxNew(methodPtr);
 		if (sslCtxPtr == NULL_PTR) {
+			clearErrorQueue();
 			throw new CryptoBootstrapException(PROVIDER_NAME, "SSL_CTX_new returned NULL");
 		}
 		boolean contextReady = false;
 		try {
-			ctx.invokeCtxSetVerify(sslCtxPtr, CoreOpenSslLoader.SSL_VERIFY_NONE);
+			// A client verifies its server; the Community server asks no client certificate.
+			int verifyMode = serverMode
+					? CoreOpenSslLoader.SSL_VERIFY_NONE
+					: CoreOpenSslLoader.SSL_VERIFY_PEER;
+			ctx.invokeCtxSetVerify(sslCtxPtr, verifyMode);
 
-			if (!serverMode) {
-				contextReady = true;
-				return sslCtxPtr;
+			if (serverMode) {
+				loadServerMaterial(ctx, sslCtxPtr, config, allocator);
 			}
-
-			PathCString certCString = toCString(config.certChainPath(), allocator);
-			PathCString keyCString = toCString(config.privateKeyPath(), allocator);
-			try (LoanedBuffer cert = certCString.buffer();
-				 LoanedBuffer key = keyCString.buffer()) {
-				long certAddress = cert.segment().address();
-				long keyAddress = key.segment().address();
-				int certResult = ctx.invokeCtxUseCertFile(
-						sslCtxPtr,
-						certAddress,
-						CoreOpenSslLoader.SSL_FILETYPE_PEM);
-				if (certResult != SSL_SUCCESS) {
-					throw new CryptoBootstrapException(PROVIDER_NAME,
-							"SSL_CTX_use_certificate_file failed", certResult);
-				}
-
-				int keyResult = ctx.invokeCtxUseKeyFile(
-						sslCtxPtr,
-						keyAddress,
-						CoreOpenSslLoader.SSL_FILETYPE_PEM);
-				if (keyResult != SSL_SUCCESS) {
-					throw new CryptoBootstrapException(PROVIDER_NAME,
-							"SSL_CTX_use_PrivateKey_file failed", keyResult);
-				}
-
-				int checkResult = ctx.invokeCtxCheckKey(sslCtxPtr);
-				if (checkResult != SSL_SUCCESS) {
-					throw new CryptoBootstrapException(
-							PROVIDER_NAME,
-							"SSL_CTX_check_private_key mismatch");
-				}
-				if (CommunityAlpnSelector.STUB != null) {
-					ctx.invokeCtxSetAlpnSelectCb(
-							sslCtxPtr, CommunityAlpnSelector.STUB.address(), NULL_PTR);
-				}
-			}
-
 			contextReady = true;
 			return sslCtxPtr;
 		} finally {
 			if (!contextReady) {
+				// A failed load leaves entries on this thread's OpenSSL error queue, and the next
+				// SSL_get_error this thread asks would read them as a fatal error of its own.
+				clearErrorQueue();
 				ctx.invokeCtxFree(sslCtxPtr);
 			}
 		}
 	}
 
-	private static PathCString toCString(java.nio.file.Path path, MemoryAllocator allocator) {
+	private static void loadServerMaterial(CoreSslHandles.CtxHandles ctx, long sslCtxPtr,
+			CryptoProviderConfig config, MemoryAllocator allocator) {
+		int certResult;
+		try (LoanedBuffer cert = toCString(config.certChainPath(), allocator)) {
+			certResult = ctx.invokeCtxUseCertFile(
+					sslCtxPtr,
+					cert.segment().address(),
+					CoreOpenSslLoader.SSL_FILETYPE_PEM);
+		}
+		if (certResult != SSL_SUCCESS) {
+			throw new CryptoBootstrapException(PROVIDER_NAME,
+					"SSL_CTX_use_certificate_file failed", certResult);
+		}
+
+		int keyResult;
+		try (LoanedBuffer key = toCString(config.privateKeyPath(), allocator)) {
+			keyResult = ctx.invokeCtxUseKeyFile(
+					sslCtxPtr,
+					key.segment().address(),
+					CoreOpenSslLoader.SSL_FILETYPE_PEM);
+		}
+		if (keyResult != SSL_SUCCESS) {
+			throw new CryptoBootstrapException(PROVIDER_NAME,
+					"SSL_CTX_use_PrivateKey_file failed", keyResult);
+		}
+
+		int checkResult = ctx.invokeCtxCheckKey(sslCtxPtr);
+		if (checkResult != SSL_SUCCESS) {
+			throw new CryptoBootstrapException(
+					PROVIDER_NAME,
+					"SSL_CTX_check_private_key mismatch");
+		}
+		if (CommunityAlpnSelector.STUB != null) {
+			ctx.invokeCtxSetAlpnSelectCb(
+					sslCtxPtr, CommunityAlpnSelector.STUB.address(), NULL_PTR);
+		}
+	}
+
+	private void clearErrorQueue() {
+		runtime.handles().errorQueue().invokeClearError();
+	}
+
+	/**
+	 * {@code path} as a NUL-terminated UTF-8 string in an infrastructure buffer the caller closes.
+	 */
+	@SuppressWarnings("PMD.AvoidCatchingGenericException") // the buffer is released on any failure, then rethrown
+	/* default */ static LoanedBuffer toCString(Path path, MemoryAllocator allocator) {
 		Objects.requireNonNull(path, "path must not be null");
 		byte[] utf8 = path.toString().getBytes(StandardCharsets.UTF_8);
 		LoanedBuffer buffer = allocator.allocateInfrastructure(utf8.length + 1L);
-		MemorySegment.copy(MemorySegment.ofArray(utf8), 0L, buffer.segment(), 0L, utf8.length);
-		buffer.segment().set(ValueLayout.JAVA_BYTE, utf8.length, (byte) 0);
-		return new PathCString(buffer, buffer.segment().address());
+		try {
+			MemorySegment.copy(MemorySegment.ofArray(utf8), 0L, buffer.segment(), 0L, utf8.length);
+			buffer.segment().set(ValueLayout.JAVA_BYTE, utf8.length, (byte) 0);
+			return buffer;
+		} catch (RuntimeException failure) {
+			buffer.close();
+			throw failure;
+		}
 	}
 
-	private record PathCString(LoanedBuffer buffer, long address) {
+	/**
+	 * Applies the expected peer to a client engine that is built and not yet bound.
+	 */
+	// A test seam, implemented by a method reference in production.
+	/* default */ @FunctionalInterface
+	interface ClientPeerBinder {
+
+		/**
+		 * Makes {@code peer} the identity {@code engine}'s server must present.
+		 *
+		 * @param engine the engine
+		 * @param peer   the identity its server must present
+		 */
+		void bind(OffHeapTlsEngine engine, TlsPeerIdentity peer);
 	}
 }

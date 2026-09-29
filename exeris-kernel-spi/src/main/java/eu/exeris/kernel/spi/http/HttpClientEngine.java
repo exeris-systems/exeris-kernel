@@ -58,9 +58,19 @@ public interface HttpClientEngine extends AutoCloseable {
      *         or has been closed, refuses a {@code null} request with this and not with
      *         {@link IllegalStateException}
      * @throws IllegalStateException if the engine has not been started or has been closed
+     * @throws eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException ({@code EX-NET-2001})
+     *         if the request is carried over TLS and the server fails that verification
      * @implSpec MUST NOT close or retain {@code request.body()} on any path, success or exception.
      *           The caller releases it after {@code send} returns or throws, and may send the same
      *           request again before it does.
+     * @implSpec When the engine carries the request over TLS — the engine decides that, not the
+     *           request, which has no scheme — it verifies the server before any request byte is
+     *           sent: the certificate chain against the engine's trust, and the certificate's
+     *           subject alternative names against the host of the effective authority
+     *           ({@link HttpRequest#authority()}, else {@link #defaultAuthority()}). A DNS host is
+     *           matched against DNS entries and an IP literal against IP entries; the subject
+     *           common name is never consulted. A DNS host is sent as the server name indication;
+     *           an IP literal is not.
      * @apiNote <strong>Body lifecycle:</strong> when {@link HttpResponse#body()} is non-null the
      *          caller owns that buffer and must {@code close()} it once the payload has been read;
      *          the off-heap segment returns to the pool only then, so a missed close is a leak that

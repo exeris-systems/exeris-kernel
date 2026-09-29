@@ -50,7 +50,8 @@ class CommunityS3SignerTest {
     private static final Instant FIXED = Instant.parse("2026-08-01T12:00:00Z");
 
     private static CommunityS3Settings settings(String secret) {
-        return new CommunityS3Settings("minio.internal", 9000, "bucket", "access-key", secret,
+        return new CommunityS3Settings(CommunityS3Settings.Scheme.HTTP, "minio.internal", 9000, "bucket",
+                "access-key", secret,
                 "us-east-1", CommunityS3Settings.DEFAULT_MAX_OBJECT_BYTES);
     }
 
@@ -210,6 +211,48 @@ class CommunityS3SignerTest {
         void oneSecondGrantSigns() {
             assertThat(signerAt(FIXED, SECRET).presign(HttpMethod.GET, PATH, Duration.ofSeconds(1)))
                     .contains("X-Amz-Expires=1");
+        }
+    }
+
+    @Nested
+    @DisplayName("Host and origin")
+    class HostAndOrigin {
+
+        @Test
+        @DisplayName("the scheme's default port is omitted from the signed Host and from a presigned URL")
+        void defaultPortIsOmittedFromTheSignedHost() {
+            CommunityS3Settings https = new CommunityS3Settings(CommunityS3Settings.Scheme.HTTPS, "s3.example.com",
+                    443, "bucket", "access-key", SECRET, "us-east-1", CommunityS3Settings.DEFAULT_MAX_OBJECT_BYTES);
+            CommunityS3Signer httpsSigner = new CommunityS3Signer(https, Clock.fixed(FIXED, ZoneOffset.UTC));
+
+            assertThat(valueOf(httpsSigner.sign(HttpMethod.GET, PATH, EMPTY_SHA256), "Host"))
+                    .as("the Host a browser or curl sends for https://s3.example.com")
+                    .isEqualTo("s3.example.com");
+            assertThat(https.dialAuthority())
+                    .as("the engine still dials an explicit port")
+                    .isEqualTo("s3.example.com:443");
+            assertThat(httpsSigner.presign(HttpMethod.GET, PATH, Duration.ofMinutes(5)))
+                    .startsWith("https://s3.example.com" + PATH + "?");
+
+            CommunityS3Settings http = new CommunityS3Settings(CommunityS3Settings.Scheme.HTTP, "minio.internal",
+                    80, "bucket", "access-key", SECRET, "us-east-1", CommunityS3Settings.DEFAULT_MAX_OBJECT_BYTES);
+            CommunityS3Signer httpSigner = new CommunityS3Signer(http, Clock.fixed(FIXED, ZoneOffset.UTC));
+
+            assertThat(valueOf(httpSigner.sign(HttpMethod.GET, PATH, EMPTY_SHA256), "Host"))
+                    .isEqualTo("minio.internal");
+            assertThat(httpSigner.presign(HttpMethod.GET, PATH, Duration.ofMinutes(5)))
+                    .startsWith("http://minio.internal" + PATH + "?");
+        }
+
+        @Test
+        @DisplayName("a port other than the scheme's default is signed and presigned with the host")
+        void otherPortIsKept() {
+            CommunityS3Signer signer = signerAt(FIXED, SECRET);
+
+            assertThat(valueOf(signer.sign(HttpMethod.GET, PATH, EMPTY_SHA256), "Host"))
+                    .isEqualTo("minio.internal:9000");
+            assertThat(signer.presign(HttpMethod.GET, PATH, Duration.ofMinutes(5)))
+                    .startsWith("http://minio.internal:9000" + PATH + "?");
         }
     }
 

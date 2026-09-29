@@ -71,7 +71,8 @@ class CommunityAcceptFaultTest {
                         "unused.pem", "unused.key", 1024, 30_000),
                 ALLOCATOR,
                 new ThrowingCryptoProvider(),
-                CryptoProviderConfig.httpsServer(tmp.resolve("cert.pem"), tmp.resolve("key.pem")));
+                CryptoProviderConfig.httpsServer(tmp.resolve("cert.pem"), tmp.resolve("key.pem")),
+                NativeTcpClientTls.none());
         carrier.setStreamHandler(stream -> { });
 
         Path jfr = tmp.resolve("accept-fault.jfr");

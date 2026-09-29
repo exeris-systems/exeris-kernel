@@ -4,8 +4,11 @@
  */
 package eu.exeris.kernel.community.transport;
 
+import eu.exeris.kernel.community.crypto.CommunityTlsEngine;
 import eu.exeris.kernel.community.crypto.SocketChannelFdAccess;
 import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
+import eu.exeris.kernel.core.crypto.tls.TlsFailureDetail;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.core.memory.ResourceArbiter;
 import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
@@ -15,6 +18,7 @@ import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
+import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -72,7 +76,11 @@ import java.util.function.LongSupplier;
  * listener first and the reactors last, in the phase order documented there. The
  * {@link NativeTcpSocketBackend}'s native socket handles are released separately, from
  * {@link #close()}, which runs {@link #stop()} and then the backend's own close — the terminal,
- * idempotent teardown path.
+ * idempotent teardown path — and then releases the client trust store, if this carrier dials TLS.
+ *
+ * <p><b>TLS:</b> accepted connections are served with the listener's material; outbound connections
+ * follow the carrier's {@link NativeTcpClientTls} decision: a verified TLS client for the dialled
+ * authority, plaintext, or a refusal.
  *
  * @since 0.5
  */
@@ -103,6 +111,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private static final long ACCEPT_RETRY_BASE_MILLIS = 25L;
     private static final long ACCEPT_RETRY_MAX_MILLIS = 1_000L;
     private static final String ENGINE_NAME = "CommunityNativeTcpCarrier";
+    /** What {@link #connect} says, as an {@code IllegalStateException}, when the engine is not running. */
+    private static final String ENGINE_NOT_RUNNING = "Engine is not running";
     private static final int MIN_LISTENER_BACKLOG = 64;
     private static final int MAX_LISTENER_BACKLOG = 1_024;
     // Advisory TCP reset code for an abortive teardown driven by a reactor dispatch fault
@@ -121,7 +131,8 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final TransportConfig config;
     private final MemoryAllocator allocator;
     private final KernelCryptoProvider cryptoProvider;
-    private final CryptoProviderConfig cryptoConfig;
+    private final CryptoProviderConfig listenerCryptoConfig;
+    private final NativeTcpClientTls clientTls;
     private final NativeTcpSocketBackend backend;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -170,14 +181,29 @@ public final class NativeTcpCarrier implements TransportEngine {
     private final ConcurrentMap<SocketChannel, NativeTcpReactor> channelOwner =
             channelRuntimeRegistry.channelOwner;
 
+    /**
+     * Creates a carrier that is not running: it binds no listener and dials nothing until
+     * {@link #start()}.
+     *
+     * @param config               the transport configuration
+     * @param allocator            the allocator every stream borrows from
+     * @param cryptoProvider       the provider that builds listener engines, or {@code null}
+     * @param listenerCryptoConfig the listener's TLS configuration, or {@code null} to serve plaintext
+     * @param clientTls            what outbound connections do; owned by the carrier from here on
+     */
     /* default */ NativeTcpCarrier(TransportConfig config,
                      MemoryAllocator allocator,
                      KernelCryptoProvider cryptoProvider,
-                     CryptoProviderConfig cryptoConfig) {
+                     CryptoProviderConfig listenerCryptoConfig,
+                     NativeTcpClientTls clientTls) {
         this.config = Objects.requireNonNull(config, "config must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.cryptoProvider = cryptoProvider;
-        this.cryptoConfig = cryptoConfig;
+        this.listenerCryptoConfig = listenerCryptoConfig;
+        this.clientTls = Objects.requireNonNull(clientTls, "clientTls must not be null");
+        if (clientTls.armed() || clientTls.refusesOutbound()) {
+            warmOutboundTlsClasses();
+        }
         this.backend = new NativeTcpSocketBackend();
         LOG.log(System.Logger.Level.INFO, () ->
                 "[NativeTcpCarrier] Community socket backend mode="
@@ -348,14 +374,24 @@ public final class NativeTcpCarrier implements TransportEngine {
     /**
      * Opens an outbound TCP connection and its single bidirectional stream, in CLIENT or DUAL mode.
      *
+     * <p>When this carrier dials TLS, the connection's engine verifies the server against
+     * {@code host}: a DNS name against the certificate's DNS entries, sent as the server name
+     * indication, an IP literal against its IP entries. The handshake runs on the stream's first
+     * read or write, which throws {@code TlsHandshakeException} ({@code EX-NET-2001}) if it fails.
+     *
      * @param host remote host name or IP address to connect to
      * @param port remote port to connect to
      * @return the established connection, with its stream already registered on a reactor; its
      *         {@link TransportConnection#remoteAddress()} is the address {@code host} resolved to,
      *         not {@code host} itself
      * @throws IllegalStateException if the mode does not support outbound connect, or the engine
-     *                                is not running
-     * @throws TransportException    if the connection could not be established ({@code EX-NET-4001})
+     *                                is not running, including one closed while this connect was
+     *                                in flight
+     * @throws TransportException    if the connection could not be established ({@code EX-NET-4001}),
+     *                                including, before any socket opens, a {@code host} that is
+     *                                neither a DNS name nor an IP literal while this carrier dials
+     *                                TLS, and a carrier whose crypto provider cannot verify an
+     *                                outbound peer; each with a {@code TlsHandshakeException} cause
      */
     @Override
     public TransportConnection connect(String host, int port) {
@@ -363,7 +399,19 @@ public final class NativeTcpCarrier implements TransportEngine {
             throw new IllegalStateException("Transport mode does not support outbound connect");
         }
         if (!running.get()) {
-            throw new IllegalStateException("Engine is not running");
+            throw new IllegalStateException(ENGINE_NOT_RUNNING);
+        }
+        if (clientTls.refusesOutbound()) {
+            throw TransportException.bindFailure(engineName(), port,
+                    new TlsHandshakeException(-1, TlsFailureDetail.NO_PEER_VERIFIER));
+        }
+        TlsPeerIdentity peer = null;
+        if (clientTls.armed()) {
+            try {
+                peer = TlsPeerIdentity.of(host);
+            } catch (TlsHandshakeException invalidHost) {
+                throw TransportException.bindFailure(engineName(), port, invalidHost);
+            }
         }
 
         SocketChannel channel = null;
@@ -379,7 +427,9 @@ public final class NativeTcpCarrier implements TransportEngine {
             channel.configureBlocking(true);
             channel.connect(new InetSocketAddress(host, port));
             channel.configureBlocking(false);
-            tlsEngine = createTlsEngineIfEnabled();
+            if (peer != null) {
+                tlsEngine = newClientEngine(peer);
+            }
             bindTlsFdIfRequired(tlsEngine, channel);
             final SocketChannel connectedChannel = channel;
 
@@ -387,11 +437,11 @@ public final class NativeTcpCarrier implements TransportEngine {
             // does: TransportConnection#remoteAddress is the peer's address, and the host name the
             // caller dialled stays the caller's. A layer that needs the name, such as an HTTP client
             // writing Host, takes it from its own request rather than from the connection.
-            InetSocketAddress peer = resolveRemoteAddress(connectedChannel);
+            InetSocketAddress reached = resolveRemoteAddress(connectedChannel);
             NativeTcpConnection connection = new NativeTcpConnection(
                     connectionSeq.getAndIncrement(),
-                    peer.getAddress().getHostAddress(),
-                    peer.getPort());
+                    reached.getAddress().getHostAddress(),
+                    reached.getPort());
 
             NativeTcpStream stream = new NativeTcpStream(
                     engineName(),
@@ -403,7 +453,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                     () -> requestWriteInterest(connectedChannel),
                     () -> onStreamClosed(connectedChannel),
                     backend.socketHandles());
-            if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
+            if (tlsEngine instanceof CommunityTlsEngine) {
                 stream.markTlsBoundFromCarrier();
             }
 
@@ -422,6 +472,26 @@ public final class NativeTcpCarrier implements TransportEngine {
             closeQuietly(tlsEngine);
             closeQuietly(channel);
             throw e;
+        }
+    }
+
+    /**
+     * A client engine that verifies the server against {@code peer}. {@link #close()} closes the
+     * client TLS only after {@link #stop()}, so an engine build refused once the client TLS is
+     * closed belongs to a connect that lost to that close, and is reported as the engine not running.
+     *
+     * @param peer the identity the server must present
+     * @return a new engine the caller owns
+     * @throws IllegalStateException ({@code Engine is not running}) if the client TLS was closed
+     */
+    private TlsEngine newClientEngine(TlsPeerIdentity peer) {
+        try {
+            return clientTls.newEngine(peer);
+        } catch (IllegalStateException refused) {
+            if (clientTls.isClosed()) {
+                throw new IllegalStateException(ENGINE_NOT_RUNNING, refused);
+            }
+            throw refused;
         }
     }
 
@@ -465,10 +535,13 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     /**
-     * Terminal, idempotent shutdown: runs {@link #stop()} and then releases the socket backend's
-     * native handles. Safe to call more than once, and safe to call without a prior {@link #start()}.
+     * Terminal, idempotent shutdown: runs {@link #stop()}, then releases the socket backend's native
+     * handles, then the client trust store. Engines already built keep their own reference to the
+     * store. Safe to call more than once, and safe to call without a prior {@link #start()}.
      */
     @Override
+    // An ordered teardown of fields, each released even if the one before it threw.
+    @SuppressWarnings("PMD.UseTryWithResources")
     public void close() {
         if (!closed.compareAndSet(false, true)) {
             return;
@@ -476,7 +549,11 @@ public final class NativeTcpCarrier implements TransportEngine {
         try {
             stop();
         } finally {
-            backend.close();
+            try {
+                backend.close();
+            } finally {
+                clientTls.close();
+            }
         }
     }
 
@@ -827,6 +904,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         while (acceptedChannel != null && running.get()) {
             SocketChannel currentChannel = acceptedChannel;
             NativeTcpConnection connection = null;
+            NativeTcpStream stream = null;
             boolean slotReserved = false;
             boolean connectionManagedByStreamLifecycle = false;
             try {
@@ -845,17 +923,13 @@ public final class NativeTcpCarrier implements TransportEngine {
                         remote.getAddress().getHostAddress(),
                         remote.getPort());
 
-                NativeTcpStream stream = buildAcceptedStream(currentChannel, connection);
+                stream = buildAcceptedStream(currentChannel, connection);
                 connection.bindSingleStream(stream);
                 connectionManagedByStreamLifecycle = true;
                 registerConnection(connection, stream, currentChannel);
             } catch (RuntimeException exception) {
                 recordAcceptFault(exception);
-                if (connection != null) {
-                    connection.close();
-                } else {
-                    closeQuietly(currentChannel);
-                }
+                releaseFailedAccept(currentChannel, connection, stream, connectionManagedByStreamLifecycle);
             } finally {
                 if (slotReserved && !connectionManagedByStreamLifecycle) {
                     activeConnections.decrementAndGet();
@@ -888,23 +962,63 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
-    private NativeTcpStream buildAcceptedStream(SocketChannel channel, NativeTcpConnection connection) {
-        TlsEngine tlsEngine = createTlsEngineIfEnabled();
-        bindTlsFdIfRequired(tlsEngine, channel);
-        NativeTcpStream stream = new NativeTcpStream(
-                engineName(),
-                streamSeq.getAndIncrement(),
-                channel,
-                connection,
-                allocator,
-                tlsEngine,
-                () -> requestWriteInterest(channel),
-                () -> onStreamClosed(channel),
-                backend.socketHandles());
-        if (tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine) {
-            stream.markTlsBoundFromCarrier();
+    /**
+     * Closes what an accepted connection whose setup threw holds, each resource once, through its
+     * owner at that point: a stream bound to the connection closes through the connection, and
+     * closes the socket and its TLS engine with it; a stream built but not bound closes itself; with
+     * no stream, the socket is closed here. The connection owns no resource of its own, so closing
+     * it without a stream only marks it closed.
+     *
+     * @param channel     the accepted socket
+     * @param connection  the connection built for it, or {@code null} if setup failed before that
+     * @param stream      the stream built for it, or {@code null} if setup failed before that
+     * @param streamBound whether {@code stream} is bound to {@code connection}
+     */
+    private static void releaseFailedAccept(SocketChannel channel,
+                                            NativeTcpConnection connection,
+                                            NativeTcpStream stream,
+                                            boolean streamBound) {
+        if (connection != null) {
+            connection.close();
         }
-        return stream;
+        if (stream == null) {
+            closeQuietly(channel);
+        } else if (!streamBound) {
+            stream.close();
+        }
+    }
+
+    /**
+     * Builds the stream for an accepted socket, with a listener TLS engine when the carrier serves
+     * TLS. The returned stream owns the engine. If anything after the engine is created throws, the
+     * engine is closed before the failure propagates; the socket stays the caller's.
+     *
+     * @param channel    the accepted socket
+     * @param connection the connection the stream belongs to
+     * @return the stream, which owns {@code channel}'s TLS engine if there is one
+     */
+    private NativeTcpStream buildAcceptedStream(SocketChannel channel, NativeTcpConnection connection) {
+        TlsEngine tlsEngine = createListenerTlsEngine();
+        try {
+            bindTlsFdIfRequired(tlsEngine, channel);
+            NativeTcpStream stream = new NativeTcpStream(
+                    engineName(),
+                    streamSeq.getAndIncrement(),
+                    channel,
+                    connection,
+                    allocator,
+                    tlsEngine,
+                    () -> requestWriteInterest(channel),
+                    () -> onStreamClosed(channel),
+                    backend.socketHandles());
+            if (tlsEngine instanceof CommunityTlsEngine) {
+                stream.markTlsBoundFromCarrier();
+            }
+            return stream;
+        } catch (RuntimeException | Error failure) {
+            closeQuietly(tlsEngine);
+            throw failure;
+        }
     }
 
     /**
@@ -977,13 +1091,29 @@ public final class NativeTcpCarrier implements TransportEngine {
         owner.enqueueRegistration(channel);
     }
 
+    /**
+     * A reactor for a new outbound channel. A connect that races {@link #stop()} can read the reactor
+     * list while it is being cleared, which shows as an index past the end or an empty slot; either
+     * means the engine has stopped, and is reported as such.
+     *
+     * @throws IllegalStateException if the engine has no reactors, or stopped while this ran
+     */
     private NativeTcpReactor selectReactor() {
         int size = reactors.size();
         if (size == 0) {
             throw new IllegalStateException("No reactor loops initialized");
         }
         int index = Math.floorMod(nextReactorIndex.getAndIncrement(), size);
-        return reactors.get(index);
+        NativeTcpReactor reactor;
+        try {
+            reactor = reactors.get(index);
+        } catch (IndexOutOfBoundsException cleared) {
+            throw new IllegalStateException(ENGINE_NOT_RUNNING, cleared);
+        }
+        if (reactor == null) {
+            throw new IllegalStateException(ENGINE_NOT_RUNNING);
+        }
+        return reactor;
     }
 
     private ChannelRuntimeRegistry.ChannelRuntimeState registerRuntime(NativeTcpStream stream,
@@ -1089,15 +1219,27 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
-    private TlsEngine createTlsEngineIfEnabled() {
-        if (cryptoProvider == null || cryptoConfig == null) {
+    private TlsEngine createListenerTlsEngine() {
+        if (cryptoProvider == null || listenerCryptoConfig == null) {
             return null;
         }
-        return cryptoProvider.createTlsEngine(cryptoConfig);
+        return cryptoProvider.createTlsEngine(listenerCryptoConfig);
+    }
+
+    /**
+     * Initialises, on the constructing thread, the classes {@link #connect} and the stream's failure
+     * reporting use, so no class initialiser runs on a connecting virtual thread.
+     */
+    private static void warmOutboundTlsClasses() {
+        TlsPeerIdentity.of("localhost");
+        TlsPeerIdentity.of(java.net.InetAddress.getLoopbackAddress().getHostAddress());
+        new NativeTcpTlsFailure(-1, -1L).toException();
+        TransportException.bindFailure(ENGINE_NAME, 0,
+                new TlsHandshakeException(-1, TlsFailureDetail.NO_PEER_VERIFIER));
     }
 
     private static void bindTlsFdIfRequired(TlsEngine tlsEngine, SocketChannel channel) {
-        if (!(tlsEngine instanceof eu.exeris.kernel.community.crypto.CommunityTlsEngine communityTlsEngine)) {
+        if (!(tlsEngine instanceof CommunityTlsEngine communityTlsEngine)) {
             return;
         }
         communityTlsEngine.bindFileDescriptor(SocketChannelFdAccess.requireFd(channel));

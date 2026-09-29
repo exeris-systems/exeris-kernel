@@ -120,6 +120,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttpExchangeTck`
 - `AbstractHttpProviderLoopbackTck` — verifies real transport round-trip; bound at Community tier (`CommunityHttpProviderLoopbackTckTest`)
 - `AbstractHealthEndpointTck` (since 0.7.0) — pins the readiness/liveness endpoint contract for any `HttpHandler` binding that surfaces a `HealthProbe`. Bound at Community tier (`CommunityHealthEndpointTckTest`).
+- `AbstractHttpClientTlsPeerVerificationTck` (since 0.12.0, [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) Amendment A1) — the TLS clause of `HttpClientEngine#send`, a suite apart from `AbstractHttpClientEngineTck`; bound at Community tier (`CommunityHttpClientTlsPeerVerificationTckTest`), not by the Core fixture client, which speaks no TLS, nor by Enterprise. See *Client TLS* below.
 - `AbstractHttpStreamExchangeTck` (since 0.10.0, [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, no respond-once regression, and (v0.11) `pathParams()` being non-null and immutable — the map is routing state, so a handler able to write to it could change what a later request resolves to. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
@@ -222,6 +223,45 @@ Outbound HTTP/1.1 requests managed by `CommunityHttpClientEngine` support persis
   4. Neither request nor response carries `Connection: close` (including comma-separated token lists).
 - **No Implicit Transport Retries (ADR-045 / ADR-026):** `CommunityHttpClientEngine` performs zero silent or transport-level retries on failed pooled connections. If a pooled connection is closed or fails during an exchange, the connection is closed and the exception is propagated immediately to caller. Application-level or policy-driven retries remain strictly the responsibility of `KernelWebClient` and `HttpRetryPolicy`.
 - **JFR Telemetry:** `CommunityHttpClientPoolEvent` (`eu.exeris.kernel.community.http.HttpClientPool`) records pool lifecycle events: `ACQUIRE_HIT`, `ACQUIRE_MISS`, `RELEASE`, `EVICT_IDLE`, and `EVICT_CAPACITY` with authority and active pool size.
+
+### Client TLS (since v0.12.0 — [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) §4, Amendment A1)
+
+A request carries no scheme, so whether `CommunityHttpClientEngine` speaks TLS is decided by its
+transport, once, when the engine is built (a booted kernel builds it when the `http` subsystem
+starts): TLS when `exeris.transport.tls` is not `false` and a crypto provider is bound there,
+plaintext otherwise
+([transport.md](transport.md#client-tls) lists the postures and the event that records them). The
+client engine's transport is always a `CLIENT` transport, with no listener and no certificate, whatever
+`HttpMode` says; in `DUAL` the server engine's transport is the one that listens.
+
+Over TLS the engine verifies the server before any request byte is sent: the certificate chain
+against its trust (`crypto.tls.client.trustFile`, else OpenSSL's default), and the certificate's
+subject alternative names against the host of the effective authority — `HttpRequest#authority()`,
+else `HttpClientEngine#defaultAuthority()`. A DNS host is matched against DNS entries, never against
+the subject common name, and is sent as the server name indication; an IP literal is matched against
+IP entries and sends none. A server that fails is refused with `TlsHandshakeException`
+(`EX-NET-2001`, detail `peer certificate verification failed`, `rawArgs[0]` the `X509_V_*` code), which
+`send` throws unwrapped. An authority host that is neither a DNS name nor an IP literal is refused
+earlier, at connect and before any socket opens: `send` throws `HttpException` (`EX-HTTP-4009`),
+caused by `TransportException` (`EX-NET-4001`), caused by `TlsHandshakeException` (detail
+`authority host is neither a DNS name nor an IP literal`). `HttpClientEngine#send` states this
+obligation in its `@implSpec`; the Community engine meets it, the Enterprise engine is outside it.
+
+`AbstractHttpClientTlsPeerVerificationTck` is the executable form of that `@implSpec`, a suite apart
+from `AbstractHttpClientEngineTck` so that a provider binds it once its client verifies. It runs the
+client against the JDK's own TLS server and a ClientHello probe: trust and its absence (a configured
+anchor, and the default trust refusing a private authority), a DNS host against DNS entries only and
+never the common name, an IP literal against IP entries only (a DNS entry spelling the address does
+not match), the request's authority over the engine's default, the server name for a DNS host and
+none for an IP literal, and no request read by a server the client refused.
+`CommunityHttpClientTlsPeerVerificationTckTest` binds it and also asserts the `X509_V_*` code of each
+refusal.
+
+`CommunityHttpRetryPolicy` classifies any transport failure of an idempotent request as retryable,
+and a verification failure is one: a `KernelWebClient` built with that policy retries it, so the
+outcome is still the refusal, but it arrives after the policy's backoff and each attempt runs another
+handshake. A `KernelWebClient` built without a policy (`HttpRetryPolicy.none()`) reports the first
+refusal.
 
 ### JSON mapper customization (since v0.10.1 — [ADR-052](../adr/ADR-052-community-json-mapper-customization-seam.md))
 

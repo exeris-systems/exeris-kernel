@@ -160,6 +160,9 @@ class NativeTcpClientServerE2eMultiReactor4IntegrationTest {
 
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
                 .where(KernelProviders.CRYPTO_PROVIDER, cryptoProvider)
+                // The client trusts the server's self-signed certificate, and dials 127.0.0.1,
+                // which is the certificate's IP subject alternative name.
+                .where(KernelProviders.CURRENT_CONFIG, certificate.clientTrust())
                 .run(() -> {
                     serverHolder[0] = provider.createEngine(new TransportConfig(
                             TransportMode.SERVER,

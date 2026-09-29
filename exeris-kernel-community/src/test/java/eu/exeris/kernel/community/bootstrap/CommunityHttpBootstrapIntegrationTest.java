@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.crypto.CommunityKernelCryptoProvider;
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
 import eu.exeris.kernel.core.bootstrap.KernelBootstrap;
 import eu.exeris.kernel.core.http.client.KernelWebClient;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
@@ -22,6 +23,7 @@ import eu.exeris.kernel.spi.http.HttpResponseBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -172,14 +174,13 @@ class CommunityHttpBootstrapIntegrationTest {
 
     @Test
     @DisplayName("KernelBootstrap with crypto+http serves /health over TLS to Community HttpClientEngine")
-    void httpSubsystemServesHealthEndpointOverTls() throws Exception {
+    void httpSubsystemServesHealthEndpointOverTls(@TempDir Path tlsMaterialDir) throws Exception {
         CommunityKernelCryptoProvider provider = createProviderOrSkip();
         provider.close();
 
-        Path certPath = Path.of("..", "native-libs", "certs", "server.crt").normalize();
-        Path keyPath = Path.of("..", "native-libs", "certs", "server.key").normalize();
-        assumeTrue(Files.isRegularFile(certPath) && Files.isRegularFile(keyPath),
-                "TLS test cert/key not found — skipping HTTPS bootstrap test");
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+        Path certPath = certificate.certificate();
+        Path keyPath = certificate.privateKey();
 
         int port = nextFreePort();
         String previousMode = System.getProperty("exeris.http.mode");
@@ -187,12 +188,16 @@ class CommunityHttpBootstrapIntegrationTest {
         String previousPort = System.getProperty("exeris.http.port");
         String previousCert = System.getProperty("exeris.transport.certPath");
         String previousKey = System.getProperty("exeris.transport.keyPath");
+        String previousTrust = System.getProperty("exeris.crypto.tls.client.trustFile");
 
         System.setProperty("exeris.http.mode", "SERVER");
         System.setProperty("exeris.http.bindHost", "127.0.0.1");
         System.setProperty("exeris.http.port", Integer.toString(port));
         System.setProperty("exeris.transport.certPath", certPath.toString());
         System.setProperty("exeris.transport.keyPath", keyPath.toString());
+        // The client verifies the server: it trusts the server's self-signed certificate, and dials
+        // 127.0.0.1, the certificate's IP subject alternative name.
+        System.setProperty("exeris.crypto.tls.client.trustFile", certPath.toString());
 
         try {
             KernelBootstrap.builder()
@@ -209,7 +214,11 @@ class CommunityHttpBootstrapIntegrationTest {
                                 HttpConfig.DEFAULT_MAX_HEADER_SIZE,
                                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                                 false,
-                                HttpVersion.HTTP_1_1
+                                HttpVersion.HTTP_1_1,
+                                "127.0.0.1:" + port,
+                                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE
                         );
                         try (HttpClientEngine client = new CommunityHttpProvider().createClientEngine(clientConfig)) {
                             client.start();
@@ -250,6 +259,7 @@ class CommunityHttpBootstrapIntegrationTest {
             restoreProperty("exeris.http.port", previousPort);
             restoreProperty("exeris.transport.certPath", previousCert);
             restoreProperty("exeris.transport.keyPath", previousKey);
+            restoreProperty("exeris.crypto.tls.client.trustFile", previousTrust);
         }
     }
 

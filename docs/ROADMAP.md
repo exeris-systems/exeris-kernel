@@ -1782,7 +1782,7 @@ S3-compatible driver against MinIO — the merge gate's two-binding requirement 
 scope is recorded as an ADR-056 §10 amendment rather than left to folklore: header signing over
 `host` / `x-amz-content-sha256` / `x-amz-date` plus query-signed presigned URLs, no multipart, no chunked
 payload signing; an `https://` endpoint is **rejected at construction** because the Community HTTP client
-engine has no client-side TLS; and the single-object ceiling is a named knob (`s3.maxObjectBytes`, default
+engine takes no TLS from an endpoint scheme; and the single-object ceiling is a named knob (`s3.maxObjectBytes`, default
 8 MiB) rather than an implicit one, refused loudly through `EX-BLOB-8005` before any allocation.
 
 Two things this slice deliberately did **not** close, both tracked below: bootstrap wiring for the

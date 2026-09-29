@@ -92,7 +92,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
-| `…spi.crypto` | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
+| `…spi.crypto`⁴ | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
 | `…spi.scheduling` | **preview** | 0.11.0 | ADR-057 | `AbstractJobSchedulerTck` | — |
 | `…spi.storage.blob` | **preview** | 0.11.0 | ADR-056 | `AbstractBlobStorageTck` | — |
 | `…spi.time` | **preview** | 0.12.0 | ADR-082 | — (no provider contract; `TimeSource` is bound, not discovered) | — |
@@ -116,6 +116,15 @@ benchmark evidence (concurrent connections, frame throughput, backpressure under
 teardown of a dead peer), not on the TCK going green (ADR-084 §10). Its first-party consumers —
 Platform LSP and Studio — are therefore building on a surface declared to move, which is recorded
 rather than left to be discovered.
+
+⁴ `crypto`: 0.12.0 amends the javadoc of `KernelCryptoProvider#createTlsEngine`,
+`TlsEngine#beginHandshake` and `CryptoProviderConfig#tcpClient()` (ADR-074 Amendment A1) and changes
+no signature; the compatibility gate reports no API change. The behaviour they now state is new: a
+provider that verifies server identity returns a client engine from a client configuration — which
+names no peer — whose `beginHandshake` throws `TlsHandshakeException` (`EX-NET-2001`) once bound,
+instead of completing unauthenticated. The Community provider does; a caller that handshakes a client
+engine takes `CommunityKernelCryptoProvider#createClientTlsEngine`, which accepts the expected peer.
+`beginHandshake` also names `CLOSED` as the status of a failed handshake, which it already was.
 
 ¹ `config`: `ConfigProvider` / `KernelProfile` / `Dynamic` are mature 0.5.0 contracts and treated
 as `stable`. The `@Immutable` annotation + watcher-refusal semantics (since 0.9.0, v0.9 Sprint 5) are
@@ -168,6 +177,7 @@ gated nor reported by the compatibility gate, so completeness here is enforced, 
 | `HttpClientEngine`, `HttpServerEngine`, `HttpProvider`, `HttpExchange`, `HttpHandler` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpClientEngineTck`, `…HttpServerEngineTck`, `…HttpProviderTck`, `…HttpExchangeTck`, `…HttpHandlerTck` |
 | Request/response carriers: `HttpRequest`, `HttpResponse`, `HttpTypedResponse`, `HttpStatus`, `HttpMethod`, `HttpVersion`, `HttpHeader` | **stable** | 0.5.0 | ADR-009 | exercised through the engine/exchange/handler TCKs above |
 | ↳ `HttpRequest.authority()` / `HttpConfig.defaultAuthority()` / `HttpClientEngine.defaultAuthority()` | **stable** | 0.12.0 | ADR-074 | `AbstractHttpClientEngineTck$PeerAddressing` (also bound to the engine a booted kernel binds, by `DeferredHttpClientEngineTckTest`), `AbstractHttpProviderLoopbackTck`, `KernelWebClientRetryTest#enricherObservesTheResolvedAuthority`, `CommunityHttpBootstrapIntegrationTest#bootedClientEnricherSeesConfiguredDefaultAuthority` (the engine a booted kernel binds) |
+| ↳ `HttpClientEngine.send(HttpRequest)` server verification over TLS (`@implSpec`, javadoc only): the chain against the engine's trust and the subject alternative names against the effective authority's host — DNS against DNS entries, sent as SNI; an IP literal against IP entries, no SNI; never the common name — failing with `TlsHandshakeException` (`EX-NET-2001`) before any request byte is sent. **Behavioural change**: the Community engine verified nothing before 0.12.0 | **stable** | 0.12.0 | ADR-074 (A1) | `AbstractHttpClientTlsPeerVerificationTck`, a suite apart from `AbstractHttpClientEngineTck`, bound by `CommunityHttpClientTlsPeerVerificationTckTest`; also `CommunityTlsPeerVerificationTest`, `CommunityHttpDualSelfDialTest`. The Enterprise engine is outside it and binds no suite |
 | ↳ `HttpClientEngine.send(HttpRequest)` request-body ownership: the caller of `send` keeps ownership of the request body and releases it after `send` returns or throws; the engine reads it during `send` and neither closes nor retains it | **stable** | 0.12.0 | ADR-034 (A1) | `AbstractHttpClientEngineTck$RequestBodyOwnership`, `AbstractHttpProviderLoopbackTck` |
 | `HttpConfigValidation` | _internal_ | 0.12.0 | ADR-074 | — (package-private; `HttpConfig`'s own construction-time validation, extracted rather than published) |
 | Engine wiring: `HttpConfig`, `HttpMode`, `HttpKernelProviders` | **stable** | 0.5.0 | ADR-009 | `AbstractHttpProviderTck`, `…HttpProviderLoopbackTck` |

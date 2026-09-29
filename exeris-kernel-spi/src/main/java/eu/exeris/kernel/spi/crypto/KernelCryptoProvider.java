@@ -51,7 +51,15 @@ public interface KernelCryptoProvider {
      *         cryptographic library, an unreadable or mismatched certificate and key pair, or a
      *         {@link CryptoProviderConfig.Protocol} this provider does not serve
      * @implSpec A configuration this provider cannot serve must fail here, at bootstrap, rather
-     *           than at the first record: the returned engine is expected to be usable.
+     *           than at the first record: the returned engine is expected to be usable, with one
+     *           exception. A client configuration names no peer, so an engine built from one has
+     *           nothing to verify the server against. A provider that verifies server identity
+     *           still returns such an engine, but its {@link TlsEngine#beginHandshake} throws
+     *           {@link eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException}
+     *           ({@code EX-NET-2001}) instead of completing unauthenticated. It binds, reports its
+     *           phase and closes like any other engine. That provider creates client engines that
+     *           can complete a handshake through its own entry point, which takes the expected
+     *           peer.
      * @implNote The Community and Enterprise providers take the off-heap session slab from the
      *           bound {@code MemoryAllocator}, so a breach of the off-heap budget surfaces as
      *           {@code MemoryExhaustedException} ({@code EX-MEM-1001}) before any native memory

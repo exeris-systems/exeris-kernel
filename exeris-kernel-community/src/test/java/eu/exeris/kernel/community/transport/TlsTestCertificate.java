@@ -44,12 +44,14 @@ import java.util.Date;
  *
  * <p>RSA-2048 with SHA-256, ~1 s to generate on a laptop, done once per test class rather than per
  * test. The SAN carries {@code IP:127.0.0.1} because every one of these suites binds the loopback.
+ * The common name is a host nobody dials: a verifying client reads the SAN only. A client trusts this
+ * certificate by naming {@link #certificate()} as its trust file ({@link #clientTrust()}).
  */
 public final class TlsTestCertificate {
 
     private static final int KEY_BITS = 2_048;
     private static final Duration VALIDITY = Duration.ofDays(1);
-    private static final String SUBJECT = "CN=127.0.0.1";
+    private static final String SUBJECT = "CN=exeris-test-leaf";
     private static final String SIGNATURE_ALGORITHM = "SHA256withRSA";
 
     private final Path certificatePath;
@@ -78,6 +80,18 @@ public final class TlsTestCertificate {
     /** PEM private-key path, for {@code TransportConfig.keyPath}. */
     /* default */ String keyPath() {
         return privateKeyPath.toString();
+    }
+
+    /**
+     * A kernel configuration that makes a client carrier trust this certificate, through
+     * {@code crypto.tls.client.trustFile}.
+     *
+     * @return a configuration holding that one key
+     */
+    public MapConfigProvider clientTrust() {
+        return new MapConfigProvider(
+                java.util.Map.of(NativeTcpTransportProvider.CLIENT_TRUST_FILE_KEY, certificatePath.toString()),
+                java.util.Map.of());
     }
 
     /**

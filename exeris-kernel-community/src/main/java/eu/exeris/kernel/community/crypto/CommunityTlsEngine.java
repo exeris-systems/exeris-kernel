@@ -6,6 +6,8 @@ package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.core.crypto.openssl.CoreSslHandles;
 import eu.exeris.kernel.core.crypto.tls.OffHeapTlsEngine;
+import eu.exeris.kernel.core.crypto.tls.TlsFailureDetail;
+import eu.exeris.kernel.core.crypto.tls.TlsHandshakeFailureCodes;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsDecryptException;
@@ -28,6 +30,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * {@link #isHandshakeComplete()} / {@link #negotiatedProtocol()} delegate unconditionally,
  * with no bound check of their own.
  *
+ * <p>A client engine built with no expected peer — the one
+ * {@link CommunityKernelCryptoProvider#createTlsEngine} returns for a client configuration — refuses
+ * {@link #beginHandshake} once bound, with {@link TlsHandshakeException} (detail
+ * {@link TlsFailureDetail#NO_PEER_IDENTITY}): it has nothing to verify the server against, and a
+ * client that verifies nothing is not one this provider hands out.
+ *
  * <p><b>Thread confinement:</b> per {@link TlsEngine}'s contract, an instance is owned by a
  * single carrier or virtual thread for {@link #wrap}, {@link #unwrap} and
  * {@link #beginHandshake}; {@link #bindFileDescriptor(int)} and {@link #close()} use
@@ -47,7 +55,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 	"PMD.ExceptionAsFlowControl",
 	"PMD.UseTryWithResources"
 })
-public final class CommunityTlsEngine implements TlsEngine {
+public final class CommunityTlsEngine implements TlsEngine, TlsHandshakeFailureCodes {
 
 	private static final int SSL_SUCCESS = 1;
 
@@ -57,6 +65,7 @@ public final class CommunityTlsEngine implements TlsEngine {
 	private final long sslCtxPtr;
 	private final MemoryAllocator ownedAllocator;
 	private final boolean jfrEnabled;
+	private final boolean noPeerIdentity;
 
 	private final AtomicBoolean bound = new AtomicBoolean(false);
 	private final AtomicBoolean delegateBoundNotified = new AtomicBoolean(false);
@@ -67,13 +76,20 @@ public final class CommunityTlsEngine implements TlsEngine {
 					   CoreSslHandles.CtxHandles ctxHandles,
 					   long sslCtxPtr,
 					   MemoryAllocator ownedAllocator,
-					   boolean jfrEnabled) {
+					   boolean jfrEnabled,
+					   boolean noPeerIdentity) {
 		this.delegate = delegate;
 		this.sslSetFd = sslSetFd;
 		this.ctxHandles = ctxHandles;
 		this.sslCtxPtr = sslCtxPtr;
 		this.ownedAllocator = ownedAllocator;
 		this.jfrEnabled = jfrEnabled;
+		this.noPeerIdentity = noPeerIdentity;
+	}
+
+	/** The wrapped engine, for the provider that gives it its expected peer. */
+	/* default */ OffHeapTlsEngine delegate() {
+		return delegate;
 	}
 
 	/**
@@ -151,13 +167,17 @@ public final class CommunityTlsEngine implements TlsEngine {
 	 *
 	 * @param outbound buffer for outbound handshake bytes
 	 * @return the handshake status returned by the delegate
-	 * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is not bound, or if the
-	 *         delegate's handshake attempt fails
+	 * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is not bound, if it is a
+	 *         client engine with no expected peer (detail {@link TlsFailureDetail#NO_PEER_IDENTITY}),
+	 *         or if the delegate's handshake attempt fails
 	 */
 	@Override
 	public TlsStatus beginHandshake(LoanedBuffer outbound) {
 		try {
 			ensureBound();
+			if (noPeerIdentity) {
+				throw new TlsHandshakeException(-1, TlsFailureDetail.NO_PEER_IDENTITY);
+			}
 			TlsStatus status = delegate.beginHandshake(outbound);
 			if (jfrEnabled) {
 				CommunityTlsHandshakeEvent.emit(status == TlsStatus.FINISHED, 0);
@@ -197,6 +217,26 @@ public final class CommunityTlsEngine implements TlsEngine {
 	public TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
 		ensureBound();
 		return delegate.wrap(plaintext, ciphertext);
+	}
+
+	/**
+	 * Forwards to the wrapped {@link OffHeapTlsEngine}.
+	 *
+	 * @return the {@code SSL_get_error} code of the failed handshake step, {@code 0} until one fails
+	 */
+	@Override
+	public int handshakeFailureSslError() {
+		return delegate.handshakeFailureSslError();
+	}
+
+	/**
+	 * Forwards to the wrapped {@link OffHeapTlsEngine}.
+	 *
+	 * @return the {@code X509_V_*} verification result, or {@code -1} when there is none
+	 */
+	@Override
+	public long peerVerificationResult() {
+		return delegate.peerVerificationResult();
 	}
 
 	/**
