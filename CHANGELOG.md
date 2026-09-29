@@ -18,12 +18,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
-- **`StreamRouteResolver`, the Core contract through which a driver resolves stream routes**
-  (ADR-043 Amendment A1). `HttpRouter` implements it, and a handler that wraps a router implements it
-  by delegating to the router. Its Javadoc states where resolution runs (before authorization,
-  outside the kernel's bindings, reading no `ScopedValue`), how a wrapper extends its own bindings to
-  the stream handler, and that anything bound around a stream is held for the stream's whole life.
-  `StreamMatch` refuses a `null` handler or parameter map at construction.
+- **SPI: `eu.exeris.kernel.spi.http.StreamRouteResolver` and `eu.exeris.kernel.spi.http.StreamMatch`,
+  the contract through which a driver resolves stream routes** (ADR-043 Amendment A1), classified
+  `preview`. A driver consumes the interface on the handler bound to `HTTP_SERVER_HANDLER`;
+  `HttpRouter` implements it, and a handler that wraps a router implements it by delegating to the
+  router. Its Javadoc states what a resolution answers (respond-once routes never, a query string
+  takes no part, `{name}` segments captured into `StreamMatch.params()`, exact before template),
+  where resolution runs (before authorization, outside the kernel's bindings, reading no
+  `ScopedValue`), how a wrapper extends its own bindings to the stream handler, and that anything
+  bound around a stream is held for the stream's whole life. `StreamMatch` refuses a `null` handler
+  or parameter map at construction. `AbstractStreamRouteResolverTck` holds the contract, bound to
+  `HttpRouter` in Core and to a forwarder over a router slot in Community. Additive at the SPI.
 
 - **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
   gains `abstain()` and a matching `Kind.ABSTAIN`; the dispatcher walks an ordered list of policies
@@ -44,11 +49,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
-- **`HttpRouter.StreamMatch` is now the top-level `eu.exeris.kernel.core.http.routing.StreamMatch`.**
+- **`HttpRouter.StreamMatch` is now the SPI record `eu.exeris.kernel.spi.http.StreamMatch`.**
   Same components and the same `exact(HttpStreamHandler)` factory. It moved out of the final router
-  class so that a handler which is not an `HttpRouter` can return one. Code compiled against 0.11
-  that names `HttpRouter.StreamMatch` or calls `HttpRouter#resolveStream` is recompiled against
-  0.12. This is Core API; the SPI is unchanged.
+  class so that a handler which is not an `HttpRouter` can return one, and into the SPI because the
+  interface returning it is SPI. Code compiled against 0.11 that names `HttpRouter.StreamMatch` or
+  calls `HttpRouter#resolveStream` is recompiled against 0.12. The removal is a Core change; at the
+  SPI the record is an addition.
 
 - **Stream resolution skips a request whose method has no stream route.** `HttpRouter#resolveStream`
   runs for every request once a driver resolves stream routes through the bound handler, and most

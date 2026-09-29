@@ -3195,13 +3195,16 @@ dispatcher a real `HttpRouter`, and the generated boot guard checked the forward
 than the handler the kernel sees. Reported by a downstream Entity-First consumer as finding T23 (see
 v0.10 §"HTTP: Generated-App Boot-Path Reachability").
 
-**Owner:** HTTP subsystem (the Core routing contract and the Community dispatcher). The generated
+**Owner:** HTTP subsystem (the SPI stream-resolution contract, the Core router and the Community
+dispatcher). The generated
 forwarder, its boot guard, the EV1 stream scaffold and the kernel pin are `exeris-tooling`'s.
 
-**Resolution:** a Core contract, `StreamRouteResolver`, that `HttpRouter` implements and a wrapper
-implements by delegating; a driver resolves stream routes through it on the bound handler
-([ADR-043](adr/ADR-043-kernel-http-streaming-spi.md) Amendment A1). `StreamMatch` becomes a
-top-level Core record so that a handler which is not a router can return one. A wrapper extends its
+**Resolution:** an SPI contract, `eu.exeris.kernel.spi.http.StreamRouteResolver` (`preview`), that
+`HttpRouter` implements and a wrapper implements by delegating; a driver resolves stream routes
+through it on the bound handler ([ADR-043](adr/ADR-043-kernel-http-streaming-spi.md) Amendment A1).
+`StreamMatch` becomes a top-level SPI record so that a handler which is not a router can return one.
+Both are SPI because drivers consume the interface and applications and generated code implement
+it; `AbstractStreamRouteResolverTck` holds the contract. A wrapper extends its
 own bindings to a stream by wrapping the handler it gets back and forwarding the parameters; no kernel
 hook is needed, because `ScopedValue` bindings are lexical. The tooling half: the generated
 forwarder implements the interface; the boot guard probes `resolveStream` for every generated
@@ -3211,15 +3214,17 @@ moves to 0.12.
 
 **Merge Gate:** the dispatcher resolves through the interface for a handler that is not an
 `HttpRouter`, with a mutation back to the concrete-class test turning the cases red; a real-boot SSE
-test binds a forwarder, never the router; the SPI is unchanged; ADR-043 is amended.
+test binds a forwarder, never the router; the SPI change is additive and classified `preview`, with
+an `Abstract*Tck` bound by Core and Community and red against a mutation of each binding; ADR-043 is
+amended.
 
 **Status (v0.12): DELIVERED kernel-side.** `CommunityHttpStreamDispatcher#resolveStreamHandler`
 resolves through `StreamRouteResolver`, pinned by `CommunityStreamResolutionDelegationTest` and, over
 a real boot with a forwarder of the generated application's shape bound, by
 `GeneratedAppStreamRouteReachabilityIntegrationTest`, which runs untagged in the default build; a miss
 through a forwarder allocates nothing unless its method has a stream route and its path carries a
-query string (`StreamResolutionMissAllocationTest`); `spi-api-diff` shows no SPI API change against
-the `development/0.12.0` base (against v0.11.0 the SPI does change, through other 0.12 work).
+query string (`StreamResolutionMissAllocationTest`); `spi-api-diff` against the `development/0.12.0`
+base reports two added `preview` types and no break (`stable-breaks=0`, `preview-breaks=0`).
 Generated applications stream once a tooling release built on kernel 0.12 or later ships the
 resolving forwarder and the constructor-injected event bus. HTTP/2 serves no stream route (next
 entry). The Enterprise HTTP engine serves none either: its streaming binding, which resolves

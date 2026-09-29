@@ -225,9 +225,9 @@ the response encoder — and `respond(HttpStatus)` for a bare status.
 ### Routing
 
 You do not have to `switch` on paths. `HttpRouter` **is** an `HttpHandler` — it implements
-`HttpHandler` and `StreamRouteResolver` — so it drops into the same slot. If you bind something that
-wraps the router instead, implement `StreamRouteResolver` on the wrapper too and delegate to the
-router, or its `streamRoute` registrations are never matched.
+`HttpHandler` and the SPI's `eu.exeris.kernel.spi.http.StreamRouteResolver` — so it drops into the
+same slot. If you bind something that wraps the router instead, implement `StreamRouteResolver` on
+the wrapper too and delegate to the router, or its `streamRoute` registrations are never matched.
 
 Source: `GeneratedAppBootPathReachabilityIntegrationTest`, in
 `exeris-kernel-community/src/test/java/eu/exeris/kernel/community/testing/http/`
