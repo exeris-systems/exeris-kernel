@@ -949,7 +949,7 @@ jobs:
           mvn -pl exeris-kernel-community \
             -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
             -Dsurefire.failIfNoSpecifiedTests=false \
-            -Dtest='CommunityOpenSslPinnedMajorTest,CommunityTlsEngineLoopbackIntegrationTest,CommunityHttpClientTlsPeerVerificationTckTest,CommunityTlsPeerVerificationTest,CommunityTlsServerErrorQueueTest,CommunityServerContextErrorQueueTest,CommunityClientTrustOpeningTest,CommunityClientEngineAssemblyTest,NativeTcpTransportProviderClientTlsTest,TransportTlsDecisionTest,CommunityHttpDualSelfDialTest,NativeTcpCarrierCloseRacesConnectTest,CommunityS3EndpointSchemeTest' \
+            -Dtest='CommunityOpenSslPinnedMajorTest,CommunityTlsEngineLoopbackIntegrationTest,CommunityHttpClientTlsPeerVerificationTckTest,CommunityTlsPeerVerificationTest,CommunityTlsServerErrorQueueTest,CommunityServerContextErrorQueueTest,CommunityClientTrustOpeningTest,CommunityClientEngineAssemblyTest,NativeTcpTransportProviderClientTlsTest,TransportTlsDecisionTest,CommunityHttpDualSelfDialTest,NativeTcpCarrierCloseRacesConnectTest,CommunityS3EndpointSchemeTest,CommunityS3BootedEndpointSchemeTest' \
             test -B -e
 
       - name: Run community default-trust suite against OpenSSL ${{ matrix.openssl_version }}
@@ -1002,7 +1002,8 @@ jobs:
                      CommunityClientTrustOpeningTest CommunityClientEngineAssemblyTest \
                      NativeTcpTransportProviderClientTlsTest TransportTlsDecisionTest \
                      CommunityHttpDualSelfDialTest NativeTcpCarrierCloseRacesConnectTest \
-                     CommunityS3EndpointSchemeTest CommunityTlsDefaultTrustTest; do
+                     CommunityS3EndpointSchemeTest CommunityS3BootedEndpointSchemeTest \
+                     CommunityTlsDefaultTrustTest; do
             require_ran exeris-kernel-community/target/surefire-reports "$cls"
           done
           exit "$failed"
