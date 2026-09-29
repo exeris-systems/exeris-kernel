@@ -59,6 +59,8 @@ final class NativeTcpStreamTlsHandshake {
     private volatile NativeTcpTlsFailure recordedFailure;
 
     /**
+     * Creates the handshake state of one stream; a {@code null} engine makes every check a no-op.
+     *
      * @param engineName            the transport engine name reported in a handshake timeout
      * @param tlsEngine             the stream's engine, or {@code null} for a plaintext stream
      * @param channel               the stream's socket, bound to the engine on first use
