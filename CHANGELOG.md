@@ -18,6 +18,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **SPI: `eu.exeris.kernel.spi.http.StreamRouteResolver` and `eu.exeris.kernel.spi.http.StreamMatch`,
+  the contract through which a driver resolves stream routes** (ADR-043 Amendment A1), classified
+  `preview`. A driver consumes the interface on the handler bound to `HTTP_SERVER_HANDLER`;
+  `HttpRouter` implements it, and a handler that wraps a router implements it by delegating to the
+  router. Its Javadoc states what a resolution answers (respond-once routes never, a query string
+  takes no part, `{name}` segments captured into `StreamMatch.params()`, exact before template),
+  where resolution runs (before authorization, outside the kernel's bindings, reading no
+  `ScopedValue`), how a wrapper extends its own bindings to the stream handler, and that anything
+  bound around a stream is held for the stream's whole life. `StreamMatch` refuses a `null` handler
+  or parameter map at construction. `AbstractStreamRouteResolverTck` holds the contract, bound to
+  `HttpRouter` in Core and to a forwarder over a router slot in Community. Additive at the SPI.
+
 - **A route authorization policy may decline to answer** (ADR-061 Amendment A2). `RouteRequirement`
   gains `abstain()` and a matching `Kind.ABSTAIN`; the dispatcher walks an ordered list of policies
   and takes the first non-abstaining answer. Without it a policy had only two replies — a requirement
@@ -36,6 +48,31 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   provided via JFR event `eu.exeris.kernel.community.http.HttpClientPool`.
 
 ### Changed
+
+- **`HttpRouter.StreamMatch` is now the SPI record `eu.exeris.kernel.spi.http.StreamMatch`.**
+  Same components and the same `exact(HttpStreamHandler)` factory. It moved out of the final router
+  class so that a handler which is not an `HttpRouter` can return one, and into the SPI because the
+  interface returning it is SPI. Code compiled against 0.11 that names `HttpRouter.StreamMatch` or
+  calls `HttpRouter#resolveStream` is recompiled against 0.12. The removal is a Core change; at the
+  SPI the record is an addition.
+
+- **Stream resolution skips a request whose method has no stream route.** `HttpRouter#resolveStream`
+  runs for every request once a driver resolves stream routes through the bound handler, and most
+  requests are not streams. A method with no stream route, exact or templated, now answers `null`
+  before the path is examined, so a query-bearing `PUT` or `DELETE` no longer copies its path to
+  drop the query (measured 64 B per request for a ten-character path, now 0 B). The stream-template
+  table is walked as an array, which allocates no iterator at any compilation tier.
+
+- **A path template rejects a request on its literal prefix before walking segments.** Everything
+  before a template's first placeholder is literal, so a path that does not start with it cannot
+  match. Both route tables use it. In a generated application's table a `POST` is rejected by one
+  prefix comparison against every other entity's stream template instead of a segment walk, which
+  makes the stream probe for a collection `POST` about 6.5 to 7 times cheaper by median, with
+  allocation unchanged. The figures are indicative, not JMH: `HttpRoutingAllocationResearch` keeps the
+  best of two interleaved passes of a best-of-5 `System.nanoTime` loop, run in three fresh JVMs per
+  side at load average 1.9 to 12.4.
+  The medians went from 199 ns to 29 ns at 10 entities (per JVM, 193–201 ns to 28–30 ns) and from
+  678 ns to 104 ns at 30 (643–790 ns to 81–163 ns).
 
 - **`RowCursor.getString` states the type domain it covers and refuses outside it** (ADR-080). It is
   total over the measured type set — returning the server's `<type>_out` rendering for every Tier A
@@ -84,6 +121,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **Events and flow get real-runtime test fixtures** (T2-4), over one embedded kernel rather than one
   fixture per subsystem, and `KernelScopePump` moves to the testkit root package where a consumer can
   reach it.
+
+- **The HTTP test fixture runs work inside the boot it holds open.**
+  `EmbeddedHttpEngineFixture#runInKernelScope(Runnable)` carries a body to that thread and throws
+  whatever the body threw on the caller's, as the persistence and runtime fixtures already do. A
+  test reads the boot's own `ScopedValue` bindings there, since the threads a driver runs handlers
+  on do not carry them. A class outside the kernel that implements the interface adds the method.
 
 ### Fixed
 
@@ -179,6 +222,31 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   one stream, which the `TransportStream` contract rules out — a stream is owned by one virtual
   thread — so a conforming caller never reached it; the carrier-pinning TCK bindings did (see the
   carrier-pinning entry). The cost on the uncontended path is one volatile read.
+
+- **A stream route resolves when the bound handler wraps the router** (ADR-043 Amendment A1). The
+  Community dispatcher resolved stream routes only when the handler bound to `HTTP_SERVER_HANDLER`
+  was the `HttpRouter` instance itself, and served every other handler respond-once. A generated
+  application binds a forwarder over a router it builds inside the boot callback, so none of its
+  stream routes resolved over a real boot: a `GET {base}/stream` reached the by-id route with the id
+  `stream`, and a per-action stream `POST` answered `404`. The dispatcher now resolves through
+  `StreamRouteResolver` on the bound handler, which `HttpRouter` implements and a wrapper implements
+  by delegating. A handler that does not implement it, such as a lambda over a router, is still
+  served respond-once. Resolution runs on the HTTP/1.1 path only: a stream route requested over
+  HTTP/2 is still served respond-once (release notes, *Carry-over*, for the workaround). A generated
+  application streams only once its forwarder implements the interface and its stream handlers
+  receive the event bus through their constructors. Both are `exeris-tooling` changes, which need a
+  tooling release built on kernel 0.12 or later.
+
+- **The SPI no longer says a boot binding reaches every virtual thread.** `KernelProviders`, several
+  of its slots, `HttpKernelProviders`, `ConfigProvider` and the `events` package documentation said
+  that a slot bound at boot is inherited by every virtual thread started inside the kernel scope. A
+  `ScopedValue` binding reaches the thread that established it and the subtasks forked inside its
+  scope, and no thread started with `Thread.ofVirtual()` or `Thread.ofPlatform()`, which is how the
+  Community driver runs request and stream handlers. The Javadoc now says so, and that a handler
+  takes any provider its driver does not bind for the call through its constructor. It also says
+  that the inheriting fork is `StructuredTaskScope`, a preview API on JDK 25 that nothing on this
+  line forks through: the kernel's own `StructuredScope` subtasks carry only the bindings their
+  opener passes (ADR-066). Javadoc only.
 
 - **A request session opened without a tenant scope is recorded, not silent** (ADR-061). A
   `permitAll()` route runs no security interceptor, so no `StorageContext` is bound for it, and a

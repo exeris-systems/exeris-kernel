@@ -41,9 +41,18 @@ import java.util.Optional;
  * HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
  * }
  *
+ * <p><b>Allocation:</b> zero-alloc on the hot path — reading a slot ({@code get()} or
+ * {@code orElse}) allocates nothing; the {@link Optional}-returning accessors on this class
+ * allocate one {@code Optional} per call when the slot they read is bound.
  * <p><b>Thread confinement:</b> any thread inside the binding scope — a {@code ScopedValue} binding
- * is visible to the binding thread and to every thread forked inside that scope, and a thread
- * outside it reads the slot as unbound rather than as empty
+ * is visible to the binding thread and to every subtask forked inside that scope through
+ * {@code StructuredTaskScope}, a preview API on JDK 25 that this distribution line does not fork
+ * through ({@link eu.exeris.kernel.spi.context.KernelProviders} states the model); a thread started
+ * any other way, like a thread outside the scope, reads the slot as unbound rather than as empty.
+ * <p><b>Ownership:</b> whoever binds a slot owns the bound instance and its lifecycle — the kernel
+ * bootstrapper for the provider, the engines and the codec registries, the application for the
+ * handler and the route policy it supplies; a reader borrows the reference for the duration of the
+ * binding scope and neither closes nor restarts it.
  *
  * @apiNote Read a slot through its accessor rather than through {@code get()} where one exists: the
  *          optional slots are unbound in perfectly healthy deployments, and
@@ -65,8 +74,8 @@ public final class HttpKernelProviders {
     /**
      * The kernel-wide {@link HttpServerEngine} (created from {@link #HTTP_PROVIDER}).
      *
-     * <p>Bound during HTTP bootstrap and inherited by every virtual thread in the
-     * kernel scope — zero constructor injection needed in handler code.
+     * <p>Bound once during HTTP bootstrap for the kernel's lifetime; the class documentation of
+     * {@link eu.exeris.kernel.spi.context.KernelProviders} says which threads see it.
      *
      * @apiNote Read it directly where the engine is a precondition of the code reading it:
      *          {@snippet lang="java" :
@@ -76,10 +85,15 @@ public final class HttpKernelProviders {
     public static final ScopedValue<HttpServerEngine> HTTP_SERVER_ENGINE = ScopedValue.newInstance();
 
     /**
-     * Optional bootstrap-time override for the server {@link HttpHandler}.
+     * The application's root server {@link HttpHandler}: the seam through which it hands the kernel
+     * what it serves.
      *
-     * <p>When bound, HTTP bootstrap may use this handler instead of the default
-     * subsystem handler. Intended for deterministic integration-test fixtures.
+     * <p>Bound around boot and read once when the HTTP subsystem starts; when unbound, a driver may
+     * serve a default of its own. Respond-once requests go to {@link HttpHandler#handle}. A driver
+     * that serves stream routes ({@link HttpStreamHandler}) resolves them through
+     * {@link StreamRouteResolver}, consulted on this handler before {@code handle}; a bound handler
+     * that does not implement it serves respond-once routes only, so a handler that wraps another
+     * carries stream resolution through as well as {@code handle}.
      */
     public static final ScopedValue<HttpHandler> HTTP_SERVER_HANDLER = ScopedValue.newInstance();
 
@@ -175,9 +189,9 @@ public final class HttpKernelProviders {
     }
 
     /**
-     * Returns an optional bootstrap-time server handler override.
+     * Returns the application's root server handler, the value of {@link #HTTP_SERVER_HANDLER}.
      *
-     * @return an {@link Optional} containing the override when bound, or empty otherwise
+     * @return an {@link Optional} containing the handler when bound, or empty otherwise
      */
     public static Optional<HttpHandler> httpServerHandler() {
         return HTTP_SERVER_HANDLER.isBound()

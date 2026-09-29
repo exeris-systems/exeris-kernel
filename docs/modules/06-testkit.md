@@ -55,6 +55,11 @@ try (EmbeddedHttpEngineFixture fixture = EmbeddedHttpEngineFixtures.kernelBootst
 }
 ```
 
+Code that reads the boot's own `ScopedValue` bindings, such as `KernelProviders.CURRENT_CONFIG`, goes
+through `runInKernelScope(Runnable)` (since 0.12), which carries the work to the thread holding the boot
+and throws whatever the body threw on the caller's thread. A handler cannot observe them: the driver
+runs it on a thread that carries only the bindings it establishes for the call.
+
 `close()` is a **hard stop**, not a graceful drain. It signals the boot thread to stop and joins it for
 up to `KernelBootstrapHttpEngineFixture.STOP_TIMEOUT_SECONDS` (10 seconds), interrupting it if it is
 still alive after that. `TransportEngine.stop()` does drain in-flight streams since v0.11 (see

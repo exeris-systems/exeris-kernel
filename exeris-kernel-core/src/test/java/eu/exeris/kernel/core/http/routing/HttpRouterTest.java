@@ -10,6 +10,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -411,7 +412,7 @@ class HttpRouterTest {
                     .streamRoute(HttpMethod.POST, "/orders/{id}/actions/ship", exchange -> { })
                     .build();
 
-            HttpRouter.StreamMatch match =
+            StreamMatch match =
                     router.resolveStream(HttpMethod.POST, "/orders/42/actions/ship");
 
             assertTrue(match != null, "a registered stream route that cannot match is a dead route");
@@ -425,7 +426,7 @@ class HttpRouterTest {
                     .streamRoute(HttpMethod.GET, "/t/{tenant}/s/{stream}", exchange -> { })
                     .build();
 
-            HttpRouter.StreamMatch match =
+            StreamMatch match =
                     router.resolveStream(HttpMethod.GET, "/t/acme/s/audit?since=5");
 
             assertTrue(match != null);
@@ -481,6 +482,63 @@ class HttpRouterTest {
             router.handle(exchange);
             assertEquals(HttpStatus.NOT_FOUND, exchange.status(),
                     "a streaming route stays invisible to the respond-once path (ADR-043 §7)");
+        }
+
+        @Test
+        void streamTemplateOnlyMethodResolves() {
+            // The per-method early return must count templates as well as exact paths: a method whose
+            // only stream route is a template is still a method that serves streams.
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.POST, "/x", e -> e.respond(HttpStatus.OK))
+                    .streamRoute(HttpMethod.GET, "/x/events", exchange -> { })
+                    .streamRoute(HttpMethod.POST, "/x/{id}/s", exchange -> { })
+                    .build();
+
+            StreamMatch match = router.resolveStream(HttpMethod.POST, "/x/1/s");
+
+            assertTrue(match != null, "POST has only a template stream route, and it must resolve");
+            assertEquals(Map.of("id", "1"), match.params());
+            assertTrue(router.resolveStream(HttpMethod.POST, "/x/1/s?since=5") != null,
+                    "the query string takes no part in matching on a template-only method");
+        }
+
+        @Test
+        void methodWithoutStreamRoutesResolvesNothing() {
+            // The other direction of the early return: a method with no stream route answers null
+            // for a path another method serves as a stream.
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/events", exchange -> { })
+                    .streamRoute(HttpMethod.POST, "/x/{id}/s", exchange -> { })
+                    .build();
+
+            assertNull(router.resolveStream(HttpMethod.PUT, "/x/events"));
+            assertNull(router.resolveStream(HttpMethod.PUT, "/x/1/s?since=5"));
+            assertNull(router.resolveStream(HttpMethod.DELETE, "/x/1/s"));
+        }
+
+        @Test
+        void leadingPlaceholderTemplateMatches() {
+            // A template whose first segment is a placeholder has nothing literal before it but the
+            // leading slash; both tables must still match it.
+            AtomicReference<String> captured = new AtomicReference<>();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/{tenant}/orders",
+                            e -> {
+                                captured.set(e.pathParams().get("tenant"));
+                                e.respond(HttpStatus.OK);
+                            })
+                    .streamRoute(HttpMethod.GET, "/{tenant}/orders/stream", exchange -> { })
+                    .build();
+
+            CapturingExchange exchange = CapturingExchange.get("/acme/orders");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertEquals("acme", captured.get());
+
+            StreamMatch match = router.resolveStream(HttpMethod.GET, "/acme/orders/stream");
+            assertTrue(match != null, "a leading-placeholder stream template must resolve");
+            assertEquals(Map.of("tenant", "acme"), match.params());
+            assertNull(router.resolveStream(HttpMethod.GET, "/acme/other/stream"));
         }
 
         @Test
