@@ -171,6 +171,11 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private final ChannelRuntimeRegistry channelRuntimeRegistry = new ChannelRuntimeRegistry();
 
+    /** Runs in {@link #connect} once the stream is registered; a test seam, a no-op otherwise. */
+    @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
+    private volatile Runnable afterClientRegistration = () -> {
+    };
+
     /**
      * Compatibility mirrors retained for diagnostics and existing transport tests.
      */
@@ -246,6 +251,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         if (!running.compareAndSet(false, true)) {
             return;
         }
+        channelRuntimeRegistry.unseal();
 
         try {
             boolean serverRole = mode() == TransportMode.SERVER || mode() == TransportMode.DUAL;
@@ -416,6 +422,7 @@ public final class NativeTcpCarrier implements TransportEngine {
 
         SocketChannel channel = null;
         TlsEngine tlsEngine = null;
+        NativeTcpStream stream = null;
         try {
             backend.validateClientSocketBackendOnce(allocator, host, port);
             channel = SocketChannel.open();
@@ -443,7 +450,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                     reached.getAddress().getHostAddress(),
                     reached.getPort());
 
-            NativeTcpStream stream = new NativeTcpStream(
+            stream = new NativeTcpStream(
                     engineName(),
                     streamSeq.getAndIncrement(),
                     connectedChannel,
@@ -458,21 +465,41 @@ public final class NativeTcpCarrier implements TransportEngine {
             }
 
             connection.bindSingleStream(stream);
+            // Refused once stop() has sealed the registry; admitted before that, the stream is in
+            // the set stop() closes. Counted as soon as it is registered, because from then on its
+            // close — by stop(), by the catch below, or by the caller — is what uncounts it.
             ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, connectedChannel);
-            registerClientChannel(runtime, connectedChannel);
+            afterClientRegistration.run();
             activeConnections.incrementAndGet();
             activeStreams.incrementAndGet();
+            registerClientChannel(runtime, connectedChannel);
             totalAccepted.incrementAndGet();
             return connection;
         } catch (IOException e) {
-            closeQuietly(tlsEngine);
-            closeQuietly(channel);
+            releaseFailedConnect(stream, tlsEngine, channel);
             throw TransportException.bindFailure(engineName(), port, e);
         } catch (RuntimeException e) {
-            closeQuietly(tlsEngine);
-            closeQuietly(channel);
+            releaseFailedConnect(stream, tlsEngine, channel);
             throw e;
         }
+    }
+
+    /**
+     * Closes what a connect that failed holds. A built stream owns the socket and the TLS engine, so
+     * closing it releases both with its own buffers, and removes its registry entry if it has one;
+     * without a stream, the engine and the socket are closed here.
+     *
+     * @param stream    the stream built for the connect, or {@code null} if it failed before that
+     * @param tlsEngine the client engine, or {@code null}
+     * @param channel   the socket, or {@code null}
+     */
+    private static void releaseFailedConnect(NativeTcpStream stream, TlsEngine tlsEngine, SocketChannel channel) {
+        if (stream != null) {
+            stream.close();
+            return;
+        }
+        closeQuietly(tlsEngine);
+        closeQuietly(channel);
     }
 
     /**
@@ -555,6 +582,14 @@ public final class NativeTcpCarrier implements TransportEngine {
                 clientTls.close();
             }
         }
+    }
+
+    /* default */ void afterClientRegistration(Runnable hook) {
+        this.afterClientRegistration = Objects.requireNonNull(hook, "hook must not be null");
+    }
+
+    /* default */ int registeredChannelCount() {
+        return runtimeByChannel.size();
     }
 
     /* default */ boolean isRunning() {
@@ -906,6 +941,7 @@ public final class NativeTcpCarrier implements TransportEngine {
             NativeTcpConnection connection = null;
             NativeTcpStream stream = null;
             boolean slotReserved = false;
+            boolean streamBound = false;
             boolean connectionManagedByStreamLifecycle = false;
             try {
                 slotReserved = tryReserveConnectionSlot();
@@ -925,11 +961,15 @@ public final class NativeTcpCarrier implements TransportEngine {
 
                 stream = buildAcceptedStream(currentChannel, connection);
                 connection.bindSingleStream(stream);
+                streamBound = true;
+                ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
+                // Registered: the slot is released by the stream's close from here on, not by the
+                // finally below. A refused registration leaves it to the finally.
                 connectionManagedByStreamLifecycle = true;
-                registerConnection(connection, stream, currentChannel);
+                registerConnection(connection, stream, currentChannel, runtime);
             } catch (RuntimeException exception) {
                 recordAcceptFault(exception);
-                releaseFailedAccept(currentChannel, connection, stream, connectionManagedByStreamLifecycle);
+                releaseFailedAccept(currentChannel, connection, stream, streamBound);
             } finally {
                 if (slotReserved && !connectionManagedByStreamLifecycle) {
                     activeConnections.decrementAndGet();
@@ -1034,8 +1074,10 @@ public final class NativeTcpCarrier implements TransportEngine {
      */
     private void registerConnection(NativeTcpConnection connection,
                                     NativeTcpStream stream,
-                                    SocketChannel currentChannel) {
-        ChannelRuntimeRegistry.ChannelRuntimeState runtime = registerRuntime(stream, currentChannel);
+                                    SocketChannel currentChannel,
+                                    ChannelRuntimeRegistry.ChannelRuntimeState runtime) {
+        // Counted before anything below can throw: the stream is registered, so its close uncounts it.
+        activeStreams.incrementAndGet();
         NativeTcpReactor owner = selectReactor();
         runtime.markRegistrationPending();
         runtime.bindOwner(owner);
@@ -1044,7 +1086,6 @@ public final class NativeTcpCarrier implements TransportEngine {
         // instant a plaintext key is armed (no lost-wakeup window).
         stream.onEstablished(() -> completeEstablished(connection, stream));
 
-        activeStreams.incrementAndGet();
         totalAccepted.incrementAndGet();
 
         owner.enqueueRegistration(currentChannel);
@@ -1118,7 +1159,7 @@ public final class NativeTcpCarrier implements TransportEngine {
 
     private ChannelRuntimeRegistry.ChannelRuntimeState registerRuntime(NativeTcpStream stream,
                                                                        SocketChannel channel) {
-        return channelRuntimeRegistry.registerRuntime(stream, channel);
+        return channelRuntimeRegistry.registerRuntime(stream, channel, ENGINE_NOT_RUNNING);
     }
 
     private ChannelRuntimeRegistry.ChannelRuntimeState resolveRuntime(SocketChannel channel) {
@@ -1246,7 +1287,9 @@ public final class NativeTcpCarrier implements TransportEngine {
     }
 
     private void closeSelectorAndChannels() {
-        for (ChannelRuntimeRegistry.ChannelRuntimeState runtime : new ArrayList<>(runtimeByChannel.values())) {
+        // Sealed in the same step as the snapshot, so a connect still in flight is either in it or
+        // refused its registration, and closes its own stream.
+        for (ChannelRuntimeRegistry.ChannelRuntimeState runtime : channelRuntimeRegistry.sealAndSnapshot()) {
             runtime.stream().close();
         }
         runtimeByChannel.clear();
