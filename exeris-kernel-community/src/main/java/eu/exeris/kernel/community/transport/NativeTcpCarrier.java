@@ -437,11 +437,11 @@ public final class NativeTcpCarrier implements TransportEngine {
             // does: TransportConnection#remoteAddress is the peer's address, and the host name the
             // caller dialled stays the caller's. A layer that needs the name, such as an HTTP client
             // writing Host, takes it from its own request rather than from the connection.
-            InetSocketAddress peer = resolveRemoteAddress(connectedChannel);
+            InetSocketAddress reached = resolveRemoteAddress(connectedChannel);
             NativeTcpConnection connection = new NativeTcpConnection(
                     connectionSeq.getAndIncrement(),
-                    peer.getAddress().getHostAddress(),
-                    peer.getPort());
+                    reached.getAddress().getHostAddress(),
+                    reached.getPort());
 
             NativeTcpStream stream = new NativeTcpStream(
                     engineName(),
