@@ -108,14 +108,20 @@ jobs:
   # call, and every mandatory gate lands in the verdict as `not-run` — which the publish step
   # correctly turns red, on every pull request, until it is supplied.
   #
-  # `always()` stands for every human-initiated event: a review that vanishes from the checks
-  # because its gates went red is the failure this arrangement exists to prevent. The narrowing is
-  # the event, not the outcome — the review action refuses a non-human actor, so a run started by
-  # the bot's own labelling can never perform the review it exists for.
+  # ON EVERY EVENT THAT IS NOT `closed`, A BOT'S INCLUDED. GitHub reports the newest run of this
+  # workflow on the head commit, and the publisher's own label changes are events: a run in which
+  # this job is skipped ends green however red the verdict before it was, so a pull request can
+  # carry `hard-block` beside a passing run. The model is not woken by a bot's event: the called
+  # workflow's producing job refuses a non-human sender on its own, and the publishing half answers
+  # such an event from the standing verdict or the standing human review. The condition matches
+  # `caller-example/guardrails.yml` in exeris-systems/.github.
+  #
+  # `always()` stands for the same reason: a review that vanishes from the checks because its gates
+  # went red is the failure this arrangement exists to prevent. Not on `closed`: the review is over
+  # and its check decides nothing.
   docs-review:
     needs: [docs, commits, pr-body]
-    if: ${{ always() && github.event.sender.type == 'User'
-            && github.event.action != 'closed' }}
+    if: ${{ always() && github.event.action != 'closed' }}
     uses: exeris-systems/.github/.github/workflows/docs-review.yml@03f534126764afdaeaa3c5cdafc2d88d81ef5529 # exeris-systems/.github@main
     with:
       # The publish job is the required one. The produce job never is, because a review that
