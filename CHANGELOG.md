@@ -247,6 +247,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **`EX-BOOT-0003` is reserved.** The registry published an initialization-deadline code with a
+  `[subsystemName, deadlineMs]` layout, but the orchestrator imposes no deadline on `initialize()` or
+  `start()` and nothing raises the code. It is now marked reserved with no layout, the way `EX-NET-4007`
+  is, and the exceptions and telemetry code tables follow. A subsystem that never returns from
+  `initialize()` holds the boot until it does.
+
 - **An S3 endpoint with a path, query, fragment or userinfo is refused, not truncated.** The S3 driver
   read only the scheme, host and port of `storage.blob.location` and dropped the rest without a signal,
   so a gateway prefix such as `/s3` was missing from every request and presigned URL, and credentials in

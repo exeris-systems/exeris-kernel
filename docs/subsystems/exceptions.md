@@ -89,7 +89,7 @@ formatting. It implements:
 |:---------------|:-----------------------------|:-------------------------------------------------|
 | `EX-BOOT-0001` | DAG Cycle Detected           | *(JFR-only — no rawArgs)*: the type actually thrown, `SubsystemCircularDependencyException`, is a plain `RuntimeException`, not an `ExerisKernelException` — it carries no `rawArgs` at all. The JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` records `cycleMembers` as one `String`, the names from `SubsystemCircularDependencyException.cycleMembers()` joined with `", "`, plus `errorCode`. |
 | `EX-BOOT-0002` | Subsystem Init Failure       | `[0] String subsystemName, [1] Phase phase (INITIALIZE\|START\|STOP), [2] String detail` — the sole thrower, `SubsystemException`, uses this fixed 3-slot layout every time. The missing-dependency abort cites the code in its message text only and carries no `rawArgs`. |
-| `EX-BOOT-0003` | Init Timeout                 | `[0] String subsystemName, [1] long deadlineMs`  |
+| `EX-BOOT-0003` | Init Timeout (reserved)      | *(reserved — no rawArgs)*: the orchestrator imposes no initialization deadline, so no kernel code path raises this code; a layout is defined with its first thrower |
 | `EX-BOOT-0004` | Memory Provider Init Failure | `[0] String providerName, [1] long reqBytes`     |
 | `EX-BOOT-3001` | Telemetry Provider Failure   | `[0] String providerName, [1] String reason`     |
 
