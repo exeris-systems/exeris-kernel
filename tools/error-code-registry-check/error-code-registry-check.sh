@@ -62,8 +62,7 @@ doc_count=$(wc -l < "$work/doc.txt")
 # The `|| true` on both extractions above is what makes this guard REACHABLE. Without it, `grep`
 # returning 1 on no-match combines with `pipefail` and `set -e` to kill the script here, and the
 # gate exits non-zero with no message at all — the right exit code for the wrong reason, and
-# nothing on screen telling anyone the format moved. Measured: renaming the doc's table rows
-# produced exit 1 and zero output until this was fixed.
+# nothing on screen telling anyone the format moved.
 if [ "$registry_count" -eq 0 ] || [ "$doc_count" -eq 0 ]; then
   echo "error-code-registry-check: FAIL — an extractor matched nothing (registry=$registry_count, doc=$doc_count)." >&2
   echo "  The file format changed under the gate. Fix the pattern; do not assume the check passed." >&2
@@ -104,10 +103,9 @@ fi
 # stripped first: several classes legitimately cite a code in prose ("e.g. \"EX-NET-2002\"") and the
 # usage examples in ExerisKernelException's own javadoc are documentation, not a second definition.
 # Test sources are out of scope — a fixture asserting on an unknown code is exercising the sink's
-# fallback, which is the point of the fixture. That exemption used to be spelled `not under
-# src/main`, which stopped meaning what it says once exeris-kernel-tck moved its contract tests to
-# src/main to be publishable: the module is named here instead, because the thing being exempted is
-# test code, not a directory. Its literals are of two kinds and neither is a leak — invented fixture
+# fallback, which is the point of the fixture. exeris-kernel-tck is excluded by name: its contract
+# tests live in src/main so that they are published, and the thing being exempted is test code, not
+# a directory. Its literals are of two kinds and neither is a leak — invented fixture
 # codes (EX-TEST-*, EX-TCK-*) that must NOT be in the registry, and real codes pinned by an
 # assertion, where writing the constant would compare it against itself and pin nothing. A rename in
 # the registry breaks those assertions at test time, which is the check the gate would otherwise be
