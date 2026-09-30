@@ -120,10 +120,8 @@ jobs:
         # stamp is what a consumer trips over, it survives generated and processor-emitted code
         # that a grep would miss, and it cannot be satisfied by a comment claiming compliance.
         #
-        # Test and TCK fixtures used to be out of scope, because they compiled with
-        # --enable-preview and the shipped classes did not. They no longer use a preview API at
-        # all, so the flag is gone from the build and there is nothing left for the scope to
-        # exclude — the gate now describes the whole line rather than half of it.
+        # Test and TCK fixtures are in scope too: nothing on this line compiles with
+        # --enable-preview, so the gate describes the whole line, not only the shipped classes.
         run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
 
       - name: Module-Name Gate
@@ -300,9 +298,8 @@ jobs:
         # hand-written list missing three of them whose JaCoCo reports were nonetheless imported
         # (18 x `File not found in project sources`, and that coverage discarded). What it does not
         # cover is tools/jfr-reporter, CI tooling that sits outside the reactor deliberately and
-        # carries its own tests (the jfr-reporter job): the old list named it, this cannot, and
-        # adding it back to the root module's sources would analyse it without its own
-        # dependencies, reintroducing the exact defect being removed here.
+        # carries its own tests (the jfr-reporter job): adding it to the root module's sources
+        # would analyse it without its own dependencies and misreport its coverage.
         #
         # No third-party action any more, which also retires a SHA pin that existed because two
         # high-severity advisories (GHSA-f79p-9c5r-xg88, GHSA-5xq9-5g24-4g6f) covered every 4.x/5.x
@@ -477,7 +474,7 @@ jobs:
           # Highest released version, NOT `git describe`: patch releases are cut on main, so on a
           # development/* branch the last *reachable* tag can be older than the latest published
           # one. Reachability is irrelevant — this compares two API surfaces, not two histories.
-          # Strict vMAJOR.MINOR.PATCH, not the bare `v*` glob this used to take. The glob picks the
+          # Strict vMAJOR.MINOR.PATCH, not a bare `v*` glob. A glob picks the
           # highest tag matching a pattern, so any tag that lands inside it decides the baseline —
           # and `git tag --sort=-v:refname` sorts `v0.11.0-preview` ABOVE `v0.11.0` (measured). One
           # suffixed tag on the preview line would therefore have made THIS line diff its SPI

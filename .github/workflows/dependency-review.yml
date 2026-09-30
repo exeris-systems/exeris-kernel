@@ -48,11 +48,10 @@ jobs:
           # unlicensed artifact. The licence is Apache-2.0, declared once in the ROOT `pom.xml`
           # and shipped as LICENSE.
           #
-          # It moved there from `exeris-kernel-parent/pom.xml` in v0.12: two published coordinates
-          # (`exeris-kernel-bom`, `exeris-kernel-build-config`) parent to the root rather than to
-          # that module, so they inherited no licence at all. Note what did NOT change — the reason
-          # this scanner reports unknown is still parent resolution, not the location of the block,
-          # so moving it fixes the effective POMs and leaves this warning exactly as it was.
+          # It is declared in the root rather than in `exeris-kernel-parent/pom.xml` because two
+          # published coordinates (`exeris-kernel-bom`, `exeris-kernel-build-config`) parent to the
+          # root, not to that module. The location does not affect this warning: the scanner
+          # reports unknown because of parent resolution, wherever the block sits.
           #
           # `sonar-maven-plugin` is LGPL-3.0 (inherited from `org.sonarsource.parent:parent`),
           # which the deny list above rejects — correctly for a dependency, wrongly for this one.
@@ -60,13 +59,10 @@ jobs:
           # after `verify` is build infrastructure that links against nothing we ship and is never
           # redistributed.
           #
-          # It inherits the exception `sonarqube-scan-action` used to hold, for the same reason and
-          # by the same argument: v0.12 replaced that action with this plugin, so the action is gone
-          # from every workflow. What is NOT established is whether this scanner surfaces Maven
-          # PLUGINS at all, as opposed to dependencies — so this entry may well be inert. It is left
-          # in because an inert line costs nothing and the alternative is discovering the answer as
-          # a red supply-chain gate on a release PR, which is precisely how the action's own licence
-          # first surfaced.
+          # What is NOT established is whether this scanner surfaces Maven PLUGINS at all, as
+          # opposed to dependencies — so this entry may well be inert. It stays because an inert
+          # line costs nothing and the alternative is discovering the answer as a red supply-chain
+          # gate on a release PR.
           allow-dependencies-licenses: >
             pkg:maven/org.sonarsource.scanner.maven/sonar-maven-plugin,
             pkg:maven/com.puppycrawl.tools/checkstyle,
