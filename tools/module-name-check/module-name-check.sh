@@ -17,33 +17,25 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 # The module list is DISCOVERED from the reactor's build output, not transcribed here. That is the
-# whole safety property, and it was arrived at by measurement rather than design:
+# whole safety property.
 #
-# An earlier draft claimed that a jar module which does not set `exeris.module.name` fails the
-# build, because maven-jar-plugin rejects an empty automatic module name. That is true only when a
-# module DECLARES the plugin explicitly — which is how the claim came to be believed, since two
-# modules do. With the configuration inherited from the root pluginManagement and no local
-# declaration, the property simply goes unresolved and the manifest entry is OMITTED: the build
-# succeeds and ships a nameless jar. Measured, not reasoned about.
+# A jar module that does not set `exeris.module.name` does not fail the build. maven-jar-plugin
+# rejects an empty automatic module name only when a module declares the plugin itself; with the
+# configuration inherited from the root pluginManagement and no local declaration, the property
+# goes unresolved, the manifest entry is omitted, and the build ships a nameless jar.
 #
-# So nothing upstream of this script guarantees anything, which makes this script the guarantee —
-# and a guarantee behind a hand-maintained list is only as good as somebody remembering to extend
-# it. Every jar the reactor produces is checked instead.
+# So nothing upstream of this script guarantees a name, which makes this script the guarantee — and
+# a guarantee behind a hand-maintained list holds only while somebody remembers to extend it. Every
+# jar the reactor produces is checked instead.
 #
 # Excluded by name: `-sources`, `-javadoc` (not code a consumer compiles against) and `original-*`
 # (the shade plugin's pre-shading copy, left beside the jar it replaced — without this the CLI
 # matches twice and the check could inspect the copy that is not published).
 #
-# `-tests` jars are still NOT excluded, and the reason has changed under the rule rather than gone
-# away. It used to be that exeris-kernel-tck's classifier-`tests` jar was the ONLY artifact anyone
-# consumed — the module had no src/main, so its default jar held seven files of metadata while all
-# 492 real classes shipped under the classifier. Excluding test jars would have left the gate
-# validating the jar nobody used and skipping the one four modules put on their classpath.
-#
-# That module now publishes an ordinary jar and no test-jar at all, so no reactor module currently
-# produces one. The pattern stays admitted anyway: a module that starts publishing a test jar would
-# otherwise acquire an unnamed one silently, which is the class of failure this gate exists to
-# refuse. Admitting a shape nothing currently produces costs nothing and closes that door.
+# `-tests` jars are NOT excluded. A test jar is an artifact a consumer can put on its classpath, and
+# a module that starts publishing one would otherwise ship it unnamed without any check noticing,
+# which is the class of failure this gate exists to refuse. No reactor module produces one today;
+# admitting the shape costs nothing.
 
 NAME_RE='^[A-Za-z_$][A-Za-z0-9_$]*(\.[A-Za-z_$][A-Za-z0-9_$]*)*$'
 
