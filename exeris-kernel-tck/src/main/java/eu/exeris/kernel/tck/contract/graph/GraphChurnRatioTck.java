@@ -32,33 +32,21 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li><b>Enterprise target:</b> &lt;1x (off-heap, zero JVM object churn per traversal).</li>
  * </ul>
  *
- * <h2>Measurement method, and why each part of it changed</h2>
- * <p>Three properties of the earlier measurement meant it could not observe that contract. They are
- * recorded here because each one looks reasonable in isolation.
- *
+ * <h2>Measurement method</h2>
  * <ol>
- *   <li><b>The numerator was a Poisson count, not a byte count.</b> It summed {@code allocationSize}
- *       where JFR provides it and {@code weight} where it does not.
- *       {@code jdk.ObjectAllocationSample} — which dominates the recording — provides only
- *       {@code weight}, the sampler's extrapolation, and it arrives in a near-constant ~261 KB
- *       quantum. Measured across repetitions the count of sampled {@code eu.exeris.*} events was
- *       0, 2, 4, 5, 6 and 10, so the reported ratio could only ever take the values 0.00, 4.09,
- *       8.17, 10.22, 12.26 … 20.44. Paired with a denominator that ran 1 000 iterations while the
- *       workload ran 10 000 — a factor of ten that scaled one sampler hit to 2.04 ratio units —
- *       the 20x threshold ended up between the ninth hit and the tenth. <b>The test failed when
- *       the sampler drew ten.</b> The numerator is now the exact per-thread allocated-bytes delta.
- *   </li>
- *   <li><b>Filtering to {@code eu.exeris.*} excludes the thing being measured.</b> graph.md
- *       attributes the ~15x to the driver — "standard Bolt/JDBC drivers exhibit a ~15x
- *       allocation-to-data ratio" — and on the Community Bolt path the kernel's own share is ~1% of
- *       the total. On a realistic result set the filtered signal is empty: three consecutive
- *       measurements of a 500-id traversal sampled zero such events, which the old arithmetic
- *       reports as a perfect {@code 0.00x}. The filter belongs to {@link JfrAllocationMonitor}'s
- *       separate <em>zero-allocation</em> contract, where attribution by type is the point.</li>
- *   <li><b>A traversal returning one id measures session setup, not churn per data byte.</b> ~11.7 KB
- *       of allocation for 16 bytes of payload is a ratio in the 700s. The ratio is defined per byte
- *       transferred, so the workload carries {@link #traversalFanOut()} ids and the fixed
- *       per-round-trip cost amortises where the documented figure puts it.</li>
+ *   <li><b>The numerator is a byte count.</b> It is the exact per-thread allocated-bytes delta across
+ *       the measured traversals, not a sum over sampled JFR allocation events: the sampler's
+ *       {@code weight} arrives in a near-constant quantum, so a sum of samples is a count of sampler
+ *       hits scaled by that quantum, and the ratio it yields moves in steps of one hit.</li>
+ *   <li><b>Every allocation on the path counts, not only {@code eu.exeris.*}.</b> graph.md attributes
+ *       the ~15x to the driver — "standard Bolt/JDBC drivers exhibit a ~15x allocation-to-data
+ *       ratio" — and on the Community Bolt path the kernel's own share of the total is small, so a
+ *       filtered numerator excludes the thing being measured. Attribution by type belongs to
+ *       {@link JfrAllocationMonitor}'s separate <em>zero-allocation</em> contract.</li>
+ *   <li><b>The workload returns {@link #traversalFanOut()} ids per traversal.</b> The ratio is defined
+ *       per byte transferred; a traversal returning one id measures session setup, not churn per
+ *       data byte. With a fan-out the fixed per-round-trip cost amortises where the documented figure
+ *       puts it. The numerator and the denominator cover the same traversals.</li>
  * </ol>
  *
  * <p>Payload is counted as {@link #bytesPerResultId()} = 16, the UUID's own width. Deliberately
@@ -73,7 +61,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * clears that knee before anything is measured.
  *
  * <h2>Why the Community bound is 23x and graph.md says 20x</h2>
- * <p>Once it measures something real, this path shows <b>two allocation regimes</b>, and the choice
+ * <p>Measured this way, the path shows <b>two allocation regimes</b>, and the choice
  * is made once per JVM and then holds:
  *
  * <pre>
@@ -84,8 +72,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>They are separated by a flat 17%, and nothing mixes them: three JVMs run six windows of 300
  * traversals each — 4 200 traversals per process, warm-up included — and every window in a process
  * landed in the same regime. Roughly two runs in seven take the slow one, which is what a fixed 20x
- * gate would fail on: a pre-existing property of the driver path, not a regression in the change
- * under review.
+ * gate would fail on: a property of the driver path, not of the code a run is testing.
  *
  * <p>So <b>23x here is a regression bound, not the contract</b>. It sits ~10% above the observed
  * slow-regime ceiling, and a mutation adding 128 bytes per returned row trips it from either regime.

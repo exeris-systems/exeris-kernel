@@ -138,6 +138,24 @@ being spent, not a mechanism, and it is written down here so nobody later mistak
 - **Out-of-order migrations.** A version lower than one already applied is not specially handled.
 - **Rollback / down-migrations.** Not offered, not planned.
 
+### 🚫 Non-Goals
+
+- The scope exclusions are listed under [What is NOT in scope](#-what-is-not-in-scope).
+- A warn-and-continue mode on checksum mismatch. §2 rejects it because it reproduces the silent
+  drift the ledger exists to detect.
+- Normalising whitespace or comments before hashing. §3 folds line endings and nothing else.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** one node runs migrations against a given database at a time, and every migration
+  shipped before the ledger stays idempotent, because the first boot on this version replays them to
+  baseline the ledger (§5).
+- **Reversed by:** checksum refusals on deployments whose migration files are unchanged apart from
+  line endings or encoding. That is a refusal with nothing wrong, which §3 names as the outcome that
+  teaches operators to distrust the mechanism.
+- **Risk:** two nodes booting together can both see an unapplied version and both run it. For a
+  backfill the second run is silent, and nothing in the kernel detects it.
+
 ## Cross-references
 
 - [docs/subsystems/persistence.md](../subsystems/persistence.md) §"Database Schema Management — Migration Strategy" — the contract this changes.

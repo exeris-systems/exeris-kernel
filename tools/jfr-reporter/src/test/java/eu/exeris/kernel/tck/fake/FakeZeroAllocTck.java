@@ -9,7 +9,7 @@ import eu.exeris.kernel.core.fake.FakeHotPath;
 /**
  * Stands in for a TCK contract class: it lives under {@code eu.exeris.kernel.tck.*} and calls the
  * fake production code, so every allocation in the round-trip test has a harness frame beneath a
- * production frame - the shape that the old classifier demoted to harness.
+ * production frame, which the classifier attributes to production.
  */
 public final class FakeZeroAllocTck {
 

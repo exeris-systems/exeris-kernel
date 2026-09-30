@@ -151,6 +151,26 @@ its own comment's "short-lived session per emit" stops being a description once 
 - The seam may need a second migration if the measurement later moves the default. Cheaper than the
   reverse order, not free.
 
+### 🚫 Non-Goals
+
+- Admission control, `ServiceResolver`-shaped naming and `dispatchStream` are excluded in the
+  **Non-goals** paragraph of [The Decision](#-the-decision).
+- Flipping the `PROMPT` default in this slice (§5). Moving release ownership to the handle (§4).
+  Persistence vocabulary on an `spi.http` carrier (Option 2).
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** application authors reliably know which handlers wait, and `RlsConnectionInterceptor`
+  republishes session keys on every acquire, so a shorter lifetime costs round-trips rather than
+  isolation (Context, constraint 1).
+- **Reversed by:** the acquire-rate multiplier measured as §5 requires and landing near `1.0×`. In
+  that case §5 is the clause to execute, per Dissent recorded.
+- **Reversed by:** the JFR staleness signal showing `LONG_RUNNING` routes that pay for nothing. That
+  reopens the naming axis.
+- **Risk:** the fix is opt-in, so an application that never declares the facet keeps the
+  hold-and-wait hazard. It surfaces as the availability collapse described in the Context, under
+  load.
+
 ## Dissent recorded
 
 The strongest case against Option 1 is that it is **opt-in to correctness**: a hazard the kernel
