@@ -11,11 +11,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * What the driver refuses to be configured with.
@@ -197,6 +199,92 @@ class CommunityS3SettingsTest {
 
             assertThat(settings.scheme()).isEqualTo(CommunityEndpointScheme.HTTP);
             assertThat(settings.scheme().outboundTls()).isEqualTo(CommunityOutboundTls.PLAINTEXT);
+        }
+
+        @Test
+        @DisplayName("an endpoint with a path, query, userinfo or fragment is refused, naming the part")
+        void componentsBeyondTheAuthorityRefused() {
+            Map<String, String> byPart = Map.of(
+                    "https://gw.example.com/s3", "path",
+                    "https://s3.example.com?x-id=1", "query",
+                    "https://key:secret@s3.example.com", "userinfo",
+                    "https://s3.example.com#frag", "fragment",
+                    "http://key:secret@minio.internal:9000/prefix?x=1", "userinfo");
+            byPart.forEach((location, part) ->
+                    assertThatThrownBy(() -> CommunityS3Settings.from(endpoint(location)))
+                            .as(location)
+                            .isInstanceOf(IllegalArgumentException.class)
+                            .hasMessageContaining(part)
+                            .hasMessageNotContaining("key:secret"));
+        }
+
+        @Test
+        @DisplayName("an empty path or a single slash is still the bare endpoint")
+        void bareEndpointAccepted() {
+            for (String location : new String[]{"https://s3.example.com", "https://s3.example.com/"}) {
+                assertThat(CommunityS3Settings.from(endpoint(location)).origin())
+                        .as(location)
+                        .isEqualTo("https://s3.example.com");
+            }
+        }
+
+        @Test
+        @DisplayName("an @ in the path is a path, not userinfo, and the host is still named")
+        void atSignInPathIsAPath() {
+            assertThatThrownBy(() -> CommunityS3Settings.from(endpoint("https://s3.example.com/a@b")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("path")
+                    .hasMessageContaining("https://s3.example.com/a@b");
+        }
+
+        @Test
+        @DisplayName("a refusal for any other reason echoes neither the userinfo nor a cause carrying it")
+        void refusalsDoNotEchoUserinfo() {
+            Map<String, String> byRefusal = Map.of(
+                    "https://key:secret@s3_bucket.internal", "location must carry a host",
+                    "https://key:secret@s3 example.com", "location must be an endpoint URI");
+            byRefusal.forEach((location, refusal) -> {
+                Throwable thrown = catchThrowable(() -> CommunityS3Settings.from(endpoint(location)));
+                assertThat(thrown).as(location)
+                        .isInstanceOf(IllegalArgumentException.class)
+                        .hasMessageContaining(refusal);
+                for (Throwable t = thrown; t != null; t = t.getCause()) {
+                    assertThat(t.getMessage()).as(location + " / " + t.getClass().getName())
+                            .doesNotContain("key:secret");
+                }
+            });
+
+            assertThat(catchThrowable(() -> CommunityS3Settings.from(endpoint("https://key:secret@s3 example.com"))))
+                    .hasCauseInstanceOf(URISyntaxException.class);
+        }
+
+        @Test
+        @DisplayName("a password holding a delimiter, or a location without //, still has its userinfo withheld")
+        void userinfoWithheldWhereTheAuthorityIsAmbiguous() {
+            for (String location : new String[]{
+                    "https://AKID:se/cret@s3.example.com",
+                    "https://AKID:se?cret@s3.example.com",
+                    "https://AKID:se#cret@s3.example.com",
+                    "https:AKID:secret@s3.example.com",
+                    "https://AKID:se cret@s3.example.com"}) {
+                Throwable thrown = catchThrowable(() -> CommunityS3Settings.from(endpoint(location)));
+                assertThat(thrown).as(location).isInstanceOf(IllegalArgumentException.class);
+                for (Throwable t = thrown; t != null; t = t.getCause()) {
+                    assertThat(t.getMessage()).as(location + " / " + t.getClass().getName())
+                            .doesNotContain("AKID")
+                            .doesNotContain("cret");
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("a syntax refusal keeps the position of a fault after the userinfo, moved to the redacted text")
+        void syntaxFaultPositionFollowsTheRedaction() {
+            Throwable thrown = catchThrowable(() -> CommunityS3Settings.from(endpoint("https://key:secret@s3 example.com")));
+            URISyntaxException cause = (URISyntaxException) thrown.getCause();
+
+            assertThat(cause.getInput().charAt(cause.getIndex())).isEqualTo(' ');
+            assertThat(cause.getInput()).startsWith("https://<userinfo>@s3");
         }
     }
 

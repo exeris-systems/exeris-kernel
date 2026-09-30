@@ -8,16 +8,17 @@ import eu.exeris.kernel.community.http.CommunityEndpointScheme;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 
 import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.Locale;
 import java.util.Map;
 
 /**
  * What the S3-compatible driver needs, read once out of {@link BlobStorageConfig} (ADR-056 §10).
  *
  * <p>{@code location} carries the endpoint — {@code http://host[:port]} or
- * {@code https://host[:port]} — and everything else arrives through {@code properties}, because the
- * SPI record deliberately has no field the kernel could interpret as a storage topology.
+ * {@code https://host[:port]}, optionally with a single trailing {@code /} — and everything else
+ * arrives through {@code properties}, because the SPI record deliberately has no field the kernel could
+ * interpret as a storage topology. A location with a path, a query, a fragment or userinfo is refused:
+ * the driver would drop each of them, and a dropped path prefix or ignored credential surfaces only as
+ * a transfer failure. No refusal echoes the userinfo.
  *
  * <h2>The scheme decides</h2>
  * <p>The client engine requires of its transport what the scheme says ({@link CommunityEndpointScheme#outboundTls()}),
@@ -91,9 +92,6 @@ import java.util.Map;
 
     private static final long HEADER_HEADROOM_BYTES = 64L * 1024;
 
-    /** What the endpoint is called in a refusal: the {@link BlobStorageConfig} field that carries it. */
-    private static final String LOCATION = "location";
-
     /**
      * What the client engine adds to whatever ceiling it is handed, for the status line and headers it
      * reads into the same buffer. Named here because this driver's ceiling has to leave room for it.
@@ -136,16 +134,18 @@ import java.util.Map;
      *
      * @param config the configuration handed to the provider
      * @return the parsed settings; never {@code null}
-     * @throws IllegalArgumentException if the endpoint is unusable, a required property is missing, or
-     *                                  the ceiling is not a positive number
+     * @throws IllegalArgumentException if the endpoint is unusable or carries a path, query, fragment or
+     *                                  userinfo, a required property is missing, or the ceiling is not a
+     *                                  positive number
      */
     /* default */ static CommunityS3Settings from(BlobStorageConfig config) {
-        URI endpoint = parseEndpoint(config.location());
-        CommunityEndpointScheme scheme = CommunityEndpointScheme.of(endpoint.getScheme(), LOCATION);
+        URI endpoint = CommunityS3Endpoint.parse(config.location());
+        CommunityEndpointScheme scheme =
+                CommunityEndpointScheme.of(endpoint.getScheme(), CommunityS3Endpoint.LOCATION);
         Map<String, String> properties = config.properties();
         return new CommunityS3Settings(
                 scheme,
-                normalisedHost(endpoint, config.location()),
+                CommunityS3Endpoint.normalisedHost(endpoint, config.location()),
                 endpoint.getPort() < 0 ? scheme.defaultPort() : endpoint.getPort(),
                 required(properties, BUCKET),
                 required(properties, ACCESS_KEY),
@@ -198,33 +198,6 @@ import java.util.Map;
      */
     /* default */ String origin() {
         return scheme.token() + "://" + hostHeader();
-    }
-
-    private static URI parseEndpoint(String location) {
-        URI endpoint;
-        try {
-            endpoint = new URI(location);
-        } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("location must be an endpoint URI, got: " + location, e);
-        }
-        CommunityEndpointScheme.of(endpoint.getScheme(), LOCATION);
-        if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {
-            throw new IllegalArgumentException("location must carry a host, got: " + location);
-        }
-        return endpoint;
-    }
-
-    /**
-     * The endpoint host in the form the transport verifies a name in: lower-cased, one trailing dot
-     * removed.
-     */
-    private static String normalisedHost(URI endpoint, String location) {
-        String host = endpoint.getHost().toLowerCase(Locale.ROOT);
-        String withoutDot = host.endsWith(".") ? host.substring(0, host.length() - 1) : host;
-        if (withoutDot.isEmpty()) {
-            throw new IllegalArgumentException("location must carry a host, got: " + location);
-        }
-        return withoutDot;
     }
 
     private static String required(Map<String, String> properties, String key) {

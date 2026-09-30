@@ -253,6 +253,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   is, and the exceptions and telemetry code tables follow. A subsystem that never returns from
   `initialize()` holds the boot until it does.
 
+- **An S3 endpoint with a path, query, fragment or userinfo is refused, not truncated.** The S3 driver
+  read only the scheme, host and port of `storage.blob.location` and dropped the rest without a signal,
+  so a gateway prefix such as `/s3` was missing from every request and presigned URL, and credentials in
+  the location were ignored. Each part is now refused when the store is built, with an
+  `IllegalArgumentException` naming it; a single trailing `/` is still the bare endpoint. No refusal of a
+  location echoes its userinfo, in the message or in an attached `URISyntaxException`.
 - **The bootstrap and events subsystem pages describe the code, and carry the date they were checked.**
   Both pages had no frontmatter and were verified in full against the code. `bootstrap.md` no longer
   describes a `SIGTERM` handler, an orchestrator-level drain, an `exit(0)` or an `EX-BOOT-0003` deadline,

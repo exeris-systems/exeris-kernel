@@ -62,7 +62,8 @@ public final class CommunityS3BlobStorageProvider implements BlobStorageProvider
      *                               off-heap, and a store that quietly allocated its own pool would
      *                               hold memory the kernel's watermark accounting never sees.
      * @throws IllegalArgumentException if the endpoint is not an {@code http} or {@code https} URI with
-     *                                  a host, or a required property is missing or unusable
+     *                                  a host and nothing beyond its port, or a required property is
+     *                                  missing or unusable
      * @throws TransportException ({@code EX-NET-4004}) for an {@code https} endpoint where no crypto
      *                            provider is bound, where the bound one is not the Community provider,
      *                            or under {@code -Dexeris.transport.tls=false}; never downgraded to
