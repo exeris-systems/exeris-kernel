@@ -171,7 +171,9 @@ public final class CoreFlowEngine implements FlowEngine {
     /**
      * {@inheritDoc}
      *
-     * @throws UnsupportedOperationException {@inheritDoc}
+     * @throws UnsupportedOperationException if this engine's {@link #capabilities()} report
+     *         {@link FlowEngineCapabilities#choreographySupport()} as {@code false}; checked before
+     *         anything else, so nothing is subscribed
      * @implNote Requires {@link #start()} to have run. Wraps {@code mapper} and this engine's
      *           scheduler in one {@link FlowChoreographyBridge} shared across every {@code eventType}
      *           in {@code eventTypeNames}, and records each returned {@link SubscriptionToken} so
