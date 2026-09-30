@@ -35,6 +35,10 @@
             UnitTestContainsTooManyAsserts (331 hits) is the sharpest example of the mismatch: a
             contract test asserting eight clauses of one contract is doing its job. Splitting it
             into eight cases would hide which clauses belong together.
+
+            JUnitJupiterTestShouldBePackagePrivate assumes a test class nobody extends. A contract
+            case is inherited by a binding in another package, so it is public or protected, and
+            usually `public final` so that the binding cannot override it to pass.
         -->
         <exclude name="MethodNamingConventions"/>
         <exclude name="ShortMethodName"/>
@@ -45,6 +49,7 @@
         <exclude name="FieldDeclarationsShouldBeAtStartOfClass"/>
         <exclude name="UnitTestContainsTooManyAsserts"/>
         <exclude name="UnitTestAssertionsShouldIncludeMessage"/>
+        <exclude name="JUnitJupiterTestShouldBePackagePrivate"/>
         <exclude name="ControlStatementBraces"/>
         <exclude name="UseExplicitTypes"/>
         <exclude name="AvoidDuplicateLiterals"/>

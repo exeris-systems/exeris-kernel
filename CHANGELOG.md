@@ -2010,7 +2010,9 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   GHSA-cxp5-3px4-pw24, two high advisories against `jackson-databind` ≤ 3.2.2),
   `postgresql.version` 42.7.11 → 42.7.13, and `lz4.version` 1.10.2 → 1.12.0 in
   `exeris-kernel-bom`, which is what fixes them for every
-  distributed coordinate; `tools/jfr-reporter` moves 2.18.7 → 2.22.2 on its own pinned Jackson 2.
+  distributed coordinate; `tools/jfr-reporter` moves 2.18.7 → 2.22.3 on its own pinned Jackson 2,
+  where 2.22.3 closes the same two advisories for `com.fasterxml.jackson.core:jackson-databind`
+  ≤ 2.22.2.
   The lz4 pin is not decorative — `at.yawk.lz4:lz4-java` reaches the tree only as a runtime
   transitive of `kafka-clients`, and it is this BOM entry that fixed it at the vulnerable version.
 
@@ -2029,6 +2031,19 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   PostgreSQL integration tests depend on). AssertJ stays on 4.0.0-M1: it is the only 4.x
   published, and moving to 3.27.7 is a major-version step down. The PostgreSQL driver, Java UUID
   Generator, Janino, JMH and Testcontainers 1.21.4 are already the latest in their line.
+
+- **Versions pinned outside the BOM, and the build plugins other than Surefire and Failsafe, are on
+  their latest release within their major.** Test dependencies pinned in a module: H2 2.3.232 →
+  2.5.252 (Community) and, in `tools/jfr-reporter`, JUnit 6.0.3 → 6.1.3. Plugins: compiler 3.16.0,
+  Javadoc 3.12.0, JAR 3.5.1, Source 3.4.0, Resources 3.5.0, Install and Deploy 3.2.0, Shade 3.6.2,
+  `license-maven-plugin` 4.6, `exec-maven-plugin` 3.6.4, CycloneDX 2.9.3, JaCoCo 0.8.15 and the
+  Sonar scanner 5.8.0.7211; the lint engines PMD 7.28.0 and Checkstyle 13.11.0. The Checkstyle, PMD,
+  GPG and Central publishing Maven plugins were already the latest. No plugin moves to a new major,
+  and the 4.0.0 betas of the Apache plugins are not taken. Surefire and Failsafe stay on 3.2.5
+  (3.5.6 in `tools/jfr-reporter`): under 3.6.0 the Community `default-test` execution selects 2293
+  tests where 3.2.5 selects 2155, including classes tagged `default-trust`, `openssl-matrix` and the
+  stream loopback suite that `excludedGroups` keeps out of it, so the move changes what each gate
+  runs.
 
 - **`tools/jfr-reporter` stays on Jackson 2, deliberately.** The case for finishing the migration
   was that the distribution should not carry two Jackson generations — and it no longer does: the

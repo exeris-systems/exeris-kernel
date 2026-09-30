@@ -867,7 +867,7 @@ jobs:
         # pinned major. These are Failsafe tests (**/*IT.java), selected by -Dit.test, never by
         # -Dtest. The Failsafe goals are invoked directly, on the classes the install and the
         # previous step compiled, because the verify lifecycle would run Surefire first:
-        # Surefire 3.2.5 has no property that skips it without skipping Failsafe too
+        # Surefire has no property that skips it without skipping Failsafe too
         # (surefire.skip is not one of its properties), so a lifecycle run re-runs the whole Core
         # unit suite and overwrites the previous step's reports, the pinned-version guard's among
         # them, with a run that has no -Dexeris.test.expectedOpenSslMajor. The OpenSSL guards do

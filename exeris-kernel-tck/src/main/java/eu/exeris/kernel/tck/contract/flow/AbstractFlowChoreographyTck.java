@@ -178,7 +178,6 @@ public abstract class AbstractFlowChoreographyTck {
     protected void wakeDecision_wakesParkedFlow() throws InterruptedException {
         AtomicBoolean parked = new AtomicBoolean(false);
         UUID instanceId = UUID.randomUUID();
-        String eventType = "WakeEvent-" + instanceId;
         FlowExecutionPlan plan = parkingPlan("wake-test-" + instanceId, parked);
 
         engine.scheduler().schedule(plan, heapContext(instanceId, "wake-test-" + instanceId));
@@ -195,6 +194,7 @@ public abstract class AbstractFlowChoreographyTck {
         long most  = instanceId.getMostSignificantBits();
         long least = instanceId.getLeastSignificantBits();
 
+        String eventType = "WakeEvent-" + instanceId;
         int ordinal = registerType(eventType);
         engine.registerChoreographyMapper(
                 descriptor -> new ChoreographyDecision.Wake(most, least),

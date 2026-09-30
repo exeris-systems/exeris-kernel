@@ -156,7 +156,10 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         return sendFresh(request, peer);
     }
 
-    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    // AvoidInstanceofChecksInCatchClause: every throwable must first release the connection and
+    // stream, and only then be classified; one catch clause per type would repeat the cleanup.
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace",
+        "PMD.AvoidInstanceofChecksInCatchClause"})
     private HttpResponse sendFresh(HttpRequest request, CommunityHttpClientPeer peer) {
         TransportConnection connection;
         try {
@@ -187,7 +190,10 @@ final class CommunityHttpClientEngine implements HttpClientEngine {
         }
     }
 
-    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace"})
+    // AvoidInstanceofChecksInCatchClause: as in sendFresh, cleanup runs for every throwable
+    // before it is classified.
+    @SuppressWarnings({"PMD.AvoidCatchingGenericException", "PMD.PreserveStackTrace",
+        "PMD.AvoidInstanceofChecksInCatchClause"})
     private HttpResponse executeExchange(TransportConnection connection,
                                          TransportStream stream,
                                          HttpRequest request,
