@@ -130,7 +130,7 @@ parked saga's state means the same thing under the new definition.
     rejection case mandatory, because a suite that only proves migration would pass against a runtime
     that migrates anything to anything.
 
-## Amendments (settled during implementation, v0.11)
+## Amendments (2026-08-06, settled during implementation, v0.11)
 
 Five questions this ADR left open or under-specified. A1–A3 were decided before any code was written.
 A4 is different in kind: it corrects an obligation this ADR stated as met when it was met for two of
@@ -270,7 +270,7 @@ structural corruption into a logged per-step failure.
 
 ---
 
-## Amendment (0.12) — the version was unexpressible through the builder
+## Amendment (2026-08-14, 0.12) — the version was unexpressible through the builder
 
 The decision above says the version is "explicit, application-declared". For the whole of v0.11 an
 application could not declare it. `FlowDefinitionBuilder` — the only supported way to assemble a

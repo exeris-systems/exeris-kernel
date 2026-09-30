@@ -144,7 +144,7 @@ Amendment A1 below: the refusal names the declared type name. The rest of the se
 `EX-PERS-5008` is the next free code in the persistence family at the time of writing; the
 implementing PR confirms that rather than assuming it.
 
-## Amendment A1 (settled during implementation, v0.12) — the refusal names the type, not its OID
+## Amendment A1 (2026-08-29, settled during implementation, v0.12) — the refusal names the type, not its OID
 
 §6 above says the refusal "names the column index and the declared type OID". It names the declared
 **type name** instead, and this ADR was wrong rather than the implementation.

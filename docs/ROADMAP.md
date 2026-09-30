@@ -3166,10 +3166,10 @@ gate does and does not cover.
 
 **Status (v0.12): DELIVERED, and three limits are recorded rather than left to be discovered.**
 
-1. **The five guardrails are reported, not required.** The required status checks are *Build & TCK
-   Verification*, *SPI Compatibility Gate* and *SonarCloud Code Analysis*. A red guardrail annotates
-   a pull request and still permits a green merge; making one required is a branch-protection change
-   and has not been made.
+1. **Two of the five guardrails are required nowhere.** The `development/0.12.0` ruleset requires
+   `docs / docs-lint`, `javadoc / javadoc-gate` and `docs-review / publish / verdict`, and `main`'s
+   requires the verdict; the commit-format and pull-request-body checks annotate a pull request and
+   still permit a green merge. Making either required is a ruleset change.
 2. **Two of seven modules are gated.** The `javadoc-gate` profile exists in `exeris-kernel-spi` and
    `exeris-kernel-tck` only. Core, Community, the testkit, the Kafka driver and the diagnostics CLI
    are at 0/0 and held there by nothing, and the release jar still builds with `doclint none` so that

@@ -139,7 +139,7 @@ claimed registry wiring was still pending when Sprint 4 had shipped it. That is 
 the past, not target state, so it is fixed now rather than deferred to the implementation — leaving a
 known-false sentence in place while citing it as misleading would be indefensible.
 
-## Amendments (settled during implementation, v0.11)
+## Amendments (2026-08-12, settled during implementation, v0.11)
 
 **A1 — The default is opt-in, but it does not "preserve today's behaviour".** Obligation 7 said an
 application that supplies nothing "sees exactly what it sees now". That was wrong about the code it
@@ -162,7 +162,7 @@ presenting a valid token. That is correct for a route with no requirement — `a
 `RouteRequirement.Kind` that asks for an identity without demanding a scope — but it is not what the
 trade-off described.
 
-## Amendment A2 (v0.12) — a policy may decline to answer, and the contract says what that costs
+## Amendment A2 (2026-08-29, v0.12) — a policy may decline to answer, and the contract says what that costs
 
 Obligation 1 put one policy behind one slot, and `requirementFor` is contractually **total**: every
 `(method, path)` pair gets a non-null answer, with `null` read as a defect that denies. That totality

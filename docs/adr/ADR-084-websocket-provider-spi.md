@@ -218,7 +218,7 @@ configuration and can move without a contract change:
   payload argument that set §5's limit — `domainDescribe` returning a full projection — weighs
   differently over the internet to a browser than it did over a local socket.
 
-## Amendment A1 (v0.12) — §1's promise was not executable until this release
+## Amendment A1 (2026-09-03, v0.12) — §1's promise was not executable until this release
 
 §1 makes "the platform must get an endpoint without booting the kernel", from two public calls, the
 property that decides this ADR. As shipped, the first of those two calls threw:
@@ -240,7 +240,7 @@ One thing this does **not** claim: `CommunityHttpTransportFactory.resolveAllocat
 unbound allocator, so an HTTP *server* engine is not constructible outside a boot. Whether it should
 be is a separate question and belongs to its own decision, not to this one.
 
-## Amendment A2 (v0.12) — the no-boot path is not the only path
+## Amendment A2 (2026-09-03, v0.12) — the no-boot path is not the only path
 
 §1 decided that a provider yields an engine **without** booting the kernel, and that decision stands
 unchanged: `WebSocketProvider.createServerEngine` works with nothing bound, and a per-session LSP

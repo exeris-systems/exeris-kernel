@@ -199,7 +199,7 @@ Jackson 3 descends to the driver; the SPI never sees `ObjectMapper` (The Wall �
 
 Bound in Community against `CommunityJsonRequestBodyDecoder` and **actually registered in CI** — no orphan `Abstract*Tck` (memory: `project_v080_coverage_audit` — unbound `Abstract*Tck` bases are a standing P0; this one ships bound, 19 cases green in the default `build-and-verify` lane).
 
-## Amendment (0.12) — §1's wrapping rule made §2's mapping impossible
+## Amendment (2026-08-14, 0.12) — §1's wrapping rule made §2's mapping impossible
 
 **What §2 promised did not happen in production.** Every malformed request body was answered `500`
 from the day this ADR landed until 0.12. §2 says a decode failure is a client error mapped to `400`
