@@ -30,12 +30,12 @@ import java.util.Date;
  * Generates the self-signed server certificate the TLS carrier suites need, in-process.
  *
  * <h2>Why this exists</h2>
- * <p>Those suites used to read {@code ../native-libs/certs/server.{crt,key}} behind an
- * {@code assumeTrue}. That directory is <b>not in the repository, not in {@code .gitignore}, not
- * created by any script, and not mentioned in any document or workflow</b> — so the path never
- * resolved for anyone, the assumption always failed, and four carrier-level TLS tests skipped in
- * every build while reporting success. A skip is the one test outcome that looks like a pass in a
- * summary line.
+ * <p>A suite that reads material from a path such as {@code ../native-libs/certs/server.{crt,key}}
+ * behind an {@code assumeTrue} never runs: that directory is <b>not in the repository, not in
+ * {@code .gitignore}, not created by any script, and not mentioned in any document or workflow</b>
+ * — so the path resolves for no one, the assumption always fails, and the carrier-level TLS tests
+ * skip in every build while reporting success. A skip is the one test outcome that looks like a
+ * pass in a summary line.
  *
  * <p>Generating the material here rather than checking a key into the tree is deliberate on two
  * counts: a committed {@code PRIVATE KEY} block trips secret scanners for no benefit, and a

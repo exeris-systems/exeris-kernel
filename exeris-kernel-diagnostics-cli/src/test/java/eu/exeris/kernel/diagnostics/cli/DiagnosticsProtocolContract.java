@@ -148,10 +148,9 @@ final class DiagnosticsProtocolContract {
     /**
      * {@code capturedAt} is an ISO-8601 string on every snapshot, never an epoch number.
      *
-     * <p>Under Jackson 2 this took {@code JavaTimeModule} plus an explicit
-     * {@code WRITE_DATES_AS_TIMESTAMPS} disable. Under {@code tools.jackson} it is the bare-mapper
-     * default and the CLI registers nothing — which is exactly why it needs asserting rather than
-     * assuming: the configuration that used to make it true is gone.
+     * <p>Under {@code tools.jackson} it is the bare-mapper default and the CLI registers nothing —
+     * which is exactly why it needs asserting rather than assuming: no configuration in the CLI
+     * makes it true.
      */
     static void assertInstantsAreIso8601(List<String> responses) {
         // Size first, and not for tidiness. Each clause here runs as its own @Test, so this one
@@ -174,7 +173,7 @@ final class DiagnosticsProtocolContract {
 
     /**
      * An empty {@code Optional} serialises as JSON {@code null}, not as an absent key — the CLI's
-     * documented wire promise, and the other half of what {@code Jdk8Module} used to provide.
+     * documented wire promise, kept by the bare {@code tools.jackson} mapper with no module registered.
      *
      * <p>The unknown-subsystem response carries it deterministically. {@code cpuQuotaMicros} is
      * asserted as a PRESENT KEY only: whether it holds null or a number depends on whether the

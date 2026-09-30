@@ -38,17 +38,13 @@ import java.util.function.Supplier;
 // terminal decision, not reducible without introducing opaque indirection.
 // AvoidCatchingGenericException: catch-all wraps user-provided handler invocations; must absorb
 // any handler exception at the HTTP boundary.
-// TooManyMethods was suppressed here until ADR-061 removed the four path-convention helpers
-// (requiresAdmission / isPublicPath / isAuthorized / requiresAdminScope); the class is now under the
-// threshold on its own, and PMD flags the leftover suppression as unnecessary.
-// TooManyMethods: fourteen, one over the threshold, and ADR-077's resolveRequirement() is what
-// crossed it. Suppressed rather than refactored here, with the real finding written down instead of
-// annotated away: the class does hold a cluster that does not belong to dispatching at all —
-// createBearerTokenBuffer / extractBearerToken / parseBearerTokenValue are Authorization-header
-// parsing, self-contained, and would leave the count at eleven. Extracting them is the right change
-// and the wrong PR: it is security-adjacent code, and moving it inside a slice about connection
-// lifetime puts the blame surface in the wrong place if it goes wrong. Owner: whoever next opens
-// this class for its own reasons.
+// TooManyMethods: fourteen, one over the threshold. Suppressed rather than refactored, with the real
+// finding written down instead of annotated away: the class does hold a cluster that does not belong
+// to dispatching at all — createBearerTokenBuffer / extractBearerToken / parseBearerTokenValue are
+// Authorization-header parsing, self-contained, and would leave the count at eleven. Extracting them
+// is the right change, and a change of its own: it is security-adjacent code, and moving it
+// alongside unrelated work puts the blame surface in the wrong place if it goes wrong. Owner:
+// whoever next opens this class for its own reasons.
 /**
  * Community: the single admission and dispatch path for both a respond-once request
  * ({@link #dispatch}) and an SSE stream open ({@link #dispatchStream}) — the bound
@@ -191,9 +187,9 @@ final class CommunityHttpRequestDispatcher {
         }
         // Identity is required — or the policy returned null, which is a defect the enforcer
         // turns into a denial rather than an admission.
-        // The null check that used to guard this call has moved inside interceptRequest. Left here it
-        // short-circuited the method that knows why the denial happened, so the NO_PROVIDER case
-        // could never reach its own emit site — the reason the event advertised it and never carried it.
+        // No null check guards this call: interceptRequest owns it. A check here would short-circuit
+        // the method that knows why the denial happened, and the NO_PROVIDER case would never reach
+        // its own emit site.
         boolean intercepted =
                 interceptRequest(request, () -> handleAuthorizedRequest(requirement, request, exchange, admitted));
         if (!intercepted) {
@@ -307,16 +303,16 @@ final class CommunityHttpRequestDispatcher {
         // the request-body decoder registry the generated handler resolves via
         // HttpKernelProviders.httpRequestBodyDecoderRegistry() (ADR-036 / W7 boot-path fix).
         //
-        // MEMORY_ALLOCATOR belongs in the same list and was missing from it. The kernel binds it as a
+        // MEMORY_ALLOCATOR belongs in the same list. The kernel binds it as a
         // FOUNDATION carrier binding around the boot callback, and the reactor threads are started
         // with Thread.ofPlatform(), which does not inherit a ScopedValue — so kernel code that needs
         // it on a request captures it at construction instead (NativeTcpTransportProvider does
         // exactly that). Application code running inside a request cannot, and resolves this slot:
         // the graph helpers do it on the kernel side, and so does anything building an off-heap body.
-        // Unbound, that surfaced as NoSuchElementException inside the handler's try — which a handler
+        // Unbound, it surfaces as NoSuchElementException inside the handler's try — which a handler
         // that classifies by exception type reports as 400, blaming the caller's body for a
-        // server-side omission. The decoding contexts no longer mandate an allocator (0.12), which
-        // removes one such site; the binding stays because the others remain.
+        // server-side omission. The decoding contexts do not mandate an allocator, so a body decoder
+        // is not one such site; the binding exists for the others.
         ScopedValue.Carrier carrier = ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator);
         if (box != null) {
             carrier = carrier.where(CommunityHttpRequestProcessor.REQUEST_SESSION, box);

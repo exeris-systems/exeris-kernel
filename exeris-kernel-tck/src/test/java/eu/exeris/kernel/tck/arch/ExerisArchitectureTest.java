@@ -15,19 +15,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * ArchUnit — The Static Judge, over the SPI.
  *
- * <h2>Reach, stated because it used to be assumed</h2>
+ * <h2>Reach, stated rather than assumed</h2>
  * <p>This suite runs in {@code exeris-kernel-tck}, whose only production dependency is the SPI, so
- * the SPI is all it can see. Four rules here used to name {@code eu.exeris.kernel..} — the whole
- * repository — and were evaluated against the SPI alone, passing on the empty remainder while
- * reading as a repository-wide guarantee. Proven rather than assumed: a {@code ThreadLocal} field
- * added to {@code core.memory.LeakTracker} left this suite 13/13 green. They are now scoped and
- * named for what they check, and the repository-wide versions live in
- * {@code KernelTierBanArchitectureTest} in {@code exeris-kernel-community}, the first module where
- * all three tiers are on one classpath.
+ * the SPI is all it can see. A rule naming {@code eu.exeris.kernel..} — the whole repository —
+ * would be evaluated against the SPI alone, passing on the empty remainder while reading as a
+ * repository-wide guarantee: a {@code ThreadLocal} field in {@code core.memory.LeakTracker} would
+ * leave it green. The rules here are therefore scoped and named for what they check, and the
+ * repository-wide versions live in {@code KernelTierBanArchitectureTest} in
+ * {@code exeris-kernel-community}, the first module where all three tiers are on one classpath.
  *
  * <p>{@code allowEmptyShould(true)} is deliberately absent throughout. Every subject below is a
  * package or class set that provably has members, so the flag could only ever hide a future
- * narrowing of the classpath — which is exactly the failure this file just had.
+ * narrowing of the classpath.
  */
 
 @AnalyzeClasses(packages = "eu.exeris.kernel")

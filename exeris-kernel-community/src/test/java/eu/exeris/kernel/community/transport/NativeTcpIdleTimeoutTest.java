@@ -163,11 +163,11 @@ class NativeTcpIdleTimeoutTest {
         @Test
         @DisplayName("a connection the server keeps WRITING to is not reclaimed — the read-driven case does not cover this")
         void writesAloneKeepTheConnectionAlive() throws Exception {
-            // Found by review of #374, not by this suite: write() reaches queueWrite only on the
-            // TLS branch, so on a plaintext stream — CommunityHttpExchange's path, and the default
-            // one — responding to a request moved bytes without stamping activity. The suite missed
-            // it because its other surviving case drives read() alone, so the egress half of the
-            // contract was never exercised by data movement at all.
+            // write() reaches queueWrite only on the TLS branch, so on a plaintext stream —
+            // CommunityHttpExchange's path, and the default one — responding to a request stamps
+            // activity only if write() itself stamps. The suite's other case drives read() alone,
+            // so without this one the egress half of the contract is never exercised by data
+            // movement at all.
             AtomicReference<RecordedEvent> captured = new AtomicReference<>();
             TransportEngine engine = null;
             Socket socket = null;

@@ -155,12 +155,11 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         // Two steps on purpose. A saga parked AT step 0 resumes at step 0+1, so a single-step
         // definition has nothing to run on wake and the resume looks identical to a refusal.
         //
-        // Built entirely through the builder since 0.12. It used to build unversioned and then
-        // rebuild the record by hand through the five-argument constructor, because the builder had
-        // no version(...) — and that reach-around worked only by side effect: build() is what
-        // records a definition's transitions and hands them to compile, so the hand-built record inherited
-        // them. An application copying the pattern without that prior build() got a plan with no
-        // transitions and no diagnostic. See VersionThroughTheBuilder below.
+        // Built entirely through the builder, version(...) included. Building unversioned and then
+        // rebuilding the record by hand through the five-argument constructor works only by side
+        // effect: build() is what records a definition's transitions and hands them to compile, so a
+        // hand-built record inherits them only from a prior build(), and without one it yields a
+        // plan with no transitions and no diagnostic. See VersionThroughTheBuilder below.
         return engine.plans().compile(engine.plans().newDefinition(DEFINITION)
                 .step(PARKED_STEP, _ -> FlowOutcome.PARK, null)
                 .step("resumed-step", _ -> {

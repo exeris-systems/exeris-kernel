@@ -207,7 +207,7 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
         return new HttpRequestDecodingContext(HttpMethod.POST, "/tck", List.of(), allocator);
     }
 
-    /** The allocator-less shape: what a caller with nothing to offer builds (0.12). */
+    /** The allocator-less shape: what a caller with nothing to offer builds. */
     private static HttpRequestDecodingContext contextWithoutAllocator() {
         return new HttpRequestDecodingContext(HttpMethod.POST, "/tck", List.of());
     }
@@ -376,8 +376,8 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
                         .satisfies(cls -> {
                             String pkg = ((Class<?>) cls).getPackage().getName();
                             // The wrapper may be a java.* exception or an SPI-owned one. Requiring
-                            // java.* is what previously forced malformed bodies to share a type with
-                            // configuration errors; opacity only ever meant "no driver types".
+                            // java.* would force malformed bodies to share a type with configuration
+                            // errors; opacity means "no driver types", nothing more.
                             assertThat(pkg)
                                     .as("wrapped exception MUST be java.* or SPI-owned, never the driver's")
                                     .matches(p -> p.startsWith("java.") || p.startsWith("eu.exeris.kernel.spi."));

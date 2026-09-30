@@ -14,8 +14,8 @@ import eu.exeris.kernel.spi.flow.model.FlowState;
  * <p>Exists as its own seam because a refused {@code save} is not a neutral event: the caller
  * has already applied the in-memory transition the snapshot was meant to make durable, so a
  * failure leaves memory and store disagreeing and then escapes {@code runInstance} uncaught.
- * Behaviour here is unchanged - the exception still propagates - but it no longer propagates
- * silently, which is what made this class of loss cost a day to diagnose from stderr alone.
+ * The exception still propagates; this seam records it first, so the loss is observable rather
+ * than silent and does not have to be diagnosed from stderr alone.
  */
 final class FlowSnapshotWriter {
 

@@ -111,7 +111,7 @@ class CommunityRequestScopeBypassIsolationIT {
                     .isEqualTo(TENANT_B);
 
             // Op 2 - a snapshot / outbox / event-log write, through the no-arg overload. This is
-            // the call that used to key the session "shared", miss, and take its own connection.
+            // the call that must not key the session "shared", miss, and take its own connection.
             try (PersistenceConnection second = engine.openConnection()) {
                 SoftAssertions.assertSoftly(softly -> {
                     softly.assertThat(backendPidOf(second))

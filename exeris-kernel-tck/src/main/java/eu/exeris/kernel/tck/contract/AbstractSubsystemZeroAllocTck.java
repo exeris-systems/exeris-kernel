@@ -215,8 +215,8 @@ public abstract class AbstractSubsystemZeroAllocTck {
         });
 
         // Asserted through the config, not through a second reading of supportsZeroGcHotPath():
-        // the if/else that used to stand here chose its assertion independently of the contract
-        // written into the recording, so the two could disagree and nothing would say so.
+        // an assertion chosen independently of the contract written into the recording could
+        // disagree with it, and nothing would say so.
         JfrAllocationMonitor.assertContract(config, result, hotPathDescription());
     }
 }

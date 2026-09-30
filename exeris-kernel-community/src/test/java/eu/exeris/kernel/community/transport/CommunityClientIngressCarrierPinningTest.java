@@ -257,8 +257,8 @@ class CommunityClientIngressCarrierPinningTest {
 
         // The server-side handler only returns once the client has closed. Wait for that, so the
         // stream's teardown does not straddle the start of the recording. What PAQS does after the
-        // handler returns — the lifecycle JFR emit — no longer initialises anything: the engine's
-        // start() warmed that event class through the catalogue.
+        // handler returns — the lifecycle JFR emit — initialises nothing: the engine's start()
+        // warms that event class through the catalogue.
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WARMUP_TIMEOUT_SECONDS);
         // Subtraction, not `<`: nanoTime is free to wrap, and a comparison of two absolute values
         // reads the wrong way round when it does.

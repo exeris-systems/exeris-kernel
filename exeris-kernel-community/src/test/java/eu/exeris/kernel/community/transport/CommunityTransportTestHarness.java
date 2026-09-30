@@ -35,10 +35,9 @@ final class CommunityTransportTestHarness {
     /**
      * Whether {@code SocketChannel}'s {@code fd} field is reachable, which the FFM socket seam
      * needs. Gated by {@code --add-opens java.base/sun.nio.ch} and {@code java.base/java.io} — a
-     * real environment capability, unlike the certificate assumption this module used to carry.
+     * real environment capability, unlike the presence of an untracked certificate directory.
      *
-     * <p>Lives here because four suites were about to hold four identical copies; the fourth is
-     * what made it worth moving rather than repeating.
+     * <p>Lives here because four suites need it, and one copy cannot drift from the others.
      *
      * @return {@code true} when the field can be read reflectively
      */

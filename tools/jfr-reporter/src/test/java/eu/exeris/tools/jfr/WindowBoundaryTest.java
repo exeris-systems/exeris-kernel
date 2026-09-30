@@ -11,7 +11,7 @@ import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** {@link TckMarker.Window#contains} at the edges, where the millisecond floor used to reach. */
+/** {@link TckMarker.Window#contains} at the edges, where a millisecond floor would reach. */
 class WindowBoundaryTest {
 
     private static final Instant START = Instant.parse("2026-09-11T10:00:00.004500000Z");
@@ -24,9 +24,10 @@ class WindowBoundaryTest {
     @Test
     @DisplayName("an event a fraction of a millisecond outside the window is outside it")
     void subMillisecondEdgesAreOutsideTheWindow() {
-        // Both of these floor into the same millisecond as a boundary, which is how they used to
-        // get in. The margin matters because it is exactly where the marker's own commit and the
-        // sampler's noise sit - and a hot path running 10 000 iterations can finish inside it.
+        // Both of these floor into the same millisecond as a boundary, which is how a
+        // millisecond-floored comparison would let them in. The margin matters because it is
+        // exactly where the marker's own commit and the sampler's noise sit - and a hot path
+        // running 10 000 iterations can finish inside it.
         assertThat(WINDOW.contains(START.minusNanos(500_000)))
                 .as("half a millisecond before the window opened")
                 .isFalse();
