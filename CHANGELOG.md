@@ -40,6 +40,10 @@ Outside the declared surfaces:
   `<classifier>tests</classifier><type>test-jar</type>` coordinate is gone, from
   `exeris-kernel-bom` too — see "`exeris-kernel-tck` publishes its contract instead of hiding it
   under a classifier" under *Changed*.
+- **tck:** `AbstractSharedScopeAccessMatrixTck` declares three more store operations a binding
+  implements, `updateValue`, `reassignOwner` and `delete`, and its owner and scope keys become
+  overridable (`ownerA()`, `ownerB()`, `sharedScope()`) — see "The reference shared-scope RLS
+  policy no longer lets a partition-mate delete or re-own a row" under *Security*.
 
 On a declared surface, a behaviour with no signature moved, each recorded in the stability matrix:
 
@@ -57,6 +61,18 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   failure carries the code of what failed, not queue overflow" under *Fixed*.
 
 ### Security
+
+- **The reference shared-scope RLS policy no longer lets a partition-mate delete or re-own a row**
+  (ADR-012 §4b.4, #580). The conforming policy in `RlsConnectionInterceptor`'s Javadoc was one
+  policy with no `FOR` clause, its `USING` widened on the shared scope and its `WITH CHECK` pinned
+  to the tenant. In PostgreSQL that `USING` also selects the rows `UPDATE` and `DELETE` reach, so a
+  tenant could delete a partition-mate's shared row, and re-own one with `UPDATE … SET tenant_id =
+  <self>`, which the pinned `WITH CHECK` accepts. The reference is now two policies: the
+  tenant-private policy for every command, and an additive `FOR SELECT` policy that widens reads
+  only. `AbstractSharedScopeAccessMatrixTck` gains four cells: update, re-own and delete of a
+  partition-mate's row are refused, and the owner still updates and deletes its own in-scope row.
+  Its Community binding, `CommunityPersistenceSharedScopeIT`, installs the new shape. The kernel
+  ships no policy, so a deployment that copied the earlier one replaces it (MIGRATION step 14).
 
 - **The Community TLS client verifies the server it dials** (ADR-074 §4, Amendment A1). Outbound
   TLS used `SSL_VERIFY_NONE`: it encrypted, loaded no trust, sent no server name and checked no

@@ -31,14 +31,15 @@ import java.util.Map;
  * Community binding of {@link AbstractSharedScopeAccessMatrixTck} against a live PostgreSQL instance.
  *
  * <p>The abstract suite owns the matrix; this class owns only the substrate — a table, a conforming RLS
- * policy, and the two store operations. A live database is required because the contract is about RLS
+ * policy, and the store operations. A live database is required because the contract is about RLS
  * behaviour, which the H2-backed {@code CommunityPersistenceEngineTckTest} cannot express.
  *
  * <h2>The conforming policy</h2>
- * <p>Reproduced here as the normative example. {@code USING} widens on the published shared scope;
- * {@code WITH CHECK} is byte-for-byte the tenant-private clause, because owner-scoped write is what that
- * clause already expresses — widening reads never requires relaxing writes. The {@code NULLIF} guard is
- * what stops a cleared scope from matching rows whose own tag is empty.
+ * <p>The reference shape {@code RlsConnectionInterceptor} publishes: the tenant-private policy for every
+ * command, and an additive {@code FOR SELECT} policy that widens reads on the published shared scope.
+ * Writes see only the owner policy, so a tenant can read a partition-mate's row and cannot update,
+ * re-own or delete it. The {@code NULLIF} guard stops a cleared scope from matching rows whose own tag
+ * is empty.
  *
  * <h2>Execution</h2>
  * <pre>mvn -pl exeris-kernel-community test -Dtest=CommunityPersistenceSharedScopeIT -DincludedGroups=integration -DexcludedGroups=</pre>
@@ -112,6 +113,30 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
         return rows;
     }
 
+    @Override
+    protected int updateValue(StorageContext ctx, String value, String newValue) {
+        try (PersistenceConnection conn = engine.openConnection(ctx);
+             PersistenceStatement stmt = conn.prepare("UPDATE scoped_docs SET value = ? WHERE value = ?")) {
+            return Math.toIntExact(stmt.bindString(0, newValue).bindString(1, value).executeUpdate());
+        }
+    }
+
+    @Override
+    protected int reassignOwner(StorageContext ctx, String value, String newOwner) {
+        try (PersistenceConnection conn = engine.openConnection(ctx);
+             PersistenceStatement stmt = conn.prepare("UPDATE scoped_docs SET tenant_id = ? WHERE value = ?")) {
+            return Math.toIntExact(stmt.bindString(0, newOwner).bindString(1, value).executeUpdate());
+        }
+    }
+
+    @Override
+    protected int delete(StorageContext ctx, String value) {
+        try (PersistenceConnection conn = engine.openConnection(ctx);
+             PersistenceStatement stmt = conn.prepare("DELETE FROM scoped_docs WHERE value = ?")) {
+            return Math.toIntExact(stmt.bindString(0, value).executeUpdate());
+        }
+    }
+
     private static PersistenceEngine createEngine(PostgreSQLContainer<?> container) {
         PersistenceConfig config = new PersistenceConfig(
                 container.getJdbcUrl(), APP_USER, APP_PASSWORD,
@@ -134,12 +159,11 @@ class CommunityPersistenceSharedScopeIT extends AbstractSharedScopeAccessMatrixT
                     + "shared_scope TEXT NOT NULL DEFAULT '', value TEXT NOT NULL)");
             st.execute("ALTER TABLE scoped_docs ENABLE ROW LEVEL SECURITY");
             st.execute("ALTER TABLE scoped_docs FORCE ROW LEVEL SECURITY");
-            st.execute("DROP POLICY IF EXISTS shared_scope_isolation ON scoped_docs");
-            st.execute("CREATE POLICY shared_scope_isolation ON scoped_docs "
-                    + "USING (tenant_id = current_setting('exeris.tenant_id', true) "
-                    + "       OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL "
-                    + "           AND shared_scope = current_setting('exeris.shared_scope', true))) "
+            st.execute("CREATE POLICY tenant_isolation ON scoped_docs "
+                    + "USING (tenant_id = current_setting('exeris.tenant_id', true)) "
                     + "WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true))");
+            st.execute("CREATE POLICY shared_scope_read ON scoped_docs FOR SELECT "
+                    + "USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''))");
             st.execute("GRANT USAGE ON SCHEMA public TO exeris_app");
             st.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON scoped_docs TO exeris_app");
         } catch (SQLException e) {

@@ -3264,6 +3264,34 @@ request over `h2c` resolves the same route.
 
 ---
 
+### Persistence: The Reference Shared-Scope RLS Policy Admits Cross-Tenant Delete and Re-Own (#580, surfaced 2026-09-26)
+
+**Gap:** the conforming policy `RlsConnectionInterceptor`'s Javadoc publishes for the shared-scope
+tier was one policy with no `FOR` clause: `USING (tenant OR shared_scope) WITH CHECK (tenant)`. In
+PostgreSQL that `USING` also decides which rows `UPDATE` and `DELETE` reach, so a tenant deleted a
+partition-mate's shared row and re-owned one with `UPDATE … SET tenant_id = <self>`, which the pinned
+`WITH CHECK` accepts. ADR-012 §4b.4 forbids both. `AbstractSharedScopeAccessMatrixTck` had one write
+cell, a forged insert, so the suite and its Community binding, which installed the same policy, could
+not see it. Reported by `exeris-tooling`, which emits the per-command shape and needed the kernel
+reference and TCK to match it (tooling ROADMAP T29 slice B).
+
+**Owner:** Persistence (the reference policy, the Community binding) and TCK.
+
+**Resolution:** the reference becomes two policies — the tenant-private policy for every command, and
+an additive `FOR SELECT` policy that widens reads only. The matrix gains update, re-own and delete
+denials plus a positive control for the owner's own writes, three store operations a binding
+implements, and overridable owner and scope keys so a `uuid`-keyed schema can bind it. Whether
+`WITH CHECK` must also pin the shared-scope tag is a separate ADR-012 §4b.4 ruling, carried to v0.13.
+
+**Merge Gate:** the Community binding passes the widened matrix on the new shape; the earlier single
+policy fails the re-own and delete cells, and a policy that refuses every update and delete fails
+the positive control.
+
+**Status (v0.12): DELIVERED.** `CommunityPersistenceSharedScopeIT` passes 8 of 8 on the two-policy
+shape; with the earlier policy re-installed, exactly the re-own and delete cells fail; with update and
+delete refused outright, exactly the positive control fails. MIGRATION step 14 tells a deployment that
+copied the earlier policy to replace it.
+
 ## Known Gaps / Future Work planned for v0.13
 
 ### Telemetry: a contract for events the kernel did not define
