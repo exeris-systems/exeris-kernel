@@ -140,9 +140,9 @@ class NativeTcpClientServerE2eMultiReactor4IntegrationTest {
         assumeTrue(CommunityTransportTestHarness.isSocketFdAccessible(),
             "SocketChannel FileDescriptor field access is unavailable without --add-opens java.base/sun.nio.ch=ALL-UNNAMED and --add-opens java.base/java.io=ALL-UNNAMED");
 
-        // Generated per run rather than read from ../native-libs/certs, which is in no commit, no
-        // .gitignore, no script and no workflow — so the old assumeTrue never held and this test
-        // skipped in every build while the summary line read as a pass.
+        // Generated per run: no TLS material is checked in or created by any script, so a test that
+        // assumes a directory such as ../native-libs/certs skips in every build while the summary
+        // line reads as a pass.
         TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
 
         KernelCryptoProvider cryptoProvider;

@@ -43,9 +43,9 @@ class NativeTcpClientServerE2eIntegrationTest {
 
     /**
      * Generated once for the class, not once per test: keypair generation is the expensive part and
-     * both TLS cases want the same material. Replaces ../native-libs/certs, which is in no commit,
-     * no .gitignore, no script and no workflow — so the old assumeTrue never held and these tests
-     * skipped in every build while the summary line read as a pass.
+     * both TLS cases want the same material. It is generated rather than read from a path such as
+     * ../native-libs/certs because no TLS material is checked in or created by any script: a test
+     * that assumes such a directory skips in every build while the summary line reads as a pass.
      */
     private static TlsTestCertificate certificate;
 

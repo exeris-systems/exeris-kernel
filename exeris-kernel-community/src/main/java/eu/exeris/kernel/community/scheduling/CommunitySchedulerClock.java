@@ -26,10 +26,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * park — the lost-wakeup this design is most exposed to.
  *
  * <p><strong>This is {@link TimeSource} plus waiting.</strong> The two reads below are inherited,
- * not redeclared: an earlier version of this file said the kernel had no unified clock abstraction
- * and that this interface was shaped so migrating onto one would be a substitution rather than a
- * redesign. ADR-082 added the abstraction and this is that substitution — the wait primitives stay
- * here, because a {@code ReentrantLock} has no business in the SPI.
+ * not redeclared: the kernel's clock abstraction is the SPI seam of ADR-082, and this interface
+ * adds only what that seam deliberately leaves out — the wait primitives, because a
+ * {@code ReentrantLock} has no business in the SPI.
  *
  * @since 0.11
  */
