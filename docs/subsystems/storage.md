@@ -211,7 +211,12 @@ segments, and the hex prefix is one opaque segment — the same two properties t
 on.
 
 **Configuration.** `location` is the endpoint, `http://host[:port]` or `https://host[:port]`; the rest
-arrives as properties.
+arrives as properties. A single trailing `/` is still the bare endpoint. A location with a path, a
+query, a fragment or userinfo is refused when the store is built, with a plain
+`IllegalArgumentException` naming the part: requests are path-style and built from the bucket and key
+alone, so a gateway prefix such as `/s3` would be missing from every request and every presigned URL,
+and credentials come only from `s3.accessKey` / `s3.secretKey`. No refusal of a location echoes its
+userinfo.
 
 | Property | Default | Meaning |
 |---|---|---|
@@ -291,7 +296,7 @@ ServiceLoader order and a class-name tie-break.
 | Key | Meaning |
 |---|---|
 | `storage.blob.provider` | The driver id: `blob-fs-community` or `blob-s3-community`. **Unset means blob storage is off.** |
-| `storage.blob.location` | Driver-interpreted root. A **directory** for the filesystem driver; the **endpoint** `http://host[:port]` or `https://host[:port]` for S3 — not the bucket, which is a property. Required once the provider key is set. |
+| `storage.blob.location` | Driver-interpreted root. A **directory** for the filesystem driver; the **endpoint** `http://host[:port]` or `https://host[:port]` for S3, with no path, query, fragment or userinfo — not the bucket, which is a property. Required once the provider key is set. |
 | `storage.blob.maxSignedUrlTtlSeconds` | Signed-URL ceiling; defaults to `BlobStorageConfig`'s. |
 | `storage.blob.s3.bucket` | S3 only, **required**. |
 | `storage.blob.s3.accessKey`, `storage.blob.s3.secretKey` | S3 only, **required**. |
