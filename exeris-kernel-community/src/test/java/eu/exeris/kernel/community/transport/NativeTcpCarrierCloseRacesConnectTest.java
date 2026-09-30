@@ -100,7 +100,7 @@ class NativeTcpCarrierCloseRacesConnectTest {
                     firstConnected.countDown();
                     TransportStream stream = connection.openStream();
                     stream.close();
-                } catch (ExerisKernelException | IllegalStateException expected) {
+                } catch (ExerisKernelException | IllegalStateException _) {
                     // a connect that lost the race to close() fails inside its contract
                 } catch (Throwable other) {
                     unexpected.add(other);
@@ -139,7 +139,7 @@ class NativeTcpCarrierCloseRacesConnectTest {
     private static void awaitQuietly(CountDownLatch latch) {
         try {
             latch.await();
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }

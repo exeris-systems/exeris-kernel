@@ -46,7 +46,7 @@ final class CommunityTransportTestHarness {
             Field field = channel.getClass().getDeclaredField("fd");
             field.setAccessible(true);
             return field.get(channel) != null;
-        } catch (IOException | ReflectiveOperationException | RuntimeException probeFailure) {
+        } catch (IOException | ReflectiveOperationException | RuntimeException _) {
             return false;
         }
     }

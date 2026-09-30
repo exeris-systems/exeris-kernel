@@ -121,7 +121,7 @@ public abstract class AbstractTransportStreamTck {
         TransportStream writer = streams.writer();
         TransportStream reader = streams.reader();
 
-        try (AutoCloseable _ = holdOutboundEgress(writer)) {
+        try (var _ = holdOutboundEgress(writer)) {
             LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO);
             buf.segment().set(ValueLayout.JAVA_BYTE, 0, (byte) 0x7E);
             writer.queueWrite(buf, 1);   // ownership transferred; egress held → stays pending

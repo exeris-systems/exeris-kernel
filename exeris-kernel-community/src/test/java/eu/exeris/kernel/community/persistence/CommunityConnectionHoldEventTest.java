@@ -85,7 +85,7 @@ class CommunityConnectionHoldEventTest {
                     box.getOrAcquire();
                     try {
                         Thread.sleep(HOLD_MILLIS);
-                    } catch (InterruptedException cause) {
+                    } catch (InterruptedException _) {
                         Thread.currentThread().interrupt();
                     }
                 });
@@ -114,7 +114,7 @@ class CommunityConnectionHoldEventTest {
                 try (PersistenceConnection conn = engine.openConnection()) {
                     assertThat(conn).isNotNull();
                     Thread.sleep(HOLD_MILLIS);
-                } catch (InterruptedException cause) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                 } catch (Exception cause) {
                     throw new IllegalStateException(cause);
@@ -123,7 +123,7 @@ class CommunityConnectionHoldEventTest {
             worker.start();
             try {
                 worker.join();
-            } catch (InterruptedException cause) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
         });

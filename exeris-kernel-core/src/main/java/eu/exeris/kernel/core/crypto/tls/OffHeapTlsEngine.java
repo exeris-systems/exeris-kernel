@@ -596,7 +596,7 @@ public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCod
         }
         try {
             return MemorySegment.ofAddress(text).reinterpret(MAX_REASON_BYTES).getString(0L);
-        } catch (IllegalArgumentException | IndexOutOfBoundsException unterminated) {
+        } catch (IllegalArgumentException | IndexOutOfBoundsException _) {
             return HANDSHAKE_STEP_FAILED;
         }
     }

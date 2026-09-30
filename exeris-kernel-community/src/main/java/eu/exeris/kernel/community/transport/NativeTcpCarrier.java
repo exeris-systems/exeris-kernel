@@ -847,7 +847,7 @@ public final class NativeTcpCarrier implements TransportEngine {
                 failure.getClass().getName(), streak, backoffMillis);
         try {
             Thread.sleep(backoffMillis);
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             // Symmetric with the ceiling above rather than a quiet return: the acceptor thread is
             // ending either way, and leaving `running` true would advertise a listener that is gone.

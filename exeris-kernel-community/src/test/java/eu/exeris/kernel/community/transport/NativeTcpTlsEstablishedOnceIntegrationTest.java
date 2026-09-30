@@ -72,7 +72,7 @@ class NativeTcpTlsEstablishedOnceIntegrationTest {
         KernelCryptoProvider cryptoProvider;
         try {
             cryptoProvider = new CommunityKernelCryptoProvider();
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException _) {
             assumeTrue(false, "OpenSSL runtime unavailable");
             return;
         }

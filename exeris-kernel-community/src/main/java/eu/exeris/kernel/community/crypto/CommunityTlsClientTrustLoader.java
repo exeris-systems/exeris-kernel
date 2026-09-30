@@ -104,7 +104,7 @@ final class CommunityTlsClientTrustLoader {
         }
         try {
             return Files.exists(Path.of(location));
-        } catch (InvalidPathException notAPath) {
+        } catch (InvalidPathException _) {
             return false;
         }
     }
