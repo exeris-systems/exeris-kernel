@@ -2056,8 +2056,10 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   a page. (#481, closes #477)
 - **The documentation standards run on every pull request** — five reusable workflows from
   `exeris-systems/.github`: frontmatter and registry, commit format, pull-request body, the ADR-085
-  §J.33 documentation review, and the §F.21 Javadoc gate. All five are **reported, not required**;
-  the required contexts remain Build & TCK Verification, SPI Compatibility Gate and SonarCloud. (#452)
+  §J.33 documentation review, and the §F.21 Javadoc gate. At the release, the `development/0.12.0`
+  ruleset requires `docs / docs-lint`, `javadoc / javadoc-gate` and `docs-review / publish /
+  verdict`, and `main`'s requires the verdict; commit format and pull-request body are required on no
+  branch. (#452)
 - **The agent layer is vendor-neutral, with an L0 runtime layer beneath it** — role profiles at
   `.agents/agents/<name>/AGENT.md` declaring capabilities rather than one runtime's tool names,
   three decision schemas, nineteen behaviour tests, four nested `AGENTS.md`, and four L0 hooks that
@@ -2075,9 +2077,8 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   produced — the runner's harness denies a shell, so a routine that asks the model to run a script
   gets a review reporting its own checks as `not-run`. The verdict is posted under the
   organisation's identity and validated against the shared base, and `docs-review / publish /
-  verdict` is red when it is BLOCKED, absent, or rests on a mandatory gate that did not run. That
-  check is not yet one of this repository's required contexts; making it required is a
-  branch-protection change.
+  verdict` is red when it is BLOCKED, absent, or rests on a mandatory gate that did not run. It is a
+  required context on `main` and on `development/0.12.0`.
 - **The diagnostics NDJSON session is driven with a malformed line mid-session** — through `serve()`
   for the first time, from the CLI documentation pass. (#479)
 
