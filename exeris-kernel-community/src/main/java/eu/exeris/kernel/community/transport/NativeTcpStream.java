@@ -401,10 +401,10 @@ final class NativeTcpStream implements TransportStream {
         if (length == 0) {
             return;
         }
-        // Both public egress entries stamp. Only queueWrite did until #374 review: write()
-        // reaches queueWrite ONLY on the TLS branch, so every plaintext response — which is
-        // CommunityHttpExchange's path, and the default one — moved bytes without counting as
-        // activity, and idle reclamation became a property of whether TLS was configured.
+        // Both public egress entries stamp. write() reaches queueWrite ONLY on the TLS branch, so
+        // with a stamp in queueWrite alone every plaintext response — which is
+        // CommunityHttpExchange's path, and the default one — would move bytes without counting as
+        // activity, and idle reclamation would become a property of whether TLS is configured.
         lastActivityNanos = System.nanoTime();
 
         if (tlsEngine == null) {

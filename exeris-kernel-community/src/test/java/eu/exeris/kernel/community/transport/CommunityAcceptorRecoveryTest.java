@@ -63,8 +63,8 @@ class CommunityAcceptorRecoveryTest {
         @Timeout(30)
         @DisplayName("the loop keeps accepting after accept() has failed")
         void loopSurvivesAFailedAccept(@TempDir Path tmp) throws Exception {
-            // Two failures, then passes that succeed. Before the fix the first one ended the loop,
-            // so `passes` stopped at 1 and the carrier was no longer running.
+            // Two failures, then passes that succeed. A loop that ended on the first failure would
+            // stop `passes` at 1 and leave the carrier no longer running.
             NativeTcpCarrier carrier = carrier(tmp);
             AtomicInteger passes = new AtomicInteger();
 

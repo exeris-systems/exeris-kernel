@@ -88,7 +88,7 @@ public final class RequestBodyDecodeException extends ExerisKernelException {
      *
      * <p>{@link FaultOrigin#CALLER}: the offered bytes are not a valid encoding of the target type. The
      * caller sent them, and sending them again unchanged fails identically. This is the classification
-     * ADR-036 §2 always intended and could previously express only by naming this type.
+     * ADR-036 §2 intends, expressed by the fault origin rather than by naming this type.
      */
     @Override
     public FaultOrigin faultOrigin() {

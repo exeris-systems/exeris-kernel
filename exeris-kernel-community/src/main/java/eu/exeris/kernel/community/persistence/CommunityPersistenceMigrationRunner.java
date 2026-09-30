@@ -56,11 +56,10 @@ import java.util.regex.Matcher;
  *
  * @since 0.8
  */
-// The class total used to need a CyclomaticComplexity suppression, dominated by the SQL splitter
-// (`splitSqlStatements` + `stripLineComments` + `addStatement`) — a single-quote-aware per-character
-// scanner that cannot be decomposed without fragmenting the state machine. Moving the apply loop to
-// `SchemaMigrationApplier` (ADR-073) dropped the total under the threshold and the suppression with
-// it; PMD's own `UnnecessaryWarningSuppression` is what caught that it had become dead.
+// The class total is dominated by the SQL splitter (`splitSqlStatements` + `stripLineComments` +
+// `addStatement`) — a single-quote-aware per-character scanner that cannot be decomposed without
+// fragmenting the state machine. It stays under the CyclomaticComplexity threshold without a
+// suppression because the apply loop lives in `SchemaMigrationApplier` (ADR-073).
 final class CommunityPersistenceMigrationRunner {
 
     /**

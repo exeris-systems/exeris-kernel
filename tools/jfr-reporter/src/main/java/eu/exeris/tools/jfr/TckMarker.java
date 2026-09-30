@@ -214,8 +214,8 @@ final class TckMarker {
      * {@code start} at 2408. Boundaries are therefore sorted by commit time, {@code start} first at
      * an equal instant.
      *
-     * <p>A second {@code start} while one is pending no longer overwrites it silently: the pending
-     * one is reported as unpaired. That is the defect that let a JVM-wide recording collapse to
+     * <p>A second {@code start} while one is pending does not overwrite it silently: the pending
+     * one is reported as unpaired. A silent overwrite would let a JVM-wide recording collapse to
      * exactly one window and be read as a single subsystem's measurement.
      *
      * @param boundaries markers in any order

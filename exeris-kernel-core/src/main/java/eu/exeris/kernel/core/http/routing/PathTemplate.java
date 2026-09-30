@@ -110,7 +110,7 @@ record PathTemplate(List<Segment> segments, int paramCount, String literalPrefix
             int slash = path.indexOf('/', start);
             boolean lastSegment = i == count - 1;
             // The template's segment count must be the path's: a trailing slash still yields an
-            // (empty) segment, matching the -1 limit the split used to carry.
+            // (empty) segment, as String.split with a -1 limit would yield.
             if (lastSegment != (slash < 0)) {
                 return false;
             }

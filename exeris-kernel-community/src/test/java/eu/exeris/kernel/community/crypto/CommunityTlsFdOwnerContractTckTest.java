@@ -124,10 +124,9 @@ class CommunityTlsFdOwnerContractTckTest {
     }
 
     /**
-     * Generates the material rather than hunting for it. The directory this used to walk up to —
-     * {@code ../native-libs/certs} — is in no commit, no {@code .gitignore}, no script and no
-     * workflow, so the assumption never held and this contract test had never executed anywhere
-     * while reporting as passing. Same fix as #375, which introduced the generator for exactly this.
+     * Generates the material rather than hunting for it. No TLS material is checked in or created
+     * by any script, so a contract test that walks up to a directory such as
+     * {@code ../native-libs/certs} never executes anywhere while reporting as passing.
      */
     private CertKeyPaths resolveCertKey() {
         TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);

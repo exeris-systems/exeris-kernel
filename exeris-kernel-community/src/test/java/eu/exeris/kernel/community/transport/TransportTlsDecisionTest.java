@@ -44,13 +44,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * An outbound call used to speak TLS because <em>another subsystem had started</em>.
+ * An outbound call speaks TLS because it is configured to, not because <em>another subsystem has
+ * started</em>.
  *
- * <p>The server's TLS is a property of what it was given — certificate and key. The client's was a
- * property of its surroundings: {@code resolveCryptoConfig} handed every {@code CLIENT}-mode
- * transport a TLS config, and the carrier armed it whenever a crypto provider happened to be bound.
- * A kernel that booted crypto to serve HTTPS therefore could not make a plaintext outbound call at
- * all, and nothing reported that — the request simply never completed.
+ * <p>The server's TLS is a property of what it was given — certificate and key — and the client's
+ * is too, not a property of its surroundings. Were {@code resolveCryptoConfig} to hand every
+ * {@code CLIENT}-mode transport a TLS config for the carrier to arm whenever a crypto provider is
+ * bound, a kernel that boots crypto to serve HTTPS could not make a plaintext outbound call at
+ * all, and nothing would report that — the request would simply never complete.
  *
  * <p>Both directions are asserted here because the knob proves nothing alone: a client that never
  * armed TLS would pass the opt-out case, and one that always armed it would pass the default case.
@@ -75,8 +76,7 @@ class TransportTlsDecisionTest {
         MemoryAllocator allocator =
                 new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
         try {
-            // The opt-out: the escape hatch that did not exist. A crypto-booted kernel can now
-            // reach a plaintext peer, which it previously could not do at all.
+            // The opt-out: a crypto-booted kernel reaches a plaintext peer.
             Outcome declined = againstPlaintextServer(crypto, allocator, "false");
             assertThat(declined.status())
                     .as("opt-out must produce a plaintext client, which the plaintext peer answers; failure: %s",

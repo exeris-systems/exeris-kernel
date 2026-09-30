@@ -200,12 +200,11 @@ class CoreFlowEngineTest {
                 engine.scheduler().schedule(plan, context);
                 assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
 
-                // "Clearly" now means structurally rather than in prose. The refusal used to build
-                // its message by concatenating the key, which is a banned pattern on a failure path
-                // and left message text as the only discriminator -- so this assertion and the
-                // choreography bridge both had to match on it. The detail moved into rawArgs, and
-                // asserting there is strictly more precise: it pins the reason AND the identity,
-                // where hasMessageContaining pinned neither.
+                // "Clearly" means structurally rather than in prose. The refusal carries its detail
+                // in rawArgs, not in a message built by concatenating the key -- a banned pattern on
+                // a failure path, and one that leaves message text as the only discriminator for
+                // this assertion and the choreography bridge alike. Asserting on rawArgs pins the
+                // reason AND the identity, where hasMessageContaining pins neither.
                 org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.scheduler().wake(context))
                         .isInstanceOfSatisfying(
                                 eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class, ex -> {
@@ -764,9 +763,8 @@ class CoreFlowEngineTest {
     }
 
     private static boolean isExpectedNotParkedRace(Throwable throwable) {
-        // Was a substring match on the message, which is why the refusal had to carry the key in a
-        // concatenated string. It is classified by rawArgs reason now (ADR-free, v0.12) -- a test
-        // matching on prose is a test that breaks when the prose improves.
+        // Classified by the rawArgs reason, not by a substring of the message -- a test matching on
+        // prose is a test that breaks when the prose improves.
         return eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.isNotParked(throwable);
     }
 

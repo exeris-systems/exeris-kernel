@@ -47,11 +47,10 @@ import java.util.List;
         }
 
         long headerStart = requestLineEnd + 2;
-        // One pass yields both: the codec's connection state and this list. It used to be two, and
-        // the bound was the reason the second one was dangerous rather than merely wasteful — the
-        // enforced limit depended on which pass reached it first unless both were handed identical
-        // bounds (ADR-071). A single pass cannot express that mistake, and does not re-materialise
-        // every field to make it.
+        // One pass yields both: the codec's connection state and this list. A second pass would be
+        // dangerous rather than merely wasteful — the enforced limit would depend on which pass
+        // reached it first unless both were handed identical bounds (ADR-071). A single pass cannot
+        // express that mistake, and does not re-materialise every field to make it.
         List<HttpHeader> headers = new ArrayList<>();
         long headersEnd = codec.parseHeaders(
                 aggregate.segment(), headerStart, total - headerStart,

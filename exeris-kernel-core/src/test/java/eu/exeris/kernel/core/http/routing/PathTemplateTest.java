@@ -18,16 +18,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * {@link PathTemplate} matches and captures by scanning the request path in place. It used to take
- * the path pre-split into a {@code String[]}; the split is what these tests hold it to, because the
- * segment rules it encoded — a trailing slash is a segment, an empty placeholder does not match — are
- * easy to lose when the array goes away.
+ * {@link PathTemplate} matches and captures by scanning the request path in place, never splitting
+ * it into a {@code String[]}. These tests hold it to the split's segment rules — a trailing slash is
+ * a segment, an empty placeholder does not match — because they are easy to lose without the array.
  */
 @DisplayName("PathTemplate")
 class PathTemplateTest {
 
     /**
-     * The split-based matcher this class replaced, kept as the oracle. Agreement across a corpus is
+     * A split-based matcher, kept as the oracle. Agreement across a corpus is
      * the claim worth testing: the scanner is a re-expression, not a new rule set.
      */
     private static boolean referenceMatches(PathTemplate template, String path) {

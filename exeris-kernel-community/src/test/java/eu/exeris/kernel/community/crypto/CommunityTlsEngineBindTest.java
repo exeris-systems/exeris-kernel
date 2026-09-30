@@ -51,9 +51,9 @@ class CommunityTlsEngineBindTest {
     void serverBindInvalidFdFails() {
         CommunityKernelCryptoProvider provider = createProviderOrSkip();
 
-        // Generated, not located. The path this used to probe — ../native-libs/certs — is in no
-        // commit, no .gitignore, no script and no workflow, so the assumption never held and this
-        // test had never run anywhere while reporting as passing. Same fix as #375.
+        // Generated, not located. No TLS material is checked in or created by any script, so a test
+        // that assumes a path such as ../native-libs/certs skips in every build while reporting as
+        // passing.
         TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
         Path certPath = certificate.certificate();
         Path keyPath = certificate.privateKey();
