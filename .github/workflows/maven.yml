@@ -128,9 +128,10 @@ jobs:
         # So the failure is silent here and expensive at the far end, which is what makes it a gate
         # rather than a convention.
         #
-        # This step IS the guarantee: an unset `exeris.module.name` does not fail the build. With the config inherited from the
-        # root pluginManagement and no local plugin declaration, the property goes unresolved and
-        # the manifest entry is simply omitted — the jar ships nameless and green. So the script
+        # This step IS the guarantee: an unset `exeris.module.name` does not fail the build. With
+        # the config inherited from the root pluginManagement and no local plugin declaration, the
+        # property goes unresolved and the manifest entry is simply omitted — the jar ships
+        # nameless and green. So the script
         # discovers every jar the reactor produced rather than checking a hand-maintained list,
         # because a new module would otherwise be uncovered by default.
         #
