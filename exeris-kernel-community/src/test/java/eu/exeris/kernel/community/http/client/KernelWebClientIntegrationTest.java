@@ -10,6 +10,7 @@ import eu.exeris.kernel.community.http.CommunityJsonResponseBodyDecoder;
 import eu.exeris.kernel.community.http.LeakTrackingAllocator;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.core.http.client.KernelWebClient;
+import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
@@ -130,6 +131,54 @@ class KernelWebClientIntegrationTest {
     }
 
     @Test
+    @DisplayName("PUT 200 round-trip serialises request body and deserialises response")
+    void putRoundTrip() {
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) -> {
+                assertThat(method).isEqualTo(HttpMethod.PUT);
+                assertThat(path).isEqualTo("/widget/42");
+                byte[] requestBytes = readRequestBody(exchange.request().body());
+                assertThat(new String(requestBytes, StandardCharsets.UTF_8))
+                        .contains("\"name\":\"Replaced\"");
+                respondWithJson(exchange, HttpStatus.OK, Map.of("id", "42", "name", "Replaced"));
+            });
+
+            @SuppressWarnings("unchecked") Map<String, Object> replaced =
+                    client.put("/widget/42", Map.of("name", "Replaced"), Map.class);
+
+            assertThat(replaced).containsEntry("id", "42").containsEntry("name", "Replaced");
+        });
+    }
+
+    @Test
+    @DisplayName("PUT reaches a router route registered on PUT, which PATCH to the same path does not")
+    void putReachesARouteRegisteredOnPut() {
+        // The router matches the method exactly, so an update route registered on PUT is reachable
+        // only by a PUT. The PATCH half is the direction that fails without a put verb: a client that
+        // updates with PATCH gets the router's not-found answer from a route that exists.
+        HttpRouter router = HttpRouter.builder()
+                .route(HttpMethod.PUT, "/widget/42", exchange -> {
+                    assertThat(new String(readRequestBody(exchange.request().body()), StandardCharsets.UTF_8))
+                            .contains("\"name\":\"Replaced\"");
+                    respondWithJson(exchange, HttpStatus.OK, Map.of("id", "42"));
+                })
+                .build();
+        runScopedTest(client -> {
+            handlerHook.set((method, path, exchange) -> router.handle(exchange));
+
+            @SuppressWarnings("unchecked") Map<String, Object> replaced =
+                    client.put("/widget/42", Map.of("name", "Replaced"), Map.class);
+            assertThat(replaced).containsEntry("id", "42");
+
+            assertThatThrownBy(() -> client.patch("/widget/42", Map.of("name", "Replaced"), Map.class))
+                    .isInstanceOf(KernelWebClient.WebClientException.class)
+                    .satisfies(ex -> assertThat(((KernelWebClient.WebClientException) ex).isNotFound())
+                            .as("PATCH to a PUT-only route is the router's not-found")
+                            .isTrue());
+        });
+    }
+
+    @Test
     @DisplayName("PATCH 200 round-trip serialises request body and deserialises response")
     void patchRoundTrip() {
         runScopedTest(client -> {
@@ -211,7 +260,7 @@ class KernelWebClientIntegrationTest {
     }
 
     @Test
-    @DisplayName("Verb methods reject null path / responseType / body-for-POST")
+    @DisplayName("Verb methods reject null path / responseType / body-for-POST, PUT and PATCH")
     void verbMethodsRejectNullArguments() {
         runScopedTest(client -> {
             assertThatNullPointerException()
@@ -222,6 +271,8 @@ class KernelWebClientIntegrationTest {
                     .isThrownBy(() -> client.post("/p", null, Map.class));
             assertThatNullPointerException()
                     .isThrownBy(() -> client.patch("/p", null, Map.class));
+            assertThatNullPointerException()
+                    .isThrownBy(() -> client.put("/p", null, Map.class));
         });
     }
 

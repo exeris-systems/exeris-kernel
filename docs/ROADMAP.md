@@ -3264,6 +3264,27 @@ request over `h2c` resolves the same route.
 
 ---
 
+### HTTP Client: `KernelWebClient` Cannot Send `PUT` (#579, surfaced 2026-09-26)
+
+**Gap:** `KernelWebClient` declared `get`, `getList`, `post`, `patch` and `delete`, while
+`HttpMethod.PUT` exists in the SPI and the kernel router matches methods exactly. A generated
+application serves update on `PUT` and publishes it in its OpenAPI document; its generated Java client
+wraps `KernelWebClient` and so sent `PATCH`, which the router answers with not-found. Reported by
+`exeris-tooling` (tooling ROADMAP T58), whose route-parity test pins that mismatch as its one
+exemption.
+
+**Owner:** HTTP subsystem (the Core client facade). Switching the generated client to `put` is
+`exeris-tooling`'s.
+
+**Resolution:** `put(String, Object, Class)` with `post`'s and `patch`'s contract.
+
+**Merge Gate:** a round trip over a real server engine, a round trip through an `HttpRouter` route
+registered on `PUT` that `PATCH` does not reach, and the null-body rejection; a mutation sending
+`PATCH` from `put` turns the round-trip cases red.
+
+**Status (v0.12): DELIVERED.** `KernelWebClientIntegrationTest` covers all three; with `put` sending
+`PATCH`, exactly `putRoundTrip` and `putReachesARouteRegisteredOnPut` fail.
+
 ## Known Gaps / Future Work planned for v0.13
 
 ### Telemetry: a contract for events the kernel did not define
