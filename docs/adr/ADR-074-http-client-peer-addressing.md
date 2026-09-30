@@ -173,6 +173,25 @@ working by configuring that explicitly, which is the difference between a coinci
 ownership and TTL; the failure-mode taxonomy for unresolved names. All three are resolver concerns,
 all three stay with the post-1.0 seam, and none is blocked by this decision.
 
+### 🚫 Non-Goals
+
+- Resolver behaviour: the three questions above stay with the post-1.0 `ServiceResolver` seam.
+- A per-host engine pool behind the client (Option 2).
+- Re-addressing a request on failure (decision 6), and an enricher that rewrites the authority
+  (decision 5).
+- A setting that keeps TLS and skips peer verification (A1).
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** the client engine opens a connection per `send` and pools nothing, so varying the peer
+  per request invalidates no shared state (Option 1).
+- **Reversed by:** a code path that treats a `null` authority as anything other than "the configured
+  default". Dissent recorded names that clause as the first to revisit, in favour of a required
+  authority.
+- **Risk:** a deployment that reached its peer through `http.bindHost` and `http.port`, and sets
+  neither `http.client.defaultAuthority` nor a per-request authority, boots cleanly. Its first
+  unaddressed request is refused, so the application notices at its first call, not at boot.
+
 ## Dissent recorded
 
 Option 2 has a real advocate case that survives its costed rejection: it leaves the `stable` carrier

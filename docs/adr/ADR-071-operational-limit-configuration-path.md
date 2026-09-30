@@ -195,6 +195,23 @@ and silently lowering their client to a default they never named would turn an u
 run-time truncation. The configuration keys resolve independently, because an operator setting an
 ingress limit said something narrower than that.
 
+### 🚫 Non-Goals
+
+- The scope exclusions are listed under [What is NOT in scope](#-what-is-not-in-scope).
+- One meaning of zero across every key. A single `0 = unbounded` rule is the road not taken: the
+  classes in §2 exist because a protective bound must not honour an accidental zero.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** no operator sets a zero header bound on purpose, because such a server refuses every
+  request (§3); and each new limit key is placed in one of §2's classes when it is added, rather than
+  having its zero decided per key.
+- **Reversed by:** a limit key whose zero fits none of §2's classes, or a deployment that depends on a
+  zero `maxRequestHeaderCount` or `maxRequestHeaderSize` — either shows the class table does not
+  cover the key set it rules.
+- **Risk:** a configuration that passed the earlier `>= 0` validation now fails at startup. The
+  operator sees it at boot rather than at request time, which is the placement §4 chooses.
+
 ## Cross-references
 
 - `docs/subsystems/http.md` — the HTTP contract these bounds belong to.

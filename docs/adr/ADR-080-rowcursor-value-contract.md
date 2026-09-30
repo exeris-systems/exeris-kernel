@@ -193,6 +193,23 @@ it could.
 its own 0.7 line. The refusal contract (§2 Tier C, §6) is enforceable from the first TCK run, since
 it needs no type implemented.
 
+### 🚫 Non-Goals
+
+- A `getString` rendering for every column type (Alternatives Considered: total everywhere).
+- UTF-8 decoding of unknown bytes, and any resolution by OID range (§2, Amendment A1).
+- A change to the kernel's own enum-as-`TEXT` idiom.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** `docs/rowcursor-type-set.md` records the server's `<type>_out` rendering under the
+  six session preconditions of §4, and the declared type name, not a type code or OID, is what
+  separates a rendered type from a refused one (Amendment A1).
+- **Reversed by:** a re-measurement in which a Tier A or Tier B expectation differs from
+  `docs/rowcursor-type-set.md`. Per Compliance and Verification, that changes this ADR, not a test.
+- **Risk:** a Community application reading a Tier C column, such as a native `enum`, through
+  `getString` gets `EX-PERS-5008` where it previously got a value. The application notices on its
+  first read of that column.
+
 ## Alternatives Considered
 
 **Total everywhere — every type stringified.** Rejected because "every type" has no floor: the

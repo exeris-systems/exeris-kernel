@@ -290,6 +290,26 @@ change carried which.
   tier is a separate scope and gates nothing here.
 - `preview` for at least one release, with named promotion criteria rather than a milestone.
 
+### 🚫 Non-Goals
+
+- Kernel-owned session resumption (§4). A binary opcode on the SPI (§3). A backpressure timeout
+  (§7).
+- A handshake callback that widens the origin allowlist. The callback only narrows it (§6).
+- `permessage-deflate` in this release. It is deferred, not rejected (§11).
+- An HTTP server engine constructible outside a boot. Amendment A1 leaves that to its own decision.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** the first-party consumers carry text, and they can rebuild continuity across a
+  reconnect from the visible handshake (§3, §4).
+- **Reversed by:** the benchmark campaign named in §10 (concurrent connections, a slow reader,
+  teardown of a dead peer) showing the shape does not survive. That blocks promotion to `stable` and
+  reopens the contract.
+- **Reversed by:** a consumer that needs binary frames. That reopens §3, additively.
+- **Risk:** LSP and Studio depend on a `preview` surface, so any change the benchmark evidence forces
+  lands on them first. A `maxMessageBytes` default below real payloads gets raised in a hurry by
+  whoever hits it (§5).
+
 ## Alternatives Considered
 
 **A kernel-owned resumable session.** Rejected in §4: the cost concentrates in buffering the

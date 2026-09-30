@@ -107,6 +107,25 @@ the exception path to make a field that nothing decides on virtualisable.
 - An unbound read costs one `ScopedValue.orElse`. On the paths that migrate — expiry checks, not
   spin loops — that is not measurable, which is exactly why the hot paths are excluded.
 
+### 🚫 Non-Goals
+
+- A DST harness. This decision provides the seam, not the harness.
+- Virtualising reads that measure: elapsed-time instrumentation, and spin or backpressure loops
+  (§4). Diagnostic timestamps on `KernelEvent` and `ExerisKernelException` stay as they are (§5).
+- Converging every local seam. A measuring site keeps its own, as `FairnessTracker` does
+  (Amendment A1). The scheduler's wait primitives stay out of the kernel-wide seam.
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** every read that decides an outcome goes through `KernelProviders.timeSource()`, and
+  the source is resolved at construction inside the carrier scope, because request threads inherit
+  no binding (Amendment A1).
+- **Reversed by:** a deterministic test or harness that can reach determinism only by virtualising a
+  read classified here as measuring. That breaks the decide/measure line of §4.
+- **Reversed by:** a profile showing the `ScopedValue.orElse` cost as measurable on a migrated path.
+- **Risk:** a test that never binds a `TimeSource` exercises the unbound fallback and stays green
+  whether or not the wiring works. Only a test that binds a parked source in both directions notices.
+
 ## Dissent recorded
 
 **The strongest case against is that this buys nothing until DST exists.** True of the seam alone,

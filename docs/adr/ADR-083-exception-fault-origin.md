@@ -135,6 +135,24 @@ deployment's budget are both plausible culprits.
 - `FaultOrigin` may gain constants — a retryable-transient origin is the obvious candidate — so a
   `switch` over it needs a `default`. This is stated on the enum.
 
+### 🚫 Non-Goals
+
+- A status code in the SPI (§3).
+- Classifying the remaining subclasses in this change. `PathNotFoundException` and
+  `ExcessiveAllocationException` stay open (§5).
+- Inferring an origin for a foreign throwable from its type (§4).
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** a subclass author reads `faultOrigin()` on the base class and answers it. An
+  unanswered subclass stays `SYSTEM`, which is the conservative direction (§2).
+- **Reversed by:** a kernel failure that fits neither `CALLER` nor `SYSTEM` as §1 defines them. That
+  reopens the two-constant shape, and Consequences names a retryable-transient origin as the
+  candidate.
+- **Risk:** a caller fault left at `SYSTEM` is answered as a server error. The caller sees it first,
+  as a failure that no operator action fixes. A consumer `switch` without a `default` breaks when a
+  constant is added.
+
 ## Alternatives Considered
 
 **Make `RequestBodyDecodeException` extend `IllegalArgumentException`.** Rejected: impossible. Java

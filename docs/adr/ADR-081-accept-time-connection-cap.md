@@ -121,6 +121,25 @@ key they can simply be told about.
   the six-argument constructor is retained, so no existing positional call changes meaning. The SPI
   compatibility gate reports an addition on a `stable` surface.
 
+### 🚫 Non-Goals
+
+- A status-bearing refusal. §2 names it as a third mechanism, which needs its own decision.
+- Chaining `http.maxConnections` to `transport.maxConnections` (option d).
+- Distinguishing transient from fatal accept errors in this change. That is tracked in the ROADMAP
+  as its own entry.
+- A capacity recommendation. The unified default is a starting point (Dissent recorded).
+
+### ⚠️ Risks and Assumptions
+
+- **Assumes:** the connection cap is the ceiling reached first. The process file-descriptor limit
+  sits above the configured cap, as `reference-deployment.md` requires.
+- **Reversed by:** production deployments on small containers exhausting their memory budget at
+  `HttpConfig.DEFAULT_MAX_CONNECTIONS` before reaching their load. That is the case Dissent recorded
+  names against a default taken from one workload.
+- **Risk:** where the file-descriptor limit is reached first, `accept()` fails and the listener stops
+  accepting permanently. The operator sees a listener that has stopped, not refusals in
+  `totalRejected`.
+
 ## Dissent recorded
 
 The unification takes 4 096 from one workload's experience. It is the only operational evidence
