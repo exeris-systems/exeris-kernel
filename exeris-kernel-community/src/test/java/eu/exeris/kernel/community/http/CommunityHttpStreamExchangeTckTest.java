@@ -388,10 +388,9 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
                         cursor = 0;
                     }
                 }
-            } catch (IOException _) {
-                // disconnect / read interrupted: a clean FIN sets endOfStream above.
-            } catch (RuntimeException _) {
-                // best effort in the test client
+            } catch (IOException | RuntimeException _) {
+                // disconnect / read interrupted: a clean FIN sets endOfStream above;
+                // anything else is best effort in the test client.
             }
         }
 

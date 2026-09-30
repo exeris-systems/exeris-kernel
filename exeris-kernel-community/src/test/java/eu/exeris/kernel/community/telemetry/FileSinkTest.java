@@ -128,7 +128,7 @@ class FileSinkTest {
             Path logFile = tempDir.resolve("idempotent.log");
             FileSink sink = new FileSink(logFile, 128);
             sink.close();
-            assertThatCode(() -> sink.close()).doesNotThrowAnyException();
+            assertThatCode(sink::close).doesNotThrowAnyException();
         }
     }
 

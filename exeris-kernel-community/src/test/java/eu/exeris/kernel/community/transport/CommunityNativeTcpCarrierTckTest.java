@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.transport.StreamHandler;
 import eu.exeris.kernel.spi.transport.TransportConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
+import eu.exeris.kernel.spi.transport.TransportStream;
 import eu.exeris.kernel.tck.contract.transport.AbstractTransportEngineTck;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
@@ -74,9 +75,7 @@ class CommunityNativeTcpCarrierTckTest extends AbstractTransportEngineTck {
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
                 .run(() -> holder[0] = provider.createEngine(config));
 
-        holder[0].setStreamHandler(stream -> {
-            stream.close();
-        });
+        holder[0].setStreamHandler(TransportStream::close);
         return holder[0];
     }
 

@@ -216,9 +216,9 @@ public abstract class AbstractTransactionalExecutorTck {
             AtomicReference<Integer> firstIdentity = new AtomicReference<>();
 
             Integer secondIdentity = executor.inReadSession(session -> {
-                Integer first = session.query(conn -> System.identityHashCode(conn));
+                Integer first = session.query(System::identityHashCode);
                 firstIdentity.set(first);
-                return session.query(conn -> System.identityHashCode(conn));
+                return session.query(System::identityHashCode);
             });
 
             assertThat(firstIdentity.get()).isEqualTo(secondIdentity);

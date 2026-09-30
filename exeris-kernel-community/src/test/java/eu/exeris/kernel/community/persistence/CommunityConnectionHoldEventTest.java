@@ -151,7 +151,7 @@ class CommunityConnectionHoldEventTest {
                     throw new IllegalStateException("interceptor refuses this connection");
                 }
             });
-            assertThatThrownBy(() -> engine.openConnection())
+            assertThatThrownBy(engine::openConnection)
                     .as("an interceptor failure MUST NOT hand the connection out")
                     .isInstanceOf(RuntimeException.class);
         });
