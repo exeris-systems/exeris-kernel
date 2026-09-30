@@ -16,6 +16,46 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [0.12.0] — 2026-09-30
 
+### Breaking
+
+None on a declared surface. [`docs/stability-matrix.md`](docs/stability-matrix.md) declares the SPI
+surfaces, and the SPI Compatibility Gate (`tools/spi-api-diff`) reports `semver=0.1.0` against
+`v0.11.0` with 0 `stable`, 0 `stable`-source and 0 `preview` breaks. Core, Community and the Maven
+coordinates are not declared surfaces.
+
+These changes need an edit on the consumer's side; the steps are in the release notes'
+*Upgrade notes*, [`docs/release/v0.12.0-release-notes.md`](docs/release/v0.12.0-release-notes.md).
+
+Outside the declared surfaces:
+
+- **core:** `HttpRouter.StreamMatch` is now the SPI record `eu.exeris.kernel.spi.http.StreamMatch`
+  and `HttpRouter#resolveStream` returns it, so code naming either is recompiled (ADR-043
+  Amendment A1; both recorded in `tools/spi-api-diff/accepted-api-changes.json`) — see
+  "`HttpRouter.StreamMatch` is now the SPI record" under *Changed*.
+- **community:** `CommunityOidcIdentityProvider.overJwksEndpoint(URI, Map, KeyRotationPolicy, Clock,
+  String, String)` takes the JWKS URI instead of a client and a path, and the provider is
+  `AutoCloseable` (ADR-012 §4, ADR-040 §3) — see "The OIDC provider fetches its JWKS key set only
+  over a connection that authenticated the server" under *Security*.
+- **tck:** `exeris-kernel-tck` publishes a plain jar, and the
+  `<classifier>tests</classifier><type>test-jar</type>` coordinate is gone, from
+  `exeris-kernel-bom` too — see "`exeris-kernel-tck` publishes its contract instead of hiding it
+  under a classifier" under *Changed*.
+
+On a declared surface, a behaviour with no signature moved, each recorded in the stability matrix:
+
+- **http:** the HTTP client no longer dials `http.bindHost:http.port`; a deployment names its peer
+  with `http.client.defaultAuthority` or an authority on each request (ADR-074) — see "The HTTP
+  client no longer reads `http.bindHost` and `http.port` as its destination" under *Changed*.
+- **http, community:** the Community TLS client verifies its server, chain and host or IP address,
+  against `crypto.tls.client.trustFile` when set, which replaces OpenSSL's default trust, else
+  against that default; no setting keeps TLS and skips verification (ADR-074 Amendment A1) — see "The Community TLS client verifies the
+  server it dials" under *Security*.
+- **persistence:** on PostgreSQL, `RowCursor.getString` over a column outside the measured type set
+  throws `EX-PERS-5008` where it returned a value (ADR-080) — see "`RowCursor.getString` states the
+  type domain it covers and refuses outside it" under *Changed*.
+- **events:** a filter keyed on `EX-EVENT-6002` matches only queue overflow — see "An event-bus
+  failure carries the code of what failed, not queue overflow" under *Fixed*.
+
 ### Security
 
 - **The Community TLS client verifies the server it dials** (ADR-074 §4, Amendment A1). Outbound
