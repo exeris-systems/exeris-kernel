@@ -2024,9 +2024,11 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   Agrona 2.6.1, JCTools 4.0.7, Bouncy Castle 1.86, HikariCP 7.1.0, Jedis 7.5.3, Commons Pool
   2.13.1, the Neo4j driver 6.3.0, `kafka-clients` 4.3.1, SLF4J 2.0.20, Logback 1.6.4, Nimbus JOSE
   JWT 10.10; for tests, JUnit 6.1.3 (a release where the BOM named the 6.1.0-M1 milestone), Mockito
-  5.24.0 and ArchUnit 1.5.1. Two major versions are not taken: Flyway 13 (no module uses it; the
-  BOM entry stays at 11.19.1) and Testcontainers 2 (it renames the modules the Kafka and PostgreSQL
-  integration tests depend on).
+  5.24.0 and ArchUnit 1.5.1; Flyway 11.20.3, the latest 11.x. Two major versions are not taken:
+  Flyway 13 (no module uses Flyway) and Testcontainers 2 (it renames the modules the Kafka and
+  PostgreSQL integration tests depend on). AssertJ stays on 4.0.0-M1: it is the only 4.x
+  published, and moving to 3.27.7 is a major-version step down. The PostgreSQL driver, Java UUID
+  Generator, Janino, JMH and Testcontainers 1.21.4 are already the latest in their line.
 
 - **`tools/jfr-reporter` stays on Jackson 2, deliberately.** The case for finishing the migration
   was that the distribution should not carry two Jackson generations — and it no longer does: the
