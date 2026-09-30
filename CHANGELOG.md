@@ -2006,8 +2006,10 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
 ### Security
 
 - **The four dependencies carrying published advisories are bumped, and one of them was not
-  four packages.** `jackson.version` 3.1.1 → 3.2.2, `postgresql.version` 42.7.11 → 42.7.13, and
-  `lz4.version` 1.10.2 → 1.11.2 in `exeris-kernel-bom`, which is what fixes them for every
+  four packages.** `jackson.version` 3.1.1 → 3.2.3 (3.2.3 also closes GHSA-wv8q-qhhj-9h54 and
+  GHSA-cxp5-3px4-pw24, two high advisories against `jackson-databind` ≤ 3.2.2),
+  `postgresql.version` 42.7.11 → 42.7.13, and `lz4.version` 1.10.2 → 1.12.0 in
+  `exeris-kernel-bom`, which is what fixes them for every
   distributed coordinate; `tools/jfr-reporter` moves 2.18.7 → 2.22.2 on its own pinned Jackson 2.
   The lz4 pin is not decorative — `at.yawk.lz4:lz4-java` reaches the tree only as a runtime
   transitive of `kafka-clients`, and it is this BOM entry that fixed it at the vulnerable version.
@@ -2017,6 +2019,14 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   `exeris-kernel-diagnostics-cli` that no longer exists as described: the CLI's Jackson 2 was
   removed on this branch when the module moved to the kernel's Jackson 3. Those seven close on
   release integration, with no bump owed. What was actually open here is the BOM and the reporter.
+
+- **Every other BOM-managed dependency is on its latest release within its major version.**
+  Agrona 2.6.1, JCTools 4.0.7, Bouncy Castle 1.86, HikariCP 7.1.0, Jedis 7.5.3, Commons Pool
+  2.13.1, the Neo4j driver 6.3.0, `kafka-clients` 4.3.1, SLF4J 2.0.20, Logback 1.6.4, Nimbus JOSE
+  JWT 10.10; for tests, JUnit 6.1.3 (a release where the BOM named the 6.1.0-M1 milestone), Mockito
+  5.24.0 and ArchUnit 1.5.1. Two major versions are not taken: Flyway 13 (no module uses it; the
+  BOM entry stays at 11.19.1) and Testcontainers 2 (it renames the modules the Kafka and PostgreSQL
+  integration tests depend on).
 
 - **`tools/jfr-reporter` stays on Jackson 2, deliberately.** The case for finishing the migration
   was that the distribution should not carry two Jackson generations — and it no longer does: the
