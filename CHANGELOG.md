@@ -23,8 +23,8 @@ surfaces, and the SPI Compatibility Gate (`tools/spi-api-diff`) reports `semver=
 `v0.11.0` with 0 `stable`, 0 `stable`-source and 0 `preview` breaks. Core, Community and the Maven
 coordinates are not declared surfaces.
 
-These changes need an edit on the consumer's side; the steps are in the release notes'
-*Upgrade notes*, [`docs/release/v0.12.0-release-notes.md`](docs/release/v0.12.0-release-notes.md).
+These changes need an edit on the consumer's side; the steps are in
+[`MIGRATION.md`](MIGRATION.md#011x--012x), which maps each entry below to its step.
 
 Outside the declared surfaces:
 
