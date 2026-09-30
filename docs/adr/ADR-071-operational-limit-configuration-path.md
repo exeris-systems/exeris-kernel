@@ -225,17 +225,17 @@ twice, so the guarantee "the configured limit is the enforced limit" held only f
 remembered to hand the same numbers to both calls. A comment at the second call site said exactly
 that, which is a fair description of a hazard being managed rather than removed.
 
-Measurement is what turned it from a tidiness question into a decision. A 16-header request allocated
-**9 848 B of heap to read ~500 B off the wire**, and the second parse — every field name and value
-materialised a second time — was a little under half of it (`docs/research/`,
-`RESEARCH-2026-09-01-http1-header-allocation.md`).
+Measurement is what turned it from a tidiness question into a decision: the second parse — every
+field name and value materialised a second time — was a large share of the read path's heap
+allocation for a realistic request. The figures, before and after, are in
+[`RESEARCH-2026-09-01-http1-header-allocation.md`](../research/RESEARCH-2026-09-01-http1-header-allocation.md).
 
 `Http1Codec.parseHeaders` now takes an optional `HeaderVisitor`, so connection state and the caller's
 header list come off **one** traversal under **one** bound. Two consequences, and the second is the
 one this ADR cares about:
 
-1. The read path allocates **5 472 B** for that request instead of 9 848 — 44%, of which the collapsed
-   parse is 41% (5 784 B) and dropping a no-longer-needed defensive list copy is the rest.
+1. The read path materialises each header field once, not twice; the allocation this saves is
+   measured in the research report above.
 2. **The failure mode this ADR was written about can no longer be expressed.** A limit that depends on
    which of two passes reaches it first requires two passes. There is one, so the bound is enforced by
    the structure rather than by a comment asking the next editor to keep two call sites in agreement.
