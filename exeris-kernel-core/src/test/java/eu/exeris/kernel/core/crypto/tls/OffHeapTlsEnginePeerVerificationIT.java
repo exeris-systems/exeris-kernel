@@ -283,12 +283,13 @@ class OffHeapTlsEnginePeerVerificationIT {
              OffHeapTlsEngine server = new OffHeapTlsEngine(handles, serverCtx, true, ALLOC);
              OffHeapTlsEngine bound = new OffHeapTlsEngine(handles, clientCtx, false, ALLOC)) {
             twice.expectPeer(TlsPeerIdentity.of("localhost"));
-            assertThatThrownBy(() -> twice.expectPeer(TlsPeerIdentity.of("localhost")))
+            TlsPeerIdentity peer = TlsPeerIdentity.of("localhost");
+            assertThatThrownBy(() -> twice.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class);
-            assertThatThrownBy(() -> server.expectPeer(TlsPeerIdentity.of("localhost")))
+            assertThatThrownBy(() -> server.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class);
             bound.notifyBound();
-            assertThatThrownBy(() -> bound.expectPeer(TlsPeerIdentity.of("localhost")))
+            assertThatThrownBy(() -> bound.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class);
         } finally {
             handles.ctx().invokeCtxFree(clientCtx);

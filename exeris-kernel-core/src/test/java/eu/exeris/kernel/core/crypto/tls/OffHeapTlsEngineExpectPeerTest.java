@@ -93,7 +93,8 @@ class OffHeapTlsEngineExpectPeerTest {
         try (OffHeapTlsEngine engine = client()) {
             openSsl.set1HostResult = 0;
 
-            assertThatThrownBy(() -> engine.expectPeer(TlsPeerIdentity.of("localhost")))
+            TlsPeerIdentity peer = TlsPeerIdentity.of("localhost");
+            assertThatThrownBy(() -> engine.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class)
                     .satisfies(e -> assertThat(((TlsHandshakeException) e).rawArgs())
                             .containsExactly(-1, TlsFailureDetail.PEER_IDENTITY_REJECTED));
@@ -108,7 +109,8 @@ class OffHeapTlsEngineExpectPeerTest {
         try (OffHeapTlsEngine engine = client()) {
             openSsl.ctrlResult = 0L;
 
-            assertThatThrownBy(() -> engine.expectPeer(TlsPeerIdentity.of("localhost")))
+            TlsPeerIdentity peer = TlsPeerIdentity.of("localhost");
+            assertThatThrownBy(() -> engine.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class);
             assertThat(openSsl.count("ERR_clear_error")).isEqualTo(1);
         }
@@ -120,7 +122,8 @@ class OffHeapTlsEngineExpectPeerTest {
         try (OffHeapTlsEngine engine = client()) {
             openSsl.set1IpResult = 0;
 
-            assertThatThrownBy(() -> engine.expectPeer(TlsPeerIdentity.of("127.0.0.1")))
+            TlsPeerIdentity peer = TlsPeerIdentity.of("127.0.0.1");
+            assertThatThrownBy(() -> engine.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class);
             assertThat(openSsl.count("ERR_clear_error")).isEqualTo(1);
         }
@@ -132,7 +135,8 @@ class OffHeapTlsEngineExpectPeerTest {
         try (OffHeapTlsEngine engine = client()) {
             engine.expectPeer(TlsPeerIdentity.of("localhost"));
 
-            assertThatThrownBy(() -> engine.expectPeer(TlsPeerIdentity.of("other.invalid")))
+            TlsPeerIdentity other = TlsPeerIdentity.of("other.invalid");
+            assertThatThrownBy(() -> engine.expectPeer(other))
                     .isInstanceOf(TlsHandshakeException.class);
         }
     }
@@ -141,7 +145,8 @@ class OffHeapTlsEngineExpectPeerTest {
     @DisplayName("a server engine refuses an identity")
     void serverEngineRefuses() {
         try (OffHeapTlsEngine engine = new OffHeapTlsEngine(openSsl.handles(), 0x1234L, true, ALLOC)) {
-            assertThatThrownBy(() -> engine.expectPeer(TlsPeerIdentity.of("localhost")))
+            TlsPeerIdentity peer = TlsPeerIdentity.of("localhost");
+            assertThatThrownBy(() -> engine.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class);
             assertThat(openSsl.count("SSL_get0_param")).isZero();
         }
@@ -153,7 +158,8 @@ class OffHeapTlsEngineExpectPeerTest {
         try (OffHeapTlsEngine engine = client()) {
             engine.notifyBound();
 
-            assertThatThrownBy(() -> engine.expectPeer(TlsPeerIdentity.of("localhost")))
+            TlsPeerIdentity peer = TlsPeerIdentity.of("localhost");
+            assertThatThrownBy(() -> engine.expectPeer(peer))
                     .isInstanceOf(TlsHandshakeException.class);
             assertThat(openSsl.count("SSL_get0_param")).isZero();
         }
@@ -165,7 +171,8 @@ class OffHeapTlsEngineExpectPeerTest {
         OffHeapTlsEngine engine = client();
         engine.close();
 
-        assertThatThrownBy(() -> engine.expectPeer(TlsPeerIdentity.of("localhost")))
+        TlsPeerIdentity peer = TlsPeerIdentity.of("localhost");
+        assertThatThrownBy(() -> engine.expectPeer(peer))
                 .isInstanceOf(TlsHandshakeException.class);
         assertThat(openSsl.count("SSL_get0_param")).isZero();
     }
