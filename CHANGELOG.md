@@ -14,7 +14,7 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
-## [0.12.0] — 2026-09-03
+## [0.12.0] — 2026-09-30
 
 ### Security
 
@@ -88,13 +88,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   registered silently owned the whole URL space. Two authors can now share it without coordinating
   through absence.
 
-- **HTTP client connection pooling, keep-alive framing, and stream unparking.** Outbound HTTP/1.1
+- **HTTP client connection pooling and keep-alive framing.** Outbound HTTP/1.1
   requests via `CommunityHttpClientEngine` reuse persistent TCP connections through
-  `CommunityHttpClientConnectionPool`. Connections are organized per authority in a zero-allocation,
-  synchronized LIFO queue with atomic retirement protection, bounded by `HttpConfig.maxConnections()`
-  and per-authority idle capacity. Reused connections qualify on strict RFC 9110/RFC 9112 framing
-  (explicit `Content-Length` or bodyless responses such as `HEAD`, `204`, `304`, or `1xx` informational
-  responses). Transport unparking eliminates virtual thread spin-wait on write drains, and zero implicit
+  `CommunityHttpClientConnectionPool`. Connections are organized per authority in a synchronized LIFO
+  queue with atomic retirement protection, bounded by `HttpConfig.maxConnections()` and per-authority
+  idle capacity; a release allocates one wrapper. Reused connections qualify on strict RFC 9110/RFC 9112
+  framing (explicit `Content-Length`, or a bodyless response such as `HEAD`, `204` or `304`); a `1xx`
+  informational response never qualifies. No implicit
   retries occur on connection failures (preserving ADR-045 / ADR-026 retry boundaries). Observability is
   provided via JFR event `eu.exeris.kernel.community.http.HttpClientPool`.
 
