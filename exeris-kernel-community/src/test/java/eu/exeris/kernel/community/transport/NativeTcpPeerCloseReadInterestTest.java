@@ -82,7 +82,7 @@ class NativeTcpPeerCloseReadInterestTest {
         TlsTestAuthority authority = TlsTestAuthority.root(material, "peer-close-ca");
         TlsTestAuthority.Issued leaf = authority.issue(TlsTestAuthority.dns("localhost"));
         int port = freePort();
-        try (TransportEngine server = echoThenCloseTlsServer(leaf, port);
+        try (var _ = echoThenCloseTlsServer(leaf, port);
              TransportEngine client = tlsClientTrusting(authority.certificate())) {
             assertAnswerSurvivesThePeersClose((NativeTcpCarrier) client, "localhost", port);
         }

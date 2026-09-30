@@ -991,6 +991,7 @@ class CommunityHttpClientConnectionPoolTest {
 
         @Override
         public void setAttachment(Object attachment) {
+            // No-op by design: this fake carries no attachment, attachment() always returns null.
         }
 
         @Override
@@ -1025,10 +1026,12 @@ class CommunityHttpClientConnectionPoolTest {
 
         @Override
         public void write(MemorySegment source, int length) {
+            // No-op by design: the pool tests never inspect bytes written to this fake stream.
         }
 
         @Override
         public void queueWrite(LoanedBuffer buffer, int length) {
+            // No-op by design: the pool tests never inspect bytes queued on this fake stream.
         }
 
         @Override

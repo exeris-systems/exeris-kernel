@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -191,7 +192,7 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
 
     private boolean evictExpiredConnection(boolean transferSlot) {
         long now = currentNanoTime();
-        for (ConcurrentMap.Entry<String, DequeHolder> entry : pool.entrySet()) {
+        for (Map.Entry<String, DequeHolder> entry : pool.entrySet()) {
             DequeHolder holder = entry.getValue();
             PooledConnection pooled = holder.pollOldestIfExpired(idleTimeoutNanos, now);
             if (pooled != null) {
@@ -225,7 +226,7 @@ final class CommunityHttpClientConnectionPool implements AutoCloseable {
         long maxAgeNanos = Long.MIN_VALUE;
         long now = currentNanoTime();
 
-        for (ConcurrentMap.Entry<String, DequeHolder> entry : pool.entrySet()) {
+        for (Map.Entry<String, DequeHolder> entry : pool.entrySet()) {
             if (Objects.equals(entry.getKey(), preferredExclusion)) {
                 continue;
             }

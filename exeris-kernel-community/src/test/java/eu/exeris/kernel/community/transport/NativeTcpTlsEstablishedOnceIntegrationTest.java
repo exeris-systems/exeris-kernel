@@ -21,7 +21,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
@@ -73,7 +72,7 @@ class NativeTcpTlsEstablishedOnceIntegrationTest {
         KernelCryptoProvider cryptoProvider;
         try {
             cryptoProvider = new CommunityKernelCryptoProvider();
-        } catch (RuntimeException ex) {
+        } catch (RuntimeException _) {
             assumeTrue(false, "OpenSSL runtime unavailable");
             return;
         }

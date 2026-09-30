@@ -89,7 +89,7 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
             try {
                 s.initialize();
                 composedEnricher = composedEnricher.andThen(s.providerBindings())::apply;
-            } catch (RuntimeException ignored) { // simulated DEGRADE: skip degraded subsystem enricher
+            } catch (RuntimeException _) { // simulated DEGRADE: skip degraded subsystem enricher
             }
         }
 
@@ -149,7 +149,7 @@ public abstract class AbstractProviderBindingLifecycleTck extends AbstractBootst
             try {
                 s.initialize();
                 enricher = enricher.andThen(s.providerBindings())::apply;
-            } catch (RuntimeException ignored) { // not expected: both subsystems healthy
+            } catch (RuntimeException _) { // not expected: both subsystems healthy
             }
         }
 

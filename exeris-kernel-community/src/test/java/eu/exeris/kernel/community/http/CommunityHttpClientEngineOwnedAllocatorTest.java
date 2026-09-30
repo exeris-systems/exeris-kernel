@@ -75,7 +75,7 @@ class CommunityHttpClientEngineOwnedAllocatorTest {
 
     @Test
     @DisplayName("a bound allocator is not closed when the transport is refused, and none is created")
-    void boundAllocatorIsNotClosedOnRefusal() throws Exception {
+    void boundAllocatorIsNotClosedOnRefusal() {
         CountingAllocator bound = new CountingAllocator(null);
         CountingAllocator own = new CountingAllocator(null);
 

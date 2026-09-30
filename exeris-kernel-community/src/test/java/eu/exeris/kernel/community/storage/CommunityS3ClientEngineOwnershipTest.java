@@ -87,7 +87,7 @@ class CommunityS3ClientEngineOwnershipTest {
         AtomicReference<CommunityOutboundTls> outboundTls = new AtomicReference<>();
         RecordingEngine engine = new RecordingEngine(null, null);
 
-        try (CommunityS3Client ignored = new CommunityS3Client(SETTINGS,
+        try (var _ = new CommunityS3Client(SETTINGS,
                 BlobStorageConfig.DEFAULT_MAX_SIGNED_URL_TTL, Clock.systemUTC(), (built, tls) -> {
                     config.set(built);
                     outboundTls.set(tls);

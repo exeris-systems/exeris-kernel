@@ -280,7 +280,7 @@ public abstract class AbstractTransportEngineTck {
          */
         @Test
         @DisplayName("a refusal at the ceiling is not counted as an accept fault")
-        void ceilingRefusalIsNotAnAcceptFault() throws Exception {
+        void ceilingRefusalIsNotAnAcceptFault() {
             int port = freePort();
             TransportEngine bounded = createEngineWithConnectionCeiling(CEILING, port);
             List<Socket> clients = new ArrayList<>();

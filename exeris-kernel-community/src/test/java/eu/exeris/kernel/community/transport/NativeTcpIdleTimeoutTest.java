@@ -132,7 +132,7 @@ class NativeTcpIdleTimeoutTest {
                     try {
                         socket.getOutputStream().write('.');
                         socket.getOutputStream().flush();
-                    } catch (IOException reset) {
+                    } catch (IOException _) {
                         // A reclaimed connection surfaces here as a reset on the next write. Catch
                         // it so the failure reads as the assertion below rather than as a stack
                         // trace from the send loop — the regression this guards is a policy
@@ -194,7 +194,7 @@ class NativeTcpIdleTimeoutTest {
                         if (b < 0) {
                             break;
                         }
-                    } catch (IOException reset) {
+                    } catch (IOException _) {
                         // Reclamation reaches the client as a reset on the read. Caught so the
                         // failure reads as the assertion below rather than as a stack trace.
                         resetByPeer = true;
@@ -309,7 +309,7 @@ class NativeTcpIdleTimeoutTest {
                         // Each returning read stamps activity; the loop is the connection staying
                         // alive. It ends when the peer closes (-1) or teardown throws.
                     }
-                } catch (RuntimeException e) {
+                } catch (RuntimeException _) {
                     // Reclaimed or torn down — the assertions read the recording, not this thread.
                 }
             });
@@ -335,9 +335,9 @@ class NativeTcpIdleTimeoutTest {
                         stream.write(outbound.segment(), 1);
                         Thread.sleep(IDLE_TIMEOUT_MILLIS / 3L);
                     }
-                } catch (InterruptedException e) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
-                } catch (RuntimeException e) {
+                } catch (RuntimeException _) {
                     // Reclaimed or torn down — the recording carries the assertion.
                 }
             });
@@ -350,7 +350,7 @@ class NativeTcpIdleTimeoutTest {
         Socket socket = new Socket();
         try {
             socket.connect(new InetSocketAddress("127.0.0.1", port), CONNECT_TIMEOUT_MS);
-        } catch (IOException e) {
+        } catch (IOException _) {
             // The server side carries every assertion; connect-side failure modes are not the subject.
         }
         return socket;
@@ -362,7 +362,7 @@ class NativeTcpIdleTimeoutTest {
         }
         try {
             socket.close();
-        } catch (IOException e) {
+        } catch (IOException _) {
             // Test teardown.
         }
     }

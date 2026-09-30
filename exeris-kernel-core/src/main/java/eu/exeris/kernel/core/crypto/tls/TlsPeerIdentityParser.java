@@ -70,7 +70,7 @@ final class TlsPeerIdentityParser {
     private static InetAddress ipLiteralOrNull(String host) {
         try {
             return InetAddress.ofLiteral(host);
-        } catch (IllegalArgumentException notALiteral) {
+        } catch (IllegalArgumentException _) {
             return null;
         }
     }

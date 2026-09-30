@@ -315,6 +315,7 @@ class CommunityHttpClientResponseDecoderTest {
 
             @Override
             public void setAttachment(Object attachment) {
+                // No-op by design: this stub carries no attachment, attachment() always returns null.
             }
 
             @Override
@@ -324,6 +325,7 @@ class CommunityHttpClientResponseDecoderTest {
 
             @Override
             public void close() {
+                // No-op by design: the stub holds no resource and always reports itself open.
             }
         };
 
@@ -739,6 +741,7 @@ class CommunityHttpClientResponseDecoderTest {
 
             @Override
             public void setAttachment(Object attachment) {
+                // No-op by design: this stub carries no attachment, attachment() always returns null.
             }
 
             @Override
@@ -748,6 +751,7 @@ class CommunityHttpClientResponseDecoderTest {
 
             @Override
             public void close() {
+                // No-op by design: the stub holds no resource and always reports itself open.
             }
         };
 

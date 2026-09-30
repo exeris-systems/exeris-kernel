@@ -46,7 +46,7 @@ final class FlowParkCheckpoint {
             try {
                 attempt.persist(instance, stepIndex);
                 return;
-            } catch (RuntimeException saveFailure) { //NOPMD AvoidCatchingGenericException
+            } catch (RuntimeException _) { //NOPMD AvoidCatchingGenericException
                 if (i == ATTEMPTS) {
                     instance.markCheckpointDirty();
                 }

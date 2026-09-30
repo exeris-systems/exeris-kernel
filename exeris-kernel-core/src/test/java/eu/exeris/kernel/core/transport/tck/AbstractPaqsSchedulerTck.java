@@ -348,7 +348,7 @@ public abstract class AbstractPaqsSchedulerTck {
                 ceilingReached.countDown();
                 try {
                     release.await();
-                } catch (InterruptedException e) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                 }
                 handlersLeft.countDown();
@@ -395,7 +395,7 @@ public abstract class AbstractPaqsSchedulerTck {
                 allEntered.countDown();
                 try {
                     release.await();
-                } catch (InterruptedException e) {
+                } catch (InterruptedException _) {
                     Thread.currentThread().interrupt();
                 }
             }, s -> StreamPriority.NORMAL);

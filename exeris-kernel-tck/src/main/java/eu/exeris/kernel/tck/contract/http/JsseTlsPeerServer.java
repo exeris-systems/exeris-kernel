@@ -110,12 +110,12 @@ final class JsseTlsPeerServer implements TlsPeerServer {
     public void close() {
         try {
             listener.close();
-        } catch (IOException ignored) {
+        } catch (IOException _) {
             // Closing is best effort: the accepting thread ends on the resulting SocketException.
         }
         try {
             acceptor.join(TimeUnit.SECONDS.toMillis(SOCKET_TIMEOUT_MILLIS / 1000L + 5));
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }
@@ -125,13 +125,13 @@ final class JsseTlsPeerServer implements TlsPeerServer {
             SSLSocket socket;
             try {
                 socket = (SSLSocket) listener.accept();
-            } catch (IOException closed) {
+            } catch (IOException _) {
                 return;
             }
             accepted.incrementAndGet();
             try (socket) {
                 serve(socket);
-            } catch (IOException expected) {
+            } catch (IOException _) {
                 // A refused handshake, or a peer that went away: not a request.
             } finally {
                 finished.incrementAndGet();

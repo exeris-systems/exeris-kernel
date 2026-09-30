@@ -122,7 +122,7 @@ class KafkaJfrEventCatalogueTest {
                     if (Event.class.isAssignableFrom(type) && !Event.class.equals(type)) {
                         found.add(name);
                     }
-                } catch (ClassNotFoundException | LinkageError ignored) {
+                } catch (ClassNotFoundException | LinkageError _) {
                     // A class this module compiles but cannot link in a test JVM is not an event
                     // class anyone can emit either; nothing to classify.
                 }

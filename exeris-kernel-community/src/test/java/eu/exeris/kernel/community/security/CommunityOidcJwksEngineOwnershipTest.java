@@ -41,7 +41,7 @@ class CommunityOidcJwksEngineOwnershipTest {
         AtomicReference<CommunityOutboundTls> outboundTls = new AtomicReference<>();
         RecordingEngine engine = new RecordingEngine(null, null);
 
-        try (CommunityOidcIdentityProvider ignored = build(HTTPS, (built, tls) -> {
+        try (var _ = build(HTTPS, (built, tls) -> {
             config.set(built);
             outboundTls.set(tls);
             return engine;
@@ -58,7 +58,7 @@ class CommunityOidcJwksEngineOwnershipTest {
         AtomicReference<CommunityOutboundTls> outboundTls = new AtomicReference<>();
         RecordingEngine engine = new RecordingEngine(null, null);
 
-        try (CommunityOidcIdentityProvider ignored = build(HTTP, (built, tls) -> {
+        try (var _ = build(HTTP, (built, tls) -> {
             config.set(built);
             outboundTls.set(tls);
             return engine;

@@ -188,7 +188,7 @@ final class S3StubServer implements AutoCloseable {
         }
         try {
             acceptor.join(TimeUnit.SECONDS.toMillis(5));
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }
@@ -198,7 +198,7 @@ final class S3StubServer implements AutoCloseable {
             Socket socket;
             try {
                 socket = listener.accept();
-            } catch (IOException closed) {
+            } catch (IOException _) {
                 return;
             }
             accepted.incrementAndGet();
@@ -225,7 +225,7 @@ final class S3StubServer implements AutoCloseable {
                 requests.add(new Request(head.method(), head.target(), head.header("host")));
                 respond(out, head, body);
             }
-        } catch (IOException gone) {
+        } catch (IOException _) {
             // The client closed the connection, or it idled past the timeout: nothing to answer.
         } finally {
             open.remove(socket);
@@ -236,7 +236,7 @@ final class S3StubServer implements AutoCloseable {
     private boolean handshake(SSLSocket socket) {
         try {
             socket.startHandshake();
-        } catch (IOException refused) {
+        } catch (IOException _) {
             handshakesFailed.incrementAndGet();
             return false;
         }

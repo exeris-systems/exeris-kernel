@@ -330,6 +330,7 @@ class CommunityHttpClientEngineTest {
 
         @Override
         public void setAttachment(Object attachment) {
+            // No-op by design: this stub carries no attachment, attachment() always returns null.
         }
 
         @Override
@@ -366,6 +367,7 @@ class CommunityHttpClientEngineTest {
 
         @Override
         public void write(MemorySegment source, int length) {
+            // No-op by design: the stub serves a canned response and discards the request bytes.
         }
 
         @Override

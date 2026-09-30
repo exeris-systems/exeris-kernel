@@ -143,7 +143,7 @@ class JfrPinningMonitorClassInitSelfTest {
         static {
             try {
                 Thread.sleep(CLINIT_MILLIS);
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             INITIALISED.set(true);

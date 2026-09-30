@@ -117,7 +117,7 @@ class CommunityTlsServerErrorQueueTest {
                 while (in.read(sink) >= 0) {
                     // drain the alert, if any, until the server closes the socket
                 }
-            } catch (java.net.SocketException reset) {
+            } catch (java.net.SocketException _) {
                 // a reset is the server dropping it too
             }
         }

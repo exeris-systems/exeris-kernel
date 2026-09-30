@@ -8,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -48,7 +49,9 @@ class EmbeddedPersistenceEngineFixturesTest {
     @Test
     @DisplayName("closing a fixture that never started is a no-op")
     void closeBeforeStartIsNoOp() {
-        EmbeddedPersistenceEngineFixtures.inMemoryH2().close();
+        EmbeddedPersistenceEngineFixture fixture = EmbeddedPersistenceEngineFixtures.inMemoryH2();
+
+        assertThatCode(fixture::close).doesNotThrowAnyException();
     }
 
     @Test

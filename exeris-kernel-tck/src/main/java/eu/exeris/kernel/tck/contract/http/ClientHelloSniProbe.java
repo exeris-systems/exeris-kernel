@@ -111,7 +111,7 @@ final class ClientHelloSniProbe implements AutoCloseable {
     public void close() {
         try {
             listener.close();
-        } catch (IOException ignored) {
+        } catch (IOException _) {
             // Best effort: the reading thread ends on the resulting SocketException.
         }
     }

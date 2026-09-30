@@ -137,9 +137,9 @@ class NativeTcpCarrierAcceptTlsBindFailureTest {
     private static boolean peerClosed(Socket client) throws IOException {
         try {
             return client.getInputStream().read() == -1;
-        } catch (SocketTimeoutException stillOpen) {
+        } catch (SocketTimeoutException _) {
             return false;
-        } catch (SocketException reset) {
+        } catch (SocketException _) {
             return true;
         }
     }

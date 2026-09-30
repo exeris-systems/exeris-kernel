@@ -534,7 +534,7 @@ class CommunityMemoryAllocatorTest {
 
             allocator.close();
 
-            assertThatCode(() -> buf.close())
+            assertThatCode(buf::close)
                     .as("Multiple closes on buffer after allocator.close() must be safe")
                     .doesNotThrowAnyException();
         }

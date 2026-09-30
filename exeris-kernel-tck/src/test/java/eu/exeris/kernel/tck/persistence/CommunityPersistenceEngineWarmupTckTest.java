@@ -78,9 +78,7 @@ class CommunityPersistenceEngineWarmupTckTest {
         PersistenceConfig config = config(Map.of("pool.warmup.connections", "5"));
         List<Integer> attemptsSeen = new ArrayList<>();
 
-        int attempts = HARNESS.warmup(config, i -> {
-            attemptsSeen.add(i);
-        });
+        int attempts = HARNESS.warmup(config, attemptsSeen::add);
 
         assertEquals(5, attempts);
         assertEquals(List.of(0, 1, 2, 3, 4), attemptsSeen);

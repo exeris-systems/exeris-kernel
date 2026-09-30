@@ -500,7 +500,7 @@ public abstract class AbstractHttpStreamExchangeTck {
             Assumptions.assumeTrue(supportsShedProbe(),
                     "binding does not wire a PAQS shed probe");
 
-            ExerisKernelException rejection = openUnderShed(exchange -> exchange.close());
+            ExerisKernelException rejection = openUnderShed(HttpStreamExchange::close);
             assertThat(rejection)
                     .as("a shed stream-open must surface a structured kernel rejection")
                     .isNotNull();
@@ -524,7 +524,7 @@ public abstract class AbstractHttpStreamExchangeTck {
                 exchange.close();
             });
             try (alreadyOpen) {
-                ExerisKernelException rejection = openUnderShed(exchange -> exchange.close());
+                ExerisKernelException rejection = openUnderShed(HttpStreamExchange::close);
                 assertThat(rejection.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4006);
                 assertThat(alreadyOpen.awaitEvents(DEFAULT_EVENT_COUNT))
                         .as("ADR-043 obligation 7: shed rejects NEW opens; live streams continue")
