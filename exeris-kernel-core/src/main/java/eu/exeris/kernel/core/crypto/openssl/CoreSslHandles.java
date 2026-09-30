@@ -216,12 +216,14 @@ public final class CoreSslHandles {
          *
          * @param ctxPtr the {@code SSL_CTX*} pointer to free
          */
+        // invokeExact declares Throwable: Errors are rethrown first, then a RuntimeException as is.
+        @SuppressWarnings("PMD.AvoidInstanceofChecksInCatchClause")
         public void invokeCtxFree(long ctxPtr) {
             try {
                 sslCtxFree.invokeExact(ctxPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — best-effort cleanup
                 FfmErrors.rethrowIfError(t);
-                if (t instanceof RuntimeException rte) { //NOPMD invokeExact throws Throwable; Errors left above
+                if (t instanceof RuntimeException rte) {
                     throw rte; //NOPMD PreserveStackTrace — rte is t via pattern match; identical object and stack trace
                 }
             }
