@@ -61,7 +61,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * clears that knee before anything is measured.
  *
  * <h2>Why the Community bound is 23x and graph.md says 20x</h2>
- * <p>Once it measures something real, this path shows <b>two allocation regimes</b>, and the choice
+ * <p>Measured this way, the path shows <b>two allocation regimes</b>, and the choice
  * is made once per JVM and then holds:
  *
  * <pre>
@@ -72,8 +72,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>They are separated by a flat 17%, and nothing mixes them: three JVMs run six windows of 300
  * traversals each — 4 200 traversals per process, warm-up included — and every window in a process
  * landed in the same regime. Roughly two runs in seven take the slow one, which is what a fixed 20x
- * gate would fail on: a pre-existing property of the driver path, not a regression in the change
- * under review.
+ * gate would fail on: a property of the driver path, not of the code a run is testing.
  *
  * <p>So <b>23x here is a regression bound, not the contract</b>. It sits ~10% above the observed
  * slow-regime ceiling, and a mutation adding 128 bytes per returned row trips it from either regime.

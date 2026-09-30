@@ -12,6 +12,10 @@ last-verified: 2026-09-30
 The upgrade steps between kernel versions: what a consumer edits, sets or recompiles. What changed
 and why is in [`CHANGELOG.md`](CHANGELOG.md) and the per-release notes under `docs/release/`.
 
+This guide covers only changes that ask something of a consumer. A behaviour change that needs no
+edit, a new feature, and the reasoning behind a change are in the release notes, so reading an
+upgrade in full takes both documents: the steps here, the context there.
+
 > **Versioning policy.** The kernel is `0.x` until 1.0.0 GA. Which SPI surfaces are `stable`,
 > `preview` or `experimental`, and what each label commits to, is declared in
 > [`docs/stability-matrix.md`](docs/stability-matrix.md). Core, Community and the Maven coordinates
