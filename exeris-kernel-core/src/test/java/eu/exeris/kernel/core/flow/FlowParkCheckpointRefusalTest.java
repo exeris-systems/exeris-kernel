@@ -66,7 +66,7 @@ class FlowParkCheckpointRefusalTest {
             FlowContext context = scheduleParkingFlow(engine, "refused-but-wakeable", parked, resumed);
 
             assertThat(parked.await(5, TimeUnit.SECONDS)).isTrue();
-            awaitParked(engine, context);
+            awaitParked(engine);
 
             assertThat(engine.scheduler()
                     .lookupParked(context.instanceIdMost(), context.instanceIdLeast()))
@@ -92,7 +92,7 @@ class FlowParkCheckpointRefusalTest {
         RefusingStore store = new RefusingStore(1);
 
         try (CoreFlowEngine engine = startedEngine(store)) {
-            FlowContext context = scheduleParkingFlow(engine, "refused-once", parked, new CountDownLatch(1));
+            scheduleParkingFlow(engine, "refused-once", parked, new CountDownLatch(1));
             assertThat(parked.await(5, TimeUnit.SECONDS)).isTrue();
             // The parked-flow gauge rises at registration, which happens before the
             // checkpoint is attempted - so waiting on it would read the store too early.
@@ -177,7 +177,7 @@ class FlowParkCheckpointRefusalTest {
     }
 
     /** The step latch fires before PARK is applied; the registration lands just after. */
-    private static void awaitParked(CoreFlowEngine engine, FlowContext context)
+    private static void awaitParked(CoreFlowEngine engine)
             throws InterruptedException {
         for (int i = 0; i < 200 && engine.stats().parkedFlows() == 0; i++) {
             Thread.onSpinWait();

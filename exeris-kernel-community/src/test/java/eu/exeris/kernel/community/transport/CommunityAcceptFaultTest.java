@@ -5,7 +5,6 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
-import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;

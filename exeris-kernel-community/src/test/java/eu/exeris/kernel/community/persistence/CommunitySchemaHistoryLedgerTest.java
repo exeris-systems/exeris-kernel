@@ -61,7 +61,7 @@ class CommunitySchemaHistoryLedgerTest {
 
     @Test
     @DisplayName("a migration whose bytes changed after it was applied refuses the boot")
-    void changedMigrationRefusesTheBoot() throws Exception {
+    void changedMigrationRefusesTheBoot() {
         DataSource ds = freshDatabase("ledger_drift");
 
         boot(ds, List.of("db/ledgertest/V2.0.0__drift_a.sql"));

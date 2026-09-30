@@ -256,7 +256,7 @@ class CommunityOidcJwksTransportTest {
     private void serveJwks(HttpServer server) {
         server.createContext(JWKS_PATH, exchange -> {
             jwksRequests.incrementAndGet();
-            try (InputStream ignored = exchange.getRequestBody(); OutputStream out = exchange.getResponseBody()) {
+            try (var _ = exchange.getRequestBody(); OutputStream out = exchange.getResponseBody()) {
                 exchange.getResponseHeaders().add("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, jwks.length);
                 out.write(jwks);
