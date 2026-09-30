@@ -195,17 +195,12 @@ jobs:
           # This input is the env var NAME, not the passphrase. It has to be set, and it has to
           # match the variable the build steps export — that is the whole of what it does.
           #
-          # It is not optional on the grounds that "maven-gpg-plugin 3.1.0+ ignores what
-          # setup-java writes into settings.xml and reads MAVEN_GPG_PASSPHRASE from the environment
-          # instead". That is backwards, and measured to be so: what setup-java writes is precisely
-          # what DECIDES which variable the plugin reads. Omitting this input does not fall back to the
-          # plugin default — the action still configures the plugin, using its own default name
-          # `GPG_PASSPHRASE`, while the steps below export `MAVEN_GPG_PASSPHRASE`. The plugin then
-          # reads a variable nobody set.
-          #
-          # The first dry run of this workflow failed exactly there, five seconds in, on the root
-          # pom, with `gpg: signing failed: No pinentry` — a message about the agent, naming nothing
-          # about the passphrase. `-X` named it: `(f) passphraseEnvName = GPG_PASSPHRASE`.
+          # What setup-java writes into settings.xml decides which variable maven-gpg-plugin reads.
+          # Without this input the action still configures the plugin, under its own default name
+          # `GPG_PASSPHRASE`, while the steps below export `MAVEN_GPG_PASSPHRASE`: the plugin then
+          # reads a variable nobody set, and signing fails with `gpg: signing failed: No pinentry`,
+          # a message that names the agent and not the passphrase. `mvn -X` shows the name in use as
+          # `passphraseEnvName`.
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Set the release version — or, on a tag, check it

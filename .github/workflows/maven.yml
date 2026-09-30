@@ -21,14 +21,11 @@ on:
 env:
   # ADR-066 — the build baselines on JDK 25 LTS.
   #
-  # --enable-preview is GONE, from the whole line: no source under this repository uses a preview
-  # API any more, test fixtures included. This changed no published artifact — the TCK test-jar,
-  # the only one built from test sources, measured 0 preview-stamped classes of 467 already, and
-  # the 56 that were stamped sat in core/community test-classes, which are never published. What
-  # it buys is the build itself: --enable-preview is legal only when --release equals the running
-  # JDK, so the GA line could be built by JDK 25 and nothing else. Now any JDK >= 25 can build it.
+  # No --enable-preview anywhere on this line: no source under this repository uses a preview
+  # API, test fixtures included. That keeps the build portable: --enable-preview is legal only
+  # when --release equals the running JDK, so without it any JDK >= 25 can build the GA line.
   #
-  # --enable-final-field-mutation was REMOVED, not overlooked: it is a JDK 26 flag (JEP 500
+  # --enable-final-field-mutation is absent deliberately: it is a JDK 26 flag (JEP 500
   # integrity-by-default) and JDK 25 refuses to start with it. There is nothing to re-enable on
   # 25, since that is the release the restriction has not reached yet.
   MAVEN_OPTS: "--enable-native-access=ALL-UNNAMED"
@@ -257,10 +254,10 @@ jobs:
       - name: SonarQube Cloud Analysis
         id: sonar
         # Runs in this job, immediately after the build, so it consumes the compiled classes and the
-        # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. That reuse is the
-        # whole point: SonarCloud Automatic Analysis never builds the project, so the
-        # `sonar.coverage.jacoco.xmlReportPaths` in sonar-project.properties could never resolve and
-        # coverage on new code read 0.0% on every pull request regardless of the tests written.
+        # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. SonarCloud
+        # Automatic Analysis never builds the project, so it cannot resolve
+        # `sonar.coverage.jacoco.xmlReportPaths` and reports no coverage; this step is what gives
+        # new code a coverage figure.
         #
         # Skipped when the secret is absent (forked pull requests) — a missing token must not fail
         # the build gate.
@@ -270,72 +267,38 @@ jobs:
         # down every merge gate for a reason unrelated to the code under test. Static analysis is not
         # a correctness gate here and must never be able to do that.
         #
-        # The organisation now has an administrator, Automatic Analysis is off and the token is an
-        # organisation secret, so this step runs for real. The first CI-based analysis this
-        # repository has ever had is what settled several things that were guesses until then:
-        # JaCoCo coverage imported (8 reports, and the `coverage` metric had not existed at all
-        # before), the `sonar.issue.ignore` entries took effect where Automatic Analysis had been
-        # ignoring them, and the TCK reclassification landed — 115 bugs and vulnerabilities closed,
-        # 8 code smells left.
+        # The Maven scanner, not the standalone CLI one: the CLI scanner has to be handed the
+        # analysis classpath, and a glob over the project tree cannot reach the local Maven
+        # repository, so it sees the reactor jars and none of a module's dependency jars —
+        # sonar-java would then resolve neither JUnit nor AssertJ nor the Postgres driver. The Maven
+        # plugin derives `sonar.java.libraries` and `sonar.java.test.libraries` per module from the
+        # reactor, and brings every reactor module into scope with its own sources, so each
+        # imported JaCoCo report has sources to land on. tools/jfr-reporter sits outside the reactor
+        # deliberately and carries its own tests (the jfr-reporter job): adding it to the root
+        # module's sources would analyse it without its own dependencies and misreport its coverage.
         #
-        # That analysis also logged `Unresolved imports/types have been detected during analysis`
-        # and `Missing 'sonar.java.test.libraries' property`, which is what moved this step from the
-        # standalone CLI scanner to the Maven one. The CLI scanner has to be HANDED the analysis
-        # classpath, and it was handed a glob over the project tree — which cannot reach the local
-        # Maven repository, so it matched the 9 reactor jars and none of the 71 dependency jars on
-        # a module's real test classpath. sonar-java was resolving neither JUnit nor AssertJ nor the
-        # Postgres driver. The Maven plugin derives both properties per module from the reactor;
-        # dumped locally before this change was made, exeris-kernel-community resolves to 26 main
-        # and 71 test library entries.
-        #
-        # `Missing 'sonar.java.test.libraries'` went with that change alone. `Unresolved
-        # imports/types` did not, and needed the invocation fix described further down; the reading
-        # in between — that the empty classpath had not been its only cause, and that a DEBUG run
-        # would be needed to name what was left — was half right and half a wrong turn. The DEBUG
-        # run was made, and came back empty.
-        #
-        # It also brings all ten reactor modules into scope, where sonar.sources had been a
-        # hand-written list missing three of them whose JaCoCo reports were nonetheless imported
-        # (18 x `File not found in project sources`, and that coverage discarded). What it does not
-        # cover is tools/jfr-reporter, CI tooling that sits outside the reactor deliberately and
-        # carries its own tests (the jfr-reporter job): adding it to the root module's sources
-        # would analyse it without its own dependencies and misreport its coverage.
-        #
-        # No third-party action any more, which also retires a SHA pin that existed because two
-        # high-severity advisories (GHSA-f79p-9c5r-xg88, GHSA-5xq9-5g24-4g6f) covered every 4.x/5.x
-        # release of `sonarqube-scan-action`. The plugin version is pinned in the root POM's
-        # pluginManagement; the goal is invoked by full coordinates so the pin is what resolves,
-        # rather than a prefix lookup that would take the newest release.
+        # The plugin version is pinned in the root POM's pluginManagement; the goal is invoked by
+        # full coordinates so the pin is what resolves, rather than a prefix lookup that would take
+        # the newest release. No third-party action is involved.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
         # `verify` runs in the SAME command as the analysis, and that is load-bearing rather than
         # belt-and-braces. Invoked alone, `sonar:sonar` starts a session in which no module has been
         # packaged, so Maven cannot resolve a reactor sibling to a jar and falls back to the local
         # repository — where the previous step, which runs `verify` and not `install`, has put
-        # nothing. Maven says so before the goal even starts: `The following dependencies could not
-        # be resolved at this point of the build but seem to be part of the reactor:
-        # eu.exeris:exeris-kernel-spi ... Try running the build up to the lifecycle phase package`.
-        #
-        # That is what `Unresolved imports/types have been detected during analysis` was, and the
-        # match is exact: the warning fired in every module with a reactor dependency and in neither
-        # of the two without one (exeris-kernel-spi, exeris-kernel-build-config). It was NOT the
-        # analyser's support for a recent JDK, which is what a first reading of it assumed, and a
-        # local dump agreed with that misreading only because a previous `mvn clean install` had
-        # left the sibling jars in ~/.m2 where CI has none.
+        # nothing. Maven says so before the goal starts (`The following dependencies could not be
+        # resolved at this point of the build but seem to be part of the reactor`), and the analysis
+        # then logs `Unresolved imports/types have been detected during analysis` in every module
+        # with a reactor dependency. A local run can hide this: an earlier `mvn clean install`
+        # leaves the sibling jars in ~/.m2, where CI has none.
         #
         # Tests and lint are skipped here because the step before this one ran both, on the same
         # tree, without skip flags. This invocation exists to put the reactor in a resolvable state,
         # not to re-verify it.
         #
-        # `Use of preview features` went with it, which was not predicted: that one had been put
-        # down to the analyser's support for a recent JDK, on the strength of its firing in
-        # exeris-kernel-spi too, where `Unresolved imports/types` never did. Both are now absent,
-        # and the run parsed 1374 Java files exactly as the broken one did, so this is not a
-        # narrower analysis. The mechanism behind the preview half is NOT established — only that it
-        # is empirically tied to this same change. Nothing about it was ever a risk: javac settles
-        # that outright, since `--release 25` without `--enable-preview` makes a preview feature a
-        # compile error rather than a warning, and the preview-bytecode gate reads major 69 with no
-        # stamp.
+        # A `Use of preview features` warning from the analyser is not a finding about the code:
+        # `--release 25` without `--enable-preview` makes a preview feature a compile error, and the
+        # preview-bytecode gate reads class-file major 69 with no preview stamp.
         run: |
           mvn -B -e -DskipTests -Dpmd.skip=true -Dcheckstyle.skip=true \
             verify -P coverage \
@@ -474,20 +437,17 @@ jobs:
           # Highest released version, NOT `git describe`: patch releases are cut on main, so on a
           # development/* branch the last *reachable* tag can be older than the latest published
           # one. Reachability is irrelevant — this compares two API surfaces, not two histories.
-          # Strict vMAJOR.MINOR.PATCH, not a bare `v*` glob. A glob picks the
-          # highest tag matching a pattern, so any tag that lands inside it decides the baseline —
-          # and `git tag --sort=-v:refname` sorts `v0.11.0-preview` ABOVE `v0.11.0` (measured). One
-          # suffixed tag on the preview line would therefore have made THIS line diff its SPI
-          # against a tree that is not its ancestor: value classes, StructuredTaskScope signatures,
-          # a baseline that is garbage in either direction. The preview line tags `preview/vX.Y.Z`
-          # for that reason, but a naming convention nobody can enforce is not a guard — this is.
+          # Strict vMAJOR.MINOR.PATCH, not a bare `v*` glob. A glob picks the highest tag matching
+          # a pattern, so any tag that lands inside it decides the baseline — and
+          # `git tag --sort=-v:refname` sorts `v0.11.0-preview` ABOVE `v0.11.0`. One suffixed tag on
+          # the preview line would make THIS line diff its SPI against a tree that is not its
+          # ancestor: value classes, StructuredTaskScope signatures, a baseline that is garbage in
+          # either direction. The preview line tags `preview/vX.Y.Z` for that reason, but a naming
+          # convention nobody can enforce is not a guard — this is.
           # `|| true` is load-bearing under `set -euo pipefail`, not defensive noise. grep exits 1
           # when it matches nothing, pipefail makes that the pipeline's status, and an assignment
-          # from a failing command substitution aborts under -e — so without it the friendly
-          # "no release tag found" branch below is UNREACHABLE and the job hard-fails instead. The
-          # two-stage form the strict filter replaced never had the hazard: `head -1` exits 0 on an
-          # empty stream. Adding grep as a third stage is what introduced it, in the same v0.12
-          # change that added the filter.
+          # from a failing command substitution aborts under -e — so without it the "no release tag
+          # found" branch below is UNREACHABLE and the job hard-fails instead.
           BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
           if [ -z "$BASELINE" ]; then
             echo "no release tag found — nothing to compare against"; exit 0

@@ -2,12 +2,10 @@ name: 'Dependency Review (Supply Chain)'
 
 on:
   pull_request:
-    # `development/**` as well as main, deliberately. Scanning only PRs into main meant a
-    # dependency or action introduced during a milestone stayed unscanned until the release cut,
-    # where it surfaces as a red gate on an 87-commit PR that nobody wants to reopen — which is
-    # exactly how the vulnerable `sonarqube-scan-action` pin reached the v0.11 cut (that action is
-    # no longer used — the history is why this trigger is shaped as it is). The scan belongs where
-    # the dependency actually enters the tree.
+    # `development/**` as well as main, deliberately. Scanning only PRs into main would leave a
+    # dependency or action introduced during a milestone unscanned until the release cut, where it
+    # surfaces as a red gate on a PR carrying the whole milestone. The scan belongs where the
+    # dependency actually enters the tree.
     branches: [ "main", "development/**" ]
 
 permissions:
