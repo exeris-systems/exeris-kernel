@@ -21,10 +21,9 @@ name: Release to Maven Central
 on:
   push:
     tags:
-      # Deliberately permissive: the strict check is a step, not this filter. The opposite
-      # arrangement already cost this repository once — the SPI gate selected its baseline with
-      # `--list 'v*'`, which sorts `v0.11.0-preview` ABOVE `v0.11.0`, and the fix was to stop
-      # trusting the pattern. A filter decides what runs; it is not a guard.
+      # Deliberately permissive: the strict vMAJOR.MINOR.PATCH check is a step, not this filter.
+      # A filter decides what runs; it is not a guard — a glob also matches a suffixed tag such as
+      # `v0.11.0-preview`, which version sorting places ABOVE `v0.11.0`.
       - 'v*'
   workflow_dispatch:
     inputs:
@@ -291,10 +290,10 @@ jobs:
         # you do, nothing can be changed, ever.
         #
         # `clean`, and it is load-bearing. Without it this second lifecycle run re-shades an
-        # already-shaded jar: exeris-kernel-diagnostics-cli came out byte-different from the gated
-        # build, which the digest assertion below caught on its first run. Two CLEAN `-P release`
-        # builds are byte-identical across all 69 files except the .asc signatures; a second build
-        # over a dirty target/ is not. Reproducibility here is a property of clean builds, and this
+        # already-shaded jar, so exeris-kernel-diagnostics-cli comes out byte-different from the
+        # gated build and the digest assertion below fails. Two CLEAN `-P release` builds are
+        # byte-identical across every file except the .asc signatures; a second build over a dirty
+        # target/ is not. Reproducibility here is a property of clean builds, and this
         # is what keeps the uploaded artifact the one that was gated and attested.
         run: mvn -B -P release clean deploy -DskipTests --settings .github/maven-settings.xml
         env:

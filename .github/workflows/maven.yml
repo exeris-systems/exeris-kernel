@@ -128,8 +128,7 @@ jobs:
         # So the failure is silent here and expensive at the far end, which is what makes it a gate
         # rather than a convention.
         #
-        # This step IS the guarantee, which was established by measurement rather than assumed: an
-        # unset `exeris.module.name` does not fail the build. With the config inherited from the
+        # This step IS the guarantee: an unset `exeris.module.name` does not fail the build. With the config inherited from the
         # root pluginManagement and no local plugin declaration, the property goes unresolved and
         # the manifest entry is simply omitted — the jar ships nameless and green. So the script
         # discovers every jar the reactor produced rather than checking a hand-maintained list,
@@ -141,7 +140,8 @@ jobs:
       - name: Scope-Register Gate
         # Keeps docs/release/1.0-scope.md and docs/ROADMAP.md from drifting. The roadmap owns the
         # analysis and carries a `**1.0 disposition:**` per item; the register owns the state.
-        # Nothing connected them, which is how an item can be dispositioned and then never tracked.
+        # Without this check nothing connects them, and an item can be dispositioned and never
+        # tracked.
         #
         # Checks set equality of headings, not correctness of a recorded state -- nothing can check
         # the latter, and the register puts every state behind a named check or the word
@@ -154,9 +154,8 @@ jobs:
         # Keeps .agents/evals/scenarios.yaml's header honest about its own contents. The suite
         # states how many of its cases assert a REFUSAL to escalate, and that number is the whole
         # argument that it is not skewed toward positives — the failure its own header names, since
-        # a suite of only positive cases passes against an agent that blocks everything. Both stated
-        # numbers were wrong within a day of being written, twice, in the pull request that added
-        # them: a case was added and the sentence describing the set was not.
+        # a suite of only positive cases passes against an agent that blocks everything. A count
+        # written in prose goes stale the moment a case is added without the sentence.
         #
         # It also asserts the property the count is shorthand FOR — that the `negative` tag and the
         # expectation agree in both directions — because `--tags negative` is how the number is
@@ -169,10 +168,8 @@ jobs:
         # Keeps KernelErrorCodes and docs/subsystems/exceptions.md in agreement, both directions,
         # plus the single-source-of-truth rule the registry rests on.
         #
-        # Nothing connected the two before, and the drift was not marginal: TWENTY of 84 codes had
-        # no doc row, including four whole domains, and two main-source classes stamped an EX- code
-        # as a bare string literal -- one of them a sentinel that was in no registry at all. None of
-        # that failed anything; it was found by chasing a single missing row.
+        # Without it the two drift silently: a code with no doc row, or an EX- code stamped as a
+        # bare string literal outside the registry, fails nothing else in the build.
         #
         # Docs-and-sources only, so it needs no build artifact -- same reasoning as the gate above.
         run: tools/error-code-registry-check/error-code-registry-check.sh
@@ -202,21 +199,17 @@ jobs:
         # does, defect included. That reads as newly accurate, passes every other gate, and ships to
         # Maven Central as the contract.
         #
-        # It already happened, which is why the script exists: the 0.12 Javadoc sweep's adversarial
-        # pass refuted a set of claims, and the correction pass wrote nine sentences of that shape
-        # into Ownership lines and @implSpec before review caught them.
-        #
         # The pattern is anchored on a tier or driver as the SUBJECT of a present-tense report, not
-        # on tense words alone — a first draft matched bare tense and raised 15 hits on this module,
-        # every one legitimate. Tier-conditional obligations stay allowed: the open-core tiers are
-        # part of this SPI's contract. The facts are not deleted either, they move to @implNote,
-        # which javadoc-conventions.md rule 6 names as their home.
+        # on tense words alone, which would flag legitimate obligation sentences. Tier-conditional
+        # obligations stay allowed: the open-core tiers are part of this SPI's contract. The facts
+        # are not deleted either, they move to @implNote, which javadoc-conventions.md rule 6 names
+        # as their home.
         #
         # Sources-only, so it needs no build artifact — same reasoning as the three gates above.
         run: tools/spi-contract-blindness-check/spi-contract-blindness-check.sh
 
       - name: Supply-Chain Gate
-        # v0.12 Stream B. Two checks, deliberately at different ends of the build.
+        # Two checks, deliberately at different ends of the build.
         #
         # `artifact:check-buildplan` reads the BUILD PLAN, so it fails on a newly added plugin that
         # cannot produce reproducible output before that plugin has published anything. It needs no
@@ -307,10 +300,9 @@ jobs:
       - name: Say so when the Sonar analysis failed
         # `continue-on-error` above reports the step as `success` whatever the goal did, so a failed
         # analysis and a clean one are indistinguishable in the job summary and in `gh pr checks`.
-        # That is not hypothetical: on one head the scanner died with `HTTP 500` from
-        # sonarcloud.io/batch/project.protobuf, the step showed green, and the only visible symptom
-        # was the required `SonarCloud Code Analysis` context never arriving — which reads as a
-        # SonarCloud integration problem rather than as a failed run.
+        # A scanner that dies (an `HTTP 500` from sonarcloud.io, say) shows only as the required
+        # `SonarCloud Code Analysis` context never arriving, which reads as a SonarCloud
+        # integration problem rather than as a failed run.
         #
         # This step does not fail the job either, for the reason the one above does not: this job is
         # the root of the pipeline and eight others depend on it. It makes the failure legible.
