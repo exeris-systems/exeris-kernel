@@ -218,8 +218,7 @@ public abstract class AbstractRequiresRoleTck {
          * Creates a registry fixed to {@code METHOD_ANY} and {@code METHOD_ALL}, the only two
          * method ids this suite drives.
          */
-        protected StubRegistry() {
-            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        private StubRegistry() {
             super();
         }
 

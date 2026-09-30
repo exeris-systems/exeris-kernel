@@ -123,7 +123,8 @@ public final class HuffmanTable {
     // =========================================================================
     // Table construction — bootstrap-time only
 
-    @SuppressWarnings({"java:S3776", "java:S6541"}) // complexity is inherent to the algorithm; this is not a hot path
+    // Complexity and nesting are inherent to the algorithm; this is not a hot path.
+    @SuppressWarnings({"java:S3776", "java:S6541", "PMD.AvoidDeeplyNestedIfStmts"})
     private static int[] buildFlatTable() {
         int capacity = 512;
         int[] left = new int[capacity];

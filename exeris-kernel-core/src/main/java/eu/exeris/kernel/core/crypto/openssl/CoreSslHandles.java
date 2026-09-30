@@ -221,7 +221,7 @@ public final class CoreSslHandles {
                 sslCtxFree.invokeExact(ctxPtr);
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — best-effort cleanup
                 FfmErrors.rethrowIfError(t);
-                if (t instanceof RuntimeException rte) {
+                if (t instanceof RuntimeException rte) { //NOPMD invokeExact throws Throwable; Errors left above
                     throw rte; //NOPMD PreserveStackTrace — rte is t via pattern match; identical object and stack trace
                 }
             }

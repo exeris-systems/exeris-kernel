@@ -59,7 +59,6 @@ import java.util.concurrent.locks.LockSupport;
 @SuppressWarnings({
     "PMD.CyclomaticComplexity",      // aggregate across loop/dispatch/tracking helpers
     "PMD.TooManyMethods",            // deliberate: loop, dispatch, fork, tracking all belong here
-    "PMD.CouplingBetweenObjects",    // loop owns dispatch, JFR, queue, and structured-scope coordination by design
     "PMD.CloseResource",             // TrackingPayload ownership transferred across lambda boundaries
     "PMD.UseTryWithResources"        // wrappers list cannot be expressed as TWR; closed deterministically in finally
 })

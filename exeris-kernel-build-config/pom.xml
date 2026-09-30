@@ -70,7 +70,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.14.1</version>
+				<version>3.16.0</version>
 				<configuration>
 					<release>${maven.compiler.release}</release>
 				</configuration>
@@ -95,7 +95,7 @@
 			<plugin>
 				<groupId>com.mycila</groupId>
 				<artifactId>license-maven-plugin</artifactId>
-				<version>4.3</version>
+				<version>4.6</version>
 				<configuration>
 					<licenseSets>
 						<licenseSet>
