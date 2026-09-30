@@ -11,7 +11,7 @@ slug: adr/ADR-051
 | Attribute       | Value                                                                                                                                                                                       |
 |:----------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **ADR #**       | **051** (reserved 2026-07-04 in `exeris-docs/adr-index.md`).                                                                                                                              |
-| **Status**      | **Accepted** — shipped in **v0.11.0**. This row previously read *Proposed* with its own rule attached: "flips to **Accepted** on merge". It merged and the flip was never executed, so the header disagreed with the tree for a full release. Verified before flipping, rather than flipped on the rule alone: all three things this ADR said would land together are present — `StreamExecutionBackend` and `PaqsScheduler`'s use of it in `exeris-kernel-core/src/main`, and the `AbstractPaqsSchedulerTck` seam-contract in that same module's tests, which is the right home given this ADR's own compliance note that the seam is Core-internal and **not** SPI. |
+| **Status**      | **Accepted** *(amended 2026-08-27 — see `## Amendments`)*. As written at decision time: *Proposed — content authored on the v0.11 train. The refactor-neutral seam + default backend + `AbstractPaqsSchedulerTck` seam-contract + this ADR land together on `development/0.11.0` (v0.11 S21 / Stream J, the milestone's first move); flips to **Accepted** on merge. Held-for-push on `feat/v011-paqs-execution-seam-port`.* |
 | **Deciders**    | Arkadiusz Przychocki                                                                                                                                                                       |
 | **Date**        | 2026-07-04                                                                                                                                                                                 |
 | **Scope**       | kernel/transport                                                                                                                                                                          |
@@ -147,6 +147,15 @@ stays transport-local; no kernel-wide promotion here.
 - The Platform-Baseline `fork`/`join`/`cancel` orchestration seam — a **distinct** injection point
   (subsystem orchestration vs transport continuation-resume); do not conflate. Kernel-wide
   unification of the two is DST-RFC territory.
+
+## Amendments
+
+- **2026-08-27 — Proposed → Accepted.** The seam shipped in v0.11.0, and the Status row carried the
+  flip rule "flips to **Accepted** on merge" without the flip. It is applied after checking that all
+  three parts this ADR says land together are in the tree: `StreamExecutionBackend` and
+  `PaqsScheduler`'s use of it in `exeris-kernel-core/src/main`, and the `AbstractPaqsSchedulerTck`
+  seam-contract in that module's tests — the home this ADR's compliance note gives a Core-internal,
+  non-SPI seam. The decision text is unchanged.
 
 ## Engineering Protocol
 
