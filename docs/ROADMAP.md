@@ -3254,6 +3254,8 @@ registered on `PUT` that `PATCH` does not reach, and the null-body rejection; a 
 **Status (v0.12): DELIVERED.** `KernelWebClientIntegrationTest` covers all three; with `put` sending
 `PATCH`, exactly `putRoundTrip` and `putReachesARouteRegisteredOnPut` fail.
 
+---
+
 ### HTTP: Stream Routes Are HTTP/1.1-Only (h2 via ALPN, h2c) (surfaced 2026-09-26)
 
 **Gap:** ADR-043 decided that SSE "rides the existing HTTP/1.1 + h2 server"; Community resolves
