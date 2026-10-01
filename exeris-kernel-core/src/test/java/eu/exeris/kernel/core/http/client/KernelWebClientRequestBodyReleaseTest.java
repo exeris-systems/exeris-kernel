@@ -6,6 +6,7 @@ package eu.exeris.kernel.core.http.client;
 
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpClientRequestEnricher;
+import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpEncodedBody;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpRequest;
@@ -37,6 +38,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -84,6 +86,36 @@ class KernelWebClientRequestBodyReleaseTest {
         assertThat(allocator.allocated()).as("one request body and one response body").isEqualTo(2);
         assertThat(allocator.outstanding()).as("buffers still held after the call").isZero();
         assertThat(allocator.everyBufferClosedExactlyOnce()).as("no buffer released twice").isTrue();
+    }
+
+    @Test
+    @DisplayName("a successful PUT: the engine receives PUT with the encoded body, and the call releases it once")
+    void successfulPutSendsPutAndReleasesRequestBody() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of(text(200, "replaced")));
+
+        String result = client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none())
+                .put("/widget/42", "cogwheel", String.class);
+
+        assertThat(result).isEqualTo("replaced");
+        assertThat(engine.received).singleElement()
+                .satisfies(request -> assertThat(request.method()).as("the verb sent").isEqualTo(HttpMethod.PUT));
+        assertThat(engine.bodyTextAtSend).as("the engine read the encoded payload").containsExactly("cogwheel");
+        assertThat(engine.received.getFirst().body().isAlive())
+                .as("the request body sent is released once the call returns").isFalse();
+        assertThat(allocator.outstanding()).as("buffers still held after the call").isZero();
+    }
+
+    @Test
+    @DisplayName("PUT refuses a null body before anything is encoded or sent")
+    void putRejectsNullBody() {
+        ProgrammedEngine engine = new ProgrammedEngine(List.of());
+
+        assertThatNullPointerException()
+                .isThrownBy(() -> client(engine, HttpClientRequestEnricher.noop(), HttpRetryPolicy.none())
+                        .put("/widget/42", null, String.class))
+                .withMessageContaining("PUT");
+        assertThat(engine.received).as("nothing was sent").isEmpty();
+        assertThat(allocator.allocated()).as("nothing was encoded").isZero();
     }
 
     @Test
