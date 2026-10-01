@@ -42,9 +42,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 200 — now driven by a declared {@link HttpRoutePolicy} on paths that have nothing to do with that
  * prefix. That is the point of ADR-061: the routes are the application's, not the driver's.
  *
- * <p>The fourth case is the one the old code could not express at all. Under the prefix convention
- * {@code /api/internal} reached its handler with no identity bound, because it did not start with
- * {@code /secure}. It is now decided by the policy like any other route.
+ * <p>The fourth case is one a path-prefix convention cannot express: {@code /api/internal} does not
+ * start with {@code /secure}, so such a convention would reach its handler with no identity bound.
+ * The policy decides it like any other route.
  */
 @DisplayName("Community: HTTP route-policy admission integration (ADR-061)")
 class CommunityHttpSecurityAdmissionIntegrationTest {

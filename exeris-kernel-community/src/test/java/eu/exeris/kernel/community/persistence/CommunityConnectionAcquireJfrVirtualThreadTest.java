@@ -27,12 +27,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Regression coverage for the connection-acquire JFR event on virtual threads.
  *
- * <p>Background: a {@code ConnectionAcquireEvent} {@code begin()}'d before the blocking pool
- * checkout and {@code commit()}'d after it straddles a park. On a virtual thread the checkout
- * parks and unmounts the carrier; remounting on a different carrier and committing the held
- * event flushed a stale, carrier-bound {@code JfrBuffer}, crashing the JVM in
- * {@code JfrStorage::flush_regular_buffer} (JDK 26 GA, build 26+35). The fix made the event
- * single-phase: it is constructed and committed entirely <em>after</em> the checkout returns.
+ * <p>Background: the event is single-phase — constructed and committed entirely <em>after</em> the
+ * blocking pool checkout returns. An event {@code begin()}'d before the checkout and
+ * {@code commit()}'d after it would straddle a park: on a virtual thread the checkout unmounts the
+ * carrier, and committing on a different carrier flushes a stale, carrier-bound JFR buffer, which
+ * can crash the JVM.
  *
  * <p>A JVM SIGSEGV cannot be asserted from inside the same JVM (it would kill the test runner),
  * so these tests instead exercise the exact triggering conditions — acquire on a virtual thread

@@ -79,8 +79,7 @@ class CommunityAcceptorRecoveryTest {
             }, accepts::get);
 
             assertThat(passes.get())
-                    .as("the loop MUST have run again after the failures; before the fix it ended "
-                            + "on the first one")
+                    .as("the loop MUST have run again after the failures, not ended on the first one")
                     .isEqualTo(3);
         }
 
