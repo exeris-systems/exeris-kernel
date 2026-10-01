@@ -239,10 +239,10 @@ public final class PaqsScheduler implements AutoCloseable {
         // Registered HERE, on the carrier thread, not inside the spawned task. Between admit() and the
         // task actually running there is a scheduling gap, and the drain waits on this count: a stream
         // admitted but not yet registered is invisible to sealIfIdle(), which then observes zero and
-        // commits to teardown on a connection already accepted. The old drain waited on
-        // activeStreamCount(), incremented on this thread by admit(), and so had no such gap; moving
-        // the wait onto the busy count (to stop idle keep-alive connections holding shutdown open)
-        // reintroduced it one layer down. The handle is closed by the task that receives it.
+        // commits to teardown on a connection already accepted. The drain waits on the busy count,
+        // not on activeStreamCount(), so that idle keep-alive connections cannot hold shutdown open;
+        // the count must therefore rise here, on the admitting thread, before the task is spawned.
+        // The handle is closed by the task that receives it.
         // CloseResource: the handle is deliberately NOT closed here — it is handed to the spawned
         // task, which owns it for the stream's life. The catch below is its only close on this
         // thread, for the one case where no task ever receives it.

@@ -133,7 +133,7 @@ class CommunityAcceptorRecoveryTest {
             // pass accepts a connection and then throws probing for the next. The pass leaves by the
             // THROW, so nothing it could have returned reaches the loop — which is why progress is
             // read from a counter. Built from return values, this streak climbs to the ceiling while
-            // the listener is demonstrably still serving, and the fix defeats itself.
+            // the listener is demonstrably still serving, and the recovery defeats itself.
             NativeTcpCarrier carrier = carrier(tmp);
             Path jfr = tmp.resolve("partial.jfr");
             AtomicInteger passes = new AtomicInteger();

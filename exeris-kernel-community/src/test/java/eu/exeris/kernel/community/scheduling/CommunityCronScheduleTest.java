@@ -191,8 +191,8 @@ class CommunityCronScheduleTest {
         @DisplayName("a leap day across a non-leap century still resolves")
         void leapDayAcrossNonLeapCentury() {
             // 2100 is not a leap year, so the gap here is eight years — the longest this subset can
-            // produce, and the reason the horizon is eight rather than the four the old message
-            // claimed. A four-year horizon would refuse a schedule that is perfectly satisfiable.
+            // produce, and the reason the horizon is eight years rather than four. A four-year horizon
+            // would refuse a schedule that is perfectly satisfiable.
             assertThat(next("0 0 29 2 *", Instant.parse("2096-03-01T00:00:00Z")))
                     .isEqualTo(Instant.parse("2104-02-29T00:00:00Z"));
         }

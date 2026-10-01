@@ -188,7 +188,7 @@ public final class InMemoryEventBus implements EventBus {
      * each value and nothing can enumerate a thread's live bindings. Staying on the publisher's
      * thread satisfies the contract by construction instead of reconstructing it.
      *
-     * <p>The trade is latency: handler durations now sum rather than overlap, and a slow handler
+     * <p>The trade is latency: handler durations sum rather than overlap, and a slow handler
      * delays its successors. Callers that want fan-out have {@link #publish}, which is
      * fire-and-forget and unchanged.
      *
@@ -202,7 +202,7 @@ public final class InMemoryEventBus implements EventBus {
     // NativeCipherContext, SecurityInterceptor, PaqsScheduler). The Throwable is not handled here:
     // it is rethrown unchanged, and the catch exists only so the wrappers no handler will ever
     // reach are released first. Narrowing it would restore the leak for exactly the types that
-    // reach this path — an Error out of a handler is the one that motivated the fix.
+    // reach this path — an Error out of a handler is the case it exists for.
     @Override
     @SuppressWarnings("java:S1181")
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload)

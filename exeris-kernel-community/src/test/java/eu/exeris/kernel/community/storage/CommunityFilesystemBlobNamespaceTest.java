@@ -41,11 +41,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The store's private files must not be reachable as objects, and vice versa.
  *
- * <p>{@code AbstractBlobStorageTck} exercises the contract with ordinary keys, which is where the
- * defect hid: staging and content-type files were named by appending {@code .uploading} and
- * {@code .ctype} to the object's own path, and both are endings {@link BlobRef} permits. The suffix
- * did not name a private file — it named another object of the same tenant. So these cases use
- * exactly the keys the old naming stole.
+ * <p>{@code AbstractBlobStorageTck} exercises the contract with ordinary keys. These cases use keys
+ * ending in {@code .uploading} and {@code .ctype}, which {@link BlobRef} permits: a store that named
+ * its staging and content-type files by appending those suffixes to the object's own path would name
+ * another object of the same tenant, not a private file.
  *
  * <p>Nothing here is filesystem-specific except the driver under test: what is asserted is the
  * contract every {@code BlobStore} owes, that an operation on one key touches only that key.
@@ -167,8 +166,8 @@ class CommunityFilesystemBlobNamespaceTest {
 
                 assertThat(store.stat(ref("sheet")).orElseThrow().contentType())
                         .as("the default is represented by the ABSENCE of a sidecar, so recording it "
-                            + "means removing the previous one — skipping the write left the old "
-                            + "type describing the new bytes")
+                            + "means removing the previous one — skipping the write would leave the "
+                            + "earlier type describing the new bytes")
                         .isEqualTo(BlobMetadata.DEFAULT_CONTENT_TYPE);
             });
         }
