@@ -25,7 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Regression coverage for the connection-acquire JFR event on virtual threads.
+ * The connection-acquire JFR event is single-phase on a virtual thread that parks in the pool
+ * checkout, and is recorded with correct fields across the unmount.
  *
  * <p>Background: the event is single-phase — constructed and committed entirely <em>after</em> the
  * blocking pool checkout returns. An event {@code begin()}'d before the checkout and

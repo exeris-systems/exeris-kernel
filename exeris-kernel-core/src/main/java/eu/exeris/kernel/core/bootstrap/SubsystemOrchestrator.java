@@ -54,7 +54,7 @@ import java.util.function.UnaryOperator;
  *       with no recovery, no degradation, JVM halts.</li>
  *   <li><b>Lifecycle:</b> Initialization is sequential in topological order; start is grouped by
  *       phase into dependency-safe rounds. Every subsystem starts on the booting thread — see
- *       {@code startParallel} for why the per-subsystem fork was removed in v0.11 (ADR-066).</li>
+ *       {@code startParallel} for why a subsystem never starts on a thread of its own (ADR-066).</li>
  *   <li><b>Reverse Shutdown:</b> Always the strict reverse of topological init order.</li>
  *   <li><b>JFR Telemetry:</b> Every init/start/stop/boot-ready/shutdown event is
  *       emitted via {@link BootstrapJfrEvents}.</li>

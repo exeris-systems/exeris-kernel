@@ -355,7 +355,7 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
     }
 
     @Test
-    @DisplayName("No policy bound: every route reaches the handler — the pre-0.11 compatibility guarantee")
+    @DisplayName("No policy bound: every route reaches the handler")
     void noPolicyBoundAdmitsEverything() {
         AtomicBoolean handlerInvoked = new AtomicBoolean(false);
 

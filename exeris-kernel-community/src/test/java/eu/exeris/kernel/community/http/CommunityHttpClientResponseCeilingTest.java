@@ -69,7 +69,7 @@ class CommunityHttpClientResponseCeilingTest {
     }
 
     @Test
-    @DisplayName("the pre-0.12 constructor shape keeps its single ceiling, so an old caller is unchanged")
+    @DisplayName("the shorter constructor keeps its single ceiling, so a caller that uses it is unchanged")
     void bridgeKeepsTheOldCoupling() {
         HttpConfig bridged = new HttpConfig(
                 HttpMode.CLIENT, "127.0.0.1", -1, 8, 30_000L, 100, 8_192,
