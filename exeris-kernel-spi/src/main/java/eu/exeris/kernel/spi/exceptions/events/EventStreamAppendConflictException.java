@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.events;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.events.EventStreamAppender;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
@@ -35,26 +32,30 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 2 – {@code long}   actualVersion    (the stream's actual head)</li>
  * </ul>
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public class EventStreamAppendConflictException extends ExerisKernelException {
 
     private static final String MSG_VERSION_CONFLICT = "Event-log append version conflict";
 
     /**
-     * General-purpose constructor — use {@link #versionConflict(String, long, long)} when possible.
+     * Constructs a version conflict with no Glass-Box arguments.
      *
      * @param message static message template
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6008} and leaves {@code rawArgs} empty, so a
+     *          caller cannot read the observed head off the exception and retry against it. Prefer
+     *          {@link #versionConflict(String, long, long)}.
      */
     public EventStreamAppendConflictException(String message) {
         super(KernelErrorCodes.EX_EVENT_6008, message, (Throwable) null);
     }
 
     /**
-     * General-purpose constructor with cause.
+     * Constructs a version conflict that carries an upstream cause but no Glass-Box arguments.
      *
      * @param message static message template
      * @param cause   upstream throwable; may be {@code null}
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6008} and leaves {@code rawArgs} empty.
      */
     public EventStreamAppendConflictException(String message, Throwable cause) {
         super(KernelErrorCodes.EX_EVENT_6008, message, cause);
@@ -74,7 +75,8 @@ public class EventStreamAppendConflictException extends ExerisKernelException {
      * @param streamType      the target stream's type qualifier
      * @param expectedVersion the version the caller passed as {@code expectedVersion}
      * @param actualVersion   the stream's actual current head sequence
-     * @return a fully initialised {@link EventStreamAppendConflictException}
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6008} and the three-element
+     *         {@code rawArgs} layout above, with no cause attached
      */
     public static EventStreamAppendConflictException versionConflict(
             String streamType, long expectedVersion, long actualVersion) {
@@ -93,11 +95,23 @@ public class EventStreamAppendConflictException extends ExerisKernelException {
      * @param expectedVersion the version the caller passed as {@code expectedVersion}
      * @param actualVersion   the stream's actual current head sequence
      * @param cause           the underlying driver failure that detected the conflict; may be {@code null}
-     * @return a fully initialised {@link EventStreamAppendConflictException}
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6008}, the three-element
+     *         {@code rawArgs} layout above, and {@code cause}
      */
     public static EventStreamAppendConflictException versionConflict(
             String streamType, long expectedVersion, long actualVersion, Throwable cause) {
         return new EventStreamAppendConflictException(KernelErrorCodes.EX_EVENT_6008, MSG_VERSION_CONFLICT, cause,
                 streamType, expectedVersion, actualVersion);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the caller's expected version did not match the stream. Re-reading
+     * and re-appending succeeds; nothing about the deployment is wrong.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }

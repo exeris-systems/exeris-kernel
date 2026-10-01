@@ -7,7 +7,7 @@
     <parent>
         <groupId>eu.exeris</groupId>
         <artifactId>exeris-kernel-parent</artifactId>
-        <version>0.11.0</version>
+        <version>0.12.0</version>
         <relativePath>../exeris-kernel-parent/pom.xml</relativePath>
     </parent>
     <artifactId>exeris-kernel-community</artifactId>
@@ -18,8 +18,10 @@
         CommunityKernelCryptoProvider (OpenSSL 3.x / TCP-only, no QUIC),
         CommunityTelemetryProvider (Console, JFR, File sinks).
     </description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
+        <exeris.module.name>eu.exeris.kernel.community</exeris.module.name>
         <!-- Empty by default; can be set to run only selected @Tag groups -->
         <includedGroups/>
         <!--
@@ -48,14 +50,26 @@
             constrained 2-vCPU runners the loopback (server reactor + handler VT + client) starves
             and even the happy-path round-trip times out, though it passes deterministically on
             many-core boxes. CI gates the fast, non-loopback streaming layer instead
-            (SseEventEncoderTest, HttpRouterTest streaming registration, the ArchTest Wall pin).
+            (SseEventEncoderTest, HttpRouterTest streaming registration,
+            CommunityStreamResolutionDelegationTest, the ArchTest Wall pin), plus one real-boot
+            stream test, GeneratedAppStreamRouteReachabilityIntegrationTest: each of its streams
+            emits one event and closes and its client reads to end of stream, so it holds no stream
+            open and asserts no timing window. It is the default build's only proof that a stream
+            route resolves behind a forwarder over a real boot, so it carries neither this tag nor
+            integration; docs/subsystems/http.md §Test gating records its 2-carrier measurement.
             Run the loopback suite on demand:
               mvn test -DincludedGroups=stream-loopback -DexcludedGroups=
               mvn test -Dtest=CommunityHttpStreamExchangeTckTest (targeted-test-run profile)
             Making it CI-gateable (reactor/handler scheduling robustness under scarce carriers) is a
             tracked follow-up.
+
+            default-trust (CommunityTlsDefaultTrustTest) runs in its own forked execution below,
+            which sets SSL_CERT_FILE and SSL_CERT_DIR for it. openssl-matrix
+            (CommunityOpenSslPinnedMajorTest) runs only in the tls-openssl-matrix CI job, which
+            selects it by name with -Dexeris.test.expectedOpenSslMajor set; without that property it
+            has nothing to assert, and it fails rather than skips.
         -->
-        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback,default-trust,openssl-matrix</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
@@ -94,8 +108,6 @@
         <dependency>
             <groupId>eu.exeris</groupId>
             <artifactId>exeris-kernel-tck</artifactId>
-            <classifier>tests</classifier>
-            <type>test-jar</type>
             <scope>test</scope>
         </dependency>
         <!-- JMH — required for JMH @State / @Benchmark annotations in benchmark classes -->
@@ -147,6 +159,11 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcprov-jdk18on</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Community persistence: PostgreSQL JDBC driver (optional runtime) -->
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -171,7 +188,7 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <version>2.3.232</version>
+            <version>2.5.252</version>
             <scope>test</scope>
         </dependency>
         <!-- Testcontainers: JUnit 5 integration + Neo4j module for parity IT -->
@@ -199,6 +216,7 @@
 
     <build>
         <plugins>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -264,6 +282,34 @@
                             -->
                             <groups>transport-pinning-recv</groups>
                             <excludedGroups>flamegraph,integration,stress</excludedGroups>
+                        </configuration>
+                    </execution>
+                    <!--
+                        Client TLS against OpenSSL's default trust (CommunityTlsDefaultTrustTest,
+                        @Tag("default-trust")). SSL_CERT_FILE and SSL_CERT_DIR decide what that
+                        default is, and they can only be set for a whole JVM, so the class runs in its
+                        own fork where they name a CA file the test writes and an empty directory.
+                        Elsewhere the tag is excluded, and the class fails rather than skips if it is
+                        run without these variables. Run alone with
+                        `mvn -pl exeris-kernel-community surefire:test@default-trust`.
+                    -->
+                    <execution>
+                        <id>default-trust</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <includes>
+                                <include>**/CommunityTlsDefaultTrustTest.java</include>
+                            </includes>
+                            <groups>default-trust</groups>
+                            <excludedGroups>flamegraph</excludedGroups>
+                            <failIfNoSpecifiedTests>false</failIfNoSpecifiedTests>
+                            <environmentVariables>
+                                <SSL_CERT_FILE>${project.build.directory}/default-trust/ca.pem</SSL_CERT_FILE>
+                                <SSL_CERT_DIR>${project.build.directory}/default-trust/empty</SSL_CERT_DIR>
+                            </environmentVariables>
                         </configuration>
                     </execution>
                 </executions>
@@ -350,7 +396,6 @@
                                     <executable>java</executable>
                                     <classpathScope>test</classpathScope>
                                     <arguments>
-                                        <argument>--enable-preview</argument>
                                         <argument>-XX:+UnlockExperimentalVMOptions</argument>
                                         <argument>${benchmark.jvm.gc}</argument>
                                         <argument>-Dbenchmark.jvmArgs=${benchmark.jvmArgs}</argument>

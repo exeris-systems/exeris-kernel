@@ -1,14 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.telemetry.CommunityJfrEventCatalogue;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
@@ -29,13 +26,22 @@ import java.util.function.UnaryOperator;
  *   <li>{@link #initialize()} — creates the {@link CommunityMemoryProvider} and its
  *       {@link MemoryAllocator} from the active kernel config; binds both into the
  *       scoped-value carrier via {@link #providerBindings()}.</li>
- *   <li>{@link #start()} — no-op; the allocator is ready from {@code initialize()}.</li>
+ *   <li>{@link #start()} — warms this tier's hot-path JFR event classes and marks the subsystem
+ *       running; the allocator itself is ready from {@code initialize()}.</li>
  *   <li>{@link #stop()} — closes the allocator, releasing all per-buffer arenas.</li>
  * </ol>
  *
- * @since 0.5.0
+ * <p>Extends {@link AbstractCommunitySubsystem} for its running flag, and that is load-bearing
+ * rather than tidiness. Two things read {@link Subsystem#isRunning()} and both go silent when it
+ * answers the interface default {@code false}: {@code SubsystemOrchestrator.shutdown()} skips the
+ * subsystem, so the {@code memoryAllocator.close()} below never runs and every arena this tier holds
+ * leaks for the life of the JVM; and the orchestrator gates the Core warm-up on the same answer, so
+ * the Core {@code memory} event group — the allocation events, the hottest in the catalogue — is
+ * never warmed. A subsystem here that holds a resource must report through {@code markRunning}.
+ *
+ * @since 0.5
  */
-final class CommunityMemorySubsystem implements Subsystem {
+final class CommunityMemorySubsystem extends AbstractCommunitySubsystem {
 
     private MemoryProvider  memoryProvider;
     private MemoryAllocator memoryAllocator;
@@ -67,7 +73,20 @@ final class CommunityMemorySubsystem implements Subsystem {
 
     @Override
     public void start() {
-        // Allocator is ready after initialize() — nothing extra to start.
+        if (memoryAllocator != null) {
+            // This driver's hot-path JFR event classes initialise here, on the thread that starts
+            // the subsystem: a virtual thread inside a <clinit> pins its carrier for the whole of
+            // it. Behind the same check markRunning takes, as every other Community subsystem does.
+            //
+            // This tier has no provider to fail to find — initialize() always builds an allocator —
+            // so the guard reads as start() reached without initialize(). That is the only state in
+            // which there is nothing to warm and nothing to stop.
+            CommunityJfrEventCatalogue.warmHotPath(name());
+        }
+        // The allocator needs nothing else started; what start() owes is the running flag, because
+        // stop() below has a resource to release and the orchestrator reads isRunning() to decide
+        // whether to call it.
+        markRunning(memoryAllocator != null);
     }
 
     @Override
@@ -75,6 +94,7 @@ final class CommunityMemorySubsystem implements Subsystem {
         if (memoryAllocator != null) {
             memoryAllocator.close();
         }
+        markRunning(false);
     }
 
     @Override

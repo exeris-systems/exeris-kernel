@@ -21,14 +21,14 @@ on:
 env:
   # ADR-066 — the build baselines on JDK 25 LTS.
   #
-  # --enable-preview stays because TEST and TCK fixtures still use StructuredTaskScope and are
-  # compiled with it (they are not distributed); main sources are preview-clean, which the
-  # Preview-Bytecode Gate below asserts against the shipped class files rather than the sources.
+  # No --enable-preview anywhere on this line: no source under this repository uses a preview
+  # API, test fixtures included. That keeps the build portable: --enable-preview is legal only
+  # when --release equals the running JDK, so without it any JDK >= 25 can build the GA line.
   #
-  # --enable-final-field-mutation was REMOVED, not overlooked: it is a JDK 26 flag (JEP 500
+  # --enable-final-field-mutation is absent deliberately: it is a JDK 26 flag (JEP 500
   # integrity-by-default) and JDK 25 refuses to start with it. There is nothing to re-enable on
   # 25, since that is the release the restriction has not reached yet.
-  MAVEN_OPTS: "--enable-preview --enable-native-access=ALL-UNNAMED"
+  MAVEN_OPTS: "--enable-native-access=ALL-UNNAMED"
   JDK_URL: "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.4%2B7/OpenJDK25U-jdk_x64_linux_hotspot_25.0.4_7.tar.gz"
   JDK_SHA256: "e58fcdcd637b25c03ca84cbbcefc70d11efb8f4b4cbd05decc9f661769d77f94"
   JDK_CACHE_KEY: "jdk-25.0.4-7-linux-x64"
@@ -117,16 +117,141 @@ jobs:
         # stamp is what a consumer trips over, it survives generated and processor-emitted code
         # that a grep would miss, and it cannot be satisfied by a comment claiming compliance.
         #
-        # Test and TCK fixtures are out of scope by design — 26 of them still use
-        # StructuredTaskScope, compile with --enable-preview, and are never published.
+        # Test and TCK fixtures are in scope too: nothing on this line compiles with
+        # --enable-preview, so the gate describes the whole line, not only the shipped classes.
         run: tools/preview-bytecode-scan/preview-bytecode-scan.sh --expect-major 69
 
+      - name: Module-Name Gate
+        # Every published jar must carry an Automatic-Module-Name. A jar without one is still
+        # usable on the module path — the JDK derives a name from the FILE NAME — and that derived
+        # name becomes a de-facto contract from the first release a consumer compiles against.
+        # So the failure is silent here and expensive at the far end, which is what makes it a gate
+        # rather than a convention.
+        #
+        # This step IS the guarantee: an unset `exeris.module.name` does not fail the build. With
+        # the config inherited from the root pluginManagement and no local plugin declaration, the
+        # property goes unresolved and the manifest entry is simply omitted — the jar ships
+        # nameless and green. So the script
+        # discovers every jar the reactor produced rather than checking a hand-maintained list,
+        # because a new module would otherwise be uncovered by default.
+        #
+        # Placed in the job that already built the reactor, for the same reason the preview gate is:
+        # it reads the artifacts rather than rebuilding them.
+        run: tools/module-name-check/module-name-check.sh
+      - name: Scope-Register Gate
+        # Keeps docs/release/1.0-scope.md and docs/ROADMAP.md from drifting. The roadmap owns the
+        # analysis and carries a `**1.0 disposition:**` per item; the register owns the state.
+        # Without this check nothing connects them, and an item can be dispositioned and never
+        # tracked.
+        #
+        # Checks set equality of headings, not correctness of a recorded state -- nothing can check
+        # the latter, and the register puts every state behind a named check or the word
+        # `unverified` for exactly that reason.
+        #
+        # Docs-only, so it needs no build artifact; it sits here rather than in its own job because
+        # a second checkout would cost more than the check.
+        run: tools/scope-register-check/scope-register-check.sh
+      - name: Eval-Consistency Gate
+        # Keeps .agents/evals/scenarios.yaml's header honest about its own contents. The suite
+        # states how many of its cases assert a REFUSAL to escalate, and that number is the whole
+        # argument that it is not skewed toward positives — the failure its own header names, since
+        # a suite of only positive cases passes against an agent that blocks everything. A count
+        # written in prose goes stale the moment a case is added without the sentence.
+        #
+        # It also asserts the property the count is shorthand FOR — that the `negative` tag and the
+        # expectation agree in both directions — because `--tags negative` is how the number is
+        # meant to be derivable rather than remembered, and a mistagged case makes that selector
+        # answer for the wrong set.
+        #
+        # Docs-and-sources only, so it needs no build artifact.
+        run: tools/eval-consistency-check/eval-consistency-check.sh
+      - name: Error-Code Registry Gate
+        # Keeps KernelErrorCodes and docs/subsystems/exceptions.md in agreement, both directions,
+        # plus the single-source-of-truth rule the registry rests on.
+        #
+        # Without it the two drift silently: a code with no doc row, or an EX- code stamped as a
+        # bare string literal outside the registry, fails nothing else in the build.
+        #
+        # Docs-and-sources only, so it needs no build artifact -- same reasoning as the gate above.
+        run: tools/error-code-registry-check/error-code-registry-check.sh
+      - name: Checkstyle Parity Gate
+        # exeris-kernel-tck runs a second Checkstyle config, because its main sources are contract
+        # tests. The PMD ruleset beside it can reference the kernel's and exclude from it, so it
+        # stays a live view; Checkstyle has no config inheritance, so its TCK config is a copy and
+        # the format offers no guarantee at all.
+        #
+        # The failure that copy invites is silent and one-directional: a module added to
+        # checkstyle.xml stops short of ~130 classes, and nothing fails, because the TCK config is
+        # by itself still valid. This gate compares the two module by module and property by
+        # property against a delta the TCK config declares about itself.
+        #
+        # Config-only, so it needs no build artifact — same reasoning as the two gates above.
+        run: tools/checkstyle-parity-check/checkstyle-parity-check.sh
+
+      - name: SPI Contract-Blindness Gate
+        # exeris-kernel-spi states obligations. This fails when a contract position states instead
+        # what one shipped driver happens to do today.
+        #
+        # It is a gate rather than a review note because the drift is invisible at review time and
+        # arrives disguised as a correction. When a Javadoc claim is refuted, the cheap repair is to
+        # rewrite the claim to match the code that falsified it — for an implementation that is the
+        # right repair, and for an implementation-blind SPI (ADR-006) it inverts the contract: the
+        # interface stops saying what an implementer owes and starts reporting what one binding
+        # does, defect included. That reads as newly accurate, passes every other gate, and ships to
+        # Maven Central as the contract.
+        #
+        # The pattern is anchored on a tier or driver as the SUBJECT of a present-tense report, not
+        # on tense words alone, which would flag legitimate obligation sentences. Tier-conditional
+        # obligations stay allowed: the open-core tiers are part of this SPI's contract. The facts
+        # are not deleted either, they move to @implNote, which javadoc-conventions.md rule 6 names
+        # as their home.
+        #
+        # Sources-only, so it needs no build artifact — same reasoning as the three gates above.
+        run: tools/spi-contract-blindness-check/spi-contract-blindness-check.sh
+
+      - name: Supply-Chain Gate
+        # Two checks, deliberately at different ends of the build.
+        #
+        # `artifact:check-buildplan` reads the BUILD PLAN, so it fails on a newly added plugin that
+        # cannot produce reproducible output before that plugin has published anything. It needs no
+        # artifacts and would work on an empty target/; it is here rather than in its own job only
+        # because a separate job would spend a JDK download on a five-second check.
+        #
+        # The SBOM gate reads the artifacts this job just built, same as the preview gate above. It
+        # exists because the failure mode of an SBOM is a file that is present and wrong — empty
+        # component list, stale version, restored random serial — and each of those reads as success
+        # to anything that merely checks the file is there.
+        #
+        # Placed in the root job knowingly: every other job depends on this one, so a failure here
+        # takes the pipeline down. That is correct for this gate and not for the Sonar step below —
+        # the distinction is whether the failure is about the code under test. A plugin that breaks
+        # reproducibility, or an SBOM that misdescribes the jar, is a change someone made in this
+        # diff.
+        run: |
+          mvn -B org.apache.maven.plugins:maven-artifact-plugin:3.6.0:check-buildplan
+          tools/sbom-gate/sbom-gate.sh
+
+      - name: Upload SBOMs
+        # Published beside each artifact by `mvn deploy` (classifier `cyclonedx`), so this upload is
+        # not the distribution channel — it is what makes the SBOMs readable for a run that never
+        # deploys, which is every pull request.
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom-${{ github.run_number }}
+          path: |
+            target/bom.json
+            exeris-kernel-*/target/bom.json
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: SonarQube Cloud Analysis
+        id: sonar
         # Runs in this job, immediately after the build, so it consumes the compiled classes and the
-        # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. That reuse is the
-        # whole point: SonarCloud Automatic Analysis never builds the project, so the
-        # `sonar.coverage.jacoco.xmlReportPaths` in sonar-project.properties could never resolve and
-        # coverage on new code read 0.0% on every pull request regardless of the tests written.
+        # JaCoCo XML that `-P coverage` just produced rather than rebuilding them. SonarCloud
+        # Automatic Analysis never builds the project, so it cannot resolve
+        # `sonar.coverage.jacoco.xmlReportPaths` and reports no coverage; this step is what gives
+        # new code a coverage figure.
         #
         # Skipped when the secret is absent (forked pull requests) — a missing token must not fail
         # the build gate.
@@ -136,22 +261,88 @@ jobs:
         # down every merge gate for a reason unrelated to the code under test. Static analysis is not
         # a correctness gate here and must never be able to do that.
         #
-        # It is load-bearing right now, not just prudent: the SonarQube Cloud organisation is
-        # currently without an administrator, so Automatic Analysis cannot be switched off — and
-        # SonarQube Cloud *rejects* a CI submission while it is enabled. Until that is resolved this
-        # step is expected to fail whenever a token is present.
+        # The Maven scanner, not the standalone CLI one: the CLI scanner has to be handed the
+        # analysis classpath, and a glob over the project tree cannot reach the local Maven
+        # repository, so it sees the reactor jars and none of a module's dependency jars —
+        # sonar-java would then resolve neither JUnit nor AssertJ nor the Postgres driver. The Maven
+        # plugin derives `sonar.java.libraries` and `sonar.java.test.libraries` per module from the
+        # reactor, and brings every reactor module into scope with its own sources, so each
+        # imported JaCoCo report has sources to land on. tools/jfr-reporter sits outside the reactor
+        # deliberately and carries its own tests (the jfr-reporter job): adding it to the root
+        # module's sources would analyse it without its own dependencies and misreport its coverage.
         #
-        # REMOVE once a CI-based analysis has been confirmed green; leaving it in permanently would
-        # let the analysis rot silently.
-        #
-        # Pinned by commit SHA, not by tag. Two high-severity advisories (GHSA-f79p-9c5r-xg88,
-        # GHSA-5xq9-5g24-4g6f) cover every 4.x/5.x release of this action, so `@v5` resolved to a
-        # vulnerable revision and failed the Dependency Review gate on PRs into main; both are
-        # cleared from 6.0.0 onward. The SHA below is tag v8.2.1. A moving tag is also mutable —
-        # SHA-pinning is what makes the reviewed revision the one that actually runs.
+        # The plugin version is pinned in the root POM's pluginManagement; the goal is invoked by
+        # full coordinates so the pin is what resolves, rather than a prefix lookup that would take
+        # the newest release. No third-party action is involved.
         continue-on-error: true
         if: ${{ env.SONAR_TOKEN != '' }}
-        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        # `verify` runs in the SAME command as the analysis, and that is load-bearing rather than
+        # belt-and-braces. Invoked alone, `sonar:sonar` starts a session in which no module has been
+        # packaged, so Maven cannot resolve a reactor sibling to a jar and falls back to the local
+        # repository — where the previous step, which runs `verify` and not `install`, has put
+        # nothing. Maven says so before the goal starts (`The following dependencies could not be
+        # resolved at this point of the build but seem to be part of the reactor`), and the analysis
+        # then logs `Unresolved imports/types have been detected during analysis` in every module
+        # with a reactor dependency. A local run can hide this: an earlier `mvn clean install`
+        # leaves the sibling jars in ~/.m2, where CI has none.
+        #
+        # Tests and lint are skipped here because the step before this one ran both, on the same
+        # tree, without skip flags. This invocation exists to put the reactor in a resolvable state,
+        # not to re-verify it.
+        #
+        # A `Use of preview features` warning from the analyser is not a finding about the code:
+        # `--release 25` without `--enable-preview` makes a preview feature a compile error, and the
+        # preview-bytecode gate reads class-file major 69 with no preview stamp.
+        run: |
+          mvn -B -e -DskipTests -Dpmd.skip=true -Dcheckstyle.skip=true \
+            verify -P coverage \
+            org.sonarsource.scanner.maven:sonar-maven-plugin:sonar
+
+      - name: Say so when the Sonar analysis failed
+        # `continue-on-error` above reports the step as `success` whatever the goal did, so a failed
+        # analysis and a clean one are indistinguishable in the job summary and in `gh pr checks`.
+        # A scanner that dies (an `HTTP 500` from sonarcloud.io, say) shows only as the required
+        # `SonarCloud Code Analysis` context never arriving, which reads as a SonarCloud
+        # integration problem rather than as a failed run.
+        #
+        # This step does not fail the job either, for the reason the one above does not: this job is
+        # the root of the pipeline and eight others depend on it. It makes the failure legible.
+        if: ${{ always() && steps.sonar.outcome == 'failure' }}
+        run: |
+          {
+            echo "### SonarQube Cloud analysis FAILED"
+            echo
+            echo "The scanner did not complete, so no analysis was submitted and the required"
+            echo "\`SonarCloud Code Analysis\` status will not appear on this commit."
+            echo
+            echo "The build itself is unaffected — this step does not gate the pipeline."
+            echo "Read the \`SonarQube Cloud Analysis\` step's log in [this run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) for the scanner's own error."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: JFR writer to reader, end to end
+        # The only job on a pull request that has real recordings: parse-jfr-to-json needs the
+        # artefact uploaded below, and both it and the upload are main-only. Without this step the
+        # writer (exeris-kernel-tck) and the reader (tools/jfr-reporter) are never run against each
+        # other before a merge - each side's own suite passes against its own fixture, which is how
+        # a renamed marker field would reach the published report unnoticed.
+        run: |
+          set -euo pipefail
+          mvn -f tools/jfr-reporter/pom.xml -q -B clean package -DskipTests
+          jar=$(ls tools/jfr-reporter/target/jfr-reporter-*.jar 2>/dev/null | grep -v original | head -1)
+          if [ -z "$jar" ]; then
+            echo "ERROR: jfr-reporter shaded JAR not found" >&2
+            exit 1
+          fi
+          java -jar "$jar" \
+            --core exeris-kernel-core/target/ --community exeris-kernel-community/target/ \
+            --commit "${{ github.sha }}" --branch "${{ github.ref_name }}" \
+            --out build/jfr-e2e/
+          # At least one recording must have been identified by its marker. Zero means the two
+          # sides no longer agree on the event, whatever each one's own tests say.
+          jq -e '[.. | objects | select(.window_source? == "marker")] | length >= 1' \
+            build/jfr-e2e/evidence.json > /dev/null
+          echo "Unattributed reasons seen:"
+          jq '[.. | objects | select(has("reason")) | .reason] | unique' build/jfr-e2e/jfr-summary.json
 
       - name: Upload TCK JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -239,7 +430,18 @@ jobs:
           # Highest released version, NOT `git describe`: patch releases are cut on main, so on a
           # development/* branch the last *reachable* tag can be older than the latest published
           # one. Reachability is irrelevant — this compares two API surfaces, not two histories.
-          BASELINE="$(git tag --sort=-v:refname --list 'v*' | head -1)"
+          # Strict vMAJOR.MINOR.PATCH, not a bare `v*` glob. A glob picks the highest tag matching
+          # a pattern, so any tag that lands inside it decides the baseline — and
+          # `git tag --sort=-v:refname` sorts `v0.11.0-preview` ABOVE `v0.11.0`. One suffixed tag on
+          # the preview line would make THIS line diff its SPI against a tree that is not its
+          # ancestor: value classes, StructuredTaskScope signatures, a baseline that is garbage in
+          # either direction. The preview line tags `preview/vX.Y.Z` for that reason, but a naming
+          # convention nobody can enforce is not a guard — this is.
+          # `|| true` is load-bearing under `set -euo pipefail`, not defensive noise. grep exits 1
+          # when it matches nothing, pipefail makes that the pipeline's status, and an assignment
+          # from a failing command substitution aborts under -e — so without it the "no release tag
+          # found" branch below is UNREACHABLE and the job hard-fails instead.
+          BASELINE="$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
           if [ -z "$BASELINE" ]; then
             echo "no release tag found — nothing to compare against"; exit 0
           fi
@@ -632,9 +834,12 @@ jobs:
       # suddenly EXCLUDE every untagged core test — including the
       # CoreOpenSslPinnedVersionAssertionTest 4.0-vs-fallback-3.x false-green guard.
       # The split removes that dependency on the undeclared pom asymmetry: the core
-      # guards run as plain Surefire selection (no group flags), the loopback IT runs
-      # via Failsafe (verify phase), and the community @Tag("integration") loopback
-      # runs with the group flag scoped to the one module that honors it.
+      # guards run as plain Surefire selection (no group flags), the core ITs run via
+      # Failsafe (verify phase), and the community suites run as plain -Dtest selection
+      # too, which the community targeted-test-run profile turns into "exclude
+      # flamegraph only", so the tagged loopback and pin classes named there run. A
+      # final step reads the reports and fails on a listed class that skipped or ran
+      # nothing, since either reports green.
       # ---------------------------------------------------------------------------
       - name: Run core crypto/TLS guards against OpenSSL ${{ matrix.openssl_version }}
         # HARD-RUN: the pinned lib is present and selected via env override, so the
@@ -656,35 +861,102 @@ jobs:
             -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
             test -B -e
 
-      - name: Run core TLS loopback IT against OpenSSL ${{ matrix.openssl_version }}
-        # Belt-and-braces end-to-end proof (finding #2): the loopback IT is a Failsafe
-        # test (**/*IT.java, integration-test/verify phase). It was previously listed
-        # under `-Dtest` on a `test`-phase invocation, so it NEVER ran. Run it explicitly
-        # via the verify phase + -Dit.test so the full SSL_accept/SSL_connect round-trip
-        # is exercised against each pinned major. The assumeTrue OpenSSL guard does not
-        # skip here because the pinned lib is present via the env override.
+      - name: Run core TLS ITs against OpenSSL ${{ matrix.openssl_version }}
+        # End-to-end proof: the full SSL_accept/SSL_connect round-trip, the thread's error queue
+        # after a refused handshake, and a client's verification of its server, against each
+        # pinned major. These are Failsafe tests (**/*IT.java), selected by -Dit.test, never by
+        # -Dtest. The Failsafe goals are invoked directly, on the classes the install and the
+        # previous step compiled, because the verify lifecycle would run Surefire first:
+        # Surefire has no property that skips it without skipping Failsafe too
+        # (surefire.skip is not one of its properties), so a lifecycle run re-runs the whole Core
+        # unit suite and overwrites the previous step's reports, the pinned-version guard's among
+        # them, with a run that has no -Dexeris.test.expectedOpenSslMajor. The OpenSSL guards do
+        # not skip here because the pinned lib is present via the env override.
         env:
           EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
           EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
         run: |
           mvn -pl exeris-kernel-core \
-            -Dsurefire.skip=true \
-            -Dit.test=OffHeapTlsEngineLoopbackIT \
-            verify -B -e
+            -Dit.test='OffHeapTlsEngineLoopbackIT,OffHeapTlsEngineErrorQueueIT,OffHeapTlsEnginePeerVerificationIT' \
+            failsafe:integration-test failsafe:verify -B -e
 
-      - name: Run community TLS loopback integration against OpenSSL ${{ matrix.openssl_version }}
-        # Community @Tag("integration") loopback — the group flag is scoped to the one
-        # module whose pom wires <groups>${includedGroups}</groups>, so it behaves as
-        # intended here (unlike the cross-module single-call form).
+      - name: Run community TLS suites against OpenSSL ${{ matrix.openssl_version }}
+        # Selected purely by -Dtest, with NO group flags: -Dtest activates this module's
+        # targeted-test-run profile, which excludes only flamegraph, so the @Tag("integration")
+        # loopback and the @Tag("openssl-matrix") pin run beside the untagged suites.
+        # CommunityOpenSslPinnedMajorTest does for this JVM what CoreOpenSslPinnedVersionAssertionTest
+        # does for Core's: it fails unless the Community provider bound the pinned major, so an env
+        # override that stops reaching this module cannot turn the other suites into a run against
+        # the runner's own OpenSSL. CommunityTlsDefaultTrustTest is not listed: its tag would run it
+        # here without the SSL_CERT_* variables it needs; the next step runs it in its own fork.
+        # -Dsurefire.failIfNoSpecifiedTests=false keeps the module's other executions, which select
+        # none of these classes, from failing; the report check below is what refuses a class that
+        # ran nothing.
         env:
           EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
           EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
         run: |
           mvn -pl exeris-kernel-community \
-            -DincludedGroups=integration \
-            -DexcludedGroups= \
-            -Dtest='CommunityTlsEngineLoopbackIntegrationTest' \
+            -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
+            -Dsurefire.failIfNoSpecifiedTests=false \
+            -Dtest='CommunityOpenSslPinnedMajorTest,CommunityTlsEngineLoopbackIntegrationTest,CommunityHttpClientTlsPeerVerificationTckTest,CommunityTlsPeerVerificationTest,CommunityTlsServerErrorQueueTest,CommunityServerContextErrorQueueTest,CommunityClientTrustOpeningTest,CommunityClientEngineAssemblyTest,NativeTcpTransportProviderClientTlsTest,TransportTlsDecisionTest,CommunityHttpDualSelfDialTest,NativeTcpCarrierCloseRacesConnectTest,CommunityS3EndpointSchemeTest,CommunityS3BootedEndpointSchemeTest' \
             test -B -e
+
+      - name: Run community default-trust suite against OpenSSL ${{ matrix.openssl_version }}
+        # The default-trust Surefire execution forks a JVM whose SSL_CERT_FILE and SSL_CERT_DIR
+        # name a CA file the suite writes and an empty directory, so a client with no configured
+        # trust verifies against the pinned build's default trust as those variables define it.
+        env:
+          EXERIS_OPENSSL_SSL_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libssl.so.${{ matrix.soname_major }}"
+          EXERIS_OPENSSL_CRYPTO_PATH: "${{ env.OPENSSL_PREFIX }}/lib64/libcrypto.so.${{ matrix.soname_major }}"
+        run: |
+          mvn -pl exeris-kernel-community surefire:test@default-trust -B -e
+
+      - name: Refuse skipped or empty TLS suites for OpenSSL ${{ matrix.openssl_version }}
+        # A skipped test reports green, and so does a -Dtest pattern that matched nothing. Every
+        # class named here must have a report, at least one test run and none skipped. The Core
+        # TCK bindings (CoreOffHeapTlsEngineTckTest, CoreOffHeapTlsEngineZeroAllocTckTest) are not
+        # listed: they skip cases by design.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          failed=0
+          require_ran() {
+            local dir=$1 cls=$2 tests=0 skipped=0 file head t s
+            local files=("$dir"/TEST-*."$cls".xml "$dir"/TEST-*."$cls"'$'*.xml)
+            if [ ${#files[@]} -eq 0 ]; then
+              echo "::error::$cls: no report in $dir"
+              failed=1
+              return
+            fi
+            for file in "${files[@]}"; do
+              head=$(grep -m1 -o '<testsuite [^>]*' "$file" || true)
+              t=$(grep -o ' tests="[0-9]*"' <<<"$head" | tr -dc '0-9' || true)
+              s=$(grep -o ' skipped="[0-9]*"' <<<"$head" | tr -dc '0-9' || true)
+              tests=$((tests + ${t:-0}))
+              skipped=$((skipped + ${s:-0}))
+            done
+            echo "$cls: tests=$tests skipped=$skipped"
+            if [ "$tests" -eq 0 ] || [ "$skipped" -gt 0 ]; then
+              echo "::error::$cls ran $tests tests and skipped $skipped against OpenSSL ${{ matrix.openssl_version }}"
+              failed=1
+            fi
+          }
+          require_ran exeris-kernel-core/target/surefire-reports CoreOpenSslPinnedVersionAssertionTest
+          for cls in OffHeapTlsEngineLoopbackIT OffHeapTlsEngineErrorQueueIT OffHeapTlsEnginePeerVerificationIT; do
+            require_ran exeris-kernel-core/target/failsafe-reports "$cls"
+          done
+          for cls in CommunityOpenSslPinnedMajorTest CommunityTlsEngineLoopbackIntegrationTest \
+                     CommunityHttpClientTlsPeerVerificationTckTest CommunityTlsPeerVerificationTest \
+                     CommunityTlsServerErrorQueueTest CommunityServerContextErrorQueueTest \
+                     CommunityClientTrustOpeningTest CommunityClientEngineAssemblyTest \
+                     NativeTcpTransportProviderClientTlsTest TransportTlsDecisionTest \
+                     CommunityHttpDualSelfDialTest NativeTcpCarrierCloseRacesConnectTest \
+                     CommunityS3EndpointSchemeTest CommunityS3BootedEndpointSchemeTest \
+                     CommunityTlsDefaultTrustTest; do
+            require_ran exeris-kernel-community/target/surefire-reports "$cls"
+          done
+          exit "$failed"
 
       - name: Upload OpenSSL ${{ matrix.openssl_version }} TLS JFR recordings
         if: always() && (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
@@ -700,7 +972,20 @@ jobs:
     # TODO: point runs-on to a dedicated bare-metal runner when available
     runs-on: ubuntu-latest
     needs: build-and-verify
-    if: (github.event_name == 'push' || github.event_name == 'schedule') && github.ref == 'refs/heads/main'
+    # Runs on a pull request INTO main as well as on main itself. A pull request into main is a
+    # release integration, and the benchmarks are the only thing in this workflow that would notice
+    # a milestone's worth of accumulated allocation or throughput regression - running them only
+    # after the merge means finding it in a release that has already landed.
+    #
+    # Nothing is reported from a pull-request run: publish-gh-pages-data is gated on
+    # push/schedule + refs/heads/main, so no number reaches data/jmh from here. The results are kept
+    # as run artifacts so a regression can be read afterwards, and nothing gates on them - JMH on a
+    # shared runner is too noisy to fail a merge over, which is why this job is not a required
+    # check (.github/branch-protection.md).
+    if: >-
+      ((github.event_name == 'push' || github.event_name == 'schedule')
+        && github.ref == 'refs/heads/main')
+      || (github.event_name == 'pull_request' && github.base_ref == 'main')
     permissions:
       contents: read
 
@@ -783,6 +1068,49 @@ jobs:
           path: exeris-kernel-core/target/jfr-reports/jmh-benchmarks.jfr
           if-no-files-found: warn
           retention-days: 14
+
+  jfr-reporter:
+    # The reporter's tests would otherwise run only inside parse-jfr-to-json, which is main-only:
+    # a pull request that broke the reader would merge green and be found by the publish job. This
+    # job builds and tests the tool on every push and pull request, and is a REQUIRED check
+    # (.github/branch-protection.md) — a merge that breaks the reader publishes a wrong report
+    # rather than a broken build. The writer/reader equivalence step lives in build-and-verify,
+    # where the recordings are.
+    name: JFR Reporter build & tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache JDK tarball
+        id: jdk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/jdk.tar.gz
+          key: ${{ env.JDK_CACHE_KEY }}
+
+      - name: Fetch JDK
+        if: steps.jdk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          wget -q -O ${{ runner.temp }}/jdk.tar.gz ${{ env.JDK_URL }}
+          echo "${{ env.JDK_SHA256 }}  ${{ runner.temp }}/jdk.tar.gz" | sha256sum -c
+
+      - name: Inject JDK into Runner
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: 'jdkfile'
+          jdkFile: ${{ runner.temp }}/jdk.tar.gz
+          java-version: ${{ env.JDK_VER }}
+          architecture: x64
+          cache: maven
+
+      - name: Build and test the reporter
+        # Not -q: the surefire "Tests run:" line is the evidence that the tests ran.
+        run: mvn -f tools/jfr-reporter/pom.xml clean verify -B
 
   parse-jfr-to-json:
     name: Parse JFR → Lab JSON

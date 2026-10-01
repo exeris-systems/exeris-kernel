@@ -28,7 +28,7 @@ The Core is the high-performance engine of Exeris. It orchestrates the boot proc
 
 ## ⚖️ Licence
 
-This module is licensed under the **Apache License 2.0 with Commons Clause**.
+This module is licensed under the **Apache License, Version 2.0** (`SPDX-License-Identifier: Apache-2.0`).
 See the [LICENSE](LICENSE) file in this directory for the full text.
 
 **In brief:** you may use, modify, fork, and redistribute this module in any

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.util;
 
@@ -12,18 +8,15 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * SPI-internal diagnostic utilities — safe formatting for log output, JFR events,
- * and exception messages.
+ * SPI-internal diagnostic utilities — safe formatting for log output, JFR events, and exception
+ * messages.
  *
- * <h2>UUID Masking</h2>
- * <p>All UUID-bearing SPI types ({@code ImmutablePrincipal}, {@code PathResult}, etc.)
- * MUST use {@link #maskUuid(UUID)} for {@code toString()} output to prevent accidental
- * exposure of node/identity UUIDs in logs or telemetry.
+ * <p>Pure static utility: no instances, no state, no dependency injection.
  *
- * <h2>Non-Instantiable</h2>
- * <p>Pure static utility — no instances, no state, no DI.
- *
- * @since 0.5.0
+ * @apiNote Every UUID-bearing SPI type ({@code ImmutablePrincipal}, {@code PathResult}, etc.) must
+ *          use {@link #maskUuid(UUID)} for its {@code toString()} output, to keep node and identity
+ *          UUIDs out of logs and telemetry.
+ * @since 0.5
  */
 public final class SpiDiagnostics {
 

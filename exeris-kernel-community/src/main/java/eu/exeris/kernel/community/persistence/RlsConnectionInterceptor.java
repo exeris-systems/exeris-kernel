@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -26,14 +22,17 @@ import eu.exeris.kernel.spi.security.StorageContext;
  *
  * <h2>Isolation Strategy Routing</h2>
  * <table>
+ *   <caption>SQL issued per isolation strategy</caption>
  *   <tr><th>Strategy</th><th>SQL issued</th></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SHARED}</td>
  *       <td>{@code set_config('exeris.tenant_id', $1, false)} and
- *           {@code set_config('exeris.shared_scope', $2, false)} in one statement</td></tr>
+ *           {@code set_config('exeris.shared_scope', $2, false)} in one statement,
+ *           then {@code RESET search_path}</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#SEPARATED_SCHEMA}</td>
  *       <td>{@code SET search_path TO &lt;schemaName&gt;, public}, then the same session-key statement</td></tr>
  *   <tr><td>{@link StorageContext.IsolationStrategy#DEDICATED}</td>
- *       <td>Routing is handled at the pool level by the engine; the session-key statement is issued anyway</td></tr>
+ *       <td>Routing is handled at the pool level by the engine; the session-key statement
+ *           is issued anyway, then {@code RESET search_path}</td></tr>
  * </table>
  *
  * <p><b>Every strategy publishes both session keys.</b> Physical placement decides which connection a
@@ -45,20 +44,53 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <p>{@code exeris.shared_scope} is published alongside the tenant key on every strategy, because
  * row-visibility is orthogonal to physical placement. The interceptor only <em>publishes</em> the
  * setting; whether reads actually widen is decided by the deployment's own RLS policy, which the kernel
- * does not ship and cannot introspect. A conforming policy widens the read predicate and leaves the write
- * predicate pinned to the owner:
+ * does not ship and cannot introspect. A conforming policy is two policies: an owner-pinned one for every
+ * command, and an additive one that widens {@code SELECT} only:
  *
- * <pre>{@code
- * CREATE POLICY tenant_isolation ON <table>
- *   USING (tenant_id = current_setting('exeris.tenant_id', true)
- *          OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL
- *              AND shared_scope = current_setting('exeris.shared_scope', true)))
+ * {@snippet lang="sql" :
+ * ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
+ * ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
+ *
+ * CREATE POLICY tenant_isolation ON table_name
+ *   USING (tenant_id = current_setting('exeris.tenant_id', true))
  *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true));
- * }</pre>
  *
- * <p>Note that {@code WITH CHECK} is unchanged from the tenant-private policy — owner-scoped write is
- * what the existing clause already expresses, so widening reads does not require relaxing writes. A
- * tenant can read its partition-mates' rows and still only ever write its own.
+ * CREATE POLICY shared_scope_read ON table_name FOR SELECT
+ *   USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''));
+ * }
+ *
+ * <p><b>The widening is its own {@code FOR SELECT} policy, never a wider {@code USING} on the owner
+ * policy.</b> A policy without a {@code FOR} clause applies to every command, and its {@code USING}
+ * decides which existing rows {@code UPDATE} and {@code DELETE} can reach, not only which rows
+ * {@code SELECT} returns. Widened there, it lets a tenant delete a partition-mate's shared row, and
+ * re-own one with {@code UPDATE ... SET tenant_id = <self>}, which a {@code WITH CHECK} pinned to the
+ * acting tenant accepts. ADR-012 §4b.4 forbids both. PostgreSQL ORs permissive policies per command, so
+ * {@code SELECT} sees the owner's rows plus the shared scope's, while {@code INSERT}, {@code UPDATE} and
+ * {@code DELETE} see the owner policy alone. {@code NULLIF} makes a cleared scope ({@code ''}) match no
+ * row, including rows whose own tag is empty.
+ *
+ * <p><b>{@code FORCE} is not optional, and leaving it out fails open.</b> PostgreSQL exempts a table's
+ * owner from that table's own policies unless the table is forced. A deployment whose application
+ * connects as the role owning its tables — the default in every quick-start — therefore gets a policy
+ * that is enabled, listed in {@code pg_policies}, and never applied: no error, no warning, other
+ * tenants' rows in every read. The three integration tests that hold this contract
+ * ({@code CommunityPersistenceTenantIsolationIT}, {@code CommunityPersistenceSharedScopeIT},
+ * {@code CommunityPersistenceIsolationLeakTckIT}) all issue both statements <em>and</em> connect as a
+ * non-owner role, so what they verify is the property a forced table has.
+ *
+ * <p><b>The comparison above is text-to-text, and that assumption is load-bearing.</b>
+ * {@code current_setting} returns {@code text} and the tested schema declares {@code tenant_id TEXT},
+ * so an unset key arrives as {@code ''}, matches no row, and fails closed. A deployment whose
+ * {@code tenant_id} column is {@code uuid} must cast — and the cast turns that same {@code ''} into
+ * {@code invalid input syntax for type uuid: ""} on every query against every scoped table, because
+ * {@link #publishSessionKeys} publishes the key unconditionally (as {@code ''} when the context
+ * declares no tenant) and a session-scoped setting survives connection reuse. Such a policy needs the
+ * empty-string guard on the tenant arm too, the way the shared-scope arm already carries it:
+ * {@code tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid}.
+ *
+ * <p>The owner policy is the tenant-private policy, unchanged: owner-scoped write is what it already
+ * expresses, so widening reads adds a policy rather than relaxing one. A tenant can read its
+ * partition-mates' rows and still only ever insert, update or delete its own.
  *
  * <h2>The Agnostic Data Principle</h2>
  * <p>This interceptor is <b>identity-blind</b> — it never imports
@@ -75,7 +107,7 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <p>Uses {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} (ScopedValue, JEP 506) —
  * zero {@code ThreadLocal}, zero VT pinning risk.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see ConnectionInterceptor
  * @see StorageContext
  * @see eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT
@@ -95,7 +127,8 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
      * <p>Uses parameterised bind to prevent SQL injection (isolationKey is untrusted data).
      */
     private static final String SQL_SET_SESSION_KEYS =
-            "SELECT set_config('exeris.tenant_id', ?, false), set_config('exeris.shared_scope', ?, false)";
+            "SELECT set_config('" + SESSION_KEY_TENANT_ID + "', ?, false), "
+                    + "set_config('" + SESSION_KEY_SHARED_SCOPE + "', ?, false)";
 
     private static final String SQL_SET_SCHEMA_PREFIX = "SET search_path TO ";
     private static final String SQL_SET_SCHEMA_SUFFIX = ", public";
@@ -128,13 +161,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
                                      StorageContext storageContext) {
         StorageContext.IsolationStrategy strategy = storageContext.strategy();
 
-        // A switch EXPRESSION, so javac requires every constant to be answered. As a statement it did
+        // A switch EXPRESSION, so javac requires every constant to be answered. A statement does
         // not: a strategy added later would match no arm and fall straight through, publishing
         // neither session key on a pooled connection that still carries the previous request's — the
-        // silent cross-tenant read this class was repaired for, reintroduced by an enum edit
-        // elsewhere and reported by nothing.
+        // silent cross-tenant read this class exists to prevent, caused by an enum edit elsewhere
+        // and reported by nothing.
         //
-        // The guarantee survives version skew, which a statement's would not have. IsolationStrategy
+        // The guarantee survives version skew, which a statement's would not. IsolationStrategy
         // ships in exeris-kernel-spi and this class in exeris-kernel-community, and the two publish
         // independently — so a newer SPI can hand an older driver a constant it was never compiled
         // against. javac emits a synthetic MatchException throw for an exhaustive enum switch
@@ -173,8 +206,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
      * touches still reads whatever is in the session — which would be the previous tenant's key.
      *
      * <p>Publishing both keys together costs nothing: one {@code set_config} statement carries both,
-     * so the strategies that previously issued a scope-only statement issue this one instead. Same
-     * round-trip count, one fewer way to be wrong.
+     * so it takes the same round-trip count as a scope-only statement, with one fewer way to be wrong.
      */
     private static void publishSessionKeys(PersistenceConnection connection,
                                            StorageContext storageContext) {
@@ -248,6 +280,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
         }
     }
 
+    /**
+     * Points {@code search_path} at the request's declared schema (SEPARATED_SCHEMA only).
+     *
+     * <p>Requires a non-blank schema name and refuses anything {@link PostgresIdentifier#isSafe}
+     * does not accept — {@code SET search_path} takes an identifier, not a bind parameter, so an
+     * unvalidated value would itself be the injection vector.
+     */
     private static void injectSchemaPath(PersistenceConnection connection,
                                          StorageContext storageContext) {
         String schemaName = storageContext.schemaName().orElse(null);

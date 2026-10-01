@@ -196,6 +196,38 @@ Please report issues involving:
 - CI workflows that expose secrets to forks, pull requests, logs, caches, or artifacts;
 - Maven, GitHub Actions, or release automation behavior that allows tampering with security-relevant artifacts.
 
+#### What the build provides today
+
+Two of the properties this section invites reports about are now produced by the build rather than
+asserted by it, and both are checked on every pull request by the Supply-Chain Gate:
+
+- **Every published coordinate carries a CycloneDX SBOM.** It is attached as a Maven artifact under
+  classifier `cyclonedx` and therefore published beside the jar, so the dependency set an artifact
+  actually resolves can be audited without building it. The invariant has no exceptions: the
+  pom-packaged coordinates (`exeris-kernel-root`, `-parent`, `-bom`) carry an SBOM with an empty
+  component list, which is true of a pom and keeps the rule free of exemptions to remember.
+- **Builds are reproducible.** Archive entry timestamps and ordering are normalized to
+  `project.build.outputTimestamp`, and the default-lifecycle plugins are version-pinned, so two
+  builds of the same commit produce byte-identical jars. This is what makes "traceable back to
+  source" checkable by a third party rather than only by the builder.
+
+The signing half now exists as a pipeline but has **not yet produced a published artifact**, and
+the distinction matters if you are relying on it:
+
+- **GPG signatures** are produced for every file a release would carry — jar, sources, javadoc, pom
+  and SBOM alike — and a release-readiness gate verifies each one against the signing key before
+  anything is uploaded. Maven Central will not accept an unsigned file, so this is a hard
+  precondition rather than an option.
+- **SLSA build provenance** is attested through Sigstore keyless signing on the release workflow's
+  own OIDC identity, and answers the question a GPG signature does not: which workflow, at which
+  commit, on which runner produced this file. Verify with
+  `gh attestation verify <file> --repo exeris-systems/exeris-kernel`.
+
+**As of this writing no release has been published through that pipeline.** Artifacts you can
+resolve today come from GitHub Packages and carry an SBOM but no signature. Until the first signed
+release exists, treat a published SBOM as an inventory of what an artifact contains, not as proof
+of who built it.
+
 ---
 
 ## Denial-of-Service and No Waste Compute

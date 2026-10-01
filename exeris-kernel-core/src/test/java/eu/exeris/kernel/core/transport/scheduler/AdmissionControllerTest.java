@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.transport.scheduler;
 
@@ -18,6 +14,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
 import eu.exeris.kernel.spi.transport.StreamPriority;
+import eu.exeris.kernel.spi.transport.TransportConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -83,6 +80,26 @@ class AdmissionControllerTest {
         return new AdmissionController(arbiter);
     }
 
+    private static AdmissionController controllerWithCeiling(int maxActiveStreams) {
+        long total = 1_000_000L;
+        WatermarkManager mgr = new WatermarkManager(
+                stubAllocator(utilizationForLevel(WatermarkLevel.NORMAL, total), total));
+        mgr.refresh();
+        return new AdmissionController(
+                ResourceArbiterTestHelper.expiredGraceArbiter(mgr), maxActiveStreams);
+    }
+
+    private static int admitUntilShed(AdmissionController controller, int attempts) {
+        int admitted = 0;
+        for (int i = 0; i < attempts; i++) {
+            if (controller.admit(StreamPriority.NORMAL) != Decision.ADMIT) {
+                break;
+            }
+            admitted++;
+        }
+        return admitted;
+    }
+
     private static long utilizationForLevel(WatermarkLevel level, long total) {
         return switch (level) {
             case NORMAL -> (long) (total * 0.50);
@@ -105,6 +122,69 @@ class AdmissionControllerTest {
         void nullArbiterThrows() {
             assertThatThrownBy(() -> new AdmissionController(null))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("zero ceiling is refused — an engine that admits nothing serves nothing")
+        void zeroCeilingRefused() {
+            assertThatThrownBy(() -> controllerWithCeiling(0))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maxActiveStreams");
+        }
+
+        @Test
+        @DisplayName("a negative that is not the unbounded sentinel is refused")
+        void negativeCeilingRefused() {
+            assertThatThrownBy(() -> controllerWithCeiling(-2))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maxActiveStreams");
+        }
+    }
+
+    // =========================================================================
+    // Configured ceiling
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Configured ceiling (transport.paqs.maxActiveStreams)")
+    class ConfiguredCeiling {
+
+        @Test
+        @DisplayName("a lowered ceiling sheds at the configured number, not at the default")
+        void loweredCeilingEnforced() {
+            AdmissionController controller = controllerWithCeiling(3);
+
+            assertThat(admitUntilShed(controller, 10)).isEqualTo(3);
+            assertThat(controller.admit(StreamPriority.CRITICAL)).isEqualTo(Decision.SHED_CAPACITY);
+            assertThat(controller.maxActiveStreams()).isEqualTo(3);
+        }
+
+        @Test
+        @DisplayName("a raised ceiling admits past the default")
+        void raisedCeilingAdmitsPastDefault() {
+            int raised = TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS + 10;
+            AdmissionController controller = controllerWithCeiling(raised);
+
+            assertThat(admitUntilShed(controller, raised + 5)).isEqualTo(raised);
+        }
+
+        @Test
+        @DisplayName("the unbounded sentinel admits past the default and reports itself unrewritten")
+        void unboundedAdmitsPastDefault() {
+            AdmissionController controller =
+                    controllerWithCeiling(TransportConfig.UNBOUNDED_ACTIVE_STREAMS);
+
+            int attempts = TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS + 100;
+            assertThat(admitUntilShed(controller, attempts)).isEqualTo(attempts);
+            assertThat(controller.maxActiveStreams())
+                    .isEqualTo(TransportConfig.UNBOUNDED_ACTIVE_STREAMS);
+        }
+
+        @Test
+        @DisplayName("the no-ceiling argument constructor keeps the pre-key default")
+        void defaultConstructorKeepsDocumentedDefault() {
+            assertThat(controllerAtLevel(WatermarkLevel.NORMAL).maxActiveStreams())
+                    .isEqualTo(TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS);
         }
     }
 
@@ -262,14 +342,14 @@ class AdmissionControllerTest {
     // =========================================================================
 
     @Nested
-    @DisplayName("Capacity limit (MAX_ACTIVE_STREAMS)")
+    @DisplayName("Capacity limit (default ceiling)")
     class CapacityLimit {
 
         @Test
-        @DisplayName("SHED_CAPACITY returned when active count equals MAX_ACTIVE_STREAMS")
+        @DisplayName("SHED_CAPACITY returned when active count equals the default ceiling")
         void shedCapacityWhenFull() {
             AdmissionController controller = controllerAtLevel(WatermarkLevel.NORMAL);
-            int maxStreams = 5_000;
+            int maxStreams = TransportConfig.DEFAULT_MAX_ACTIVE_STREAMS;
             for (int i = 0; i < maxStreams; i++) {
                 assertThat(controller.admit(StreamPriority.NORMAL)).isEqualTo(Decision.ADMIT);
             }

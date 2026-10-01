@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.security;
 
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
 import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
@@ -23,12 +20,13 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>index 1 – {@code String} failureReason (e.g. "expired", "malformed", "revoked")</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class SecurityAuthenticationException extends ExerisKernelException {
 
     /**
-     * Creates a new authentication exception.
+     * Records a token validation failure with no chained cause — the token type and reason
+     * already explain it fully.
      *
      * @param tokenType     the type of token that failed validation
      * @param failureReason a short reason code (no user data — safe for telemetry)
@@ -39,7 +37,7 @@ public final class SecurityAuthenticationException extends ExerisKernelException
     }
 
     /**
-     * Creates a new authentication exception with a root cause.
+     * Records a token validation failure, keeping the root cause for forensics.
      *
      * @param tokenType     the type of token that failed validation
      * @param failureReason a short reason code
@@ -48,6 +46,17 @@ public final class SecurityAuthenticationException extends ExerisKernelException
     public SecurityAuthenticationException(String tokenType, String failureReason, Throwable cause) {
         super(KernelErrorCodes.EX_SEC_2002, "Token validation failed", cause,
                 tokenType, failureReason);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>{@link FaultOrigin#CALLER}: the credential the caller presented is expired, malformed or
+     * revoked. A valid one succeeds against the same deployment.
+     */
+    @Override
+    public FaultOrigin faultOrigin() {
+        return FaultOrigin.CALLER;
     }
 }
 

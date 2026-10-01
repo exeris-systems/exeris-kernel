@@ -1,6 +1,14 @@
 ---
+name: community-tck-first-review
 description: Review Exeris changes with TCK-first discipline for SPI/observable behavior impact, abstract TCK requirements, binding tests, and semantic coverage.
 argument-hint: SPI change, provider semantics, or lifecycle behavior change
+steps:
+  - {skill: exeris-tck-first}
+  - {agent: exeris-tck}
+  - {skill: exeris-tagged-gate-runner, when: "the change is covered by an integration, continuity or stress gate"}
+gates:
+  - ci:maven / build-and-verify
+  - ci:maven / spi-compatibility-gate
 ---
 
 Review this change with Exeris TCK-first discipline.

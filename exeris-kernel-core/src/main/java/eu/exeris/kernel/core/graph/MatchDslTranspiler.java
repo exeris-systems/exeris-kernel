@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.graph;
 
@@ -16,24 +12,19 @@ import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import java.util.Objects;
 
 /**
- * Core: Semantic synthesis engine — transpiles a MATCH DSL traversal request into a
- * target-specific database dialect string.
+ * Core: transpiles a {@link GraphTraversal} or a shortest-path request into a query string
+ * by dispatching it to the matching builder of the {@link GraphDialect} it is constructed with.
  *
- * <h2>Intent over Implementation (graph.md §Core Philosophy)</h2>
- * <p>This class is the "brain" of the MATCH abstraction. It receives a protocol-blind
- * {@link GraphTraversal} and delegates production of the final query string to the
- * active {@link GraphDialect} bound to the {@link eu.exeris.kernel.spi.graph.GraphEngine}.
- * The result is ready for execution by a {@link GraphSession} without the session knowing
- * <em>anything</em> about the originating DSL structure.
+ * <h2>Not wired into any session or backend</h2>
+ * <p>No {@link GraphSession}, {@link eu.exeris.kernel.spi.graph.GraphEngine} or graph backend
+ * constructs or calls this class. A graph backend builds the query it executes by calling
+ * {@link GraphDialect} itself, so nothing in the kernel executes a string returned here. The
+ * class is exercised only by tests that call it directly and inspect the returned string.
  *
- * <h2>Supported Target Dialects (The Wall — SPI-blind)</h2>
- * <ul>
- *   <li><b>SQL:2023 PGQ</b> — {@code GRAPH_TABLE(…) MATCH (…) WHERE …} for PostgreSQL ≥ 18</li>
- *   <li><b>Cypher</b>       — {@code MATCH (n)-[:FOLLOWS]->(m) WHERE …} for Neo4j / Memgraph</li>
- * </ul>
- * <p>The transpiler itself is dialect-blind — it calls {@link GraphDialect} methods and
- * never hard-codes SQL or Cypher syntax. The dialect implementation (Community/Enterprise)
- * is selected by the kernel at boot via ServiceLoader.
+ * <h2>Dialect blindness</h2>
+ * <p>This class writes no SQL or Cypher syntax of its own: every string it returns is the
+ * return value of one builder method of the {@link GraphDialect} passed to its constructor. It
+ * selects no dialect and takes no part in bootstrap.
  *
  * <h2>Multi-Hop Semantics</h2>
  * <ul>
@@ -43,13 +34,13 @@ import java.util.Objects;
  *       with {@code minHops=1, maxHops=maxDepth}</li>
  * </ul>
  *
- * <h2>Zero-Allocation Contract</h2>
- * <p>This class holds no mutable state. Every call is pure function: input record in,
- * {@code String} out. No heap objects are created beyond the returned {@code String}
- * (which is owned by the caller). The transpiler instance is safe to share across
- * all virtual threads (it is effectively stateless after construction).
+ * <h2>Thread safety and allocation</h2>
+ * <p>This class holds no mutable state after construction, and an instance may be shared
+ * across threads. Apart from the exception it throws on an invalid argument it allocates
+ * nothing of its own; what a call allocates is what the bound dialect allocates to build the
+ * returned {@code String}.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class MatchDslTranspiler {
 
@@ -60,7 +51,8 @@ public final class MatchDslTranspiler {
     private final GraphDialect dialect;
 
     /**
-     * Constructs the transpiler bound to the given dialect.
+     * Binds this transpiler to a single {@link GraphDialect}; every transpile call below
+     * delegates the actual query-string construction to it.
      *
      * @param dialect active graph dialect for the current engine (must not be {@code null})
      */
@@ -79,7 +71,7 @@ public final class MatchDslTranspiler {
      * </ul>
      *
      * @param traversal immutable traversal request (must not be {@code null})
-     * @return dialect-specific query string ready for execution; never {@code null}
+     * @return the query string the bound dialect builds for {@code traversal}; never {@code null}
      */
     public String transpileBfs(GraphTraversal traversal) {
         Objects.requireNonNull(traversal, "traversal must not be null");
@@ -97,6 +89,7 @@ public final class MatchDslTranspiler {
      * @param edge     edge type to traverse (must not be {@code null})
      * @param maxDepth maximum path depth (≥ 1)
      * @return dialect-specific shortest-path query; never {@code null}
+     * @throws IllegalArgumentException if {@code maxDepth} is less than 1
      */
     public String transpileShortestPath(GraphEdgeDescriptor edge, int maxDepth) {
         Objects.requireNonNull(edge, "edge must not be null");
@@ -107,7 +100,7 @@ public final class MatchDslTranspiler {
     }
 
     /**
-     * Returns the name of the active dialect for diagnostics and JFR events.
+     * Returns the name of the dialect this transpiler is bound to, for diagnostics.
      *
      * @return dialect name (e.g. "SQL/PGQ", "Cypher")
      */

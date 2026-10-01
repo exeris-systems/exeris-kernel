@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -21,7 +17,7 @@ import java.util.Optional;
  * dependency direction one-way (implementations depend on SPI, never inverse).
  *
  * <h2>Binding (bootstrap side)</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * HttpProvider provider  = java.util.ServiceLoader.load(HttpProvider.class)
  *         .stream()
  *         .map(java.util.ServiceLoader.Provider::get)
@@ -38,14 +34,31 @@ import java.util.Optional;
  *         server.start();
  *         keepAlive();
  *     });
- * }</pre>
+ * }
  *
  * <h2>Reading (subsystem / handler side)</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * HttpServerEngine engine = HttpKernelProviders.httpServerEngine();
- * }</pre>
+ * }
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> zero-alloc on the hot path — reading a slot ({@code get()} or
+ * {@code orElse}) allocates nothing; the {@link Optional}-returning accessors on this class
+ * allocate one {@code Optional} per call when the slot they read is bound.
+ * <p><b>Thread confinement:</b> any thread inside the binding scope — a {@code ScopedValue} binding
+ * is visible to the binding thread and to every subtask forked inside that scope through
+ * {@code StructuredTaskScope}, a preview API on JDK 25 that this distribution line does not fork
+ * through ({@link eu.exeris.kernel.spi.context.KernelProviders} states the model); a thread started
+ * any other way, like a thread outside the scope, reads the slot as unbound rather than as empty.
+ * <p><b>Ownership:</b> whoever binds a slot owns the bound instance and its lifecycle — the kernel
+ * bootstrapper for the provider, the engines and the codec registries, the application for the
+ * handler and the route policy it supplies; a reader borrows the reference for the duration of the
+ * binding scope and neither closes nor restarts it.
+ *
+ * @apiNote Read a slot through its accessor rather than through {@code get()} where one exists: the
+ *          optional slots are unbound in perfectly healthy deployments, and
+ *          {@link java.util.NoSuchElementException} out of a handler is an unhelpful way to learn
+ *          that the application never configured a client engine.
+ * @since 0.5
  */
 public final class HttpKernelProviders {
 
@@ -61,21 +74,26 @@ public final class HttpKernelProviders {
     /**
      * The kernel-wide {@link HttpServerEngine} (created from {@link #HTTP_PROVIDER}).
      *
-     * <p>Bound during HTTP bootstrap and inherited by every virtual thread in the
-     * kernel scope — zero constructor injection needed in handler code.
+     * <p>Bound once during HTTP bootstrap for the kernel's lifetime; the class documentation of
+     * {@link eu.exeris.kernel.spi.context.KernelProviders} says which threads see it.
      *
-     * <h2>Usage</h2>
-     * <pre>{@code
-     * boolean running = HttpKernelProviders.HTTP_SERVER_ENGINE.get().isRunning();
-     * }</pre>
+     * @apiNote Read it directly where the engine is a precondition of the code reading it:
+     *          {@snippet lang="java" :
+     *          boolean running = HttpKernelProviders.HTTP_SERVER_ENGINE.get().isRunning();
+     *          }
      */
     public static final ScopedValue<HttpServerEngine> HTTP_SERVER_ENGINE = ScopedValue.newInstance();
 
     /**
-     * Optional bootstrap-time override for the server {@link HttpHandler}.
+     * The application's root server {@link HttpHandler}: the seam through which it hands the kernel
+     * what it serves.
      *
-     * <p>When bound, HTTP bootstrap may use this handler instead of the default
-     * subsystem handler. Intended for deterministic integration-test fixtures.
+     * <p>Bound around boot and read once when the HTTP subsystem starts; when unbound, a driver may
+     * serve a default of its own. Respond-once requests go to {@link HttpHandler#handle}. A driver
+     * that serves stream routes ({@link HttpStreamHandler}) resolves them through
+     * {@link StreamRouteResolver}, consulted on this handler before {@code handle}; a bound handler
+     * that does not implement it serves respond-once routes only, so a handler that wraps another
+     * carries stream resolution through as well as {@code handle}.
      */
     public static final ScopedValue<HttpHandler> HTTP_SERVER_HANDLER = ScopedValue.newInstance();
 
@@ -99,7 +117,7 @@ public final class HttpKernelProviders {
      * callers) do not require this slot to be bound. Use
      * {@link #httpRequestBodyEncoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpRequestBodyEncoderRegistry> HTTP_REQUEST_BODY_ENCODER_REGISTRY =
             ScopedValue.newInstance();
@@ -114,7 +132,7 @@ public final class HttpKernelProviders {
      * callers) do not require this slot to be bound. Use
      * {@link #httpResponseBodyDecoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpResponseBodyDecoderRegistry> HTTP_RESPONSE_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
@@ -129,7 +147,7 @@ public final class HttpKernelProviders {
      * that never decode a body (read-only resources) do not require it to be bound.
      * Use {@link #httpRequestBodyDecoderRegistry()} to read defensively.
      *
-     * @since 0.8.0
+     * @since 0.8
      */
     public static final ScopedValue<HttpRequestBodyDecoderRegistry> HTTP_REQUEST_BODY_DECODER_REGISTRY =
             ScopedValue.newInstance();
@@ -138,12 +156,11 @@ public final class HttpKernelProviders {
      * Optional per-route authorization policy ({@link HttpRoutePolicy}), supplied by the application.
      *
      * <p>Bound during HTTP bootstrap when the application declares one (ADR-061). The transport
-     * admission path reads this slot to decide whether a request may reach its handler. When unbound,
-     * no per-route requirement is applied — the kernel behaves as it did before 0.11, which is why an
-     * application that declares nothing sees no change. Use {@link #httpRoutePolicy()} to read
-     * defensively.
+     * admission path reads this slot to decide whether a request may reach its handler. When
+     * unbound, no per-route requirement is applied and every route reaches its handler as though no
+     * policy existed. Use {@link #httpRoutePolicy()} to read defensively.
      *
-     * @since 0.11.0
+     * @since 0.11
      */
     public static final ScopedValue<HttpRoutePolicy> HTTP_ROUTE_POLICY = ScopedValue.newInstance();
 
@@ -152,7 +169,7 @@ public final class HttpKernelProviders {
     }
 
     /**
-     * Returns the active {@link HttpProvider}.
+     * Returns the active {@link HttpProvider}, for bootstrap code that has one by construction.
      *
      * @return the bound provider
      * @throws java.util.NoSuchElementException if the slot is not bound (HTTP not bootstrapped)
@@ -172,9 +189,9 @@ public final class HttpKernelProviders {
     }
 
     /**
-     * Returns an optional bootstrap-time server handler override.
+     * Returns the application's root server handler, the value of {@link #HTTP_SERVER_HANDLER}.
      *
-     * @return an {@link Optional} containing the override when bound, or empty otherwise
+     * @return an {@link Optional} containing the handler when bound, or empty otherwise
      */
     public static Optional<HttpHandler> httpServerHandler() {
         return HTTP_SERVER_HANDLER.isBound()
@@ -198,7 +215,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpRequestBodyEncoderRegistry> httpRequestBodyEncoderRegistry() {
         return HTTP_REQUEST_BODY_ENCODER_REGISTRY.isBound()
@@ -211,7 +228,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpResponseBodyDecoderRegistry> httpResponseBodyDecoderRegistry() {
         return HTTP_RESPONSE_BODY_DECODER_REGISTRY.isBound()
@@ -224,7 +241,7 @@ public final class HttpKernelProviders {
      * if one was bound during HTTP bootstrap.
      *
      * @return an {@link Optional} containing the registry when bound, or empty otherwise
-     * @since 0.8.0
+     * @since 0.8
      */
     public static Optional<HttpRequestBodyDecoderRegistry> httpRequestBodyDecoderRegistry() {
         return HTTP_REQUEST_BODY_DECODER_REGISTRY.isBound()
@@ -236,7 +253,7 @@ public final class HttpKernelProviders {
      * Returns the optional per-route authorization policy, if the application bound one.
      *
      * @return an {@link Optional} containing the policy when bound, or empty otherwise
-     * @since 0.11.0
+     * @since 0.11
      */
     public static Optional<HttpRoutePolicy> httpRoutePolicy() {
         return HTTP_ROUTE_POLICY.isBound()

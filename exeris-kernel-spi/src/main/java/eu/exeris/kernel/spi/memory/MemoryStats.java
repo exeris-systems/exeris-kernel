@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.memory;
 
@@ -19,11 +15,6 @@ import java.util.Objects;
  * Arrays of {@code MemoryStats} are therefore expected to benefit from header elimination
  * and heap flattening on future JVMs, but no such behaviour is assumed or required today.
  *
- * <h2>Zero-Allocation Contract</h2>
- * <p>This record is returned by {@link MemoryAllocator#stats()} on the diagnostic path.
- * It is intentionally <em>not</em> on the hot allocation path, so the record allocation
- * per call is acceptable (diagnostics are low-frequency).
- *
  * @param totalBytes         Total off-heap budget configured for this allocator (bytes).
  * @param allocatedBytes     Bytes currently in use (live loaned buffers).
  * @param freeBytes          Bytes available for new allocations.
@@ -37,8 +28,11 @@ import java.util.Objects;
  *                           {@link #leakDetectionMode()} is {@link LeakDetectionMode#SAMPLED}
  *                           or {@link LeakDetectionMode#PARANOID}.
  * @param leakDetectionMode  The active leak detection mode for this allocator instance.
+ * @apiNote One instance is allocated per {@link MemoryAllocator#stats()} call. That is
+ *          deliberate and affordable because this is the diagnostic path; reading stats in
+ *          an allocation loop turns it into hot-path garbage.
+ * @since 0.5
  * @see MemoryAllocator#stats()
- * @since 0.5.0
  */
 public record MemoryStats(
         long totalBytes,
@@ -53,7 +47,13 @@ public record MemoryStats(
 ) {
 
     /**
-     * Compact canonical constructor with basic consistency validation.
+     * Rejects a snapshot that could not describe a real allocator: negative byte or object
+     * counts, a {@code totalBytes} below the {@code -1} "unknown" sentinel, or
+     * {@code allocatedBytes} above {@code totalBytes}, which would put
+     * {@link #utilization()} outside {@code [0.0, 1.0]}.
+     *
+     * @throws IllegalArgumentException if any of those invariants is violated
+     * @throws NullPointerException     if {@code leakDetectionMode} is {@code null}
      */
     public MemoryStats {
         if (allocatedBytes < 0 || freeBytes < 0 || peakAllocatedBytes < 0) {
@@ -98,9 +98,14 @@ public record MemoryStats(
     }
 
     /**
-     * Returns a zero-value snapshot (used as a null-object to avoid null checks).
+     * Returns an all-zero snapshot with leak detection reported as
+     * {@link LeakDetectionMode#DISABLED} — the null object a telemetry path can read instead
+     * of branching on {@code null} before an allocator exists.
      *
-     * @return all-zero stats instance
+     * @return all-zero stats instance whose {@link #utilization()} is {@code 0.0}
+     * @apiNote Zero here means "nothing to report", not "an allocator with a zero budget".
+     *          A caller distinguishing the two must look elsewhere; this instance carries no
+     *          marker of its own.
      */
     public static MemoryStats zero() {
         return new MemoryStats(0L, 0L, 0L, 0L, 0L, 0L, 0, 0L, LeakDetectionMode.DISABLED);

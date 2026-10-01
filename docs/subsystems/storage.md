@@ -1,7 +1,18 @@
+---
+title: "Storage Subsystem — Blob Contract"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Storage Subsystem — Blob Contract
 
-**Status:** SPI + two Community drivers shipped in v0.11 (ADR-056). Post-1.0 per the ROADMAP's
-narrowed-core decision — 1.0 GA is not gated on this subsystem.
+**Status:** SPI + two Community drivers shipped in v0.11 (ADR-056); the subsystem boots from 0.12,
+opt-in through `storage.blob.provider` — unset, storage is off and nothing is bound (see *Bootstrap
+and provider selection*). The SPI is a `preview` surface, outside the stable core the ROADMAP's
+narrowed-core decision holds 1.0 to, so 1.0 GA is not gated on it.
 
 **SPI package:** `eu.exeris.kernel.spi.storage.blob`
 **Drivers:** `CommunityFilesystemBlobStorageProvider` and `CommunityS3BlobStorageProvider`. Two bindings
@@ -154,7 +165,7 @@ can do safely because they know which instances are running.
 
 Failures are raised through `CommunityBlobFailures`, which emits the JFR event and returns the exception,
 so a call site reads `throw failures.transferFailed(...)`. The drivers have some twenty failure sites
-across seven classes; pairing an emit with a throw by hand at each one makes "recorded but not thrown"
+across eight classes; pairing an emit with a throw by hand at each one makes "recorded but not thrown"
 and "thrown but not recorded" both reachable by omission, and returning the exception removes the
 pairing. The channel is bound once per driver to that driver's name, so a failure cannot be attributed to
 the sibling driver by an argument slip, and both drivers share the event names — filter
@@ -199,7 +210,13 @@ starts with its own prefix would confirm its own last statement. `BlobRef` refus
 segments, and the hex prefix is one opaque segment — the same two properties the filesystem layout rests
 on.
 
-**Configuration.** `location` is the endpoint; the rest arrives as properties.
+**Configuration.** `location` is the endpoint, `http://host[:port]` or `https://host[:port]`; the rest
+arrives as properties. A single trailing `/` is still the bare endpoint. A location with a path, a
+query, a fragment or userinfo is refused when the store is built, with a plain
+`IllegalArgumentException` naming the part: requests are path-style and built from the bucket and key
+alone, so a gateway prefix such as `/s3` would be missing from every request and every presigned URL,
+and credentials come only from `s3.accessKey` / `s3.secretKey`. No refusal of a location echoes its
+userinfo.
 
 | Property | Default | Meaning |
 |---|---|---|
@@ -208,11 +225,32 @@ on.
 | `s3.region` | `us-east-1` | SigV4 credential-scope region |
 | `s3.maxObjectBytes` | 8 MiB | Ceiling on a single object. Bounded above at just under 2 GiB and refused at construction beyond it — the single-buffer design addresses an object with an `int`, so a larger ceiling could not be honoured |
 
-**Cleartext only.** `CommunityHttpTransportFactory` wires certificate material for listeners, not for
-client connections, so a `CLIENT`-mode engine speaks cleartext whatever the endpoint scheme says. An
-`https://` endpoint is therefore **rejected at construction** rather than silently downgraded — sending
-SigV4 credentials in the clear because a scheme was ignored is not a failure that may be quiet. The
-target is a MinIO-compatible endpoint over a trusted network path.
+**The endpoint's scheme decides.** The driver's client engine requires of its transport what the
+endpoint's scheme says, wherever the store is built (`CommunityOutboundTls`;
+[transport.md](transport.md#client-tls)):
+
+- `http://` is **plaintext, even where a crypto provider is bound**. The store's transport records
+  `PLAINTEXT_REQUIRED` in the `eu.exeris.kernel.transport.TransportTlsClientPosture` event.
+- `https://` is **TLS that verifies the server** before any request byte is sent: the certificate
+  chain against `crypto.tls.client.trustFile`, else OpenSSL's default trust, and the subject
+  alternative names against the endpoint host — a DNS name against DNS entries, sent as the server
+  name indication; an IP literal against IP entries, with no server name sent. The transport records
+  `VERIFIED`. A server that fails is refused with `TlsHandshakeException` (`EX-NET-2001`) and the
+  `X509_V_*` code ([crypto.md](crypto.md#client-peer-verification)).
+- `https://` **needs the Community crypto provider bound where the store is built.** With no
+  provider bound, with one that cannot verify an outbound peer, or under
+  `-Dexeris.transport.tls=false`, `CommunityS3BlobStorageProvider#createStore` throws
+  `TransportException` `EX-NET-4004` and the posture event records the refusal; a boot that creates
+  the store fails. The endpoint is **never downgraded** — sending SigV4 credentials in the clear
+  because a scheme was ignored is not a failure that may be quiet.
+- **The default port follows the scheme** (80, 443) and is omitted from the signed `Host` and from a
+  presigned URL, which starts with the endpoint's scheme; the engine still dials `host:port`.
+- **Addressing is path-style**, so no bucket enters a host name, and the name verified is the
+  endpoint host for every bucket. The host is read once, lower-cased and without a trailing dot, and
+  the signed `Host`, the server name and the verified name all come from it.
+
+A `crypto.tls.client.trustFile` that is not a readable file fails an `http://` store too: a named
+trust file is checked whether or not the transport arms TLS.
 
 **The ceiling is a memory budget, not just a limit.** The driver holds an object in one buffer for the
 length of a transfer, because a single `PUT` must declare `Content-Length` before its first body byte and
@@ -246,10 +284,83 @@ reports what `HEAD` said, so a caller that reads to end-of-stream can tell the t
 signing, session tokens, and signing arbitrary caller-supplied `x-amz-*` headers — each serves a
 capability this driver does not have, so implementing it would be signing for requests it cannot make.
 
-**Provider selection is an open gap.** Both providers are registered at the same Community priority, and
-nothing in this repository loads `BlobStorageProvider` through `ServiceLoader` yet, so a deployment gets
-the store whose provider it constructs. When a storage subsystem does bootstrap the SPI, two providers at
-one priority will need a configured choice rather than a discovery order.
+## Bootstrap and provider selection
+
+`CommunityStorageSubsystem` (phase `SERVICES`, depends on `memory`) boots the subsystem, and
+`StorageBootstrap` in Core selects the driver. Selection is **by configured id, not by ranking** —
+the one bootstrap in the kernel that does not rank by `priority()`, because both Community drivers
+register at the same priority and are not interchangeable: one needs a writable directory, the other
+credentials and a reachable endpoint. Ranking them would decide where a tenant's objects land by
+ServiceLoader order and a class-name tie-break.
+
+| Key | Meaning |
+|---|---|
+| `storage.blob.provider` | The driver id: `blob-fs-community` or `blob-s3-community`. **Unset means blob storage is off.** |
+| `storage.blob.location` | Driver-interpreted root. A **directory** for the filesystem driver; the **endpoint** `http://host[:port]` or `https://host[:port]` for S3, with no path, query, fragment or userinfo — not the bucket, which is a property. Required once the provider key is set. |
+| `storage.blob.maxSignedUrlTtlSeconds` | Signed-URL ceiling; defaults to `BlobStorageConfig`'s. |
+| `storage.blob.s3.bucket` | S3 only, **required**. |
+| `storage.blob.s3.accessKey`, `storage.blob.s3.secretKey` | S3 only, **required**. |
+| `storage.blob.s3.region`, `storage.blob.s3.maxObjectBytes` | S3 only, optional; the driver's defaults apply. |
+
+The `storage.blob.s3.*` keys are forwarded into `BlobStorageConfig.properties()` under the driver's
+own names (`s3.bucket`, …). They are **enumerated in the subsystem rather than swept from a prefix**,
+because `ConfigProvider` answers `getString(key)` and nothing else — there is no way to ask it for
+every key beneath a prefix. A driver that grows a property therefore gets it read only once that
+list grows too; what stops that being silent is that the driver refuses a missing required property
+at construction rather than starting half-configured. The alternative — a provider declaring its own
+keys through the SPI — is a `BlobStorageProvider` change with a TCK obligation behind it, and is
+recorded in the ROADMAP rather than taken.
+
+**Absent configuration is not ambiguous configuration.** With `storage.blob.provider` unset the
+subsystem binds nothing and reports running, exactly as a kernel with no storage behaves; both
+drivers sit on every Community classpath, so refusing to boot without the key would stop every
+deployment that never wanted blob storage. What is refused is asking for storage *without saying
+which*: an id naming no discovered driver fails at boot with `EX-BLOB-8008`, carrying the key, the
+value that was set and the ids that were available. An empty classpath is `EX-BLOB-8007` instead —
+nothing is ambiguous there, and the fix is a dependency rather than a key. A missing
+`storage.blob.location` is `EX-BLOB-8009`, carrying that key and what a value for it looks like. A
+missing S3-specific required property (`s3.bucket`, `s3.accessKey`, `s3.secretKey`) is not this
+code at all: `CommunityS3Settings` refuses it with a plain, unwrapped `IllegalArgumentException`
+naming the property, carrying no `EX-BLOB` code.
+
+Three codes rather than one because `rawArgs` is read positionally by Glass-Box tooling and the
+layouts differ: 8008's last slot is the list of provider ids that were available, so a free-text
+hint in that position would be parsed as ids.
+
+The `memory` dependency belongs to the S3 driver, not to the subsystem's own needs: its store stages
+transfers off-heap through `KernelProviders.MEMORY_ALLOCATOR` and refuses to be created without one.
+A subsystem declares what the drivers it *may* select require, because the boot graph is built before
+any configuration is read — there is no point at which the dependency could be made conditional on
+which driver was named.
+
+**The driver is selected in `initialize()`; its store is created in `start()`.** Declaring `memory`
+orders the boot without making the allocator visible any earlier: bootstrap builds the kernel scope
+from every subsystem's `providerBindings()` only after all of them have initialised, and runs
+`start()` inside it. `initialize()` therefore reads the keys and calls
+`StorageBootstrap.loadProvider`, which selects the driver and creates no store, so every `EX-BLOB`
+refusal above is raised there. `start()` creates the store through the selected provider, inside the
+scope where `MEMORY_ALLOCATOR` is bound. A driver refusing its own configuration, such as S3 without
+`storage.blob.s3.bucket`, consequently surfaces from `start()`: `SubsystemOrchestrator` reports it as a
+`SubsystemException` in phase `START` whose cause is the driver's own exception — for S3, the
+`IllegalArgumentException` above. The subsystem is not optional, so that still fails the boot before
+the application runs.
+
+`BLOB_STORE` needs a value before `start()` runs, because bootstrap reads `providerBindings()`
+straight after `initialize()`. The value bound is a `DeferredBlobStore` that holds the provider and the
+configuration and creates the real store in `start()` — the answer `DeferredHttpServerEngine` and
+`DeferredWebSocketServerEngine` give to the same ordering (ADR-084 Amendment A2). It refuses every
+operation before `start()` and after `close()` with `IllegalStateException` rather than answering
+empty, which would read as a missing object. `stop()` closes it, so a reference an application kept
+past `boot()` refuses work as well.
+
+Which driver won is recorded on the `eu.exeris.kernel.storage.StorageBootstrapSelected` JFR event, at
+selection in `initialize()` — so a boot whose driver then refuses its configuration in `start()` still
+records a selection. Its `location` is recorded with the userinfo of a `scheme://` location replaced by
+`<userinfo>`, because the event precedes the driver's own checks; a directory is recorded as
+configured.
+The provider slots are `KernelProviders.BLOB_STORAGE_PROVIDER` and `BLOB_STORE` — named `BLOB_*`
+rather than `STORAGE_*` because `STORAGE_CONTEXT` is ADR-012's tenant-isolation carrier and has
+nothing to do with object storage.
 
 ## Not in this subsystem
 
@@ -257,9 +368,34 @@ Multipart upload, the full SigV4 signing grid, vendor drivers beyond S3-compatib
 policy (retention, expiry, versioning), content inspection, and CDN integration. System-scope blobs and
 shared-scope row visibility for blobs are excluded by contract, not merely unimplemented — see ADR-056.
 
+**Where non-tenant binary content goes instead.** Rows have three scopes and blobs have one, so an
+application modelling a `GLOBAL` entity has nowhere here to put that entity's bytes. Sort by who
+authors the content: anything the *developer* authors and ships identically to every tenant —
+imagery, icons, fonts, catalogue art — is a **build artefact**, and belongs in the deployment
+artifact or behind a CDN, where it is rolled back with the code that references it rather than
+versioned separately from it. Content one *tenant* authors and many read is the genuinely uncovered
+case; ADR-056's "What an application should do instead" states why the tier is gated on that case
+appearing rather than on the argument being made.
+
 ## References
 
 - `docs/adr/ADR-056-blob-storage-provider-spi.md` — the decision, its obligations, and its two
   implementation amendments.
 - ADR-012 — the isolation model this subsystem resolves against.
 - `docs/subsystems/memory.md`, `CONTRIBUTING.md` §"Off-Heap Memory" — `LoanedBuffer` lifecycle.
+
+## Owning ADRs
+
+- [ADR-056](../adr/ADR-056-blob-storage-provider-spi.md) — Adopt a `BlobStorageProvider` SPI for binary-object storage
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.storage.blob.*`) is classified **preview** since
+0.11.0 in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
+[ADR-056](../adr/ADR-056-blob-storage-provider-spi.md) and the contract tests are
+`AbstractBlobStorageTck`. See the matrix for the semver policy this label commits to.
+
+The `KernelProviders.BLOB_STORAGE_PROVIDER` / `BLOB_STORE` slots and the `storage.blob.*`
+configuration keys arrived in 0.12.0 and inherit that label: the SPI they bind is the one the matrix
+classifies, and a bootstrap path does not stabilise a surface.
+

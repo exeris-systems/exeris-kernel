@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -21,9 +17,7 @@ import java.nio.channels.SocketChannel;
 /**
  * Package-private plain-socket I/O dispatch for {@link NativeTcpStream}.
  *
- * <p>Extracted from {@link NativeTcpStream} in v0.8 Sprint 3 (QA-016) as the
- * second seam of the stream's God-class decomposition. Owns the
- * {@code core-socket-seam} ↔ {@code nio-fallback} backend selection and the
+ * <p>Holds the {@code core-socket-seam} ↔ {@code nio-fallback} backend selection and the
  * Panama {@code recv}/{@code send} syscall invocations.
  *
  * <p>Selection rule (see {@link Backend#resolve}): the core-socket seam is

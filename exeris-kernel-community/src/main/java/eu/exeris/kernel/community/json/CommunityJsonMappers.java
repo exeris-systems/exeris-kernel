@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.json;
 
@@ -29,11 +25,10 @@ import java.util.ServiceLoader;
  * <h2>Default preservation</h2>
  * <p>When no discovered customizer {@linkplain JsonMapperCustomizer#appliesTo(JsonMapperScope)
  * applies} to a scope, this returns a plain {@code new ObjectMapper()} — byte-for-byte the
- * pre-0.10.1 default, with no builder round-trip that could drift from the bare-constructor
- * defaults. The customizing {@link JsonMapper#builder() builder} path is taken only when at least
- * one customizer opts in.
+ * bare-constructor default, with no builder round-trip that could drift from it. The customizing
+ * {@link JsonMapper#builder() builder} path is taken only when at least one customizer opts in.
  *
- * @since 0.10.1
+ * @since 0.10
  */
 public final class CommunityJsonMappers {
 
@@ -68,7 +63,7 @@ public final class CommunityJsonMappers {
                 .sorted(Comparator.comparingInt(JsonMapperCustomizer::order))
                 .toList();
         if (applicable.isEmpty()) {
-            // No opt-in for this scope: preserve the exact pre-0.10.1 default mapper.
+            // No opt-in for this scope: the exact bare-constructor default mapper.
             return new ObjectMapper();
         }
         // A misbehaving customizer fails fast at bootstrap; the customizer class shows in the trace.

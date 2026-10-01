@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.concurrent;
 
@@ -78,7 +74,7 @@ import java.util.concurrent.Callable;
  * <p>{@code state} moves once, monotonically, from {@code RUNNING} to a terminal value, so a reader
  * can never observe it going backwards.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class StructuredScope implements AutoCloseable {
 
@@ -305,6 +301,9 @@ public final class StructuredScope implements AutoCloseable {
         }
 
         /**
+         * Returns this task's outcome. Safe to poll before {@link StructuredScope#join()} as well
+         * as after, per this class's memory model.
+         *
          * @return the task's state; {@link State#RUNNING} until it terminates
          */
         public State state() {
@@ -312,6 +311,9 @@ public final class StructuredScope implements AutoCloseable {
         }
 
         /**
+         * Returns the value this task completed with, visible without further synchronization
+         * once {@link #state()} reports {@link State#SUCCESS} — see this class's memory model.
+         *
          * @return the value the task produced
          * @throws IllegalStateException if the task did not succeed
          */
@@ -323,6 +325,10 @@ public final class StructuredScope implements AutoCloseable {
         }
 
         /**
+         * Returns the throwable this task terminated with, visible without further
+         * synchronization once {@link #state()} reports {@link State#FAILED} — see this class's
+         * memory model.
+         *
          * @return the throwable the task terminated with
          * @throws IllegalStateException if the task did not fail
          */
