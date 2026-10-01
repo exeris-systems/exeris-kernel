@@ -501,14 +501,14 @@ public abstract class AbstractJobSchedulerTck {
      * while a body it started is still unfinished. That is what "drained, not abandoned" means, and
      * it is checkable the instant close returns.
      *
-     * <p><strong>What this does not cover.</strong> The motivating defect was a window between
-     * checking a job out of the queue and registering its worker: a driver doing those in two
-     * critical sections leaves the job in neither, and a close landing between them snapshots past it
-     * and returns without waiting. That window is a few instructions wide, and reintroducing it does
-     * <em>not</em> fail this case — the interleaving needed to hit it is not reachable by racing two
-     * threads from outside. It is closed by construction instead, by doing both under one lock. This
-     * case is a regression net for the coarser property, not a reproduction of that race, and it is
-     * documented as such so nobody later reads a green run as proof the window is guarded.
+     * <p><strong>What this does not cover.</strong> A window between checking a job out of the
+     * queue and registering its worker: a driver doing those in two critical sections leaves the job
+     * in neither, and a close landing between them snapshots past it and returns without waiting.
+     * That window is a few instructions wide, and a driver that has it does <em>not</em> fail this
+     * case — the interleaving needed to hit it is not reachable by racing two threads from outside.
+     * It is closed by construction instead, by doing both under one lock. This case is a regression
+     * net for the coarser property, not a reproduction of that race, so a green run is not proof the
+     * window is guarded.
      */
     private void assertDrainIsTotal(JobScheduler racing) throws InterruptedException {
         AtomicBoolean bodyStarted = new AtomicBoolean();

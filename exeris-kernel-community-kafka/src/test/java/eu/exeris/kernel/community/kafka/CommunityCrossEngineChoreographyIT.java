@@ -46,7 +46,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Cross-engine choreography integration test (Sprint 6c — DIST-302 closure).
+ * Cross-engine choreography integration test (DIST-302).
  *
  * <h2>What this test proves</h2>
  * <p>Two distinct {@link FlowEngine} instances ("Service A" and "Service B") share a single

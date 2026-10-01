@@ -60,5 +60,5 @@ class CommunitySchedulingArchitectureTest {
             .haveFullyQualifiedName("java.util.concurrent.ScheduledExecutorService")
             .because("ADR-057 §3 — a scheduled executor computes deadlines from System.nanoTime() "
                     + "with no seam to displace, which would put the deterministic trigger TCK out "
-                    + "of reach and reintroduce the scoped-ban exception this ADR removed.");
+                    + "of reach and require the scoped-ban exception this ADR rules out.");
 }

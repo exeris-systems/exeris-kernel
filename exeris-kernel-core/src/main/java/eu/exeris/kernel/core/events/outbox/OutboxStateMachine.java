@@ -14,8 +14,8 @@ import java.util.function.BooleanSupplier;
 /**
  * Lock-free state machine for {@link OutboxOrchestrator}.
  *
- * <p>Extracted from {@link OutboxOrchestrator} in v0.8 Sprint 1 (QA-014) to close
- * the orchestrator's God-class suppression block. Owns the six-state ordinal
+ * <p>Kept separate from {@link OutboxOrchestrator} (QA-014) so the orchestrator needs
+ * no God-class suppression block. Owns the six-state ordinal
  * encoding, the {@link VarHandle} CAS transition primitive, and the JFR
  * {@link OutboxStateTransitionEvent} emit on every successful transition.
  *

@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Contract tests for {@link HttpMethod} RFC 9110 §9.2 semantic predicates —
- * safe / idempotent / typical-request-body (v0.9 Sprint 4c Phase 3 SPI coverage).
+ * safe / idempotent / typical-request-body.
  */
 @DisplayName("HttpMethod — RFC 9110 method semantics")
 class HttpMethodTest {

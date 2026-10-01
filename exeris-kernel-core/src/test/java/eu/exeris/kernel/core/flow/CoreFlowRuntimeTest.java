@@ -1498,8 +1498,8 @@ class CoreFlowRuntimeTest {
             runtimeField.setAccessible(true);
             Object runtime = runtimeField.get(engine);
 
-            // The miss cache moved to ParkedLookupMissCache in v0.12; the field it guards is
-            // the same deque, one object further down.
+            // The miss cache lives in ParkedLookupMissCache; the field it guards is a deque one
+            // object below the runtime.
             java.lang.reflect.Field cacheField =
                     CoreFlowRuntime.class.getDeclaredField("parkedLookupMisses");
             cacheField.setAccessible(true);

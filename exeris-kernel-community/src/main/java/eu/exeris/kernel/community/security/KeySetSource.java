@@ -11,8 +11,8 @@ import java.util.Map;
  * Injectable seam that supplies a point-in-time snapshot of the verification key set.
  *
  * <p>Implementations return an immutable {@code kid -> key} snapshot. There is no HTTP
- * or wire vocabulary here — a real OIDC/JWKS fetch lands in v0.10
- * ({@code CommunityOidcIdentityProvider}, deferred by ADR-040). A refresh that cannot
+ * or wire vocabulary here — the OIDC/JWKS fetch lives in {@link CommunityJwksHttpKeySetSource},
+ * which {@code CommunityOidcIdentityProvider} builds (ADR-040). A refresh that cannot
  * produce a trustworthy snapshot MUST signal failure via {@link KeySetRefreshException}
  * rather than returning an empty or partial map (fail-closed, ADR-012).
  *

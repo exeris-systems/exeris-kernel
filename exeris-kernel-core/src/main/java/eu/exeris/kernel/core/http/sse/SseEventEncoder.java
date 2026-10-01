@@ -30,11 +30,11 @@ import java.lang.foreign.ValueLayout;
  * as {@code '?'} — identical to {@link String#getBytes(java.nio.charset.Charset)} with UTF-8. The heap
  * {@link #encode(StreamEvent)} wrapper is retained for tests and non-hot-path callers.
  *
- * <p><b>v0.10 transport framing:</b> the bytes are written as a <em>raw, close-delimited</em>
+ * <p><b>Transport framing:</b> the bytes are written as a <em>raw, close-delimited</em>
  * HTTP/1.1 body (no {@code Content-Length}, no chunk framing; the response carries {@code Connection:
  * close} and the SSE session ends with the connection — RFC 9112 §6.3). {@code Transfer-Encoding: chunked}
  * per-event framing (for SSE through buffering reverse proxies) and an HTTP/2 {@code DATA}-frame path are
- * documented follow-ups; this encoder's field-block output is unchanged by either.
+ * not implemented; this encoder's field-block output does not depend on either.
  *
  * <h2>Field Order &amp; Rules</h2>
  * <pre>

@@ -17,9 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * L1 Contract: {@link FlowMigrationState} compact-constructor invariants and defensive copying.
  *
- * <p>The record shipped in v0.11 with no test of its own anywhere in the repository — its
- * invariants were exercised only indirectly, through migrations that happened to build a valid
- * one. This covers what a transform author can get wrong directly.
+ * <p>Elsewhere the record's invariants are exercised only indirectly, through migrations that
+ * happen to build a valid one. This covers what a transform author can get wrong directly.
  *
  * @since 0.11.0
  */

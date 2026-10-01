@@ -41,7 +41,7 @@ import java.util.concurrent.locks.LockSupport;
  * {@code join()}, and {@code close()} are all invoked by that same internal owner
  * thread, satisfying the Java 26 owner-thread rule.
  *
- * <h2>Decomposition (v0.8 Sprint 1 QA-014)</h2>
+ * <h2>Decomposition (QA-014)</h2>
  * <p>State transitions and the {@link java.lang.invoke.VarHandle} CAS primitive
  * live in {@link OutboxStateMachine}; batch flush + retry + DLQ delivery live in
  * {@link OutboxBatchFlusher}. This orchestrator owns only lifecycle (start/stop/

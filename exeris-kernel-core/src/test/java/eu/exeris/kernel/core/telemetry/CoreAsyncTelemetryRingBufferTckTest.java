@@ -13,7 +13,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * Validation gate (Sprint 7): {@link AsyncTelemetrySink} must satisfy the
+ * Validation gate: {@link AsyncTelemetrySink} must satisfy the
  * ring-buffer throughput + flush latency contract under 100k events/s.
  *
  * <p>The async sink wraps a no-op downstream so the test isolates the wrapper's

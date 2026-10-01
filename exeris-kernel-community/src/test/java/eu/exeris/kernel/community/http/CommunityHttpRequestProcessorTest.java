@@ -111,7 +111,7 @@ class CommunityHttpRequestProcessorTest {
 
     @Test
     void configuredHeaderCountLimitReachesTheProductionParsePath() {
-        // The binding this PR is actually about: CommunityHttpRequestProcessor builds the codec from
+        // The binding under test: CommunityHttpRequestProcessor builds the codec from
         // HttpConfig, and CommunityHttp1RequestReader parses with the codec's bounds on both passes.
         // Asserted as a pair -- the same request under the default config and under a tight one --
         // because either half alone would pass with the configured bound still ignored.
@@ -132,9 +132,9 @@ class CommunityHttpRequestProcessorTest {
                 exchange.respond(HttpResponse.noBody(HttpStatus.OK, HttpVersion.HTTP_1_1)));
 
         // No status line at all: a header-limit breach on the HTTP/1 path closes the stream rather
-        // than answering. That is pre-existing behaviour of the parse-fault path and not something
-        // this change introduces -- the default bound behaved identically, just at 100 instead of 1.
-        // It is worth its own slice (RFC 6585 defines 431 for exactly this) and is out of scope here.
+        // than answering. That is how the parse-fault path handles any header bound, the default of
+        // 100 as much as this 1. Answering 431 (RFC 6585 defines it for exactly this) is not
+        // implemented and is out of scope for this test.
         assertThat(refused.responseText())
                 .as("the configured bound of 1 must decide the outcome, not the default of 100")
                 .isEmpty();
@@ -524,10 +524,10 @@ class CommunityHttpRequestProcessorTest {
         assertThat(outbound).hasSizeGreaterThanOrEqualTo(27);
 
         MemorySegment outboundSegment = MemorySegment.ofArray(outbound);
-        // Walk by declared payload length rather than by 9-byte strides. The stride assumption held
-        // only while the server's initial SETTINGS was EMPTY, which was the defect ADR-071's tail
-        // named: it advertised no limits at all. Now it carries SETTINGS_MAX_HEADER_LIST_SIZE, so a
-        // fixed-offset walker reads the middle of a payload and reports whatever byte it lands on.
+        // Walk by declared payload length rather than by 9-byte strides. A stride walk holds only for
+        // an EMPTY initial SETTINGS, which advertises no limits at all; the server's initial SETTINGS
+        // carries SETTINGS_MAX_HEADER_LIST_SIZE (ADR-071), so a fixed-offset walker reads the middle
+        // of a payload and reports whatever byte it lands on.
         long pos = 0;
         Http2FrameParser.FrameHeader frame1 = Http2FrameParser.parseHeaderBigEndian(outboundSegment, pos);
         assertThat(frame1.frameType()).isEqualTo(Http2FrameType.SETTINGS);

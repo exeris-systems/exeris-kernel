@@ -34,11 +34,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * re-fires every select, re-throwing and busy-spinning the reactor (~5.7M throws/s measured).
  * Withdrawing only {@code OP_READ} merely relocates the spin onto {@code OP_WRITE} (a closed-engine
  * stream's queued egress is undrainable, so {@link NativeTcpCarrier#flushStream} never narrows
- * interest). The fix cancels the key outright and resets the stream abortively.
+ * interest). {@code closeKeyStream} therefore cancels the key outright and resets the stream
+ * abortively.
  *
- * <p>The assertion is non-vacuous: with the channel's stream unregistered, the pre-fix
- * {@code closeKeyStream} returns without touching the key, so the key would stay valid — the
- * cancellation assertion fails. The cancel happens before {@code resolveStream}, so it is
+ * <p>The assertion is non-vacuous: with the channel's stream unregistered, a {@code closeKeyStream}
+ * that resolves the stream before cancelling returns without touching the key, so the key would stay
+ * valid — the cancellation assertion fails. The cancel happens before {@code resolveStream}, so it is
  * independent of whether the stream's teardown completes or defers.
  */
 class NativeTcpCloseKeyStreamReadInterestTest {

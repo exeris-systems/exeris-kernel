@@ -201,7 +201,7 @@ class CommunityCronScheduleTest {
         @DisplayName("cron fields are read in UTC, not the host zone")
         void interpretedInUtc() {
             // Asserted rather than assumed: a driver switching to local time would silently move
-            // every schedule, and would reintroduce the DST gap and overlap that UTC does not have.
+            // every schedule, and would introduce the DST gap and overlap that UTC does not have.
             assertThat(next("0 0 * * *", Instant.parse("2026-03-10T23:30:00Z")))
                     .isEqualTo(Instant.parse("2026-03-11T00:00:00Z"));
         }

@@ -16,8 +16,7 @@ import org.junit.jupiter.api.Tag;
 // See CommunityTransportCarrierPinningMultiReactor2TckTest for the rationale —
 // the 4-reactor variant is a strict superset of the contention scenario, so it
 // inherits the same `@Tag("stress")` selector and runs only in the dedicated
-// `transport-stress-gate` job until the Sprint 7 non-blocking-ingress refactor
-// removes the FFM carrier pinning entirely.
+// `transport-stress-gate` job, for as long as the ingress path pins FFM carriers.
 @Tag("stress")
 @DisplayName("Community: Transport Carrier Pinning TCK (MultiReactor=4)")
 class CommunityTransportCarrierPinningMultiReactor4TckTest extends TransportCarrierPinningTck {

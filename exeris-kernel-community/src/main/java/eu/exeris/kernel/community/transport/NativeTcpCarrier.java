@@ -274,7 +274,8 @@ public final class NativeTcpCarrier implements TransportEngine {
             // Both groups warm in both roles. Roughly half of the fourteen — the PAQS and acceptor
             // events — are unreachable in CLIENT mode, and that is a cost this accepts rather than
             // a property it wants: splitting the group by role needs a catalogue key that is not a
-            // Subsystem name, which is the v0.13 telemetry-bootstrap mechanism.
+            // Subsystem name. That telemetry-bootstrap mechanism is not implemented; it is tracked in
+            // docs/ROADMAP.md ("Telemetry: a contract for events the kernel did not define").
             CoreJfrEventCatalogue.warmHotPath("transport");
             CommunityJfrEventCatalogue.warmHotPath("transport");
 
@@ -312,7 +313,7 @@ public final class NativeTcpCarrier implements TransportEngine {
         // Claim the stop before clearing `running`, and in this order. The reactors' liveness
         // predicate is `running || draining`, so raising `draining` second would leave a window where
         // both read false and a reactor could exit before the drain has even begun — the very failure
-        // this method exists to prevent, reintroduced at instruction scale. Entering through the
+        // this method exists to prevent, at instruction scale. Entering through the
         // `draining` CAS also makes the guard atomic: a concurrent second stop() loses the race here
         // and returns, instead of both threads passing a separate check.
         if (!draining.compareAndSet(false, true)) {
@@ -1089,8 +1090,8 @@ public final class NativeTcpCarrier implements TransportEngine {
      *
      * <p>The hook ({@link #completeEstablished}) fires on the reactor thread once the connection
      * is established: plaintext as soon as the key is armed, TLS once the reactor-driven handshake
-     * reaches ACTIVE. This deserialises handshakes that previously queued behind one another on the
-     * single acceptor thread, while preserving the {@code onConnectionEstablished} → {@code schedule}
+     * reaches ACTIVE. Handshakes therefore do not queue behind one another on the single acceptor
+     * thread, while preserving the {@code onConnectionEstablished} → {@code schedule}
      * ordering. Slot accounting stays lifecycle-based (released on stream close), so a failed/aborted
      * handshake that closes the stream releases the slot without acceptor involvement.
      */

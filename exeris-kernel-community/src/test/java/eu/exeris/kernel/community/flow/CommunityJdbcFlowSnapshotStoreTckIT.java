@@ -192,7 +192,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
             // requires a true concurrent first-writer race (two transactions both passing the
             // existsInTransaction=false check before either commits) which would need a barrier
             // injected between tryOptimisticUpdate and insertOrRemapPkConflict; that scenario
-            // is intentionally out of scope for this PR (see PR #94 review).
+            // is intentionally out of scope for this test.
             FlowSnapshot duplicate = newSnapshot(id, FlowState.PARKED, 0, FlowSnapshot.SCHEMA_VERSION_INITIAL);
             assertThatThrownBy(() -> loserStore.save(duplicate))
                     .as("duplicate save MUST raise EX-FLOW-7002")

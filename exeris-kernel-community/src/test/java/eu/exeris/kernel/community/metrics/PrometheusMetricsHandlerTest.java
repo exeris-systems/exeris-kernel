@@ -101,7 +101,7 @@ class PrometheusMetricsHandlerTest {
     }
 
     @Test
-    @DisplayName("PR #98 review: body buffer is released when respond() throws (no leak)")
+    @DisplayName("the body buffer is released when respond() throws (no leak)")
     void respondThrowsClosesBody() {
         PrometheusMetricsSink sink = new PrometheusMetricsSink();
         sink.increment("k", 1L);

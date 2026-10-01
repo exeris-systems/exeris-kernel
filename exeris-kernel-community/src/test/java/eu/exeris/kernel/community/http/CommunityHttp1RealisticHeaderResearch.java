@@ -156,7 +156,7 @@ class CommunityHttp1RealisticHeaderResearch {
                 + "\r\n";
     }
 
-    /** The old research fixture, kept so the two measurements can be compared directly. */
+    /** The synthetic sixteen-header fixture, so the two measurements can be compared directly. */
     private static String syntheticSixteen() {
         StringBuilder sb = new StringBuilder("GET /api/v1/orders/12345 HTTP/1.1\r\n");
         for (int i = 0; i < 16; i++) {

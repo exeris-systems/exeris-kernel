@@ -14,9 +14,9 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>The Community codec drivers ({@code JsonBodyEncoder},
  * {@code CommunityJsonRequestBodyEncoder}, {@code CommunityJsonResponseBodyDecoder},
  * {@code CommunityJsonRequestBodyDecoder}, {@code CommunityJsonEventPayloadCodec}) already accept
- * an injected {@link tools.jackson.databind.ObjectMapper}, but the providers assembling them
- * previously hardcoded {@code new ObjectMapper()} — a bare mapper with default {@code MethodHandle}
- * property accessors. Registering a customizer lets an application tune that mapper per
+ * an injected {@link tools.jackson.databind.ObjectMapper}; with no customizer, the providers
+ * assembling them hand in a bare {@code new ObjectMapper()} — a mapper with default
+ * {@code MethodHandle} property accessors. Registering a customizer lets an application tune that mapper per
  * {@link JsonMapperScope}, for example adding the Blackbird module
  * ({@code jackson-module-blackbird}) so property access compiles to monomorphic
  * {@code invokedynamic} call-sites instead of the shared, megamorphic {@code MethodHandle}
@@ -26,7 +26,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Provide an implementation on the application classpath and declare it in
  * {@code META-INF/services/eu.exeris.kernel.community.json.JsonMapperCustomizer}. Community ships
  * no customizer and pulls no optional Jackson module dependency: with none registered, every
- * mapper is byte-for-byte the pre-0.10.1 default (see
+ * mapper is byte-for-byte the bare-constructor default (see
  * {@link CommunityJsonMappers#forScope(JsonMapperScope)}).
  *
  * <h2>Contract</h2>

@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The reader derives its header list from the codec's single pass (v0.12). These pin the observable
+ * The reader derives its header list from the codec's single pass. These pin the observable
  * results of that: what the list contains, that it is not writable, and that the connection state
  * the same pass produces still agrees with it.
  */
@@ -80,7 +80,7 @@ class CommunityHttp1RequestReaderTest {
     @Test
     void theHeaderListHandedOnIsNotWritable() {
         // HttpRequest documents its header list as immutable and this is the list that becomes one.
-        // The reader stopped copying it in v0.12; what makes that safe is that nothing else holds
+        // The reader hands it on without copying; what makes that safe is that nothing else holds
         // the backing list, so the view is the only reference -- and it has to refuse writes.
         String request = "GET / HTTP/1.1\r\nHost: service.internal\r\n\r\n";
 

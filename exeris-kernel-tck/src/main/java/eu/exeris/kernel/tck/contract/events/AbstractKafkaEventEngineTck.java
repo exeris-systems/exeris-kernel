@@ -335,7 +335,7 @@ public abstract class AbstractKafkaEventEngineTck {
         EventEngine fresh = createEngine();
         fresh.start();
         // Give the consumer-loop VT enough time to run its first poll iteration with an
-        // empty subscription set — that is exactly the path that previously crashed it.
+        // empty subscription set — that is exactly the path that must not crash it.
         Thread.sleep(750L);
         assertThat(fresh.loop().isRunning())
                 .as("consumer loop must remain running after the first empty-subscription tick")

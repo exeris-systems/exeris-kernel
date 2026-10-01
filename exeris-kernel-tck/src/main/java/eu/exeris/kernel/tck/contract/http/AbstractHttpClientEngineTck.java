@@ -198,7 +198,7 @@ public abstract class AbstractHttpClientEngineTck {
             engine.start();
 
             // There is no scheme on HttpRequest, so there is no basis for defaulting to 80 or 443,
-            // and the listener port is not the peer's. Refusing names the fix.
+            // and the listener port is not the peer's. Refusing names the remedy.
             assertThatThrownBy(() -> engine.send(HttpRequest
                     .noBody(HttpMethod.GET, "/health", HttpVersion.HTTP_1_1, List.of())
                     .withAuthority("service.internal")))

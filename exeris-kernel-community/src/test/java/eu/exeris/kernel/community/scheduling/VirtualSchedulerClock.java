@@ -14,7 +14,7 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * <p>{@link #awaitUntil} ignores its deadline and waits for a signal instead: with virtual time,
  * a deadline can only arrive through {@link #advance(Duration)}, which signals. Honouring the
- * deadline against wall time would reintroduce exactly the real-time waiting ADR-057 §4 removes.
+ * deadline against wall time would be exactly the real-time waiting ADR-057 §4 rules out.
  */
 final class VirtualSchedulerClock implements CommunitySchedulerClock {
 

@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Adversarial unit coverage for {@link PendingRequestHeaders} HPACK-decode validation
- * (v0.9 Sprint 4c Phase 2). Exercises RFC 7540 §8.1.2 request-pseudo-header rules as a
+ * Exercises RFC 7540 §8.1.2 request-pseudo-header rules as a
  * fail-closed contract. These live as Community unit tests (not a portable TCK) because
  * HTTP/2 frame decode has no SPI seam — the validator is internal Community runtime.
  */

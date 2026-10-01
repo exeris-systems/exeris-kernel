@@ -46,9 +46,9 @@ class CommunityPersistenceEngineMigrationTest {
      *
      * <p>The list is hand-maintained, so a new file under {@code db/migration/} is inert until someone
      * remembers to add it — and nothing about that failure is visible until a query hits the missing
-     * column. That is not hypothetical: {@code V0.11.2} was written, shipped in the resource directory,
-     * and left unregistered, and the whole default build stayed green. Only the Testcontainers gate,
-     * which does not run in {@code mvn clean install}, said {@code column … does not exist}.
+     * column. An unregistered file in the resource directory leaves the whole default build green;
+     * only the Testcontainers gate, which does not run in {@code mvn clean install}, reports
+     * {@code column … does not exist}.
      */
     @Test
     @DisplayName("every db/migration resource is registered to run — an unlisted file is inert")
@@ -65,14 +65,14 @@ class CommunityPersistenceEngineMigrationTest {
     }
 
     /**
-     * The saga-state ALTERs actually execute — the three v0.11 columns exist after bootstrap.
+     * The saga-state ALTERs actually execute — the three columns the {@code V0.11.x} migrations add
+     * exist after bootstrap.
      *
-     * <p>Complements the check above: that one proves the files are wired, this one proves they run.
-     * Before this, no default-build test asserted that any of the three v0.11 migrations had any
-     * effect, on H2 or anywhere else.
+     * <p>Complements the check above: that one proves the files are wired, this one proves they run,
+     * on H2 in the default build.
      */
     @Test
-    @DisplayName("the v0.11 saga-state columns exist after migration")
+    @DisplayName("the V0.11.x saga-state columns exist after migration")
     void sagaStateCarriesTheV011Columns() {
         try (CommunityPersistenceEngine engine = new CommunityPersistenceEngine(testConfig(true));
              PersistenceConnection connection = engine.openConnection()) {
@@ -164,9 +164,8 @@ class CommunityPersistenceEngineMigrationTest {
 
             assertThat(shuffled)
                     .as("string order puts V0.10.0 and V0.11.0 ahead of V0.5.0, because '1' < '5'. "
-                            + "That was invisible while every script only created its own table with "
-                            + "IF NOT EXISTS; the first ALTER against an earlier script's table fails "
-                            + "outright, which is how it was found")
+                            + "A script that only creates its own table with IF NOT EXISTS hides that; "
+                            + "an ALTER against an earlier script's table fails outright")
                     .containsExactly(
                             "db/migration/V0.5.0__create_outbox.sql",
                             "db/migration/V0.7.0__create_saga_state.sql",

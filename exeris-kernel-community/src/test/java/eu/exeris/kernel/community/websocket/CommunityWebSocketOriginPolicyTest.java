@@ -25,8 +25,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The TCK drives every scenario with an origin and a non-empty allowlist, so neither the
  * empty-allowlist direction nor the header-less client is exercised there. Both are contract
- * statements rather than binding details, so they arguably belong in the TCK; they are here because
- * this PR already adds one security case to it and a second is better proposed than bundled.
+ * statements rather than binding details, so they arguably belong in the TCK; this binding test
+ * covers them, and promoting them to the TCK is a separate proposal.
  */
 @DisplayName("Community: WebSocket origin policy")
 class CommunityWebSocketOriginPolicyTest {

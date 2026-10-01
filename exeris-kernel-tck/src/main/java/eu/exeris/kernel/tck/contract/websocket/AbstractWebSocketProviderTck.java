@@ -26,14 +26,13 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * <p>ADR-084 §1 makes "the platform must get an endpoint <em>without</em> booting the kernel" the
  * deciding property of the whole decision — it is why the ADR rejects negotiating an upgrade on the
  * HTTP stream seam. A property that decides an ADR has to be enforceable against <em>any</em>
- * provider, and until now it was pinned nowhere: {@code AbstractWebSocketExchangeTck} covers
- * wire-level behaviour (handshake, frames, close codes), so an Enterprise provider that quietly
- * required a kernel scope would satisfy the shared suite while contradicting the ADR.
+ * provider, and this class is where it is pinned: {@code AbstractWebSocketExchangeTck} covers
+ * wire-level behaviour (handshake, frames, close codes), so a provider that quietly required a
+ * kernel scope would satisfy that suite while contradicting the ADR.
  *
- * <p>The Community provider did exactly that at v0.12 — it resolved the kernel's allocator at
- * construction and threw when nothing had bound one, which is precisely the state a tool embedding
- * an endpoint is in. That was a driver bug found by reading; this class is what makes the next one a
- * test failure.
+ * <p>The typical violation is a provider that resolves the kernel's allocator at construction and
+ * throws when nothing has bound one, which is precisely the state a tool embedding an endpoint is
+ * in. This class makes that a test failure rather than something only a reader can find.
  *
  * <p>These cases bind no {@code ScopedValue} and boot nothing, deliberately. A binding that needs a
  * kernel scope to pass here is not a conforming binding.

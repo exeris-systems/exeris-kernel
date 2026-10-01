@@ -160,8 +160,8 @@ class CommunityPersistenceEngineFairnessTest {
 
         // ADR-035 regression guard: this is the constrained-benchmark scenario. A tiny pool
         // (max=2 under -XX:ActiveProcessorCount=1) with a transient queue from a high client
-        // count must ADMIT (deferring to the acquire timeout) rather than shed — restoring the
-        // pre-v0.6.0 0% error rate. allowance = ceil(2 * 8.0) = 16, so queued <= 16 is admitted.
+        // count must ADMIT (deferring to the acquire timeout) rather than shed, which keeps that
+        // scenario at a 0% error rate. allowance = ceil(2 * 8.0) = 16, so queued <= 16 is admitted.
         @Test
         @DisplayName("DEFAULT: small saturated pool with transient queue admits (benchmark regression guard)")
         void defaultConfig_smallPoolTransientQueue_admits() {

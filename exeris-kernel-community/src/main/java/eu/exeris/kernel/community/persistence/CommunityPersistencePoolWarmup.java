@@ -14,8 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Community-internal connection-pool warm-up helper. Extracted from
- * {@link CommunityPersistenceEngine} in QA-010 (v0.8 Sprint 1) so the engine carries
+ * Community-internal connection-pool warm-up helper, kept apart from
+ * {@link CommunityPersistenceEngine} (QA-010) so the engine carries
  * one less responsibility: the "hold N connections at once to force HikariCP to
  * materialise them concurrently before the first user request arrives" workflow lives
  * here.

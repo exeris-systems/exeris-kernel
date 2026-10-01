@@ -180,8 +180,9 @@ public final class CoreJfrEventCatalogue {
             // KernelProviders.TELEMETRY_SINKS, and no Subsystem reports the name "telemetry", so
             // there is no start the warm-up could hang off. A host that stands the sinks up
             // initialises them where it builds them. Whatever stands the sink stack up in the
-            // kernel is the seam these belong to — the v0.13 roadmap slice — and they leave this
-            // list with it.
+            // kernel is the seam these belong to, and they leave this list with it. That seam is not
+            // implemented; it is tracked in docs/ROADMAP.md ("Telemetry: a contract for events the
+            // kernel did not define").
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent",
             "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",

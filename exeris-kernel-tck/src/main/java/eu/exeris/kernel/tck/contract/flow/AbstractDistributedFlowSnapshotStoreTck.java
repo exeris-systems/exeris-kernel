@@ -179,9 +179,8 @@ public abstract class AbstractDistributedFlowSnapshotStoreTck {
             assertThat(got.state()).isEqualTo(original.state());
             assertThat(got.stackPointer()).isEqualTo(original.stackPointer());
             assertThat(got.compensationStack()).containsExactly(7, 9);
-            // The three components v0.11 added to this record. The fixture has populated
-            // currentStepName and definitionVersion since ADR-062/ADR-064 landed but nothing asserted
-            // they survived the round trip, so a store that silently dropped a column passed this
+            // The three identity components (ADR-062/ADR-064). Populating them in the fixture without
+            // asserting the round trip would let a store that silently drops a column pass this
             // contract. Every one of them is what a resume guard reads, so losing one in transit turns
             // a sound saga into a fail-closed refusal — or worse for the stack, into a rollback the
             // runtime can no longer check.

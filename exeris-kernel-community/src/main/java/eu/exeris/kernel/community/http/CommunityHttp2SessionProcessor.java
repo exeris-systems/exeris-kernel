@@ -284,7 +284,7 @@ final class CommunityHttp2SessionProcessor {
                     allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.PROTOCOL_ERROR);
             return false;
         }
-        // HTTP-112 (v0.8 Sprint 5): RFC 7540 §5.1.1 stream-id monotonicity + §5.1.2
+        // HTTP-112: RFC 7540 §5.1.1 stream-id monotonicity + §5.1.2
         // SETTINGS_MAX_CONCURRENT_STREAMS cap. INVALID_ID is a connection-fatal protocol
         // error (GOAWAY + close loop); OVER_CAP is a per-stream refusal that keeps the
         // connection open for other streams (RST_STREAM REFUSED_STREAM + skip body).

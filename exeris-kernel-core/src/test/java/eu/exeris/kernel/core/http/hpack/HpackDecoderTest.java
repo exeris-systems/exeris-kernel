@@ -141,7 +141,7 @@ class HpackDecoderTest {
         void sameInputPassesAtTheDefault() {
             // Without this half the test above would pass against a decoder that refused every
             // literal of that shape for some unrelated reason, and would keep passing if the
-            // constructor argument were ignored and the old constant restored.
+            // constructor argument were ignored in favour of a constant.
             HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 65_536, 65_536);
             MemorySegment block = testArena.allocate(2048);
             long end = writeLiteralNoIndex(block, 0, LONG_NAME, "v");

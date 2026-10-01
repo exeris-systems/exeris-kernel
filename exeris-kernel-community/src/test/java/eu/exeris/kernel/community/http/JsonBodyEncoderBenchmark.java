@@ -32,16 +32,16 @@ import java.util.List;
  * JMH Benchmark: JSON response-body encoding, streaming vs. materialize-and-copy.
  *
  * <h2>Why this exists</h2>
- * <p>The response-encode hot path had no JMH coverage — the only allocation/CPU evidence came from
- * whole-stack perfbox runs, which cannot isolate the encoder. This benchmark measures the encode step
- * directly, comparing the three strategies side by side in one run via {@link #strategy}:
+ * <p>Whole-stack perfbox runs cannot isolate the encoder on the response-encode hot path, so this
+ * benchmark measures the encode step directly, comparing the three strategies side by side in one
+ * run via {@link #strategy}:
  * <ul>
  *   <li>{@code STREAMING} — {@link JsonBodyEncoder} writing straight into the loaned off-heap segment
  *       through {@link SegmentSink} (0.10.2+).</li>
  *   <li>{@code STREAMING_REUSED_WRITER} — streaming through a pre-built, reused {@link ObjectWriter}; a
  *       documented <em>negative result</em> (allocation-neutral vs {@code STREAMING}) — writer reuse is
  *       not a lever on the residual. See {@link #encodeStreamingReusedWriter(Object)}.</li>
- *   <li>{@code MATERIALIZE_AND_COPY} — the pre-0.10.2 path: {@code ObjectMapper.writeValueAsBytes}
+ *   <li>{@code MATERIALIZE_AND_COPY} — the materialising path: {@code ObjectMapper.writeValueAsBytes}
  *       to a heap {@code byte[]}, then {@link MemorySegment#copy} into the loaned buffer. Kept here
  *       only as the A/B baseline.</li>
  * </ul>
@@ -50,7 +50,7 @@ import java.util.List;
  * <p>Run with the GC profiler ({@code -prof gc}) — {@code gc.alloc.rate.norm} (bytes allocated per op)
  * is the primary signal: streaming should drop the per-op heap {@code byte[]} entirely. In CI the
  * benchmarks job additionally records JFR ({@code settings=default}), from which the same per-op
- * allocation is derivable. Throughput ({@code ops/s}) is the secondary signal — the removed copy pass.
+ * allocation is derivable. Throughput ({@code ops/s}) is the secondary signal — the copy pass streaming skips.
  *
  * <p>Payload is a list of small records approximating a benchmark {@code /users} response (a few KB of
  * JSON), so the streaming path exercises {@link SegmentSink}'s grow once past the initial estimate.
@@ -125,7 +125,7 @@ public class JsonBodyEncoderBenchmark extends AbstractExerisBenchmark {
         }
     }
 
-    /** Pre-0.10.2 baseline path, inlined here for A/B only — not used by production code. */
+    /** Materialise-then-copy baseline path, inlined here for A/B only — not used by production code. */
     private HttpEncodedBody encodeMaterializeAndCopy(Object value) {
         byte[] bytes = mapper.writeValueAsBytes(value);
         LoanedBuffer buffer = context.allocator().allocateNetwork(bytes.length);
