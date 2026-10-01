@@ -37,8 +37,10 @@ Where each `### Breaking` entry of [`CHANGELOG.md`](CHANGELOG.md#0120--2026-09-3
 | http, community: the Community TLS client verifies its server | 8 |
 | persistence: `RowCursor.getString` throws `EX-PERS-5008` outside the measured type set | 12 |
 | events: `EX-EVENT-6002` matches only queue overflow | 10 |
+| tck: `AbstractSharedScopeAccessMatrixTck` declares three more store operations | 4 |
 
-Step 13 is the licence change, which needs no code edit.
+Step 13 is the licence change, which needs no code edit. Step 14 is for a deployment that copied the
+kernel's reference shared-scope RLS policy; it is a database change, not a code edit.
 
 1. **Re-read your transport and HTTP configuration.** Nothing changed shape, but limits the runtime
    ignored, compiled in or borrowed are now enforced as configured — see "[knobs that did nothing](docs/release/v0.12.0-release-notes.md#compatibility-knobs-that-did-nothing-now-do-something)"
@@ -111,6 +113,13 @@ Step 13 is the licence change, which needs no code edit.
      compiles and links; what changed is what the answer means.
    - `AbstractCryptoEngineTck`: the three Community-only checks are skipped, not passed, for a
      binding whose `isCommunityTier()` is `false`.
+   - `AbstractSharedScopeAccessMatrixTck` declares three more abstract store operations, so a
+     binding does not compile until it adds them: `updateValue(ctx, value, newValue)`,
+     `reassignOwner(ctx, value, newOwner)` and `delete(ctx, value)`, each returning the affected row
+     count or throwing a `PersistenceProviderException` when the store refuses. Its new cells fail a
+     binding whose policy lets a tenant update, re-own or delete a partition-mate's row, and one
+     whose owner cannot update and delete its own. A binding whose owner or scope column is not text
+     overrides `ownerA()`, `ownerB()` and `sharedScope()`.
 
    **If you implement a testkit fixture interface**, `EmbeddedHttpEngineFixture` gained
    `runInKernelScope(Runnable)`, which a class outside the kernel adds.
@@ -188,3 +197,9 @@ Step 13 is the licence change, which needs no code edit.
     `LICENSE` is the unmodified Apache License 2.0; the Commons Clause condition is gone. No code
     edit follows from it. See "[Licence](docs/release/v0.12.0-release-notes.md#licence-the-kernel-is-now-apache-license-20-unmodified)"
     in the release notes.
+14. **If your database carries the shared-scope RLS policy from `RlsConnectionInterceptor`'s
+    Javadoc, replace it.** That single policy's widened `USING` also governs `UPDATE` and `DELETE`, so
+    a tenant can delete a partition-mate's shared row and re-own one. Drop it and create the two
+    policies the Javadoc now gives: the tenant-private policy for every command, and an additive
+    `FOR SELECT` policy that widens reads on `exeris.shared_scope`. Reads are unchanged; writes to a
+    partition-mate's row now affect no row.

@@ -44,19 +44,30 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * <p>{@code exeris.shared_scope} is published alongside the tenant key on every strategy, because
  * row-visibility is orthogonal to physical placement. The interceptor only <em>publishes</em> the
  * setting; whether reads actually widen is decided by the deployment's own RLS policy, which the kernel
- * does not ship and cannot introspect. A conforming policy widens the read predicate and leaves the write
- * predicate pinned to the owner:
+ * does not ship and cannot introspect. A conforming policy is two policies: an owner-pinned one for every
+ * command, and an additive one that widens {@code SELECT} only:
  *
  * {@snippet lang="sql" :
  * ALTER TABLE table_name ENABLE ROW LEVEL SECURITY;
  * ALTER TABLE table_name FORCE  ROW LEVEL SECURITY;
  *
  * CREATE POLICY tenant_isolation ON table_name
- *   USING (tenant_id = current_setting('exeris.tenant_id', true)
- *          OR (NULLIF(current_setting('exeris.shared_scope', true), '') IS NOT NULL
- *              AND shared_scope = current_setting('exeris.shared_scope', true)))
+ *   USING (tenant_id = current_setting('exeris.tenant_id', true))
  *   WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true));
+ *
+ * CREATE POLICY shared_scope_read ON table_name FOR SELECT
+ *   USING (shared_scope = NULLIF(current_setting('exeris.shared_scope', true), ''));
  * }
+ *
+ * <p><b>The widening is its own {@code FOR SELECT} policy, never a wider {@code USING} on the owner
+ * policy.</b> A policy without a {@code FOR} clause applies to every command, and its {@code USING}
+ * decides which existing rows {@code UPDATE} and {@code DELETE} can reach, not only which rows
+ * {@code SELECT} returns. Widened there, it lets a tenant delete a partition-mate's shared row, and
+ * re-own one with {@code UPDATE ... SET tenant_id = <self>}, which a {@code WITH CHECK} pinned to the
+ * acting tenant accepts. ADR-012 §4b.4 forbids both. PostgreSQL ORs permissive policies per command, so
+ * {@code SELECT} sees the owner's rows plus the shared scope's, while {@code INSERT}, {@code UPDATE} and
+ * {@code DELETE} see the owner policy alone. {@code NULLIF} makes a cleared scope ({@code ''}) match no
+ * row, including rows whose own tag is empty.
  *
  * <p><b>{@code FORCE} is not optional, and leaving it out fails open.</b> PostgreSQL exempts a table's
  * owner from that table's own policies unless the table is forced. A deployment whose application
@@ -77,9 +88,9 @@ import eu.exeris.kernel.spi.security.StorageContext;
  * empty-string guard on the tenant arm too, the way the shared-scope arm already carries it:
  * {@code tenant_id = NULLIF(current_setting('exeris.tenant_id', true), '')::uuid}.
  *
- * <p>Note that {@code WITH CHECK} is unchanged from the tenant-private policy — owner-scoped write is
- * what the existing clause already expresses, so widening reads does not require relaxing writes. A
- * tenant can read its partition-mates' rows and still only ever write its own.
+ * <p>The owner policy is the tenant-private policy, unchanged: owner-scoped write is what it already
+ * expresses, so widening reads adds a policy rather than relaxing one. A tenant can read its
+ * partition-mates' rows and still only ever insert, update or delete its own.
  *
  * <h2>The Agnostic Data Principle</h2>
  * <p>This interceptor is <b>identity-blind</b> — it never imports
