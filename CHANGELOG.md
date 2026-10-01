@@ -114,8 +114,9 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   `post`, `patch` and `delete`, so a Java client built on it could not send `PUT`, and the router
   matches methods exactly: an update served on `PUT` answered a `PATCH` client with not-found.
   `put` has `post`'s and `patch`'s contract (non-null body, typed decode, `WebClientException` on a
-  non-2xx response). `PUT` is idempotent, so the bound `HttpRetryPolicy` may retry it where it would
-  not retry `POST` or `PATCH`.
+  non-2xx response). `PUT` is idempotent, so a retry policy that retries idempotent requests, as the
+  Community default does, may retry it with no `Idempotency-Key` header, which `POST` and `PATCH` need
+  for the same treatment.
 
 - **SPI: `eu.exeris.kernel.spi.http.StreamRouteResolver` and `eu.exeris.kernel.spi.http.StreamMatch`,
   the contract through which a driver resolves stream routes** (ADR-043 Amendment A1), classified

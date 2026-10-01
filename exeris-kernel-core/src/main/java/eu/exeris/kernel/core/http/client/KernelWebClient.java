@@ -322,9 +322,10 @@ public final class KernelWebClient {
      * response body as {@code responseType}. Same contract as
      * {@link #post(String, Object, Class)} otherwise.
      *
-     * <p>{@code PUT} is idempotent (RFC 9110 §9.2.2), so the bound
-     * {@link HttpRetryPolicy} may retry it on a transient failure where it
-     * would not retry {@code POST} or {@code PATCH}; the body is encoded again for each attempt.
+     * <p>{@code PUT} is idempotent (RFC 9110 §9.2.2). A retry policy that retries idempotent requests,
+     * as the Community default does, may therefore retry it on a transient failure with no
+     * {@code Idempotency-Key} header, which {@code POST} and {@code PATCH} need for the same treatment.
+     * The body is encoded again for each attempt.
      *
      * @param <T>          response payload type
      * @param path         request-target path
