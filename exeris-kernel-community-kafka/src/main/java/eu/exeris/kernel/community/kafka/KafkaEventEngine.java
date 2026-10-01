@@ -95,8 +95,7 @@ import java.util.function.Function;
  */
 @SuppressWarnings({
         // KafkaEventEngine bundles publish + consume + producer + consumer wiring intentionally;
-        // splitting it would dilute the single Kafka-binding entry point. Sprint 8 SQ-006 may
-        // re-evaluate alongside other large engines.
+        // splitting it would dilute the single Kafka-binding entry point.
         "PMD.ExcessiveImports",
         "PMD.CouplingBetweenObjects"
 })

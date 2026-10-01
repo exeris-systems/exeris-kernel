@@ -19,7 +19,7 @@ import javax.tools.Diagnostic;
 import java.util.Set;
 
 /**
- * Compile-time validation processor for {@code @Immutable} config keys (v0.9 Sprint 5).
+ * Compile-time validation processor for {@code @Immutable} config keys.
  *
  * <h2>What it enforces</h2>
  * <p>Unlike {@code RequiresRoleProcessor}, this processor emits no source — it only

@@ -107,7 +107,7 @@ final class CommunityHikariSupport {
                 && !CommunityHikariUtils.containsKeyIgnoreCase(properties, "defaultRowFetchSize")) {
             properties.put("defaultRowFetchSize", "50");
         }
-        // DOC-090 (v0.8 Sprint 5): JDBC driver-side prepared-statement cache. Required for
+        // DOC-090: JDBC driver-side prepared-statement cache. Required for
         // JdbcFlowSnapshotStore + outbox + RLS-interceptor paths to amortise SQL parse cost
         // across the two-step OCC UPDATE-then-INSERT pattern. The first-writer's UPDATE_OCC
         // and INSERT statements are re-prepared every save without the cache; PostgreSQL also

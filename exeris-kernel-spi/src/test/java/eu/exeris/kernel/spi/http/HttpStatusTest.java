@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Contract tests for {@link HttpStatus} — code-range validation and RFC 9110 §15
- * status-class predicates (v0.9 Sprint 4c Phase 3 SPI coverage).
+ * status-class predicates.
  */
 @DisplayName("HttpStatus — validation + status-class predicates")
 class HttpStatusTest {

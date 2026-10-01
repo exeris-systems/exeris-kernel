@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests {@link Http2SessionContext#admitClientStreamId(int)} — HTTP-112 (v0.8 Sprint 5).
+ * Tests {@link Http2SessionContext#admitClientStreamId(int)} — HTTP-112.
  *
  * <p>Covers RFC 7540 §5.1.1 (peer-initiated stream IDs MUST be odd and strictly
  * increasing) and §5.1.2 ({@code SETTINGS_MAX_CONCURRENT_STREAMS} cap, currently

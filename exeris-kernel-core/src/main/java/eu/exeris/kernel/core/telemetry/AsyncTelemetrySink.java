@@ -166,10 +166,10 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         // permit-counted (single permit max), so producer-side over-signal is harmless;
         // when the consumer is actively draining, the call is a cheap no-op kernel hop.
         // Required because MpscArrayQueue.offer is wait-free but does NOT signal a
-        // blocking consumer (unlike ArrayBlockingQueue.offer which woke ABQ's internal
-        // condition variable). Without this unpark, events sat in the ring up to the
-        // full IDLE_PARK_NANOS budget — observed as multi-second fan-out latency
-        // under CoreFlowEngineTest's 512-iteration schedule/park/wake load (PR #139).
+        // blocking consumer (unlike ArrayBlockingQueue.offer, which wakes its internal condition
+        // variable). Without this unpark, events sit in the ring for up to the full IDLE_PARK_NANOS
+        // budget, which shows as multi-second fan-out latency under CoreFlowEngineTest's
+        // 512-iteration schedule/park/wake load.
         LockSupport.unpark(consumer);
     }
 

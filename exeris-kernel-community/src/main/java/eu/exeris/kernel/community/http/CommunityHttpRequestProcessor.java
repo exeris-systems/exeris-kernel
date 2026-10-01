@@ -26,8 +26,8 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
-// Cohesion baseline post-QA-011 (v0.8 Sprint 1): h2c/HTTP-2 upgrade detection and
-// aggregate-buffer telemetry were extracted to dedicated helpers
+// Cohesion (QA-011): h2c/HTTP-2 upgrade detection and aggregate-buffer telemetry live in dedicated
+// helpers
 // (CommunityHttpH2cUpgradeDetector, CommunityHttpAggregateTelemetry). The remaining
 // suppressions reflect intrinsic processor responsibilities: the request loop is the
 // natural integration point that catches generic stream errors (graceful close

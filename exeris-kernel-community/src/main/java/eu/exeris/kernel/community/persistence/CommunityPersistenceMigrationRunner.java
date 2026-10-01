@@ -22,8 +22,8 @@ import java.util.regex.Pattern;
 import java.util.regex.Matcher;
 
 /**
- * Community-internal SQL migration bootstrap helper. Extracted from
- * {@link CommunityPersistenceEngine} in QA-010 (v0.8 Sprint 1) to reduce the engine's
+ * Community-internal SQL migration bootstrap helper, kept apart from
+ * {@link CommunityPersistenceEngine} (QA-010) to narrow the engine's
  * responsibility surface — the engine owns connection lifecycle and admission control;
  * this helper owns reading SQL resources from the classpath, ordering them, and
  * splitting each into statements. Deciding which migrations still need applying, and

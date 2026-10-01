@@ -15,7 +15,7 @@ import java.util.UUID;
 
 /**
  * Community zero-allocation guard for the {@code @RequiresRole} accept path
- * (ADR-014 §5; reviewer finding on PR #102).
+ * (ADR-014 §5).
  *
  * <h2>What this proves</h2>
  * <p>{@link RoleCheckEnforcer#isAllowed(int, PrincipalContext, RoleRegistry)}
