@@ -23,8 +23,8 @@ import java.util.concurrent.locks.LockSupport;
  * <p>This lives in Community, not Core: it knows the <em>concrete</em> Community subsystems and their
  * health primitives (e.g. {@code CommunityPersistenceEngine#canServiceRequest()}), wired in as a
  * {@link HealthSource} per subsystem. It only pushes state through the existing public
- * {@code markSubsystemState} — no generic subsystem-health method is added to the SPI (that is a v0.10
- * decision). Core stays driver-agnostic.
+ * {@code markSubsystemState} — by design, no generic subsystem-health method is added to the SPI.
+ * Core stays driver-agnostic.
  *
  * <h2>State discipline</h2>
  * <p>The watcher transitions <strong>only</strong> {@code RUNNING ↔ DEGRADED}. It never touches a

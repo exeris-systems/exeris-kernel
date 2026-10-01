@@ -21,12 +21,11 @@ import java.util.Map;
 /**
  * The record of which migrations this database has already had applied (ADR-073).
  *
- * <p>Before this existed, apply-once was not a property of the runner but of how each migration
- * happened to be written: every shipped script guarded its DDL with {@code IF NOT EXISTS}, so
- * re-running the whole set on every boot was a no-op. That holds only until the first migration
- * that cannot be written that way — a data backfill, a {@code DROP COLUMN}, a constraint tightening
- * — and the backfill case fails <em>silently</em>, because a re-applied {@code UPDATE} leaves a
- * healthy boot and wrong data.
+ * <p>The ledger makes apply-once a property of the runner rather than of how each migration happens
+ * to be written. Guarding DDL with {@code IF NOT EXISTS} makes re-running a script a no-op only for
+ * migrations that can be written that way; a data backfill, a {@code DROP COLUMN} or a constraint
+ * tightening cannot, and the backfill case fails <em>silently</em>, because a re-applied
+ * {@code UPDATE} leaves a healthy boot and wrong data.
  *
  * <p>The ledger table is created with {@code IF NOT EXISTS} and is deliberately not recorded in
  * itself: it is the one piece of schema whose creation has to stay idempotent, because there is

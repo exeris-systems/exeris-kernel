@@ -35,15 +35,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * A refused durable checkpoint has to leave a machine-readable trace.
  *
- * <p>The failure this pins cost a day to diagnose from a benchmark run, because the only trace was
- * an uncaught exception on the flow virtual thread. The store-side event that exists for save
+ * <p>Without this event, the only trace of the failure this pins is an uncaught exception on the flow
+ * virtual thread. The store-side event that exists for save
  * failures ({@code FlowSnapshotSaveFailedEvent}, JFR-091) is emitted from inside
  * {@code JdbcFlowSnapshotStore.save}'s try-with-resources body, so a failure raised by the resource
  * expression itself - the connection acquire - escapes every catch there and emits nothing. This
  * event sits at the call site instead, so it fires whatever the binding is and wherever inside it
  * the write died.
  *
- * <p>Behaviour is unchanged: the exception still propagates. Only the silence is removed.
+ * <p>The event adds a trace and changes no behaviour: the exception still propagates.
  */
 @DisplayName("Flow: a refused snapshot save is observable")
 class FlowSnapshotPersistFailedEventTest {

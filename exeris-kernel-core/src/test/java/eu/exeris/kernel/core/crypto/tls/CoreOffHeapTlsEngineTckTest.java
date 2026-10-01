@@ -181,7 +181,7 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
             // No notifyBound() / fd bind here: the fd-owner engine stays UNINITIALIZED so
             // beginHandshake() fails fast (see requiresExternalBindBeforeHandshake()). Real
             // handshake I/O is covered by OffHeapTlsEngineLoopbackIT. notifyBound() without a
-            // real fd previously masked the phantom-handshake busy-spin bug.
+            // real fd masks a phantom-handshake busy-spin, so this harness does not call it.
             return new OffHeapTlsEngine(handles, serverCtxPtr, true, allocator);
         }
     }

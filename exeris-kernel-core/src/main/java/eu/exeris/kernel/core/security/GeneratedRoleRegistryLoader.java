@@ -21,7 +21,7 @@ import java.lang.invoke.MethodType;
  * {@code eu.exeris.kernel.security.generated.RoleCheckRegistry} emitted by
  * {@code RequiresRoleProcessor}. Core must not declare a compile dependency on
  * that artifact — it only exists when at least one {@code @RequiresRole} is
- * compiled somewhere downstream, and a compile edge would reintroduce the
+ * compiled somewhere downstream, and a compile edge would create the
  * reactor cycle the processor deliberately avoids (build-config is consumed by
  * SPI as a plugin, not a module dependency). The class is therefore resolved by
  * <b>string FQN</b> (mirroring {@code RequiresRoleProcessor.GENERATED_CLASS_FQN})

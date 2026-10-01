@@ -133,8 +133,8 @@ class CronSyntaxTest {
             // The common spellings of "every hour" and "every day". Both stride past every value but
             // the first, so each fires exactly once per cycle. A bound at the field's upper value
             // would reject these two while admitting */59 and */23, which fire twice — backwards
-            // from the reading that would motivate the bound, and a v0.10 schedule that stops
-            // constructing on v0.11.
+            // from the reading that would motivate the bound, and a schedule that constructs today
+            // would stop constructing.
             assertThatCode(() -> new JobTrigger.Cron("0 */24 * * *")).doesNotThrowAnyException();
             assertThatCode(() -> new JobTrigger.Cron("*/60 * * * *")).doesNotThrowAnyException();
             assertThatCode(() -> new JobTrigger.Cron("* * * * */9")).doesNotThrowAnyException();

@@ -12,8 +12,8 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * Real kernel engines for events and flow, booted in-process, for consumers outside this repository.
  *
  * <h2>Why this exists</h2>
- * <p>v0.11 gave the testkit a real persistence engine and nothing else, so a host runtime binding the
- * events or flow SPI still had to write doubles — and a double encodes how its author <em>read</em> the
+ * <p>A real persistence engine alone leaves a host runtime binding the events or flow SPI writing
+ * doubles — and a double encodes how its author <em>read</em> the
  * contract, not how the runtime <em>behaves</em>. Ordering, lifecycle and threading are exactly the
  * properties a double cannot get wrong loudly. Saga state is the sharpest case: step ordering,
  * compensation, and the optimistic-lock conflict on a stale write are behaviour no stub reproduces,

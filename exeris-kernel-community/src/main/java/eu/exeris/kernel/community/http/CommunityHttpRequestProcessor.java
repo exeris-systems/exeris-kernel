@@ -302,7 +302,7 @@ public final class CommunityHttpRequestProcessor {
 
         StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
         if (streamRoute != null) {
-            // v0.10 streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
+            // Streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
             // (HttpStreamEngine deadline / StreamAdmissionController) but their PRODUCTION binding is
             // deliberately deferred here, not wired:
             //   - obligation 6 (JWT-expiry fail-closed): dispatched with no auth deadline until the
@@ -312,7 +312,7 @@ public final class CommunityHttpRequestProcessor {
             //     the dedicated long-lived-slot ceiling is not yet enforced. The safety property — new
             //     stream-opens shed under load — still holds via carrier-edge PAQS (NativeTcpCarrier's
             //     AdmissionController), which sheds any new stream including an SSE open. Plumbing the
-            //     carrier arbiter through to a dedicated streaming ceiling is a v0.10 follow-up.
+            //     carrier arbiter through to a dedicated streaming ceiling is not implemented.
             // ADR-061 applies to a stream open exactly as it does to a request. Routed through the
             // request dispatcher rather than checked here, so there is one implementation of the
             // route requirement and one place it can drift from.

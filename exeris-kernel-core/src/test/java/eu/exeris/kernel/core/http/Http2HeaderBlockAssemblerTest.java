@@ -25,9 +25,10 @@ class Http2HeaderBlockAssemblerTest {
     @Test
     void headerBlockBoundIsTheConfiguredOneNotAConstant() {
         try (Arena arena = Arena.ofConfined()) {
-            // ADR-071's tail: this bound was a hardcoded 65 536, so an operator raising the header
-            // limits saw HTTP/1 honour them and HTTP/2 silently not. A tiny bound proves the value
-            // is read rather than the constant — at 65 536 this frame would sail through.
+            // ADR-071: this bound is the configured one, so HTTP/2 honours the header limits an
+            // operator raises exactly as HTTP/1 does; a constant here would make HTTP/2 silently
+            // ignore them. A tiny bound proves the value is read rather than a constant — at a
+            // constant 65 536 this frame would sail through.
             Http2HeaderBlockAssembler assembler =
                     new Http2HeaderBlockAssembler(new StubAllocator(arena), 4);
             Http2FrameParser.FrameHeader header =

@@ -100,9 +100,8 @@ final class CommunityWebSocketUpgradeRequest {
 
     private static long findHeaderStart(MemorySegment segment, int length) {
         // Long throughout: the method returns a long offset and MemorySegment indexes in longs, so
-        // computing in int and widening at the return was the wrong way round even where the values
-        // cannot overflow. Doing the arithmetic in the type the result is used at removes the
-        // question instead of answering it in a comment.
+        // the arithmetic is done in the type the result is used at rather than in int and widened at
+        // the return. That removes the overflow question instead of answering it in a comment.
         for (long i = 0; i + 1 < length; i++) {
             if (segment.get(ValueLayout.JAVA_BYTE, i) == '\r'
                     && segment.get(ValueLayout.JAVA_BYTE, i + 1) == '\n') {

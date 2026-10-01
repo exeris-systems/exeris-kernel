@@ -12,7 +12,7 @@ import java.util.Collection;
  * <p>A refused save must not escape {@code runInstance} uncaught: by the time the write can fail,
  * the instance has already been flipped to PARKED and registered, so an uncaught exception would
  * leave it advertising a durability it does not have. Flipping the state only after a successful
- * write would look like the fix and is worse — the instance is wakeable in this JVM, so refusing
+ * write looks like the remedy and is worse — the instance is wakeable in this JVM, so refusing
  * to park it would turn a transient store outage into a saga lost even without a restart.
  *
  * <p>So the park stands and the claim does not. See docs/subsystems/flow.md for the contract.

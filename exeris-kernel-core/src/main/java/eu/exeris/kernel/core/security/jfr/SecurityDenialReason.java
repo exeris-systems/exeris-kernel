@@ -72,8 +72,8 @@ public enum SecurityDenialReason {
     /**
      * The canonical {@code EX-SEC-*} code this denial carries.
      *
-     * <p>Bound to the reason rather than passed alongside it, so the two cannot drift — the pairing
-     * was already wrong in two places before this enum existed.
+     * <p>Bound to the reason rather than passed alongside it, so the two cannot drift: a code passed
+     * separately at each call site can be paired with the wrong reason at any one of them.
      *
      * @return the error code
      */

@@ -55,7 +55,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code exeris-kernel-core/pom.xml} binds Failsafe over {@code **&#47;*IT.java} at
  * {@code integration-test}/{@code verify}, so the standard build runs it. Adding the tag would drop it
  * from Surefire-only opt-out paths ({@code -DexcludedGroups=integration}) while Failsafe ran it
- * anyway — the exact mismatch removed from {@code OffHeapTlsEngineLoopbackIT} in v0.8 Sprint 6.
+ * anyway — the same reason {@code OffHeapTlsEngineLoopbackIT} carries no such tag.
  *
  * <h2>Platform</h2>
  * <p>Linux and Windows. macOS is excluded on a concrete layout difference, not caution: BSD

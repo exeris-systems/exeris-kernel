@@ -73,7 +73,7 @@ final class HttpConfigValidation {
         // The port is checked HERE and not only when a request is sent. This validator exists to
         // catch operator mistakes at construction, where the message can name the key; deferring a
         // missing port to the first request would report it as a per-request failure instead, which
-        // is the same defect ADR-071 fixed for the header limits.
+        // is the placement ADR-071 rules out for the header limits too.
         int close = defaultAuthority.startsWith("[") ? defaultAuthority.indexOf(']') : -1;
         int separator = close >= 0 ? defaultAuthority.indexOf(':', close) : defaultAuthority.lastIndexOf(':');
         if (separator <= 0 || separator == defaultAuthority.length() - 1) {

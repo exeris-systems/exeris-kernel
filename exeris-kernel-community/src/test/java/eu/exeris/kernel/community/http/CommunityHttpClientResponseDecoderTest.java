@@ -34,9 +34,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The decoder stopped materialising a line, a name substring and a value substring per field in
- * v0.12, and stopped building a header list twice per response. These pin what must not have moved:
- * the characters, the whitespace handling, which lines are skipped, and what counts as a parseable
+ * The decoder materialises no line, name substring or value substring per field, and builds the
+ * header list once per response. These pin what that must preserve: the characters, the
+ * whitespace handling, which lines are skipped, and what counts as a parseable
  * {@code Content-Length}.
  */
 class CommunityHttpClientResponseDecoderTest {

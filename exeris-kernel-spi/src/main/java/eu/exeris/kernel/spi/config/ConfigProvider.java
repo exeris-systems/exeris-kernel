@@ -536,8 +536,7 @@ public interface ConfigProvider {
      * OTLP emission path yet — there is no {@code TraceContext} carrier, no OTLP sink, and no
      * span emission in SPI/Core/Community. They are forward placeholders for the kernel tracing
      * milestone tracked in {@code docs/ROADMAP.md} §"Telemetry: OTLP Metrics Export and
-     * Distributed Tracing" (targeted ~Sprint 0.12 / v0.12 of the consolidated 1.0 GA roadmap).
-     * The only telemetry export shipping today is the Prometheus pull sink (v0.7).
+     * Distributed Tracing". The only telemetry export implemented is the Prometheus pull sink.
      *
      * @param jfrEnabled     whether JFR recording is active
      * @param metricsEnabled whether the Prometheus metrics endpoint is active

@@ -134,8 +134,8 @@ final class Http2SessionContext implements AutoCloseable {
      *
      * <p>Takes the {@link HttpConfig} rather than the three {@code int}s it reads out of it. They
      * are the same type, adjacent, and all default to 65 536, so a transposed pair would compile,
-     * pass every test that uses defaults, and only diverge once an operator configured one — which
-     * is the exact failure shape this slice exists to remove, reintroduced at the call site.
+     * pass every test that uses defaults, and only diverge once an operator configured one: a
+     * configured bound silently not applied, produced at the call site.
      */
     /* default */ static Http2SessionContext create(MemoryAllocator allocator, HttpConfig config) {
         HpackDynamicTable decodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);

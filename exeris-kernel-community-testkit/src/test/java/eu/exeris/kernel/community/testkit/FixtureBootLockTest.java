@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * What is testable here is <em>mutual exclusion</em>, not the race it prevents.
  *
  * <p>A lost race inside the kernel is not deterministically reproducible, so no test asserts that two
- * fixtures would have swapped configuration. What can be pinned is the property the fix rests on: a
+ * fixtures would have swapped configuration. What can be pinned is the property the lock rests on: a
  * second caller does not enter while the first is inside. The blocked half of that is necessarily a
  * bounded wait; the released half is deterministic, and a broken lock fails the released half's
  * premise as surely as the blocked one.

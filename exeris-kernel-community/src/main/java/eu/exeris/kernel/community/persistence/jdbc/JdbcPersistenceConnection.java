@@ -205,12 +205,13 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
         try {
             // Not conditional on inTransaction. The pool baseline is autoCommit=false, so EVERY
             // statement opens a real transaction whether or not an SPI caller opened one — which is
-            // why commitStandaloneWriteIfNeeded exists for the success path. Its counterpart was
-            // missing here: a standalone write that THREW got neither the commit nor a rollback, so
-            // the physical connection went back to the pool inside an aborted transaction and the
-            // next request to receive it died on its first statement, whatever that statement was.
-            // An RLS WITH CHECK rejection is the ordinary way to reach that — the security control
-            // working as designed poisoned a pooled connection for an unrelated later request.
+            // why commitStandaloneWriteIfNeeded exists for the success path, and this rollback is its
+            // counterpart. Without it a standalone write that THREW gets neither the commit nor a
+            // rollback, so the physical connection goes back to the pool inside an aborted
+            // transaction and the next request to receive it dies on its first statement, whatever
+            // that statement is. An RLS WITH CHECK rejection is the ordinary way to reach that — the
+            // security control working as designed would poison a pooled connection for an
+            // unrelated later request.
             rollbackQuietly();
             inTransaction = false;
             try {

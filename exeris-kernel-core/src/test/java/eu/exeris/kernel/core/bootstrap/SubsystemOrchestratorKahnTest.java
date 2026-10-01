@@ -234,9 +234,9 @@ class SubsystemOrchestratorKahnTest {
             assertThatThrownBy(() -> orchestrator.start(minimalConfig()))
                     .isInstanceOf(SubsystemOrchestrator.BootstrapException.class);
 
-            // The round used to collect failures and check them only after the loop, so bravo —
-            // in the real graph, the subsystem that binds a socket and accepts traffic — started
-            // on a kernel already known to be broken, and nothing rolls that back.
+            // A round that collects failures and checks them only after the loop would start bravo —
+            // in the real graph, the subsystem that binds a socket and accepts traffic — on a kernel
+            // already known to be broken, and nothing rolls that back.
             assertThat(started)
                     .as("alpha failed; bravo must never have been asked to start")
                     .containsExactly("alpha");

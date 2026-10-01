@@ -30,9 +30,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * {@code transport.idleTimeoutMillis} must reclaim a connection that moves no bytes.
  *
- * <p>Through v0.11 it reclaimed nothing. The key was read from configuration, validated against
- * {@code >= 0}, carried through {@code HttpConfig} into {@code TransportConfig}, and rendered by
- * {@code toString()} — and never compared to anything. An operator could set it, see it echoed
+ * <p>The key is read from configuration, validated against {@code >= 0}, carried through
+ * {@code HttpConfig} into {@code TransportConfig}, and rendered by {@code toString()} — all of which
+ * holds for a knob that is never compared to anything. An operator could then set it, see it echoed
  * back, and keep every idle connection forever. A knob that is carried but not consumed is
  * strictly worse than a missing one: the missing knob is discoverable.
  *

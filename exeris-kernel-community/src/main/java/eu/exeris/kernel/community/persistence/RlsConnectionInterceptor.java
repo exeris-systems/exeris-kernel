@@ -161,13 +161,13 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
                                      StorageContext storageContext) {
         StorageContext.IsolationStrategy strategy = storageContext.strategy();
 
-        // A switch EXPRESSION, so javac requires every constant to be answered. As a statement it did
+        // A switch EXPRESSION, so javac requires every constant to be answered. A statement does
         // not: a strategy added later would match no arm and fall straight through, publishing
         // neither session key on a pooled connection that still carries the previous request's — the
-        // silent cross-tenant read this class was repaired for, reintroduced by an enum edit
-        // elsewhere and reported by nothing.
+        // silent cross-tenant read this class exists to prevent, caused by an enum edit elsewhere
+        // and reported by nothing.
         //
-        // The guarantee survives version skew, which a statement's would not have. IsolationStrategy
+        // The guarantee survives version skew, which a statement's would not. IsolationStrategy
         // ships in exeris-kernel-spi and this class in exeris-kernel-community, and the two publish
         // independently — so a newer SPI can hand an older driver a constant it was never compiled
         // against. javac emits a synthetic MatchException throw for an exhaustive enum switch
@@ -206,8 +206,7 @@ public final class RlsConnectionInterceptor implements ConnectionInterceptor {
      * touches still reads whatever is in the session — which would be the previous tenant's key.
      *
      * <p>Publishing both keys together costs nothing: one {@code set_config} statement carries both,
-     * so the strategies that previously issued a scope-only statement issue this one instead. Same
-     * round-trip count, one fewer way to be wrong.
+     * so it takes the same round-trip count as a scope-only statement, with one fewer way to be wrong.
      */
     private static void publishSessionKeys(PersistenceConnection connection,
                                            StorageContext storageContext) {

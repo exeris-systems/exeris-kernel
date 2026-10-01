@@ -152,7 +152,7 @@ class HttpConfigTest {
         }
 
         @Test
-        @DisplayName("raising it is accepted — which is the point an operator could not reach before")
+        @DisplayName("raising it is accepted — the direction an operator needs it")
         void raisingIsAccepted() {
             assertThatCode(() -> withHeaderBlock(1_048_576)).doesNotThrowAnyException();
         }
@@ -203,7 +203,7 @@ class HttpConfigTest {
     }
 
     @Nested
-    @DisplayName("HPACK string literal — the other constant ADR-071 named as its tail")
+    @DisplayName("HPACK string literal — the other bound ADR-071 makes configurable")
     class StringLiteralBound {
 
         @Test
@@ -239,8 +239,8 @@ class HttpConfigTest {
     @DisplayName("Client peer (ADR-074) — refused at construction, where the message names the key")
     class ClientPeer {
 
-        // These assert CONSTRUCTION-time refusal specifically, and that is the whole point of the
-        // slice. The engine refuses the same shapes at send() with an IllegalStateException, which
+        // These assert CONSTRUCTION-time refusal specifically, and that is the whole point of
+        // them. The engine refuses the same shapes at send() with an IllegalStateException, which
         // is a different code path throwing a different type — so a TCK case there does not cover
         // this one. Deferring a misconfigured key to the first request reports an operator mistake
         // as a client problem, which is the anti-pattern validateRequestLimits above argues against.
@@ -302,10 +302,11 @@ class HttpConfigTest {
         @Test
         @DisplayName("-1 is refused, and the message says why this key is not the request key")
         void unlimitedIsRefused() {
-            // It resolved to a 64 KiB ceiling — BELOW the default, and the smallest value the range
-            // could produce — so an operator asking for no limit got the tightest one there is.
-            // Refused rather than fixed: a response ceiling bounds what a remote peer can make this
-            // client allocate, so "no limit" asks for the protection the key exists to provide.
+            // Read through the range, -1 resolves to a 64 KiB ceiling — BELOW the default, and the
+            // smallest value the range can produce — so an operator asking for no limit would get the
+            // tightest one there is. Refused rather than remapped: a response ceiling bounds what a
+            // remote peer can make this client allocate, so "no limit" asks for the protection the
+            // key exists to provide.
             assertThatThrownBy(() -> withResponseCeiling(-1L))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("maxResponseBodyBytes")

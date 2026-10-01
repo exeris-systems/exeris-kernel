@@ -35,19 +35,20 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * <p>The Community pool baseline is {@code autoCommit=false}, so <em>every</em> statement opens a real
  * database transaction whether or not an SPI caller opened one — which is why
  * {@code commitStandaloneWriteIfNeeded} exists for the success path. Its counterpart on the failure
- * path was missing: {@code close()} rolled back only when the SPI-level {@code inTransaction} flag was
- * set, so a standalone write that threw returned the physical connection to the pool inside an aborted
- * transaction. The next request to receive it died on its first statement — including the RLS
- * interceptor's, before any application code ran.
+ * path is {@code close()} rolling back regardless of the SPI-level {@code inTransaction} flag. A
+ * {@code close()} that rolls back only when that flag is set returns the physical connection of a
+ * standalone write that threw to the pool inside an aborted transaction, and the next request to
+ * receive it dies on its first statement — including the RLS interceptor's, before any application
+ * code runs.
  *
  * <p>A constraint violation is the cheapest way to reach that, but the ordinary way is an RLS
- * {@code WITH CHECK} rejection: the security control working as designed poisoned a pooled connection
- * for an unrelated later request.
+ * {@code WITH CHECK} rejection: the security control working as designed would poison a pooled
+ * connection for an unrelated later request.
  *
  * <p><b>The pool is pinned to one connection.</b> That is the whole point of this fixture rather than
  * a case in an existing suite. With a larger pool whether the poisoned connection comes back is a
- * matter of assignment order, and {@code CommunityPersistenceSharedScopeIT} was passing on exactly
- * that luck until an unrelated change added a statement to the acquire path.
+ * matter of assignment order, so a suite can pass on that luck until an unrelated change adds a
+ * statement to the acquire path.
  */
 @Tag("integration")
 @Testcontainers(disabledWithoutDocker = true)
@@ -99,9 +100,9 @@ class CommunityPersistenceFailedWriteReturnIT {
     @Test
     @DisplayName("a rejected write inside an explicit transaction is unaffected")
     void rejectedWriteInsideExplicitTransactionStillRecovers() {
-        // The path that already worked, kept as a guard: the fix widened when close() rolls back, and
-        // must not have narrowed anything. A failure here would mean the explicit-transaction case
-        // regressed while the standalone one was being repaired.
+        // A guard on the explicit-transaction path: close() rolls back on more than the
+        // inTransaction flag, and that must not narrow anything. A failure here means the
+        // explicit-transaction case broke while the standalone one holds.
         try (PersistenceConnection conn = engine.openConnection()) {
             conn.beginTransaction();
             assertThatThrownBy(() -> {

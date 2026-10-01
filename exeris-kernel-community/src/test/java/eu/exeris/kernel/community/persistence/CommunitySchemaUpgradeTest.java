@@ -121,7 +121,7 @@ class CommunitySchemaUpgradeTest {
         @Test
         @DisplayName("leaves compensation_step_names NULL, which is the opposite choice and correct")
         void identitiesBackfillNull() throws SQLException {
-            // V0.11.2 took the other option from its immediate predecessor on purpose: a BYTEA can
+            // V0.11.2 takes the other option from its immediate predecessor on purpose: a BYTEA can
             // represent NULL, so absence is carried by the read rather than by a sentinel. Asserted
             // because "both columns backfill" would pass against either choice, and the two
             // migrations disagreeing is what makes each one deliberate.

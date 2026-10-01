@@ -45,21 +45,18 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * @since 0.5
  */
-// Cohesion baseline post-QA-010 (v0.8 Sprint 1): migration bootstrap and pool warm-up
-// were extracted to dedicated helpers (CommunityPersistenceMigrationRunner,
-// CommunityPersistencePoolWarmup). The remaining cyclomatic complexity is dominated
-// by the per-request connection-acquisition decision tree (request-scope vs physical,
-// tenant pool selection, interceptor chain).
+// Cohesion: migration bootstrap and pool warm-up live in dedicated helpers
+// (CommunityPersistenceMigrationRunner, CommunityPersistencePoolWarmup). The remaining
+// cyclomatic complexity is dominated by the per-request connection-acquisition decision
+// tree (request-scope vs physical, tenant pool selection, interceptor chain).
 //
 // Residual GodClass / TooManyMethods suppressions reflect the central role the engine
 // plays in the SPI integration surface — it is the single class that has to thread
 // the request-scope session-box, the per-tenant pool registry, the interceptor chain,
 // and the admission controller through one PersistenceEngine façade. Further
-// decomposition (lifecycle vs. acquisition vs. admission) is a candidate for v0.8
-// Sprint 3 Quality batch II if the WMC=75 / method count remains above the gate
-// threshold after Sprint 1 closes. The `PMD.CouplingBetweenObjects` suppression from
-// the QA-010 pass was removed in this PR — PMD reports it as unnecessary against
-// the post-decomposition surface.
+// decomposition (lifecycle vs. acquisition vs. admission) is the candidate if the
+// WMC / method count stays above the gate threshold. PMD.CouplingBetweenObjects is not
+// suppressed: PMD reports it as unnecessary against this surface.
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.GodClass", "PMD.TooManyMethods"})
 final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalConnectionSource {
 
