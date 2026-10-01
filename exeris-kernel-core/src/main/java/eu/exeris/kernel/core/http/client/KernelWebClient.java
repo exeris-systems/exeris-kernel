@@ -318,6 +318,31 @@ public final class KernelWebClient {
     }
 
     /**
+     * Issues an HTTP {@code PUT} with a typed body and deserialises the
+     * response body as {@code responseType}. Same contract as
+     * {@link #post(String, Object, Class)} otherwise.
+     *
+     * <p>{@code PUT} is idempotent (RFC 9110 §9.2.2). A retry policy that retries idempotent requests,
+     * as the Community default does, may therefore retry it on a transient failure with no
+     * {@code Idempotency-Key} header, which {@code POST} and {@code PATCH} need for the same treatment.
+     * The body is encoded again for each attempt.
+     *
+     * @param <T>          response payload type
+     * @param path         request-target path
+     * @param body         request payload (encoded via the request encoder registry); must not be null
+     * @param responseType target type, or {@code Void.class} to discard
+     * @return the deserialised payload, or {@code null} when {@code responseType == Void.class}
+     * @throws NullPointerException if {@code body}, {@code path}, or {@code responseType} is
+     *                               {@code null}
+     * @throws WebClientException   on any non-2xx response or codec failure
+     * @since 0.12
+     */
+    public <T> T put(String path, Object body, Class<T> responseType) {
+        Objects.requireNonNull(body, "body must not be null for PUT");
+        return execute(HttpMethod.PUT, path, body, responseType);
+    }
+
+    /**
      * Issues an HTTP {@code PATCH} with a typed body and deserialises the
      * response body as {@code responseType}. Same contract as
      * {@link #post(String, Object, Class)} otherwise.
