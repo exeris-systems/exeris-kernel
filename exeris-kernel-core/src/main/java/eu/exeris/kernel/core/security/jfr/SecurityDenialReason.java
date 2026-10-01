@@ -10,11 +10,10 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * Why no security context could be established, as carried on {@code SecurityContextMissing}.
  *
  * <h2>Why the set is enumerated</h2>
- * <p>Every value here is one denial an operator has to be able to tell apart, and until 0.12 two of
- * them were advertised and never emitted: the event's own description named {@code NO_PROVIDER} and
- * {@code TOKEN_MISSING}, and nothing in the kernel produced either. An operator filtering on
- * {@code NO_PROVIDER} got an empty result and could reasonably conclude no deployment had ever been
- * misconfigured. Enumerating the reasons is what makes that class of drift a compile-time concern
+ * <p>Every value here is one denial an operator has to be able to tell apart, and every reason the
+ * event's description names must actually be emitted: an operator filtering on {@code NO_PROVIDER}
+ * who gets an empty result can reasonably conclude no deployment was ever misconfigured. Enumerating
+ * the reasons is what makes drift between the description and the emitters a compile-time concern
  * instead of a documentation one.
  *
  * <h2>The two error codes are not interchangeable</h2>
@@ -30,7 +29,7 @@ public enum SecurityDenialReason {
     /**
      * No security provider is bound, so no request can present a credential anybody would read.
      *
-     * <p>The one that matters most and the one that was dark: a deployment that never bound a
+     * <p>The one that matters most: a deployment that never bound a
      * provider denies its entire authenticated surface, and on the wire that is indistinguishable
      * from a fleet of clients that all forgot their tokens — so it gets diagnosed against the
      * clients. This event is the only place the two differ.

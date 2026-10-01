@@ -159,9 +159,9 @@ class CommunityCronScheduleTest {
         @Test
         @DisplayName("an unsatisfiable expression refuses quickly, not after two million steps")
         void unsatisfiableExpressionRefusesPromptly() {
-            // 30 February. The search bound used to be a STEP count sized as minutes-in-four-years,
-            // while the search advances by days and months — so this walked 2 108 160 ZonedDateTime
-            // operations, thousands of years past the horizon the message named, before refusing.
+            // 30 February. A bound counted in steps sized as minutes-in-four-years, while the search
+            // advances by days and months, would walk thousands of years past the horizon the message
+            // names before refusing; the bound is the calendar horizon itself.
             // It does that inside CommunityJobScheduler.submit, under the scheduler's single lock.
             //
             // Cost is the only observable difference: this cron subset has no year field, so its

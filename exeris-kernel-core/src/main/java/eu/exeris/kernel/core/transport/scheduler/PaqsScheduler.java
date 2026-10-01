@@ -115,7 +115,7 @@ public final class PaqsScheduler implements AutoCloseable {
      * time to spare. Above it, the platform stays the authority — a handler that blocks this long is
      * an application defect, and SIGKILL is the correct answer to it.
      *
-     * <p>Not configurable. Since 0.11 the drain waits on streams being <em>served</em> rather than
+     * <p>Not configurable. The drain waits on streams being <em>served</em> rather than
      * open, so a normal shutdown ends in milliseconds and this bound is only reached when a handler
      * will not return. Adding a knob would invite tuning it in place of fixing that.
      */

@@ -146,8 +146,8 @@ class CommunityOidcKeycloakIT {
                     assertThat(result.principal().scopes())
                             .as("the mapper must carry through exactly what the IdP granted — "
                                     + "pinning a scope name here would test Keycloak's realm "
-                                    + "defaults, and asserting a name the realm never issued is "
-                                    + "how this passed before 0.11, when the mapper invented one")
+                                    + "defaults, and a scope the realm never issued means the "
+                                    + "mapper invented it")
                             .isEqualTo(grantedScopes);
                     assertThat(result.storage().strategy()).as("isolation strategy").isNotNull();
                 }

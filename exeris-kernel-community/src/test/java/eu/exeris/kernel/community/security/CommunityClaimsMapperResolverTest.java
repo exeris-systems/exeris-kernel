@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The reachability half of {@code ClaimsMapper} — the SPI calls itself "the <b>only</b>
- * application-customisable mapping point in the identity pipeline", and until v0.11 a booted kernel
- * could not reach it (ADR-063, cross-repo stub).
+ * application-customisable mapping point in the identity pipeline", so a booted kernel must reach it
+ * (ADR-063, cross-repo stub).
  *
  * <p>The decision is tested through {@code select(Iterable)} rather than through the classpath: a
  * service file in test resources would apply to every test in this module and make the
@@ -32,7 +32,7 @@ class CommunityClaimsMapperResolverTest {
         ClaimsMapper resolved = CommunityClaimsMapperResolver.resolve();
 
         assertThat(resolved)
-                .as("an unconfigured deployment must keep the behaviour it had before the seam opened")
+                .as("an unconfigured deployment must get the Community default mapper")
                 .isInstanceOf(CommunityClaimsMapper.class);
     }
 

@@ -18,10 +18,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The allocation-sampling stride must be reachable through {@code ConfigProvider}.
  *
- * <p>Until v0.12 it was read from {@code -Dexeris.community.memory.jfr.sampleEvery} and from
- * nothing else: not from a config file, not from the environment, and not from
- * {@code docs/subsystems/config.md}, which never listed it. The property remains the second tier,
- * because it was the published surface.
+ * <p>A stride readable only from {@code -Dexeris.community.memory.jfr.sampleEvery} cannot be set
+ * from a config file or the environment. The system property is the second tier, because it is a
+ * published surface.
  */
 @DisplayName("CommunityMemoryJfrSampling — the stride is configuration, not only a -D flag")
 class CommunityMemoryJfrSamplingConfigTest {

@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link ClaimsMapper} is documented as the only application-customisable point in the identity
- * pipeline, and until 0.11 this provider offered no way to supply one — the default was constructed
- * inline, so an application needing a different subject or scope shape had to reimplement
+ * pipeline, so this provider must accept a substitute: without one, an application needing a
+ * different subject or scope shape has to reimplement
  * {@link eu.exeris.kernel.spi.security.identity.IdentityProvider} outright.
  */
 @DisplayName("Community OIDC: substituting the claims mapper")

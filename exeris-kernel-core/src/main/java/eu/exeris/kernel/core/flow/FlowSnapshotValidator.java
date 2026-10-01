@@ -127,7 +127,7 @@ final class FlowSnapshotValidator {
      * {@code EX-FLOW-7002 / phase=SCHEMA_MISMATCH} (Glass-Box rawArgs via
      * {@link FlowEngineException#schemaMismatch(String, int)}) and requires manual intervention.
      *
-     * <p>This method is the <b>bounds/arity</b> half. Since 0.11 it delegates to
+     * <p>This method is the <b>bounds/arity</b> half. It delegates to
      * {@link #validateSnapshotStepIdentity} for the half it structurally cannot cover: a same-arity
      * reorder leaves the index in range, so only comparing step identities detects it (ADR-062).
      * Terminal snapshots ({@link FlowState#isTerminal()}) are exempt — they are never resumed.
@@ -266,8 +266,8 @@ final class FlowSnapshotValidator {
         String planStepName = plan.stepAt(step).name();
         Optional<String> persistedName = persisted.currentStepName();
         if (persistedName.isEmpty()) {
-            // Written before 0.11. Resuming it would mean trusting the index again, which is the
-            // behaviour this guard exists to remove — so it is refused rather than assumed safe.
+            // A snapshot that records no step identity. Resuming it would mean trusting the bare
+            // index, which this guard exists to prevent — so it is refused rather than assumed safe.
             emitSchemaMismatch(persisted, step, stepCount,
                     FlowEngineException.REASON_STEP_IDENTITY_ABSENT, null, planStepName);
             throw FlowEngineException.schemaMismatchStepIdentityAbsent(engineName, step);

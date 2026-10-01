@@ -699,19 +699,19 @@ public final class SubsystemOrchestrator {
      * Starts a phase's subsystems in dependency-safe rounds, each round in order on the calling
      * thread.
      *
-     * <p><b>This ran one virtual thread per subsystem until v0.11 and no longer does</b>, and the
-     * reason is a hard limit rather than a preference (ADR-066). A subsystem's {@code start()} reads
+     * <p><b>This does not run one virtual thread per subsystem</b>, and the reason is a hard limit
+     * rather than a preference (ADR-066). A subsystem's {@code start()} reads
      * {@link ScopedValue} bindings established by two callers the orchestrator cannot see through:
      * {@code KernelBootstrap} binds {@code CURRENT_CONFIG} around the boot, and the <em>application</em>
      * binds its own — {@code HTTP_SERVER_HANDLER} is the load-bearing example, and an application is
-     * free to bind values the kernel has never heard of. {@code StructuredTaskScope} forks inherited
+     * free to bind values the kernel has never heard of. {@code StructuredTaskScope} forks inherit
      * all of it; a plain virtual thread inherits none of it, and a {@code ScopedValue.Carrier} can
-     * only carry values named in advance. Rebuilding the kernel's own carrier was tried and produced
-     * a boot that started the HTTP subsystem with no handler bound — every route answering 404.
+     * only carry values named in advance. Rebuilding the kernel's own carrier is not enough: it
+     * starts the HTTP subsystem with no handler bound — every route answering 404.
      *
-     * <p>The cost is boot latency: a phase now takes the sum of its subsystems' start times rather
-     * than the longest. It is paid once per JVM, {@code FOUNDATION} was already sequential, and the
-     * dependency-round structure is unchanged — only the execution inside a round is.
+     * <p>The cost is boot latency: a phase takes the sum of its subsystems' start times rather than
+     * the longest. It is paid once per JVM, {@code FOUNDATION} is sequential regardless, and the
+     * dependency rounds still decide the order — only the execution inside a round is sequential.
      */
     private void startParallel(List<Subsystem> subsystems,
                                 BootstrapPhase phase,

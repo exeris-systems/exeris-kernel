@@ -62,8 +62,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *       MUST surface as {@link RequestBodyDecodeException}, distinct from the
  *       {@link IllegalStateException} a missing decoder raises. The handler is required to
  *       answer {@code 400} for the first and {@code 5xx} for the second, and can only do that
- *       if the types differ — until 0.12 both were {@code IllegalStateException} and every
- *       malformed request became a 500.</li>
+ *       if the types differ — with one type for both, every malformed request becomes a 500.</li>
  *   <li><b>Driver exception opacity (The Wall).</b> No binding-specific type — no
  *       {@code tools.jackson.*} — may cross the SPI boundary. The wrapper is either a
  *       {@code java.*} exception or an SPI-owned one; opacity is about keeping <em>driver</em>
@@ -297,10 +296,10 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
         @Test
         @DisplayName("decode works when the context carries no allocator")
         void decodeWithoutAllocator() {
-            // The allocator was mandatory on this context until 0.12, which made every decode site
-            // require a bound MEMORY_ALLOCATOR even though no decoder reads one — a decoder is handed
-            // an already-allocated buffer. A decoder that needs auxiliary off-heap memory must take an
-            // allocator at construction; reaching for the context's is what this forbids.
+            // The allocator is optional on this context, so a decode site needs no bound
+            // MEMORY_ALLOCATOR: a decoder is handed an already-allocated buffer. A decoder that needs
+            // auxiliary off-heap memory must take an allocator at construction; reaching for the
+            // context's is what this forbids.
             HttpRequestBodyDecoder decoder = createDecoder();
             try (LoanedBuffer body = bufferOf(validEncodedBytes())) {
                 Object decoded = decoder.decode(body, validTargetType(), contextWithoutAllocator());

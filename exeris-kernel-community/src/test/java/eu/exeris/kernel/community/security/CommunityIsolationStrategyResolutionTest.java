@@ -44,9 +44,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Every row here is also driven across all bindings by
  * {@code AbstractSecurityProviderTck.IsolationStrategyContract}; this class is the Community-local
- * companion, not the authoritative coverage. Case 8 in particular used to be the <i>only</i> coverage
- * of the wrong-typed deny anywhere in the repository — the abstract suite had no such case, so no
- * other binding was ever asked for that token. It now does (ADR-012 §9, enforcement layers).
+ * companion, not the authoritative coverage. Case 8, the wrong-typed deny, is also an
+ * {@code AbstractSecurityProviderTck} case, so every binding is asked for that token (ADR-012 §9,
+ * enforcement layers).
  *
  * @since 0.5.0
  */

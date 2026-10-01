@@ -200,9 +200,9 @@ class InMemoryEventBusTest {
                 .isInstanceOf(StackOverflowError.class);
 
         assertThat(closes.get())
-                .as("N=3, so the bus retains twice and owes three closes. The unwind used to leave "
-                    + "the two unreached wrappers open, pinning the payload's segment for the "
-                    + "process's life; only the throwing handler's own wrapper was released")
+                .as("N=3, so the bus retains twice and owes three closes. An unwind that left the "
+                    + "two unreached wrappers open, releasing only the throwing handler's own, would "
+                    + "pin the payload's segment for the process's life")
                 .isEqualTo(retains.get() + 1);
         assertThat(closes.get()).isEqualTo(3);
     }
@@ -245,8 +245,8 @@ class InMemoryEventBusTest {
         assertThat(closes.get())
                 .as("two retains succeeded before the third threw, so three refs were outstanding "
                     + "(the caller's plus those two) with no handler thread to own any of them. "
-                    + "The fan-out used to leave all three, pinning the payload's segment for the "
-                    + "life of the process")
+                    + "A fan-out that left all three would pin the payload's segment for the life "
+                    + "of the process")
                 .isEqualTo(3);
     }
 

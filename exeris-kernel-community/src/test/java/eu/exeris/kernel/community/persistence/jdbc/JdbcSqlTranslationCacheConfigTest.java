@@ -18,10 +18,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The SQL placeholder-translation cache bound is configuration, not a constant.
  *
- * <p>It was a private {@code 1024} with no way to address it, and the cache it bounds
- * <b>never evicts</b> — so an application with more distinct statements than the bound keeps the
- * earliest ones it happened to see, not the hottest, and re-translates everything else on every
- * call. Raising the bound is the only lever, and until v0.12 there was none.
+ * <p>The cache it bounds <b>never evicts</b> — so an application with more distinct statements than
+ * the bound keeps the earliest ones it happened to see, not the hottest, and re-translates
+ * everything else on every call. Raising the bound is the only lever.
  *
  * <p>These cases drive the resolver rather than {@code translateParams}, deliberately: translation
  * is deterministic, so a cached and an uncached result are the same string and the bound is

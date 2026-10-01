@@ -24,8 +24,8 @@ import java.util.Arrays;
  *
  * <p>Measures the pair the engine's read loop actually runs per response: {@code
  * resolveExpectedTotal}, which the loop consults to learn when to stop reading, and {@code
- * decodeResponse}, which turns the aggregate into an {@link HttpResponse}. Until v0.12 both built a
- * full header list, so every name and value of every response was materialised twice.
+ * decodeResponse}, which turns the aggregate into an {@link HttpResponse}. If both built a full header
+ * list, every name and value of every response would be materialised twice.
  *
  * <p>Prints a table; asserts nothing.
  */

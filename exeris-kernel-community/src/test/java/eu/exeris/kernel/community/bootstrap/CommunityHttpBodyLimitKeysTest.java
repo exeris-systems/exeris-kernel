@@ -18,13 +18,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The two body limits resolve independently (ADR-071 amendment).
  *
  * <p>{@code http.maxRequestBodyBytes} bounds what this server accepts; {@code
- * http.maxResponseBodyBytes} bounds what this client reads back from someone else's. Until 0.12 the
- * client borrowed the request key, so tightening ingress shrank what the outbound client could read
- * and loosening it grew every response allocation — with neither name saying so.
+ * http.maxResponseBodyBytes} bounds what this client reads back from someone else's. A client that
+ * borrowed the request key would shrink what it can read whenever ingress is tightened, and grow every
+ * response allocation whenever ingress is loosened — with neither name saying so.
  *
  * <p>The load-bearing cases are the two negatives: setting one key must leave the other at its
- * default. A test that only asserted each key is honoured would pass just as well against the
- * shared-knob version this replaces.
+ * default. A test that only asserted each key is honoured would pass just as well against a single
+ * shared knob.
  */
 @DisplayName("Community HTTP config: the request and response body limits are separate keys")
 class CommunityHttpBodyLimitKeysTest {

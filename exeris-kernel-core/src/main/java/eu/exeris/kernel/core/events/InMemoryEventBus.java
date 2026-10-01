@@ -223,8 +223,8 @@ public final class InMemoryEventBus implements EventBus {
         // early-exit path (interrupt, RuntimeException) — every retain() is balanced.
         List<TrackingWrapper> wrappers = buildWrappers(payload, slotCount);
 
-        // Plain list, deliberately: dispatch no longer crosses a thread boundary, so the
-        // concurrent queue this used to be would buy nothing but an allocation and a CAS per add.
+        // Plain list, deliberately: dispatch does not cross a thread boundary, so a concurrent queue
+        // would buy nothing but an allocation and a CAS per add.
         List<Throwable> failures = new ArrayList<>(slotCount);
         try {
             dispatchOnCallingThread(slots, wrappers, descriptor, failures);

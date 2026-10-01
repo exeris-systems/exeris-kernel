@@ -31,14 +31,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * An accept that fails must not end the listener.
  *
- * <p>Until 0.12.0 an {@link IOException} from {@code accept()} took the listener down for the
- * lifetime of the JVM: {@code runAcceptorLoop} called {@code handleAsyncFailure} and returned,
- * clearing {@code running} and closing the server channel. That is how file-descriptor exhaustion
- * surfaces, and it is transient — descriptors come back as connections close — so a process that hit
- * its {@code ulimit -n} once needed a restart to serve again.
+ * <p>An {@link IOException} from {@code accept()} is how file-descriptor exhaustion surfaces, and it
+ * is transient — descriptors come back as connections close. A loop that called
+ * {@code handleAsyncFailure} and returned on it would clear {@code running} and close the server
+ * channel for the lifetime of the JVM, so a process that hit its {@code ulimit -n} once would need a
+ * restart to serve again.
  *
  * <h2>Why the loop is driven rather than the classification asserted</h2>
- * <p>The defect was that the loop <em>ended</em>. A test that asked "is {@code EMFILE} classified as
+ * <p>The failure this guards against is the loop <em>ending</em>. A test that asked "is {@code EMFILE} classified as
  * transient?" would assert the judgement and not the consequence, and would still pass against a
  * loop that classified correctly and returned anyway. So these cases run the real
  * {@code acceptorLoop} with a pass that fails and then recovers, and assert on what the loop did

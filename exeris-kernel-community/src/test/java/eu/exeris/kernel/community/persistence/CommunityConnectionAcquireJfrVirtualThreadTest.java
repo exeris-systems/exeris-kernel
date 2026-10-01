@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Regression coverage for the connection-acquire JFR event on virtual threads.
  *
- * <p>Background: {@code ConnectionAcquireEvent} used to be {@code begin()}'d before the
- * blocking pool checkout and {@code commit()}'d after it. On a virtual thread the checkout
+ * <p>Background: a {@code ConnectionAcquireEvent} {@code begin()}'d before the blocking pool
+ * checkout and {@code commit()}'d after it straddles a park. On a virtual thread the checkout
  * parks and unmounts the carrier; remounting on a different carrier and committing the held
  * event flushed a stale, carrier-bound {@code JfrBuffer}, crashing the JVM in
  * {@code JfrStorage::flush_regular_buffer} (JDK 26 GA, build 26+35). The fix made the event

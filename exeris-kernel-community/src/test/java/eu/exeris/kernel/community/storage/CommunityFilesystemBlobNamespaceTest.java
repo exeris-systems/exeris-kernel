@@ -91,9 +91,9 @@ class CommunityFilesystemBlobNamespaceTest {
                 upload(ref("report"), SUBJECT, null);
 
                 assertThat(download(ref("report.uploading")))
-                        .as("the staging file used to BE this object: opened with TRUNCATE_EXISTING, "
-                            + "then moved away by the commit, so the neighbour was first emptied and "
-                            + "then deleted by an upload that never named it")
+                        .as("a staging file at this object's own path would be opened with "
+                            + "TRUNCATE_EXISTING and moved away by the commit, emptying and then "
+                            + "deleting the neighbour through an upload that never named it")
                         .isEqualTo(NEIGHBOUR);
                 assertThat(download(ref("report"))).isEqualTo(SUBJECT);
             });
@@ -105,7 +105,7 @@ class CommunityFilesystemBlobNamespaceTest {
             asTenant(() -> {
                 upload(ref("report.uploading"), NEIGHBOUR, null);
 
-                // Closed without commit: the abort path deletes the staging file, which used to be
+                // Closed without commit: the abort path deletes the staging file, which must not be
                 // the neighbour's own path.
                 store.beginUpload(ref("report"), SUBJECT.length, null).close();
 

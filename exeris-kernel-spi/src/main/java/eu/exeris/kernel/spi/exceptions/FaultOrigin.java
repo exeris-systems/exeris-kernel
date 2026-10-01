@@ -7,18 +7,17 @@ package eu.exeris.kernel.spi.exceptions;
 /**
  * SPI: who has to change something for a failed operation to succeed.
  *
- * <p>A kernel exception has always said <em>what</em> went wrong — an error code, a message, and
- * {@code rawArgs}. It has never said <em>whose fault</em> it was, and that is the question a
- * protocol adapter must answer to pick a status code. Until 0.12 the only place the kernel stated
- * it was ADR-036 §2, and it stated it by naming two exception <em>types</em>: a body that will not
- * bind is a {@code 400}, a decoder that is not registered is a {@code 5xx}. That works only for a
- * caller who already knows both types by name — and the natural
+ * <p>An error code, a message and {@code rawArgs} say <em>what</em> went wrong. They do not say
+ * <em>whose fault</em> it was, and that is the question a protocol adapter must answer to pick a
+ * status code. Answering it by exception <em>type</em> — a body that will not bind is a
+ * {@code 400}, a decoder that is not registered is a {@code 5xx} (ADR-036 §2) — works only for a
+ * caller who already knows both types by name, and the natural
  * {@code catch (RuntimeException) -> 500} turns every malformed request into a server error.
  *
  * <h2>The default is the conservative one</h2>
- * <p>{@link #SYSTEM} is what an unclassified failure reports, which is what the runtime already did
- * before this enum existed — so nothing changes for an exception nobody has classified, and
- * classifying more of them later is an addition rather than a change of behaviour. The asymmetry is
+ * <p>{@link #SYSTEM} is what an unclassified failure reports, the same server-side treatment an
+ * adapter gives an exception it cannot classify — so classifying more of them later is an addition
+ * rather than a change of behaviour. The asymmetry is
  * deliberate: reporting a caller's mistake as a server error is a worse error message, while
  * reporting a broken deployment as the caller's mistake hides an outage behind a {@code 4xx} that
  * nobody pages on.

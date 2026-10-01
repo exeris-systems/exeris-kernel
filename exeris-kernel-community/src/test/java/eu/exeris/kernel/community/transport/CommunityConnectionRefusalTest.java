@@ -111,7 +111,7 @@ class CommunityConnectionRefusalTest {
         assertThat(stats.totalRejected())
                 .as("TransportStats.totalRejected is the field an operator consults when asking "
                         + "whether the server is turning work away; an accept-time refusal is the "
-                        + "most total form of that and used to be missing from it entirely")
+                        + "most total form of that and must be counted in it")
                 .isPositive();
     }
 

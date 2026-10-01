@@ -55,9 +55,9 @@ final class CommunityTransportDrainEvent extends Event {
     /* default */ int busyRemaining;
 
     @Label("Open Streams At Drain Start")
-    @Description("Connections admitted when the drain began, busy or idle. Reported for context: "
-            + "before 0.11 the drain waited on THIS number, which an idle keep-alive connection "
-            + "never lowers, so shutdown burned its full deadline")
+    @Description("Connections admitted when the drain began, busy or idle. Reported for context "
+            + "only: the drain does not wait on this number, because an idle keep-alive connection "
+            + "never lowers it")
     /* default */ int openAtStart;
 
     @Label("Drain Duration (ns)")

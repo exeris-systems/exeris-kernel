@@ -194,9 +194,8 @@ class NativeTcpCarrierBackendSelectionTest {
     @Test
     @DisplayName("transport.socket.backend from the config provider selects the backend")
     void configProviderSelectsBackend() {
-        // Until v0.12 this choice was reachable only through -D or an env var, so it was invisible
-        // to a config file and absent from docs/subsystems/config.md. The ladder below it is
-        // unchanged; what is new is that the provider is consulted first.
+        // A choice reachable only through -D or an env var is invisible to a config file. The
+        // provider is consulted first; the -D and env-var ladder sits below it.
         MapConfigProvider config = new MapConfigProvider(
                 Map.of(SOCKET_BACKEND_KEY, SOCKET_BACKEND_NIO), Map.of());
         ScopedValue.where(KernelProviders.CURRENT_CONFIG, config).run(() -> {
