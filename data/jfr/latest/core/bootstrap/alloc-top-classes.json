@@ -1,36 +1,81 @@
 [ {
   "class" : "java.util.HashMap$Node",
-  "count" : 270,
-  "bytes" : 15701632,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[Ljava.util.HashMap$Node;",
-  "count" : 119,
-  "bytes" : 52132096,
-  "category" : "JVM_NOISE"
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 272,
+  "events" : 272,
+  "samples" : 59,
+  "sample_weight_bytes" : 15431616,
+  "tlab_refills" : 213,
+  "tlab_bytes" : 55836672,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 272,
+    "other" : 0
+  }
 }, {
   "class" : "java.util.ImmutableCollections$ListItr",
-  "count" : 114,
-  "bytes" : 6280192,
-  "category" : "JVM_NOISE"
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 117,
+  "events" : 117,
+  "samples" : 26,
+  "sample_weight_bytes" : 6800416,
+  "tlab_refills" : 91,
+  "tlab_bytes" : 23855104,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 117,
+    "other" : 0
+  }
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "kind" : "array",
+  "category" : "test_harness",
+  "count" : 117,
+  "events" : 117,
+  "samples" : 27,
+  "sample_weight_bytes" : 53566464,
+  "tlab_refills" : 90,
+  "tlab_bytes" : 23592960,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 117,
+    "jdk" : 0,
+    "other" : 0
+  }
 }, {
   "class" : "[Ljava.lang.Object;",
-  "count" : 42,
-  "bytes" : 2604880,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.HashMap$KeyIterator",
-  "count" : 2,
-  "bytes" : 35023280,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "[B",
-  "count" : 1,
-  "bytes" : 277968,
-  "category" : "JVM_NOISE"
-}, {
-  "class" : "java.util.LinkedHashMap$Entry",
-  "count" : 1,
-  "bytes" : 56,
-  "category" : "JVM_NOISE"
+  "kind" : "array",
+  "category" : "test_harness",
+  "count" : 38,
+  "events" : 38,
+  "samples" : 8,
+  "sample_weight_bytes" : 2087488,
+  "tlab_refills" : 30,
+  "tlab_bytes" : 7864320,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 38,
+    "jdk" : 0,
+    "other" : 0
+  }
 } ]
