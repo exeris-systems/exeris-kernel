@@ -84,8 +84,9 @@ independent resolutions that can disagree about what a "route" is.
 
 Right shape, wrong order. It retracts a written promise in `persistence.md`, inverts a live RLS
 integration test guarding a tenant-isolation property, and needs a release-ownership design — all
-spent on a default whose affordability is unmeasured. The acquire-rate multiplier is bounded at
-`[1.0×, 3.17×]` and nobody has narrowed it.
+spent on a default whose affordability is unmeasured. The acquire-rate multiplier has only the upper
+bound derived in [RFC-2026-08-26 §"Data gathered"](../rfc/RFC-2026-08-26-request-connection-lifetime.md#data-gathered),
+and nobody has narrowed it.
 
 ### Option 5 — A detach seam on the box (RFC Option B)
 
@@ -123,8 +124,9 @@ already runs everywhere outside a request box**, flow threads included. A missed
 there today and would be a leak here, under the same rule and the same detector.
 
 **5. What gates a future default flip is named, not deferred vaguely.** Flipping `PROMPT` to
-unit-of-work scoping requires: the real acquire-rate multiplier inside `[1.0×, 3.17×]`, measured as a
-count of reuses that cross a transaction boundary; the cost of the interceptor's session-key
+unit-of-work scoping requires: the real acquire-rate multiplier, within the bound derived in
+[RFC-2026-08-26 §"Data gathered"](../rfc/RFC-2026-08-26-request-connection-lifetime.md#data-gathered),
+measured as a count of reuses that cross a transaction boundary; the cost of the interceptor's session-key
 statements at that rate; and a re-run of the saga benchmark with
 `eu.exeris.kernel.persistence.ConnectionHold` enabled, so the request-side and flow-side holds are
 apportioned rather than assumed. Until all three exist the default does not move.
