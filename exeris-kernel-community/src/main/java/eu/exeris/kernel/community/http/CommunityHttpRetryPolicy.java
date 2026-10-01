@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -43,7 +39,7 @@ import java.util.function.DoubleSupplier;
  * <p>Stateless and thread-safe. Cross-call circuit-breaking is intentionally out of scope (the
  * per-attempt contract carries no cross-call state) — see ADR-045.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 // PMD.CyclomaticComplexity: a retry policy is a decision machine — idempotency gate, retryable-status
 // set, backoff ceiling, and Retry-After parsing each add a small branch. No single method exceeds the
@@ -92,6 +88,8 @@ public final class CommunityHttpRetryPolicy implements HttpRetryPolicy {
      * @param baseDelayMillis exponential-backoff base in milliseconds; MUST be {@code >= 0}
      * @param maxDelayMillis  backoff cap in milliseconds; MUST be {@code >= baseDelayMillis}
      * @param jitter          supplier of a jitter fraction in {@code [0, 1)}; never {@code null}
+     * @throws IllegalArgumentException if {@code maxAttempts < 1}, if {@code baseDelayMillis < 0},
+     *     if {@code maxDelayMillis < baseDelayMillis}, or if {@code jitter} is {@code null}
      */
     public CommunityHttpRetryPolicy(int maxAttempts, long baseDelayMillis, long maxDelayMillis, DoubleSupplier jitter) {
         if (maxAttempts < MIN_ATTEMPTS) {

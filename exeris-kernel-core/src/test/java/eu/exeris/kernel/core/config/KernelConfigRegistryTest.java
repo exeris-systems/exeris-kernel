@@ -1,12 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.config;
+
+import eu.exeris.kernel.tck.support.TckScope;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,7 +12,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -289,7 +286,6 @@ class KernelConfigRegistryTest {
 
         @Test
         @DisplayName("Concurrent fireReload from 64 VTs — all updates are visible, no exception")
-        @SuppressWarnings("preview")
         void concurrentFireReloadFromVirtualThreads() throws Exception {
             var reg    = new KernelConfigRegistry();
             var values = new CopyOnWriteArrayList<String>();
@@ -298,7 +294,7 @@ class KernelConfigRegistryTest {
             reg.seal();
 
             int threads = 64;
-            try (var scope = StructuredTaskScope.open()) {
+            try (TckScope scope = TckScope.openFailFast()) {
                 for (int i = 0; i < threads; i++) {
                     final String val = String.valueOf(i);
                     scope.fork(() -> fireAndReturn(reg, "app.properties", "counter", val));

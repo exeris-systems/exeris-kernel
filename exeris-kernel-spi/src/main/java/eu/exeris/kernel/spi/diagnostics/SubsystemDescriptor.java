@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.diagnostics;
 
@@ -19,7 +15,7 @@ import java.util.Objects;
  * @param dependsOn names of subsystems this one depends on; defensively copied, never {@code null}
  * @param running   whether the subsystem is currently running
  * @param optional  whether the subsystem is optional (skippable under a DEGRADE failure policy)
- * @since 0.9.0
+ * @since 0.9
  */
 public record SubsystemDescriptor(
         String name,
@@ -28,6 +24,13 @@ public record SubsystemDescriptor(
         boolean running,
         boolean optional) {
 
+    /**
+     * Rejects a {@code null} {@code name} or {@code phase} and replaces {@code dependsOn} with an
+     * unmodifiable copy, so the descriptor cannot be mutated through the list the caller passed in.
+     *
+     * @throws NullPointerException if {@code name}, {@code phase} or {@code dependsOn} is {@code null},
+     *                              or if {@code dependsOn} contains a {@code null} element
+     */
     public SubsystemDescriptor {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(phase, "phase");

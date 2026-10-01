@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -15,12 +11,12 @@ import java.util.Map;
  * Injectable seam that supplies a point-in-time snapshot of the verification key set.
  *
  * <p>Implementations return an immutable {@code kid -> key} snapshot. There is no HTTP
- * or wire vocabulary here — a real OIDC/JWKS fetch lands in v0.10
- * ({@code CommunityOidcIdentityProvider}, deferred by ADR-040). A refresh that cannot
+ * or wire vocabulary here — the OIDC/JWKS fetch lives in {@link CommunityJwksHttpKeySetSource},
+ * which {@code CommunityOidcIdentityProvider} builds (ADR-040). A refresh that cannot
  * produce a trustworthy snapshot MUST signal failure via {@link KeySetRefreshException}
  * rather than returning an empty or partial map (fail-closed, ADR-012).
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @FunctionalInterface
 /* default */ interface KeySetSource {

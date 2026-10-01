@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.persistence;
 
@@ -22,11 +18,11 @@ import jdk.jfr.StackTrace;
  * JFR event emitted for each admission control decision in the persistence layer.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * AdmissionDecisionEvent.emit(new AdmissionDecisionEvent.Payload(
  *         providerId, accepted, queueDepth, saturation, fairnessRatio,
  *         queueDepthP95, queueWaitP95Ms, decisionReason));
- * }</pre>
+ * }
  *
  * <h2>Hot-Path Guard</h2>
  * <p>Uses a cached {@link EventType} probe and checks {@link EventType#isEnabled()}
@@ -38,7 +34,7 @@ import jdk.jfr.StackTrace;
  * <pre>fairnessRatio = accepted / (accepted + rejected)</pre>
  * Target: ≥0.90 for equitable service delivery.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.AdmissionDecision")
 @Label("Persistence Admission Decision")
@@ -54,6 +50,12 @@ public final class AdmissionDecisionEvent {
     private AdmissionDecisionEvent() {
     }
 
+    /**
+     * Reports whether this event's JFR event type is currently enabled.
+     *
+     * @return {@code true} if an active recording would accept this event; {@code false} if
+     *         {@link #emit} would return immediately without allocating a payload-backed event
+     */
     public static boolean isEnabled() {
         return EVENT_TYPE.isEnabled();
     }
@@ -89,6 +91,15 @@ public final class AdmissionDecisionEvent {
 
     /**
      * Immutable payload for a single admission decision event.
+     *
+     * @param providerId     stable identifier of the provider tier, e.g. {@code "postgres-community"}
+     * @param accepted       {@code true} if the request was admitted; {@code false} if rejected with backpressure
+     * @param queueDepth     depth of pending connection requests at decision time
+     * @param saturation     active connections as a fraction of max pool size, in {@code [0.0, 1.0]}
+     * @param fairnessRatio  acceptance ratio over the recent window, {@code accepted / (accepted + rejected)}
+     * @param queueDepthP95  P95 queue depth over the recent fairness window
+     * @param queueWaitP95Ms P95 queue wait, in milliseconds, over the recent fairness window
+     * @param decisionReason deterministic reason code for this admission decision
      */
     public record Payload(String providerId,
                           boolean accepted,

@@ -1,13 +1,10 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.memory;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import jdk.jfr.Category;
 import jdk.jfr.Description;
 import jdk.jfr.Event;
@@ -22,14 +19,14 @@ import jdk.jfr.StackTrace;
  * semantic misuse that silently no-ops and could mask a use-after-free condition.
  *
  * <h2>Error Code</h2>
- * <p>Maps to {@code EX-MEM-1003} — AllocationHint/ownership misuse conflict.
+ * <p>Maps to {@code EX-MEM-1003} — peek-view ownership misuse.
  *
  * <h2>JFR-First Contract</h2>
  * <p>{@code @StackTrace(false)} — zero overhead on the hot path when JFR is not recording.
  * The misuse site is identified by the {@code callerMethod} field, not by capturing an
  * expensive stack walk.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.core.PeekViewMisuse")
 @Label("Peek View Ownership Misuse")
@@ -58,7 +55,7 @@ import jdk.jfr.StackTrace;
         }
         PeekMisuseEvent evt = new PeekMisuseEvent();
         if (evt.isEnabled()) {
-            evt.errorCode = "EX-MEM-1003";
+            evt.errorCode = KernelErrorCodes.EX_MEM_1003;
             evt.callerMethod = method;
             evt.commit();
         }

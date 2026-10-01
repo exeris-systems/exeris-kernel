@@ -62,7 +62,7 @@ public final class CommunityKernelContextEnricher implements HttpClientRequestEn
 ### Contract
 
 - **Immutability.** `enrich` MUST return a new `HttpRequest` (the record is immutable; the enricher constructs one with a copy of the existing headers plus its additions). No in-place mutation seam exists, intentionally.
-- **Body ownership.** `enrich` MUST NOT read, retain, or close the request body `LoanedBuffer`. The buffer's lifecycle is owned by the calling site and transferred to the engine on `send`.
+- **Body ownership.** `enrich` MUST NOT read, retain, or close the request body `LoanedBuffer`. The buffer's lifecycle is owned by the calling site and transferred to the engine on `send`. *(2026-09-25: superseded on the transfer by ADR-034 Amendment A1. Nothing is transferred on `send`; the caller of `send` keeps ownership of the buffer and releases it after `send` returns or throws. The enricher obligation in the first sentence is unchanged.)*
 - **Header injection rejection.** Any header value containing CR (`\r`, `0x0D`), LF (`\n`, `0x0A`), or NUL (`\0`, `0x00`) MUST cause the enricher to throw `IllegalArgumentException` before returning. This is symmetric with the server-side rejection in `Http1RequestParser` (Security audit S-P0-04, 2026-05-13) and prevents CWE-93 HTTP header injection on the outbound path.
 - **Chain semantics.** `chain(...)` returns an enricher that applies its members in list order; each member sees the output of the previous one. An empty list is equivalent to `noop()`.
 - **Threading.** `enrich` runs on the caller's virtual thread, synchronously, after `CommunityWebClient` constructs the base `HttpRequest` and before `engine.send(request)`. The enricher MAY read `ScopedValue` slots bound in the calling context. The enricher MUST NOT spawn threads, perform I/O, or block on external resources.
@@ -196,3 +196,10 @@ No `KernelClientGenerator` change is required in `exeris-tooling` for this enric
   the implementation plan, satisfied on a differently-named façade. Only the broken link is
   corrected; the decision text is marked, not rewritten (`adr-conventions.md` rule 7). Found by the
   shared link check on its first run against this repository. (PR pending)
+- **2026-09-25 — the request body is not transferred to the engine on `send`.** The *Body
+  ownership* obligation said the buffer's lifecycle "is owned by the calling site and transferred to
+  the engine on `send`". ADR-034 Amendment A1 settles the client-side ownership model: the caller of
+  `HttpClientEngine#send` keeps ownership of the request body and releases it after `send` returns
+  or throws; the engine reads it during `send` and neither closes nor retains it. The enricher's own obligation, never to read, retain or
+  close the body, is unchanged, and so is the rest of this decision. The obligation is marked in
+  place, not rewritten (`adr-conventions.md` rule 7).

@@ -1,21 +1,17 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
-import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.transport.TransportConfig;
+import eu.exeris.kernel.spi.transport.TransportStats;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
@@ -74,7 +70,8 @@ class CommunityAcceptFaultTest {
                         "unused.pem", "unused.key", 1024, 30_000),
                 ALLOCATOR,
                 new ThrowingCryptoProvider(),
-                CryptoProviderConfig.httpsServer(tmp.resolve("cert.pem"), tmp.resolve("key.pem")));
+                CryptoProviderConfig.httpsServer(tmp.resolve("cert.pem"), tmp.resolve("key.pem")),
+                NativeTcpClientTls.none());
         carrier.setStreamHandler(stream -> { });
 
         Path jfr = tmp.resolve("accept-fault.jfr");
@@ -87,6 +84,18 @@ class CommunityAcceptFaultTest {
                 closeQuietly(connectQuietly(port));
             }
             awaitFaults(jfr, recording);
+
+            // The other half of the same signal, and the half the TCK asserts only negatively: a
+            // fault reaches TransportStats, and it does NOT reach totalRejected, which counts work
+            // the engine declined. Read before close(), since stats() reports EMPTY once stopped.
+            TransportStats stats = carrier.stats();
+            assertThat(stats.acceptFaults())
+                    .as("a fault an operator can only see by attaching a JFR recording is not "
+                            + "exposed alongside the refusal count")
+                    .isPositive();
+            assertThat(stats.totalRejected())
+                    .as("nothing was declined here — the connections were accepted and then broke")
+                    .isZero();
         } finally {
             carrier.close();
         }

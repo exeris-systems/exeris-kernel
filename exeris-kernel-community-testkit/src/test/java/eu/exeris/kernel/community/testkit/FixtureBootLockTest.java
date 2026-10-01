@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.testkit;
 
@@ -22,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * What is testable here is <em>mutual exclusion</em>, not the race it prevents.
  *
  * <p>A lost race inside the kernel is not deterministically reproducible, so no test asserts that two
- * fixtures would have swapped configuration. What can be pinned is the property the fix rests on: a
+ * fixtures would have swapped configuration. What can be pinned is the property the lock rests on: a
  * second caller does not enter while the first is inside. The blocked half of that is necessarily a
  * bounded wait; the released half is deterministic, and a broken lock fails the released half's
  * premise as surely as the blocked one.

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.flow;
 
@@ -21,9 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * L1 Contract: {@link FlowMigrationState} compact-constructor invariants and defensive copying.
  *
- * <p>The record shipped in v0.11 with no test of its own anywhere in the repository — its
- * invariants were exercised only indirectly, through migrations that happened to build a valid
- * one. This covers what a transform author can get wrong directly.
+ * <p>Elsewhere the record's invariants are exercised only indirectly, through migrations that
+ * happen to build a valid one. This covers what a transform author can get wrong directly.
  *
  * @since 0.11.0
  */

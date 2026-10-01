@@ -11,9 +11,8 @@ name: Release to Maven Central
 # while touching nothing remote, from any branch. That is the cheap way to find out whether a change
 # broke the release path *before* a tag depends on it.
 #
-# This header used to argue that a tag trigger was wrong until one release had gone through by hand,
-# because "a `push: tags` trigger on a project that has never published there turns a mistyped tag
-# into a permanent artifact". **That argument did not survive its own next sentence.**
+# A tag trigger is safe even before the first release has gone through: a mistyped tag does not
+# become a permanent artifact.
 # `autoPublish=false` in the root POM's `release` profile means this workflow uploads a DEPLOYMENT
 # that a human still has to Publish in the portal, and that can be DROPPED until they do. A mistyped
 # tag costs a dropped deployment, not a permanent artifact. What actually needs guarding is *which
@@ -22,10 +21,9 @@ name: Release to Maven Central
 on:
   push:
     tags:
-      # Deliberately permissive: the strict check is a step, not this filter. The opposite
-      # arrangement already cost this repository once — the SPI gate selected its baseline with
-      # `--list 'v*'`, which sorts `v0.11.0-preview` ABOVE `v0.11.0`, and the fix was to stop
-      # trusting the pattern. A filter decides what runs; it is not a guard.
+      # Deliberately permissive: the strict vMAJOR.MINOR.PATCH check is a step, not this filter.
+      # A filter decides what runs; it is not a guard — a glob also matches a suffixed tag such as
+      # `v0.11.0-preview`, which version sorting places ABOVE `v0.11.0`.
       - 'v*'
   workflow_dispatch:
     inputs:
@@ -193,11 +191,16 @@ jobs:
           architecture: x64
           cache: maven
           gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
-          # `gpg-passphrase` is deliberately NOT set. This action would write it into settings.xml
-          # as the `gpg.passphrase` property, and maven-gpg-plugin 3.1.0+ ignores that property
-          # entirely — it reads the MAVEN_GPG_PASSPHRASE environment variable instead. Setting it
-          # here produces a build that looks configured and hangs waiting for a passphrase prompt
-          # that will never be answered. It is passed as `env:` on the build steps below.
+          # This input is the env var NAME, not the passphrase. It has to be set, and it has to
+          # match the variable the build steps export — that is the whole of what it does.
+          #
+          # What setup-java writes into settings.xml decides which variable maven-gpg-plugin reads.
+          # Without this input the action still configures the plugin, under its own default name
+          # `GPG_PASSPHRASE`, while the steps below export `MAVEN_GPG_PASSPHRASE`: the plugin then
+          # reads a variable nobody set, and signing fails with `gpg: signing failed: No pinentry`,
+          # a message that names the agent and not the passphrase. `mvn -X` shows the name in use as
+          # `passphraseEnvName`.
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Set the release version — or, on a tag, check it
         # On a dispatch the tree is a -SNAPSHOT development line and setting the version is the
@@ -287,10 +290,10 @@ jobs:
         # you do, nothing can be changed, ever.
         #
         # `clean`, and it is load-bearing. Without it this second lifecycle run re-shades an
-        # already-shaded jar: exeris-kernel-diagnostics-cli came out byte-different from the gated
-        # build, which the digest assertion below caught on its first run. Two CLEAN `-P release`
-        # builds are byte-identical across all 69 files except the .asc signatures; a second build
-        # over a dirty target/ is not. Reproducibility here is a property of clean builds, and this
+        # already-shaded jar, so exeris-kernel-diagnostics-cli comes out byte-different from the
+        # gated build and the digest assertion below fails. Two CLEAN `-P release` builds are
+        # byte-identical across every file except the .asc signatures; a second build over a dirty
+        # target/ is not. Reproducibility here is a property of clean builds, and this
         # is what keeps the uploaded artifact the one that was gated and attested.
         run: mvn -B -P release clean deploy -DskipTests --settings .github/maven-settings.xml
         env:

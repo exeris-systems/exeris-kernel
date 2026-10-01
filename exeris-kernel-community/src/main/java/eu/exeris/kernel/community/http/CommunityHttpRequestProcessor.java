@@ -1,14 +1,9 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.community.persistence.PersistenceSessionBox;
 import eu.exeris.kernel.core.http.http1.Http1Codec;
 import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
@@ -22,6 +17,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpRequestBodyDecoderRegistry;
 import eu.exeris.kernel.spi.http.HttpRoutePolicy;
 import eu.exeris.kernel.spi.http.HttpResponseBodyEncoderRegistry;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
@@ -30,8 +26,8 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 import java.lang.foreign.MemorySegment;
 import java.util.Objects;
 
-// Cohesion baseline post-QA-011 (v0.8 Sprint 1): h2c/HTTP-2 upgrade detection and
-// aggregate-buffer telemetry were extracted to dedicated helpers
+// Cohesion (QA-011): h2c/HTTP-2 upgrade detection and aggregate-buffer telemetry live in dedicated
+// helpers
 // (CommunityHttpH2cUpgradeDetector, CommunityHttpAggregateTelemetry). The remaining
 // suppressions reflect intrinsic processor responsibilities: the request loop is the
 // natural integration point that catches generic stream errors (graceful close
@@ -40,6 +36,20 @@ import java.util.Objects;
 // purposeful (CloseResource suppression covers the buffer flyweight that is shared
 // across loop iterations by design), and the keep-alive iteration / read-aggregate
 // branching dominates the residual cyclomatic complexity.
+/**
+ * Community: the per-connection HTTP request loop — reads HTTP/1.1 requests off a
+ * {@link TransportStream}, detects an h2c or prior-knowledge upgrade and hands the connection to
+ * {@link CommunityHttp2SessionProcessor}, and otherwise dispatches each parsed request (respond-once
+ * or SSE stream) through {@link CommunityHttpRequestDispatcher} / {@link CommunityHttpStreamDispatcher}.
+ *
+ * <p>One instance is built by {@link CommunityHttpServerEngine#start()} and shared by every accepted
+ * connection; {@link #process} is invoked once per connection, on that connection's own thread, and
+ * runs the keep-alive loop — reading, parsing, dispatching and re-arming the aggregate buffer between
+ * requests — until the peer closes, an unrecoverable stream error occurs, a graceful drain declines to
+ * keep it open, the request or response does not ask for keep-alive, a streaming route takes over the
+ * connection for its own lifetime, or the connection is handed off to
+ * {@link CommunityHttp2SessionProcessor} via an h2c/prior-knowledge upgrade.
+ */
 @SuppressWarnings({
     "PMD.AvoidCatchingGenericException",
     "PMD.CloseResource",
@@ -48,9 +58,9 @@ import java.util.Objects;
 public final class CommunityHttpRequestProcessor {
 
     /**
-     * Request-scoped persistence session box binding.
-     * Lazily acquires a JDBC connection on first subsystem access, consolidating connection +
-     * transaction state for the duration of an HTTP request.
+     * Carries the request-scoped {@link PersistenceSessionBox} bound for the duration of one HTTP
+     * request, lazily acquiring a pooled JDBC connection on the request's first persistence access.
+     *
      * <p>Accessible to subsystems (e.g., graph, persistence) to reuse the request-bound connection.
      */
     public static final ScopedValue<PersistenceSessionBox> REQUEST_SESSION =
@@ -125,7 +135,8 @@ public final class CommunityHttpRequestProcessor {
     // preserve HTTP/1.1 pipelined leftovers while still releasing when idle.
     /* default */ void process(TransportStream stream, HttpHandler handler) {
         try (stream; ProcessingState state = new ProcessingState()) {
-            Http1Codec codec = new Http1Codec();
+            Http1Codec codec = new Http1Codec(
+                    config.maxRequestHeaderCount(), config.maxRequestHeaderSize());
             boolean continueProcessing = true;
             while (continueProcessing) {
                 continueProcessing = processIteration(codec, stream, handler, state);
@@ -232,6 +243,8 @@ public final class CommunityHttpRequestProcessor {
     }
 
     /**
+     * Re-arms the connection as busy with the bound drain coordinator, if any.
+     *
      * @return {@code false} only when the drain has committed to teardown; unbound means no drain
      *         coordinator is in play at all, which must not close connections
      */
@@ -287,9 +300,9 @@ public final class CommunityHttpRequestProcessor {
                 readResult.headers(),
                 bodyBuffer);
 
-        HttpRouter.StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
+        StreamMatch streamRoute = streamDispatcher.resolveStreamHandler(request, handler);
         if (streamRoute != null) {
-            // v0.10 streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
+            // Streaming dispatch (ADR-043). Two obligation mechanisms are built + TCK-pinned
             // (HttpStreamEngine deadline / StreamAdmissionController) but their PRODUCTION binding is
             // deliberately deferred here, not wired:
             //   - obligation 6 (JWT-expiry fail-closed): dispatched with no auth deadline until the
@@ -299,7 +312,7 @@ public final class CommunityHttpRequestProcessor {
             //     the dedicated long-lived-slot ceiling is not yet enforced. The safety property — new
             //     stream-opens shed under load — still holds via carrier-edge PAQS (NativeTcpCarrier's
             //     AdmissionController), which sheds any new stream including an SSE open. Plumbing the
-            //     carrier arbiter through to a dedicated streaming ceiling is a v0.10 follow-up.
+            //     carrier arbiter through to a dedicated streaming ceiling is not implemented.
             // ADR-061 applies to a stream open exactly as it does to a request. Routed through the
             // request dispatcher rather than checked here, so there is one implementation of the
             // route requirement and one place it can drift from.

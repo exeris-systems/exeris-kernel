@@ -1,14 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.storage;
 
 import eu.exeris.kernel.community.http.CommunityHttpProvider;
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHeader;
@@ -28,6 +25,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.BiFunction;
 
 /**
  * The wire half of the S3-compatible driver: one signed request, one response.
@@ -38,12 +36,16 @@ import java.util.Optional;
  *
  * <h2>Engine ownership</h2>
  * <p>This owns a {@code CLIENT}-mode engine of its own rather than borrowing the ambient
- * {@code HTTP_CLIENT_ENGINE}. Two reasons, and the second is the load-bearing one: an engine is bound
- * to a single host by {@code HttpConfig}, so a shared application client cannot address the storage
- * endpoint at all; and object transfers are large and long, so putting them through the pool that
- * serves application traffic would let one upload sit in front of every other request.
+ * {@code HTTP_CLIENT_ENGINE} (ADR-074): object transfers are large and long, and putting them through
+ * the pool that serves application traffic would let one upload sit in front of every other request.
+ * Head-of-line isolation is why this engine is private.
  *
- * @since 0.11.0
+ * <p>The engine's transport follows the endpoint's scheme ({@link CommunityS3Settings#scheme()}),
+ * not what is bound where the store is built: plaintext for {@code http}, and for {@code https} TLS
+ * that verifies the server against the endpoint host — the host of the dialled authority, which the
+ * signed {@code Host} header names too — or no engine.
+ *
+ * @since 0.11
  */
 final class CommunityS3Client implements AutoCloseable {
 
@@ -71,10 +73,25 @@ final class CommunityS3Client implements AutoCloseable {
 
     /* default */ CommunityS3Client(CommunityS3Settings settings, Duration maxSignedUrlTtl,
                                     Clock clock) {
+        this(settings, maxSignedUrlTtl, clock, new CommunityHttpProvider()::createClientEngine);
+    }
+
+    /**
+     * Builds the client over the engine {@code engineFactory} returns, and starts that engine. The
+     * client owns the engine from the moment it is built: an engine whose {@code start()} throws is
+     * closed before the failure propagates, since no client exists to close it.
+     *
+     * @param settings        the endpoint, bucket and credentials
+     * @param maxSignedUrlTtl the longest lifetime a presigned URL may be given
+     * @param clock           the signing clock
+     * @param engineFactory   builds the private engine from its configuration and outbound TLS
+     */
+    /* default */ CommunityS3Client(CommunityS3Settings settings, Duration maxSignedUrlTtl, Clock clock,
+                                    BiFunction<HttpConfig, CommunityOutboundTls, HttpClientEngine> engineFactory) {
         this.settings = settings;
         this.maxSignedUrlTtl = maxSignedUrlTtl;
         this.signer = new CommunityS3Signer(settings, clock);
-        this.engine = new CommunityHttpProvider().createClientEngine(new HttpConfig(
+        this.engine = startOrClose(engineFactory.apply(new HttpConfig(
                 HttpMode.CLIENT,
                 settings.host(),
                 settings.port(),
@@ -84,8 +101,31 @@ final class CommunityS3Client implements AutoCloseable {
                 MAX_HEADER_SIZE,
                 settings.engineBodyCeiling(),
                 false,
-                HttpVersion.HTTP_1_1));
-        this.engine.start();
+                HttpVersion.HTTP_1_1,
+                // ADR-074: every request dials this authority, and the carrier verifies a TLS peer
+                // against its host, the host the signed Host header names. The bindHost and port
+                // above are LISTEN fields, which a CLIENT-mode engine never dials.
+                settings.dialAuthority(),
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE), settings.scheme().outboundTls()));
+    }
+
+    // AvoidCatchingGenericException: the engine is closed on any start failure, then the failure
+    // rethrown; a failed close is attached to it, never allowed to replace it.
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
+    private static HttpClientEngine startOrClose(HttpClientEngine engine) {
+        try {
+            engine.start();
+            return engine;
+        } catch (RuntimeException | Error startFailure) {
+            try {
+                engine.close();
+            } catch (RuntimeException | Error closeFailure) {
+                startFailure.addSuppressed(closeFailure);
+            }
+            throw startFailure;
+        }
     }
 
     /**

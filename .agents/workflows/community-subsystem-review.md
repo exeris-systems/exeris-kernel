@@ -1,6 +1,14 @@
 ---
+name: community-subsystem-review
 description: Review Exeris change in a specific subsystem context with placement, contract, runtime risk, and TCK implications.
 argument-hint: SUBSYSTEM_NAME + SUBSYSTEM_FILE + change scope
+steps:
+  - {skill: exeris-subsystem-specialist}
+  - {agent: exeris-architect}
+  - {agent: exeris-docs-adr, when: "the subsystem contract document no longer matches the code"}
+gates:
+  - ci:maven / build-and-verify
+  - ci:guardrails / docs
 ---
 
 Review this Exeris change in the context of a specific subsystem.

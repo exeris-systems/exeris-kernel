@@ -1,6 +1,13 @@
 ---
+name: open-core-boundary
 description: Review Exeris changes through the Open-Core boundary — SPI/Core/Community/Enterprise placement, leakage risks, and smallest boundary-safe approach.
 argument-hint: Change scope to evaluate through Open-Core split
+steps:
+  - {agent: exeris-architect}
+  - {skill: exeris-architect-guardrails}
+gates:
+  - test:ExerisArchitectureTest
+  - test:KernelTierBanArchitectureTest
 ---
 
 Review this change specifically through the Exeris Open-Core boundary.

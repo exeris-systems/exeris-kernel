@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -19,6 +15,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceHealthStatus;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.security.StorageContext;
 
 import java.sql.Connection;
@@ -46,23 +43,20 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Uses temporary JDBC connections backed by HikariCP's default heap-based pool.
  * No {@code GlobalMemoryArbiter} claims — Community tier only.
  *
- * @since 0.5.0
+ * @since 0.5
  */
-// Cohesion baseline post-QA-010 (v0.8 Sprint 1): migration bootstrap and pool warm-up
-// were extracted to dedicated helpers (CommunityPersistenceMigrationRunner,
-// CommunityPersistencePoolWarmup). The remaining cyclomatic complexity is dominated
-// by the per-request connection-acquisition decision tree (request-scope vs physical,
-// tenant pool selection, interceptor chain).
+// Cohesion: migration bootstrap and pool warm-up live in dedicated helpers
+// (CommunityPersistenceMigrationRunner, CommunityPersistencePoolWarmup). The remaining
+// cyclomatic complexity is dominated by the per-request connection-acquisition decision
+// tree (request-scope vs physical, tenant pool selection, interceptor chain).
 //
 // Residual GodClass / TooManyMethods suppressions reflect the central role the engine
 // plays in the SPI integration surface — it is the single class that has to thread
 // the request-scope session-box, the per-tenant pool registry, the interceptor chain,
 // and the admission controller through one PersistenceEngine façade. Further
-// decomposition (lifecycle vs. acquisition vs. admission) is a candidate for v0.8
-// Sprint 3 Quality batch II if the WMC=75 / method count remains above the gate
-// threshold after Sprint 1 closes. The `PMD.CouplingBetweenObjects` suppression from
-// the QA-010 pass was removed in this PR — PMD reports it as unnecessary against
-// the post-decomposition surface.
+// decomposition (lifecycle vs. acquisition vs. admission) is the candidate if the
+// WMC / method count stays above the gate threshold. PMD.CouplingBetweenObjects is not
+// suppressed: PMD reports it as unnecessary against this surface.
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.GodClass", "PMD.TooManyMethods"})
 final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalConnectionSource {
 
@@ -137,19 +131,25 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
     // PersistenceEngine
     // =========================================================================
 
+    /**
+     * Opens a connection under the ambient {@link StorageContext}.
+     *
+     * <p>Delegates to the context overload rather than keying the request session {@code "shared"}
+     * on its own. Two overloads deriving the session's scope key from different sources is what
+     * produced {@code BYPASS_SCOPE_MISMATCH} on every request that touched both - a Saga touches
+     * both by construction, since the snapshot store, the outbox adapter and the event log all
+     * arrive here while repositories arrive through the context overload. The bypass was not a
+     * neutral fallback: it returned a pooled connection with no {@link ConnectionInterceptor} run
+     * on it, and because RlsConnectionInterceptor publishes its keys session-scoped, that
+     * connection still carried the previous borrower's tenant. Deriving both keys from one source
+     * removes the mismatch and the un-intercepted acquire together.
+     *
+     * <p>Outside a request scope this is unchanged: {@code storageContextOrSystem()} yields
+     * {@code GLOBAL}, whose tenant key is {@code "shared"} and whose pool is the shared one.
+     */
     @Override
     public PersistenceConnection openConnection() {
-        if (closed) {
-            throw new IllegalStateException(ENGINE_CLOSED_MESSAGE);
-        }
-        PersistenceSessionBox requestBox = PersistenceSessionBox.currentOrNull();
-        if (requestBox != null && requestBox.belongsTo(this)) {
-            RequestPersistenceSession requestSession = requestBox.getOrAcquire(this::openPhysicalConnection);
-            if (requestSession != null) {
-                return requestBox.requestScopedConnection(requestSession);
-            }
-        }
-        return openPhysicalConnection();
+        return openConnection(KernelProviders.storageContextOrSystem());
     }
 
     @Override
@@ -192,6 +192,7 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
         if (requestBox != null && requestBox.belongsTo(this)) {
             RequestPersistenceSession requestSession = requestBox.getOrAcquireIfScopeMatches(
                     tenantKey,
+                    storageContext,
                     () -> openPhysicalConnection(storageContext, tenantKey, snapshot));
             if (requestSession != null) {
                 return requestBox.requestScopedConnection(requestSession);

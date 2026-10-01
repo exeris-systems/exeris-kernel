@@ -1,14 +1,12 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
@@ -17,6 +15,7 @@ import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
+import eu.exeris.kernel.tck.support.BlockingPeerPair;
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
@@ -26,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.foreign.MemorySegment;
 import java.net.InetSocketAddress;
@@ -36,7 +36,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,15 +55,18 @@ class CommunityTlsEngineLoopbackIntegrationTest {
     private static final int HANDSHAKE_MAX_STEPS = 64;
     private static final int PAYLOAD_SIZE = 512;
 
+    @TempDir
+    /* default */ static Path tlsMaterialDir;
+
     @Test
     @DisplayName("handshake completes and both engines become ACTIVE")
     void handshakeCompletesAndBothEnginesBecomeActive() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = generatedCertKey();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
              MemoryAllocator allocator = createAllocator();
              CommunityTlsEngine serverEngine = createServerEngine(provider, certKey);
-             CommunityTlsEngine clientEngine = createClientEngine(provider, false);
+             CommunityTlsEngine clientEngine = createClientEngine(provider, certKey, false);
              ServerSocketChannel listen = ServerSocketChannel.open();
              SocketChannel clientChannel = SocketChannel.open()) {
 
@@ -99,12 +101,12 @@ class CommunityTlsEngineLoopbackIntegrationTest {
     @Test
     @DisplayName("full round-trip both directions data matches for 512-byte payload")
     void fullRoundTripBothDirectionsDataMatches() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = generatedCertKey();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
              MemoryAllocator allocator = createAllocator();
              CommunityTlsEngine serverEngine = createServerEngine(provider, certKey);
-             CommunityTlsEngine clientEngine = createClientEngine(provider, false);
+             CommunityTlsEngine clientEngine = createClientEngine(provider, certKey, false);
              ServerSocketChannel listen = ServerSocketChannel.open();
              SocketChannel clientChannel = SocketChannel.open()) {
 
@@ -157,7 +159,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
     @Test
     @DisplayName("JFR emits bootstrap and successful handshake events")
     void jfrEmitsBootstrapAndHandshakeEventsOnSuccess() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = generatedCertKey();
         Path recordingPath = Files.createTempFile("community-loopback-success-", ".jfr");
 
         try {
@@ -169,7 +171,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
                 try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
                      MemoryAllocator allocator = createAllocator();
                      CommunityTlsEngine serverEngine = createServerEngine(provider, certKey);
-                     CommunityTlsEngine clientEngine = createClientEngine(provider, true);
+                     CommunityTlsEngine clientEngine = createClientEngine(provider, certKey, true);
                      ServerSocketChannel listen = ServerSocketChannel.open();
                      SocketChannel clientChannel = SocketChannel.open()) {
 
@@ -233,7 +235,7 @@ class CommunityTlsEngineLoopbackIntegrationTest {
 
                 try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
                      MemoryAllocator allocator = createAllocator();
-                     CommunityTlsEngine clientEngine = createClientEngine(provider, true);
+                     CommunityTlsEngine clientEngine = createClientEngine(provider, generatedCertKey(), true);
                      LoanedBuffer outbound = allocator.allocate(AllocationHint.MEDIUM)) {
 
                     assertThatThrownBy(() -> clientEngine.beginHandshake(outbound))
@@ -278,8 +280,14 @@ class CommunityTlsEngineLoopbackIntegrationTest {
                 CryptoProviderConfig.httpsServer(certKey.cert(), certKey.key()));
     }
 
+    /**
+     * A client that trusts the server's self-signed certificate and expects {@code 127.0.0.1}, its
+     * IP subject alternative name. The trust closes here: the engine's context holds its own
+     * reference to the store.
+     */
     private static CommunityTlsEngine createClientEngine(
             CommunityKernelCryptoProvider provider,
+            CertKeyPaths certKey,
             boolean jfrEnabled) {
         CryptoProviderConfig clientConfig = new CryptoProviderConfig(
                 CryptoProviderConfig.Protocol.TCP_TLS,
@@ -289,22 +297,18 @@ class CommunityTlsEngineLoopbackIntegrationTest {
                 0,
                 jfrEnabled,
                 CryptoProviderConfig.TLS_1_3);
-        return (CommunityTlsEngine) provider.createTlsEngine(clientConfig);
+        try (CommunityTlsClientTrust trust = provider.openClientTrust(certKey.cert())) {
+            return provider.createClientTlsEngine(clientConfig, trust, TlsPeerIdentity.of("127.0.0.1"));
+        }
     }
 
-    private static CertKeyPaths resolveCertKeyOrSkip() {
-        Path cwd = Path.of("").toAbsolutePath().normalize();
-        Path moduleDir = "exeris-kernel-community".equals(String.valueOf(cwd.getFileName()))
-                ? cwd
-                : cwd.resolve("exeris-kernel-community").normalize();
-
-        Path cert = moduleDir.resolve("../native-libs/certs/server.crt").normalize();
-        Path key = moduleDir.resolve("../native-libs/certs/server.key").normalize();
-
-        assumeTrue(Files.isRegularFile(cert) && Files.isRegularFile(key),
-                "TLS test cert/key not found at ../native-libs/certs - skipping integration test");
-
-        return new CertKeyPaths(cert, key);
+    /**
+     * A fresh self-signed pair in the class's temporary directory, so no case depends on material
+     * that has to exist on disk before the run.
+     */
+    private static CertKeyPaths generatedCertKey() {
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+        return new CertKeyPaths(certificate.certificate(), certificate.privateKey());
     }
 
     private static void driveHandshakeConcurrently(
@@ -314,35 +318,24 @@ class CommunityTlsEngineLoopbackIntegrationTest {
             LoanedBuffer clientOutbound) {
         Instant deadline = Instant.now().plus(HANDSHAKE_TIMEOUT);
 
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.awaitAll(),
-                config -> config
-                        .withThreadFactory(Thread.ofPlatform().daemon(true).factory())
-                        .withTimeout(HANDSHAKE_TIMEOUT))) {
-
-            var serverTask = scope.fork(() -> {
-                driveSingleEngine(serverEngine, serverOutbound, deadline);
-                return null;
-            });
-            var clientTask = scope.fork(() -> {
-                driveSingleEngine(clientEngine, clientOutbound, deadline);
-                return null;
-            });
-
-            scope.join();
-
-            if (Instant.now().isAfter(deadline) || scope.isCancelled()) {
-                throw new AssertionError("TLS handshake timed out after " + HANDSHAKE_TIMEOUT.getSeconds() + "s");
-            }
-            if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Server handshake failed", serverTask.exception());
-            }
-            if (clientTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Client handshake failed", clientTask.exception());
-            }
+        BlockingPeerPair.Outcome outcome;
+        try {
+            outcome = BlockingPeerPair.drive(HANDSHAKE_TIMEOUT,
+                    () -> driveSingleEngine(serverEngine, serverOutbound, deadline),
+                    () -> driveSingleEngine(clientEngine, clientOutbound, deadline));
         } catch (InterruptedException interruptedException) {
             Thread.currentThread().interrupt();
             throw new AssertionError("TLS handshake interrupted", interruptedException);
+        }
+
+        if (outcome.timedOut() || Instant.now().isAfter(deadline)) {
+            throw new AssertionError("TLS handshake timed out after " + HANDSHAKE_TIMEOUT.getSeconds() + "s");
+        }
+        if (outcome.serverFailure() != null) {
+            throw new AssertionError("Server handshake failed", outcome.serverFailure());
+        }
+        if (outcome.clientFailure() != null) {
+            throw new AssertionError("Client handshake failed", outcome.clientFailure());
         }
 
         assertThat(serverEngine.isHandshakeComplete()).isTrue();

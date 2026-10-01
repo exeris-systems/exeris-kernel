@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -204,9 +200,23 @@ class CoreFlowEngineTest {
                 engine.scheduler().schedule(plan, context);
                 assertThat(started.await(3, TimeUnit.SECONDS)).isTrue();
 
+                // "Clearly" means structurally rather than in prose. The refusal carries its detail
+                // in rawArgs, not in a message built by concatenating the key -- a banned pattern on
+                // a failure path, and one that leaves message text as the only discriminator for
+                // this assertion and the choreography bridge alike. Asserting on rawArgs pins the
+                // reason AND the identity, where hasMessageContaining pins neither.
                 org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.scheduler().wake(context))
-                        .isInstanceOf(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class)
-                        .hasMessageContaining("not currently parked");
+                        .isInstanceOfSatisfying(
+                                eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.class, ex -> {
+                                    assertThat(eu.exeris.kernel.spi.exceptions.flow.FlowEngineException
+                                            .isNotParked(ex))
+                                            .as("the refusal must be classifiable without reading its message")
+                                            .isTrue();
+                                    assertThat(ex.rawArgs())
+                                            .as("rawArgs layout: engineName, phase, reason, most, least")
+                                            .containsExactly("CoreFlowEngineTest", "WAKE", "NOT_PARKED",
+                                                    context.instanceIdMost(), context.instanceIdLeast());
+                                });
 
                 allowCompletion.countDown();
                 awaitTrue(5_000, () -> engine.stats().completedFlows() == 1L);
@@ -215,17 +225,10 @@ class CoreFlowEngineTest {
 
         // 512 race iterations of schedule/park/wake on a single context drive the
         // FlowScheduler hard enough that the post-loop settle conditions can take
-        // tens of seconds on a constrained 2-vCPU CI runner (the same JDK 26+35
-        // schedule-pressure window that motivated the v0.8 Sprint 0a VT carrier
-        // bump). Local 12-core boxes settle in well under a second.
-        //
-        // Budget escalation history:
-        //   - 5 s post-loop budget / 10 s @Timeout (v0.7 baseline; passes locally).
-        //   - 30 s / 90 s introduced by PR #123 alongside the v0.8 Sprint 1 CI
-        //     hotfix v4 series for 2-vCPU GitHub Actions runners.
-        //   - 60 s / 180 s introduced by PR after #125 — even the 30 s post-loop
-        //     budget exceeded under peak CI pressure on the SECOND awaitTrue
-        //     (line ~277 in this file), specifically the post-wake settle window.
+        // tens of seconds on a constrained 2-vCPU CI runner; local 12-core boxes settle in
+        // well under a second. The budgets are 60 s post-loop and 180 s for the test: the
+        // post-wake settle window (the second awaitTrue) is the one that runs longest under
+        // peak CI pressure, and a 30 s post-loop budget is not enough for it there.
         @Test
         @Timeout(value = 180, unit = TimeUnit.SECONDS)
         @DisplayName("immediate schedule, park, and wake on the same context is race-safe")
@@ -268,7 +271,18 @@ class CoreFlowEngineTest {
                         context.instanceIdMost(),
                         context.instanceIdLeast());
                 if (parked.isPresent()) {
-                    engine.scheduler().wake(parked.orElseThrow());
+                    // Same guard as the loop above, and for the same reason: lookupParked-then-wake
+                    // is check-then-act, so the engine can advance this instance between the two
+                    // calls. Guarding one and not the other is what made this test flaky -- it
+                    // failed here, on line 271, not in the 512-iteration loop it was written to
+                    // stress.
+                    try {
+                        engine.scheduler().wake(parked.orElseThrow());
+                    } catch (RuntimeException ex) {
+                        if (!isExpectedNotParkedRace(ex)) {
+                            throw ex;
+                        }
+                    }
                     awaitTrue(60_000, () -> engine.stats().completedFlows() >= 1);
                 }
 
@@ -742,11 +756,9 @@ class CoreFlowEngineTest {
     }
 
     private static boolean isExpectedNotParkedRace(Throwable throwable) {
-        if (!(throwable instanceof eu.exeris.kernel.spi.exceptions.flow.FlowEngineException flowEngineException)) {
-            return false;
-        }
-        String message = flowEngineException.getMessage();
-        return message != null && message.contains("not currently parked");
+        // Classified by the rawArgs reason, not by a substring of the message -- a test matching on
+        // prose is a test that breaks when the prose improves.
+        return eu.exeris.kernel.spi.exceptions.flow.FlowEngineException.isNotParked(throwable);
     }
 
     private static CoreFlowEngine startedEngine(boolean persistenceEnabled) {

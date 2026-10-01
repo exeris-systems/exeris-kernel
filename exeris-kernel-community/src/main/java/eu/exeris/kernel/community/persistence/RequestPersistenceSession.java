@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -23,21 +19,21 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  * Once deactivated, the connection is committed/rolled-back and released back to the pool by the HTTP subsystem.
  *
  * <h2>Usage in ScopedValue</h2>
- * <pre>
+ * {@snippet lang="java" :
  * var session = REQUEST_SESSION.orElse(null);
  * if (session != null && session.active()) {
  *     conn = session.connection();  // reuse within request
  * } else {
  *     conn = pool.acquire();  // fallback to legacy per-operation
  * }
- * </pre>
+ * }
  *
  * @param connection     Persistence connection from pool, transactionally open
  * @param isolation      Isolation level set at request entry (immutable for request lifetime)
  * @param readOnly       Read-only hint (inferred from HTTP method or explicit header)
  * @param active         Flag: true if session is active, false if deactivated (post-exit)
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public record RequestPersistenceSession(
     PersistenceConnection connection,

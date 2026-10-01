@@ -37,11 +37,10 @@ Make the recurring milestone→main integration deterministic. The flow below ma
      `.agents/policies/branch-and-release.md` exists to prevent. Cutting the next
      `development/X.Y.0` branch is what makes the resolver return it.
 
-5. **The integration PR.** Single PR `release(x.y.z): integrate vX.Y.0 milestone into main`, base `main`, head `development/X.Y.0`. Run `exeris-pr-preflight` before pushing. Never commit to `main` directly.
+5. **The integration PR.** Single PR `release(x.y.z): integrate vX.Y.0 milestone into main`, base `main`, head `development/X.Y.0`. Run `exeris-pr-preflight` before pushing. Never commit to `main` directly. **`JMH Benchmarks (Community + Core)` runs on this PR** — it is the only check in the workflow that would notice a milestone's worth of accumulated regression, and a pull request into `main` is the last point at which that is still cheap to act on. It does not block (JMH on a shared runner is noisier than the regressions worth catching) and publishes nothing; read its run artifacts rather than waiting for a figure to appear anywhere.
 
 6. **Post-merge verification on main.**
    - GitHub Packages publish succeeded — downstream repos consume the BOM; a missing/unauthorized artifact breaks them (a sibling project has already hit a 401 on `exeris-kernel-bom`).
-   - JMH benchmarks job ran (main-only).
    - Tag state matches convention (prior releases are tagged on main — confirm before assuming).
 
 7. **Open the next development line.** Branch `development/X.(Y+1).0` off the **finalized** release state on main — post-release fixes (e.g. #233 after 0.10.0) may move the tip; cut from the final commit, not the merge commit. One commit: `chore(release): open development/X.(Y+1).0 — bump reactor to X.(Y+1).0-SNAPSHOT` (all 11 coordinates; grep-verify as in step 2). Push the branch.

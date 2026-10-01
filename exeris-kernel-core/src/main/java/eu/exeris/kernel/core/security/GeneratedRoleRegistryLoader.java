@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.security;
 
@@ -25,7 +21,7 @@ import java.lang.invoke.MethodType;
  * {@code eu.exeris.kernel.security.generated.RoleCheckRegistry} emitted by
  * {@code RequiresRoleProcessor}. Core must not declare a compile dependency on
  * that artifact — it only exists when at least one {@code @RequiresRole} is
- * compiled somewhere downstream, and a compile edge would reintroduce the
+ * compiled somewhere downstream, and a compile edge would create the
  * reactor cycle the processor deliberately avoids (build-config is consumed by
  * SPI as a plugin, not a module dependency). The class is therefore resolved by
  * <b>string FQN</b> (mirroring {@code RequiresRoleProcessor.GENERATED_CLASS_FQN})
@@ -48,7 +44,7 @@ import java.lang.invoke.MethodType;
  * <h2>The Wall</h2>
  * <p>Imports only {@code exeris-kernel-spi} and the JDK. No driver, no Spring.
  *
- * @since 0.8.0
+ * @since 0.8
  * @see RoleRegistry
  * @see RoleCheckEnforcer
  */

@@ -1,6 +1,14 @@
 ---
+name: community-provider-serviceloader
 description: Review Exeris Community provider loading and ServiceLoader semantics, including registration risks, boundary risks, and test implications.
 argument-hint: Provider registration/discovery change scope
+steps:
+  - {skill: exeris-service-loader-and-bootstrap}
+  - {agent: exeris-architect}
+  - {agent: exeris-tck, when: "discovery order or a registration failure is observable through the SPI"}
+gates:
+  - test:ExerisArchitectureTest
+  - ci:maven / build-and-verify
 ---
 
 Review this Exeris Community change as a provider-loading and ServiceLoader task.

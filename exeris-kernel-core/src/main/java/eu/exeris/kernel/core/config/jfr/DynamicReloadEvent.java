@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.config.jfr;
 
@@ -23,7 +19,7 @@ import jdk.jfr.StackTrace;
  * Minimal overhead when JFR recording is disabled — the {@code isEnabled()} guard
  * in the emit helper short-circuits before any field assignment.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class DynamicReloadEvent {
 
@@ -43,17 +39,31 @@ public final class DynamicReloadEvent {
     @StackTrace(false)
     public static final class DynamicFieldReloadedEvent extends Event {
 
+        /** Name of the config file whose on-disk change triggered this reload. */
         @Label("File")
         @Description("Config file name that triggered the reload")
         public String file;
 
+        /** Dot-path key of the {@code @Dynamic} field that was reloaded. */
         @Label("Key")
         @Description("Dot-path key of the reloaded field")
         public String key;
 
+        /** Wall-clock duration of the reload callback invocation, in microseconds. */
         @Label("Duration (µs)")
         @Description("Wall-clock time from reload callback entry to VarHandle.setRelease() in microseconds")
         public long durationUs;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public DynamicFieldReloadedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================
@@ -71,17 +81,34 @@ public final class DynamicReloadEvent {
     @StackTrace(false)
     public static final class DynamicReloadFailedEvent extends Event {
 
+        /** Name of the config file whose on-disk change triggered the failed reload attempt. */
         @Label("File")
         @Description("Config file that failed to reload")
         public String file;
 
+        /** Dot-path key of the {@code @Dynamic} field that failed to update. */
         @Label("Key")
         @Description("Dot-path key of the field that failed to update")
         public String key;
 
+        /**
+         * Static, secret-free failure description — never the attempted value. At the current call
+         * sites this is always {@code "error type: " + <exception class simple name>}.
+         */
         @Label("Reason")
         @Description("Static failure description (no secret data)")
         public String reason;
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public DynamicReloadFailedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
     }
 
     // =========================================================================

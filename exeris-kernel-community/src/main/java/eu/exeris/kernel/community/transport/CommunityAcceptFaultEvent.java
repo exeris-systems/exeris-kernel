@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -39,7 +35,7 @@ import jdk.jfr.StackTrace;
  * <p>Exception <b>class</b> only, no message — the same secret-safe shape as
  * {@link CommunityReactorDispatchFaultEvent}, since a message can carry request-derived text.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @Name("eu.exeris.kernel.transport.CommunityAcceptFault")
 @Label("Community Accept Fault")

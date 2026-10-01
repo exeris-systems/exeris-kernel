@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.events;
 
@@ -23,6 +19,23 @@ import static org.assertj.core.api.Assertions.assertThat;
  * index 0 → String  eventType
  * index 1 → long    queueDepth
  * index 2 → long    queueCapacity
+ * </pre>
+ *
+ * <h2>EventBusException rawArgs (EX-EVENT-6009 publish failed)</h2>
+ * <pre>
+ * index 0 → int     eventTypeOrdinal
+ * index 1 → String  reason
+ * </pre>
+ *
+ * <h2>EventBusException rawArgs (EX-EVENT-6010 handlers failed)</h2>
+ * <pre>
+ * index 0 → int     eventTypeOrdinal
+ * index 1 → int     failedHandlerCount
+ * </pre>
+ *
+ * <h2>EventBusException rawArgs (EX-EVENT-6011 subscription rejected)</h2>
+ * <pre>
+ * index 0 → String  eventType
  * </pre>
  *
  * <h2>EventRegistryException rawArgs (EX-EVENT-6003 duplicate conflict)</h2>
@@ -79,19 +92,83 @@ class EventExceptionLayoutTest {
     class EventBusGeneral {
 
         @Test
-        @DisplayName("General constructor: errorCode=EX-EVENT-6002, rawArgs is non-null")
+        @DisplayName("General constructor: errorCode=EX-EVENT-6001, rawArgs is empty")
         void generalConstructorEmptyRawArgs() {
             EventBusException ex = new EventBusException("Bus shutdown in progress");
-            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6002);
-            assertThat(ex.rawArgs()).isNotNull();
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6001);
+            assertThat(ex.rawArgs()).isNotNull().isEmpty();
         }
 
         @Test
-        @DisplayName("General constructor with cause — cause is preserved")
+        @DisplayName("General constructor with cause — cause is preserved, errorCode=EX-EVENT-6001")
         void generalConstructorWithCause() {
             RuntimeException root = new RuntimeException("ring closed");
             EventBusException ex = new EventBusException("bus closed", root);
             assertThat(ex.getCause()).isSameAs(root);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6001);
+            assertThat(ex.rawArgs()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("EventBusException.publishFailed (EX-EVENT-6009)")
+    class PublishFailed {
+
+        @Test
+        @DisplayName("rawArgs[0]=eventTypeOrdinal (Integer), [1]=reason (String); cause preserved")
+        void rawArgsLayout() {
+            IllegalStateException root = new IllegalStateException("broker gone");
+            EventBusException ex = EventBusException.publishFailed(42, "delivery-failed", root);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6009);
+            assertThat(ex.rawArgs()).containsExactly(42, "delivery-failed");
+            assertThat(ex.rawArgs()[0]).isInstanceOf(Integer.class);
+            assertThat(ex.getCause()).isSameAs(root);
+        }
+
+        @Test
+        @DisplayName("a null cause is allowed — getCause() is null")
+        void nullCause() {
+            EventBusException ex = EventBusException.publishFailed(7, "interrupted", null);
+            assertThat(ex.getCause()).isNull();
+            assertThat(ex.rawArgs()).containsExactly(7, "interrupted");
+        }
+    }
+
+    @Nested
+    @DisplayName("EventBusException.handlersFailed (EX-EVENT-6010)")
+    class HandlersFailed {
+
+        @Test
+        @DisplayName("rawArgs[0]=eventTypeOrdinal (Integer), [1]=failedHandlerCount (Integer); no cause")
+        void rawArgsLayout() {
+            EventBusException ex = EventBusException.handlersFailed(42, 3);
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6010);
+            assertThat(ex.rawArgs()).containsExactly(42, 3);
+            assertThat(ex.rawArgs()[0]).isInstanceOf(Integer.class);
+            assertThat(ex.rawArgs()[1]).isInstanceOf(Integer.class);
+            assertThat(ex.getCause()).isNull();
+            assertThat(ex.getSuppressed()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("EventBusException.subscriptionRejected (EX-EVENT-6011)")
+    class SubscriptionRejected {
+
+        @Test
+        @DisplayName("rawArgs[0]=eventType (String); no cause")
+        void rawArgsLayout() {
+            EventBusException ex = EventBusException.subscriptionRejected("OrderPlaced");
+            assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6011);
+            assertThat(ex.rawArgs()).containsExactly("OrderPlaced");
+            assertThat(ex.getCause()).isNull();
+        }
+
+        @Test
+        @DisplayName("the message is static — the type name is carried only in rawArgs")
+        void staticMessage() {
+            assertThat(EventBusException.subscriptionRejected("OrderPlaced").getMessage())
+                    .doesNotContain("OrderPlaced");
         }
     }
 

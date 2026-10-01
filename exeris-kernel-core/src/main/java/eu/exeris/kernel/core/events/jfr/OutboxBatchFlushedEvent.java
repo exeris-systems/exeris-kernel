@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.events.jfr;
 
@@ -14,21 +10,51 @@ import jdk.jfr.Label;
 import jdk.jfr.StackTrace;
 
 /**
- * JFR event emitted when the Outbox Orchestrator flushes a batch to the broker port.
+ * JFR event emitted once per flush cycle by {@code OutboxBatchFlusher.flush(List)}, in a
+ * {@code finally} block that runs whether the broker's batch publish succeeded, partially
+ * failed, or threw.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Label("Outbox Batch Flushed")
 @Category({"Exeris", "Events", "Outbox"})
 @StackTrace(false)
 public final class OutboxBatchFlushedEvent extends Event {
 
+    /**
+     * Count of entries delivered by the initial batch {@code OutboxBrokerPort.publish(List)}
+     * call in this flush cycle — the batch size minus {@link #failedCount}, not the number of
+     * entries the flush cycle started with. An entry that fails this initial call but is later
+     * recovered by the per-event retry loop is not added back into this count.
+     */
     @Label("Batch Size")
     public int batchSize;
 
+    /**
+     * Nanoseconds from the start of the flush cycle to this event's emission, including any
+     * per-event retries and their backoff delays for entries the initial publish call did not
+     * deliver.
+     */
     @Label("Flush Duration Nanos")
     public long flushDurationNanos;
 
+    /**
+     * Count of entries the initial batch publish call did not deliver in this flush cycle.
+     * Every one of these is routed to the per-event retry loop; this count is not reduced when
+     * a retry later succeeds, and does not equal the number that end up in the DLQ — see
+     * {@code OutboxDlqEvent} for the terminal per-entry outcome.
+     */
     @Label("Failed Count")
     public int failedCount;
+/**
+ * Creates an unrecorded event.
+ *
+ * <p>The emitter assigns the public fields and calls {@link Event#commit()}. An instance that is never
+ * committed contributes nothing to a recording.
+ */
+public OutboxBatchFlushedEvent() {
+    // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+    super();
+}
+
 }

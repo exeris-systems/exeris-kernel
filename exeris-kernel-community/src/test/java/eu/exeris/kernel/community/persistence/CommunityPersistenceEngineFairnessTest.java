@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -164,8 +160,8 @@ class CommunityPersistenceEngineFairnessTest {
 
         // ADR-035 regression guard: this is the constrained-benchmark scenario. A tiny pool
         // (max=2 under -XX:ActiveProcessorCount=1) with a transient queue from a high client
-        // count must ADMIT (deferring to the acquire timeout) rather than shed — restoring the
-        // pre-v0.6.0 0% error rate. allowance = ceil(2 * 8.0) = 16, so queued <= 16 is admitted.
+        // count must ADMIT (deferring to the acquire timeout) rather than shed, which keeps that
+        // scenario at a 0% error rate. allowance = ceil(2 * 8.0) = 16, so queued <= 16 is admitted.
         @Test
         @DisplayName("DEFAULT: small saturated pool with transient queue admits (benchmark regression guard)")
         void defaultConfig_smallPoolTransientQueue_admits() {

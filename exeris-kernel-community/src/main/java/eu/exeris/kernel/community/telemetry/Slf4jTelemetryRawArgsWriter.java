@@ -1,20 +1,15 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.telemetry;
 
 /**
  * Package-private rawArgs JSON-array writer for {@link Slf4jTelemetrySink}.
  *
- * <p>Extracted from {@link Slf4jTelemetrySink} in v0.8 Sprint 1 (QA-012) as the
- * middle layer of the JSON serialization split. Walks the disclosed rawArgs
- * array and serializes each element to JSON; delegates string escaping to
- * {@link Slf4jTelemetryJsonEscaper}.
+ * <p>The middle layer of the JSON serialization split: walks the disclosed
+ * rawArgs array and serializes each element to JSON, delegating string escaping
+ * to {@link Slf4jTelemetryJsonEscaper}.
  *
  * <p>Supported element types: boxed primitives, {@code String}, {@code Character},
  * {@code Enum}, and arrays of any of the above (recursive). Unknown types are

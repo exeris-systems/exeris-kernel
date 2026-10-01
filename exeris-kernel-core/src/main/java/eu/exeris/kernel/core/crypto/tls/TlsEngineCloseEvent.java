@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.crypto.tls;
 
@@ -24,7 +20,7 @@ import jdk.jfr.StackTrace;
  * <p>Zero overhead when JFR is not recording. Emitted exactly once per engine
  * lifecycle — never on the I/O hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.tls.EngineClose")
 @Label("TLS Engine Close")
@@ -42,6 +38,14 @@ final class TlsEngineCloseEvent extends Event {
     @Label("Final Phase")
     /* default */ String finalPhase;
 
+    /**
+     * Emits the close event.
+     *
+     * @param sslPtr     raw {@code SSL*} address
+     * @param graceful   {@code true} if the engine reached {@code SHUTDOWN_COMPLETE}
+     *                   before closing, {@code false} if closed from any other phase
+     * @param finalPhase name of the {@code TlsPhase} the state machine was in at close
+     */
     /* default */ static void emit(long sslPtr, boolean graceful, String finalPhase) {
         if (!FlightRecorder.isInitialized()) {
             return;

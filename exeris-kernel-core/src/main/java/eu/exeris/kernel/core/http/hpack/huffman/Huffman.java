@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.hpack.huffman;
 
@@ -26,7 +22,7 @@ import java.lang.foreign.ValueLayout;
  * <p>{@link #encode} writes Huffman-coded bits into the output segment with
  * RFC 7541 §5.2 EOS-padded alignment.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({
         "PMD.CyclomaticComplexity",
@@ -60,7 +56,11 @@ public final class Huffman {
      * @param inputLength number of bytes to decode
      * @param output      destination segment for decoded octets
      * @return number of bytes written to {@code output}
-     * @throws HuffmanDecodingException on EOS in data stream, output overflow, or invalid padding
+     * @throws HuffmanDecodingException ({@code EX-HTTP-4001}) if {@code inputLength} is
+     *                                  negative, {@code output} has no room left for the next
+     *                                  decoded octet, the stream decodes to the EOS symbol
+     *                                  before its end, or the trailing padding is not the
+     *                                  all-ones prefix of the EOS code
      */
     @SuppressWarnings({"PMD.CyclomaticComplexity", "java:S3776"}) // Complexity justified by direct table-driven decode
     public static int decode(MemorySegment input, long inputOffset, long inputLength,
@@ -108,6 +108,8 @@ public final class Huffman {
      * @param input  source segment containing raw octets
      * @param output destination segment (must be large enough for worst-case expansion)
      * @return number of bytes written to {@code output} (byte-aligned, EOS-padded)
+     * @throws HuffmanDecodingException ({@code EX-HTTP-4001}) if {@code output} does not have
+     *                                  enough remaining capacity for the encoded bits
      */
     public static long encode(MemorySegment input, MemorySegment output) {
         long bitPos = 0;
@@ -201,12 +203,18 @@ public final class Huffman {
      * hierarchy. Not a checked exception — per Performance Contract, hot-path failures
      * use unchecked exceptions with pre-defined error codes.
      *
-     * @since 0.5.0
+     * @since 0.5
      */
     public static final class HuffmanDecodingException extends ExerisKernelException {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4001;
 
+        /**
+         * Creates an exception with no chained cause.
+         *
+         * @param messageTemplate static, pre-defined message template — no runtime formatting
+         * @param rawArgs         domain arguments for the {@code EX-HTTP-4001} Glass-Box payload
+         */
         public HuffmanDecodingException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
         }

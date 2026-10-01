@@ -1,39 +1,75 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.routing;
 
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
+import eu.exeris.kernel.spi.http.StreamMatch;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The streaming half of the routing table: exact paths first, then templates.
  *
  * <p>Its own type because it is its own table. Folding it back into {@link HttpRouter} would put two
  * independent resolution strategies in one class and, more to the point, would hide that the streaming
- * table has exactly the precedence rules the respond-once one does — which is the property that stopped
- * being true when this table was a bare {@code Map} and templated stream routes silently never matched.
+ * table must keep exactly the precedence rules the respond-once one has — an exact route wins over a
+ * template — rather than the two tables silently drifting apart.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class StreamRouteTable {
 
-    private final Map<Key, HttpStreamHandler> exact;
-    private final List<TemplateEntry> templates;
+    // Keyed by method first so a lookup needs no key object: a (method, path) record would be
+    // allocated and discarded on every request just to probe the map.
+    private final Map<HttpMethod, Map<String, HttpStreamHandler>> exact;
+    // An array, not a List: a for-each over an array compiles to an indexed walk, while over a List
+    // it creates an iterator, which is an allocation on every request wherever the loop has not been
+    // compiled with escape analysis.
+    private final TemplateEntry[] templates;
+    // Every method that has at least one stream route, exact or templated.
+    private final Set<HttpMethod> methods;
 
-    private StreamRouteTable(Map<Key, HttpStreamHandler> exact, List<TemplateEntry> templates) {
-        this.exact = Map.copyOf(exact);
-        this.templates = List.copyOf(templates);
+    private StreamRouteTable(Map<HttpMethod, Map<String, HttpStreamHandler>> exact,
+                             List<TemplateEntry> templates) {
+        Map<HttpMethod, Map<String, HttpStreamHandler>> copied = new EnumMap<>(HttpMethod.class);
+        exact.forEach((method, byPath) -> copied.put(method, Map.copyOf(byPath)));
+        this.exact = copied;
+        this.templates = templates.toArray(new TemplateEntry[0]);
+        Set<HttpMethod> served = EnumSet.noneOf(HttpMethod.class);
+        served.addAll(copied.keySet());
+        for (TemplateEntry entry : this.templates) {
+            served.add(entry.method());
+        }
+        this.methods = served;
+    }
+
+    /**
+     * Returns whether any stream route, exact or templated, is registered for {@code method}.
+     *
+     * @param method request method; {@code null} answers {@code false}
+     * @return {@code true} if a request with this method can resolve to a stream route
+     */
+    /* default */ boolean serves(HttpMethod method) {
+        return method != null && methods.contains(method);
+    }
+
+    /**
+     * Returns whether any stream route, exact or templated, is registered for any method.
+     *
+     * @return {@code true} if at least one stream route is registered
+     */
+    /* default */ boolean servesAny() {
+        return !methods.isEmpty();
     }
 
     /**
@@ -46,25 +82,19 @@ final class StreamRouteTable {
      * @param path   request path, query already stripped
      * @return the match, or {@code null}
      */
-    /* default */ HttpRouter.StreamMatch resolve(HttpMethod method, String path) {
-        HttpStreamHandler literal = exact.get(new Key(method, path));
+    /* default */ StreamMatch resolve(HttpMethod method, String path) {
+        Map<String, HttpStreamHandler> byPath = exact.get(method);
+        HttpStreamHandler literal = byPath == null ? null : byPath.get(path);
         if (literal != null) {
-            return HttpRouter.StreamMatch.exact(literal);
+            return StreamMatch.exact(literal);
         }
-        if (templates.isEmpty()) {
-            return null;
-        }
-        String[] segments = path.split("/", -1);
         for (TemplateEntry entry : templates) {
-            if (entry.method() == method && entry.template().matches(segments)) {
-                return new HttpRouter.StreamMatch(
-                        entry.handler(), entry.template().capture(segments));
+            if (entry.method() == method && entry.template().matches(path)) {
+                return new StreamMatch(entry.handler(), entry.template().capture(path));
             }
         }
         return null;
     }
-
-    private record Key(HttpMethod method, String path) {}
 
     private record TemplateEntry(HttpMethod method, PathTemplate template,
                                  HttpStreamHandler handler) {}
@@ -72,22 +102,37 @@ final class StreamRouteTable {
     /** Accumulates registrations, compiling each path once at build time. */
     /* default */ static final class Builder {
 
-        private final Map<Key, HttpStreamHandler> exact = new HashMap<>();
+        private final Map<HttpMethod, Map<String, HttpStreamHandler>> exact =
+                new EnumMap<>(HttpMethod.class);
         private final List<TemplateEntry> templates = new ArrayList<>();
+        // The raw template patterns already registered, per method, to refuse a verbatim repeat.
+        private final Map<HttpMethod, Set<String>> templatePatterns = new EnumMap<>(HttpMethod.class);
 
         /**
          * Registers one streaming route.
          *
          * @throws IllegalArgumentException if the path carries a brace that is not a well-formed
          *                                  {@code {name}} placeholder — a registration that could never
-         *                                  match must not be storable
+         *                                  match must not be storable — or if the same method and the
+         *                                  same path, character for character, are already registered:
+         *                                  the second handler could never be the one a request reaches
+         *                                  under first-registration-wins, so storing it hides a mistake
          */
         /* default */ void add(HttpMethod method, String path, HttpStreamHandler handler) {
             if (PathTemplate.isTemplate(path)) {
-                templates.add(new TemplateEntry(method, PathTemplate.compile(path), handler));
-            } else {
-                exact.put(new Key(method, path), handler);
+                PathTemplate template = PathTemplate.compile(path);
+                if (!templatePatterns.computeIfAbsent(method, _ -> new HashSet<>()).add(path)) {
+                    throw duplicate(method, path);
+                }
+                templates.add(new TemplateEntry(method, template, handler));
+            } else if (exact.computeIfAbsent(method, _ -> new HashMap<>()).putIfAbsent(path, handler) != null) {
+                throw duplicate(method, path);
             }
+        }
+
+        private static IllegalArgumentException duplicate(HttpMethod method, String path) {
+            return new IllegalArgumentException(
+                    "a stream route is already registered for " + method + " " + path);
         }
 
         /* default */ StreamRouteTable build() {
