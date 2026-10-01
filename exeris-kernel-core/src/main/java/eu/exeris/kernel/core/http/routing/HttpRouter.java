@@ -46,6 +46,8 @@ import java.util.Objects;
  * table, so a driver resolves its stream routes through that contract whether the router is bound
  * directly or reached through a handler that wraps it.
  */
+// CyclomaticComplexity: the class total is the sum of many small lookups and queries, none above 6.
+@SuppressWarnings("PMD.CyclomaticComplexity")
 public final class HttpRouter implements HttpHandler, StreamRouteResolver {
 
     private static final HttpHandler DEFAULT_NOT_FOUND = exchange ->
@@ -110,6 +112,20 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
      */
     public boolean isStreamRoute(HttpMethod method, String path) {
         return resolveStream(method, path) != null;
+    }
+
+    /**
+     * Returns whether this router serves any stream route, exact or templated, for any method.
+     *
+     * <p>A composition root that did not register the routes itself asks this before it installs a
+     * wrapper in front of the router: a wrapper that does not implement {@link StreamRouteResolver}
+     * hides every stream route behind it.
+     *
+     * @return {@code true} if at least one stream route is registered
+     * @since 0.12
+     */
+    public boolean servesStreams() {
+        return streamRoutes.servesAny();
     }
 
     /**
@@ -210,7 +226,9 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
      * Mutable accumulator for route registrations, compiled into an immutable {@link HttpRouter} by
      * {@link #build()}. Precedence across route kinds — exact, then template, then prefix — is fixed
      * regardless of registration order; within the same kind, the first registration that matches a
-     * given request wins.
+     * given request wins. A stream route registered a second time for the same method and the same
+     * path, character for character, is refused by {@link #streamRoute} rather than stored behind the
+     * first.
      *
      * <p>Not thread-safe: a {@code Builder} instance is meant to be populated and built from a single
      * thread during application startup.
@@ -310,6 +328,8 @@ public final class HttpRouter implements HttpHandler, StreamRouteResolver {
          * @param path    the route path, as a literal or a {@code {name}}-templated pattern
          * @param handler the streaming handler to drive
          * @return this builder
+         * @throws IllegalArgumentException if a stream route with the same method and the same path is
+         *                                  already registered, or the path is a malformed template
          */
         public Builder streamRoute(HttpMethod method, String path, HttpStreamHandler handler) {
             Objects.requireNonNull(method, METHOD_PARAM);

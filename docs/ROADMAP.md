@@ -3317,6 +3317,34 @@ copied the earlier policy to replace it.
 
 ---
 
+### HTTP: A Repeated Stream Route Replaces the First, and a Router Cannot Say It Serves Streams (#589, surfaced 2026-10-01)
+
+**Gap:** `HttpRouter.Builder` documents that within one kind of route the first registration wins.
+For exact stream routes the second won: `StreamRouteTable` stored them in a map, and a repeated
+`streamRoute(GET, "/x/stream", …)` replaced the earlier handler without a trace; template stream
+routes, kept in a list, did follow the rule. Separately, a built `HttpRouter` answered stream questions
+only per path (`resolveStream`, `isStreamRoute`), so a composition root that did not register the
+routes could not tell whether a wrapper it was about to install would hide any. Reported by
+`exeris-tooling`, which guarantees that a consumer's `configureRoutes` cannot replace a generated
+route and refuses a non-resolver `decorate` wrapper in front of stream routes.
+
+**Owner:** HTTP subsystem (the Core router). Dropping tooling's post-build duplicate check and
+extending its wrapper refusal are `exeris-tooling`'s.
+
+**Resolution:** `streamRoute` refuses a registration whose method and path, character for character,
+are already registered, exact or templated; `HttpRouter.servesStreams()` answers whether any stream
+route is registered.
+
+**Merge Gate:** the refusal for an exact and a template repeat, acceptance for the same path under
+another method and for templates differing only in placeholder names, and `servesStreams()` for none,
+exact-only and template-only; each case red against a mutation that removes what it checks.
+
+**Status (v0.12): DELIVERED.** `HttpRouterTest.StreamRouteRegistration` holds the seven cases.
+Without the refusal both repeat cases fail; with `servesStreams()` fixed to `true` the none case
+fails, and fixed to `false` both positive cases fail.
+
+---
+
 ## Known Gaps / Future Work planned for v0.13
 
 ### Telemetry: a contract for events the kernel did not define
