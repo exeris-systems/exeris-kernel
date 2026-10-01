@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.events.outbox;
 
@@ -21,8 +17,8 @@ import java.util.concurrent.locks.LockSupport;
 /**
  * Batch flush + retry + DLQ delivery for {@link OutboxOrchestrator}.
  *
- * <p>Extracted from {@link OutboxOrchestrator} in v0.8 Sprint 1 (QA-014) to close
- * the orchestrator's God-class suppression block. Owns:
+ * <p>Kept separate from {@link OutboxOrchestrator} (QA-014) so the orchestrator needs
+ * no God-class suppression block. Owns:
  *
  * <ul>
  *   <li>{@link #flush(List)} — publishes a batch via the broker port, marks

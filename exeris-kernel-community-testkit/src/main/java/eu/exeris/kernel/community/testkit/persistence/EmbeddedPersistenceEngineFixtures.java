@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.testkit.persistence;
 
@@ -24,7 +20,7 @@ import java.util.Objects;
  * The testkit declares neither. It references no driver class, only a URL string, and a test library
  * has no business putting a database on the classpath of everything that depends on it.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class EmbeddedPersistenceEngineFixtures {
 

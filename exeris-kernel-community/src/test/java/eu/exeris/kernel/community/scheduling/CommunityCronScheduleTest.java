@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.scheduling;
 
@@ -163,9 +159,9 @@ class CommunityCronScheduleTest {
         @Test
         @DisplayName("an unsatisfiable expression refuses quickly, not after two million steps")
         void unsatisfiableExpressionRefusesPromptly() {
-            // 30 February. The search bound used to be a STEP count sized as minutes-in-four-years,
-            // while the search advances by days and months — so this walked 2 108 160 ZonedDateTime
-            // operations, thousands of years past the horizon the message named, before refusing.
+            // 30 February. A bound counted in steps sized as minutes-in-four-years, while the search
+            // advances by days and months, would walk thousands of years past the horizon the message
+            // names before refusing; the bound is the calendar horizon itself.
             // It does that inside CommunityJobScheduler.submit, under the scheduler's single lock.
             //
             // Cost is the only observable difference: this cron subset has no year field, so its
@@ -195,8 +191,8 @@ class CommunityCronScheduleTest {
         @DisplayName("a leap day across a non-leap century still resolves")
         void leapDayAcrossNonLeapCentury() {
             // 2100 is not a leap year, so the gap here is eight years — the longest this subset can
-            // produce, and the reason the horizon is eight rather than the four the old message
-            // claimed. A four-year horizon would refuse a schedule that is perfectly satisfiable.
+            // produce, and the reason the horizon is eight years rather than four. A four-year horizon
+            // would refuse a schedule that is perfectly satisfiable.
             assertThat(next("0 0 29 2 *", Instant.parse("2096-03-01T00:00:00Z")))
                     .isEqualTo(Instant.parse("2104-02-29T00:00:00Z"));
         }
@@ -205,7 +201,7 @@ class CommunityCronScheduleTest {
         @DisplayName("cron fields are read in UTC, not the host zone")
         void interpretedInUtc() {
             // Asserted rather than assumed: a driver switching to local time would silently move
-            // every schedule, and would reintroduce the DST gap and overlap that UTC does not have.
+            // every schedule, and would introduce the DST gap and overlap that UTC does not have.
             assertThat(next("0 0 * * *", Instant.parse("2026-03-10T23:30:00Z")))
                     .isEqualTo(Instant.parse("2026-03-11T00:00:00Z"));
         }

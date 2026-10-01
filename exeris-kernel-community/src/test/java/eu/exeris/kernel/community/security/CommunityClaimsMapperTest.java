@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -28,10 +24,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The mapper decides what an authenticated caller is allowed to do, so every case here is about the
  * difference between what the token said and what the principal ends up holding.
  *
- * <p>The load-bearing one is {@link Absence}: until 0.11 this mapper handed out {@code security:read}
- * to everyone regardless of the token, which made {@code security:write} unreachable and every route
+ * <p>The load-bearing one is {@link Absence}: a mapper that handed out {@code security:read} to
+ * everyone regardless of the token would make {@code security:write} unreachable and every route
  * requirement indistinguishable from no requirement. A test suite that only checks the present-claim
- * cases would pass just as happily against that old behaviour.
+ * cases would pass just as happily against such a mapper.
  */
 @DisplayName("CommunityClaimsMapper")
 class CommunityClaimsMapperTest {
@@ -86,12 +82,12 @@ class CommunityClaimsMapperTest {
             PrincipalContext principal = mapper.map(claims(Map.of(), Map.of()));
 
             assertThat(principal.scopes())
-                    .as("the whole point of the change: a default grant would let a route requiring "
+                    .as("a default grant would let a route requiring "
                             + "security:read admit a caller who never asked for it, which is the same "
                             + "as the route having no requirement at all")
                     .isEmpty();
             assertThat(principal.hasScope("security:read"))
-                    .as("and specifically not the scope this mapper used to hand out unconditionally")
+                    .as("and specifically not security:read, the obvious scope to grant by default")
                     .isFalse();
             assertThat(principal.roles()).isEmpty();
         }

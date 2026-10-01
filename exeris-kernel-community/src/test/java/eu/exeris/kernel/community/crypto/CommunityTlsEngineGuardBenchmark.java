@@ -1,14 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.exceptions.crypto.CryptoBootstrapException;
@@ -19,6 +16,7 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.tck.perf.AbstractExerisBenchmark;
+import eu.exeris.kernel.tck.support.BlockingPeerPair;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Level;
@@ -37,7 +35,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -94,7 +91,12 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 
 		serverEngine = (CommunityTlsEngine) provider.createTlsEngine(
 				CryptoProviderConfig.httpsServer(certPath, keyPath));
-		clientEngine = (CommunityTlsEngine) provider.createTlsEngine(CryptoProviderConfig.tcpClient());
+		// The client trusts the server's self-signed certificate and dials 127.0.0.1, its IP SAN; the
+		// engine's context keeps its own reference to the store, so the trust closes here.
+		try (CommunityTlsClientTrust trust = provider.openClientTrust(certPath)) {
+			clientEngine = provider.createClientTlsEngine(
+					CryptoProviderConfig.tcpClient(), trust, TlsPeerIdentity.of("127.0.0.1"));
+		}
 
 		try {
 			serverListenChannel = ServerSocketChannel.open();
@@ -243,33 +245,24 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 
 	private void driveHandshakeToActive() {
 		Instant deadline = Instant.now().plus(HANDSHAKE_TIMEOUT);
-		try (var scope = StructuredTaskScope.open(
-				StructuredTaskScope.Joiner.awaitAll(),
-				config -> config
-						.withThreadFactory(Thread.ofPlatform().daemon(true).factory())
-						.withTimeout(HANDSHAKE_TIMEOUT))) {
-			var serverTask = scope.fork(() -> {
-				driveSingleHandshakeEngine(serverEngine, serverHandshakeOutbound, deadline);
-				return null;
-			});
-			var clientTask = scope.fork(() -> {
-				driveSingleHandshakeEngine(clientEngine, clientHandshakeOutbound, deadline);
-				return null;
-			});
-			scope.join();
-
-			if (Instant.now().isAfter(deadline) || scope.isCancelled()) {
-				throw new IllegalStateException("TLS handshake timed out in benchmark setup");
-			}
-			if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-				throw new IllegalStateException("Server handshake failed", serverTask.exception());
-			}
-			if (clientTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-				throw new IllegalStateException("Client handshake failed", clientTask.exception());
-			}
+		BlockingPeerPair.Outcome outcome;
+		try {
+			outcome = BlockingPeerPair.drive(HANDSHAKE_TIMEOUT,
+					() -> driveSingleHandshakeEngine(serverEngine, serverHandshakeOutbound, deadline),
+					() -> driveSingleHandshakeEngine(clientEngine, clientHandshakeOutbound, deadline));
 		} catch (InterruptedException interruptedException) {
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("Benchmark handshake interrupted", interruptedException);
+		}
+
+		if (outcome.timedOut() || Instant.now().isAfter(deadline)) {
+			throw new IllegalStateException("TLS handshake timed out in benchmark setup");
+		}
+		if (outcome.serverFailure() != null) {
+			throw new IllegalStateException("Server handshake failed", outcome.serverFailure());
+		}
+		if (outcome.clientFailure() != null) {
+			throw new IllegalStateException("Client handshake failed", outcome.clientFailure());
 		}
 
 		if (!serverEngine.isHandshakeComplete() || !clientEngine.isHandshakeComplete()) {
@@ -334,7 +327,8 @@ public class CommunityTlsEngineGuardBenchmark extends AbstractExerisBenchmark {
 						"-keyout", keyFile.toString(),
 						"-out", certFile.toString(),
 						"-days", "1", "-nodes",
-						"-subj", "/CN=exeris-benchmark");
+						"-subj", "/CN=exeris-benchmark",
+						"-addext", "subjectAltName=IP:127.0.0.1");
 				pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
 				pb.redirectError(ProcessBuilder.Redirect.DISCARD);
 				Process proc = pb.start();

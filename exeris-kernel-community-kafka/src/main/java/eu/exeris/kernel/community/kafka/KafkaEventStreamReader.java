@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -36,7 +32,7 @@ import java.util.function.ToIntFunction;
  * is deferred. Holds no live Kafka resource between calls — each replay opens and closes its own
  * scan consumer inside {@link KafkaEventLog}; {@link #close()} is a no-op.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 public final class KafkaEventStreamReader implements EventStreamReader {
 
@@ -44,6 +40,8 @@ public final class KafkaEventStreamReader implements EventStreamReader {
     private final ToIntFunction<String> typeOrdinalResolver;
 
     /**
+     * Constructs a reader bound to {@code config}'s durable event-log topic.
+     *
      * @param config              the Kafka binding config (bootstrap servers, log topic, poll timeout)
      * @param typeOrdinalResolver resolves an event-type name to its ordinal for {@code replayByType}
      *                            (wire to {@code EventRegistry::ordinalOf}; {@code -1} = unknown)

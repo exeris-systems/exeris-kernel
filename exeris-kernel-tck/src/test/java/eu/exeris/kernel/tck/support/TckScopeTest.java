@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.tck.support;
 
@@ -223,6 +219,78 @@ class TckScopeTest {
             scope.close();
 
             assertThat(runs.get()).isEqualTo(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("Forked result")
+    class ForkedResult {
+
+        @Test
+        @DisplayName("get() returns what the task returned")
+        void getReturnsTheResult() throws InterruptedException {
+            TckScope.Forked<String> handle;
+            try (TckScope scope = TckScope.openFailFast()) {
+                handle = scope.fork(() -> "value");
+                scope.join();
+            }
+
+            assertThat(handle.get()).isEqualTo("value");
+            assertThat(handle.failed()).isFalse();
+        }
+
+        @Test
+        @DisplayName("get() before the task finishes refuses, and yields the value once it does")
+        void getBeforeCompletionRefusesThenYields() throws InterruptedException {
+            CountDownLatch release = new CountDownLatch(1);
+            try (TckScope scope = TckScope.openFailFast()) {
+                // Blocked on a latch the test holds, so "not finished yet" is a fact rather than a
+                // race: the assertion below cannot run after the task completed.
+                TckScope.Forked<String> handle = scope.fork(() -> {
+                    release.await();
+                    return "late";
+                });
+
+                assertThatThrownBy(handle::get)
+                        .as("an unfinished task has no result, and null would look like one")
+                        .isInstanceOf(IllegalStateException.class);
+
+                release.countDown();
+                scope.join();
+                assertThat(handle.get())
+                        .as("and the same handle yields the value once the task is done")
+                        .isEqualTo("late");
+            }
+        }
+
+        /**
+         * The direction the handle exists for: a fixture reading a result must not receive
+         * {@code null} because the task threw. Without it, a failure reaches the assertion as a
+         * missing value rather than as the exception that caused it.
+         */
+        @Test
+        @DisplayName("get() on a failed task throws, and carries the failure as the cause")
+        void getOnFailureCarriesTheCause() {
+            try (TckScope scope = TckScope.open()) {
+                TckScope.Forked<String> handle = scope.fork(() -> {
+                    throw new IllegalArgumentException("boom");
+                });
+                try {
+                    scope.join();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(interrupted);
+                } catch (Throwable reported) { //NOPMD AvoidCatchingThrowable — join() reports by throwing
+                    // join() aggregates ("1 forked task(s) failed"); what this case is about is the
+                    // handle, which must carry the original cause rather than a null result.
+                    assertThat(reported).isNotNull();
+                }
+
+                assertThat(handle.failed()).isTrue();
+                assertThatThrownBy(handle::get)
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasRootCauseInstanceOf(IllegalArgumentException.class);
+            }
         }
     }
 }

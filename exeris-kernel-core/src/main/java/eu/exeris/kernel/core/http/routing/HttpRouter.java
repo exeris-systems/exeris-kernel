@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.routing;
 
@@ -13,6 +9,8 @@ import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
+import eu.exeris.kernel.spi.http.StreamMatch;
+import eu.exeris.kernel.spi.http.StreamRouteResolver;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -25,14 +23,14 @@ import java.util.Objects;
  * per RFC 9110 §9.3.2. Thread-safe after construction.
  *
  * <p>Build with {@link #builder()}:
- * <pre>{@code
+ * {@snippet lang="java" :
  * HttpRouter router = HttpRouter.builder()
  *     .route(HttpMethod.GET, "/health",      e -> e.respond(HttpStatus.OK))
  *     .route(HttpMethod.GET, "/x",           collectionHandler)
  *     .route(HttpMethod.GET, "/x/{id}",      byIdHandler)
  *     .prefixRoute(HttpMethod.GET, "/static", staticFileHandler)
  *     .build();
- * }</pre>
+ * }
  *
  * <h2>Resolution precedence</h2>
  * <p>An exact route always wins over a template route, which always wins over a prefix route.
@@ -42,13 +40,15 @@ import java.util.Objects;
  *
  * <p>The streaming table follows the same rules — exact before template, same placeholder syntax,
  * captured values reaching the handler through
- * {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}. It did not always: the streaming
- * table was an exact-match {@code Map} while the generator emitted templated stream paths, so every
- * per-action stream route registered successfully and then never matched a concrete request. A
- * registration that cannot match is now unrepresentable — a malformed brace throws at
- * {@link Builder#streamRoute}, and a well-formed one is compiled as a template.
+ * {@link eu.exeris.kernel.spi.http.HttpStreamExchange#pathParams()}. A registration that cannot match
+ * is unrepresentable — a malformed brace throws at {@link Builder#streamRoute}, and a well-formed one
+ * is compiled as a template. The router is also the {@link StreamRouteResolver} for its own stream
+ * table, so a driver resolves its stream routes through that contract whether the router is bound
+ * directly or reached through a handler that wraps it.
  */
-public final class HttpRouter implements HttpHandler {
+// CyclomaticComplexity: the class total is the sum of many small lookups and queries, none above 6.
+@SuppressWarnings("PMD.CyclomaticComplexity")
+public final class HttpRouter implements HttpHandler, StreamRouteResolver {
 
     private static final HttpHandler DEFAULT_NOT_FOUND = exchange ->
             exchange.respond(HttpStatus.NOT_FOUND);
@@ -82,12 +82,23 @@ public final class HttpRouter implements HttpHandler {
      *
      * <p>Exact stream routes win over template stream routes, mirroring the respond-once precedence:
      * a deployment that registers both a literal and a templated path meant the literal to be special.
+     * A method with no stream route answers {@code null} without examining the path.
+     *
+     * <p>Cost: a miss allocates nothing when the request's method has no stream route or the path
+     * carries no query string; otherwise it copies the path once to drop the query, which is the one
+     * allocation {@link StreamRouteResolver} admits on a miss. A hit allocates the returned
+     * {@link StreamMatch}, and for a template the captured parameter map.
      *
      * @param method request method
-     * @param path   request path (query stripped)
+     * @param path   request path as received; it may carry a query string, which takes no part in
+     *               matching
      * @return the resolved stream route, or {@code null}
      */
+    @Override
     public StreamMatch resolveStream(HttpMethod method, String path) {
+        if (!streamRoutes.serves(method)) {
+            return null;
+        }
         return streamRoutes.resolve(method, stripQuery(path));
     }
 
@@ -95,13 +106,33 @@ public final class HttpRouter implements HttpHandler {
      * Returns {@code true} if {@code (method, path)} is registered as a streaming route.
      *
      * @param method request method
-     * @param path   request path (query stripped)
+     * @param path   request path as received; it may carry a query string, which takes no part in
+     *               matching
      * @return whether the route is streaming
      */
     public boolean isStreamRoute(HttpMethod method, String path) {
         return resolveStream(method, path) != null;
     }
 
+    /**
+     * Returns whether this router serves any stream route, exact or templated, for any method.
+     *
+     * <p>A composition root that did not register the routes itself asks this before it installs a
+     * wrapper in front of the router: a wrapper that does not implement {@link StreamRouteResolver}
+     * hides every stream route behind it.
+     *
+     * @return {@code true} if at least one stream route is registered
+     * @since 0.12
+     */
+    public boolean servesStreams() {
+        return streamRoutes.servesAny();
+    }
+
+    /**
+     * Creates a new, empty builder for assembling routes before compiling them into a router.
+     *
+     * @return a new builder
+     */
     public static Builder builder() {
         return new Builder();
     }
@@ -165,13 +196,9 @@ public final class HttpRouter implements HttpHandler {
     }
 
     private RouteMatch resolveTemplate(HttpMethod method, String path) {
-        if (templateRoutes.isEmpty()) {
-            return null;
-        }
-        String[] segments = path.split("/", -1);
         for (PathTemplateRoute template : templateRoutes) {
             if (template.method() == method) {
-                RouteMatch match = template.toMatch(segments);
+                RouteMatch match = template.toMatch(path);
                 if (match != null) {
                     return match;
                 }
@@ -196,24 +223,16 @@ public final class HttpRouter implements HttpHandler {
     private record RouteEntry(HttpMethod method, String path, HttpHandler handler) {}
 
     /**
-     * A resolved streaming route: the handler, and whatever its template captured.
+     * Mutable accumulator for route registrations, compiled into an immutable {@link HttpRouter} by
+     * {@link #build()}. Precedence across route kinds — exact, then template, then prefix — is fixed
+     * regardless of registration order; within the same kind, the first registration that matches a
+     * given request wins. A stream route registered a second time for the same method and the same
+     * path, character for character, is refused by {@link #streamRoute} rather than stored behind the
+     * first.
      *
-     * @param handler the streaming handler to drive
-     * @param params  captured path parameters; empty for an exact stream route
+     * <p>Not thread-safe: a {@code Builder} instance is meant to be populated and built from a single
+     * thread during application startup.
      */
-    public record StreamMatch(HttpStreamHandler handler, Map<String, String> params) {
-
-        /**
-         * A match with nothing captured — what an exact stream route resolves to.
-         *
-         * @param handler the streaming handler
-         * @return the match; never {@code null}
-         */
-        public static StreamMatch exact(HttpStreamHandler handler) {
-            return new StreamMatch(handler, Map.of());
-        }
-    }
-
     public static final class Builder {
 
         private static final String HANDLER_PARAM = "handler";
@@ -232,6 +251,10 @@ public final class HttpRouter implements HttpHandler {
          * {@code {name}} segments is registered as a path-template route (captured into
          * {@link HttpExchange#pathParams()}); otherwise it is an exact route.
          *
+         * @param method  the request method to match
+         * @param path    the route path, as a literal or a {@code {name}}-templated pattern
+         * @param handler the handler to dispatch to on a match
+         * @return this builder
          * @throws IllegalArgumentException if {@code path} contains a malformed brace segment
          *     (an unbalanced {@code {}/{@code }} that is not a well-formed {@code {name}} placeholder)
          */
@@ -243,7 +266,15 @@ public final class HttpRouter implements HttpHandler {
             return this;
         }
 
-        /** Registers one handler for a path under multiple HTTP methods (template-aware, see above). */
+        /**
+         * Registers one handler for a path under multiple HTTP methods (template-aware, as
+         * {@link #route(HttpMethod, String, HttpHandler)}).
+         *
+         * @param handler the handler to dispatch to on a match
+         * @param path    the route path, as a literal or a {@code {name}}-templated pattern
+         * @param methods the request methods to register the handler under
+         * @return this builder
+         */
         public Builder route(HttpHandler handler, String path, HttpMethod... methods) {
             Objects.requireNonNull(handler, HANDLER_PARAM);
             Objects.requireNonNull(path, "path");
@@ -270,6 +301,11 @@ public final class HttpRouter implements HttpHandler {
          * Matches require a path boundary ({@code /}) or exact length match
          * to prevent partial-segment false positives (e.g. {@code /api} does not match
          * {@code /apiv2}).
+         *
+         * @param method     the request method to match
+         * @param pathPrefix the path prefix to match against, with or without a trailing {@code /*}
+         * @param handler    the handler to dispatch to on a match
+         * @return this builder
          */
         public Builder prefixRoute(HttpMethod method, String pathPrefix, HttpHandler handler) {
             Objects.requireNonNull(method, METHOD_PARAM);
@@ -288,10 +324,12 @@ public final class HttpRouter implements HttpHandler {
          * route never delivers a respond-once {@link HttpExchange}; it is opened as an
          * {@code HttpStreamExchange} by the transport tier.
          *
-         * @param method  request method
-         * @param path    exact request path
-         * @param handler the streaming handler
+         * @param method  the request method to match
+         * @param path    the route path, as a literal or a {@code {name}}-templated pattern
+         * @param handler the streaming handler to drive
          * @return this builder
+         * @throws IllegalArgumentException if a stream route with the same method and the same path is
+         *                                  already registered, or the path is a malformed template
          */
         public Builder streamRoute(HttpMethod method, String path, HttpStreamHandler handler) {
             Objects.requireNonNull(method, METHOD_PARAM);
@@ -301,13 +339,22 @@ public final class HttpRouter implements HttpHandler {
             return this;
         }
 
-        /** Overrides the default 404 handler. */
+        /**
+         * Overrides the default 404 handler.
+         *
+         * @param handler the handler to invoke when no route matches
+         * @return this builder
+         */
         public Builder notFound(HttpHandler handler) {
             this.notFoundHandler = Objects.requireNonNull(handler, HANDLER_PARAM);
             return this;
         }
 
-        /** Builds the immutable router and emits a JFR lifecycle event. */
+        /**
+         * Builds the immutable router and emits a JFR lifecycle event.
+         *
+         * @return the immutable router
+         */
         public HttpRouter build() {
             HttpRouterRegisteredEvent.emit(exactRoutes.size(), templateRoutes.size(), prefixRoutes.size());
             return new HttpRouter(exactRoutes, templateRoutes, prefixRoutes, streamRoutes.build(),

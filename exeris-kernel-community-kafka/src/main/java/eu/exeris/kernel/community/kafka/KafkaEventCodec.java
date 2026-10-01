@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -40,12 +36,12 @@ import java.nio.ByteOrder;
  * <p>Encoding allocates a fresh {@code byte[]} sized exactly {@code HEADER_SIZE + payload.length()}
  * — Kafka's {@code ProducerRecord} owns this buffer until the broker acknowledges. Decoding
  * is zero-copy on the hot path: {@link #decodeDescriptor(byte[])} reads primitives directly
- * via {@link VarHandle}, and {@link #decodePayloadSegment(byte[])} (PERF-071) returns a
+ * via {@link VarHandle}, and {@link #decodePayloadSegment(byte[])} returns a
  * {@link MemorySegment} slice over the consumer-supplied frame — no payload-bytes
  * allocation, no {@code System.arraycopy}. The legacy {@link #decodePayloadBytes(byte[])}
  * remains for byte-level test assertions and delegates to the slice API.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 final class KafkaEventCodec {
 
@@ -163,7 +159,7 @@ final class KafkaEventCodec {
 
     /**
      * Returns the payload tail as a zero-copy {@link MemorySegment} slice over the
-     * consumer-supplied {@code frame} array (PERF-071).
+     * consumer-supplied {@code frame} array.
      *
      * <p>The returned segment shares its backing storage with the input array — no
      * payload bytes are copied and no fresh {@code byte[]} is allocated. The slice
@@ -192,7 +188,7 @@ final class KafkaEventCodec {
      *
      * <p>Retained as a byte-level test convenience and for callers that need an
      * independently-owned {@code byte[]}. The production decode hot path uses
-     * {@link #decodePayloadSegment(byte[])} (PERF-071) to avoid the copy.
+     * {@link #decodePayloadSegment(byte[])} to avoid the copy.
      */
     /* default */ static byte[] decodePayloadBytes(byte[] frame) {
         if (frame.length == HEADER_SIZE) {

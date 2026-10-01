@@ -1,14 +1,12 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
+import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.memory.AllocationHint;
@@ -17,6 +15,7 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.reflect.InaccessibleObjectException;
@@ -24,7 +23,6 @@ import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
@@ -35,6 +33,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 @DisplayName("Community: FD-owner bind contract TCK")
 @Timeout(value = 20, unit = TimeUnit.SECONDS)
 class CommunityTlsFdOwnerContractTckTest {
+
+    @TempDir
+    private Path tlsMaterialDir;
 
     @Test
     @DisplayName("runtime probe recognizes direct channel FD accessor when available")
@@ -50,15 +51,16 @@ class CommunityTlsFdOwnerContractTckTest {
     @Test
     @DisplayName("bindFileDescriptor before beginHandshake allows handshake progression")
     void bindFileDescriptorBeforeBeginHandshakeAllowsHandshakeProgression() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = resolveCertKey();
         assumeSocketFdAccessOnLoopbackOrSkip();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
              MemoryAllocator allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
              CommunityTlsEngine serverEngine = (CommunityTlsEngine) provider.createTlsEngine(
                      CryptoProviderConfig.httpsServer(certKey.cert(), certKey.key()));
-             CommunityTlsEngine clientEngine = (CommunityTlsEngine) provider.createTlsEngine(
-                     CryptoProviderConfig.tcpClient());
+             CommunityTlsClientTrust trust = provider.openClientTrust(certKey.cert());
+             CommunityTlsEngine clientEngine = provider.createClientTlsEngine(
+                     CryptoProviderConfig.tcpClient(), trust, TlsPeerIdentity.of("127.0.0.1"));
              ServerSocketChannel listener = ServerSocketChannel.open();
              SocketChannel clientChannel = SocketChannel.open()) {
 
@@ -88,7 +90,7 @@ class CommunityTlsFdOwnerContractTckTest {
     @Test
     @DisplayName("bindFileDescriptor is idempotent for same descriptor")
     void bindFileDescriptorIsIdempotentForSameDescriptor() throws Exception {
-        CertKeyPaths certKey = resolveCertKeyOrSkip();
+        CertKeyPaths certKey = resolveCertKey();
         assumeSocketFdAccessOnLoopbackOrSkip();
 
         try (CommunityKernelCryptoProvider provider = createProviderOrSkip();
@@ -121,18 +123,14 @@ class CommunityTlsFdOwnerContractTckTest {
         }
     }
 
-    private static CertKeyPaths resolveCertKeyOrSkip() {
-        Path cwd = Path.of("").toAbsolutePath().normalize();
-        Path moduleDir = "exeris-kernel-community".equals(String.valueOf(cwd.getFileName()))
-                ? cwd
-                : cwd.resolve("exeris-kernel-community").normalize();
-        Path cert = moduleDir.resolve("../native-libs/certs/server.crt").normalize();
-        Path key = moduleDir.resolve("../native-libs/certs/server.key").normalize();
-
-        assumeTrue(Files.isRegularFile(cert) && Files.isRegularFile(key),
-                "TLS cert/key not found under ../native-libs/certs - skipping FD-owner contract test");
-
-        return new CertKeyPaths(cert, key);
+    /**
+     * Generates the material rather than hunting for it. No TLS material is checked in or created
+     * by any script, so a contract test that walks up to a directory such as
+     * {@code ../native-libs/certs} never executes anywhere while reporting as passing.
+     */
+    private CertKeyPaths resolveCertKey() {
+        TlsTestCertificate certificate = TlsTestCertificate.generateInto(tlsMaterialDir);
+        return new CertKeyPaths(certificate.certificate(), certificate.privateKey());
     }
 
     private static void assumeSocketFdAccessOnLoopbackOrSkip() {

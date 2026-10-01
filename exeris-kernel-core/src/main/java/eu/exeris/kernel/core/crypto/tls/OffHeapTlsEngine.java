@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.crypto.tls;
 
@@ -24,9 +20,12 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 /**
  * Core: Zero-allocation, protocol-agnostic TLS engine (TLS 1.3 record layer).
@@ -77,12 +76,48 @@ import java.lang.invoke.VarHandle;
  *   <li>{@link TlsEngineCloseEvent} — emitted once at {@link #close()}</li>
  * </ul>
  *
+ * <h2>OpenSSL Error Queue</h2>
+ * <p>OpenSSL keeps its error queue per OS thread, and {@code SSL_get_error} reports
+ * {@code SSL_ERROR_SSL} whenever that queue is non-empty, whichever connection left the entry. So
+ * every outcome of {@link #beginHandshake}, {@link #unwrap}, {@link #wrap},
+ * {@link #initiateShutdown} and {@link #bindTransportFd} other than a
+ * {@code WANT_READ}/{@code WANT_WRITE} retry empties the calling thread's queue before this engine
+ * returns or throws. It does so after reading {@code SSL_get_error} and, for a client with an
+ * expected peer, {@code SSL_get_verify_result}. No park point lies between those reads and the
+ * clear: a virtual thread that unmounted there would clear one carrier's queue and leave another's
+ * entry behind. A {@code WANT_*} retry and a successful read or write leave the queue alone, so the
+ * record-layer hot path makes no extra downcall.
+ *
+ * <h2>Peer Verification</h2>
+ * <p>A client engine given an identity through {@link #expectPeer} checks the server's certificate
+ * against it: the name through {@code X509_VERIFY_PARAM_set1_host}, the address through
+ * {@code X509_VERIFY_PARAM_set1_ip}. The chain is verified against the trust of the context the
+ * engine was built from. On a context whose verify mode is {@code SSL_VERIFY_PEER}, OpenSSL aborts a
+ * handshake that fails the check; on any context, a handshake that OpenSSL completes with a
+ * verification result other than {@code X509_V_OK} is refused here, so the engine never becomes
+ * {@link TlsPhase#ACTIVE} with a failed verification. A failed handshake leaves its codes on
+ * {@link TlsHandshakeFailureCodes}. An engine that is never given an identity checks nothing
+ * beyond what its context does.
+ *
  * <h2>Closed-state Idempotency</h2>
  * <p>{@link #close()} is guarded by a {@link VarHandle} CAS on {@code closedFlag} —
  * multiple concurrent {@code close()} calls are safe; exactly one will invoke
  * {@link NativeCipherContext#release()}.
  *
- * @since 0.5.0
+ * <p><b>Allocation:</b> zero-alloc on the {@link #wrap}/{@link #unwrap} hot path;
+ * allocates once at construction (the native {@code SSL*} handle via
+ * {@link NativeCipherContext}) and, at handshake completion, once for the cipher-name
+ * string ({@link CipherNameReader}) plus once more only if the negotiated ALPN protocol
+ * falls outside the pre-interned {@code h2}/{@code http/1.1}/{@code h3} set
+ * ({@link AlpnReader}).
+ * <p><b>Thread confinement:</b> owner thread — not thread-safe by design; each
+ * carrier or virtual thread owns its own {@code OffHeapTlsEngine} instance. Only the
+ * {@link #close()} CAS guard is safe under concurrent calls.
+ * <p><b>Ownership:</b> the caller closes the engine via {@link #close()}; the winning
+ * {@code close()} call releases the {@link NativeCipherContext} base reference exactly
+ * once, freeing the {@code SSL*} handle when no retained reference remains outstanding.
+ *
+ * @since 0.5
  * @see TlsEngine
  * @see CoreSslHandles
  * @see NativeCipherContext
@@ -91,7 +126,7 @@ import java.lang.invoke.VarHandle;
 // PMD.CyclomaticComplexity: TlsEngine has 10 SPI methods plus mandatory lifecycle helpers.
 // PMD.TooManyMethods: Same rationale — minimum viable surface for a production-grade TLS engine.
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
-public final class OffHeapTlsEngine implements TlsEngine {
+public final class OffHeapTlsEngine implements TlsEngine, TlsHandshakeFailureCodes {
 
     // =========================================================================
     // Close guard — VarHandle CAS (mirrors NativeCipherContext pattern)
@@ -143,6 +178,24 @@ public final class OffHeapTlsEngine implements TlsEngine {
     private static final TlsDecryptException DECRYPT_CLOSED_SENTINEL =
             new TlsDecryptException();
 
+    /** Host-check flags: no partial wildcards, and the subject common name is never a host. */
+    private static final int HOSTFLAGS = CoreOpenSslLoader.X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS
+            | CoreOpenSslLoader.X509_CHECK_FLAG_NEVER_CHECK_SUBJECT;
+
+    /** {@code peerVerificationResult} before a verification result exists. */
+    private static final long NO_VERIFICATION_RESULT = -1L;
+
+    /** A native pointer OpenSSL returns when it has nothing to give. */
+    private static final long NULL_POINTER = 0L;
+
+    /** Longest verification reason read from OpenSSL's constant strings, NUL included. */
+    private static final long MAX_REASON_BYTES = 256L;
+
+    private static final String HANDSHAKE_STEP_FAILED = "SSL handshake step failed";
+    private static final String EXPECT_PEER_ON_SERVER = "expectPeer requires a client engine";
+    private static final String EXPECT_PEER_AFTER_BIND = "expectPeer requires an engine that is not yet bound";
+    private static final String EXPECT_PEER_TWICE = "expected peer is already set";
+
     // =========================================================================
     // Instance state — DeclarationOrder: package-private volatile BEFORE private final
     // =========================================================================
@@ -178,6 +231,16 @@ public final class OffHeapTlsEngine implements TlsEngine {
      */
     private long handshakeStartNanos;
 
+    /** The identity the server must present; {@code null} until {@link #expectPeer} succeeds. */
+    @SuppressWarnings("java:S3077") // an immutable record, published once
+    private volatile TlsPeerIdentity expectedPeer;
+
+    /** {@link #handshakeFailureSslError()}; written by the thread that drove the failed step. */
+    private volatile int failedStepSslError;
+
+    /** {@link #peerVerificationResult()}; written by the thread that drove the handshake. */
+    private volatile long verificationResult = NO_VERIFICATION_RESULT;
+
     // =========================================================================
     // Construction
     // =========================================================================
@@ -197,7 +260,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @param serverMode {@code true} for server role ({@code SSL_accept}),
      *                   {@code false} for client ({@code SSL_connect})
      * @param allocator  {@link MemoryAllocator} used for {@link AllocationHint#SESSION} tracking
-     * @throws TlsException if {@code SSL_new} returns {@code NULL}
+     * @throws TlsException ({@code EX-NET-2001}) if {@code SSL_new} returns {@code NULL}
      * @throws eu.exeris.kernel.spi.exceptions.memory.MemoryExhaustedException
      *         ({@code EX-MEM-1001}) if the {@link AllocationHint#SESSION} slab cannot be
      *         satisfied by the {@code WatermarkManager}
@@ -228,13 +291,18 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @param sslSetFd       pre-linked method handle for {@code SSL_set_fd(SSL*, int) → int}
      * @param fileDescriptor OS-level socket file descriptor to bind
      * @return raw return value of {@code SSL_set_fd} (1 = success, 0 = failure)
-     * @throws TlsHandshakeException if the engine is closed or the downcall throws
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed or
+     *         the downcall throws
      */
     public int bindTransportFd(MethodHandle sslSetFd, int fileDescriptor) {
         checkNotClosed();
         long ptr = cipherCtx.retainSslPointer();
         try {
-            return (int) sslSetFd.invokeExact(ptr, fileDescriptor);
+            int result = (int) sslSetFd.invokeExact(ptr, fileDescriptor);
+            if (result != SSL_SUCCESS) {
+                clearErrorQueue();
+            }
+            return result;
         } catch (TlsHandshakeException handshakeException) {
             throw handshakeException;
         } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
@@ -261,8 +329,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * {@link TlsPhase#HANDSHAKE_IN_PROGRESS} and emits {@link TlsEngineBindEvent}
      * (JFR-First).
      *
-     * @throws TlsHandshakeException if the engine is not in {@link TlsPhase#UNINITIALIZED}
-     *                               or has already been closed
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is not in
+     *         {@link TlsPhase#UNINITIALIZED} or has already been closed
      */
     @Override
     public void notifyBound() {
@@ -280,6 +348,113 @@ public final class OffHeapTlsEngine implements TlsEngine {
         long ptr = cipherCtx.sslPointer();
         TlsEngineBindEvent.emit(ptr, serverMode);
         TlsHandshakeEvent.emitStart(ptr, serverMode);
+    }
+
+    // =========================================================================
+    // Expected peer
+    // =========================================================================
+
+    /**
+     * Sets the identity the server certificate must carry. Allowed once, on a client engine, in
+     * {@link TlsPhase#UNINITIALIZED}.
+     *
+     * <p>For a {@link TlsPeerIdentity.DnsName}: host flags {@code NO_PARTIAL_WILDCARDS} and
+     * {@code NEVER_CHECK_SUBJECT}, then {@code X509_VERIFY_PARAM_set1_host} with the explicit
+     * length, then the server name indication through
+     * {@code SSL_ctrl(SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name, name)}. For a
+     * {@link TlsPeerIdentity.IpAddress}: {@code X509_VERIFY_PARAM_set1_ip} with its 4 or 16 bytes,
+     * and no server name indication. The name or address is staged in a buffer from
+     * {@link MemoryAllocator#allocateInfrastructure(long)} that is released before this method
+     * returns: OpenSSL copies it. The {@code X509_VERIFY_PARAM} is the session's own, borrowed and
+     * never freed.
+     *
+     * @param peer the identity the server must present
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if this is a server engine, the engine is
+     *         bound or closed, an identity was already set, or OpenSSL refuses the identity (detail
+     *         {@link TlsFailureDetail#PEER_IDENTITY_REJECTED}, after the thread's error queue is
+     *         emptied)
+     * @throws NullPointerException if {@code peer} is {@code null}
+     */
+    public void expectPeer(TlsPeerIdentity peer) {
+        Objects.requireNonNull(peer, "peer must not be null");
+        checkNotClosed();
+        if (serverMode) {
+            throw new TlsHandshakeException(EXPECT_PEER_ON_SERVER);
+        }
+        if (stateMachine.phase() != TlsPhase.UNINITIALIZED) {
+            throw new TlsHandshakeException(EXPECT_PEER_AFTER_BIND);
+        }
+        if (expectedPeer != null) {
+            throw new TlsHandshakeException(EXPECT_PEER_TWICE);
+        }
+        CoreSslHandles.PeerVerificationHandles verification = handles.peerVerification();
+        long ptr = cipherCtx.retainSslPointer();
+        try {
+            long param = verification.invokeGet0Param(ptr);
+            if (param == NULL_POINTER) {
+                throw identityRejected();
+            }
+            switch (peer) {
+                case TlsPeerIdentity.DnsName dns -> expectName(verification, ptr, param, dns);
+                case TlsPeerIdentity.IpAddress address -> expectAddress(verification, param, address);
+            }
+            expectedPeer = peer;
+        } finally {
+            cipherCtx.release();
+        }
+    }
+
+    private void expectName(CoreSslHandles.PeerVerificationHandles verification, long ptr, long param,
+                            TlsPeerIdentity.DnsName dns) {
+        byte[] name = dns.name().getBytes(StandardCharsets.US_ASCII);
+        verification.invokeParamSetHostflags(param, HOSTFLAGS);
+        try (LoanedBuffer staged = allocator.allocateInfrastructure(name.length + 1L)) {
+            MemorySegment segment = staged.segment();
+            MemorySegment.copy(name, 0, segment, ValueLayout.JAVA_BYTE, 0L, name.length);
+            segment.set(ValueLayout.JAVA_BYTE, name.length, (byte) 0);
+            if (verification.invokeParamSet1Host(param, segment.address(), name.length) != SSL_SUCCESS) {
+                throw identityRejected();
+            }
+            if (verification.invokeCtrl(ptr, CoreOpenSslLoader.SSL_CTRL_SET_TLSEXT_HOSTNAME,
+                    CoreOpenSslLoader.TLSEXT_NAMETYPE_HOST_NAME, segment.address()) != SSL_SUCCESS) {
+                throw identityRejected();
+            }
+        }
+    }
+
+    private void expectAddress(CoreSslHandles.PeerVerificationHandles verification, long param,
+                               TlsPeerIdentity.IpAddress address) {
+        byte[] octets = address.octets();
+        try (LoanedBuffer staged = allocator.allocateInfrastructure(octets.length)) {
+            MemorySegment segment = staged.segment();
+            MemorySegment.copy(octets, 0, segment, ValueLayout.JAVA_BYTE, 0L, octets.length);
+            if (verification.invokeParamSet1Ip(param, segment.address(), octets.length) != SSL_SUCCESS) {
+                throw identityRejected();
+            }
+        }
+    }
+
+    private TlsHandshakeException identityRejected() {
+        clearErrorQueue();
+        return new TlsHandshakeException(-1, TlsFailureDetail.PEER_IDENTITY_REJECTED);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return {@code 0} until a handshake step fails, then its {@code SSL_ERROR_*} code; a completed
+     *         handshake this engine refuses because verification failed reports
+     *         {@code SSL_ERROR_SSL}
+     */
+    @Override
+    public int handshakeFailureSslError() {
+        return failedStepSslError;
+    }
+
+    /** {@inheritDoc} */
+    @Override
+    public long peerVerificationResult() {
+        return verificationResult;
     }
 
     // =========================================================================
@@ -318,6 +493,8 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @param outbound buffer for outbound handshake bytes; always empty in fd-owner BIO mode
      * @return {@link TlsStatus#FINISHED} on complete, {@link TlsStatus#NEED_UNWRAP} or
      *         {@link TlsStatus#NEED_WRAP} if more steps required
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed, or if
+     *         called while not in {@link TlsPhase#HANDSHAKE_IN_PROGRESS}
      */
     @Override
     public TlsStatus beginHandshake(LoanedBuffer outbound) {
@@ -341,17 +518,17 @@ public final class OffHeapTlsEngine implements TlsEngine {
             }
 
             int sslErr = handles.ioHandles().invokeGetError(ptr, ret);
-            if (sslErr != CoreOpenSslLoader.SSL_ERROR_WANT_READ
-                    && sslErr != CoreOpenSslLoader.SSL_ERROR_WANT_WRITE) {
-                TlsHandshakeFailureEvent.emit(ptr, serverMode,
-                        KernelErrorCodes.EX_NET_2002, "SSL handshake step failed", sslErr);
-                // Self-guard: a fatal code ({@link #mapSslError} → CLOSED) leaves a broken
-                // session. Forcing ERROR makes a re-entrant beginHandshake() fail fast on the
-                // wrong-state guard rather than re-driving SSL_accept, so engine teardown no
-                // longer depends solely on the transport calling close() on the CLOSED status.
-                stateMachine.forceError();
+            if (isRetry(sslErr)) {
+                return mapSslError(sslErr);
             }
-            return mapSslError(sslErr);
+            long verify = expectedPeer == null
+                    ? NO_VERIFICATION_RESULT
+                    : handles.peerVerification().invokeGetVerifyResult(ptr);
+            // Self-guard: a fatal code ({@link #mapSslError} → CLOSED) leaves a broken
+            // session. Forcing ERROR makes a re-entrant beginHandshake() fail fast on the
+            // wrong-state guard rather than re-driving SSL_accept, so engine teardown does
+            // not depend solely on the transport calling close() on the CLOSED status.
+            return failHandshake(ptr, sslErr, verify);
 
         } finally {
             cipherCtx.release();
@@ -368,6 +545,14 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * @return {@link TlsStatus#FINISHED}
      */
     private TlsStatus completeHandshake(long ptr) {
+        if (expectedPeer != null) {
+            long verify = handles.peerVerification().invokeGetVerifyResult(ptr);
+            if (verify != CoreOpenSslLoader.X509_V_OK) {
+                return failHandshake(ptr, CoreOpenSslLoader.SSL_ERROR_SSL, verify);
+            }
+            verificationResult = verify;
+        }
+        clearErrorQueue();
         negotiatedAlpn = AlpnReader.read(ptr, handles.ioHandles(), allocator);
         String cipherName = CipherNameReader.read(ptr, handles.ioHandles());
         stateMachine.transitionTo(TlsPhase.HANDSHAKE_IN_PROGRESS, TlsPhase.HANDSHAKE_COMPLETE);
@@ -376,6 +561,44 @@ public final class OffHeapTlsEngine implements TlsEngine {
         TlsHandshakeEvent.emitComplete(ptr, serverMode,
                 negotiatedAlpn != null ? negotiatedAlpn : "", cipherName, durationNanos, "");
         return TlsStatus.FINISHED;
+    }
+
+    /**
+     * Ends a handshake that failed or was refused: empties the thread's error queue, records the
+     * codes, forces {@link TlsPhase#ERROR} and emits {@link TlsHandshakeFailureEvent}, in that
+     * order, so the codes are visible to whoever sees the phase.
+     *
+     * @param ptr    raw {@code SSL*} address (caller holds a retain)
+     * @param sslErr the {@code SSL_get_error} code
+     * @param verify the {@code X509_V_*} code, or {@code -1} when there was nothing to verify
+     * @return {@link TlsStatus#CLOSED}
+     */
+    private TlsStatus failHandshake(long ptr, int sslErr, long verify) {
+        clearErrorQueue();
+        failedStepSslError = sslErr;
+        verificationResult = verify;
+        stateMachine.forceError();
+        TlsHandshakeFailureEvent.emit(ptr, serverMode, KernelErrorCodes.EX_NET_2001,
+                failureReason(verify), sslErr, verify);
+        return TlsStatus.CLOSED;
+    }
+
+    /**
+     * OpenSSL's own words for a verification failure, or the generic reason when there was none.
+     */
+    private String failureReason(long verify) {
+        if (verify <= CoreOpenSslLoader.X509_V_OK) {
+            return HANDSHAKE_STEP_FAILED;
+        }
+        long text = handles.peerVerification().invokeVerifyCertErrorString(verify);
+        if (text == NULL_POINTER) {
+            return HANDSHAKE_STEP_FAILED;
+        }
+        try {
+            return MemorySegment.ofAddress(text).reinterpret(MAX_REASON_BYTES).getString(0L);
+        } catch (IllegalArgumentException | IndexOutOfBoundsException unterminated) {
+            return HANDSHAKE_STEP_FAILED;
+        }
     }
 
     // =========================================================================
@@ -402,6 +625,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
      *       that BIO-fill step; it only calls {@code SSL_read} and writes into
      *       {@code plaintext}.</li>
      * </ul>
+     *
+     * @throws TlsDecryptException ({@code EX-NET-2003}) if the engine is closed or not
+     *         in {@link TlsPhase#ACTIVE}
      */
     @Override
     public TlsStatus unwrap(LoanedBuffer ciphertext, LoanedBuffer plaintext) {
@@ -424,18 +650,20 @@ public final class OffHeapTlsEngine implements TlsEngine {
             int sslErr = handles.ioHandles().invokeGetError(sslPtr, bytesRead);
 
             if (sslErr == CoreOpenSslLoader.SSL_ERROR_ZERO_RETURN) {
+                clearErrorQueue();
                 stateMachine.transitionTo(TlsPhase.ACTIVE, TlsPhase.SHUTDOWN_INITIATED);
                 return TlsStatus.CLOSED;
             }
 
-            TlsStatus status = mapSslError(sslErr);
-            if (status == TlsStatus.CLOSED) {
-                // Fatal read error (not a clean ZERO_RETURN) on an active session: force ERROR
-                // so a subsequent read/renegotiation fails fast on a broken session, mirroring
-                // the beginHandshake() self-guard. WANT_READ/WANT_WRITE stay non-terminal.
-                stateMachine.forceError();
+            if (isRetry(sslErr)) {
+                return mapSslError(sslErr);
             }
-            return status;
+            // Fatal read error (not a clean ZERO_RETURN) on an active session: force ERROR
+            // so a subsequent read/renegotiation fails fast on a broken session, mirroring
+            // the beginHandshake() self-guard. WANT_READ/WANT_WRITE stay non-terminal.
+            clearErrorQueue();
+            stateMachine.forceError();
+            return TlsStatus.CLOSED;
 
         } finally {
             cipherCtx.release();
@@ -460,6 +688,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
      *       own {@code BIO_read} handle, then transmits the contents.
      *       This class has zero knowledge of that BIO drain step.</li>
      * </ul>
+     *
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed or not
+     *         in {@link TlsPhase#ACTIVE}
      */
     @Override
     public TlsStatus wrap(LoanedBuffer plaintext, LoanedBuffer ciphertext) {
@@ -479,6 +710,9 @@ public final class OffHeapTlsEngine implements TlsEngine {
             }
 
             int sslErr = handles.ioHandles().invokeGetError(sslPtr, bytesWritten);
+            if (!isRetry(sslErr)) {
+                clearErrorQueue();
+            }
             return mapSslError(sslErr);
 
         } finally {
@@ -546,6 +780,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * </ul>
      *
      * @param outbound buffer for the {@code close_notify} alert; always empty in fd-owner BIO mode
+     * @throws TlsHandshakeException ({@code EX-NET-2001}) if the engine is closed
      */
     @Override
     public void initiateShutdown(LoanedBuffer outbound) {
@@ -580,6 +815,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
         if (result == SSL_SUCCESS) {
             stateMachine.transitionTo(TlsPhase.SHUTDOWN_INITIATED, TlsPhase.SHUTDOWN_COMPLETE);
         } else if (result < 0) {
+            clearErrorQueue();
             stateMachine.forceError();
         }
     }
@@ -604,7 +840,7 @@ public final class OffHeapTlsEngine implements TlsEngine {
     /**
      * Returns the raw {@code SSL*} pointer for diagnostic logging and JFR events.
      *
-     * <p><b>Must NOT be used to call OpenSSL functions directly.</b>
+     * <p><b>Must NOT be passed to OpenSSL functions directly.</b>
      * Use {@link NativeCipherContext#retainSslPointer()} for that — this accessor
      * bypasses the reference count and is intended solely for log/JFR correlation.
      *
@@ -668,12 +904,16 @@ public final class OffHeapTlsEngine implements TlsEngine {
      * — an I/O error or unexpected peer EOF) is a terminal condition that maps to
      * {@link TlsStatus#CLOSED}.
      *
-     * <p>Mapping these terminal codes to {@link TlsStatus#NEED_HANDSHAKE} (the prior
-     * behaviour) caused an unbounded reactor busy-spin: a half-open or garbage probe
-     * connection stuck in {@code HANDSHAKE_IN_PROGRESS} was re-stepped on every
-     * level-triggered read, never torn down, emitting millions of phantom handshake
-     * "failure" events. Returning {@code CLOSED} lets the transport layer
-     * ({@code ensureTlsReady}/{@code unwrap}) tear the fd down after a single real failure.
+     * @apiNote A terminal code must map to {@link TlsStatus#CLOSED} rather than to a
+     *          status that requests another handshake step: a half-open or garbage
+     *          probe connection stuck in {@code HANDSHAKE_IN_PROGRESS} would otherwise
+     *          be re-stepped on every level-triggered read and never torn down.
+     *          {@code CLOSED} lets the transport layer ({@code ensureTlsReady}/
+     *          {@code unwrap}) tear the fd down after a single real failure.
+     * @param sslErrorCode raw {@code SSL_get_error} result code
+     * @return {@link TlsStatus#NEED_UNWRAP} for {@code SSL_ERROR_WANT_READ},
+     *         {@link TlsStatus#NEED_WRAP} for {@code SSL_ERROR_WANT_WRITE}, or
+     *         {@link TlsStatus#CLOSED} for any other code
      */
     /* default */ static TlsStatus mapSslError(int sslErrorCode) {
         return switch (sslErrorCode) {
@@ -681,6 +921,25 @@ public final class OffHeapTlsEngine implements TlsEngine {
             case CoreOpenSslLoader.SSL_ERROR_WANT_WRITE -> TlsStatus.NEED_WRAP;
             default -> TlsStatus.CLOSED;
         };
+    }
+
+    /**
+     * Whether {@code sslErrorCode} asks for more I/O rather than reporting a failure.
+     *
+     * @param sslErrorCode raw {@code SSL_get_error} result code
+     * @return {@code true} for {@code SSL_ERROR_WANT_READ} and {@code SSL_ERROR_WANT_WRITE}
+     */
+    private static boolean isRetry(int sslErrorCode) {
+        return sslErrorCode == CoreOpenSslLoader.SSL_ERROR_WANT_READ
+                || sslErrorCode == CoreOpenSslLoader.SSL_ERROR_WANT_WRITE;
+    }
+
+    /**
+     * Empties the calling thread's OpenSSL error queue, so an entry this session's failure left
+     * cannot surface as {@code SSL_ERROR_SSL} on the next session this thread drives.
+     */
+    private void clearErrorQueue() {
+        handles.errorQueue().invokeClearError();
     }
 
     /**

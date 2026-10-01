@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.security;
 
@@ -19,10 +15,10 @@ import eu.exeris.kernel.spi.security.RoleRegistry;
  * AND/EQ between the principal's pre-computed {@code long} mask and the
  * registry-supplied required mask:
  *
- * <pre>{@code
+ * {@snippet lang="java" :
  * RoleMatch.ANY  →  (principal.roleMask() & registry.requiredAny(methodId)) != 0L
  * RoleMatch.ALL  →  (principal.roleMask() & registry.requiredAll(methodId)) == registry.requiredAll(methodId)
- * }</pre>
+ * }
  *
  * <p>The accept path is allocation-free. The deny path raises
  * {@link InsufficientPrivilegesException} ({@code EX-SEC-2003}) with a
@@ -36,7 +32,7 @@ import eu.exeris.kernel.spi.security.RoleRegistry;
  * registry instance is constructor-injected by the operator's bootstrap;
  * tests inject a {@link RoleRegistry} stub.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class RoleCheckEnforcer {
 
@@ -69,7 +65,8 @@ public final class RoleCheckEnforcer {
      * @param methodId  compile-time method id
      * @param principal non-null principal context
      * @param registry  non-null role registry
-     * @throws InsufficientPrivilegesException when the principal lacks the required role(s)
+     * @throws InsufficientPrivilegesException ({@code EX-SEC-2003}) when the principal
+     *         lacks the required role(s)
      */
     public static void check(int methodId, PrincipalContext principal, RoleRegistry registry) {
         if (!isAllowed(methodId, principal, registry)) {

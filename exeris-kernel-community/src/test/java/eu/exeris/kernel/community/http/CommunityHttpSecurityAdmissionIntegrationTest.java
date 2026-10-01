@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -42,13 +38,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The same three admission outcomes the hardcoded {@code /secure} prefix used to produce — 401, 403,
- * 200 — now driven by a declared {@link HttpRoutePolicy} on paths that have nothing to do with that
- * prefix. That is the point of ADR-061: the routes are the application's, not the driver's.
+ * The three admission outcomes — 401, 403, 200 — driven by a declared {@link HttpRoutePolicy} on
+ * paths that share no prefix. That is the point of ADR-061: the routes are the application's, not the
+ * driver's.
  *
- * <p>The fourth case is the one the old code could not express at all. Under the prefix convention
- * {@code /api/internal} reached its handler with no identity bound, because it did not start with
- * {@code /secure}. It is now decided by the policy like any other route.
+ * <p>The fourth case is one a path-prefix convention cannot express: {@code /api/internal} does not
+ * start with {@code /secure}, so such a convention would reach its handler with no identity bound.
+ * The policy decides it like any other route.
  */
 @DisplayName("Community: HTTP route-policy admission integration (ADR-061)")
 class CommunityHttpSecurityAdmissionIntegrationTest {
@@ -192,7 +188,7 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
     };
 
     @Test
-    @DisplayName("A STREAMING route on a protected path is denied too — it used to bypass the gate entirely")
+    @DisplayName("A STREAMING route on a protected path is denied too — streaming does not bypass the gate")
     void protectedStreamRouteWithoutAuthorizationReturnsUnauthorized() {
         AtomicBoolean streamHandlerInvoked = new AtomicBoolean(false);
 
@@ -359,13 +355,13 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
     }
 
     @Test
-    @DisplayName("No policy bound: every route reaches the handler — the pre-0.11 compatibility guarantee")
+    @DisplayName("No policy bound: every route reaches the handler")
     void noPolicyBoundAdmitsEverything() {
         AtomicBoolean handlerInvoked = new AtomicBoolean(false);
 
         // Deliberately NOT withHttpSecurityScope: this case is about the absence of HTTP_ROUTE_POLICY.
-        // The release notes lean on "an application that declares nothing behaves as it did before",
-        // and until now nothing exercised that branch end-to-end.
+        // This pins end-to-end that an application declaring no route policy behaves as one that
+        // declares nothing, which the release notes promise.
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
             .where(KernelProviders.SECURITY_PROVIDER,
                 new CommunitySecurityProvider(TestJwt.keySet(), TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE))
@@ -438,7 +434,11 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
                 HttpConfig.DEFAULT_MAX_HEADER_SIZE,
                 HttpConfig.DEFAULT_MAX_REQUEST_BODY_BYTES,
                 false,
-                HttpVersion.HTTP_1_1
+                HttpVersion.HTTP_1_1,
+                "127.0.0.1" + ":" + port,
+                HttpConfig.DEFAULT_MAX_HEADER_BLOCK_SIZE,
+                HttpConfig.DEFAULT_MAX_HEADER_LIST_SIZE,
+                HttpConfig.DEFAULT_MAX_STRING_LITERAL_SIZE
         );
     }
 

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.diagnostics;
 
@@ -23,7 +19,7 @@ import jdk.jfr.StackTrace;
  * (construct → set → {@code commit()}); never a {@code begin()}→blocking→{@code commit()} straddle, which
  * would risk a carrier-bound {@code EventWriter} crash on a virtual thread.
  *
- * @since 0.9.0
+ * @since 0.9
  */
 @Name("eu.exeris.kernel.diagnostics.KernelDiagnostics")
 @Label("Kernel Diagnostics Call")

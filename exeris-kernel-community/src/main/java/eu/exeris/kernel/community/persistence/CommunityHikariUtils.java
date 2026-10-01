@@ -1,16 +1,17 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
 import java.sql.SQLException;
 import java.util.Map;
 
+/**
+ * Static helpers shared by {@link CommunityHikariSupport}: unwrapping the nested
+ * {@link SQLException} from a driver/pool failure, checking whether it carries a usable SQL
+ * state, and a case-insensitive key lookup over a connection-property map.
+ */
 /* default */ final class CommunityHikariUtils {
 
     private CommunityHikariUtils() {

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * Exeris Kernel Event-Payload Codec SPI (ADR-046) — the pluggable serialization
@@ -30,9 +26,10 @@
  * exposed via the optional
  * {@link eu.exeris.kernel.spi.context.KernelProviders#EVENT_PAYLOAD_CODEC_REGISTRY}
  * {@link java.lang.ScopedValue} slot (the {@code EVENT_STREAM_READER} /
- * {@code EVENT_STREAM_APPENDER} precedent), inherited by every virtual thread in the
- * kernel scope.
+ * {@code EVENT_STREAM_APPENDER} precedent). Like every kernel slot it reaches the thread that
+ * established the binding and the subtasks forked inside its scope, not a thread started any other
+ * way (see {@link eu.exeris.kernel.spi.context.KernelProviders}).
  *
- * @since 0.10.0
+ * @since 0.10
  */
 package eu.exeris.kernel.spi.events.codec;

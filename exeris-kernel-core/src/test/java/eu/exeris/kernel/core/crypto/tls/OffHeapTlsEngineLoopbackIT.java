@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.crypto.tls;
 
@@ -21,6 +17,7 @@ import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import eu.exeris.kernel.tck.support.BlockingPeerPair;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -40,7 +37,6 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -78,13 +74,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *
  * @since 0.5.0
  */
-// v0.8 Sprint 6 (Coverage C-P0-02): @Tag("integration") removed — the class
-// name ends in "IT" so Maven Failsafe picks it up automatically on `mvn verify`
-// regardless of tags. The tag was misleading because it suggested the IT was
-// dead from CI (it ran via Failsafe all along). Keeping the JUnit tag would
-// still cause `mvn -DexcludedGroups=integration ...` opt-outs to drop the test
-// on Surefire-only paths even though Failsafe runs it; removing the tag aligns
-// observable behavior with the Failsafe-based execution model.
+// No @Tag("integration"): the class name ends in "IT", so Maven Failsafe runs it on `mvn verify`
+// regardless of tags. A JUnit tag would let `-DexcludedGroups=integration` drop it from Surefire-only
+// paths while Failsafe still runs it, and would suggest it does not run in CI when it does.
 @EnabledOnOs(OS.LINUX)
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("IT: OffHeapTlsEngine — TLS 1.3 loopback handshake + round-trip")
@@ -663,52 +655,31 @@ class OffHeapTlsEngineLoopbackIT {
     // =========================================================================
 
     /**
-     * Drives the TLS 1.3 handshake by running server and client on two concurrent
-     * platform threads inside a {@link StructuredTaskScope}.
-     *
-     * <h2>Why platform threads</h2>
-     * <p>OpenSSL's {@code SSL_accept} and {@code SSL_connect} are blocking FFM (Panama)
-     * downcalls. Unlike Java NIO I/O, FFM calls block the carrier thread and prevent the
-     * JVM from unmounting the virtual thread. On single-CPU CI runners, two virtual threads
-     * sharing one carrier would deadlock: {@code SSL_accept} occupies the carrier while
-     * {@code SSL_connect} can never run. Platform threads are preempted by the OS scheduler
-     * independently, so both blocking calls complete.
-     *
-     * <h2>Deadlock guard</h2>
-     * <p>{@code withTimeout(Duration.ofSeconds(15))} cancels the scope after 15 s and sends
-     * {@link Thread#interrupt()} to both platform threads. On Linux, interrupting a thread
-     * blocked in {@code read()} delivers {@code EINTR} to the syscall, which causes OpenSSL
-     * to return {@code SSL_ERROR_SYSCALL}. This converts a pipeline hang into a test abort.
+     * Drives the TLS 1.3 handshake by running server and client concurrently on platform threads,
+     * under a deadline — see {@link BlockingPeerPair} for why neither half is negotiable here.
      */
     private static void driveHandshake(OffHeapTlsEngine server, LoanedBuffer serverBuf,
                                        OffHeapTlsEngine client, LoanedBuffer clientBuf) {
         Instant deadline = Instant.now().plusSeconds(15);
-        try (var scope = StructuredTaskScope.open(
-                StructuredTaskScope.Joiner.awaitAll(),
-                config -> config
-                        .withThreadFactory(Thread.ofPlatform().daemon(true).factory())
-                        .withTimeout(Duration.ofSeconds(15)))) {
-
-            StructuredTaskScope.Subtask<Void> serverTask =
-                    scope.fork(() -> { driveSingleEngine(server, serverBuf); return null; });
-            StructuredTaskScope.Subtask<Void> clientTask =
-                    scope.fork(() -> { driveSingleEngine(client, clientBuf); return null; });
-
-            scope.join();
-
-            if (Instant.now().isAfter(deadline) || scope.isCancelled()) {
-                throw new org.opentest4j.TestAbortedException(
-                        "driveHandshake timed out after 15 s — SSL_accept/SSL_connect deadlock suspected");
-            }
-            if (serverTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Server handshake thread failed", serverTask.exception());
-            }
-            if (clientTask.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                throw new AssertionError("Client handshake thread failed", clientTask.exception());
-            }
+        BlockingPeerPair.Outcome outcome;
+        try {
+            outcome = BlockingPeerPair.drive(Duration.ofSeconds(15),
+                    () -> driveSingleEngine(server, serverBuf),
+                    () -> driveSingleEngine(client, clientBuf));
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             throw new org.opentest4j.TestAbortedException("driveHandshake interrupted");
+        }
+
+        if (outcome.timedOut() || Instant.now().isAfter(deadline)) {
+            throw new org.opentest4j.TestAbortedException(
+                    "driveHandshake timed out after 15 s — SSL_accept/SSL_connect deadlock suspected");
+        }
+        if (outcome.serverFailure() != null) {
+            throw new AssertionError("Server handshake thread failed", outcome.serverFailure());
+        }
+        if (outcome.clientFailure() != null) {
+            throw new AssertionError("Client handshake thread failed", outcome.clientFailure());
         }
 
         assertThat(server.phase() == TlsPhase.ACTIVE && client.phase() == TlsPhase.ACTIVE)
