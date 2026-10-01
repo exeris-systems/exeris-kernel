@@ -15,9 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The client sizes a response read from the <em>response</em> ceiling.
  *
- * <p>Until 0.12 it read {@code maxRequestBodyBytes} — the limit that bounds what this <em>server</em>
- * accepts — so a deployment tightening its ingress also shrank what its outbound client could read
- * back, and loosening it grew every response allocation. Two directions, two sockets, one knob.
+ * <p>{@code maxRequestBodyBytes} bounds what this <em>server</em> accepts and must not size the
+ * client: otherwise tightening ingress shrinks what the outbound client can read back, and loosening
+ * it grows every response allocation. Two directions, two sockets, two knobs.
  *
  * <p>Asserted on the derived capacity rather than through a live peer: the number is what the
  * allocation uses, and a test that has to stand up a server to reach it would be measuring the
@@ -42,7 +42,7 @@ class CommunityHttpClientResponseCeilingTest {
         }
 
         // The discriminating half: the request ceiling moves by two orders of magnitude and the
-        // response allocation must not notice. Before the split this assertion could not hold.
+        // response allocation must not notice. A client sized from the request key fails here.
         try (CommunityHttpClientEngine engine = new CommunityHttpClientEngine(
                 clientConfig(REQUEST_CEILING * 100, RESPONSE_CEILING))) {
 
@@ -69,7 +69,7 @@ class CommunityHttpClientResponseCeilingTest {
     }
 
     @Test
-    @DisplayName("the pre-0.12 constructor shape keeps its single ceiling, so an old caller is unchanged")
+    @DisplayName("the shorter constructor keeps its single ceiling, so a caller that uses it is unchanged")
     void bridgeKeepsTheOldCoupling() {
         HttpConfig bridged = new HttpConfig(
                 HttpMode.CLIENT, "127.0.0.1", -1, 8, 30_000L, 100, 8_192,

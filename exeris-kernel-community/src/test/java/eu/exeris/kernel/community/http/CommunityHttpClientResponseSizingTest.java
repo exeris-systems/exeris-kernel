@@ -37,9 +37,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * What a response costs is what the response is, not what the ceiling allows.
  *
- * <p>Until 0.12 the client allocated {@code resolveAggregateCapacity()} up front for every response,
- * so a {@code HEAD} against a 10 MiB ceiling allocated 10 MiB — configuration sized the allocation,
- * on a path that runs once per request.
+ * <p>The client must not allocate {@code resolveAggregateCapacity()} up front for every response:
+ * then a {@code HEAD} against a 10 MiB ceiling allocates 10 MiB, and configuration sizes the
+ * allocation on a path that runs once per request.
  *
  * <p>Asserted on {@code MemoryStats.peakAllocatedBytes()} rather than on timing, because the claim
  * is about bytes and timing would measure the machine. The allocator is fresh per exchange, so the

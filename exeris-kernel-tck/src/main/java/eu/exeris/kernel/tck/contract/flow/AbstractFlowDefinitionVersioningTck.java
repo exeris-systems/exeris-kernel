@@ -283,10 +283,9 @@ public abstract class AbstractFlowDefinitionVersioningTck {
         @Test
         @DisplayName("a version set on the builder reaches the definition and the compiled plan")
         void theBuilderCarriesTheVersionEndToEnd() {
-            // The contract ADR-064 needs and did not have until 0.12: the fluent API, which is the
-            // only supported way to assemble a definition, can express the identity the catalog is
-            // keyed by. Without it every definition built this way was version 1 and a second
-            // version was unexpressible.
+            // The contract ADR-064 needs: the fluent API, which is the only supported way to
+            // assemble a definition, can express the identity the catalog is keyed by. Without it
+            // every definition built this way would be version 1 and a second version unexpressible.
             FlowDefinition definition = engine.plans().newDefinition("builder-versioned")
                     .step("only-step", _ -> FlowOutcome.COMPLETE, null)
                     .version(4)
@@ -302,11 +301,11 @@ public abstract class AbstractFlowDefinitionVersioningTck {
 
         // That versioning through the builder also keeps the flow graph is covered where it is
         // observable: Coexistence.parkedSagaResumesOnItsOwnVersion parks at step 0 and asserts that
-        // step 1 ran, and every plan in this TCK is now assembled through builder.version(...). A
+        // step 1 ran, and every plan in this TCK is assembled through builder.version(...). A
         // version path that lost transitions would leave that saga stuck at step 0 and fail there.
         // FlowExecutionPlan exposes no transition accessor, so behaviour is the only honest probe —
-        // and the better one: the pre-0.12 hand-rebuild's failure mode was a silently edgeless
-        // graph, which is exactly a saga that never advances.
+        // and the better one: a hand-rebuilt plan fails as a silently edgeless graph, which is
+        // exactly a saga that never advances.
 
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -1197,8 +1196,8 @@ public abstract class AbstractFlowDefinitionVersioningTck {
          * snapshot the runtime wrote is then resumed through the guard. It can only pass if
          * {@code toSnapshot} put real names in the row.
          *
-         * <p>Added because the first version of this suite did not have it and a mutation that made the
-         * recording side return nothing left the whole suite green.
+         * <p>Without this case, a mutation that makes the recording side return nothing leaves the whole
+         * suite green.
          */
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)

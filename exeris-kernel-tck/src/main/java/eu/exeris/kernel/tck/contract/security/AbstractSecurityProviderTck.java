@@ -421,10 +421,9 @@ public abstract class AbstractSecurityProviderTck {
      * instead <em>withholds</em> visibility the caller asked for and an enforcing deployment was ready
      * to grant, with no signal that anything was wrong.
      *
-     * <p>That silent withholding is why this case did not exist before v0.11: while every declared
-     * shared scope was denied outright, the mistyped token reached the same outcome as the well-typed
-     * one, so nothing was hidden. ADR-012 §4b.7 removed that coincidence by making the deny conditional
-     * on the deployment (see §10).
+     * <p>The silent withholding exists because ADR-012 §4b.7 makes the deny conditional on the
+     * deployment (see §10): were every declared shared scope denied outright, the mistyped token would
+     * reach the same outcome as the well-typed one, and nothing would be hidden.
      *
      * <p>Caller owns the buffer lifecycle.
      *
@@ -444,9 +443,8 @@ public abstract class AbstractSecurityProviderTck {
      * resolving it to a tenant-private context silently narrows what the caller asked for, and honouring
      * it produces a context claiming visibility that nothing enforces — the S-P0-07 class.
      *
-     * <p>That inversion has now happened, and the case did not disappear: it became conditional on the
-     * deployment, so there is still no window in which a declared shared scope resolves to anything but
-     * deny or correct enforcement. The enforcing half of the seam is asserted in
+     * <p>The deny is conditional on the deployment, so there is no window in which a declared shared
+     * scope resolves to anything but deny or correct enforcement. The enforcing half of the seam is asserted in
      * {@code AbstractIdentityProviderTck}, whose SUT is a template method and can therefore supply an
      * enforcing instance; this suite pins the unenforced default.
      *

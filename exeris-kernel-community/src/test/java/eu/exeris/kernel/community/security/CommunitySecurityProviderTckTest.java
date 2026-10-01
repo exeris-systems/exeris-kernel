@@ -32,7 +32,7 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
 
     @Override
     protected LoanedBuffer createValidTokenBuffer() {
-        // Since 0.11 the mapper grants only what the token claims, so the fixture has to say it.
+        // The mapper grants only what the token claims, so the fixture has to say it.
         return TestJwt.builder().claim("scope", "security:read").toBuffer();
     }
 

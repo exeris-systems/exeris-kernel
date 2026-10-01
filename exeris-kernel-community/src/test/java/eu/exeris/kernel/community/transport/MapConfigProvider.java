@@ -36,9 +36,8 @@ public final class MapConfigProvider implements ConfigProvider {
     /**
      * @param strings string-typed keys
      * @param ints    int-typed keys
-     * @param longs   long-typed keys — {@code getLong} returned empty unconditionally until 0.12,
-     *                so no test could assert that a boot path honours a long key at all, and every
-     *                body-size and timeout limit is one
+     * @param longs   long-typed keys, served by {@code getLong} — this is what lets a test assert
+     *                that a boot path honours a long key, and every body-size and timeout limit is one
      */
     public MapConfigProvider(Map<String, String> strings, Map<String, Integer> ints,
                              Map<String, Long> longs) {

@@ -28,9 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Giving up on the FlowProgress ordinal must be observable.
  *
  * <p>When every candidate in the probe window collides, publication is disabled for the life of the
- * process and {@code publishProgress} returns on a cached sentinel from then on. Before v0.12
- * nothing recorded that, so a consumer subscribed to {@code FlowProgress} received nothing —
- * indistinguishable from a system in which no flow ever terminated.
+ * process and {@code publishProgress} returns on a cached sentinel from then on. Unless that is
+ * recorded, a consumer subscribed to {@code FlowProgress} receives nothing — indistinguishable from
+ * a system in which no flow ever terminated.
  *
  * <p>The registry stub refuses every registration and resolves nothing, which is exactly the
  * exhausted-window condition; reaching it through a live flow would need a whole runtime instance

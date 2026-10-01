@@ -99,8 +99,8 @@ class CommunityJobLifecycleTest {
                         "named", new JobTrigger.OneShot(Duration.ZERO), () -> { }));
                 awaitReleased(handle);
 
-                // jobName() used to read through the descriptor. Releasing it without copying the
-                // name out turns every post-mortem lookup — the thing ADR-057 §6 keeps the handle
+                // jobName() must not read through the descriptor. Releasing it without copying the
+                // name out would turn every post-mortem lookup — the thing ADR-057 §6 keeps the handle
                 // addressable FOR — into a NullPointerException.
                 assertThat(handle.jobName()).isEqualTo("named");
             }

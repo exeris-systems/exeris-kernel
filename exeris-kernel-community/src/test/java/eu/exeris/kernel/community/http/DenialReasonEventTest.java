@@ -37,8 +37,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Three unrelated situations produce one {@code 401}, and until 0.12 two of them produced no
- * telemetry at all — while the JFR event's own description advertised both by name.
+ * Three unrelated situations produce one {@code 401}, and each of them emits the JFR event its
+ * description advertises by name.
  *
  * <p>The contract has two halves and they pull against each other, so both are asserted here: the
  * <b>response must be identical</b> for every reason, because telling an unauthenticated caller

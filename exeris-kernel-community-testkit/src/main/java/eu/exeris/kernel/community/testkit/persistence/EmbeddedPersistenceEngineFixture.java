@@ -10,10 +10,9 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * A real kernel {@link PersistenceEngine}, booted in-process, for consumers outside this repository.
  *
  * <h2>Why this exists</h2>
- * <p>Until 0.11 the testkit shipped HTTP fixtures and nothing else, so a host runtime binding the
- * persistence SPI had no way to test against the engine it actually runs on. What it could do was write
- * a double — and a double encodes how its author <em>read</em> the contract, not how the runtime
- * <em>behaves</em>. Ordering, lifecycle, and threading are precisely the properties a double cannot get
+ * <p>A host runtime binding the persistence SPI needs to test against the engine it actually runs on.
+ * The alternative is a double — and a double encodes how its author <em>read</em> the contract, not
+ * how the runtime <em>behaves</em>. Ordering, lifecycle, and threading are precisely the properties a double cannot get
  * wrong loudly, which is why defects in them keep being found by applications rather than by tests.
  *
  * <p>This fixture is the real engine: real provider discovery through {@code ServiceLoader}, real

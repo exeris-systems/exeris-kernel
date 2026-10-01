@@ -115,7 +115,7 @@ public final class PaqsScheduler implements AutoCloseable {
      * time to spare. Above it, the platform stays the authority — a handler that blocks this long is
      * an application defect, and SIGKILL is the correct answer to it.
      *
-     * <p>Not configurable. Since 0.11 the drain waits on streams being <em>served</em> rather than
+     * <p>Not configurable. The drain waits on streams being <em>served</em> rather than
      * open, so a normal shutdown ends in milliseconds and this bound is only reached when a handler
      * will not return. Adding a knob would invite tuning it in place of fixing that.
      */
@@ -239,10 +239,10 @@ public final class PaqsScheduler implements AutoCloseable {
         // Registered HERE, on the carrier thread, not inside the spawned task. Between admit() and the
         // task actually running there is a scheduling gap, and the drain waits on this count: a stream
         // admitted but not yet registered is invisible to sealIfIdle(), which then observes zero and
-        // commits to teardown on a connection already accepted. The old drain waited on
-        // activeStreamCount(), incremented on this thread by admit(), and so had no such gap; moving
-        // the wait onto the busy count (to stop idle keep-alive connections holding shutdown open)
-        // reintroduced it one layer down. The handle is closed by the task that receives it.
+        // commits to teardown on a connection already accepted. The drain waits on the busy count,
+        // not on activeStreamCount(), so that idle keep-alive connections cannot hold shutdown open;
+        // the count must therefore rise here, on the admitting thread, before the task is spawned.
+        // The handle is closed by the task that receives it.
         // CloseResource: the handle is deliberately NOT closed here — it is handed to the spawned
         // task, which owns it for the stream's life. The catch below is its only close on this
         // thread, for the one case where no task ever receives it.
@@ -458,8 +458,7 @@ public final class PaqsScheduler implements AutoCloseable {
 
     /**
      * Returns the default {@link StreamExecutionBackend}: one Virtual Thread per stream via
-     * {@link Thread#ofVirtual()}, preserving the VT-per-stream guarantee and the exact prior
-     * spawn behaviour (refactor-neutral default).
+     * {@link Thread#ofVirtual()}, which is the VT-per-stream guarantee.
      *
      * @return the default execution backend; never {@code null}
      */

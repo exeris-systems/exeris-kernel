@@ -54,7 +54,7 @@ import java.util.function.UnaryOperator;
  *       with no recovery, no degradation, JVM halts.</li>
  *   <li><b>Lifecycle:</b> Initialization is sequential in topological order; start is grouped by
  *       phase into dependency-safe rounds. Every subsystem starts on the booting thread — see
- *       {@code startParallel} for why the per-subsystem fork was removed in v0.11 (ADR-066).</li>
+ *       {@code startParallel} for why a subsystem never starts on a thread of its own (ADR-066).</li>
  *   <li><b>Reverse Shutdown:</b> Always the strict reverse of topological init order.</li>
  *   <li><b>JFR Telemetry:</b> Every init/start/stop/boot-ready/shutdown event is
  *       emitted via {@link BootstrapJfrEvents}.</li>
@@ -433,9 +433,7 @@ public final class SubsystemOrchestrator {
      * argument threading.
      *
      * <h4>Type safety</h4>
-     * <p>The previous implementation iterated a {@code Map<ScopedValue<?>, Object>} and
-     * required {@code @SuppressWarnings({"unchecked","rawtypes"})} to build the carrier.
-     * This implementation applies the {@link #composedEnricher} — a {@link UnaryOperator}
+     * <p>This implementation applies the {@link #composedEnricher} — a {@link UnaryOperator}
      * composed from each subsystem's pure enricher function — to a base carrier.
      * No casts, no wildcards, no suppressions. The compiler validates each
      * {@code .where(ScopedValue<T>, T)} binding at the subsystem's own call site.
@@ -699,19 +697,19 @@ public final class SubsystemOrchestrator {
      * Starts a phase's subsystems in dependency-safe rounds, each round in order on the calling
      * thread.
      *
-     * <p><b>This ran one virtual thread per subsystem until v0.11 and no longer does</b>, and the
-     * reason is a hard limit rather than a preference (ADR-066). A subsystem's {@code start()} reads
+     * <p><b>This does not run one virtual thread per subsystem</b>, and the reason is a hard limit
+     * rather than a preference (ADR-066). A subsystem's {@code start()} reads
      * {@link ScopedValue} bindings established by two callers the orchestrator cannot see through:
      * {@code KernelBootstrap} binds {@code CURRENT_CONFIG} around the boot, and the <em>application</em>
      * binds its own — {@code HTTP_SERVER_HANDLER} is the load-bearing example, and an application is
-     * free to bind values the kernel has never heard of. {@code StructuredTaskScope} forks inherited
+     * free to bind values the kernel has never heard of. {@code StructuredTaskScope} forks inherit
      * all of it; a plain virtual thread inherits none of it, and a {@code ScopedValue.Carrier} can
-     * only carry values named in advance. Rebuilding the kernel's own carrier was tried and produced
-     * a boot that started the HTTP subsystem with no handler bound — every route answering 404.
+     * only carry values named in advance. Rebuilding the kernel's own carrier is not enough: it
+     * starts the HTTP subsystem with no handler bound — every route answering 404.
      *
-     * <p>The cost is boot latency: a phase now takes the sum of its subsystems' start times rather
-     * than the longest. It is paid once per JVM, {@code FOUNDATION} was already sequential, and the
-     * dependency-round structure is unchanged — only the execution inside a round is.
+     * <p>The cost is boot latency: a phase takes the sum of its subsystems' start times rather than
+     * the longest. It is paid once per JVM, {@code FOUNDATION} is sequential regardless, and the
+     * dependency rounds still decide the order — only the execution inside a round is sequential.
      */
     private void startParallel(List<Subsystem> subsystems,
                                 BootstrapPhase phase,
@@ -749,10 +747,9 @@ public final class SubsystemOrchestrator {
                 // BootstrapException escaping here means the profile is fail-fast. The rest of the
                 // round is the subsystems that bind sockets and accept traffic: collecting failures
                 // and checking after the loop starts them anyway, and a boot already known to be
-                // doomed then serves requests on a half-built kernel before it admits it. The
-                // fork-per-subsystem round this replaced cancelled its siblings on the first
-                // failure; running in-thread has to let the first one out. Nothing rolls http back
-                // once it is listening.
+                // doomed then serves requests on a half-built kernel before it admits it. Running
+                // in-thread, there are no siblings to cancel, so the first failure has to leave the
+                // loop itself. Nothing rolls http back once it is listening.
                 doStart(subsystem, phase, profile);
             }
 

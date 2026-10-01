@@ -60,13 +60,11 @@ class CommunityConnectionRefusalTest {
         AtomicReference<RecordedEvent> captured = new AtomicReference<>();
         CountDownLatch eventSeen = new CountDownLatch(1);
 
-        // Awaits the EVENT, not a proxy for it. The previous shape spun on
-        // TransportStats.totalRejected and then stopped the recording immediately — but
-        // NativeTcpCarrier.recordRefusal increments that counter BEFORE it emits, so the signal
-        // being waited on is published one statement earlier than the thing being asserted. The
-        // window is nanoseconds, which is why it only ever failed on a fast, otherwise-idle
-        // machine and never once in CI: the race is won by the FASTER observer, so a loaded runner
-        // hid it and a quiet laptop did not. Widening the gap to 300 ms failed it 100/100.
+        // Awaits the EVENT, not a proxy for it. NativeTcpCarrier.recordRefusal increments
+        // TransportStats.totalRejected BEFORE it emits, so that counter is published one statement
+        // earlier than the event being asserted and is no signal that the event was committed. A
+        // wait on the counter loses that race only to a fast observer, which is why such a wait
+        // passes on a loaded runner and fails on an idle machine.
         try (RecordingStream stream = new RecordingStream()) {
             stream.enable(REFUSED);
             stream.onEvent(REFUSED, event -> {
@@ -111,7 +109,7 @@ class CommunityConnectionRefusalTest {
         assertThat(stats.totalRejected())
                 .as("TransportStats.totalRejected is the field an operator consults when asking "
                         + "whether the server is turning work away; an accept-time refusal is the "
-                        + "most total form of that and used to be missing from it entirely")
+                        + "most total form of that and must be counted in it")
                 .isPositive();
     }
 

@@ -358,8 +358,7 @@ public final class JdbcPersistenceConnection implements PersistenceConnection {
          * process happens to see and then stops admitting — so on an application with more than N
          * statements the resident set is the earliest ones, not the hottest, and every other
          * statement is re-translated on every call. That is why the bound is worth configuring
-         * rather than merely worth having: raising it is the only lever, and until 0.12 there was
-         * none.
+         * rather than merely worth having: raising it is the only lever.
          *
          * <p>{@code 0} disables caching entirely — a coherent setting for a workload with
          * unbounded statement variety, where the cache is pure overhead. A negative value is

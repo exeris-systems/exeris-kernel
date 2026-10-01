@@ -38,11 +38,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What a refused PARK checkpoint does to the saga.
  *
- * <p>Before v0.12 the refusal escaped {@code runInstance} uncaught and killed the flow virtual
- * thread, while the instance had already been flipped to PARKED and registered - so it claimed a
- * durability it did not have. The obvious repair, flipping the state only after a successful
- * write, is worse: the instance is wakeable in this JVM, and refusing to park it turns a transient
- * store outage into a saga lost even without a restart.
+ * <p>A refusal escaping {@code runInstance} uncaught would kill the flow virtual thread after the
+ * instance had already been flipped to PARKED and registered - claiming a durability it does not
+ * have. Flipping the state only after a successful write is worse: the instance is wakeable in
+ * this JVM, and refusing to park it turns a transient store outage into a saga lost even without a
+ * restart.
  *
  * <p>So the park stands and the claim does not. One retry absorbs an instantaneous blip; past that
  * the instance is marked non-durable and counted in {@code FlowEngineShutdownEvent}, which is the

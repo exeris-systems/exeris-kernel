@@ -146,7 +146,7 @@ class FlowExceptionLayoutTest {
         @DisplayName("rawArgs[1]='WAKE', [2]='NOT_PARKED', [3]/[4]=instance identity (long, long)")
         void rawArgsLayout() {
             // The one factory in this class that is NOT the documented four-tuple, and it is the
-            // reason the class-level layout table now says to read by phase rather than by arity:
+            // reason the class-level layout table says to read by phase rather than by arity:
             // a flow identity is 128 bits and does not fit the int at index 3.
             FlowEngineException ex = FlowEngineException.notParked("SagaEngine", 42L, 7L);
             Object[] raw = ex.rawArgs();
@@ -169,8 +169,8 @@ class FlowExceptionLayoutTest {
         @Test
         @DisplayName("the message carries no identity — the whole point of moving it into rawArgs")
         void messageIsStatic() {
-            // Until 0.12 this refusal built its message by concatenating the key, which is a banned
-            // pattern on a failure path and made message text the only discriminator.
+            // Concatenating the key into the message is a banned pattern on a failure path and would
+            // make message text the only discriminator; the identity belongs in rawArgs.
             FlowEngineException ex = FlowEngineException.notParked("E", 123456789L, 987654321L);
             assertThat(ex.getMessage())
                     .doesNotContain("123456789")
