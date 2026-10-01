@@ -3375,7 +3375,7 @@ RFC; #585 and #580 item 4 are ADR rulings (ADR-012, ADR-006).
 
 **Merge Gate:** each issue's acceptance criteria.
 
-**Status (v0.13): NOT STARTED.** Filed 2026-09-30.
+**Status (v0.13): NOT STARTED.** The measurements are in #581–#585.
 
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
