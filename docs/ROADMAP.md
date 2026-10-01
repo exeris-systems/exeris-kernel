@@ -3344,6 +3344,41 @@ the two paths visible as a contract question rather than an implementation detai
 
 ---
 
+### Tooling Asks Carried to v0.13 — Persistence Role Check, Flow Routing, Choreography Start, Security Rulings (surfaced 2026-09-26)
+
+**Gap:** `exeris-tooling`'s kernel asks from its 0.9.0 train (tooling ROADMAP "Kernel asks from this
+train"). Two of them, `KernelWebClient.put` (#579) and the shared-scope reference policy (#580), are
+in v0.12. The rest need a kernel contract or a ruling first and are carried here, each with its own
+issue holding the measurement:
+
+- **#581 — the persistence role can bypass row-level security unnoticed.** A role with `SUPERUSER` or
+  `BYPASSRLS` skips every policy, forced ones included, and nothing in the kernel reads
+  `pg_roles` for the connected role.
+- **#582 — a flow step's next step cannot depend on its result.** `CoreFlowPlanFactory` precomputes
+  one next index per step, and no `FlowOutcome` selects among a step's outgoing transitions, so a
+  failure, timeout or guarded edge is not expressible.
+- **#583 — a second choreography `Start` for a running correlation is unpinned.**
+  `FlowChoreographyBridge` schedules a new instance without checking the id, and neither the
+  `ChoreographyDecision.Start` Javadoc nor `AbstractFlowChoreographyTck` states the outcome.
+- **#585 — two security rulings the SDK annotations wait on:** a contracted principal session key for
+  principal-scoped RLS across the Wall, and field-level encryption at rest with a key registry. A
+  refusal is an answer.
+- **#580 item 4 — whether the shared-scope `WITH CHECK` also pins the published scope tag.** The v0.12
+  change makes every write owner-pinned; whether an owner may also move its row between scopes is
+  a new ADR-012 §4b.4 ruling.
+
+**Owner:** Persistence (#581, #580 item 4), Flow (#582, #583), Security (#585). The tooling halves
+of each are `exeris-tooling`'s and are listed in each issue.
+
+**Resolution:** #581 and #583 are implementation plus TCK once the default is chosen; #582 needs an
+RFC; #585 and #580 item 4 are ADR rulings (ADR-012, ADR-006).
+
+**Merge Gate:** each issue's acceptance criteria.
+
+**Status (v0.13): NOT STARTED.** The measurements are in #581–#585.
+
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.
@@ -3800,6 +3835,9 @@ That is not merely inconvenient. It moves the join into application code, which 
 ---
 
 ### Flow: Parallel Steps Cannot Be Expressed, and Four SDK Attributes Are Waiting On It (surfaced 2026-09-01)
+
+**Tracked as #584** (requested by `exeris-tooling`). The RFC the issue asks for is v0.13 work; the
+runtime capability keeps the 1.0 disposition below.
 
 **Gap:** `@SagaStep` in the SDK declares `parallel`, `waitForAll` and `failFast`, and `@Saga` declares
 `compensationStrategy` and `compensationOrder`. The kernel has no model for any of the first three:
