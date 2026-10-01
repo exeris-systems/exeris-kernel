@@ -3292,6 +3292,8 @@ shape; with the earlier policy re-installed, exactly the re-own and delete cells
 delete refused outright, exactly the positive control fails. MIGRATION step 14 tells a deployment that
 copied the earlier policy to replace it.
 
+---
+
 ## Known Gaps / Future Work planned for v0.13
 
 ### Telemetry: a contract for events the kernel did not define
