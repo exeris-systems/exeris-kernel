@@ -119,10 +119,9 @@ class CommunityClaimsMapperResolverTest {
     }
 
     /**
-     * The wiring itself. An earlier version of this class asserted only that the provider assembled,
-     * and a mutation run — reverting {@code CommunitySecurityProvider} to build the identity provider
-     * without the resolver — left every case green. That is the change this PR exists to make, so it
-     * needs an assertion that fails when it is undone.
+     * The wiring itself. Asserting only that the provider assembles stays green when
+     * {@code CommunitySecurityProvider} builds the identity provider without the resolver, so this
+     * case asserts the resolver is what the provider uses, and fails when that wiring is removed.
      */
     @Test
     @DisplayName("the ServiceLoader boot path assembles the provider through the resolver")

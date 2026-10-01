@@ -458,8 +458,7 @@ public final class PaqsScheduler implements AutoCloseable {
 
     /**
      * Returns the default {@link StreamExecutionBackend}: one Virtual Thread per stream via
-     * {@link Thread#ofVirtual()}, preserving the VT-per-stream guarantee and the exact prior
-     * spawn behaviour (refactor-neutral default).
+     * {@link Thread#ofVirtual()}, which is the VT-per-stream guarantee.
      *
      * @return the default execution backend; never {@code null}
      */

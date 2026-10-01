@@ -1196,8 +1196,8 @@ public abstract class AbstractFlowDefinitionVersioningTck {
          * snapshot the runtime wrote is then resumed through the guard. It can only pass if
          * {@code toSnapshot} put real names in the row.
          *
-         * <p>Added because the first version of this suite did not have it and a mutation that made the
-         * recording side return nothing left the whole suite green.
+         * <p>Without this case, a mutation that makes the recording side return nothing leaves the whole
+         * suite green.
          */
         @Test
         @Timeout(value = 30, unit = TimeUnit.SECONDS)

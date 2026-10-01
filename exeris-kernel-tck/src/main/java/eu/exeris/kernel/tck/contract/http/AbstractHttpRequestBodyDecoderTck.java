@@ -402,7 +402,7 @@ public abstract class AbstractHttpRequestBodyDecoderTck {
                         .isNotInstanceOf(IllegalStateException.class)
                         // The same classification, readable without knowing the type by name
                         // (ADR-083). A handler that catches broadly can only be as accurate as what
-                        // it is handed, and matching on two remembered types is what this replaces.
+                        // it is handed, and this spares it matching on two remembered types.
                         .satisfies(thrown -> assertThat(FaultOrigin.classify(thrown))
                                 .isEqualTo(FaultOrigin.CALLER));
             }

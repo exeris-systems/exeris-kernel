@@ -433,9 +433,7 @@ public final class SubsystemOrchestrator {
      * argument threading.
      *
      * <h4>Type safety</h4>
-     * <p>The previous implementation iterated a {@code Map<ScopedValue<?>, Object>} and
-     * required {@code @SuppressWarnings({"unchecked","rawtypes"})} to build the carrier.
-     * This implementation applies the {@link #composedEnricher} — a {@link UnaryOperator}
+     * <p>This implementation applies the {@link #composedEnricher} — a {@link UnaryOperator}
      * composed from each subsystem's pure enricher function — to a base carrier.
      * No casts, no wildcards, no suppressions. The compiler validates each
      * {@code .where(ScopedValue<T>, T)} binding at the subsystem's own call site.
@@ -749,10 +747,9 @@ public final class SubsystemOrchestrator {
                 // BootstrapException escaping here means the profile is fail-fast. The rest of the
                 // round is the subsystems that bind sockets and accept traffic: collecting failures
                 // and checking after the loop starts them anyway, and a boot already known to be
-                // doomed then serves requests on a half-built kernel before it admits it. The
-                // fork-per-subsystem round this replaced cancelled its siblings on the first
-                // failure; running in-thread has to let the first one out. Nothing rolls http back
-                // once it is listening.
+                // doomed then serves requests on a half-built kernel before it admits it. Running
+                // in-thread, there are no siblings to cancel, so the first failure has to leave the
+                // loop itself. Nothing rolls http back once it is listening.
                 doStart(subsystem, phase, profile);
             }
 
