@@ -40,6 +40,10 @@ Outside the declared surfaces:
   `<classifier>tests</classifier><type>test-jar</type>` coordinate is gone, from
   `exeris-kernel-bom` too — see "`exeris-kernel-tck` publishes its contract instead of hiding it
   under a classifier" under *Changed*.
+- **core:** `HttpRouter.Builder.streamRoute` refuses a stream route already registered for the same
+  method and the same path with `IllegalArgumentException`, where it kept the last registration of
+  an exact path — see "A repeated stream route is refused, and a router says whether it serves
+  streams" under *Changed*.
 - **tck:** `AbstractSharedScopeAccessMatrixTck` declares three more store operations a binding
   implements, `updateValue`, `reassignOwner` and `delete`, and its owner and scope keys become
   overridable (`ownerA()`, `ownerB()`, `sharedScope()`) — see "The reference shared-scope RLS
@@ -201,6 +205,16 @@ On a declared surface, a behaviour with no signature moved, each recorded in the
   `AbstractBlobStorageTck` against MinIO over `https`.
 
 ### Changed
+
+- **A repeated stream route is refused, and a router says whether it serves streams** (#589).
+  `HttpRouter.Builder` documents that within one kind of route the first registration wins, but an
+  exact stream route registered twice kept the second: `StreamRouteTable` stored exact paths in a map
+  and the later `put` replaced the earlier handler. `streamRoute` now refuses a registration whose
+  method and path, character for character, are already registered, exact or templated, so a
+  duplicate surfaces at startup rather than as the wrong handler; two templates that differ only in
+  placeholder names still keep the first. `HttpRouter.servesStreams()` answers whether any stream
+  route is registered, so a composition root that did not register the routes can refuse to install
+  a wrapper that is not a `StreamRouteResolver` in front of them.
 
 - **`HttpRouter.StreamMatch` is now the SPI record `eu.exeris.kernel.spi.http.StreamMatch`.**
   Same components and the same `exact(HttpStreamHandler)` factory. It now refuses a `null` handler

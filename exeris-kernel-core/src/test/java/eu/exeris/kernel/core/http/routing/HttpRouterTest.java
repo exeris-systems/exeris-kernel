@@ -9,6 +9,7 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.http.StreamMatch;
 import org.junit.jupiter.api.Nested;
@@ -20,7 +21,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -292,6 +295,75 @@ class HttpRouterTest {
             // An unbalanced brace would otherwise compile to a never-matching literal that silently 404s.
             assertThrows(IllegalArgumentException.class, () ->
                     HttpRouter.builder().route(HttpMethod.GET, "/x/{id", e -> e.respond(HttpStatus.OK)));
+        }
+    }
+
+    @Nested
+    class StreamRouteRegistration {
+
+        private final HttpStreamHandler first = exchange -> { };
+        private final HttpStreamHandler second = exchange -> { };
+
+        @Test
+        void exactStreamRouteRegisteredTwiceIsRefused() {
+            HttpRouter.Builder builder = HttpRouter.builder().streamRoute(HttpMethod.GET, "/x/stream", first);
+
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                    () -> builder.streamRoute(HttpMethod.GET, "/x/stream", second));
+            assertTrue(refused.getMessage().contains("GET /x/stream"), refused.getMessage());
+            assertSame(first, builder.build().resolveStream(HttpMethod.GET, "/x/stream").handler(),
+                    "the refused registration leaves the first one in place");
+        }
+
+        @Test
+        void templateStreamRouteRegisteredTwiceIsRefused() {
+            HttpRouter.Builder builder = HttpRouter.builder().streamRoute(HttpMethod.POST, "/x/{id}/ship", first);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> builder.streamRoute(HttpMethod.POST, "/x/{id}/ship", second));
+        }
+
+        @Test
+        void samePathUnderAnotherMethodIsAccepted() {
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/stream", first)
+                    .streamRoute(HttpMethod.POST, "/x/stream", second)
+                    .build();
+
+            assertSame(first, router.resolveStream(HttpMethod.GET, "/x/stream").handler());
+            assertSame(second, router.resolveStream(HttpMethod.POST, "/x/stream").handler());
+        }
+
+        @Test
+        void templatesDifferingOnlyInPlaceholderNamesKeepTheFirst() {
+            // Not a verbatim repeat, so not refused; the documented rule decides between them.
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/{id}/stream", first)
+                    .streamRoute(HttpMethod.GET, "/x/{key}/stream", second)
+                    .build();
+
+            assertSame(first, router.resolveStream(HttpMethod.GET, "/x/7/stream").handler());
+        }
+
+        @Test
+        void servesStreamsIsFalseWithNoStreamRoute() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x", e -> e.respond(HttpStatus.OK))
+                    .build();
+
+            assertFalse(router.servesStreams(), "respond-once routes are not stream routes");
+            assertFalse(HttpRouter.builder().build().servesStreams());
+        }
+
+        @Test
+        void servesStreamsIsTrueWithAnExactStreamRouteOnly() {
+            assertTrue(HttpRouter.builder().streamRoute(HttpMethod.GET, "/x/stream", first).build().servesStreams());
+        }
+
+        @Test
+        void servesStreamsIsTrueWithATemplateStreamRouteOnly() {
+            assertTrue(HttpRouter.builder().streamRoute(HttpMethod.POST, "/x/{id}/ship", first).build()
+                    .servesStreams());
         }
     }
 

@@ -38,6 +38,7 @@ Where each `### Breaking` entry of [`CHANGELOG.md`](CHANGELOG.md#0120--2026-09-3
 | persistence: `RowCursor.getString` throws `EX-PERS-5008` outside the measured type set | 12 |
 | events: `EX-EVENT-6002` matches only queue overflow | 10 |
 | tck: `AbstractSharedScopeAccessMatrixTck` declares three more store operations | 4 |
+| core: `HttpRouter.Builder.streamRoute` refuses a repeated stream route | 15 |
 
 Step 13 is the licence change, which needs no code edit. Step 14 is for a deployment that copied the
 kernel's reference shared-scope RLS policy; it is a database change, not a code edit.
@@ -203,3 +204,8 @@ kernel's reference shared-scope RLS policy; it is a database change, not a code 
     policies the Javadoc now gives: the tenant-private policy for every command, and an additive
     `FOR SELECT` policy that widens reads on `exeris.shared_scope`. Reads are unchanged; writes to a
     partition-mate's row now affect no row.
+15. **If your code registers the same stream route twice, keep one.** `HttpRouter.Builder.streamRoute`
+    refuses a stream route whose method and path are already registered, with
+    `IllegalArgumentException` at the call. Keep the registration that was being served: for an exact
+    path the later one, which replaced the earlier; for a repeated template the earlier one, which
+    matched first.

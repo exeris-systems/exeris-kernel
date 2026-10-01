@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -63,6 +64,15 @@ final class StreamRouteTable {
     }
 
     /**
+     * Returns whether any stream route, exact or templated, is registered for any method.
+     *
+     * @return {@code true} if at least one stream route is registered
+     */
+    /* default */ boolean servesAny() {
+        return !methods.isEmpty();
+    }
+
+    /**
      * Resolves a streaming route, or returns {@code null} when none matches.
      *
      * <p>An exact route wins over a template, mirroring respond-once precedence: a deployment that
@@ -95,20 +105,34 @@ final class StreamRouteTable {
         private final Map<HttpMethod, Map<String, HttpStreamHandler>> exact =
                 new EnumMap<>(HttpMethod.class);
         private final List<TemplateEntry> templates = new ArrayList<>();
+        // The raw template patterns already registered, per method, to refuse a verbatim repeat.
+        private final Map<HttpMethod, Set<String>> templatePatterns = new EnumMap<>(HttpMethod.class);
 
         /**
          * Registers one streaming route.
          *
          * @throws IllegalArgumentException if the path carries a brace that is not a well-formed
          *                                  {@code {name}} placeholder — a registration that could never
-         *                                  match must not be storable
+         *                                  match must not be storable — or if the same method and the
+         *                                  same path, character for character, are already registered:
+         *                                  the second handler could never be the one a request reaches
+         *                                  under first-registration-wins, so storing it hides a mistake
          */
         /* default */ void add(HttpMethod method, String path, HttpStreamHandler handler) {
             if (PathTemplate.isTemplate(path)) {
-                templates.add(new TemplateEntry(method, PathTemplate.compile(path), handler));
-            } else {
-                exact.computeIfAbsent(method, _ -> new HashMap<>()).put(path, handler);
+                PathTemplate template = PathTemplate.compile(path);
+                if (!templatePatterns.computeIfAbsent(method, _ -> new HashSet<>()).add(path)) {
+                    throw duplicate(method, path);
+                }
+                templates.add(new TemplateEntry(method, template, handler));
+            } else if (exact.computeIfAbsent(method, _ -> new HashMap<>()).putIfAbsent(path, handler) != null) {
+                throw duplicate(method, path);
             }
+        }
+
+        private static IllegalArgumentException duplicate(HttpMethod method, String path) {
+            return new IllegalArgumentException(
+                    "a stream route is already registered for " + method + " " + path);
         }
 
         /* default */ StreamRouteTable build() {
