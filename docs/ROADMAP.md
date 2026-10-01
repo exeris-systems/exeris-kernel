@@ -3377,6 +3377,8 @@ RFC; #585 and #580 item 4 are ADR rulings (ADR-012, ADR-006).
 
 **Status (v0.13): NOT STARTED.** The measurements are in #581–#585.
 
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.
