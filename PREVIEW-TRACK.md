@@ -1,3 +1,12 @@
+---
+title: "The `preview` line"
+type: reference
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-08-13
+---
+
 # The `preview` line
 
 This branch is **not** a research fork and **not** an adapter. It is the *intended future `main`*:
