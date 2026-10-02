@@ -1,0 +1,72 @@
+# ADR-085 §F.21, in a file of its own and not in `guardrails.yml`.
+#
+# THE SPLIT IS NOT TIDINESS. `claude-code-action` refuses to start when the workflow it runs under
+# differs in any byte from the copy on the default branch, so `guardrails.yml` has to be one blob
+# on every branch. This gate cannot be: the modules it names must carry the `javadoc-gate` profile
+# in their own poms, and which modules do is a property of a tree rather than a rule. Keeping it
+# here lets each branch name what it can actually hold to, while the file the reviewer enters
+# through stays identical everywhere. No action of that kind runs here, so nothing compares this
+# file across branches.
+#
+# `modules` NAMES WHAT THIS TREE CAN BE HELD TO, and is absent where that is nothing. The gate
+# measures a module only where that module's own pom carries the `javadoc-gate` profile: without it
+# the root pom's `doclint none` stands, `-Ddoclint` never reaches the plugin, and the run reports a
+# pass that measured nothing. Every substantive whole-module step in the called workflow is guarded
+# on `modules != ''`, so leaving that one set empty gates no module and claims nothing — the honest
+# state for a tree whose poms do not carry the profile, and not a placeholder waiting to be filled.
+#
+# THE TWO SETS MAY NOT BOTH BE EMPTY. The called workflow joins them into one list before any of
+# those guards apply and refuses an empty result — `neither 'modules' nor 'diff-modules' was given
+# — the gate has nothing to check`, exit 1. So a copy of this file with both empty does not report
+# nothing; it fails this job on every pull request. Emptying one is a statement about the tree,
+# and the workflow will not let emptying both pass quietly.
+#
+# Each copy of this file therefore states its own set and says nothing about any other branch's: a
+# comment that describes a tree it is not in is false the moment the file is merged into that tree.
+#
+# Whether a merge requires it is decided by the repository's rulesets, not by this workflow.
+name: javadoc
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    # The shared gate provisions JDK 25; the preview line compiles --release 28 with JEP 401 syntax
+    # (PREVIEW-TRACK.md, "Five gates cannot run here").
+    branches-ignore: [preview]
+concurrency:
+  group: javadoc-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+# What the called workflow declares, and nothing beyond it: it builds and reads, and publishes no
+# check of its own beyond this job's own conclusion.
+permissions:
+  contents: read
+
+jobs:
+  javadoc:
+    uses: exeris-systems/.github/.github/workflows/javadoc-gate.yml@bfb55570c910290c92e1c537aab785a725997fa0 # exeris-systems/.github@main
+    with:
+      # THE BLOCK IS LIVE ON EVERY BRANCH AND ONLY THE VALUES MOVE, which is the whole of why it
+      # is written out here rather than left commented. A tree that gates nothing and a tree that
+      # gates two modules then differ by two values, and a merge between them conflicts on those
+      # two lines. Left as a comment on one side, the same merge conflicts as a comment against a
+      # live block — and resolving that the wrong way deletes a gate instead of changing a value,
+      # silently, because every step of the called workflow is guarded on `modules != ''` and an
+      # empty set runs green having measured nothing.
+      #
+      # TWO SETS, AND THEY ANSWER DIFFERENT QUESTIONS.
+      #
+      # `modules` is the whole-module bar: every file complies, always. It holds the SPI, which is
+      # what a downstream implementor writes against, and the TCK, which is what a contributor runs
+      # to show an implementation conforms. Each module in it needs the `javadoc-gate` profile in
+      # its own pom, and `-Pjavadoc-gate` is what selects that profile — so empty is the honest
+      # value for a tree whose poms do not carry it, and is what the called workflow defaults to.
+      # The `release` profile keeps `doclint none` on purpose, so publishing never depends on the
+      # state of the prose.
+      #
+      # `diff-modules` is javadoc-conventions.md rule 11 as rule 11 states it: for Kernel Core,
+      # Community and tooling, rules 2-9 apply to changed files only, with no backfill mandate. It
+      # needs no pom change, because that half runs `javadoc` and Checkstyle directly over the
+      # changed files rather than through the Maven plugin — which is also why this value is the
+      # same on every branch while `modules` is not.
+      modules: exeris-kernel-spi,exeris-kernel-tck
+      diff-modules: exeris-kernel-core,exeris-kernel-community
+      extra-maven-args: "-Pjavadoc-gate"
