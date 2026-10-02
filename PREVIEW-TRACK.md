@@ -162,7 +162,10 @@ unavailable on this line as a standing condition**. Each is recorded rather than
   identically on every one. Unlike the other two this is not noise: it fails
   `mvn clean verify -P coverage`, which is precisely the command CI runs. Coverage floors are not
   abandoned; they are ratcheted per module and enforced on `main` over the same sources. What is lost
-  here is the ability to *observe* coverage on the preview toolchain.
+  here is the ability to *observe* coverage on the preview toolchain. For the same reason the root
+  POM excludes every source from SonarCloud's coverage (`sonar.coverage.exclusions`): without a
+  report, the quality gate's coverage condition reads 0% on all new code, which is a measurement of
+  the missing tool, not of the code.
 
 - **The javadoc gate** (`.github/workflows/javadoc.yml`, `branches-ignore: [preview]`). It is the
   shared `javadoc-gate` workflow, which provisions Temurin 25 and runs Checkstyle and doclint over the
