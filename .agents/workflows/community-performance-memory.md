@@ -1,6 +1,14 @@
 ---
+name: community-performance-memory
 description: Review Exeris Community runtime changes for hot-path allocation/copy churn, ownership lifecycle, runtime risk, and observability expectations.
 argument-hint: Hot-path or memory-sensitive change scope
+steps:
+  - {agent: exeris-performance}
+  - {skill: exeris-performance-contract}
+  - {skill: exeris-jfr-telemetry-review, when: "the change adds or moves a JFR event"}
+gates:
+  - ci:maven / build-and-verify
+  - test:ExerisArchitectureTest
 ---
 
 Review this Exeris Community change as a runtime hot-path and memory-lifecycle task.

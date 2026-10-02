@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.security;
 
@@ -39,24 +35,27 @@ import java.util.UUID;
  *       OAuth2/OIDC)</li>
  * </ul>
  *
- * <h2>Valhalla Readiness</h2>
- * <p>Standard {@code record} — all fields are value-safe types.
- * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p><b>Allocation:</b> allocates (one record plus an immutable copy of {@code roles} and
+ * {@code scopes} at construction, via {@link Set#copyOf(java.util.Collection)}); the accessors then
+ * hand back the stored references without allocating further
+ * <p><b>Thread confinement:</b> any thread — deeply immutable, so one instance is safe to publish
+ * to every virtual thread that inherits the {@code PRINCIPAL_CONTEXT} binding
+ * <p><b>Ownership:</b> nothing to release — the record outlives no resource, and the caller's
+ * {@code roles} / {@code scopes} collections stay the caller's because they are copied, not adopted
+ * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
- * No identity operations ({@code ==}, {@code synchronized},
- * {@code System.identityHashCode()}) are permitted.
- *
- * <h2>Thread Safety</h2>
- * <p>Deeply immutable. {@code roles} and {@code scopes} are
- * defensively copied via {@link Set#copyOf(java.util.Collection)}.
  *
  * @param principalId UUIDv7 principal identifier (never {@code null})
  * @param tenantId    UUIDv7 tenant (empty for tenant-less / system)
  * @param roles       immutable role set (never {@code null})
  * @param scopes      immutable OAuth2 scope set (never {@code null})
  *
- * @since 0.5.0
+ * @apiNote No identity operation ({@code ==}, {@code synchronized},
+ *          {@code System.identityHashCode()}) is permitted on an instance: all components are
+ *          value-safe and the record is ready for {@code value record} migration (JEP 401), which
+ *          would make identity meaningless.
+ * @since 0.5
  * @see PrincipalContext
  */
 public value record ImmutablePrincipal(
@@ -68,7 +67,10 @@ public value record ImmutablePrincipal(
 
 
     /**
-     * Compact constructor — fail-fast validation and defensive copy.
+     * Compact constructor — rejects a null component and copies {@code roles} and {@code scopes}
+     * so a later mutation of the caller's collections cannot reach this principal.
+     *
+     * @throws NullPointerException if any component is {@code null}
      */
     public ImmutablePrincipal {
         Objects.requireNonNull(principalId, "principalId must not be null");
@@ -167,8 +169,9 @@ public value record ImmutablePrincipal(
     }
 
     /**
-     * Masks a UUID for safe log output — delegates to the canonical
-     * {@link SpiDiagnostics#maskUuid(UUID)} shared across all SPI identity carriers.
+     * Masks a UUID for safe log output, so {@link #toString()} never publishes a full identifier —
+     * delegates to the canonical {@link SpiDiagnostics#maskUuid(UUID)} shared across all SPI
+     * identity carriers.
      *
      * <p>Example: {@code 01945a3b-f2c1-7...} → {@code 01945a3b~***}
      */

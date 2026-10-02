@@ -30,7 +30,7 @@ Catch the recurring, expensive footguns that a green build alone does **not** pr
 3. **Architecture guard test (The Wall)**
    - Run the ArchUnit guard so SPI/Core/Driver boundaries are enforced (it has historically been `@ArchIgnore`'d — do not assume CI covers it):
      ```
-     mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest **plus the Community-module guards** (`KernelTierDirectionArchitectureTest`, `CommunitySchedulingArchitectureTest`) — `-pl exeris-kernel-tck -am` does not build Community, so the Core→Community direction rule never runs under it; ExerisArchitectureTest \
+     mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest **plus the Community-module guards** (`KernelTierDirectionArchitectureTest`, `CommunitySchedulingArchitectureTest`, `KernelTierBanArchitectureTest`) — `-pl exeris-kernel-tck -am` does not build Community, so the Core→Community direction rule never runs under it; ExerisArchitectureTest \
        -Dsurefire.failIfNoSpecifiedTests=false \
        -Dpmd.skip=true -Dcheckstyle.skip=true test
      ```
@@ -40,7 +40,7 @@ Catch the recurring, expensive footguns that a green build alone does **not** pr
 
 5. **Docs / ADR drift**
    - If behavior/boundary meaning changed, confirm docs/ADR are synced (delegate to `exeris-docs-adr-check`).
-   - If an ADR is involved: numbers are a GLOBAL namespace — reserve the slot in `~/exeris-systems/exeris-docs/adr-index.md` BEFORE writing content (see `exeris-adr-register`). PR #129 (ADR-026 collision) is the cautionary tale.
+   - If an ADR is involved: numbers are a GLOBAL namespace — reserve the slot in `adr-index.md` in the `exeris-systems/exeris-docs` repository BEFORE writing content (see `exeris-adr-register`). PR #129 (ADR-026 collision) is the cautionary tale.
 
 6. **Public-docs hygiene**
    - Release notes/CHANGELOG describe only what is published: no unpublished-consumer-behavior-as-shipped, no local-only links, no cross-repo/private PR# leaks, no deep links into enterprise-private repos.

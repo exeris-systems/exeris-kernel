@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -21,8 +17,7 @@ import java.util.Objects;
  * a Panama {@link java.lang.foreign.MemorySegment}. The {@link HttpServerEngine}
  * implementation takes ownership of the buffer on
  * {@link HttpExchange#respond(HttpResponse)} and releases it after the wire write
- * completes. Callers MUST NOT close the buffer after passing it to
- * {@link HttpExchange#respond(HttpResponse)}.
+ * completes.
  *
  * <h2>Valhalla Readiness</h2>
  * <p>No identity operations ({@code ==}, {@code System.identityHashCode()},
@@ -31,11 +26,20 @@ import java.util.Objects;
  * {@code Class::isValue} in the module's value-carrier registry test.
  * The {@code LoanedBuffer} component keeps its own identity and its own lifecycle.
  *
+ * <p><b>Allocation:</b> allocates (the carrier and its header list); the body is carried by
+ * reference
+ * <p><b>Ownership:</b> the caller owns {@link #body()} until
+ * {@link HttpExchange#respond(HttpResponse)}, from which point the engine owns it and releases it
+ * once the write completes
+ *
  * @param status  response status; non-null
  * @param version protocol version of the response; non-null
  * @param headers immutable list of response header fields; non-null, may be empty
  * @param body    response body buffer, or {@code null} if the response has no body
- * @since 0.5.0
+ * @apiNote Do not close or retain the body buffer once the response has been passed to
+ *          {@link HttpExchange#respond(HttpResponse)} — a second release corrupts the pool's
+ *          accounting, and a retained reference reads another response's bytes.
+ * @since 0.5
  */
 public value record HttpResponse(
         HttpStatus status,
@@ -44,6 +48,13 @@ public value record HttpResponse(
         LoanedBuffer body
 ) {
 
+    /**
+     * Rejects the three components a response head cannot be written without; {@code body} stays
+     * nullable, because that is how a bodyless response is expressed.
+     *
+     * @throws NullPointerException if {@code status}, {@code version} or {@code headers} is
+     *                              {@code null}
+     */
     public HttpResponse {
         Objects.requireNonNull(status,  "status must not be null");
         Objects.requireNonNull(version, "version must not be null");
@@ -52,7 +63,8 @@ public value record HttpResponse(
     }
 
     /**
-     * Returns {@code true} if this response carries a non-null body buffer.
+     * Returns whether a body buffer travels with this response — {@code false} means the engine has
+     * nothing to write after the head and nothing to release.
      *
      * @return {@code true} if {@link #body()} is non-null
      */

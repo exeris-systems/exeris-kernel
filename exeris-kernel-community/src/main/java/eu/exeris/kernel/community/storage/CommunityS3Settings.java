@@ -1,46 +1,53 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.storage;
 
+import eu.exeris.kernel.community.http.CommunityEndpointScheme;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageConfig;
 
 import java.net.URI;
-import java.net.URISyntaxException;
 import java.util.Map;
 
 /**
  * What the S3-compatible driver needs, read once out of {@link BlobStorageConfig} (ADR-056 §10).
  *
- * <p>{@code location} carries the endpoint — {@code http://host:port} — and everything else arrives
- * through {@code properties}, because the SPI record deliberately has no field the kernel could
- * interpret as a storage topology.
+ * <p>{@code location} carries the endpoint — {@code http://host[:port]} or
+ * {@code https://host[:port]}, optionally with a single trailing {@code /} — and everything else
+ * arrives through {@code properties}, because the SPI record deliberately has no field the kernel could
+ * interpret as a storage topology. A location with a path, a query, a fragment or userinfo is refused:
+ * the driver would drop each of them, and a dropped path prefix or ignored credential surfaces only as
+ * a transfer failure. No refusal echoes the userinfo.
  *
- * <h2>Cleartext only, and said out loud</h2>
- * <p>The Community HTTP client engine has no client-side TLS: {@code CommunityHttpTransportFactory}
- * wires certificate material for listeners only, so a {@code CLIENT}-mode engine speaks cleartext
- * whatever the endpoint scheme says. An {@code https://} endpoint is therefore rejected at
- * construction rather than silently downgraded — sending SigV4 credentials in the clear because a
- * scheme was ignored is exactly the failure that must never be quiet. This driver targets a
- * MinIO-compatible endpoint reached over a trusted network path; a public S3 endpoint needs the
- * Enterprise transport.
+ * <h2>The scheme decides</h2>
+ * <p>The client engine requires of its transport what the scheme says ({@link CommunityEndpointScheme#outboundTls()}),
+ * wherever the store is built. {@code http://} is plaintext, even where a crypto provider is bound.
+ * {@code https://} is TLS that verifies the server against the endpoint host, or no store: without the
+ * Community crypto provider bound where the store is built, or under
+ * {@code -Dexeris.transport.tls=false}, the store is not created. It is never downgraded — sending SigV4
+ * credentials in the clear because a scheme was ignored is exactly the failure that must never be
+ * quiet. The default port follows the scheme.
  *
- * @param host           endpoint host
+ * <p>The host is read once, lower-cased and without a trailing dot, and every authority the driver
+ * uses is built from it: the dialled one ({@link #dialAuthority()}), the signed {@code Host}
+ * ({@link #hostHeader()}) and a presigned URL's ({@link #origin()}). The name the transport verifies
+ * and sends as the server name is the host of the dialled authority, so all four agree. Addressing is
+ * path-style, so no bucket enters a host name.
+ *
+ * @param scheme         endpoint scheme, which decides the client engine's transport
+ * @param host           endpoint host, lower-cased, without a trailing dot; an IPv6 literal keeps its
+ *                       brackets
  * @param port           endpoint port
  * @param bucket         bucket every object lands in; tenants are separated by key prefix, not by bucket
  * @param accessKey      SigV4 access key id
  * @param secretKey      SigV4 secret access key
  * @param region         SigV4 credential-scope region
  * @param maxObjectBytes ceiling on a single object, in bytes
- * @since 0.11.0
+ * @since 0.11
  */
-/* default */ value record CommunityS3Settings(String host, int port, String bucket, String accessKey,
-                                         String secretKey, String region, long maxObjectBytes) {
+/* default */ value record CommunityS3Settings(CommunityEndpointScheme scheme, String host, int port, String bucket,
+                                         String accessKey, String secretKey, String region, long maxObjectBytes) {
 
     /** Property key: the bucket every object lands in. */
     /* default */ static final String BUCKET = "s3.bucket";
@@ -83,8 +90,6 @@ import java.util.Map;
      */
     /* default */ static final long DEFAULT_MAX_OBJECT_BYTES = 8L * 1024 * 1024;
 
-    private static final String HTTP_SCHEME = "http";
-    private static final int DEFAULT_HTTP_PORT = 80;
     private static final long HEADER_HEADROOM_BYTES = 64L * 1024;
 
     /**
@@ -129,15 +134,19 @@ import java.util.Map;
      *
      * @param config the configuration handed to the provider
      * @return the parsed settings; never {@code null}
-     * @throws IllegalArgumentException if the endpoint is unusable, a required property is missing, or
-     *                                  the ceiling is not a positive number
+     * @throws IllegalArgumentException if the endpoint is unusable or carries a path, query, fragment or
+     *                                  userinfo, a required property is missing, or the ceiling is not a
+     *                                  positive number
      */
     /* default */ static CommunityS3Settings from(BlobStorageConfig config) {
-        URI endpoint = parseEndpoint(config.location());
+        URI endpoint = CommunityS3Endpoint.parse(config.location());
+        CommunityEndpointScheme scheme =
+                CommunityEndpointScheme.of(endpoint.getScheme(), CommunityS3Endpoint.LOCATION);
         Map<String, String> properties = config.properties();
         return new CommunityS3Settings(
-                endpoint.getHost(),
-                endpoint.getPort() < 0 ? DEFAULT_HTTP_PORT : endpoint.getPort(),
+                scheme,
+                CommunityS3Endpoint.normalisedHost(endpoint, config.location()),
+                endpoint.getPort() < 0 ? scheme.defaultPort() : endpoint.getPort(),
                 required(properties, BUCKET),
                 required(properties, ACCESS_KEY),
                 required(properties, SECRET_KEY),
@@ -158,23 +167,37 @@ import java.util.Map;
         return maxObjectBytes + HEADER_HEADROOM_BYTES;
     }
 
-    private static URI parseEndpoint(String location) {
-        URI endpoint;
-        try {
-            endpoint = new URI(location);
-        } catch (URISyntaxException e) {
-            throw new IllegalArgumentException("location must be an endpoint URI, got: " + location, e);
-        }
-        if (!HTTP_SCHEME.equalsIgnoreCase(endpoint.getScheme())) {
-            throw new IllegalArgumentException(
-                    "location must use the http scheme — the Community HTTP client engine has no "
-                            + "client-side TLS, so an https endpoint would be sent in the clear; got: "
-                            + endpoint.getScheme());
-        }
-        if (endpoint.getHost() == null || endpoint.getHost().isBlank()) {
-            throw new IllegalArgumentException("location must carry a host, got: " + location);
-        }
-        return endpoint;
+    /**
+     * The authority every request dials: {@code host:port}, with the port always stated, since the
+     * client engine requires one.
+     *
+     * @return the dialled authority
+     */
+    /* default */ String dialAuthority() {
+        return host + ":" + port;
+    }
+
+    /**
+     * The {@code Host} value the signer signs and sends: the host alone on the scheme's default port,
+     * otherwise {@code host:port}.
+     *
+     * <p>RFC 9110 reads both as the same authority as {@link #dialAuthority()}. The port-less form is
+     * the one a browser or curl sends for a presigned URL on the default port, so a signature over
+     * {@code host:443} would verify against nothing it sends.
+     *
+     * @return the {@code Host} value
+     */
+    /* default */ String hostHeader() {
+        return port == scheme.defaultPort() ? host : host + ":" + port;
+    }
+
+    /**
+     * The scheme and authority a presigned URL starts with: {@code scheme://} and {@link #hostHeader()}.
+     *
+     * @return the origin, with no trailing slash
+     */
+    /* default */ String origin() {
+        return scheme.token() + "://" + hostHeader();
     }
 
     private static String required(Map<String, String> properties, String key) {

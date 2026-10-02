@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.testkit.persistence;
 
@@ -14,17 +10,16 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * A real kernel {@link PersistenceEngine}, booted in-process, for consumers outside this repository.
  *
  * <h2>Why this exists</h2>
- * <p>Until 0.11 the testkit shipped HTTP fixtures and nothing else, so a host runtime binding the
- * persistence SPI had no way to test against the engine it actually runs on. What it could do was write
- * a double — and a double encodes how its author <em>read</em> the contract, not how the runtime
- * <em>behaves</em>. Ordering, lifecycle, and threading are precisely the properties a double cannot get
+ * <p>A host runtime binding the persistence SPI needs to test against the engine it actually runs on.
+ * The alternative is a double — and a double encodes how its author <em>read</em> the contract, not
+ * how the runtime <em>behaves</em>. Ordering, lifecycle, and threading are precisely the properties a double cannot get
  * wrong loudly, which is why defects in them keep being found by applications rather than by tests.
  *
  * <p>This fixture is the real engine: real provider discovery through {@code ServiceLoader}, real
  * bootstrap, real migrations, real pool. Nothing here is a stand-in.
  *
  * <h2>Lifecycle</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * try (EmbeddedPersistenceEngineFixture fixture = EmbeddedPersistenceEngineFixtures.inMemoryH2()) {
  *     fixture.start();
  *     try (PersistenceConnection connection = fixture.engine().openConnection()) {
@@ -33,7 +28,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  *         connection.rollback();
  *     }
  * }
- * }</pre>
+ * }
  *
  * <h2>Which thread</h2>
  * <p>{@link #engine()} is safe to use directly from the test thread: the Community engine reads no
@@ -42,7 +37,7 @@ import eu.exeris.kernel.spi.persistence.PersistenceEngine;
  * a provider slot, which is the usual shape of a host runtime's transaction manager — must run through
  * {@link #runInKernelScope(Runnable)} instead, or it will fail to resolve them.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public interface EmbeddedPersistenceEngineFixture extends AutoCloseable {
 

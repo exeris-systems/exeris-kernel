@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.graph;
 
@@ -12,12 +8,14 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Valhalla-Ready: Immutable configuration for the Graph subsystem.
+ * SPI: Immutable, implementation-blind configuration consumed by
+ * {@link GraphProvider#createEngine(GraphConfig)} to build a {@link GraphEngine}.
  *
+ * <h2>Valhalla Readiness</h2>
  * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
- * {@code Class::isValue} in the module's value-carrier registry test.
- * Avoid identity operations.
+ * {@code Class::isValue} in the module's value-carrier registry test. No identity is required;
+ * fields are primitives, {@code String}s, or the immutable {@code properties} map.
  *
  * <h2>The Wall (SPI Compliance)</h2>
  * <p>This config is <strong>implementation-blind</strong>: it does not reference JDBC,
@@ -32,7 +30,8 @@ import java.util.Objects;
  * @param pathFinderEnabled whether shortest-path algorithms are enabled
  * @param properties      opaque backend-specific configuration map
  *
- * @since 0.5.0
+ * @since 0.5
+ * @see GraphProvider
  */
 public value record GraphConfig(
         String backendType,
@@ -44,7 +43,10 @@ public value record GraphConfig(
         Map<String, String> properties
 ) {
     /**
-     * Compact constructor with defaults.
+     * Rejects a {@code null} {@code backendType} and fills in {@code graphName} and
+     * {@code properties} defaults when the caller passes {@code null} for either.
+     *
+     * @throws NullPointerException if {@code backendType} is {@code null}
      */
     public GraphConfig {
         Objects.requireNonNull(backendType, "backendType");
@@ -53,10 +55,11 @@ public value record GraphConfig(
     }
 
     /**
-     * Gets a backend-specific property.
+     * Returns the raw value of a backend-specific property, resolved from
+     * {@link #properties()}.
      *
      * @param key property key; must not be {@code null}
-     * @return property value or {@code null} if absent
+     * @return the property value, or {@code null} if {@code key} is absent
      * @throws NullPointerException if {@code key} is {@code null}
      */
     public String property(String key) {
@@ -65,11 +68,11 @@ public value record GraphConfig(
     }
 
     /**
-     * Gets a backend-specific property with default.
+     * Returns the value of a backend-specific property, or {@code defaultValue} if absent.
      *
      * @param key          property key; must not be {@code null}
-     * @param defaultValue value if key is absent
-     * @return property value or default
+     * @param defaultValue value to return if {@code key} is absent
+     * @return the property value, or {@code defaultValue} if {@code key} is absent
      * @throws NullPointerException if {@code key} is {@code null}
      */
     public String property(String key, String defaultValue) {
@@ -78,10 +81,11 @@ public value record GraphConfig(
     }
 
     /**
-     * Quick factory for minimal config.
+     * Returns a minimal config for {@code backendType} with caching, indexing, dual-write
+     * sync and path-finding all disabled, and an empty properties map.
      *
-     * @param backendType backend type
-     * @return config with all features disabled
+     * @param backendType logical backend type (e.g. "postgresql", "neo4j")
+     * @return a config with every feature flag disabled
      */
     public static GraphConfig create(String backendType) {
         return new GraphConfig(backendType, null, false, false, false, false, null);

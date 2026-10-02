@@ -75,12 +75,11 @@ files took `preview`'s spelling back wholesale, `AbstractSecurityInterceptorTck`
 because it also carries real new cases, and the class and its test are deleted here.
 
 **Pre-existing on this line, not introduced by a merge-up:** the standalone architecture-guard
-command (`.agents/references/build-and-ci.md`) (`mvn -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest ... test`) fails here with
-`[No Class Loaded]` — the guard's own non-vacuity assertion, reporting that it scanned nothing. Checked
-against a clean `origin/preview` checkout, where it fails identically. The guard itself is fine: it runs
-and passes inside the full `mvn clean install`, which is what CI does. It is the isolated invocation
-that does not set this line's classpath up, and anyone following the default line's runbook here will
-read a tooling gap as a boundary breach.
+command (`.agents/references/build-and-ci.md`) (`mvn -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest ... test`)
+fails here with `[No Class Loaded]` — the guard's own non-vacuity assertion, reporting that ArchUnit
+scanned nothing, because it cannot read class-file major 72. The full build excludes the guard on this
+line, so it does not run there either: the Wall is verified on the development line, over the same
+sources. Anyone following the default line's runbook here will read that failure as a boundary breach.
 
 **Still to measure on JDK 28:** the bytecode row in the table above (`311 of 927`) predates this
 merge and is stale by whatever it added. Recomputing it needs a JDK 28 build, which
@@ -109,9 +108,9 @@ rather than the `BootstrapException` the contract names. The checked exception f
 catch restores the intended type. The default line reached the same outcome by a different route
 (ADR-066 §2).
 
-## Four gates cannot run here — and the reason is structural, not temporary
+## Five gates cannot run here — and the reason is structural, not temporary
 
-Three of the four read class files, and **class-file readers ship support after a JDK releases**. This
+Three of the five read class files, and **class-file readers ship support after a JDK releases**. This
 line tracks the newest JDK, usually while it is still EA. The two facts do not reconcile: by the time
 a tool supports the JDK this branch is on, this branch has moved to the next one.
 
@@ -125,8 +124,10 @@ unavailable on this line as a standing condition**. Each is recorded rather than
 - **PMD** (`pmd.skip` in the root POM). PMD 7.22.0 cannot parse JDK 28 class files — type resolution
   fails on `java/lang/String` itself. With types unresolved it reports ~20 false positives on SPI
   sources that are clean under the same PMD on JDK 25/26.
-- **ArchUnit** — the Wall guard in `exeris-kernel-tck` and the two driver-side guards in
-  `exeris-kernel-community`. ArchUnit 1.4.2 imports **zero** classes at major 72. This was caught by
+- **ArchUnit** — the Wall guard in `exeris-kernel-tck` and the driver-side suites in
+  `exeris-kernel-community` (`KernelTierDirectionArchitectureTest`, `CommunitySchedulingArchitectureTest`,
+  `KernelTierBanArchitectureTest`, and `JfrEventCatalogueCoverageTest`, which imports with ArchUnit to
+  find every JFR event class). ArchUnit 1.4.2 imports **zero** classes at major 72. This was caught by
   the suites' own non-empty-analysis assertions (`verifyClassesArePresent`,
   `allThreeTiersAreOnTheAnalysisClasspath`), which exist precisely so an empty analysis can never pass
   as a green one.
@@ -154,13 +155,18 @@ unavailable on this line as a standing condition**. Each is recorded rather than
   abandoned; they are ratcheted per module and enforced on `main` over the same sources. What is lost
   here is the ability to *observe* coverage on the preview toolchain.
 
+- **The javadoc gate** (`.github/workflows/javadoc.yml`, `branches-ignore: [preview]`). It is the
+  shared `javadoc-gate` workflow, which provisions Temurin 25 and runs Checkstyle and doclint over the
+  SPI and the TCK: it can neither compile `--release 28` nor parse the `value` modifier. The same
+  sources are gated on `main`; a pull request into this branch does not run it.
+
 **How this one was missed, and the rule it produced.** The first version of this branch reported
 "`mvn clean install` green, 4123 tests" — true, and irrelevant, because CI runs
 `mvn clean verify -P coverage` and `install` does not activate that profile. The JaCoCo failure was
 invisible locally for exactly that reason. **Verify this line with the command CI runs, not a
 neighbouring one**; the same slip produced two red gates on the default line's PR in the same week.
 
-**Why the bar is not lowered:** all four gates' subject is identical on the two lines — the SPI /
+**Why the bar is not lowered:** all five gates' subject is identical on the two lines — the SPI /
 Core / Community boundaries, the lint rules, and the coverage floors, over the same sources — and
 `main` runs all three on JDK 25 LTS where the tools work.
 
@@ -180,13 +186,13 @@ The distributed line splits the two jobs across two branches: `main` carries rel
 `development/*` carries the `-SNAPSHOT`. **This line has one branch doing both**, which is why the
 reopen below is a step rather than an afterthought.
 
-1. **Cut.** Bump the eleven reactor poms and `sonar.projectVersion` to the plain version, land it,
+1. **Cut.** Bump the eleven reactor poms to the plain version, land it,
    then tag `preview/vX.Y.Z` on that commit. The `preview/` prefix is load-bearing: the SPI-diff gate
    selects its baseline by a strict `vMAJOR.MINOR.PATCH` match, and an unprefixed `v0.11.1` on this
    line would sort **above** the distributed line's `v0.11.0` and hand the GA baseline a tree that is
    not its ancestor.
-2. **Reopen immediately.** Bump the same eleven poms and `sonar.projectVersion` to the next
-   `-SNAPSHOT` in the *same* session as the cut.
+2. **Reopen immediately.** Bump the same eleven poms to the next `-SNAPSHOT` in the *same* session
+   as the cut. The Sonar analysis takes its version from the reactor, so no other file names it.
 
 **Step 2 is not hygiene, and skipping it is silent.** The publish step fires on *every* push to this
 branch (`.github/workflows/maven.yml`), GitHub Packages treats a release version as **immutable**, and
@@ -231,6 +237,51 @@ Two standing costs, so neither is a surprise next time:
 - `tools/preview-bytecode-scan/` is **kept, byte-identical to `main`'s, and deliberately unwired**
   here: it asserts zero preview bytecode, which is the exact inverse of this line's design. Identical
   files never conflict, which is why keeping it costs less than deleting it.
+
+### The v0.12 merge-up: the base is not where git looks for it
+
+`development/0.12.0` descends from `main`'s squash of v0.11.0, and that squash is not an ancestor of
+this branch, so git computes the merge base as `v0.10.2` and replays all of 0.11 a second time:
+**355 conflicted files**. Done in two merges instead:
+
+1. **`development/0.11.0` first** — the tail this line had taken by squash (#327) but git still
+   counted as unmerged. 19 conflicts, every one resolved to this branch's side; it records ancestry
+   and carries the two v0.11.0 release-notes sections.
+2. **`development/0.12.0` against `v0.11.0` as base.** The base is supplied by a *local* graft
+   (`git replace --graft v0.11.0 <its parent> origin/development/0.11.0`) that exists only for the
+   merge computation and is deleted afterwards — it is never pushed. **141 conflicted files**: 65 agent
+   files, 11 poms, about 12 docs, 49 Java files with 54 hunks.
+
+The table above gains three rows for this shape:
+
+| conflict group | resolution |
+|---|---|
+| `.agents/`, `.claude/`, `.github/` agent files (the ADR-085 v2 schema) | take the incoming side; re-apply this line's statements to `AGENTS.md`, the branch policy and the tagged-gate runner; keep `jdk-and-preview-track.md` whole |
+| a record declaration | this branch's `value` modifier on the incoming record, with the incoming Javadoc |
+| Javadoc saying a carrier "can be migrated to a `value record` once JEP 401 is mainline" | rewrite: on this line it already is one |
+
+**What merged cleanly and was wrong here**, found by the build and the sweeps below rather than by
+the conflicts:
+
+- **The GA line's fixture conversion.** Ten test fixtures moved to `TckScope`, three TLS fixtures to
+  `BlockingPeerPair`, and `--enable-preview` left four poms and the benchmark harness. All reverted
+  here; `TckScope`, `BlockingPeerPair` and `StructuredScope` stay deleted.
+- **Imports removed by a clean hunk** while the conflict that used them kept this branch's body —
+  a compile error, not a semantic one, but only a full compile shows it.
+- **Two independent fixes of one race.** Both lines fixed the same check-then-stop race in
+  `CommunityConnectionRefusalTest`, differently; the merge composed this branch's helper with the
+  incoming body, which no longer declares the variable the helper reads. The incoming fix is taken.
+- **A duplicated `<properties>` block** in a pom both sides had edited near the top.
+- **22 new records without the modifier** — caught by the per-module value-carrier registry test,
+  which is what it exists for.
+- **An allocation measurement that depends on the JVM it shares.** `StreamResolutionMissAllocationTest`
+  asserts a stream-route miss allocates zero bytes per call. On JDK 28 EA it reads a few bytes to a
+  few dozen per call in most full Core runs and zero alone; on JDK 25 it is stable. Making `value`
+  records identity again does not change that. Excluded in `exeris-kernel-core/pom.xml` with the
+  re-enable check beside it; the contract is held on the development line.
+
+The TCK now publishes its contract from `src/main` (incoming), so on this line the TCK's main sources
+use `StructuredTaskScope` and its jar is preview-stamped, like every other module here.
 
 **Always finish a merge-up by running `mvn clean verify -P coverage` — the command CI runs.** A clean
 merge is not evidence of a correct one.

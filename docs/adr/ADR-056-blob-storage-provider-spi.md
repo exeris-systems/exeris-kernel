@@ -1,3 +1,11 @@
+---
+title: "ADR-056: Adopt a `BlobStorageProvider` SPI for binary-object storage"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-056
+---
 # ADR-056: Adopt a `BlobStorageProvider` SPI for binary-object storage
 
 | Attribute       | Value                                                                                      |
@@ -66,6 +74,12 @@ rather than leaving each driver to guess how much it may assume.
    yet. The SPI and the first driver land ahead of bootstrap wiring, as `GraphProvider` did; the slots
    and the config binding land with the second driver, where a provider-selection decision first has
    something to select between. Until then a `BlobStore` is constructed directly by its caller.)*
+
+   *(Amended 2026-09-27, with the storage subsystem: the slot pair exists from 0.12, and it landed with
+   the storage subsystem rather than with a second driver. `StorageBootstrap` selects the driver named
+   by `storage.blob.provider` and does not rank by `priority()` — the two Community drivers share a
+   priority and are not interchangeable. `CommunityStorageSubsystem` binds both slots from its
+   `providerBindings()`. With the key unset, storage is off and neither slot is bound.)*
 
 3. **Bytes move on `LoanedBuffer`; the SPI exposes no `byte[]` and no `InputStream` on the transfer
    path.** *(Amended 2026-07-30, with the SPI. The original text set out a `retain()`/`close()`
@@ -158,6 +172,9 @@ rather than leaving each driver to guess how much it may assume.
       Accepting an `https` endpoint would send SigV4 credentials in the clear because a scheme was
       ignored. The driver targets a MinIO-compatible endpoint over a trusted network path; a public S3
       endpoint needs the Enterprise transport.*
+
+      *(Amended 2026-09-27: an `https://` endpoint is honoured over verified TLS, and an `http://`
+      endpoint stays plaintext — see [Amendments](#amendments).)*
     - ***A configurable single-object ceiling (`s3.maxObjectBytes`, default 8 MiB) replaces an implicit
       one.** Without multipart upload an object is held in one buffer for the length of a transfer, so a
       ceiling exists whether or not it is named; naming it makes the refusal loud (`EX-BLOB-8005`, before
@@ -215,6 +232,35 @@ rather than leaving each driver to guess how much it may assume.
 - **System-scope (`GLOBAL`) blob storage.** Obligation 5 denies it. Kernel-internal artefacts that need
   durable bytes have no such requirement today, and inventing a system namespace before there is a
   consumer would be target-state invention.
+
+  **What an application should do instead** (added 2026-09-02, after the question arrived from
+  outside). The exclusion above says what is refused and not what to reach for, which leaves every
+  application improvising the same answer. Rows have three scopes and blobs have one, so an
+  application that models a `GLOBAL` entity has nowhere to put that entity's binary content — and the
+  gap is real enough to name, even though the tier stays out.
+
+  Sort the content by **who authors it**, because that decides the answer more reliably than who
+  reads it:
+
+  - **Authored by the developer, identical for every tenant, versioned with the code** — product
+    imagery, icons, fonts, seed documents, catalogue art. This is a *build artefact*, not stored
+    content. It belongs in the deployment artifact or behind a CDN, where it is cached, served
+    without an isolation check that would mean nothing, and — the part that decides it — **rolled
+    back with the code that references it**. Putting it in object storage buys nothing and adds a
+    deployment coupling: the bytes and the code that names them start versioning separately.
+  - **Authored by a tenant, owned by one, read by many** — a published document, a shared export, a
+    public profile image. This is the genuinely uncovered case, and it is the one that would justify
+    a tier. It is not covered today and an application needing it must carry its own store.
+
+  Almost everything that presents as "shared assets" is the first kind. That is why this exclusion
+  has cost so little in practice, and why a tier is gated on the second kind appearing rather than on
+  the argument being made — the shape it would take is already known (widen the read, pin the write
+  to the owner, as the shared-scope row tier does), so the missing input is a consumer, not a design.
+
+  The reason to keep refusing until then is not effort. This subsystem's strongest property is that a
+  cross-tenant reference is **not expressible**; a tier makes it expressible, and every safety
+  argument here becomes conditional on the tier being set correctly. The blast radius is also
+  asymmetric with the row tier: a mis-scoped row leaks a record, a mis-scoped blob leaks a file.
 - **Shared-scope row visibility for blobs (ADR-012 §4b).** The shared-scope tier widens a *read
   predicate over rows*; a blob has no predicate to widen. Cross-tenant blob sharing is a separate
   question needing its own mechanism and its own decision. The two axes compose in the sense that a
@@ -281,3 +327,33 @@ implementation slices:
 
 Obligations 1, 2, and 9 are reviewable by inspection from the first SPI PR. Obligations 3–8 are only
 proven by the TCK, so the SPI slice is not done until both bindings are green against it.
+
+## Amendments
+
+Each amendment is marked in place at the obligation or protocol item it changes, not rewritten
+(`adr-conventions.md` rule 7). This section indexes them.
+
+- **2026-07-30 — with the SPI.** Obligation 2 is stated in the future tense, because the slot pair
+  lands after the SPI and its first driver. Obligation 3's per-direction `retain()`/`close()`
+  protocol is replaced by the stronger rule that the caller owns its buffers throughout, and the
+  trade-off it carried is retired in Consequences. Obligation 6 is discharged by `BlobRef`'s
+  constructor rather than by each driver, so Engineering Protocol item 1 tests key-injection
+  rejection in `BlobRefTest`, not in the TCK. Engineering Protocol item 6 adds the JFR failure events
+  the original list omitted.
+- **2026-08-01 — with the S3 binding.** Obligation 10 records what building the S3 driver settled:
+  the authentication subset, an `http://`-only endpoint, the `s3.maxObjectBytes` single-object
+  ceiling, and the `HEAD` framing fix in the HTTP client. Engineering Protocol item 3 adds no CI gate;
+  the existing community integration job runs the MinIO suite.
+- **2026-09-27 — with the storage subsystem.** Obligation 2: the slot pair exists from 0.12,
+  selected by `storage.blob.provider` through `StorageBootstrap` without ranking by `priority()` and
+  bound by `CommunityStorageSubsystem`; an unset key binds nothing.
+- **2026-09-27 — obligation 10: the endpoint's scheme decides its transport.** An `https://`
+  endpoint is honoured, over TLS that verifies the server against the endpoint host (ADR-074
+  Amendment A1), and an `http://` endpoint is plaintext even where a crypto provider is bound. The
+  driver's client engine states the endpoint's scheme to its transport — `CommunityOutboundTls`, a
+  Community-only requirement on no SPI type — instead of taking TLS from where the store is built.
+  An `https` store needs the Community crypto provider bound where it is built: with none, with a
+  provider that cannot verify an outbound peer, or under `-Dexeris.transport.tls=false`, creation
+  fails with `EX-NET-4004` rather than downgrading. The default port follows the scheme and is
+  omitted from the signed `Host`. Addressing stays path-style, so the verified name is the endpoint
+  host for every bucket; an endpoint that refuses path-style addressing is still out of scope.

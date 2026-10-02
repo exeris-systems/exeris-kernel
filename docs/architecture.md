@@ -1,6 +1,13 @@
+---
+title: "Exeris Kernel: Architecture Overview"
+type: explanation
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Exeris Kernel: Architecture Overview
-**Version:** 0.7.0-SNAPSHOT  
-**Last Updated:** May 2026  
 **Status:** Validated Architectural Prototype (TRL‑3)
 
 ---
@@ -13,7 +20,7 @@ Built on **JDK 25 LTS** (distributed preview-clean, ADR-066), it leverages:
 - **Virtual Threads** (Project Loom, JEP 444) for 1:1 request‑to‑thread mapping.
 - **Panama FFM** (JEP 454) for zero‑copy I/O and deterministic off‑heap memory management.
 - **Scoped Values** (JEP 506) for strict, ThreadLocal-free context propagation.
-- **Flexible Constructor Bodies** (JEP 513, Closed/Delivered in JDK 25) for pre-initialising fields before `super()` in value-ready types.
+- **Flexible Constructor Bodies** (JEP 513, Closed/Delivered in JDK 25) for pre-initialising fields before `super()` in value-ready types — a claim currently asserted only in this document; it is not cross-checked against `docs/glossary.md`, `docs/whitepaper.md`, or `docs/ROADMAP.md`, which do not mention JEP 513.
 - **Compute-once config caches** via the Supplier + `AtomicReference` CAS pattern, mirroring the `LazyConstant` semantic (JEP 526) without depending on it — JEP 526 is not on the JDK 25 baseline.
 - **Valhalla Readiness (JEP 401):** All data carriers (`record`, `final class`) avoid `synchronized`, `System.identityHashCode()`, and identity `==` so they scalarise via C2 JIT Escape Analysis today. Migration to `value record`/`value class` will be performed once JEP 401 reaches mainline GA.
 
@@ -31,12 +38,23 @@ Modules are not divided by domain, but by **trust and execution tier**.
 exeris-kernel-parent
 ├── exeris-kernel-spi        (The Constitution: Pure contracts, Value Records)
 ├── exeris-kernel-core       (The Brain: Orchestration, Bootstrap, Context + HTTP/2 wire codec)
-├── exeris-kernel-community  (The Engine: NIO.2-backed Java 26 subsystem drivers)
+├── exeris-kernel-community  (The Engine: NIO.2-backed subsystem drivers, plus an FFM/Panama socket path)
 ├── exeris-kernel-enterprise (The Accelerator: Off-Heap drivers, io_uring, QUIC)
 └── exeris-kernel-tck        (The Judge: Technology Compatibility Kit)
 ```
 
-> **Supporting modules** (not part of the trust tier Wall): `exeris-kernel-bom` (BOM), `exeris-kernel-build-config` (PMD/Checkstyle rules), `exeris-kernel-community-testkit` (reusable HTTP test fixtures for Community).
+> `exeris-kernel-enterprise` is **not** a module of this Maven reactor — it is a separate, closed-source
+> repository (per the trust-tier boundary below), shown here only to complete the trust-tier picture.
+> This repository's actual `pom.xml` reactor, as of `0.12.0`, is: `exeris-kernel-build-config`,
+> `exeris-kernel-bom`, `exeris-kernel-parent`, `exeris-kernel-spi`, `exeris-kernel-tck`,
+> `exeris-kernel-core`, `exeris-kernel-community-testkit`, `exeris-kernel-community`, plus two modules
+> outside the trust-tier tree above: `exeris-kernel-community-kafka` (isolates the Kafka/Redpanda
+> `EventEngine` binding and its transitive dependencies so single-node operators don't carry a Kafka
+> client on their classpath — see ADR-008) and `exeris-kernel-diagnostics-cli` (a standalone executable
+> exposing the `KernelDiagnostics` SPI over stdio JSON for out-of-process consumers, per ADR-033).
+> `exeris-kernel-build-config` (PMD/Checkstyle rules) and `exeris-kernel-bom` sit outside the trust tier
+> too; `exeris-kernel-community-testkit` provides reusable kernel-boot, HTTP, persistence, and
+> security test fixtures — not HTTP-only — for consumers outside this repository.
 
 ### The "Mix & Match" Rule (Opt-In Architecture)
 
@@ -44,11 +62,15 @@ Exeris is an **À la carte** execution engine. Subsystems are loaded dynamically
 
 ### Rules
 
-> **Note:** The rules below describe the **target architecture**. The current `0.6.0` release may be a partial implementation of this structure.
+> **Note:** The rules below describe the **target architecture**. Rules 1–3 and 5–6 are verified
+> against this repository's own reactor at `0.12.0` (see the compile-dependency check below each).
+> Rule 4 (Enterprise) cannot be checked from here: `exeris-kernel-enterprise` is a separate,
+> closed-source repository not present in this tree, so its dependency shape is stated as documented
+> intent, not as something this repository can confirm.
 
 1. **spi** has zero Exeris dependencies — it is the immutable foundation.
 2. **core** depends only on **spi**.
-3. **community** depends on **spi** and **core** (for shared TLS/memory infrastructure — `AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`). As of `0.6.0`, `exeris-kernel-community` contains full subsystem driver implementations (bootstrap, crypto, events, flow, graph, HTTP dispatch, memory, persistence, security, telemetry, transport) and declares compile dependencies on `exeris-kernel-spi`, `exeris-kernel-core`, `slf4j-api`, and `jctools-core`.
+3. **community** depends on **spi** and **core**, for two distinct reasons: shared TLS/memory infrastructure (`AbstractLoanedBuffer`, `CoreOpenSslLoader`, `TlsStateMachine`) and the **driver-agnostic decision layer** a driver must not re-implement per transport (`SecurityInterceptor`, `RouteAuthorizationEnforcer`, `SecurityJfrEvents`). The second is the placement ADR-061 obligation 2 fixed: one decision layer every transport inherits, rather than each driver growing its own and disagreeing. As of `0.12.0`, `exeris-kernel-community`'s source tree has a package per subsystem — bootstrap, config, crypto, diagnostics, events, flow, graph, health, HTTP, JSON, memory, metrics, persistence, scheduling, security, storage, telemetry, transport, and WebSocket (the "Logical Subsystems" links further down list the subset with a dedicated subsystem doc — WebSocket does not yet have one) — and its `pom.xml` declares compile dependencies on `exeris-kernel-spi`, `exeris-kernel-core`, `slf4j-api`, and `jctools-core`, plus provider-specific libraries for individual drivers: HikariCP and an optional PostgreSQL JDBC driver (persistence), the Neo4j Java Driver (graph), and Nimbus JOSE+JWT, Jackson Databind, and Bouncy Castle (crypto/security).
 4. **enterprise** depends on **spi** and **core** (same shared infrastructure).
 5. **community** and **enterprise** never depend on each other.
 6. Applications depend on **core** and **one** selected driver (community *or* enterprise).
@@ -84,7 +106,7 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 └──────────────────────────────────────────────────────────────┘
 ```
 
-### L2 — Data Synthesis (Graph, Transport, HTTP)
+### L2 — Data Synthesis (Graph, Transport, HTTP, WebSocket)
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -93,8 +115,8 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 │  │  Graph Service     │ │  Transport (I/O)                 │ │
 │  │  - Path Finding    │ │  - Protocol-Agnostic SPI         │ │
 │  │  - Native Queries  │ │  - Priority-Aware Scheduler      │ │
-│  └────────────────────┘ │  - Community: NIO.2 TCP (FFM     │ │
-│  ┌────────────────────┐ │    socket path in progress)      │ │
+│  └────────────────────┘ │ - Community: NIO.2 + FFM         │ │
+│  ┌────────────────────┐ │   POSIX-hybrid backend (auto)    │ │
 │  │  HTTP              │ └──────────────────────────────────┘ │
 │  │  - HTTP/2 + HPACK  │                                      │
 │  │    codec in Core   │                                      │
@@ -103,6 +125,13 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 │  └────────────────────┘                                      │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+> **WebSocket** is a fourth L2 protocol surface not pictured above: a full `spi.websocket.*` contract
+> (`WebSocketProvider`, `WebSocketServerEngine`, `WebSocketExchange`, handshake and close-code types)
+> with a Community driver implementation exists in this repository as of `0.12.0`. It is documented in
+> [subsystems/websocket.md](subsystems/websocket.md), including the embedded and bootstrapped modes
+> and its `preview` classification; the diagram is unchanged because redrawing an L2 row is a
+> larger edit than adding a surface to it.
 
 ### L1 — Data & Integrity (Security, Persistence, Crypto)
 
@@ -147,11 +176,20 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 - Enables **1 thread per request** on Carrier Threads
 - Managed within a structured scope that owns their lifetime — never spawned unstructured
 
-### 5. Structured Concurrency (JEP 525 / JDK 25 Joiner API)
-- All parallel operations run inside a structured scope — `StructuredScope` on the distributed line, `StructuredTaskScope` on the `preview` branch (ADR-066) — never raw `ExecutorService`
-- `Joiner.awaitAllSuccessfulOrThrow()` for bootstrap: one failure cancels the entire scope
-- `Joiner.anySuccessfulResultOrThrow()` for competitive I/O: first result wins, rest cancelled immediately
-- `join()` returns a typed result `R` — zero-cast `LoanedBuffer` handover between subtasks
+### 5. Structured Concurrency (JEP 505 — fifth `StructuredTaskScope` preview, current as of JDK 25)
+- All parallel operations run inside a structured scope — never raw `ExecutorService` — but the two
+  distribution lines use different concrete types, and their failure semantics are **not** the same:
+  - **Distributed line (this repository, `0.12.0`):** `core.concurrent.StructuredScope`, a GA-APIs-only
+    class (virtual threads + `ScopedValue`, no `--enable-preview`). It is deliberately **await-all,
+    never fail-fast**: `join()` returns `void` and waits for every forked task regardless of outcome;
+    each `fork()` call returns a typed `ForkedTask<T>` whose `state()`/result the caller inspects
+    afterward. Any "abort the rest on first failure" behavior — e.g. bootstrap's `FailurePolicy.FAIL_FAST`
+    in `SubsystemOrchestrator` — is application logic layered on top of that always-await-all primitive,
+    not a scope-level cancellation the primitive provides.
+  - **`preview` branch only (ADR-066):** the JDK's own `java.util.concurrent.StructuredTaskScope` with
+    its `Joiner` policies — `Joiner.awaitAllSuccessfulOrThrow()` (one failure cancels the scope) and
+    `Joiner.anySuccessfulResultOrThrow()` (first result wins, rest cancelled) — are real APIs there, but
+    they are preview-only and are not what the distributed line ships or uses.
 
 ### 2. Panama FFM (JEP 454)
 - Safe native interop
@@ -203,7 +241,7 @@ Contracts live in **spi**, orchestration in **core**, and execution in the **dri
 ### JFR‑First Telemetry ("Glass Box")
 - No heavy agents
 - Every major kernel operation emits a **strongly-typed JFR event**
-- Microsecond precision, minimal overhead
+- Nanosecond-resolution timestamps (JFR's own clock). A sub-1% CPU overhead tax is claimed in the whitepaper and glossary but is not backed by a benchmark in this repository.
 
 ---
 
@@ -217,10 +255,10 @@ the closed-source `exeris-kernel-enterprise` module.
 |:----------------------------------------|:----------------------:|:----------------------:|:----------------------:|
 | **Virtual Threads (Loom)**              | ✅ Full                | ✅ Full                | ✅ Full                |
 | **Panama FFM / OpenSSL TLS**            | ✅ `libssl.so.3`       | ✅ `libssl.3.dylib`    | ✅ `libssl-3-x64.dll`  |
-| **Community TCP transport (NIO.2-backed; FFM socket path in progress — Sprint 3–4)** | ⚠️ In progress | ⚠️ In progress | ⚠️ In progress |
-| **`io_uring` kernel-bypass** `[Ent.]`  | ✅ kernel ≥ 5.11       | ❌ Not available       | ❌ Not available       |
+| **Community TCP transport** (NIO.2 base, FFM POSIX-hybrid socket backend auto-selected at boot) | ✅ NIO.2 + FFM backend when syscall validation succeeds | ⚠️ NIO.2 confirmed; the FFM backend's own loopback round-trip integration test (`SyscallLoopbackRoundTripIT`) does not run on macOS — see [Transport subsystem](subsystems/transport.md) | ✅ NIO.2 only — backend always falls back (Winsock socket model) |
+| **`io_uring` kernel-bypass** `[Ent.]`  | ✅ modern kernels (exact floor set by the Enterprise module, not verifiable from this repository) | ❌ Not available       | ❌ Not available       |
 | **QUIC / UDP transport** `[Ent.]`       | ✅                     | ✅                     | ⚠️ Partial (no io_uring)|
-| **L0 Glass-Box crash buffer**           | `/tmp/exeris-crash/`   | `/tmp/exeris-crash/`   | `%TEMP%\exeris-crash\` |
+| **L0 Glass-Box crash buffer**           | 🚧 Planned (TRL-4) — not implemented in this repository; see the Cloud Native Observability table below | 🚧 Planned (TRL-4) | 🚧 Planned (TRL-4) |
 | **NUMA-aware slab allocation** `[Ent.]` | ✅ libnuma             | ❌ Not available       | ❌ Not available       |
 | **Huge Pages (mmap)** `[Ent.]`          | ✅ `MAP_HUGETLB`       | ⚠️ Superpage (limited) | ❌ Not available       |
 | **TCK full suite (FFM tests)**          | ✅                     | ✅                     | ⚠️ FFM tests skipped   |
@@ -229,8 +267,11 @@ the closed-source `exeris-kernel-enterprise` module.
 > for the Enterprise tier. macOS is the primary development platform. Windows support is limited to
 > the Community tier and development builds.
 
-> **`io_uring` minimum kernel version:** 5.11 (for `IORING_OP_PROVIDE_BUFFERS` and multishot RECVMSG).
-> Kernels below 5.11 will fall back to `epoll`-based transport at boot and emit a JFR warning during kernel bootstrap (concrete event type is implementation-specific and may live outside `exeris-kernel-core`).
+> **`io_uring` minimum kernel version:** not verifiable from this repository. `io_uring` support lives
+> entirely in `exeris-kernel-enterprise`, a separate closed-source repository not present in this
+> reactor, so neither the minimum kernel version nor the epoll-fallback behavior claimed by earlier
+> drafts of this document could be confirmed against source for this pass — treat any specific number
+> as unverified until the Enterprise module's own docs are checked.
 
 ---
 
@@ -242,10 +283,10 @@ Kubernetes environments, the following strategy applies:
 
 | Observability Layer     | Mechanism                                   | Status         |
 |:------------------------|:--------------------------------------------|:---------------|
-| **In-process events**   | JFR (`Exeris Kernel/*` event categories)    | ✅ TRL-3       |
-| **Crash diagnostics**   | Glass-Box binary crash buffer + `exeris-decoder` | 🚧 TRL-4 planned |
-| **Metrics (Prometheus)**| `DeterministicBinarySink` → OTLP exporter   | 🚧 TRL-4 planned |
-| **Distributed tracing** | `traceId` in `ExerisKernelException.rawArgs`; OTLP span export | 🚧 TRL-4 planned |
+| **In-process events**   | JFR (mostly `Exeris Kernel/*` event categories; a minority — Events/Outbox/Projection, HTTP routing, Config reload, WebSocket lifecycle — use a divergent `Exeris/*` top-level category) | ✅ TRL-3       |
+| **Crash diagnostics**   | Glass-Box binary crash buffer (`.ring` files, shared `exeris-telemetry-spec` wire format); the kernel is producer-only and ships no decoder — decoding is a separate tool, per [ADR-039](adr/ADR-039-open-core-observability-boundary.md) | 🚧 TRL-4 planned |
+| **Metrics (Prometheus)**| binary metrics sink → OTLP exporter (mechanism name not yet fixed in code) | 🚧 TRL-4 planned |
+| **Distributed tracing** | `ExerisKernelException.traceId` (a dedicated field, not part of `rawArgs`); OTLP span export | 🚧 TRL-4 planned |
 | **Log aggregation**     | `Slf4jTelemetrySink` → structured JSON → Loki/Fluent Bit | ✅ TRL-3 (Community) |
 
 > **TRL-4 obligation:** A `PrometheusOtlpTelemetrySink` implementing the `TelemetrySink` SPI must be
@@ -277,7 +318,7 @@ To understand how these concepts map to actual code, read the subsystem definiti
 **Physical Modules (The Wall):**
 - [SPI Module](modules/01-spi.md) – The Constitution & Contracts
 - [Core Module](modules/02-core.md) – The Brain & Orchestration
-- [Community Module](modules/03-community.md) – NIO.2-backed Java 26 subsystem drivers (OSS)
+- [Community Module](modules/03-community.md) – NIO.2-backed JDK 25 subsystem drivers (OSS)
 - [Enterprise Module](modules/04-enterprise.md) - High-Performance Native Drivers
 - [TCK Module](modules/05-tck.md) - Technology Compatibility Kit
 - [Testkit Module](modules/06-testkit.md) - Fixtures that boot the real kernel for consumers
@@ -286,7 +327,8 @@ To understand how these concepts map to actual code, read the subsystem definiti
 - [Bootstrap](subsystems/bootstrap.md) | [Config](subsystems/config.md) | [Memory](subsystems/memory.md) | [Security](subsystems/security.md)
 - [Transport](subsystems/transport.md) | [Persistence](subsystems/persistence.md) | [Graph](subsystems/graph.md) | [Flow](subsystems/flow.md)
 - [Crypto](subsystems/crypto.md) | [Telemetry](subsystems/telemetry.md) | [Events](subsystems/events.md)
-- [HTTP](subsystems/http.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md) | [Exceptions](subsystems/exceptions.md)
+- [HTTP](subsystems/http.md) | [WebSocket](subsystems/websocket.md) | [Scheduling](subsystems/scheduling.md) | [Storage](subsystems/storage.md)
+- [Diagnostics](subsystems/diagnostics.md) | [Exceptions](subsystems/exceptions.md)
 
 ---
 

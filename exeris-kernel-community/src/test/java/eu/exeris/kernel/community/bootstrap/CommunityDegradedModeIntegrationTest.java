@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -28,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Operational-continuity IT (v0.9 Sprint 7, deliverable #3): a real dependency failure — the Postgres
+ * Operational-continuity IT: a real dependency failure — the Postgres
  * container is stopped mid-run — must drive the required {@code persistence} subsystem to
  * {@link SubsystemState#DEGRADED} via {@link CommunitySubsystemHealthWatcher}, dropping readiness
  * (so the load balancer drains the instance — the ADR-012 deterministic deny at the routing layer)

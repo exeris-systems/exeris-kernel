@@ -1,27 +1,20 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.graph.model;
 
 import java.util.Objects;
 
 /**
- * Valhalla-Ready: Immutable descriptor of a graph edge type.
+ * Immutable descriptor of the <em>shape</em> of a graph edge type — not the data — created
+ * once during metadata discovery and shared immutably via {@code ScopedValue}.
  *
+ * <h2>Valhalla Readiness</h2>
  * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
- * Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
  * Avoid identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
- *
- * <h2>Zero-Copy Contract</h2>
- * <p>This record describes the <em>shape</em> of an edge type — not the data.
- * Created once during metadata discovery and shared immutably via {@code ScopedValue}.
  *
  * @param sourceNode    the source node label (e.g. "User")
  * @param edgeType      the edge type (e.g. "FOLLOWS", "SIMILAR_TO")
@@ -31,7 +24,7 @@ import java.util.Objects;
  * @param direction     edge direction (OUTGOING, INCOMING, BOTH)
  * @param tableName     pre-computed relational table name (e.g. "follows_edges")
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public value record GraphEdgeDescriptor(
         String sourceNode,
@@ -55,7 +48,12 @@ public value record GraphEdgeDescriptor(
     }
 
     /**
-     * Compact constructor with validation.
+     * Rejects a {@code null} {@code sourceNode}, {@code edgeType} or {@code targetNode}, and
+     * fills in {@code direction} and {@code tableName} defaults when the caller passes
+     * {@code null} for either.
+     *
+     * @throws NullPointerException if {@code sourceNode}, {@code edgeType} or
+     *                               {@code targetNode} is {@code null}
      */
     public GraphEdgeDescriptor {
         Objects.requireNonNull(sourceNode, "sourceNode");
@@ -66,7 +64,8 @@ public value record GraphEdgeDescriptor(
     }
 
     /**
-     * Quick factory for simple edges.
+     * Returns an outgoing, unidirectional edge descriptor with weight {@code 1.0} and a
+     * table name derived from {@code edgeType}.
      *
      * @param sourceNode source node label
      * @param edgeType   edge type

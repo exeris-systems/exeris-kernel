@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.routing;
 
@@ -13,7 +9,9 @@ import eu.exeris.kernel.spi.http.HttpMethod;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
+import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -23,7 +21,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -299,6 +299,75 @@ class HttpRouterTest {
     }
 
     @Nested
+    class StreamRouteRegistration {
+
+        private final HttpStreamHandler first = exchange -> { };
+        private final HttpStreamHandler second = exchange -> { };
+
+        @Test
+        void exactStreamRouteRegisteredTwiceIsRefused() {
+            HttpRouter.Builder builder = HttpRouter.builder().streamRoute(HttpMethod.GET, "/x/stream", first);
+
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                    () -> builder.streamRoute(HttpMethod.GET, "/x/stream", second));
+            assertTrue(refused.getMessage().contains("GET /x/stream"), refused.getMessage());
+            assertSame(first, builder.build().resolveStream(HttpMethod.GET, "/x/stream").handler(),
+                    "the refused registration leaves the first one in place");
+        }
+
+        @Test
+        void templateStreamRouteRegisteredTwiceIsRefused() {
+            HttpRouter.Builder builder = HttpRouter.builder().streamRoute(HttpMethod.POST, "/x/{id}/ship", first);
+
+            assertThrows(IllegalArgumentException.class,
+                    () -> builder.streamRoute(HttpMethod.POST, "/x/{id}/ship", second));
+        }
+
+        @Test
+        void samePathUnderAnotherMethodIsAccepted() {
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/stream", first)
+                    .streamRoute(HttpMethod.POST, "/x/stream", second)
+                    .build();
+
+            assertSame(first, router.resolveStream(HttpMethod.GET, "/x/stream").handler());
+            assertSame(second, router.resolveStream(HttpMethod.POST, "/x/stream").handler());
+        }
+
+        @Test
+        void templatesDifferingOnlyInPlaceholderNamesKeepTheFirst() {
+            // Not a verbatim repeat, so not refused; the documented rule decides between them.
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/{id}/stream", first)
+                    .streamRoute(HttpMethod.GET, "/x/{key}/stream", second)
+                    .build();
+
+            assertSame(first, router.resolveStream(HttpMethod.GET, "/x/7/stream").handler());
+        }
+
+        @Test
+        void servesStreamsIsFalseWithNoStreamRoute() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x", e -> e.respond(HttpStatus.OK))
+                    .build();
+
+            assertFalse(router.servesStreams(), "respond-once routes are not stream routes");
+            assertFalse(HttpRouter.builder().build().servesStreams());
+        }
+
+        @Test
+        void servesStreamsIsTrueWithAnExactStreamRouteOnly() {
+            assertTrue(HttpRouter.builder().streamRoute(HttpMethod.GET, "/x/stream", first).build().servesStreams());
+        }
+
+        @Test
+        void servesStreamsIsTrueWithATemplateStreamRouteOnly() {
+            assertTrue(HttpRouter.builder().streamRoute(HttpMethod.POST, "/x/{id}/ship", first).build()
+                    .servesStreams());
+        }
+    }
+
+    @Nested
     class HeadFallback {
 
         @Test
@@ -415,7 +484,7 @@ class HttpRouterTest {
                     .streamRoute(HttpMethod.POST, "/orders/{id}/actions/ship", exchange -> { })
                     .build();
 
-            HttpRouter.StreamMatch match =
+            StreamMatch match =
                     router.resolveStream(HttpMethod.POST, "/orders/42/actions/ship");
 
             assertTrue(match != null, "a registered stream route that cannot match is a dead route");
@@ -429,7 +498,7 @@ class HttpRouterTest {
                     .streamRoute(HttpMethod.GET, "/t/{tenant}/s/{stream}", exchange -> { })
                     .build();
 
-            HttpRouter.StreamMatch match =
+            StreamMatch match =
                     router.resolveStream(HttpMethod.GET, "/t/acme/s/audit?since=5");
 
             assertTrue(match != null);
@@ -485,6 +554,63 @@ class HttpRouterTest {
             router.handle(exchange);
             assertEquals(HttpStatus.NOT_FOUND, exchange.status(),
                     "a streaming route stays invisible to the respond-once path (ADR-043 §7)");
+        }
+
+        @Test
+        void streamTemplateOnlyMethodResolves() {
+            // The per-method early return must count templates as well as exact paths: a method whose
+            // only stream route is a template is still a method that serves streams.
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.POST, "/x", e -> e.respond(HttpStatus.OK))
+                    .streamRoute(HttpMethod.GET, "/x/events", exchange -> { })
+                    .streamRoute(HttpMethod.POST, "/x/{id}/s", exchange -> { })
+                    .build();
+
+            StreamMatch match = router.resolveStream(HttpMethod.POST, "/x/1/s");
+
+            assertTrue(match != null, "POST has only a template stream route, and it must resolve");
+            assertEquals(Map.of("id", "1"), match.params());
+            assertTrue(router.resolveStream(HttpMethod.POST, "/x/1/s?since=5") != null,
+                    "the query string takes no part in matching on a template-only method");
+        }
+
+        @Test
+        void methodWithoutStreamRoutesResolvesNothing() {
+            // The other direction of the early return: a method with no stream route answers null
+            // for a path another method serves as a stream.
+            HttpRouter router = HttpRouter.builder()
+                    .streamRoute(HttpMethod.GET, "/x/events", exchange -> { })
+                    .streamRoute(HttpMethod.POST, "/x/{id}/s", exchange -> { })
+                    .build();
+
+            assertNull(router.resolveStream(HttpMethod.PUT, "/x/events"));
+            assertNull(router.resolveStream(HttpMethod.PUT, "/x/1/s?since=5"));
+            assertNull(router.resolveStream(HttpMethod.DELETE, "/x/1/s"));
+        }
+
+        @Test
+        void leadingPlaceholderTemplateMatches() {
+            // A template whose first segment is a placeholder has nothing literal before it but the
+            // leading slash; both tables must still match it.
+            AtomicReference<String> captured = new AtomicReference<>();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/{tenant}/orders",
+                            e -> {
+                                captured.set(e.pathParams().get("tenant"));
+                                e.respond(HttpStatus.OK);
+                            })
+                    .streamRoute(HttpMethod.GET, "/{tenant}/orders/stream", exchange -> { })
+                    .build();
+
+            CapturingExchange exchange = CapturingExchange.get("/acme/orders");
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertEquals("acme", captured.get());
+
+            StreamMatch match = router.resolveStream(HttpMethod.GET, "/acme/orders/stream");
+            assertTrue(match != null, "a leading-placeholder stream template must resolve");
+            assertEquals(Map.of("tenant", "acme"), match.params());
+            assertNull(router.resolveStream(HttpMethod.GET, "/acme/other/stream"));
         }
 
         @Test

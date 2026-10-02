@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -19,7 +15,7 @@ import java.util.UUID;
 
 /**
  * Community zero-allocation guard for the {@code @RequiresRole} accept path
- * (ADR-014 §5; reviewer finding on PR #102).
+ * (ADR-014 §5).
  *
  * <h2>What this proves</h2>
  * <p>{@link RoleCheckEnforcer#isAllowed(int, PrincipalContext, RoleRegistry)}

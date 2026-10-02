@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -36,7 +32,7 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
 
     @Override
     protected LoanedBuffer createValidTokenBuffer() {
-        // Since 0.11 the mapper grants only what the token claims, so the fixture has to say it.
+        // The mapper grants only what the token claims, so the fixture has to say it.
         return TestJwt.builder().claim("scope", "security:read").toBuffer();
     }
 

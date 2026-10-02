@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * Off-heap entity serialisation codec contracts for the Exeris Persistence SPI.
@@ -21,6 +17,6 @@
  * <p>This package contains ONLY pure SPI interfaces — no JDBC, HikariCP, io_uring,
  * or any driver-specific class references are permitted here.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.persistence.codec;

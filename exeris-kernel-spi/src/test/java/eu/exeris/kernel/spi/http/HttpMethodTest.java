@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -20,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Contract tests for {@link HttpMethod} RFC 9110 §9.2 semantic predicates —
- * safe / idempotent / typical-request-body (v0.9 Sprint 4c Phase 3 SPI coverage).
+ * safe / idempotent / typical-request-body.
  */
 @DisplayName("HttpMethod — RFC 9110 method semantics")
 class HttpMethodTest {

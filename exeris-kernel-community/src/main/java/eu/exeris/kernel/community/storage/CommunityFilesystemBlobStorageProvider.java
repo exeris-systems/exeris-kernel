@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.storage;
 
@@ -17,11 +13,21 @@ import eu.exeris.kernel.spi.storage.blob.BlobStore;
  *
  * <p>{@link BlobStorageConfig#location()} is read as the store root directory, created if absent.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 public final class CommunityFilesystemBlobStorageProvider implements BlobStorageProvider {
 
     private static final String PROVIDER_ID = "blob-fs-community";
+
+    /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link BlobStorageProvider}; not meant to be
+     * constructed directly.
+     */
+    public CommunityFilesystemBlobStorageProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     public String providerId() {

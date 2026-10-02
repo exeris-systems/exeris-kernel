@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.http1;
 
@@ -20,7 +16,7 @@ import java.util.Objects;
  * <p>Writes HTTP/1.1 status-line and header fields directly into a
  * {@link MemorySegment} — no intermediate String concatenation on the hot path.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class Http1ResponseEncoder {
 
@@ -36,13 +32,18 @@ public final class Http1ResponseEncoder {
     }
 
     /**
-     * Writes the status-line into the segment.
+     * Writes an HTTP/1.1 status-line — {@code HTTP/1.1 <statusCode> <reasonPhrase>\r\n} —
+     * into the segment at {@code offset}.
      *
      * @param seg        destination segment
      * @param offset     byte offset
      * @param statusCode HTTP status code (e.g. 200)
      * @param reasonPhrase reason phrase (e.g. "OK")
      * @return new byte position after the status-line CRLF
+     * @throws NullPointerException     if {@code reasonPhrase} is {@code null}
+     * @throws IllegalArgumentException if {@code statusCode} is not a 3-digit value in
+     *                                  {@code [100, 599]}, or {@code reasonPhrase} carries a
+     *                                  non-ASCII or ASCII control character
      */
     @SuppressWarnings("PMD.AssignmentInOperand")
     public static long writeStatusLine(MemorySegment seg, long offset,
@@ -58,13 +59,17 @@ public final class Http1ResponseEncoder {
     }
 
     /**
-     * Writes a single header field.
+     * Writes one HTTP/1.1 header field — {@code name: value\r\n} — into the segment at
+     * {@code offset}.
      *
      * @param seg    destination segment
      * @param offset byte offset
      * @param name   header name
      * @param value  header value
      * @return new byte position after the header CRLF
+     * @throws NullPointerException     if {@code name} or {@code value} is {@code null}
+     * @throws IllegalArgumentException if {@code name} or {@code value} carries a non-ASCII or
+     *                                  ASCII control character
      */
     public static long writeHeader(MemorySegment seg, long offset, String name, String value) {
         Objects.requireNonNull(name, "HTTP header name must not be null");

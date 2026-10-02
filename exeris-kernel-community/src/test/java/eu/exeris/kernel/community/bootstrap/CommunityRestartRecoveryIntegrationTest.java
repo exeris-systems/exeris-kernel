@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -32,7 +28,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Operational-continuity IT (v0.9 Sprint 7, deliverable #2): a parked saga checkpoint must survive a
+ * Operational-continuity IT: a parked saga checkpoint must survive a
  * <em>real</em> kernel restart. Kernel instance A parks a {@link FlowState#PARKED} snapshot and then
  * <strong>fully closes its persistence engine</strong> (pool shut down — a genuine stop, not the
  * same-engine reopen trick the per-store TCK uses); instance B boots a fresh engine + pool against the

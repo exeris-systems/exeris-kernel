@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.metrics;
 
@@ -105,7 +101,7 @@ class PrometheusMetricsHandlerTest {
     }
 
     @Test
-    @DisplayName("PR #98 review: body buffer is released when respond() throws (no leak)")
+    @DisplayName("the body buffer is released when respond() throws (no leak)")
     void respondThrowsClosesBody() {
         PrometheusMetricsSink sink = new PrometheusMetricsSink();
         sink.increment("k", 1L);

@@ -1,3 +1,11 @@
+---
+title: "RFC-2026-06-29: How should `KernelWebClient` resolve a *logical* service name to a concrete endpoint at call time — or should the kernel resolve it at all?"
+type: rfc
+visibility: public
+owning-repo: exeris-kernel
+status: active
+---
+
 # RFC-2026-06-29: How should `KernelWebClient` resolve a *logical* service name to a concrete endpoint at call time — or should the kernel resolve it at all?
 
 | Field             | Value                                                                 |
@@ -8,7 +16,7 @@
 | **Date Closed**   | 2026-08-07                                                           |
 | **Scope**         | substrate / Tier 1 (kernel HTTP client addressing; kernel half of the tooling "mesh" gap T12) |
 | **Owning Repo**   | `exeris-kernel` — the addressing seam lives on `KernelWebClient` / the `HttpClientEngine` SPI. Hosted here as a **kernel-transport SPI RFC**, per the convention that each repo holds the RFCs for the SPI it owns (cf. `RFC-2026-06-18-http-streaming-spi`); the eventual ADR is kernel-scoped. A downstream consumer (`exeris-tooling` T12) tracks it from its own docs — the same way tooling's SSE-emitter RFC tracks the kernel HTTP-streaming SPI RFC — rather than the RFC living in `exeris-docs`. |
-| **Target ADR(s)** | TBD — a kernel-scope "WebClient service addressing" ADR once accepted; number reserved in the global `exeris-docs/adr-index.md` **only** when the implementation build gate opens (not at RFC time — RFCs carry no registry number) |
+| **Target ADR(s)** | [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) for the multi-peer addressing half (the 1.0-scope half of the split disposition). The `ServiceResolver` ADR is unwritten; its number is reserved in the global `exeris-docs/adr-index.md` **only** when that implementation build gate opens (not at RFC time — RFCs carry no registry number) |
 | **Affected Repos**| `exeris-kernel` (the resolution seam + any Community driver + the `KernelWebClient` consult point; hosts this RFC and the eventual kernel-scoped ADR), `exeris-tooling` (T12 — generated clients emit a logical peer name instead of a hard-coded host), `exeris-docs` (the global ADR-index row, reserved when the build gate opens). Enterprise registry/mesh drivers are out-of-repo and are referenced descriptively only. |
 | **Reviewers**     | —                                                                    |
 
@@ -49,7 +57,7 @@ Note the pre-1.0 honesty discipline: the kernel is TRL-3 with no external SPI co
 
 ### Spike outcomes
 
-None. This RFC is design-only per the roadmap K4 gate; no prototype branch was built. The implementation crux (below, in Open Questions) — whether the `HttpClientEngine` binding is per-host or gains a per-request endpoint — is flagged for the spike that would precede the resulting ADR.
+None for this RFC, which is design-only per the roadmap K4 gate; no prototype branch was built for it. The implementation crux (below, in Open Questions) — whether the `HttpClientEngine` binding is per-host or gains a per-request endpoint — was left to the spike preceding the resulting ADR. That spike ran for [ADR-074](../adr/ADR-074-http-client-peer-addressing.md), and its findings are recorded there: the client dialled a listen address (`HttpConfig.bindHost`) as its destination, `send` opened a fresh connection per call so a per-host engine had no pool to preserve, and the `Host` header was derived from the connection rather than from a named peer.
 
 ## Options Considered
 
@@ -151,7 +159,7 @@ The cost is honestly the highest of the options — a new SPI plus its TCK and i
 |:-----------------|:------|
 | **Outcome**      | **ACCEPTED** — Option C, a `ServiceResolver` SPI seam, with the static map (A) and DNS-SRV (B) as the two first-party Community drivers and the mesh case (D) reframed as a pass-through driver. Recommendation adopted unchanged; its **disposition is split** — multi-peer addressing on the existing `spi.http` surface is 1.0 scope, the resolver seam itself stays post-1.0. The split fixes *when*, not *how*: the addressing shape stays open as Open Question 1 and is owed its own decision record (see below). |
 | **Date**         | 2026-08-07 |
-| **Resulting ADR(s)** | **none at acceptance.** The number is reserved in the global index when the implementation build gate opens, per the header's `Target ADR(s)` note — accepting this RFC commits no kernel surface. |
+| **Resulting ADR(s)** | **none at acceptance** — accepting this RFC committed no kernel surface. Since then, [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) (2026-08-26) for the multi-peer addressing half: the request names its peer. The `ServiceResolver` half has no ADR; its number is reserved when that implementation build gate opens, per the header's `Target ADR(s)` note. |
 | **Notes**        | See below. |
 
 ### What was re-verified before accepting
@@ -204,7 +212,7 @@ The dissent bites only on the resolver seam, which is the half that waits on T12
 
 ## Open questions / follow-ups
 
-- **`HttpClientEngine` binding model (implementation crux — ADR-shape blocker).** `KernelWebClient` holds one engine bound to one host. Does resolution (a) hand the engine a resolved endpoint per `send`, (b) maintain a per-host engine/connection-pool behind the resolver, or (c) make the client hold a resolver + an engine factory? The SPI surface differs *materially* between (a)/(b)/(c), so this **must be settled in the pre-ADR spike before the ADR can be drafted** — it is the gate condition on the resulting ADR, not a detail. **Raised in weight by the split disposition (2026-08-07):** this question now carries a 1.0-scope commitment, so it is owed an option table, costs and recorded dissent of its own — the Decision Record above fixes only *that* multi-peer addressing is in 1.0, never *how*. — owner: `exeris-kernel` HTTP subsystem.
+- **`HttpClientEngine` binding model (implementation crux — ADR-shape blocker).** `KernelWebClient` holds one engine bound to one host. Does resolution (a) hand the engine a resolved endpoint per `send`, (b) maintain a per-host engine/connection-pool behind the resolver, or (c) make the client hold a resolver + an engine factory? The SPI surface differs *materially* between (a)/(b)/(c), so this **must be settled in the pre-ADR spike before the ADR can be drafted** — it is the gate condition on the resulting ADR, not a detail. **Raised in weight by the split disposition (2026-08-07):** this question now carries a 1.0-scope commitment, so it is owed an option table, costs and recorded dissent of its own — the Decision Record above fixes only *that* multi-peer addressing is in 1.0, never *how*. **Settled by [ADR-074](../adr/ADR-074-http-client-peer-addressing.md), its Option 1:** the authority rides on `HttpRequest`, one engine serves many peers, and a configured default peer covers a request that names none — shape (a) above, with the endpoint on the request rather than handed to `send` separately. — owner: `exeris-kernel` HTTP subsystem.
 - **`ServiceResolver` return type — single vs. weighted set.** Does `resolve(logicalName)` return one `Endpoint` or a `List<WeightedEndpoint>`? Option B's DNS-SRV carries weight/priority for client-side balancing, so this decides whether load-balancing lives in `KernelWebClient` or behind the resolver driver, and shapes the SPI signature. The resulting ADR must pick one; scope it in the spike. — owner: resulting ADR.
 - **Cache ownership + TTL / health-recheck contract.** Roadmap leans toward driver-owned caching; pin the invalidation and health-recheck semantics. — owner: resulting ADR.
 - **Identity / IDP audience binding across re-addressing.** Lock the resolve → enrich → send ordering and the audience-binding rule against ADR-040 (`IdentityProvider` SPI) outbound-credential audience binding. — owner: security + HTTP, resulting ADR.

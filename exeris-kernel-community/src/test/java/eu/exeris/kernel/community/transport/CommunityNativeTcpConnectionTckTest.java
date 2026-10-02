@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -21,6 +17,12 @@ class CommunityNativeTcpConnectionTckTest extends AbstractTransportConnectionTck
 
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
+
+    /**
+     * The client end dials the server by name, so the dialled-end address case can tell the
+     * address the connection reports from the name it was dialled by.
+     */
+    private static final String DIAL_HOST = "localhost";
 
     private CommunityTransportTestHarness.Pair pair;
 
@@ -41,7 +43,7 @@ class CommunityNativeTcpConnectionTckTest extends AbstractTransportConnectionTck
 
     @Override
     protected ConnectionPair createConnectionPair() {
-        pair = CommunityTransportTestHarness.openLoopbackPair(ALLOCATOR, false);
+        pair = CommunityTransportTestHarness.openLoopbackPair(ALLOCATOR, false, 1, DIAL_HOST);
         return new ConnectionPair(pair.serverConnection(), pair.clientConnection());
     }
 }
