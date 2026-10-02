@@ -32,9 +32,9 @@ import java.time.Instant;
  *          {@link ExerisKernelException#getMessage()} belongs to low-frequency diagnostic paths
  *          (console, file) only.
  * @implNote The Enterprise {@code BinaryGlassBoxSink} reads {@code rawArgs()} directly into
- *           off-heap mmap buffers. This is a standard {@code record} with reference components
- *           ({@link String}, {@link Instant}, {@link ExerisKernelException}) and a candidate for a
- *           {@code value record} once JEP&nbsp;401 is mainline.
+ *           off-heap mmap buffers. Its components are references ({@link String},
+ *           {@link Instant}, {@link ExerisKernelException}), so the {@code value} modifier it
+ *           carries on the {@code preview} line removes identity without flattening anything.
  * @since 0.5
  */
 public value record KernelEvent(

@@ -19,8 +19,8 @@ package eu.exeris.kernel.spi.telemetry;
  * @param glassBoxOffHeapBytes Off-heap budget for BinaryGlassBoxSink (Enterprise).
  *                             {@code 0} = disabled (Community mode).
  * @param maxEventQueueDepth   Maximum buffered events before backpressure/drop.
- * @implNote All components are primitives or immutable references, making this record a candidate
- *           for a header-less, flattenable {@code value record} once JEP&nbsp;401 is mainline.
+ * @implNote All components are primitives or immutable references, which is what lets this
+ *           record carry the {@code value} modifier on the {@code preview} line.
  * @since 0.5
  */
 public value record TelemetryConfig(

@@ -132,6 +132,9 @@ distributed**. Main sources compile without it. This is the whole of the distinc
 every scope. The distinction the gate enforces is unchanged; there is simply nothing left on the
 other side of it.)*
 
+*(On the `preview` branch this section is not superseded: that line keeps `StructuredTaskScope` in
+every scope and compiles with `--enable-preview` throughout, as `PREVIEW-TRACK.md` records.)*
+
 ### 4. The gate reads bytecode, not sources
 
 `tools/preview-bytecode-scan/` reads the **published jars** and fails the build if any distributed
@@ -153,6 +156,9 @@ Both failure modes are proven to fail the gate by byte-level mutation of a built
 inspection.
 
 ## Amendment A1 (2026-08-30, v0.12) — the test-scope carve-out is closed, and it was not where the risk was
+
+*Scope: the distributed line (`main`, `development/*`). The `preview` branch does not take this
+amendment; its fixtures keep `StructuredTaskScope` and its poms keep `--enable-preview`.*
 
 §3 draws the line at what ships and leaves twenty-six fixtures compiling under `--enable-preview`.
 That carve-out no longer exists: the fixtures were moved onto GA APIs and the flag was removed from

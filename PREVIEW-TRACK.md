@@ -217,6 +217,11 @@ That is not hypothetical. `preview/v0.11.1` was cut at `673c0c2f` on 2026-08-13 
 dependabot bumps — with the poms still reading `0.11.1`. None of it was consumable, and the only way to
 find that out was to read the workflow.
 
+**`release.yml` is not this line's release path.** It publishes the distributed line to Maven
+Central, provisions JDK 25, and its tag trigger accepts only a strict `vMAJOR.MINOR.PATCH` from
+`main`. This line publishes through `maven.yml` to GitHub Packages. A `workflow_dispatch` dry run of
+`release.yml` from this branch cannot compile `--release 28`, so it is not a check of anything here.
+
 **Consumers depend on a cut, not on this branch.** `eu.exeris.preview:*:0.11.1` is what a preview
 adopter pins; `0.12.0-SNAPSHOT` is what a local `mvn clean install` from this branch produces.
 
