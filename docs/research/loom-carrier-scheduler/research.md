@@ -42,12 +42,13 @@ CPU bounds the open-loop tail:
 > *Falsified if* misses per request and cycles per request between `D` and `A_iso` do not differ
 > outside their run-to-run spread at in-flight state ≥ 2× L3.
 
-> **H3 (cost).** The custom scheduler's CPU premium at partial load comes from its idle path, and
-> a carrier that parks when its queue is empty costs no more CPU per request than `A_iso` at 50 %
-> load.
+> **H3 (cost).** The custom scheduler itself costs no more carrier CPU per request than `A_iso`;
+> any CPU premium measured through the transport comes from the transport integration, not from
+> the carrier loop.
 >
-> *Falsified if* after the idle-path fix (see Implementation Notes) `D` still spends more than
-> 10 % more CPU per request than `A_iso` at 50 % load.
+> *Falsified if* with the transport in the loop `D` spends more than 10 % more CPU per request
+> than `A_iso` at 50 % load and a profile of the carrier threads attributes the excess to
+> `ExerisCarrierThread` / `ExerisCarrierScheduler` frames.
 
 H1 and H3 are independent of H2. A track that confirms H1 and refutes H2 is a scheduling result,
 not a locality result, and is reported as one.
@@ -157,11 +158,17 @@ change the measurements depend on:
 
 Open items, in the order they block measurement:
 
-1. **Carrier idle path.** `ExerisCarrierThread.tryParkPoller` / `unparkPoller` share
-   `carrierState` with the carrier's own park handshake. A poller that leaves the state `PARKED`
-   makes the carrier's `RUNNING → PARKED` CAS fail, and the loop spins on `drainTasks` without
-   parking; each `wakeup` that sees `PARKED` also leaves a stale unpark permit. Separate the two
-   states, then measure idle `%usr` before and after. Blocks H3, and H1's CPU column.
+1. **Where the pilot's carrier CPU went.** The carrier loop parks correctly when its queue is
+   empty, measured without the transport: `probes/CarrierIdleProbe.java` (virtual threads started directly,
+   all routed to 2 carriers with `exeris.locality.allVthreads=true`, each touching 8 KB and
+   sleeping 20 ms at 3,000/s, 3 s phases, carrier CPU from `ThreadMXBean`, 2 fresh JVMs per arm,
+   Loom EA b18-20260917) read 0.0 % carrier CPU idle before and after load and 4.5–4.7 % under
+   load, against 12.5 % for 2 `ForkJoinPool` workers plus their delay scheduler. The pilot's
+   60–70 % `%usr` per carrier on the same handler shape therefore comes from the transport path,
+   not from the carrier loop. The poller hand-off methods (`tryParkPoller`, `canParkPoller`,
+   `unparkPoller`, `registerPinnedPoller`) have no callers, so the shared `carrierState` they
+   would race on cannot be the cause. Next: profile the carrier threads (async-profiler, `cpu`
+   and `wall`) under `/delayed` with the H1 target. Blocks H3, and H1's CPU column.
 2. **Harness identity.** Kernel SHA, clean-tree check, JDK build string, per-trial isolation
    check, achieved-rate gate. Blocks every hypothesis.
 3. **Tests that exercise the scheduler.** `ExerisCarrierSchedulerTest` runs on the stock JDK,
