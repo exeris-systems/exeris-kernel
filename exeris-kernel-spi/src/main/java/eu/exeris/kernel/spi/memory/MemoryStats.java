@@ -10,7 +10,7 @@ import java.util.Objects;
  * Immutable snapshot of {@link MemoryAllocator} diagnostics.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Primitive-only, and declared {@code value record} on the `preview` line (JEP 401, preview in
+ * <p>Primitive-only, and declared {@code value record} on the {@code preview} line (JEP 401, preview in
  * JDK 28). The distributed line compiles the same source as an identity {@code record}; the
  * modifier is the only difference, and it is asserted by {@code Class::isValue} in this carrier's
  * ValhallaReadiness test rather than left to a one-time inspection.

@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Any reordering of enum constants silently corrupts the state machine.
  *
  * <h2>TlsHandshakeResult / TlsShutdownResult Valhalla-Readiness</h2>
- * <p>Both are {@code record} types designed for future {@code value record} migration.
+ * <p>Both are {@code value record} types on the {@code preview} line.
  * Tests verify structural equality, pre-allocated singletons, and absence of identity ops.
  *
  * @since 0.5.0

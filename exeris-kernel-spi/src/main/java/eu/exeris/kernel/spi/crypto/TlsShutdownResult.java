@@ -8,7 +8,7 @@ package eu.exeris.kernel.spi.crypto;
  * SPI: Immutable result of a single TLS shutdown step.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28); the
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401, preview in JDK 28); the
  * distributed line compiles the same source as an identity {@code record}. Asserted by
  * {@code Class::isValue} in this carrier's ValhallaReadiness test.
  * The {@code sentCloseNotify}/{@code receivedCloseNotify} booleans and the status ordinal are

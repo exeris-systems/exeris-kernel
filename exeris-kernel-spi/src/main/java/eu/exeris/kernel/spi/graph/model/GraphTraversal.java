@@ -12,7 +12,7 @@ import java.util.UUID;
  * how deep to go, and what to include in the result.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  * Avoid identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).

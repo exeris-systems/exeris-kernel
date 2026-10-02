@@ -25,7 +25,7 @@
  * </pre>
  *
  * <h2>Valhalla Readiness</h2>
- * <p>All records in this package are declared {@code value record} on the `preview` line
+ * <p>All records in this package are declared {@code value record} on the {@code preview} line
  * (JEP 401) and annotated {@code @ValueCandidate}. No identity operations ({@code ==},
  * {@code synchronized}, {@code identityHashCode}) are used.
  *

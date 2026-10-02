@@ -18,7 +18,7 @@ package eu.exeris.kernel.spi.persistence;
  * <p>This is a standard Java {@code record}. No identity operations are used
  * ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}),
  * so C2 escape analysis can scalarise instances.
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *

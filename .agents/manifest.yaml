@@ -167,10 +167,9 @@ adapters:
     hooks: .github/hooks/exeris.json
     # Deferred with the other four, and for a stated reason: a Copilot adapter needs a mapping of
     # capabilities onto that runtime's tool names, and one written from memory would silently grant
-    # or withhold tools. The mapping file is the deliverable, not the adapter. The hand-maintained
-    # v1 adapters that used to sit under .github/{agents,prompts,skills} are removed rather than
-    # left behind: nothing renders them any more, so they could only rot while still carrying a
-    # marker that says they are generated.
+    # or withhold tools. The mapping file is the deliverable, not the adapter. No Copilot adapter
+    # is kept under .github/{agents,prompts,skills} meanwhile: nothing renders one, so a file there
+    # could only rot while still carrying a marker that says it is generated.
     status: deferred
   codex:
     target: .codex

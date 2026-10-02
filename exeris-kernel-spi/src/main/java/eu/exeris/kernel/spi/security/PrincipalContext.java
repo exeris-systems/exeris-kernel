@@ -58,7 +58,7 @@ import java.util.UUID;
  * mutates, rebinds or releases it
  *
  * <p>The canonical implementation, {@link ImmutablePrincipal}, is declared {@code value record} on
- * the `preview` line (JEP 401). The interface itself cannot carry the modifier: only classes can be
+ * the {@code preview} line (JEP 401). The interface itself cannot carry the modifier: only classes can be
  * value classes.
  *
  * @implSpec Implementations MUST satisfy:
@@ -66,8 +66,7 @@ import java.util.UUID;
  *             <li>All accessors MUST be O(1) — no lazy loading, no DB calls.</li>
  *             <li>All returned {@code Set<String>} are immutable.</li>
  *             <li>Implementations MUST be thread-safe (deep immutability), which a
- *                 {@code record} gives for free and readies for {@code value record}
- *                 migration (JEP 401).</li>
+ *                 {@code record} gives for free and a {@code value record} (JEP 401) keeps.</li>
  *             <li>All UUIDs SHOULD be v7 (time-ordered) for B-Tree-friendly
  *                 database indexing — sequential inserts, no page splits.</li>
  *           </ul>

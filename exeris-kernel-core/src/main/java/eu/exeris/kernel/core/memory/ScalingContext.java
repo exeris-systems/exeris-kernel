@@ -23,7 +23,7 @@ import java.util.Objects;
  * <p>All fields are primitives or immutable value types. No identity operations
  * ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}) are used
  * on instances of this record.
- * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *

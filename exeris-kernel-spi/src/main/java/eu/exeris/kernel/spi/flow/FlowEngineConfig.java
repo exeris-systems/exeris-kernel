@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  * <h2>Valhalla Readiness</h2>
  * <p>Purely primitive fields with {@code String} keys limited to bootstrap path.
  * No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}).
- * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *

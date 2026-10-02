@@ -12,7 +12,7 @@ import java.util.Objects;
  * <p>The two halves always travel together: a successful
  * {@link SecurityProvider#authenticate(eu.exeris.kernel.spi.memory.LoanedBuffer)} yields both, and
  * the transport edge binds them into their respective {@code ScopedValue} slots for the request.
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *
@@ -29,8 +29,8 @@ import java.util.Objects;
  *
  * @apiNote No identity operation ({@code ==}, {@code synchronized},
  *          {@code System.identityHashCode()}) is permitted on an instance: all fields are
- *          interface references and the record is ready for {@code value record} migration
- *          (JEP 401), which would make identity meaningless.
+ *          interface references, and on the {@code preview} line the record is a
+ *          {@code value record} (JEP 401), which has no identity at all.
  * @since 0.5
  * @see SecurityProvider
  * @see PrincipalContext

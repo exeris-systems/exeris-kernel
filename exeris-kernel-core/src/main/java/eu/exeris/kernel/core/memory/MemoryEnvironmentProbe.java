@@ -188,7 +188,7 @@ public final class MemoryEnvironmentProbe {
      *
      * <h2>Valhalla Readiness (JEP 401)</h2>
      * <p>All fields are primitive {@code long}s. No identity operations used.
-     * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+     * Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
      *

@@ -15,7 +15,7 @@ last-verified: 2026-09-28
 - Core: `eu.exeris.kernel.core.events.*` (Outbox Orchestrator, Projections)
 - Drivers:
     - **`community`**: Standard Heap/NIO (PostgreSQL Event Store, JVM-heap Pub/Sub)
-    - **`community-kafka`**: Apache Kafka driver on `kafka-clients` 4.0.x, version managed in `exeris-kernel-bom` (`KafkaEventEngine`, plus a `KafkaEventBrokerPort` Outbox adapter that is built but not wired — see *Delivery Boundary*)
+    - **`community-kafka`**: Apache Kafka driver on `kafka-clients`, version managed in `exeris-kernel-bom` (`KafkaEventEngine`, plus a `KafkaEventBrokerPort` Outbox adapter that is built but not wired — see *Delivery Boundary*)
 
 **Layer:** L3 (Logic Engines)
 **Status:** Validated Architectural Prototype (TRL-3)

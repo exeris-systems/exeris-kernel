@@ -12,7 +12,7 @@ import java.util.Objects;
  * {@link GraphProvider#createEngine(GraphConfig)} to build a {@link GraphEngine}.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test. No identity is required;
  * fields are primitives, {@code String}s, or the immutable {@code properties} map.

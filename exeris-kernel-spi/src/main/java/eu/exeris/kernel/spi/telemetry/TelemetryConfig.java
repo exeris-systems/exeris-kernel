@@ -9,7 +9,7 @@ package eu.exeris.kernel.spi.telemetry;
  *
  * <p>A {@link TelemetryProvider} reads it once, at bootstrap, to decide which sinks to build and
  * what each may consume; it is rejected at construction unless it leaves at least one sink active.
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *

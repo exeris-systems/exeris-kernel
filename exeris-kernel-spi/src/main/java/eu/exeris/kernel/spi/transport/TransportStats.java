@@ -10,7 +10,7 @@ package eu.exeris.kernel.spi.transport;
  * <h2>Zero-Allocation</h2>
  * <p>This record is designed for periodic sampling (every 1–5 s) by the telemetry
  * subsystem. It is a small, shallow data carrier, declared {@code value record} on the
- * `preview` line (JEP 401); the distributed line compiles the same source as an identity
+ * {@code preview} line (JEP 401); the distributed line compiles the same source as an identity
  * {@code record}, and the modifier is asserted by {@code Class::isValue} in the module's
  * value-carrier registry test.
  *

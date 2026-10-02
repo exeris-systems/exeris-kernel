@@ -21,7 +21,7 @@ import java.util.Optional;
  * <p>This record joins the ADR-033 snapshot family: {@code schemaVersion} first, then {@code capturedAt},
  * with append-only growth governed by {@link KernelDiagnostics#SCHEMA_VERSION}.
  *
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  * @param schemaVersion         the wire-schema version (see {@link KernelDiagnostics#SCHEMA_VERSION})

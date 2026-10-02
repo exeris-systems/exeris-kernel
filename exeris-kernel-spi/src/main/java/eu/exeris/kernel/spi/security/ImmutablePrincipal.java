@@ -42,7 +42,7 @@ import java.util.UUID;
  * to every virtual thread that inherits the {@code PRINCIPAL_CONTEXT} binding
  * <p><b>Ownership:</b> nothing to release — the record outlives no resource, and the caller's
  * {@code roles} / {@code scopes} collections stay the caller's because they are copied, not adopted
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *
@@ -53,8 +53,8 @@ import java.util.UUID;
  *
  * @apiNote No identity operation ({@code ==}, {@code synchronized},
  *          {@code System.identityHashCode()}) is permitted on an instance: all components are
- *          value-safe and the record is ready for {@code value record} migration (JEP 401), which
- *          would make identity meaningless.
+ *          value-safe, and on the {@code preview} line the record is a {@code value record}
+ *          (JEP 401), which has no identity at all.
  * @since 0.5
  * @see PrincipalContext
  */

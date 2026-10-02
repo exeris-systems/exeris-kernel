@@ -7,7 +7,7 @@ package eu.exeris.kernel.spi.flow.model;
 /**
  * One step of a {@link FlowDefinition}: where it sits, what identifies it, what it does, and what
  * undoes it.
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *
@@ -23,8 +23,8 @@ package eu.exeris.kernel.spi.flow.model;
  *
  * @implNote All components are primitives or effectively immutable references and the record
  *           performs no identity operation ({@code ==}, {@code synchronized},
- *           {@code identityHashCode}), so C2 can scalarise it via escape analysis and it is ready
- *           for {@code value record} when JEP 401 is stable. In the Enterprise tier {@code action}
+ *           {@code identityHashCode}), so C2 can scalarise it via escape analysis, and it is a
+ *           {@code value record} on the {@code preview} line. In the Enterprise tier {@code action}
  *           and {@code compensation} live as dispatch-table indices rather than raw addresses in the
  *           step-registry slab, and {@code stepId} addresses the slot directly:
  *           {@code address = stepSlabBase + stepId * STEP_DESCRIPTOR_STRIDE}.

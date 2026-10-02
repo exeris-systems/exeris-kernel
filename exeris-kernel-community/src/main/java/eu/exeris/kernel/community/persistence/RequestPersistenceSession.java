@@ -13,7 +13,7 @@ import eu.exeris.kernel.spi.persistence.TransactionIsolation;
  * <h2>Semantics</h2>
  * <p>Wraps an active persistence connection and its transaction state scoped to a single HTTP request.
  * Immutable, with no identity-sensitive operations, and declared {@code value record} on the
- * `preview` line (JEP 401). The {@code PersistenceConnection} it carries keeps its own identity
+ * {@code preview} line (JEP 401). The {@code PersistenceConnection} it carries keeps its own identity
  * and its own lifecycle; only the carrier around it loses identity.
  *
  * <h2>Lifecycle</h2>

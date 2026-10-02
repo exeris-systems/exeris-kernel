@@ -13,7 +13,7 @@ import java.util.Objects;
  * <p>No {@code synchronized}, no identity {@code ==}, no {@code System.identityHashCode()}.
  * The constants below are shared instances, which stops being observable once the carrier is a
  * value class -- callers must compare {@code code()}, never the carrier.
- * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *

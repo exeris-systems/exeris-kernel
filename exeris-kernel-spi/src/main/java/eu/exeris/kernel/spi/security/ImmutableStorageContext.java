@@ -35,8 +35,8 @@ import java.util.Optional;
  * @param attributes     opaque {@code String→String} interceptor metadata; never {@code null}
  *
  * @apiNote No identity operation ({@code ==}, {@code synchronized},
- *          {@code System.identityHashCode()}) is permitted on an instance: the record is ready for
- *          {@code value record} migration (JEP 401), which would make identity meaningless.
+ *          {@code System.identityHashCode()}) is permitted on an instance: on the {@code preview}
+ *          line the record is a {@code value record} (JEP 401), which has no identity at all.
  * @since 0.5
  * @see StorageContext
  */

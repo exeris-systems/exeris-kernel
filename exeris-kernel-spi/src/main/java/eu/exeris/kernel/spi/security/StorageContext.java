@@ -43,8 +43,8 @@ import java.util.Optional;
  * @implSpec All accessors MUST be O(1) — no lazy DB lookups, no I/O, no mutable state — and an
  *           implementation SHOULD be a flat record so it stays deeply immutable across the
  *           {@code ScopedValue} hand-off.
- * @implNote The canonical implementation, {@link ImmutableStorageContext}, is ready for
- *           {@code value record} migration (JEP 401).
+ * @implNote The canonical implementation, {@link ImmutableStorageContext}, is a
+ *           {@code value record} (JEP 401) on the {@code preview} line.
  * @since 0.5
  * @see eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT
  * @see PrincipalContext

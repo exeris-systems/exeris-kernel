@@ -29,7 +29,7 @@ import java.util.Optional;
  * <p><b>Ownership:</b> the caller owns both the arrays it passes in and the arrays it reads back;
  * each crossing is a copy, so mutating either side cannot reach the snapshot. Nothing here holds a
  * resource that needs releasing.
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *

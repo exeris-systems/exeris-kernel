@@ -7,7 +7,7 @@ package eu.exeris.kernel.spi.flow.model;
 /**
  * A directed edge between two steps of a {@link FlowDefinition}, tagged with the condition under
  * which routing takes it.
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  *
@@ -18,8 +18,8 @@ package eu.exeris.kernel.spi.flow.model;
  *                     never {@code null}
  *
  * @implNote All components are primitives or {@code String} and the record performs no identity
- *           operation, so C2 can scalarise it via escape analysis and it is ready for
- *           {@code value record} when JEP 401 is stable. In the Enterprise tier transitions live in
+ *           operation, so C2 can scalarise it via escape analysis, and it is a
+ *           {@code value record} on the {@code preview} line. In the Enterprise tier transitions live in
  *           a flat slab array with adjacency indexed by {@code fromStep}, and {@code conditionTag}
  *           is stored as an FNV-1a hash ({@code long}) so the hot lookup path holds no heap
  *           {@code String}.

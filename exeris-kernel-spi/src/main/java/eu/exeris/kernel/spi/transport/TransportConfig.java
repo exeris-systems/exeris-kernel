@@ -14,7 +14,7 @@ package eu.exeris.kernel.spi.transport;
  * concern and MUST NOT leak into this record.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28). The
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401, preview in JDK 28). The
  * distributed line compiles the same source as an identity {@code record}; the modifier is the
  * only difference, and it is asserted by {@code Class::isValue} in the module's value-carrier
  * registry test rather than left to a one-time inspection.

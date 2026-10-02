@@ -29,7 +29,7 @@ import java.util.function.Supplier;
  * <h2>Design Philosophy</h2>
  * <p>Configuration is not a {@code Map<String, Object>} or a mutable POJO.
  * Each section is an immutable, identity-free data carrier — a {@code value record} on the
- * `preview` line (JEP 401), the same source compiled as an identity {@code record} on the
+ * {@code preview} line (JEP 401), the same source compiled as an identity {@code record} on the
  * distributed line.
  *
  * <h2>Lazy Initialization (JEP 526 Readiness)</h2>
@@ -331,7 +331,7 @@ public interface ConfigProvider {
      * @param persistence    persistence / database settings
      * @param telemetry      telemetry and observability settings
      * @implNote Four references and one {@code long} per instance, ≈ 40 bytes on the heap as an
-     *           identity record. Declared {@code value record} on the `preview` line (JEP 401);
+     *           identity record. Declared {@code value record} on the {@code preview} line (JEP 401);
      *           what that buys is unmeasured there, and this document claims nothing about it. Because {@code profile} is a {@link KernelProfile}
      *           enum rather than a string, a profile test is a JIT-constant-folded identity
      *           check against a JVM singleton: enum references are effectively integer-width

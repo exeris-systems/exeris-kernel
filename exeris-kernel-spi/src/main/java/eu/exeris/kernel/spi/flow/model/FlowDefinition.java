@@ -13,7 +13,7 @@ import java.util.Objects;
  * Immutable definition of a named flow — the blueprint from which executable
  * {@link FlowExecutionPlan} instances are compiled.
  *
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
  * @param name                  unique flow definition name (used as a key in the registry)
@@ -32,8 +32,8 @@ import java.util.Objects;
  *
  * @implNote The {@code steps} list is always an immutable {@link List#copyOf} snapshot, the
  *           {@code String name} field is read on the bootstrap path rather than the hot path, and
- *           the record performs no identity operations — so it is ready for {@code value record}
- *           when JEP 401 is stable.
+ *           the record performs no identity operations, which is what lets it be a
+ *           {@code value record} on the {@code preview} line.
  * @since 0.5
  * @see FlowStepDescriptor
  * @see FlowExecutionPlan
