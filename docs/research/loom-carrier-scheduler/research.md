@@ -20,9 +20,6 @@ last-verified: 2026-10-02
 
 ## Hypothesis
 
-The hypotheses are named `HYP-*` rather than numbered, because `H1` / `H2` / `H3` name the HTTP
-protocol versions everywhere else in Exeris. This track measures **HTTP/1.1 cleartext only**.
-
 On the Community transport (FFM POSIX sockets, platform `Selector` reactors that wake worker
 virtual threads with `LockSupport.unpark`), replacing the stock `ForkJoinPool` scheduler with a
 custom `VirtualThreadScheduler` that keeps one MPSC queue per carrier and pins each carrier to one
@@ -107,8 +104,12 @@ not a locality result, and is reported as one.
 - **Harness in `exeris-benchmarks`**, on branch `research/loom-carrier-scheduler`, rewritten
   rather than carried over from the pilot. Every trial records the kernel commit SHA, refuses to
   run from a dirty kernel tree, and records the JDK build string, the full JVM command line and
-  the CPU topology. Kernel artifacts are installed from this branch's commit, not read from
-  `target/classes`.
+  the CPU topology. The kernel classes are built from that commit into the harness's own
+  directory, never read from a working tree's `target/classes` and never installed into the
+  local Maven repository.
+- **Load vehicle.** Requests are HTTP/1.1 (`/plaintext`, `/delayed`) because `wrk` / `wrk2`
+  drive it with open-loop pacing and coordinated-omission correction. The hypotheses concern
+  continuation scheduling below the protocol layer; the protocol is not a factor.
 - **Hardware.** AMD Ryzen 5 5600 (Zen 3, 6 cores / 12 threads, single CCX, 32 MiB L3), Linux 7.0.
   CPU partitioning: reactors and JVM auxiliary threads on cores 0–1 (CPUs 0, 1, 6, 7); carriers
   on cores 2–3 (CPUs 2, 3; SMT siblings 8, 9 left idle); load generator on cores 4–5. The pilot's
@@ -131,8 +132,7 @@ not a locality result, and is reported as one.
 
 ### What will NOT be measured (scope boundary)
 
-- **HTTP/2 and HTTP/3.** The workload is HTTP/1.1 cleartext; protocol is not an axis.
-- **Enterprise transports** (`io_uring`, QUIC / HTTP/3). The `io_uring` + custom scheduler combination
+- **Enterprise transports** (`io_uring`). The `io_uring` + custom scheduler combination
   is a separate track with its own visibility rules.
 - **The JDK poller.** The Community transport never starts `sun.nio.ch.Poller`, so
   `jdk.pollerMode` has no effect here and is not an axis.
@@ -178,7 +178,7 @@ Open items, in the order they block measurement:
    not from the carrier loop. The poller hand-off methods (`tryParkPoller`, `canParkPoller`,
    `unparkPoller`, `registerPinnedPoller`) have no callers, so the shared `carrierState` they
    would race on cannot be the cause. Next: profile the carrier threads (async-profiler, `cpu`
-   and `wall`) under `/delayed` with the HTTP/1.1 target. Blocks HYP-CPU, and HYP-TAIL's CPU column.
+   and `wall`) under `/delayed` with the benchmark target. Blocks HYP-CPU, and HYP-TAIL's CPU column.
 2. **Harness identity.** Kernel SHA, clean-tree check, JDK build string, per-trial isolation
    check, achieved-rate gate. Blocks every hypothesis.
 3. **Tests that exercise the scheduler.** `ExerisCarrierSchedulerTest` runs on the stock JDK,
