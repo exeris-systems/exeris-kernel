@@ -5,9 +5,9 @@
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261544,
+  "sample_weight_bytes" : 261560,
   "tlab_refills" : 1,
-  "tlab_bytes" : 262144,
+  "tlab_bytes" : 102128,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
@@ -16,6 +16,26 @@
     "panama" : 0,
     "array" : 2,
     "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.UUID",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 101552,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
     "other" : 0
   }
 } ]
