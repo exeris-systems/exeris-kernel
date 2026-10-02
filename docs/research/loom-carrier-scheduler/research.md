@@ -20,12 +20,15 @@ last-verified: 2026-10-02
 
 ## Hypothesis
 
+The hypotheses are named `HYP-*` rather than numbered, because `H1` / `H2` / `H3` name the HTTP
+protocol versions everywhere else in Exeris. This track measures **HTTP/1.1 cleartext only**.
+
 On the Community transport (FFM POSIX sockets, platform `Selector` reactors that wake worker
 virtual threads with `LockSupport.unpark`), replacing the stock `ForkJoinPool` scheduler with a
 custom `VirtualThreadScheduler` that keeps one MPSC queue per carrier and pins each carrier to one
 CPU bounds the open-loop tail:
 
-> **H1 (scheduling).** At 50–95 % of the stock scheduler's saturation rate, with carriers, JVM
+> **HYP-TAIL (scheduling).** At 50–95 % of the stock scheduler's saturation rate, with carriers, JVM
 > auxiliary threads and the load generator on disjoint CPUs, the pinned custom scheduler (arm `D`)
 > has a lower worst-trial p99 than the isolated stock scheduler (arm `A_iso`) at every rate, and
 > the difference is explained by carrier run-queue wait: floating carriers stack on one CPU, pinned
@@ -35,14 +38,14 @@ CPU bounds the open-loop tail:
 > over n ≥ 5 fresh JVMs per cell, or if `perf sched` does not show floating carriers sharing a CPU
 > in the trials where their tail breaks down.
 
-> **H2 (cache locality).** When the state of concurrently parked requests exceeds the 32 MiB L3,
+> **HYP-CACHE (cache locality).** When the state of concurrently parked requests exceeds the 32 MiB L3,
 > resuming a virtual thread on the carrier that last ran it costs fewer L2/L3 misses and fewer
 > cycles per request than resuming it on any carrier.
 >
 > *Falsified if* misses per request and cycles per request between `D` and `A_iso` do not differ
 > outside their run-to-run spread at in-flight state ≥ 2× L3.
 
-> **H3 (cost).** The custom scheduler itself costs no more carrier CPU per request than `A_iso`;
+> **HYP-CPU (cost).** The custom scheduler itself costs no more carrier CPU per request than `A_iso`;
 > any CPU premium measured through the transport comes from the transport integration, not from
 > the carrier loop.
 >
@@ -50,7 +53,8 @@ CPU bounds the open-loop tail:
 > than `A_iso` at 50 % load and a profile of the carrier threads attributes the excess to
 > `ExerisCarrierThread` / `ExerisCarrierScheduler` frames.
 
-H1 and H3 are independent of H2. A track that confirms H1 and refutes H2 is a scheduling result,
+HYP-TAIL and HYP-CPU are independent of HYP-CACHE. A track that confirms HYP-TAIL and refutes
+HYP-CACHE is a scheduling result,
 not a locality result, and is reported as one.
 
 ---
@@ -64,6 +68,11 @@ not a locality result, and is reported as one.
   affine arm could not pin carriers: it relied on a custom-scheduler hook the stock JDK does not
   have. This track is the test it could not run, now that the Loom `fibers` branch exposes
   `Thread.VirtualThreadScheduler` (`jdk.virtualThreadScheduler.implClass`).
+  The transport also differs: the v0.6 Community track ran on NIO (`SocketChannel` reads and
+  writes), while the Community transport now performs socket I/O through FFM syscalls on raw
+  POSIX descriptors (`NativeTcpSocketBackend`), with `Selector` reactors used only for readiness.
+  Results from the two tracks are not comparable, and neither speaks for the Enterprise
+  `io_uring` transport.
 - **External work.** Francesco Nigro's Netty virtual-thread scheduler measurements
   (<https://github.com/franz1981/Netty-VirtualThread-Scheduler/blob/master/PERFORMANCE.md>) cover
   an event-loop transport. A transport whose readiness detection and continuation execution live
@@ -72,7 +81,7 @@ not a locality result, and is reported as one.
 - **Pilot.** A pilot on 2026-09-27 (archived as non-evidence in `exeris-benchmarks`,
   `results/history/loom-carrier-scheduler-pilot-2026-09/`) showed 12–25 % carrier run-queue wait
   for floating carriers and 0.3–0.5 % for pinned ones, and tail breakdowns in every arm except
-  `D`. It could not identify the kernel code it measured, so it motivates H1 without supporting
+  `D`. It could not identify the kernel code it measured, so it motivates HYP-TAIL without supporting
   it.
 
 ---
@@ -84,13 +93,13 @@ not a locality result, and is reported as one.
 | Metric | Tool | Arms | Used for |
 |:-------|:-----|:-----|:---------|
 | Saturation throughput | `wrk`, closed loop | A, A_iso, C_iso, D | Rate ladder only — never a headline |
-| p50 / p90 / p99 / p99.9, per trial | `wrk2`, open loop | A, A_iso, C_iso, D | H1 |
+| p50 / p90 / p99 / p99.9, per trial | `wrk2`, open loop | A, A_iso, C_iso, D | HYP-TAIL |
 | Achieved rate vs target, per trial | `wrk2` | all | Trial validity gate |
-| Carrier / reactor `%usr`, `%sys`, `%wait`; cswch | `pidstat -u -w -t` | all | H1, H3 |
-| Carrier CPU placement over time | `perf sched record` / `timehist` | A_iso, C_iso, D | H1 mechanism |
+| Carrier / reactor `%usr`, `%sys`, `%wait`; cswch | `pidstat -u -w -t` | all | HYP-TAIL, HYP-CPU |
+| Carrier CPU placement over time | `perf sched record` / `timehist` | A_iso, C_iso, D | HYP-TAIL mechanism |
 | Thread → CPU mask, per trial | `/proc/<pid>/task/*/status` | all | Isolation gate |
-| cycles, instructions, L2 / L3 misses per request | `perf stat` (Zen 3 `amd_l3`) | A_iso, D | H2 |
-| CPU-seconds per request | `pidstat` / `perf stat` | all | H3 |
+| cycles, instructions, L2 / L3 misses per request | `perf stat` (Zen 3 `amd_l3`) | A_iso, D | HYP-CACHE |
+| CPU-seconds per request | `pidstat` / `perf stat` | all | HYP-CPU |
 | JFR (scheduler, park/unpark, GC) | JFR, single-phase events only | D, A_iso | Diagnosis, not headline |
 
 ### How it will be measured
@@ -111,18 +120,19 @@ not a locality result, and is reported as one.
   and re-run; it is never folded into a percentile.
 - **Rates.** 50 / 70 / 85 / 90 / 95 % of `A_iso`'s median saturation rate, measured in the same
   campaign.
-- **H2 workload.** In-flight state is set by rate × delay × state per request (Little's law), not
+- **HYP-CACHE workload.** In-flight state is set by rate × delay × state per request (Little's law), not
   by connection count. The sweep targets 0.5×, 1×, 2× and 4× L3. Connection count is set to cover
   the in-flight count, with enough generator threads that the `wrk2` connection ramp (5 ms per
   connection per thread) finishes inside warmup.
-- **Reporting.** Per-cell medians with all trial values, and worst-trial p99 for H1 as a stated
+- **Reporting.** Per-cell medians with all trial values, and worst-trial p99 for HYP-TAIL as a stated
   statistic with its n. The report follows `exeris-benchmarks`
   `docs/status-and-claim-eligibility.md`; nothing below `comparison_eligible` is quoted as a
   result.
 
 ### What will NOT be measured (scope boundary)
 
-- **Enterprise transports** (`io_uring`, QUIC/H3). The `io_uring` + custom scheduler combination
+- **HTTP/2 and HTTP/3.** The workload is HTTP/1.1 cleartext; protocol is not an axis.
+- **Enterprise transports** (`io_uring`, QUIC / HTTP/3). The `io_uring` + custom scheduler combination
   is a separate track with its own visibility rules.
 - **The JDK poller.** The Community transport never starts `sun.nio.ch.Poller`, so
   `jdk.pollerMode` has no effect here and is not an axis.
@@ -168,7 +178,7 @@ Open items, in the order they block measurement:
    not from the carrier loop. The poller hand-off methods (`tryParkPoller`, `canParkPoller`,
    `unparkPoller`, `registerPinnedPoller`) have no callers, so the shared `carrierState` they
    would race on cannot be the cause. Next: profile the carrier threads (async-profiler, `cpu`
-   and `wall`) under `/delayed` with the H1 target. Blocks H3, and H1's CPU column.
+   and `wall`) under `/delayed` with the HTTP/1.1 target. Blocks HYP-CPU, and HYP-TAIL's CPU column.
 2. **Harness identity.** Kernel SHA, clean-tree check, JDK build string, per-trial isolation
    check, achieved-rate gate. Blocks every hypothesis.
 3. **Tests that exercise the scheduler.** `ExerisCarrierSchedulerTest` runs on the stock JDK,
@@ -186,7 +196,7 @@ Open items, in the order they block measurement:
    proposed to the product line on its own.
 7. **Timed parks.** The scheduler does not override `schedule(Runnable, long, TimeUnit)`, so timed
    parks are serviced by the JDK's `VirtualThread-unparker` platform thread and resume carriers
-   with a cross-CPU unpark. Not an H1 axis; a question for the loom-dev report.
+   with a cross-CPU unpark. Not a HYP-TAIL axis; a question for the loom-dev report.
 
 ---
 
