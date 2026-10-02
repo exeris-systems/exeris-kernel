@@ -14,7 +14,9 @@ import eu.exeris.kernel.core.memory.WatermarkManager;
 import eu.exeris.kernel.core.telemetry.jfr.CoreJfrEventCatalogue;
 import eu.exeris.kernel.core.transport.scheduler.AdmissionController;
 import eu.exeris.kernel.core.transport.scheduler.PaqsScheduler;
+import eu.exeris.kernel.core.transport.scheduler.StreamExecutionBackend;
 import eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder;
+import eu.exeris.kernel.core.transport.scheduler.locality.RoundRobinCarrierExecutionBackend;
 import eu.exeris.kernel.spi.crypto.CryptoProviderConfig;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.crypto.TlsEngine;
@@ -695,12 +697,43 @@ public final class NativeTcpCarrier implements TransportEngine {
         AdmissionController admissionController =
                 new AdmissionController(arbiter, config.maxActiveStreams());
         StreamLoadShedder shedder = new StreamLoadShedder(engineName());
-        this.paqs = new PaqsScheduler(
-                admissionController,
-                shedder,
-                streamHandler,
-                stream -> StreamPriority.NORMAL,
-                engineName());
+        StreamExecutionBackend executionBackend = resolveExecutionBackend();
+        this.paqs = executionBackend != null
+                ? new PaqsScheduler(
+                        admissionController,
+                        shedder,
+                        streamHandler,
+                        stream -> StreamPriority.NORMAL,
+                        engineName(),
+                        executionBackend)
+                : new PaqsScheduler(
+                        admissionController,
+                        shedder,
+                        streamHandler,
+                        stream -> StreamPriority.NORMAL,
+                        engineName());
+    }
+
+    private StreamExecutionBackend resolveExecutionBackend() {
+        boolean locality = Boolean.getBoolean("exeris.transport.locality")
+                || "locality-aware".equalsIgnoreCase(System.getProperty("exeris.transport.backend"))
+                || "locality-aware".equalsIgnoreCase(System.getProperty("exeris.transport.executionBackend"));
+        if (!locality) {
+            return null;
+        }
+        if (RoundRobinCarrierExecutionBackend.isAvailable()) {
+            RoundRobinCarrierExecutionBackend backend = RoundRobinCarrierExecutionBackend.createIfAvailable();
+            if (backend != null) {
+                LOG.log(System.Logger.Level.INFO,
+                        "[NativeTcpCarrier] Locality-aware execution enabled with {0} carriers",
+                        backend.group().size());
+                return backend;
+            }
+        }
+        LOG.log(System.Logger.Level.WARNING,
+                "[NativeTcpCarrier] Locality requested but ExerisCarrierScheduler is not installed; "
+                        + "falling back to default VT-per-stream");
+        return null;
     }
 
     /**
@@ -749,7 +782,29 @@ public final class NativeTcpCarrier implements TransportEngine {
         }
     }
 
+    private void applyAcceptorAffinity() {
+        String affinityProp = System.getProperty("exeris.reactor.affinity");
+        if (affinityProp == null || affinityProp.isBlank()) {
+            affinityProp = System.getProperty("exeris.transport.reactorAffinity");
+        }
+        if (affinityProp != null && !affinityProp.isBlank()) {
+            try {
+                String[] parts = affinityProp.split(",");
+                int[] cores = new int[parts.length];
+                for (int i = 0; i < parts.length; i++) {
+                    cores[i] = Integer.parseInt(parts[i].trim());
+                }
+                if (cores.length > 0) {
+                    eu.exeris.kernel.core.transport.scheduler.locality.ExerisCarrierThread.bindToCores(cores);
+                }
+            } catch (Exception _) {
+                // best effort
+            }
+        }
+    }
+
     private void runAcceptorLoop() {
+        applyAcceptorAffinity();
         acceptorLoop(this::acceptPendingConnections, () -> acceptsObserved);
     }
 

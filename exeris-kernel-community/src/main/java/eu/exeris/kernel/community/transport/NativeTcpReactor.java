@@ -16,6 +16,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import eu.exeris.kernel.core.transport.scheduler.locality.ExerisCarrierThread;
 
 /**
  * Reactor loop owning a single {@link Selector} plus its FD-set, draining
@@ -141,9 +142,35 @@ final class NativeTcpReactor {
         }
     }
 
+    private void applyReactorAffinity() {
+        String affinityProp = System.getProperty("exeris.reactor.affinity");
+        if (affinityProp == null || affinityProp.isBlank()) {
+            affinityProp = System.getProperty("exeris.transport.reactorAffinity");
+        }
+        if (affinityProp == null || affinityProp.isBlank()) {
+            affinityProp = System.getProperty("transport.reactorAffinity");
+        }
+        if (affinityProp != null && !affinityProp.isBlank()) {
+            try {
+                String[] parts = affinityProp.split(",");
+                int[] cores = new int[parts.length];
+                for (int i = 0; i < parts.length; i++) {
+                    cores[i] = Integer.parseInt(parts[i].trim());
+                }
+                if (cores.length > 0) {
+                    int targetCore = cores[Math.floorMod(index, cores.length)];
+                    ExerisCarrierThread.bindToCore(targetCore);
+                }
+            } catch (Exception _) {
+                // best effort
+            }
+        }
+    }
+
     @SuppressWarnings("PMD.CognitiveComplexity") // selector loop drains MPSC + polls keys; per-key
     // dispatch extracted to dispatchSelectedKey (PERF-073) so cyclomatic complexity no longer trips.
     private void runLoop() {
+        applyReactorAffinity();
         while (host.isReactorActive()) {
             try {
                 boolean drainedRequests = drainPendingRequests();
