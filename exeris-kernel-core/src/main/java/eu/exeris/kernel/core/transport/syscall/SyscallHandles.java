@@ -11,7 +11,7 @@ import java.lang.invoke.MethodHandle;
  * for raw Berkeley socket C functions.
  *
  * <h2>Valhalla-Ready (JEP 401)</h2>
- * <p>This is a standard {@code record} whose fields are all identity-free.
+ * <p>This is a {@code value record} on the {@code preview} line, and its fields are all identity-free.
  * No {@code ==}, no {@code synchronized}, no {@code System.identityHashCode()} — it
  * scalarizes cleanly via C2 JIT Escape Analysis on the hot path.
  * Declared {@code value record} on the {@code preview} line (JEP 401); asserted by

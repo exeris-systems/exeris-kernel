@@ -12,7 +12,7 @@ The SPI (Service Provider Interface) defines the immutable laws of the Exeris Ke
 - **`KernelContext`**: Identity-free state propagation via `ScopedValue`.
 
 ## 🧬 Valhalla Readiness
-All data structures are implemented as `record` types annotated with `@ValueCandidate`. They are architecturally ready to be promoted to `value record` (JEP 401) for zero-object-header memory efficiency.
+All data structures are implemented as `record` types annotated with `@ValueCandidate`. On the `preview` branch they are declared `value record` (JEP 401); on the distributed line they are identity records that differ only by that modifier.
 
 ## ⚖️ Licence
 

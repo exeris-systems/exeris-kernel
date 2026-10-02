@@ -109,8 +109,8 @@ operates on local memory, a PostgreSQL partition, or a Kafka cluster. (The SPI i
 
 Event routing metadata is encapsulated in `EventDescriptor` — a record of seven primitive fields (`long`,
 `int`). It avoids `synchronized`, `System.identityHashCode()`, and identity `==`, which makes it a candidate
-for C2's scalar replacement. It is designed for future migration to a value class once JEP 401 (Value
-Classes and Objects) reaches mainline GA, which will further eliminate object headers.
+for C2's scalar replacement. On the `preview` branch it is a `value record` (JEP 401, Value Classes
+and Objects); the distributed line compiles the same source as an identity record.
 A primitive descriptor does not by itself make a publication allocation-free: the in-memory bus allocates
 per publication (a snapshot of the subscriber list, one virtual thread per handler), and
 `EventBusZeroAllocTck` bounds the Community bus's per-publish `eu.exeris.*` allocations rather than

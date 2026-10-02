@@ -121,9 +121,9 @@ public interface TransportEngine extends AutoCloseable {
      * Returns a point-in-time diagnostics snapshot.
      *
      * <p>This call is non-blocking and low-allocation. {@link TransportStats} is a
-     * Valhalla-ready record — allocations will be eliminated once JEP 401 lands and
-     * the record is migrated to {@code value record}. Until then, implementations
-     * SHOULD return a cached or pool-sourced instance where possible.
+     * {@code value record} on the {@code preview} line and an identity record on the
+     * distributed line, where implementations SHOULD return a cached or pool-sourced
+     * instance where possible.
      *
      * @return current transport statistics
      */

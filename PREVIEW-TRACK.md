@@ -180,7 +180,7 @@ neighbouring one**; the same slip produced two red gates on the default line's P
 
 **Why the bar is not lowered:** all five gates' subject is identical on the two lines — the SPI /
 Core / Community boundaries, the lint rules, and the coverage floors, over the same sources — and
-`main` runs all three on JDK 25 LTS where the tools work.
+`main` runs all five on JDK 25 LTS where the tools work.
 
 **The permanence of the gap makes one constraint governing rather than advisory.** This line is
 **never self-verifying** for boundaries, lint, or coverage; that verification is always inherited from

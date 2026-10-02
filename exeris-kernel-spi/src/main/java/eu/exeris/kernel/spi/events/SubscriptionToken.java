@@ -13,8 +13,8 @@ package eu.exeris.kernel.spi.events;
  * without requiring a reverse lookup of the handler object.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>This record uses only primitive fields and is suitable for future migration to
- * {@code value record}. No identity operations must be performed on it.
+ * <p>This record uses only primitive fields and is a {@code value record} on the {@code preview} line.
+ * No identity operations must be performed on it.
  *
  * @param busId               identifier of the {@link EventBus} instance that issued this token
  * @param subscriptionOrdinal the slot ordinal within the bus's subscriber table

@@ -8,8 +8,8 @@ package eu.exeris.kernel.spi.flow;
  * Immutable descriptor of the capabilities of a specific {@link FlowEngine} implementation.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>All fields are {@code boolean} primitives or {@link String} — ideal for future
- * {@code value record} scalarisation. No identity operations used.
+ * <p>All fields are {@code boolean} primitives or {@link String}, and the record is a
+ * {@code value record} on the {@code preview} line. No identity operations used.
  *
  * @param deterministicExecution {@code true} if the engine guarantees deterministic step
  *                               ordering (Enterprise only)

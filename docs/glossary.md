@@ -96,10 +96,11 @@ in environments with millions of Virtual Threads.
 
 ### Value Class / Value Record (JEP 401 — Valhalla Readiness)
 
-A future JVM primitive that eliminates object headers and identity overhead. Exeris designs all
-immutable data carriers (e.g., `EventDescriptor`, `MemorySlab`) as standard `record` types today,
-strictly avoiding identity operations (`==`, `synchronized`, `System.identityHashCode()`) so they
-scalarize cleanly via JIT Escape Analysis and will migrate to `value record` without code changes.
+A JVM feature, in preview, that removes identity from a class so the JVM may drop its object header.
+Exeris declares its immutable data carriers (e.g., `EventDescriptor`, `MemorySlab`) as `value record`s on
+the `preview` branch and as standard `record` types on the distributed line. Both avoid identity
+operations (`==`, `synchronized`, `System.identityHashCode()`), so they scalarize cleanly via JIT
+Escape Analysis and the two declarations differ by the modifier alone.
 
 ### Thread Pinning
 

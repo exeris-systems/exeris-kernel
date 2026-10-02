@@ -47,13 +47,14 @@ import java.util.Optional;
  *           ({@code gcName}, {@code availableProcessors}, heap geometry) are plain fields;
  *           {@code heapMaxBytes} is {@code -1} when the JVM reports the max as undefined (mirrors
  *           {@code java.lang.management}).
- * @apiNote  This carrier deliberately uses {@link Optional} components (an identity class today) over
+ * @apiNote  This carrier deliberately uses {@link Optional} components (an identity class on JDK 25, a
+ *           value class on JDK 28 with preview features enabled) over
  *           sentinel-{@code long}s + a presence bitmask: it is a cold-path diagnostic snapshot (never on
  *           a hot path or in an allocation budget), and the {@code Optional.empty()} degradation
- *           contract is materially clearer than sentinels. A future Valhalla value-class migration would
- *           flatten the {@code long}/{@code int} components but not the {@code Optional} ones — that is
- *           an accepted, documented cost for this record, not an oversight to re-litigate during a
- *           Valhalla sweep.
+ *           contract is materially clearer than sentinels. On the {@code preview} line it is a value
+ *           class, and what that flattens is unmeasured; the {@code Optional} components are kept for
+ *           the clarity of the degradation contract, not for layout, and are not to be re-litigated
+ *           during a Valhalla sweep.
  * @since 0.9
  */
 public value record RuntimeErgonomicsSnapshot(

@@ -12,7 +12,7 @@ package eu.exeris.kernel.core.persistence;
  * <p>Declared as a top-level {@code record} to provide a reusable, canonical
  * retry-policy abstraction decoupled from any particular orchestrator
  * implementation. All three components are primitives and there are no identity
- * operations, so the type carries nothing a future Valhalla value class would need to shed.
+ * operations, so the type is a {@code value record} on the {@code preview} line with nothing to shed.
  * An orchestrator holds one shared instance for its lifetime and reads it on every attempt
  * rather than allocating a fresh policy per retry.
  *

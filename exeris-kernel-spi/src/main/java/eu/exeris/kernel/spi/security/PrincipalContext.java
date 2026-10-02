@@ -43,9 +43,9 @@ import java.util.UUID;
  * In the Enterprise tier, the off-heap token parser extracts the
  * principal identity via two
  * {@code MemorySegment.get(ValueLayout.JAVA_LONG, offset)} calls —
- * <b>zero heap allocation</b>. When Project Valhalla (JEP 401) lands,
- * {@code UUID} will become a primitive value type scalarised into two
- * CPU registers. A {@code String principalId} would force a heap
+ * <b>zero heap allocation</b>. {@code java.util.UUID} itself is an
+ * identity class on every current JDK, so JEP 401 does not scalarise it.
+ * A {@code String principalId} would force a heap
  * allocation and a byte-copy for <em>every single request</em>,
  * destroying the zero-GC contract.
  *

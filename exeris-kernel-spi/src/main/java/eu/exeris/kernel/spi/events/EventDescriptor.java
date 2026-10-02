@@ -22,8 +22,8 @@ package eu.exeris.kernel.spi.events;
  * <ul>
  *   <li>No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}).</li>
  *   <li>JIT C2 scalarizes this on the standard heap path via escape analysis.</li>
- *   <li>When JEP 401 is mainline, adding the {@code value} modifier requires zero
- *       field changes — object headers disappear for free.</li>
+ *   <li>It is a {@code value record} on the {@code preview} line (JEP 401), with no field changed for the
+ *       modifier.</li>
  * </ul>
  *
  * <h2>UUID Encoding</h2>

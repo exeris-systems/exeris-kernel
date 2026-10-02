@@ -8,7 +8,7 @@ package eu.exeris.kernel.spi.events;
  * Immutable event type specification.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>This record is designed for future migration to {@code value record}:
+ * <p>This record is a {@code value record} on the {@code preview} line, which it can be because:
  * <ul>
  *   <li>No identity operations on this record.</li>
  *   <li>{@code ordinal} and boolean flags are primitive — scalarizable by JIT.</li>

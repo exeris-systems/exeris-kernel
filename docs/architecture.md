@@ -22,7 +22,7 @@ Built on **JDK 25 LTS** (distributed preview-clean, ADR-066), it leverages:
 - **Scoped Values** (JEP 506) for strict, ThreadLocal-free context propagation.
 - **Flexible Constructor Bodies** (JEP 513, Closed/Delivered in JDK 25) for pre-initialising fields before `super()` in value-ready types — a claim currently asserted only in this document; it is not cross-checked against `docs/glossary.md`, `docs/whitepaper.md`, or `docs/ROADMAP.md`, which do not mention JEP 513.
 - **Compute-once config caches** via the Supplier + `AtomicReference` CAS pattern, mirroring the `LazyConstant` semantic (JEP 526) without depending on it — JEP 526 is not on the JDK 25 baseline.
-- **Valhalla Readiness (JEP 401):** All data carriers (`record`, `final class`) avoid `synchronized`, `System.identityHashCode()`, and identity `==` so they scalarise via C2 JIT Escape Analysis today. Migration to `value record`/`value class` will be performed once JEP 401 reaches mainline GA.
+- **Valhalla Readiness (JEP 401):** All data carriers (`record`, `final class`) avoid `synchronized`, `System.identityHashCode()`, and identity `==` so they scalarise via C2 JIT Escape Analysis today. On the `preview` branch the carriers are `value record`s already (JEP 401 preview, JDK 28); the distributed line keeps them as identity records until JEP 401 is final.
 
 **No Waste Compute** is the core principle:
 > Every byte allocated must serve a purpose. Every CPU cycle must add value.

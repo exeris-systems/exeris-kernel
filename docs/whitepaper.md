@@ -62,8 +62,9 @@ identity `==` operations, allowing the C2 JIT to apply Escape Analysis scalarisa
 hot-paths today — without requiring JEP 401 to be finalized.
 
 **JEP 401 (Value Classes and Objects)** is currently in Early Access preview. The keyword
-`value` is **not yet used** in the codebase to preserve toolchain stability (Checkstyle/PMD/AOT).
-When JEP 401 reaches mainline GA, the migration path is a single-keyword addition (`value record`)
+`value` is **not used** on the distributed line, to preserve toolchain stability (Checkstyle/PMD/AOT);
+the `preview` branch carries it on the same carriers, and what it buys there is unmeasured. When JEP 401
+reaches mainline GA, the distributed line's migration path is a single-keyword addition (`value record`)
 per data carrier, with no architectural change required. This preparation targets **~11.9M operations
 per second on a single thread** via L1 cache alignment after value-type flattening.
 

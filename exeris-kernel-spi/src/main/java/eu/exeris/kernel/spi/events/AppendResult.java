@@ -16,7 +16,7 @@ package eu.exeris.kernel.spi.events;
  *
  * <h2>Valhalla Readiness (JEP 401)</h2>
  * <p>A single primitive {@code long} field, no identity-sensitive collaborators — adding the
- * {@code value} modifier later requires zero field changes.
+ * {@code value} modifier, which it carries on the {@code preview} line, changes no field.
  *
  * @param committedSequence the 1-based per-stream sequence assigned to the appended event
  *        (the stream's new head); always {@code >= 1}

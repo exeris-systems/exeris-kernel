@@ -18,8 +18,8 @@ import java.util.UUID;
  * <p>{@link UUID} is exactly 128 bits — two {@code long} primitives.
  * In the Enterprise tier the off-heap parser extracts the principal
  * via two {@code MemorySegment.get(JAVA_LONG, offset)} calls — zero
- * heap allocation. When Valhalla (JEP 401) lands, UUID becomes a
- * primitive value type scalarised into CPU registers. A {@code String}
+ * heap allocation. {@code java.util.UUID} itself is an identity class on
+ * every current JDK, so it is not scalarised by JEP 401. A {@code String}
  * would force a heap copy per request, destroying zero-GC.
  *
  * <h2>UUIDv7 — B-Tree Friendly</h2>

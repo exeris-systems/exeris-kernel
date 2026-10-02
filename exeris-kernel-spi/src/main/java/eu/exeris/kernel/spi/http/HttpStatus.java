@@ -11,8 +11,8 @@ import java.util.Objects;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>No {@code synchronized}, no identity {@code ==}, no {@code System.identityHashCode()}.
- * The constants below are shared instances, which stops being observable once the carrier is a
- * value class -- callers must compare {@code code()}, never the carrier.
+ * The constants below are shared instances, which is not observable on a value class -- callers
+ * must compare {@code code()}, never the carrier.
  * Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
