@@ -101,26 +101,34 @@ not a locality result, and is reported as one.
 
 ### How it will be measured
 
-- **Harness in `exeris-benchmarks`**, on branch `research/loom-carrier-scheduler`, rewritten
-  rather than carried over from the pilot. Every trial records the kernel commit SHA, refuses to
-  run from a dirty kernel tree, and records the JDK build string, the full JVM command line and
-  the CPU topology. The kernel classes are built from that commit into the harness's own
-  directory, never read from a working tree's `target/classes` and never installed into the
-  local Maven repository.
-- **Load vehicle.** Requests are HTTP/1.1 (`/plaintext`, `/delayed`) because `wrk` / `wrk2`
+- **Harness in `exeris-benchmarks`**, branch `research/loom-carrier-scheduler`,
+  `scripts/loom-carrier-scheduler/` and `scenarios/loom-carrier-scheduler/`. The kernel is
+  exported from one commit with `git archive` and built into the harness's own directory, never
+  read from a working tree and never installed into the local Maven repository. Every trial
+  records the kernel commit, the JDK build string, the full JVM command lines and the CPU
+  topology, and is gated on: FFM socket path active (`active=posix-hybrid, ffmArmed=true`),
+  achieved rate ≥ 99 % of target, no socket errors or non-2xx, carrier and non-carrier thread
+  placement at the end of the window, and no profiler or tracer attached.
+- **Workload.** Modelled on Nigro's CPU-bound configuration: the handler's virtual thread makes
+  one blocking call to a mock backend on its own CPUs (1 ms think time, 100 connections,
+  2 carriers), driven open-loop below saturation. The backend client is an axis, because it
+  decides which mechanism wakes the virtual thread: `jdk` (pooled blocking `java.net.Socket`,
+  woken by the JDK poller) or `kernel` (`KernelWebClient`, woken by the transport's reactors).
+  `jdk.pollerMode` is held equal across arms within a campaign and recorded.
+- **Load vehicle.** Requests are HTTP/1.1 (`/backend`) because `wrk` / `wrk2`
   drive it with open-loop pacing and coordinated-omission correction. The hypotheses concern
   continuation scheduling below the protocol layer; the protocol is not a factor.
 - **Hardware.** AMD Ryzen 5 5600 (Zen 3, 6 cores / 12 threads, single CCX, 32 MiB L3), Linux 7.0.
-  CPU partitioning: reactors and JVM auxiliary threads on cores 0–1 (CPUs 0, 1, 6, 7); carriers
-  on cores 2–3 (CPUs 2, 3; SMT siblings 8, 9 left idle); load generator on cores 4–5. The pilot's
-  reactor run-queue wait came from outside the JVM, so the campaign runs with `isolcpus` /
-  `nohz_full` on the carrier CPUs, or records why it could not.
+  CPU partitioning: server JVM auxiliary threads and reactors on core 0 (CPUs 0, 6); mock backend
+  on core 1 (CPUs 1, 7); carriers on cores 2–3 (CPUs 2, 3; SMT siblings 8, 9 left idle); load
+  generator on cores 4–5 (CPUs 4, 5, 10, 11). Each trial records the kernel's isolated-CPU set;
+  the host isolates none, so processes outside the benchmark can still run on every CPU.
 - **JDK.** Loom EA, `28-testing`, branch `fibers`; the exact build string is recorded per trial.
 - **Trials.** One fresh JVM per trial, n ≥ 5 per cell, arm order randomised per repetition. 10 s
-  warmup, 30 s measurement. A trial whose achieved rate is below 99 % of target is marked invalid
-  and re-run; it is never folded into a percentile.
-- **Rates.** 50 / 70 / 85 / 90 / 95 % of `A_iso`'s median saturation rate, measured in the same
-  campaign.
+  warmup, 30 s measurement. A trial that fails a gate is marked invalid and
+  listed in the campaign summary; it is never folded into a percentile.
+- **Rates.** 50 / 70 / 85 % of `A_iso`'s median saturation rate, measured in the same campaign;
+  90 / 95 % are added once the lower rungs are stable.
 - **HYP-CACHE workload.** In-flight state is set by rate × delay × state per request (Little's law), not
   by connection count. The sweep targets 0.5×, 1×, 2× and 4× L3. Connection count is set to cover
   the in-flight count, with enough generator threads that the `wrk2` connection ramp (5 ms per
@@ -134,8 +142,6 @@ not a locality result, and is reported as one.
 
 - **Enterprise transports** (`io_uring`). The `io_uring` + custom scheduler combination
   is a separate track with its own visibility rules.
-- **The JDK poller.** The Community transport never starts `sun.nio.ch.Poller`, so
-  `jdk.pollerMode` has no effect here and is not an axis.
 - **Product-line placement.** Whether any of this code belongs on `preview` or `main` is decided
   after the Decision section, through ADR-051's successor, not on this branch.
 - **Saturation throughput as a claim.** On a 6-core desktop the closed-loop spread between arms is
