@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.flow;
 
@@ -196,7 +192,7 @@ class CommunityJdbcFlowSnapshotStoreTckIT extends AbstractDistributedFlowSnapsho
             // requires a true concurrent first-writer race (two transactions both passing the
             // existsInTransaction=false check before either commits) which would need a barrier
             // injected between tryOptimisticUpdate and insertOrRemapPkConflict; that scenario
-            // is intentionally out of scope for this PR (see PR #94 review).
+            // is intentionally out of scope for this test.
             FlowSnapshot duplicate = newSnapshot(id, FlowState.PARKED, 0, FlowSnapshot.SCHEMA_VERSION_INITIAL);
             assertThatThrownBy(() -> loserStore.save(duplicate))
                     .as("duplicate save MUST raise EX-FLOW-7002")

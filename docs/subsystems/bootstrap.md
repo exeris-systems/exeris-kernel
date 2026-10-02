@@ -1,86 +1,122 @@
+---
+title: "Kernel Subsystem: Bootstrap (L0 Orchestration)"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-28
+---
+
 # Kernel Subsystem: Bootstrap (L0 Orchestration)
 
 **Physical Layout:**
 
 - **SPI:** `eu.exeris.kernel.spi.bootstrap.*`  
-  *(Subsystem contracts, Lifecycle, Registry)*
+  *(`Subsystem`, `SubsystemProvider`, `BootstrapSelector`, `BootstrapPhase`, `HealthProbe`)*  
+  Exceptions: `eu.exeris.kernel.spi.exceptions.SubsystemException`,
+  `eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException`
 
 - **Core:** `eu.exeris.kernel.core.bootstrap.*`  
-  *(Sequence Manager, Health Monitor, Failure Policies)*
+  *(`KernelBootstrap`, `SubsystemOrchestrator` with its nested `FailurePolicy`, the package-private
+  `SubsystemRegistryLoader` and `SubsystemTopologicalSorter`; `health.KernelHealthMonitor`;
+  `jfr.BootstrapJfrEvents`, `jfr.KernelStartEvent`)*
 
-> `KernelBootstrap` (entry point) lives in `eu.exeris.kernel.core.bootstrap`. 
-> Signal handling (SIGTERM/SIGINT) is not yet implemented; 
-> callers are responsible for invoking `boot()` and managing JVM shutdown.
+- **Community:** `eu.exeris.kernel.community.bootstrap.*`  
+  *(`CommunitySubsystemProvider` and its twelve subsystems, `CommunitySubsystemHealthWatcher`)*;
+  `eu.exeris.kernel.community.health.HealthEndpointHandler`
+
+> `KernelBootstrap` (entry point) lives in `eu.exeris.kernel.core.bootstrap`.
+> The kernel installs no signal handler and no JVM shutdown hook. `boot()` runs the application's
+> `kernelMain` on the calling thread and calls `shutdown()` in a `finally` once `kernelMain` returns or
+> throws; turning `SIGTERM`/`SIGINT` into that return is the caller's job.
 
 **Layer:** L0 (Orchestration)  
-**Status:** Validated Architectural Prototype (TRL‑3) — JDK 25 LTS baseline / Valhalla-ready carriers
+**Status:** Validated Architectural Prototype (TRL‑3) — JDK 25 LTS baseline
 
 ---
 
 ## Overview
 
 The **Bootstrap subsystem** is the central orchestrator of the Exeris Kernel.  
-It manages the strictly ordered initialization sequence of all subsystems, ensuring that foundational layers (Config,
-Memory) are fully operational before higher‑level logic (Transport, Flow) is activated.
+It manages the ordered initialization and start of all subsystems, ensuring that foundational layers (Config,
+Memory) are operational before higher‑level logic (Transport, Flow) is activated. It runs once per JVM and
+never on a request path.
 
-> **L0 / L1 Boundary:** L0 Foundation subsystems (Config, Memory, Exceptions) initialize in total silence — no
-> telemetry infrastructure is yet available. Telemetry (L1) is the first system to attach after L0 is READY,
-> providing the **"Glass Box"** visibility for all subsequent layers (L1–L4). Any failure during L0 is recorded
-> via the pre-allocated **Glass-Box deterministic buffer** — JFR events are unavailable until Telemetry completes
-> its own init.
+> **Diagnostics during boot:** Bootstrap reports through `System.Logger` and the JFR events listed under
+> "Boot Observability". Those events are emitted from the first line of `KernelBootstrap.boot()` whenever
+> Flight Recorder is initialized and the event type is enabled — they do not wait for a Telemetry
+> subsystem, and there is none in the Boot DAG. Bootstrap writes to no pre-allocated crash buffer; the
+> memory-mapped crash buffer below is target state.
 
 ### Key Characteristics
 
 - **Dependency‑Ordered Init**  
-  Directed acyclic graph (DAG) resolves subsystem order.  
-  Config always first → Memory seconds → everything else follows.
+  A directed acyclic graph (DAG) built from each subsystem's `dependsOn()` resolves the order.  
+  Config is resolved first, before the orchestrator runs; Memory is the only `FOUNDATION` subsystem in
+  Community.
 
 - **Dependency-Round Start**  
-  L1 and L2 subsystems (Security, Persistence, Graph, Transport) start in dependency-safe rounds on the
-  booting thread — see "Phase Start Strategy" below for why the per-subsystem fork was removed in v0.11.
-  > **Note (0.11):** Community ships `CommunitySecuritySubsystem` from 0.11 onward. Before that this
-  > document described a Security subsystem the Community module did not have, so
-  > `KernelProviders.SECURITY_PROVIDER` was bound by nothing and the Citadel path was unreachable
-  > in a default boot. Closed as drift repair by ADR-061.
+  `SERVICES` and `RUNTIME` subsystems start in dependency-safe rounds on the booting thread — see "Phase
+  Start Strategy" below for why no subsystem is started on a thread of its own. Community ships
+  `CommunitySecuritySubsystem`, which binds `KernelProviders.SECURITY_PROVIDER` when a `SecurityProvider`
+  is discovered and leaves it unbound otherwise (ADR-061 §4).
 
 - **Fail‑Fast vs Degrade**  
-  Configurable failure policies:
-    - *FAIL_FAST* → Strict Mode (Target Standard) for high-density edge environments
-    - *DEGRADE* → ideal for local dev or emergency maintenance
+  `SubsystemOrchestrator.FailurePolicy`, set through the `KernelBootstrap` builder:
+    - *FAIL_FAST* (the default) → any `initialize()` or `start()` failure aborts the boot.
+    - *DEGRADE* → a failing subsystem that is outside `FOUNDATION` **and** reports `isOptional() == true` is
+      dropped together with its transitive dependents; every other failure still aborts. No Community
+      subsystem declares itself optional, so on the Community tier alone `DEGRADE` boots exactly like
+      `FAIL_FAST`.
 
-- **Graceful Shutdown**  
-  Transport closes Ingress, awaits deterministic hard timeout (60 s), then Persistence flushes and closes pools.
+- **Ordered Shutdown**  
+  `shutdown()` calls `stop()` in reverse topological order, and only on subsystems whose `isRunning()`
+  reports `true`. The orchestrator imposes no deadline of its own: each `stop()` does whatever its
+  subsystem does, and one that throws is logged at `WARNING` and skipped. The transport subsystem's
+  `stop()` is the one that drains: `NativeTcpCarrier.stop()` closes ingress, keeps the reactors serving
+  while `PaqsScheduler.close()` waits for streams in service to finish under a 60-second hard deadline,
+  and only then force-closes what is left.
 
 ---
 
 ## Diagram 1 — Boot DAG (Flowchart)
 
+The Community subsystem set as `CommunitySubsystemProvider` registers it. Arrows are declared
+`dependsOn()` edges; the subgraphs are `BootstrapPhase` values.
+
 ```mermaid
 flowchart TD
-    CFG["Config\n(resolved by KernelBootstrap\nvia ServiceLoader(ConfigProvider)\nbefore orchestrator runs)"]
+    CFG["Config<br/>(resolved by KernelBootstrap<br/>via ServiceLoader of ConfigProvider<br/>before the orchestrator runs)"]
 
-    subgraph FOUNDATION["FOUNDATION (sequential — no JFR)"]
-        MEM[Memory]
+    subgraph FOUNDATION["FOUNDATION (sequential)"]
+        MEM[memory]
     end
 
-    subgraph SERVICES["SERVICES (parallel)"]
-        CRP[Crypto]
-        PER[Persistence]
-        GRP[Graph]
-        TRP[Transport]
+    subgraph SERVICES["SERVICES (dependency rounds)"]
+        CRP[crypto]
+        SEC[security]
+        PER[persistence]
+        SCH[scheduling]
+        STO[storage]
+        GRP[graph]
+        TRP[transport]
     end
 
-    subgraph RUNTIME["RUNTIME (parallel)"]
-        EVT[Events]
-        FLW[Flow]
-        HTTP["HTTP"]
+    subgraph RUNTIME["RUNTIME (dependency rounds)"]
+        EVT[events]
+        FLW[flow]
+        HTTP[http]
+        WS[websocket]
     end
 
-    CFG --> MEM
-    MEM --> CRP & PER & GRP & TRP
-    CRP & PER & GRP & TRP --> EVT & FLW & HTTP
+    CFG -.-> MEM
+    MEM --> CRP & SEC & PER & STO & GRP & TRP
+    CRP --> TRP
+    PER --> GRP
+    MEM --> EVT & HTTP & WS
+    PER --> EVT & FLW
 
-    EVT & FLW & HTTP --> RDY([KERNEL READY])
+    EVT & FLW & HTTP & WS --> RDY([KERNEL STARTED])
 
     style FOUNDATION fill:#1a1a2e,color:#e0e0e0,stroke:#444
     style SERVICES fill:#16213e,color:#e0e0e0,stroke:#444
@@ -88,134 +124,115 @@ flowchart TD
     style RDY fill:#00b894,color:#000,stroke:#00b894
 ```
 
+`scheduling` declares no dependency. Being in the DAG does not make a subsystem active: `transport` stays
+inert unless `transport.mode`/`network.transportMode` is set, `http` unless an HTTP mode or port is
+configured, `websocket` unless `websocket.enabled=true`, and `crypto`/`security` unless a provider is
+discovered. Such a subsystem still passes through `initialize()` and `start()`, but reports
+`isRunning() == false`, so it is never stopped.
+
 ---
 
 ## Diagram 1b — Subsystem State Machine
 
-Each subsystem registered in the Boot DAG transitions through this state machine independently.
-Core's `SubsystemOrchestrator` drives the boot transitions, which are irreversible — there is no `RESTART`. The one reversible axis is the post-boot health state `RUNNING ↔ DEGRADED`, driven not by the orchestrator but by the Community `CommunitySubsystemHealthWatcher` (see "Kubernetes Health Probes" below): a live-but-impaired dependency degrades readiness and recovers when it returns, without ever leaving the `RUNNING`-family or killing the process.
+These are the per-subsystem states `KernelHealthMonitor.SubsystemState` tracks. Core's
+`SubsystemOrchestrator` drives the boot transitions, which are irreversible — there is no `RESTART`. The one
+reversible axis is the post-boot health state `RUNNING ↔ DEGRADED`, driven not by the orchestrator but by the
+Community `CommunitySubsystemHealthWatcher` (see "Kubernetes Health Probes" below): a live-but-impaired
+dependency degrades readiness and recovers when it returns, without killing the process.
 
 ```mermaid
 stateDiagram-v2
     direction LR
-    [*] --> REGISTERED : JVM start\nServiceLoader discovery
+    [*] --> REGISTERED : discovered, selected\nand topologically sorted
 
-    REGISTERED --> INITIALIZED : Dependencies READY\ninitialize() returned OK
-    REGISTERED --> FAILED      : Dependency cycle (EX-BOOT-0001)\nor SPI provider missing
+    REGISTERED --> INITIALIZED : initialize() returned
+    REGISTERED --> FAILED      : initialize() threw (EX-BOOT-0002)
 
-    INITIALIZED --> RUNNING    : start() returned OK
-    INITIALIZED --> FAILED     : Deadline exceeded (EX-BOOT-0003)\nor initialize() threw exception (EX-BOOT-0002)
+    INITIALIZED --> RUNNING    : start() returned
+    INITIALIZED --> FAILED     : start() threw (EX-BOOT-0002)
 
-    RUNNING --> STOPPED        : stop() called\nAll resources released
-    RUNNING --> FAILED         : Unrecoverable runtime error
-
+    RUNNING --> STOPPED        : shutdown() — stop() returned\n(only if isRunning())
     RUNNING --> DEGRADED       : Health watcher: dependency lost\n(post-boot, reversible)
     DEGRADED --> RUNNING       : Health watcher: dependency recovered
-    DEGRADED --> STOPPED       : stop() called
+    DEGRADED --> STOPPED       : shutdown() — stop() returned
 
-    STOPPED --> [*]            : Virtual Threads drained
-
-    FAILED --> [*]             : Emergency JFR snapshot\nJVM exit(1) · Glass-Box buffer flushed
-
-    note right of RUNNING
-        Hot-path active.
-        K8s readiness probe → HTTP 200.
-        K8s liveness probe → HTTP 200.
-    end note
+    STOPPED --> [*]
 
     note right of FAILED
-        K8s liveness probe → HTTP 503.
-        Pod replaced by ReplicaSet controller.
+        Mandatory failure: kernel FAILED,
+        readiness FAILED / liveness DOWN,
+        boot() throws. The kernel never exits the JVM.
+        DEGRADE + optional: subsystem and its
+        transitive dependents leave the boot order.
     end note
 
     note right of DEGRADED
         Live but impaired (required dep lost post-boot).
-        K8s readiness probe → HTTP 503 (drain).
-        K8s liveness probe → HTTP 200 (not killed).
+        Readiness 503 (DEGRADED), liveness 200.
         Watcher-driven, post-boot only, reversible.
     end note
-
-    %% Note: kernel-level SHUTTING_DOWN is from KernelState, not per-subsystem state.
 ```
+
+A dependency cycle (`EX-BOOT-0001`) or a `dependsOn()` name no provider supplies aborts the boot before any
+subsystem is registered with the monitor, so neither appears in this diagram. Kernel-level state is separate:
+`KernelHealthMonitor.KernelState` latches `INITIALIZED`, `STARTED`, `SHUTTING_DOWN` and `FAILED`.
 
 ---
 
-## Diagram 2 — Graceful Teardown (Sequence)
+## Diagram 2 — Shutdown (Sequence)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant OS  as OS (SIGTERM/SIGINT)
-    participant BTS as BootstrapSequencer
-    participant TRP as Transport (Ingress)
-    participant PER as Persistence
-    participant MEM as Memory (Arena)
+    participant APP as Application (kernelMain)
+    participant KB  as KernelBootstrap.boot()
+    participant ORC as SubsystemOrchestrator
+    participant SUB as Subsystems (reverse topological order)
 
-    OS->>BTS: signal(SIGTERM)
-    BTS->>TRP: closeIngress()
-    Note over TRP: Stop accepting new streams.<br/>Drain in-flight requests.
-
-    BTS->>BTS: startHardTimeout(60s)
-
-    alt all in-flight requests drained before timeout
-        TRP-->>BTS: drainComplete()
-    else timeout fires
-        BTS->>TRP: forceClose()
-        Note over BTS,TRP: Hard kill — SRE must inspect<br/>EX-BOOT-0003 in Glass-Box buffer.
+    APP-->>KB: kernelMain returns or throws
+    KB->>KB: close DynamicConfigFileWatcher
+    KB->>ORC: shutdown()  (in finally)
+    ORC->>ORC: markKernelState(SHUTTING_DOWN) — readiness 503
+    loop each subsystem, last initialized first
+        alt isRunning() == true
+            ORC->>SUB: stop()
+            SUB-->>ORC: returned — SubsystemStopped JFR, state STOPPED
+        else isRunning() == false
+            Note over ORC,SUB: skipped — stop() is never called
+        end
     end
-
-    BTS->>PER: flushAndClose()
-    Note over PER: Write-ahead log flush → pool close.
-    PER-->>BTS: closed()
-
-    BTS->>MEM: releaseArenas()
-    MEM-->>BTS: released()
-
-    BTS-->>OS: exit(0)
+    ORC->>ORC: KernelShutdownComplete JFR
+    ORC-->>KB: returns (never throws)
+    KB-->>APP: boot() returns, or throws BootstrapException
 ```
 
----
-
-## Diagram 3 — Zero-Copy Ingest Pipeline
-
-```mermaid
-flowchart LR
-    NIC["NIC (Hardware)"]
-    IOR["io_uring<br/>(kernel ring)"]
-    ANA["Panama Arena<br/>(MemorySegment — off-heap)"]
-    WRK["Worker VThread<br/>(structured scope)"]
-    DB["Persistence SPI<br/>(LoanedBuffer)"]
-
-    NIC -- DMA --> IOR
-    IOR -- zero-copy slice --> ANA
-    ANA -- LoanedBuffer.retain() --> WRK
-    WRK -- MemorySegment.asSlice() --> DB
-    DB -- LoanedBuffer.release() --> ANA
-
-    style NIC  fill:#2d3436,color:#dfe6e9,stroke:#636e72
-    style IOR  fill:#2d3436,color:#dfe6e9,stroke:#636e72
-    style ANA  fill:#0984e3,color:#fff,stroke:#0984e3
-    style WRK  fill:#6c5ce7,color:#fff,stroke:#6c5ce7
-    style DB   fill:#00b894,color:#000,stroke:#00b894
-```
-
-> **Zero-Copy Contract:** Data crosses the NIC → JVM boundary exactly **once** via DMA into the Panama Arena.  
-> Every downstream step operates on `MemorySegment` slices. No `byte[]` copies. No `ByteBuffer` wrapping.  
-> The `LoanedBuffer.release()` call at the Persistence layer is the sole deallocation point.
+`shutdown()` has no timeout and no second attempt. A `stop()` that throws is caught, logged at `WARNING`, and
+the subsystem is not marked `STOPPED`.
 
 ---
 
 ## The "Holy Order" of Initialization
 
-A layer can only start if all layers below it are **READY**.
+`initialize()` runs for every subsystem first, in one topological order, before any `start()`; phases govern
+only the start. A phase starts only after every subsystem of the phase before it has returned from `start()`.
 
 ```
-FOUNDATION:   Memory (sequential)
-SERVICES:     Crypto & Persistence & Graph & Transport (parallel)
-RUNTIME:      Events & Flow & HTTP (parallel)
+initialize:   all subsystems, topological order (Kahn's algorithm, ties broken by name)
+start:
+  FOUNDATION: memory (sequential)
+  SERVICES:   crypto, persistence, scheduling, security, storage   → then graph, transport
+  RUNTIME:    http, events, flow, websocket
+stop:         reverse of the initialize order, running subsystems only
 ```
 
-> **Config** is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs — it is not a `Subsystem`. `Exceptions` is not a Subsystem layer.
+For the Community set the initialize order is `memory, crypto, http, persistence, events, flow, graph,
+scheduling, security, storage, transport, websocket`, so the stop order is its reverse. Stop order follows
+declared `dependsOn()` edges and the name tie-break, not phases: `http` declares only `memory`, so it stops
+after `persistence`, `events`, `flow` and `transport`. A subsystem that must outlive another at shutdown has
+to declare it.
+
+> **Config** is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` (highest `priority()` wins)
+> before the orchestrator runs — it is not a `Subsystem`. `Exceptions` is not a Subsystem layer.
 
 ---
 
@@ -223,26 +240,27 @@ RUNTIME:      Events & Flow & HTTP (parallel)
 
 ### 1. Deterministic Startup
 
-No classpath magic.  
-Every subsystem must be explicitly registered or discovered via `ServiceLoader`.
+No classpath scanning.  
+Subsystems are discovered only through `ServiceLoader<SubsystemProvider>`; the orchestrator has no
+registration API. Providers are sorted by `priority()` descending, and on a name collision the
+higher-priority provider's subsystem is kept (Community = 0, Enterprise = 100).
 
 ### 2. Failure Sovereignty
 
-Bootstrap decides the fate of the Kernel:
+Bootstrap decides whether the Kernel comes up:
 
-- **FAIL_FAST** → Strict Mode (Target Standard). Mandatory for high-density edge environments.
-- **DEGRADE** → Reserved for local dev or emergency maintenance only. Never deploy to production in this mode.
+- **FAIL_FAST** → the default, and the policy the `FailurePolicy` Javadoc recommends for production.
+- **DEGRADE** → recommended there for dev and canary environments. It only ever saves an optional,
+  non-`FOUNDATION` subsystem, and the cost is silent: the dropped subsystem takes every transitive dependent
+  out of the boot with it.
 
-> Exeris targets **JDK 25 LTS** with **Valhalla Readiness (JEP 401, preview on JDK 28)**. The heap-allocation budgets
-> in `performance-contract.md` are met today via C2 JIT Escape Analysis scalarisation of `record`/`final class`
-> data carriers. Migration to `value record`/`value class` (requiring `value` keyword) is deferred until
-> JEP 401 reaches mainline GA — at that point, object-header elimination will further reduce memory pressure
-> without any architectural change.
+A dependency cycle is fatal under either policy.
 
-### 3. Signal Awareness
+### 3. Shutdown Is Driven by the Caller
 
-Bootstrap translates OS signals (`SIGTERM`, `SIGINT`) into a controlled, reverse‑ordered shutdown sequence
-with deterministic hard timeouts at each layer boundary (see Diagram 2).
+The kernel does not listen for OS signals. Ordered shutdown happens when `kernelMain` returns; an application
+that must stop cleanly on `SIGTERM` has to make `kernelMain` return and let `boot()` finish before the JVM
+halts.
 
 ---
 
@@ -250,34 +268,48 @@ with deterministic hard timeouts at each layer boundary (see Diagram 2).
 
 ### What Bootstrap SPI **does**
 
-- Defines `Subsystem` (lifecycle contract: `initialize()`, `start()`, `stop()`, `dependsOn()`, `phase()`, `isOptional()`, `providerBindings()`)
-- Defines `SubsystemProvider` (ServiceLoader discovery; `priority()` default=100)
-- Defines `BootstrapSelector` (immutable record: which subsystems to activate)
+- Defines `Subsystem` (lifecycle contract: `name()`, `dependsOn()`, `phase()`, `initialize()`, `start()`,
+  `stop()`, `isRunning()`, `isOptional()`, `providerBindings()`)
+- Defines `SubsystemProvider` (ServiceLoader discovery; `priority()` default = 0)
+- Defines `BootstrapSelector` (immutable record: `all()`, `none()`, `forNames(...)` — expanded by the
+  orchestrator to its transitive dependency closure)
 - Defines `BootstrapPhase` enum (`FOUNDATION`, `SERVICES`, `RUNTIME`)
 - Config is NOT a Subsystem — resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` before the orchestrator runs
-- Health state is tracked by `KernelHealthMonitor` (Core). The class implements the SPI read-only contract `eu.exeris.kernel.spi.bootstrap.HealthProbe` (introduced in 0.7.0) so HTTP handlers, sidecar reporters, and Enterprise observers can consume probe state without coupling to the Core orchestrator class.
+- Health state is tracked by `KernelHealthMonitor` (Core). The class implements the SPI read-only contract
+  `eu.exeris.kernel.spi.bootstrap.HealthProbe` (since 0.7) so HTTP handlers, sidecar reporters, and
+  Enterprise observers can consume probe state without coupling to the Core orchestrator class.
 
 ### What Bootstrap Core **does**
 
-- Resolves dependency graph of all subsystems
-- Manages subsystem state machine:  
-  `INIT → STARTING → READY → SHUTTING_DOWN`
-- Provides Health Check Registry for Kubernetes probes
+- Discovers providers, applies the selector closure, and topologically sorts the result
+  (`SubsystemRegistryLoader`, `SubsystemTopologicalSorter`)
+- Initializes, starts and stops subsystems, and enforces the failure policy (`SubsystemOrchestrator`)
+- Composes each subsystem's `providerBindings()` into the `ScopedValue` scope that `start()` and
+  `kernelMain` run in, and binds `KernelProviders.SUBSYSTEMS` for the `KernelDiagnostics` SPI (ADR-033)
+- Tracks kernel state (`INITIALIZED → STARTED → SHUTTING_DOWN`, or `FAILED`) and per-subsystem state for
+  probes (`KernelHealthMonitor`)
+- Offers `KernelBootstrap.inspect(Runnable)`, which resolves the sorted subsystem inventory without calling
+  any `initialize()` or `start()`
 
 ---
 
 ## Error Codes (Deterministic Telemetry)
 
-| Code             | Severity               | Meaning                        | Action                                                        |
-|------------------|------------------------|--------------------------------|---------------------------------------------------------------|
-| **EX‑BOOT‑0001** | `[FATAL_BUILD_DEFECT]` | Dependency cycle detected      | Kernel cannot boot. Treat as a CI/CD error, **not** a production anomaly. This code means the application will never open a port. Fix the `dependsOn()` graph before shipping. |
-| **EX‑BOOT‑0002** | FATAL                  | Bootstrap failure (opaque)     | Fatal exit. `rawArgs` layout is variable — treat as opaque payload for hex/string dump. Glass-Box decoder cannot rely on field ordering for this code. |
-| **EX‑BOOT‑0003** | CRITICAL               | Bootstrap deadline exceeded    | Subsystem did not complete init within the deadline. Kill or degrade. |
-| **EX‑BOOT‑0004** | CRITICAL               | Memory provider init failure   | `MemoryProvider` could not initialise its off-heap tier (e.g., `mmap` permission denied, insufficient system memory, missing native library). `rawArgs[0]=String providerName`, `rawArgs[1]=long requestedBytes`. Inspect Glass-Box deterministic buffer. |
-| **EX‑BOOT‑3001** | CRITICAL               | Telemetry provider init failure | `TelemetryProvider` failed to initialize. Check `rawArgs[0]=providerName`, `rawArgs[1]=reason`. |
+| Code             | Carried by | `rawArgs` | When |
+|------------------|------------|-----------|------|
+| **EX‑BOOT‑0001** | `SubsystemCircularDependencyException` — a plain `RuntimeException`, not an `ExerisKernelException` | None. Members are read from `cycleMembers()` (insertion-ordered `Set<String>`); the JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` carries them as one `String` joined with `", "`, plus `errorCode`. | Dependency cycle found by the sort, during `SubsystemOrchestrator.initialize()` or `resolveTopology()`, before any subsystem is initialized. The set holds every subsystem the sort could not order, including those that only depend on the cycle. `KernelBootstrap` rethrows it unwrapped. |
+| **EX‑BOOT‑0002** | `SubsystemException` | `[0] String subsystemName`, `[1] SubsystemException.Phase phase`, `[2] String detail` | `initialize()` or `start()` threw. The orchestrator wraps any other unchecked exception in one (`detail` = its message, original as cause) and, unless `DEGRADE` drops the subsystem, throws `SubsystemOrchestrator.BootstrapException` with it as cause. The orchestrator never raises it for `stop()`. The sorter's "depends on missing subsystem" `BootstrapException` cites this code in its message only, with no `rawArgs`. |
+| **EX‑BOOT‑0003** | — | Registry layout: `[0] String subsystemName`, `[1] long deadlineMs` | Defined in `KernelErrorCodes` only. The orchestrator enforces no deadline and nothing in this repository throws it. |
+| **EX‑BOOT‑0004** | `MemoryBootstrapException` | `[0] String providerName`, `[1] long requestedBytes` (`-1` if unknown); the message-only constructor leaves `rawArgs` empty | `CommunityMemoryProvider` cannot create its allocator. Raised inside `memory`'s `initialize()`, so the caller sees it as the cause of an `EX-BOOT-0002`. |
+| **EX‑BOOT‑3001** | `TelemetryBootstrapException` | `[0] String providerName`, `[1] String reason` | `CommunityTelemetryProvider` cannot construct a sink. Telemetry is not a Boot DAG subsystem. |
 
-> **EX‑BOOT‑0001 is not a runtime event.** A dependency cycle is a build defect.  
-> If this code surfaces in production, your deployment pipeline has failed. Gate on it in CI with `mvn clean install`.
+> **EX‑BOOT‑0001 is not a runtime event.** A dependency cycle is a build defect: the kernel cannot boot,
+> under any failure policy. Fix the `dependsOn()` graph before shipping; `KernelBootstrap.inspect(...)`
+> surfaces it without touching infrastructure.
+
+A boot failure reaches the caller of `KernelBootstrap.boot()` as `KernelBootstrap.BootstrapException`
+wrapping `SubsystemOrchestrator.BootstrapException`; a missing `ConfigProvider` fails with a
+`KernelBootstrap.BootstrapException` whose message cites `EX-CFG-0001`.
 
 ---
 
@@ -287,6 +319,13 @@ with deterministic hard timeouts at each layer boundary (see Diagram 2).
 
 ```java
 public class PersistenceSubsystem implements Subsystem {
+
+    private volatile boolean running;
+
+    @Override
+    public String name() {
+        return "persistence";
+    }
 
     @Override
     public List<String> dependsOn() {
@@ -305,87 +344,102 @@ public class PersistenceSubsystem implements Subsystem {
     }
 
     @Override
-    public void start() { /* activate */ }
+    public void start() { running = true; /* activate */ }
 
     @Override
-    public void stop() { /* flush and release */ }
+    public void stop() { running = false; /* flush and release */ }
+
+    @Override
+    public boolean isRunning() {
+        return running;   // the default is false, and then stop() is never called
+    }
 }
 ```
 
+The subsystem is returned from a `SubsystemProvider.getSubsystems(ConfigProvider)` registered under
+`META-INF/services/eu.exeris.kernel.spi.bootstrap.SubsystemProvider`.
+
 ---
 
-### 2. Phase Start Strategy (Core — on the booting thread, since v0.11)
+### 2. Phase Start Strategy (Core — on the booting thread)
 
 Subsystems start in dependency-safe rounds, and **every round runs on the thread that called
-`boot()`** rather than one virtual thread per subsystem. This changed in v0.11 under
-[ADR-066](../adr/ADR-066-preview-clean-ga-baseline.md), and the reason is a hard limit rather than a
-preference.
+`boot()`** rather than one virtual thread per subsystem. The reason is a hard limit rather than a
+preference ([ADR-066](../adr/ADR-066-preview-clean-ga-baseline.md)).
 
 A subsystem's `start()` reads `ScopedValue` bindings established by two callers the orchestrator
 cannot see through: `KernelBootstrap` binds `CURRENT_CONFIG` around the boot, and the **application**
 binds its own — `HTTP_SERVER_HANDLER` is the load-bearing example, and an application is free to bind
-values the kernel has never heard of. `StructuredTaskScope` forks inherited all of it; a plain virtual
-thread inherits none of it, and a `ScopedValue.Carrier` can only carry values named in advance.
-Rebuilding the kernel's own carrier was implemented and produced a boot that started the HTTP
-subsystem with no handler bound — every route answering 404.
+values the kernel has never heard of. A plain virtual thread inherits none of them, and a
+`ScopedValue.Carrier` can only carry values named in advance. Forking with a rebuilt kernel carrier was
+rejected for that reason: it starts the HTTP subsystem with no handler bound, and every route answers 404.
 
 ```java
-// SubsystemOrchestrator: one dependency-safe round, in order, on the booting thread.
+// SubsystemOrchestrator.startParallel: one dependency-safe round, in order, on the booting thread.
 for (Subsystem subsystem : ready) {
     if (Thread.interrupted()) {
         Thread.currentThread().interrupt();
         throw new BootstrapException("Bootstrap interrupted during phase " + phase);
     }
-    try {
-        doStart(subsystem, phase, profile);
-    } catch (BootstrapException | SubsystemException failure) {
-        failures.add(failure);
-    }
+    doStart(subsystem, phase, profile);   // a failure that is not dropped under DEGRADE propagates here
 }
-// every subsystem in the round is attempted; the phase throws afterwards if any failed
 ```
 
-**Failure semantics changed with it, and for the better.** The old `StructuredTaskScope.open()` used
-`awaitAllSuccessfulOrThrow` by default, so `join()` threw `StructuredTaskScope.FailedException` — a
-preview type — and the orchestrator's own failure-collection block was never reached. A phase now
-always throws `BootstrapException` naming how many subsystems failed and carrying the first as its
-cause.
+**Failure semantics.** `doStart` routes a failure through the failure policy. Under `DEGRADE`, an optional
+subsystem is removed with its dependents and the round continues. Otherwise the orchestrator marks the kernel
+`FAILED` and throws `BootstrapException` naming the subsystem, with its `SubsystemException` as cause, at once:
+the rest of the round is not started, so no socket-binding subsystem comes up on a boot already known to have
+failed. A round in which no pending subsystem has its dependencies started throws `BootstrapException`
+("cannot make progress").
 
 **Cost:** a phase takes the sum of its subsystems' start times rather than the longest. It is paid
-once per JVM, and `FOUNDATION` was already sequential.
+once per JVM, and `FOUNDATION` is sequential either way.
+
+After each `start()` that leaves `isRunning() == true`, the orchestrator initializes that subsystem's Core
+hot-path JFR event classes on the booting thread (`CoreJfrEventCatalogue.warmHotPath`), so a virtual thread
+never pins its carrier inside their `<clinit>`. The cost is counted in the subsystem's start time; a warm-up
+failure is logged and never fails the subsystem.
 
 ---
 
 ## Testing Strategy
 
-### Unit Tests
+### Unit and TCK Tests (Core)
 
-- DAG resolver detects circular dependencies → asserts `EX‑BOOT‑0001` is thrown at construction time, not at runtime
-- Failure policy correctness (FAIL_FAST / Strict Mode vs DEGRADE)
+- `SubsystemOrchestratorKahnTest` — ordering, and `EX‑BOOT‑0001` thrown by `initialize()` before any
+  subsystem is initialized
+- `CoreBootstrapOrchestratorTckTest`, `CoreBootstrapOrchestratorRealSortTckTest` — `AbstractBootstrapOrchestratorTck`
+- `CoreFailurePolicyTckTest` — `AbstractFailurePolicyTck` (FAIL_FAST vs DEGRADE)
+- `CoreBootstrapZeroAllocTckTest` — `BootstrapZeroAllocTck`
+- `CoreHealthMonitorTckTest`, `CoreProviderBindingLifecycleTckTest`, `KernelBootstrapTest`, `ScopedValueBindingTest`
 
-### Integration Tests
+### Integration Tests (Community)
 
-- Full boot trace with JFR timing
-- Signal handling (SIGTERM → correct shutdown order per Diagram 2)
-- Hard timeout fires correctly when in-flight drain exceeds 60 s
-- Health probe accuracy (`/health/ready` returns 503 until L4 READY)
+- `SubsystemInitOrderIntegrationTest`, `KernelBootstrapIntegrationTest`, `CommunityDegradedModeIntegrationTest`
+- `AbstractSubsystemLifecycleTck` bindings for `memory`, `transport`, `http` and `websocket`
+- `HealthEndpointHandlerKernelMonitorIntegrationTest`, `CommunitySubsystemHealthWatcherTest`
 
-> **Note:** `AbstractBootstrapOrchestratorTck` and `BootstrapZeroAllocTck` require concrete bindings in `exeris-kernel-community` tests (binding missing as of current state — open TCK debt).
+> **Note:** `AbstractGracefulShutdownTck` has no concrete binding in this repository, and there is no test
+> of signal handling, because the kernel handles no signal. The transport drain is covered by
+> `PaqsSchedulerTest`, `DrainCoordinatorTest` and `CommunityHttpDrainIntegrationTest`, not by this
+> subsystem's tests.
 
 ---
 
 ## Summary
 
-The Bootstrap subsystem is the guardian of the Kernel's lifecycle. By enforcing a strict, dependency-aware boot sequence
-and starting each phase in dependency-safe rounds on the booting thread, it ensures that the Exeris Kernel starts fast, fails safely,
-and shuts down gracefully with **deterministic hard timeouts** at every layer boundary, maintaining system integrity
-at all times.
+The Bootstrap subsystem is the guardian of the Kernel's lifecycle. It enforces a dependency-aware boot
+sequence, starts each phase in dependency-safe rounds on the booting thread, fails the boot on the first
+mandatory failure, and stops running subsystems in reverse topological order when `kernelMain` returns. It
+does not handle signals or exit the JVM, and bounds shutdown time only where the transport drains its
+streams (60 s) — turning a signal into shutdown stays with the host.
 
 ---
 
 ## Kubernetes Health Probes
 
-> **Status (0.7.0):** Probe state and an HTTP handler are implemented; an auto-bound embedded HTTP health server on a dedicated port is still **🚧 Planned (TRL-4 target)**. Operators wire the handler into their HTTP server engine themselves until the auto-bind landing.
+> **Status:** Probe state and an HTTP handler are implemented. An auto-bound health server on a dedicated
+> port is **not implemented**; operators wire the handler into an HTTP server engine themselves.
 
 ### Probe contract
 
@@ -394,15 +448,20 @@ at all times.
 - **Readiness** — UP only when the kernel has transitioned to `STARTED` and every required subsystem is `RUNNING`. Returns `STARTING` while the Boot DAG is in progress, while a required subsystem is still initializing, and during `SHUTTING_DOWN`. Returns `DEGRADED` (not ready) when a **required** subsystem has gone `DEGRADED` — live but impaired after boot, e.g. its broker died — so the load balancer drains the instance; a still-initializing required subsystem outranks `DEGRADED` for the status label. A **degraded optional** subsystem never sheds readiness. Returns `FAILED` after `FAILED` state.
 - **Liveness** — UP after the kernel has transitioned to `INITIALIZED`. Returns `STARTING` before that point. Returns `DOWN` only after `FAILED` state. A `DEGRADED` subsystem never affects liveness — the process stays alive so it can recover (`DEGRADED → RUNNING` is reversible).
 
+A subsystem is required when it is in `FOUNDATION` or reports `isOptional() == false`.
+
 ### `HealthEndpointHandler` (Community)
 
 `eu.exeris.kernel.community.health.HealthEndpointHandler` is an `HttpHandler` that surfaces the probe over HTTP. Construct it with any `HealthProbe` implementation (the orchestrator-owned `KernelHealthMonitor` is the canonical caller) and register it with the HTTP server engine:
 
 ```java
-HealthEndpointHandler health = new HealthEndpointHandler(orchestrator.healthMonitor());
+HealthEndpointHandler health = new HealthEndpointHandler(bootstrap.healthMonitor());
 httpServerEngine.setHandler(health);   // or compose into an application router
 httpServerEngine.start();
 ```
+
+`KernelBootstrap.healthMonitor()` answers only while `boot()` is running and throws
+`IllegalStateException` otherwise; `SubsystemOrchestrator.healthMonitor()` returns the same monitor.
 
 | Probe         | Default path             | Healthy            | Not healthy                                            |
 |:--------------|:-------------------------|:-------------------|:-------------------------------------------------------|
@@ -417,11 +476,16 @@ The handler returns:
 
 The contract is pinned by `eu.exeris.kernel.tck.contract.health.AbstractHealthEndpointTck` plus the Community binding `CommunityHealthEndpointTckTest`. End-to-end behavior with the real `KernelHealthMonitor` is pinned by `HealthEndpointHandlerKernelMonitorIntegrationTest`.
 
+> **Not the same as the default HTTP routes.** When no `HTTP_SERVER_HANDLER` is bound, `CommunityHttpSubsystem`
+> installs `/health`, `/health/live`, `/health/ready` and `/db/ping`. That `/health/ready` reports only
+> whether the `http` subsystem itself is running, not `KernelHealthMonitor`; `/health` and `/health/live`
+> always answer `200`. Point Kubernetes probes at `HealthEndpointHandler`.
+
 ### `CommunitySubsystemHealthWatcher` (Community, host-wired)
 
-`KernelHealthMonitor` only marks a subsystem `RUNNING` at boot; it does not re-poll afterwards. To drop readiness when a dependency dies *after* boot (and restore it on recovery), `eu.exeris.kernel.community.bootstrap.CommunitySubsystemHealthWatcher` runs a background poll that reconciles each live subsystem's health into the monitor's reversible `RUNNING ↔ DEGRADED` axis. It transitions **only** that axis — never resurrecting `FAILED`/`STOPPED` nor racing the boot DAG — and treats a throwing health source as impaired.
+`KernelHealthMonitor` only marks a subsystem `RUNNING` at boot; it does not re-poll afterwards. To drop readiness when a dependency dies *after* boot (and restore it on recovery), `eu.exeris.kernel.community.bootstrap.CommunitySubsystemHealthWatcher` runs a background poll on a daemon platform thread that reconciles each registered subsystem's health into the monitor's reversible `RUNNING ↔ DEGRADED` axis. It transitions **only** that axis — never resurrecting `FAILED`/`STOPPED` nor racing the boot DAG — and treats a throwing health source as impaired. Each flip into or out of `DEGRADED` emits the JFR event `SubsystemHealthTransition`.
 
-Like `HealthEndpointHandler`, the watcher is **wired by the host**, not by kernel `main` — it stays Wall-clean by knowing the *concrete* Community subsystems and pushing state through the public `markSubsystemState` (no generic subsystem-health method is added to the SPI; that is deferred to v0.10). Construct it after boot, register each subsystem's health source (e.g. persistence's `canServiceRequest()` — the same signal that deterministically denies requests under ADR-012), `start()` it, and `stop()` it on shutdown:
+Like `HealthEndpointHandler`, the watcher is **wired by the host**, not by kernel `main` — it stays Wall-clean by knowing the *concrete* Community subsystems and pushing state through the public `markSubsystemState`; the SPI has no generic subsystem-health method. Construct it after boot, register each subsystem's health source (e.g. persistence's `canServiceRequest()` — the same signal that deterministically denies requests under ADR-012), `start()` it, and `stop()` it on shutdown:
 
 ```java
 KernelHealthMonitor monitor = bootstrap.healthMonitor();
@@ -440,7 +504,7 @@ The reconciliation + lifecycle is pinned by `CommunitySubsystemHealthWatcherTest
 livenessProbe:
   httpGet:
     path: /healthz/liveness
-    port: 8080                     # data-plane port, until the auto-bound health port lands
+    port: 8080                     # the application HTTP engine serving HealthEndpointHandler
   initialDelaySeconds: 0
   periodSeconds: 5
   failureThreshold: 3
@@ -461,20 +525,34 @@ startupProbe:
   periodSeconds: 5                 # 30 × 5s = 150s cold-start budget
 ```
 
-> **Dedicated port (planned, TRL-4):** A future revision will auto-bind the handler on a dedicated, non-data-plane port (`exeris.bootstrap.healthPort`, default `9090`) so probes can observe lifecycle state from the very first millisecond — even before the data-plane transport binds. Until then, operators register the handler with the application HTTP engine and probe the data-plane port.
+> **Dedicated port (target state, not implemented):** a dedicated, non-data-plane health port that probes
+> lifecycle state before the data-plane transport binds does not exist; no configuration key for it is read.
+> Operators register the handler with the application HTTP engine and probe that port.
 
 ---
 
 ## Boot Observability
 
-Bootstrap completion is tracked via `BootstrapJfrEvents.KernelBootReadyEvent`. The event records `totalDurationMs` and `activeSubsystemCount` for the completed startup sequence.
+Bootstrap completion is recorded by the JFR event `eu.exeris.kernel.bootstrap.KernelBootReady`
+(`BootstrapJfrEvents.KernelBootReadyEvent`), with fields `totalDurationMs`, `subsystemCount`, `profile`,
+`nodeId` (the `exeris.node.id` system property, default `local`) and `selector`. `subsystemCount` is the
+number of subsystems still in the boot order when start completes; subsystems dropped under `DEGRADE` are
+not counted.
 
-**Sequence included in `totalDurationMs`:**
-- L0 foundation init (Config → Memory → Exceptions)
-- L1 parallel init (Security + Persistence)
-- L2 parallel init (Graph + Transport — includes native library loading)
-- L3/L4 parallel init (Events + Flow)
-- Health server bind
+**Included in `totalDurationMs`** — from the start of `SubsystemOrchestrator.initialize()` to the end of
+`start()`:
+- provider discovery, selector closure and topological sort
+- every `initialize()`, in topological order
+- sealing the config registry, starting the dynamic config watcher, and building the provider scope
+- every `start()`, phase by phase, including the per-subsystem JFR class warm-up
+
+**Not included:** the `KernelStart` event and `ConfigProvider` resolution before it (timed by
+`ConfigSettingsResolved.durationMs`), and `kernelMain`.
+
+The full event set, all in category `Exeris Kernel / Bootstrap`: `KernelStart`, `ConfigSettingsResolved`,
+`SubsystemInitialized` (also emitted on failure, with `success=false` and `errorMessage`),
+`SubsystemStarted`, `KernelBootReady`, `SubsystemStopped`, `KernelShutdownComplete`,
+`CircularDependencyDetected`, `SubsystemHealthTransition`.
 
 > **JVM warm-up note:** The first requests after boot will experience JIT compilation overhead while C2 compiles the hot path. This is expected and distinct from bootstrap completion — the readiness probe reflects DAG completion, not first-request throughput.
 
@@ -482,8 +560,8 @@ Bootstrap completion is tracked via `BootstrapJfrEvents.KernelBootReadyEvent`. T
 
 ## Rolling Deployment Strategy (Kubernetes)
 
-In a rolling update, K8s terminates old pods only after new pods pass the readiness probe. The interaction
-between Bootstrap graceful shutdown and the readiness probe must be precisely understood:
+In a rolling update, K8s terminates old pods only after new pods pass the readiness probe. What the kernel
+contributes on the old pod is limited to what `shutdown()` does:
 
 ```mermaid
 sequenceDiagram
@@ -495,86 +573,96 @@ sequenceDiagram
     Note over K8s,NEW: Rolling update starts
     K8s->>NEW: Start new pod
     NEW->>NEW: Boot DAG executes
-    NEW-->>K8s: /health/ready → 200
+    NEW-->>K8s: /healthz/readiness → 200
 
     Note over K8s,OLD: Traffic shifts to new pod
     K8s->>K8s: Remove old pod from Service Endpoints
     K8s->>OLD: SIGTERM
-
-    Note over OLD: Graceful shutdown (60s hard timeout)
-    OLD->>OLD: closeIngress() — stop accepting new streams
-    OLD->>OLD: drain in-flight requests
-    OLD->>OLD: flushAndClose() Persistence
-    OLD->>OLD: releaseArenas() Memory
-    OLD-->>K8s: exit(0)
+    Note over OLD: Application makes kernelMain return
+    OLD->>OLD: shutdown(): readiness → 503 (SHUTTING_DOWN)
+    OLD->>OLD: stop() running subsystems, reverse topological order
+    OLD-->>K8s: process exits
 ```
 
-> **Critical invariant:** The old pod's `/health/ready` returns `503` immediately when `closeIngress()` is
-> called (within milliseconds of receiving SIGTERM). This prevents K8s from routing any new request to the
-> shutting-down pod. The `readinessProbe` periodSeconds must be ≤ 5 s to ensure fast endpoint removal.
+> **What holds:** with `HealthEndpointHandler`, readiness turns `503` as soon as `shutdown()` begins, before any
+> `stop()` runs. Nothing happens on `SIGTERM` by itself — the kernel installs no handler, so until the
+> application makes `kernelMain` return, readiness stays `200`.
 
-> **`terminationGracePeriodSeconds`:** Set to `75` seconds (60 s hard drain timeout + 15 s buffer for
-> Persistence flush and Arena release). Setting it lower than `60` risks `SIGKILL` before drain completes,
-> resulting in `EX-BOOT-0003` in the crash buffer.
+> **`terminationGracePeriodSeconds`:** the orchestrator imposes no overall deadline; the transport's `stop()`
+> drains streams in service for up to 60 s. Size the grace period to the application's own drain plus that
+> transport drain plus the slowest other `stop()`; a `SIGKILL` before `shutdown()` finishes leaves the
+> remaining subsystems unstopped.
 
 ---
 
 ## L0 Crash Observability — Memory-Mapped Crash Buffer (TRL-4 Requirement)
 
-**Status:** Required for TRL-4 certification. Not yet implemented (TRL-3 baseline uses in-RAM Glass-Box buffer only).
+**Status: target state, not implemented.** Nothing in this repository maps a crash file, writes `.ring`
+frames, or reads `EXERIS_CRASH_DIR`. The bootstrap path records failures through `System.Logger`, JFR and
+the exception it throws. The contract below is what a producer has to meet to reach TRL-4.
 
 ### Problem
 
-The pre-allocated Glass-Box deterministic buffer (L0, pre-JFR) lives exclusively in JVM heap/off-heap RAM.
-If the JVM crashes fatally (`SIGSEGV`, `OutOfMemoryError` before JFR starts, hardware fault), the diagnostic
-data in the buffer is lost permanently. The operator has no post-mortem data.
+Diagnostic data held only in process memory is lost on a fatal JVM crash (`SIGSEGV`, `OutOfMemoryError`
+before a JFR recording is dumped, hardware fault). The operator then has no post-mortem data.
 
 ### Contract
 
 The L0 Glass-Box buffer **MUST** be backed by a memory-mapped file (`mmap`/`MapViewOfFile`) so that the OS
-kernel guarantees durability of written bytes even on a hard JVM crash.
+kernel keeps written bytes even on a hard JVM crash.
 
 | Property        | Value                                                                                               |
 |:----------------|:----------------------------------------------------------------------------------------------------|
 | **Default path** | `/tmp/exeris-crash/kernel-<pid>.ring`                                                              |
 | **Override ENV** | `EXERIS_CRASH_DIR` — if set, replaces `/tmp/exeris-crash/`                                        |
 | **File size**    | Fixed-size, pre-allocated at L0 boot (default: 4 MB). Never grown dynamically.                    |
-| **Format**       | Binary Glass-Box frames (same layout as `GlassBoxSerializer` ring buffer — see `telemetry.md`)    |
+| **Format**       | Binary Glass-Box frames (same layout as the `GlassBoxSerializer` ring buffer — see `telemetry.md`) |
 | **Lifecycle**    | Created at L0 init, closed (and optionally renamed to `kernel-<pid>-<timestamp>.ring`) on graceful shutdown. Survives JVM crash. |
 | **Permissions**  | Owner read/write only (`0600`). File is not rotated — a new PID gets a new file.                  |
 
 ### Durability Contract
 
-Exeris does **not** call `msync` on the hot write path. Maintaining Zero-Syscall semantics on L0 is a
-non-negotiable invariant (see `performance-contract.md`). Instead, each frame is written with
-`VarHandle.releaseFence()` after the final field to enforce JVM-level store ordering.
+The producer does **not** call `msync` on the hot write path; L0 stays zero-syscall (see
+`performance-contract.md`). Each frame is written with `VarHandle.releaseFence()` after the final field to
+enforce JVM-level store ordering.
 
 The OS page-dirty mechanism then handles asynchronous persistence of dirty pages to the filesystem
 cache. **This does not constitute a hard durability guarantee.** On a sudden power failure or hard
 kernel panic before the OS has flushed dirty pages, frames written after the last OS-driven page flush
 may be lost. Operators requiring power-loss durability must ensure OS-level journaling or use a UPS.
 
-For graceful JVM crashes (`SIGSEGV`, uncaught exception), the OS signal handler will typically flush
-dirty pages before process termination — but this is a best-effort OS behaviour, not a contract.
+For JVM crashes (`SIGSEGV`, uncaught exception) the dirty pages of a shared file mapping remain in the OS
+page cache after the process dies — but this is OS behaviour, not a contract.
 
-The canonical open crash-file decoder is designed to tolerate partial frames at the end of the
-crash buffer (ring-wrap corruption) and skip undecodable frames silently.
+The canonical open crash-file decoder is expected to tolerate partial frames at the end of the
+crash buffer (ring-wrap corruption) and skip undecodable frames.
 
 ### Operator Recovery
 
-The kernel is producer-only here: the L0 buffer writes `.ring` files in the shared `exeris-telemetry-spec`
-wire format. Decoding is done by the **single canonical open decoder** — the open subset of the
-`exeris-enterprise-observability` decoder/forensics path (`FrameDecoder`, `FrameValidator`,
-`CrashBufferReader`), which reads the binary `kernel-<pid>.ring` file and decodes each Glass-Box frame into
-human-readable error reports using the `rawArgs` binary layout defined in `telemetry.md`. The kernel ships
-no duplicate decoder. The file=open / live=enterprise decoder cut is recorded in
+The kernel's role is producer-only: the L0 buffer will write `.ring` files in the shared
+`exeris-telemetry-spec` wire format. Decoding belongs to the **single canonical open decoder** — the open
+subset of the `exeris-enterprise-observability` decoder/forensics path (`FrameDecoder`, `FrameValidator`,
+`CrashBufferReader`), which reads a `kernel-<pid>.ring` file and decodes each Glass-Box frame using the
+`rawArgs` binary layout defined in `telemetry.md`. The kernel ships no decoder. The file=open /
+live=enterprise decoder cut is recorded in
 [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) (Open-Core Observability Boundary); the
-state-vs-event split (state via `KernelDiagnostics`, events via this binary format) is recorded in ADR-033.
+state-vs-event split (state via `KernelDiagnostics`, events via this binary format) is recorded in
+[ADR-033](../adr/ADR-033-kernel-diagnostics-spi.md).
+
+Illustrative: the decoder is not part of this repository and no producer writes `.ring` files yet, so this
+block shows the shape of decoded frames rather than a captured run. Only a code thrown with `rawArgs` can
+appear with a payload; `EX-BOOT-0001` carries none.
 
 ```
 $ exeris-decode /tmp/exeris-crash/kernel-12345.ring
-[0000ns] EX-BOOT-0001: DAG cycle detected — cycleMembers=[Security, Flow]
-[0042ns] EX-MEM-1002: Arena leak detected — segmentAddress=0x7f3a00000000, segmentByteSize=65536
+[0000000042ns] EX-BOOT-0002 [FATAL] Subsystem lifecycle failure
+               rawArgs[0]: subsystemName=flow
+               rawArgs[1]: phase=INITIALIZE
+               rawArgs[2]: detail=Snapshot store unreachable
+
+[0000000107ns] EX-MEM-1001 [CRITICAL] Off-heap exhausted
+               rawArgs[0]: requestedBytes=65536
+               rawArgs[1]: availableBytes=4096
 ```
 
 ### Implementation Notes (for Kernel Engineers)
@@ -593,3 +681,13 @@ This subsystem's SPI surface (`eu.exeris.kernel.spi.bootstrap.*`) is classified 
 [SPI Stability Matrix](../stability-matrix.md). See the matrix for the semver policy and TCK
 coverage status.
 
+---
+
+## Owning ADRs
+
+- [ADR-005](../adr/ADR-005-jfr-first-telemetry-strategy.md) — JFR-first telemetry: bootstrap lifecycle and health transitions are JFR events.
+- [ADR-007](../adr/ADR-007-next-gen-runtime-architecture.md) — runtime architecture; owning ADR of `…spi.bootstrap` in the stability matrix.
+- [ADR-033](../adr/ADR-033-kernel-diagnostics-spi.md) — `KernelProviders.SUBSYSTEMS` and `KernelBootstrap.inspect(...)` feed the diagnostics SPI.
+- [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) — crash-file decoder cut (target-state crash buffer).
+- [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — §4: Community security subsystem binding `SECURITY_PROVIDER`.
+- [ADR-066](../adr/ADR-066-preview-clean-ga-baseline.md) — subsystems start on the booting thread, not in forked scopes.

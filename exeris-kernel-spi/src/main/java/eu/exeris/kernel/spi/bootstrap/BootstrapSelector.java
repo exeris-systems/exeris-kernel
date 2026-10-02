@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.bootstrap;
 
@@ -16,7 +12,7 @@ import java.util.Set;
  * Immutable, identity-free selector expressing which subsystems to activate at boot.
  *
  * <h2>Usage</h2>
- * <pre>{@code
+ * {@snippet lang="java" :
  * // Full stack — all subsystems from all SubsystemProviders
  * BootstrapSelector.all()
  *
@@ -25,23 +21,32 @@ import java.util.Set;
  *
  * // Headless batch worker — no HTTP transport
  * BootstrapSelector.forNames("persistence", "events", "flow")
- * }</pre>
+ * }
  *
  * <h2>Closure Expansion</h2>
  * <p>The {@code SubsystemOrchestrator} in {@code exeris-kernel-core} expands this
  * selector to its full transitive closure: if {@code "persistence"} is requested and
  * it declares {@code dependsOn("memory", "telemetry")}, then {@code memory} and
  * {@code telemetry} are automatically pulled into the active set — no manual listing.
+ * A requested name, or a name the closure reaches, that no {@link SubsystemProvider} on the
+ * classpath supplies aborts the boot rather than being silently dropped.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28). The
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401, preview in JDK 28). The
  * distributed line compiles the same source as an identity {@code record}; the modifier is the
  * only difference, and it is asserted by {@code Class::isValue} in the module's value-carrier
  * registry test rather than left to a one-time inspection.
  *
+ * <p><b>Allocation:</b> allocates (one immutable {@code Set} copy per construction, plus the
+ * normalised names in {@link #forNames(String...)}) — a selector is built once per boot and
+ * never on a request path.
+ * <p><b>Thread confinement:</b> any thread — the record is immutable and its {@code Set} is
+ * a defensive immutable copy, so one selector may be read from any number of threads without
+ * synchronisation.
+ *
  * @param requestedNames explicitly requested subsystem names; empty when {@link #selectAll} is true
  * @param selectAll      {@code true} = activate every subsystem found via ServiceLoader
- * @since 0.5.0
+ * @since 0.5
  */
 public value record BootstrapSelector(Set<String> requestedNames, boolean selectAll) {
 
@@ -49,6 +54,20 @@ public value record BootstrapSelector(Set<String> requestedNames, boolean select
     // Compact canonical constructor — validates invariants
     // -------------------------------------------------------------------------
 
+    /**
+     * Canonical constructor — normalises the requested-name set so that the record is
+     * immutable whatever the caller passes in.
+     *
+     * <p>A {@code null} set is read as "none requested"; any other set is copied, so the
+     * selector never aliases a collection the caller can still mutate. When {@code selectAll}
+     * is {@code true} the names are kept but carry no meaning — {@link #includes(String)}
+     * answers {@code true} for every name.
+     *
+     * @param requestedNames explicitly requested subsystem names; may be {@code null}
+     * @param selectAll      {@code true} to activate every subsystem discovered via
+     *                       {@code ServiceLoader}, ignoring {@code requestedNames}
+     * @throws NullPointerException if {@code requestedNames} contains a {@code null} element
+     */
     public BootstrapSelector {
         // Defensive copy to prevent external mutation; Set.copyOf returns immutable set
         requestedNames = (requestedNames == null) ? Set.of() : Set.copyOf(requestedNames);
@@ -77,7 +96,7 @@ public value record BootstrapSelector(Set<String> requestedNames, boolean select
      * needed but no subsystem lifecycle is required.
      *
      * @return the "none" selector
-     * @since 0.5.0
+     * @since 0.5
      */
     public static BootstrapSelector none() {
         return new BootstrapSelector(Set.of(), false);
@@ -129,20 +148,31 @@ public value record BootstrapSelector(Set<String> requestedNames, boolean select
     // -------------------------------------------------------------------------
 
     /**
-     * Returns {@code true} if {@code name} is explicitly requested
-     * (irrelevant when {@link #selectAll()} is {@code true}).
+     * Reports whether this selector activates the subsystem called {@code name}.
      *
-     * @param name subsystem name to check
-     * @return {@code true} if explicitly included
+     * <p>Always {@code true} for the {@link #all()} selector; otherwise membership of
+     * {@link #requestedNames()} — the explicitly requested set, <em>before</em> the
+     * orchestrator expands it to its dependency closure. A subsystem pulled into the boot
+     * only as someone else's dependency is therefore not "included" by this method.
+     *
+     * @param name subsystem name to check, in the lowercase hyphen-separated form of
+     *             {@link Subsystem#name()}
+     * @return {@code true} if this selector activates {@code name}
+     * @apiNote The match is literal. {@link #forNames(String...)} trims and lowercases what it
+     *          is given, but this method does not, so a selector built from
+     *          {@code forNames("Persistence")} answers {@code false} to
+     *          {@code includes("Persistence")} and {@code true} to {@code includes("persistence")}.
      */
     public boolean includes(String name) {
         return selectAll || requestedNames.contains(name);
     }
 
     /**
-     * Returns {@code true} if this selector activates all discovered subsystems.
+     * Reports whether this selector activates every subsystem discovered through
+     * {@code ServiceLoader<SubsystemProvider>} rather than a named subset.
      *
-     * @return {@code true} for {@link #all()} selector
+     * @return {@code true} for the {@link #all()} selector; {@code false} for {@link #none()}
+     *         and for any selector built by {@link #forNames(String...)}
      */
     public boolean isAll() {
         return selectAll;

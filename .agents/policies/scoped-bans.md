@@ -64,16 +64,19 @@ Measured on this branch:
 | `ExerisArchitectureTest` | `exeris-kernel-tck` | **SPI only** — that module's one compile dependency is `exeris-kernel-spi` | the four bans, plus `noStructuredTaskScopeInSchedulingSpi` |
 | `KernelTierDirectionArchitectureTest` | `exeris-kernel-community` | all three tiers, and it asserts non-vacuity per tier so a missing classpath fails loudly | `coreDoesNotDependOnCommunity`, `spiDependsOnNeitherCoreNorCommunity` |
 | `CommunitySchedulingArchitectureTest` | `exeris-kernel-community` | `eu.exeris.kernel.community.scheduling` only | `noStructuredTaskScope`, `noThreadLocal`, `noExecutors` |
+| `KernelTierBanArchitectureTest` | `exeris-kernel-community` | all three tiers | the four bans above, across Core and Community |
 
 Neither suite reaches `exeris-kernel-community-kafka` or `exeris-kernel-diagnostics-cli`; both are
 leaves nothing depends on.
 
-**Where the four bans do and do not reach on this branch.** They are executable over the **SPI**
-(`ExerisArchitectureTest`) and over **`community.scheduling`** (`CommunitySchedulingArchitectureTest`).
-Core, and Community outside `scheduling`, are **not** guarded for the four bans here — that gap is
-closed on the development line by `KernelTierBanArchitectureTest`. Until it reaches this branch, a
-`ThreadLocal` in Core is a review finding, not a build failure. **Direction is a different matter and
-is fully guarded**: `coreDoesNotDependOnCommunity` runs over all three tiers today.
+**Where the four bans do and do not reach on this branch.** `KernelTierBanArchitectureTest` covers Core and
+Community, `ExerisArchitectureTest` covers the SPI, and `CommunitySchedulingArchitectureTest` covers
+the scheduling driver twice over. There is no untested tier for these four.
+
+**On the `preview` branch none of these suites runs.** ArchUnit cannot read class-file major 72
+(JDK 28) and imports zero classes, so all four are excluded there and the bans are a review finding,
+not a build failure. Their subject is the same sources, gated on the development line
+([`PREVIEW-TRACK.md`](../../PREVIEW-TRACK.md), "Five gates cannot run here").
 
 Verify a ban by what the suite can load, never by reading its `packages` argument — and remember
 that the guard living in `exeris-kernel-community` never runs under a `-pl exeris-kernel-tck -am`

@@ -24,9 +24,7 @@ skipped.
    assuming CI covers it — the guard has historically been `@ArchIgnore`'d. **One invocation is not
    enough:** `-pl exeris-kernel-tck -am` never builds `exeris-kernel-community`, so
    `coreDoesNotDependOnCommunity` — the rule that would catch a Core → Community import — does not
-   run under it. On this line the tck invocation additionally fails
-   with `[No Class Loaded]` for a classpath reason, not a boundary one — take that suite from the
-   full `mvn clean install` of step 1.
+   run under it.
 4. **Contract or SPI change → TCK and binding tests updated and green**, and the tagged gates run if
    their subject changed. A green default build is not evidence about a tagged test.
 5. **Docs and ADR impact triaged** (`exeris-doc-impact-triage`); drift fixed, or deferred with a

@@ -1,15 +1,11 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.http1;
 
-import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
-import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.FaultOrigin;
+import eu.exeris.kernel.core.http.CanonicalHeaderNames;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
@@ -33,7 +29,7 @@ import java.nio.charset.StandardCharsets;
  * <h2>Thread Safety</h2>
  * <p>Thread-safe. Stateless static utility methods can be used concurrently.
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc9112">RFC 9112</a>
  */
 @SuppressWarnings("PMD.CyclomaticComplexity")
@@ -70,6 +66,13 @@ public final class Http1RequestParser {
      */
     @FunctionalInterface
     public interface HeaderVisitor {
+
+        /**
+         * Receives one header field parsed from the request, in wire order.
+         *
+         * @param name  field name exactly as the wire carried it, case preserved
+         * @param value field value with leading and trailing optional whitespace trimmed
+         */
         void onHeader(String name, String value);
     }
 
@@ -119,8 +122,9 @@ public final class Http1RequestParser {
      * @param length  available bytes
      * @param visitor callback for each parsed header
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
-     * @throws Http1ParseException if the header count or a single header size limit
-     *                              is exceeded
+     * @throws Http1ParseException {@code EX-HTTP-4004} if a header field is malformed, a field
+     *                              name is not a valid RFC 9110 token, or the header count or a
+     *                              single field's size exceeds the default limit
      */
     public static long parseHeaders(MemorySegment seg, long offset, long length,
                                     HeaderVisitor visitor) {
@@ -138,7 +142,10 @@ public final class Http1RequestParser {
      * @param maxHeaderSize maximum byte size of a single header field (name + value)
      * @param visitor       callback for each parsed header
      * @return byte position after the terminal CRLF CRLF, or {@code -1} if incomplete
-     * @throws Http1ParseException if {@code maxHeaders} or {@code maxHeaderSize} is exceeded
+     * @throws Http1ParseException {@code EX-HTTP-4004} if a header field is malformed, a field
+     *                              name is not a valid RFC 9110 token, the header count exceeds
+     *                              {@code maxHeaders}, or a field's size exceeds
+     *                              {@code maxHeaderSize}
      */
     public static long parseHeaders(MemorySegment seg, long offset, long length,
                                     int maxHeaders, int maxHeaderSize,
@@ -166,19 +173,15 @@ public final class Http1RequestParser {
 
             long fieldSize = lineEnd - pos;
             if (fieldSize > maxHeaderSize) {
-                throw new Http1ParseException(MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
+                throw new Http1ParseException(FaultOrigin.CALLER, MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
             }
 
             headerCount++;
             if (headerCount > maxHeaders) {
-                throw new Http1ParseException(MSG_TOO_MANY_HEADERS, headerCount, maxHeaders);
+                throw new Http1ParseException(FaultOrigin.CALLER, MSG_TOO_MANY_HEADERS, headerCount, maxHeaders);
             }
 
-            String rawName = readAscii(seg, pos, colonPos);
-            if (!isValidToken(rawName)) {
-                throw new Http1ParseException(MSG_INVALID_HEADER_NAME, rawName);
-            }
-            String name = rawName;
+            String name = resolveFieldName(seg, pos, colonPos);
             String rawValue = readAscii(seg, colonPos + 1, lineEnd);
             String value = trimOws(rawValue);
             visitor.onHeader(name, value);
@@ -187,41 +190,22 @@ public final class Http1RequestParser {
         return -1;
     }
 
-    /**
-     * Unchecked exception for HTTP/1.1 protocol parse violations (DoS limits, malformed
-     * framing).
-     *
-     * @since 0.5.0
-     */
-    public static final class Http1ParseException extends ExerisKernelException {
-
-        private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4004;
-
-        public Http1ParseException(String messageTemplate, Object... rawArgs) {
-            super(ERROR_CODE, messageTemplate, rawArgs);
-        }
-
-        public Http1ParseException(String messageTemplate, Throwable cause, Object... rawArgs) {
-            super(ERROR_CODE, messageTemplate, cause, rawArgs);
-        }
-    }
-
     // =========================================================================
     // Internal
     // =========================================================================
 
     private static void rejectMalformedHeaderLine(long fieldSize, int maxHeaderSize) {
         if (fieldSize > maxHeaderSize) {
-            throw new Http1ParseException(MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_HEADER_SIZE_LIMIT, fieldSize, maxHeaderSize);
         }
-        throw new Http1ParseException(MSG_MALFORMED_HEADER, fieldSize);
+        throw new Http1ParseException(FaultOrigin.CALLER, MSG_MALFORMED_HEADER, fieldSize);
     }
 
     private static long findCrLf(MemorySegment seg, long offset, long length) {
         long size = seg.byteSize();
         if (offset < 0 || length < 0 || offset > size) {
             long requestedEnd = (length > Long.MAX_VALUE - offset) ? Long.MAX_VALUE : offset + length;
-            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
         }
         if (length < CRLF_SEQUENCE_LENGTH) {
             return -1;
@@ -229,7 +213,7 @@ public final class Http1RequestParser {
         long maxLength = size - offset;
         if (length > maxLength) {
             long requestedEnd = (length > Long.MAX_VALUE - offset) ? Long.MAX_VALUE : offset + length;
-            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_RANGE_OUT_OF_BOUNDS, offset, requestedEnd, size);
         }
 
         long end = offset + length;
@@ -246,7 +230,7 @@ public final class Http1RequestParser {
     private static long findByte(MemorySegment seg, long start, long end, byte target) {
         long size = seg.byteSize();
         if (start < 0 || end < start || end > size) {
-            throw new Http1ParseException(MSG_RANGE_OUT_OF_BOUNDS, start, end, size);
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_RANGE_OUT_OF_BOUNDS, start, end, size);
         }
         for (long pos = start; pos < end; pos++) {
             if (seg.get(ValueLayout.JAVA_BYTE, pos) == target) {
@@ -254,6 +238,23 @@ public final class Http1RequestParser {
             }
         }
         return -1;
+    }
+
+    /**
+     * A known spelling resolves to a shared constant with no allocation, and is a valid token by
+     * construction — so both the materialisation and the validation are skipped. A miss falls back
+     * to materialising the raw bytes and validating them as a field-name token.
+     */
+    private static String resolveFieldName(MemorySegment seg, long start, long end) {
+        String known = CanonicalHeaderNames.resolve(seg, start, end);
+        if (known != null) {
+            return known;
+        }
+        String rawName = readAscii(seg, start, end);
+        if (!CanonicalHeaderNames.isValidFieldName(rawName)) {
+            throw new Http1ParseException(FaultOrigin.CALLER, MSG_INVALID_HEADER_NAME, rawName);
+        }
+        return rawName;
     }
 
     private static String readAscii(MemorySegment seg, long start, long end) {
@@ -287,31 +288,5 @@ public final class Http1RequestParser {
             return value;
         }
         return value.substring(start, end);
-    }
-
-    private static boolean isValidToken(String value) {
-        int len = value.length();
-        if (len == 0) {
-            return false;
-        }
-        for (int index = 0; index < len; index++) {
-            if (!isTchar(value.charAt(index))) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isTchar(char candidateChar) {
-        if ((candidateChar >= 'a' && candidateChar <= 'z') || (candidateChar >= 'A' && candidateChar <= 'Z')) {
-            return true;
-        }
-        if (candidateChar >= '0' && candidateChar <= '9') {
-            return true;
-        }
-        return switch (candidateChar) {
-            case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~' -> true;
-            default -> false;
-        };
     }
 }

@@ -1,3 +1,12 @@
+---
+title: "ADR-032: HttpClientRequestEnricher SPI — Implicit Context Propagation to Outbound HTTP"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-032
+---
+
 # ADR-032: `HttpClientRequestEnricher` SPI — Implicit Context Propagation to Outbound HTTP
 
 **Status:** Accepted
@@ -6,6 +15,8 @@
 **Visibility:** public
 **Scope:** kernel/transport (per-repo)
 **Authors:** Arkadiusz Przychocki
+
+> *(amended 2026-09-05)* **The façade this ADR extends is `KernelWebClient`, in `exeris-kernel-core`.** The decision text below says `CommunityWebClient` throughout and is left as written; that name came from ADR-026, which ADR-034 superseded on 2026-05-19. No class of that name was ever committed. The decision itself stands and is implemented — `HttpClientRequestEnricher` is in `exeris-kernel-spi`, and `KernelWebClient` takes it, defaulting to `HttpClientRequestEnricher.noop()`. See `## Amendments`.
 
 ## Context
 
@@ -51,7 +62,7 @@ public final class CommunityKernelContextEnricher implements HttpClientRequestEn
 ### Contract
 
 - **Immutability.** `enrich` MUST return a new `HttpRequest` (the record is immutable; the enricher constructs one with a copy of the existing headers plus its additions). No in-place mutation seam exists, intentionally.
-- **Body ownership.** `enrich` MUST NOT read, retain, or close the request body `LoanedBuffer`. The buffer's lifecycle is owned by the calling site and transferred to the engine on `send`.
+- **Body ownership.** `enrich` MUST NOT read, retain, or close the request body `LoanedBuffer`. The buffer's lifecycle is owned by the calling site and transferred to the engine on `send`. *(2026-09-25: superseded on the transfer by ADR-034 Amendment A1. Nothing is transferred on `send`; the caller of `send` keeps ownership of the buffer and releases it after `send` returns or throws. The enricher obligation in the first sentence is unchanged.)*
 - **Header injection rejection.** Any header value containing CR (`\r`, `0x0D`), LF (`\n`, `0x0A`), or NUL (`\0`, `0x00`) MUST cause the enricher to throw `IllegalArgumentException` before returning. This is symmetric with the server-side rejection in `Http1RequestParser` (Security audit S-P0-04, 2026-05-13) and prevents CWE-93 HTTP header injection on the outbound path.
 - **Chain semantics.** `chain(...)` returns an enricher that applies its members in list order; each member sees the output of the previous one. An empty list is equivalent to `noop()`.
 - **Threading.** `enrich` runs on the caller's virtual thread, synchronously, after `CommunityWebClient` constructs the base `HttpRequest` and before `engine.send(request)`. The enricher MAY read `ScopedValue` slots bound in the calling context. The enricher MUST NOT spawn threads, perform I/O, or block on external resources.
@@ -161,9 +172,34 @@ No `KernelClientGenerator` change is required in `exeris-tooling` for this enric
 - [HttpKernelProviders.java](../../exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/http/HttpKernelProviders.java) — `HTTP_CLIENT_ENGINE` ScopedValue slot
 - [KernelProviders.java](../../exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/context/KernelProviders.java) — `PRINCIPAL_CONTEXT` ScopedValue slot the default enricher reads
 - [PrincipalContext.java](../../exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/security/PrincipalContext.java) — identity model exposing `principalId()` and `tenantId()`
-- [CommunityWebClient.java](../../exeris-kernel-community/src/main/java/eu/exeris/kernel/community/http/client/CommunityWebClient.java) — the façade gaining the new constructor
+- [KernelWebClient.java](../../exeris-kernel-core/src/main/java/eu/exeris/kernel/core/http/client/KernelWebClient.java) — the façade the enricher is wired into *(2026-09-05: this row linked a `CommunityWebClient.java` under `exeris-kernel-community`, a path that has never existed in this repository)*
 - ADR-026 — Client-Side Application API (`CommunityWebClient`) — establishes the typed-façade surface this ADR extends
 - ADR-014 — `@RequiresRole` Compile-Time RBAC Generation — same `PrincipalContext.roleMask()` path the enricher reads from
 - ADR-006 — Spring-Free Kernel Boundary (The Wall) — enricher contract sees only SPI types
 - Security audit S-P0-04 (2026-05-13, `docs/release/security-privacy-audit-v0.8.md`) — server-side CRLF/NUL rejection; enricher mirrors on outbound
 - Consolidated 1.0 GA roadmap row #63 (`docs/release/1_0-gA-roadmap-consolidated.md`) — Sprint 0.12 W3C `traceparent` ScopedValue slot that extends this enricher's default emission set after it lands
+
+## Amendments
+
+- **2026-09-05 — the façade is named `KernelWebClient` and lives in `exeris-kernel-core`.** This
+  ADR's context, decision and implementation plan all name `CommunityWebClient`, taken from ADR-026,
+  and its References row linked
+  `exeris-kernel-community/src/main/java/eu/exeris/kernel/community/http/client/CommunityWebClient.java`.
+  No file of that name exists, and none ever did — there is no add or delete for it anywhere in this
+  repository's history, and no commit ever contained `class CommunityWebClient`. ADR-026 was
+  superseded by ADR-034 on 2026-05-19, which introduced `KernelWebClient`; ADR-026's own header
+  records that the `CommunityWebClient` façade is removed. This ADR, accepted 2026-05-17, was
+  written against a name that was retired eight weeks later and never revisited.
+  **Nothing about the decision changes.** `HttpClientRequestEnricher` is in
+  `exeris-kernel-spi/src/main/java/eu/exeris/kernel/spi/http/`, and `KernelWebClient` accepts one,
+  delegating to `HttpClientRequestEnricher.noop()` where none is supplied — which is obligation 4 of
+  the implementation plan, satisfied on a differently-named façade. Only the broken link is
+  corrected; the decision text is marked, not rewritten (`adr-conventions.md` rule 7). Found by the
+  shared link check on its first run against this repository. (PR pending)
+- **2026-09-25 — the request body is not transferred to the engine on `send`.** The *Body
+  ownership* obligation said the buffer's lifecycle "is owned by the calling site and transferred to
+  the engine on `send`". ADR-034 Amendment A1 settles the client-side ownership model: the caller of
+  `HttpClientEngine#send` keeps ownership of the request body and releases it after `send` returns
+  or throws; the engine reads it during `send` and neither closes nor retains it. The enricher's own obligation, never to read, retain or
+  close the body, is unchanged, and so is the rest of this decision. The obligation is marked in
+  place, not rewritten (`adr-conventions.md` rule 7).

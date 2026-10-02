@@ -1,14 +1,9 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
-import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
 import eu.exeris.kernel.core.http.sse.StreamAdmissionController;
@@ -21,6 +16,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpStreamHandler;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.http.StreamEvent;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.transport.StreamHandler;
@@ -133,7 +129,7 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
         CommunityHttpStreamDispatcher dispatcher =
                 new CommunityHttpStreamDispatcher(new LeakTrackingAllocator(ALLOCATOR), shed);
         try {
-            dispatcher.dispatchStream(streamRequest(), new StubStream(), HttpRouter.StreamMatch.exact(handler));
+            dispatcher.dispatchStream(streamRequest(), new StubStream(), StreamMatch.exact(handler));
             return null;
         } catch (ExerisKernelException rejection) {
             return rejection;
@@ -141,7 +137,7 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
     }
 
     @Test
-    @DisplayName("SSE response head is well-formed and close-delimited (no Content-Length / chunked, v0.10)")
+    @DisplayName("SSE response head is well-formed and close-delimited (no Content-Length / chunked)")
     void sseResponseHeadIsWellFormedAndCloseDelimited() {
         LoopbackStreamScenario scenario = LoopbackStreamScenario.start(exchange -> {
             exchange.emit(StreamEvent.of("hi"));
@@ -155,11 +151,11 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
             assertThat(head).as("status line").startsWith("HTTP/1.1 200");
             assertThat(lower).as("SSE content type").contains("content-type: text/event-stream");
             assertThat(lower).as("disables proxy/client caching").contains("cache-control: no-cache");
-            // v0.10: the SSE body is close-delimited (RFC 9112 §6.3) — Connection: close, and neither
+            // The SSE body is close-delimited (RFC 9112 §6.3) — Connection: close, and neither
             // Content-Length nor Transfer-Encoding: chunked is present. This pins the honest framing the
             // SseEventEncoder Javadoc / ADR-043 delivery-status note describe.
             assertThat(lower).as("close-delimited framing").contains("connection: close");
-            assertThat(lower).as("no chunked framing in v0.10").doesNotContain("transfer-encoding");
+            assertThat(lower).as("no chunked framing").doesNotContain("transfer-encoding");
             assertThat(lower).as("no Content-Length on an open-ended stream").doesNotContain("content-length");
         }
     }
@@ -225,7 +221,7 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
                 // the handler swallows the throw — that is what awaitHandlerUnwind() reports.
                 StreamClosedException terminal =
                         dispatcher.dispatchStream(request, serverStream,
-                                HttpRouter.StreamMatch.exact(observing), authDeadlineEpochMillis);
+                                StreamMatch.exact(observing), authDeadlineEpochMillis);
                 if (terminal != null) {
                     handlerError.set(terminal);
                 }
@@ -392,10 +388,9 @@ class CommunityHttpStreamExchangeTckTest extends AbstractHttpStreamExchangeTck {
                         cursor = 0;
                     }
                 }
-            } catch (IOException _) {
-                // disconnect / read interrupted: a clean FIN sets endOfStream above.
-            } catch (RuntimeException _) {
-                // best effort in the test client
+            } catch (IOException | RuntimeException _) {
+                // disconnect / read interrupted: a clean FIN sets endOfStream above;
+                // anything else is best effort in the test client.
             }
         }
 

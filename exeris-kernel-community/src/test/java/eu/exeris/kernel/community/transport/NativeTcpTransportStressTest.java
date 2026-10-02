@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -44,23 +40,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Community TCP multi-carrier stress and concurrency tests.
  *
- * <h2>TCK-064 investigation status (Sprint 2 v0.7)</h2>
+ * <h2>Constrained runners (TCK-064)</h2>
  *
- * <p>The {@code stressTest10ClientsWith4Reactors} method previously deadlocked under
- * constrained CI environments (2 vCPU GitHub Actions runners) past the 2-minute Future
- * timeout, while the same test passed deterministically locally in {@code <500 ms}
- * across 5/5 runs. The investigation considered three hypotheses:
+ * <p>{@code stressTest10ClientsWith4Reactors} can stall past its Future timeout on
+ * constrained CI environments (2 vCPU GitHub Actions runners) while passing locally in
+ * {@code <500 ms}. Three factors bear on it:
  *
  * <ol>
- *   <li><b>Thread-pressure deadlock</b> — 10 client engines × 1 reactor + 4 server
- *       reactors + 10 ForkJoinPool workers competing on 2 vCPUs. Mitigation deferred
- *       to a future structural rewrite (single client engine + N streams pattern) so
- *       the platform-thread count drops from ~24 to ~6.</li>
- *   <li><b>{@code pendingRequests} ordering anomaly</b> — partially addressed by
- *       PERF-063 (Sprint 2): {@code ConcurrentLinkedQueue} replaced with
- *       {@link org.jctools.queues.MpscUnboundedArrayQueue}, whose single-consumer
- *       guarantees are stronger than CLQ's under reactor wakeup contention.</li>
- *   <li><b>Short-read assumption</b> — addressed below: {@code stream.read} is now
+ *   <li><b>Thread pressure</b> — 10 client engines × 1 reactor + 4 server
+ *       reactors + 10 ForkJoinPool workers competing on 2 vCPUs. A structural rewrite
+ *       (single client engine + N streams pattern) would drop the platform-thread count
+ *       from ~24 to ~6; it is not implemented.</li>
+ *   <li><b>{@code pendingRequests} ordering</b> — partially addressed by PERF-063:
+ *       the queue is a {@link org.jctools.queues.MpscUnboundedArrayQueue}, whose
+ *       single-consumer guarantees are stronger than {@code ConcurrentLinkedQueue}'s under
+ *       reactor wakeup contention.</li>
+ *   <li><b>Short reads</b> — addressed below: {@code stream.read} is
  *       called in a short-read loop because TCP does not guarantee a single-shot
  *       read of {@code MESSAGE_SIZE} bytes, particularly under load when receive
  *       windows fragment.</li>
@@ -80,8 +75,8 @@ class NativeTcpTransportStressTest {
 
     private static MemoryAllocator ALLOCATOR;
 
-    // TCK-064 (v0.8 Sprint 0): scale knobs for constrained-CI runners.
-    // Defaults remain 10 / 4 (matches v0.7 baseline); CI on 2-vCPU GitHub Actions
+    // TCK-064: scale knobs for constrained-CI runners.
+    // Defaults are 10 / 4; CI on 2-vCPU GitHub Actions
     // overrides via -Dexeris.tck.transport.stress.clients=3
     //                -Dexeris.tck.transport.stress.serverReactors=2
     //                -Dexeris.tck.transport.stress.clientTimeoutSeconds=30
@@ -90,7 +85,7 @@ class NativeTcpTransportStressTest {
     // hot enough to mask the issue; constrained CI cannot make forward progress on
     // the carrier reactor under that ratio. Independent of the scale knobs, the
     // per-client timeout is bounded so CI fails fast (max wallclock = clients × timeout)
-    // instead of the 20 min sequential 2-min timeout cycle observed pre-fix.
+    // instead of cycling through sequential 2-min timeouts (20 min for 10 clients).
     private static final int NUM_CLIENTS =
             Integer.getInteger("exeris.tck.transport.stress.clients", 10);
     private static final int SERVER_REACTOR_COUNT =
@@ -275,12 +270,12 @@ class NativeTcpTransportStressTest {
      */
     private static void readFully(TransportStream stream, MemorySegment target, int expectedBytes) {
         int total = 0;
-        // TCK-064 (Sprint 0 v0.8): under constrained-CI thread pressure (2 vCPU GitHub Actions),
-        // `Thread.onSpinWait()` was a JIT spin-loop hint that did NOT yield the CPU — it asked
-        // the kernel to keep us hot on a starved core, starving the server reactor that owed us
-        // bytes. The result was a multi-minute deadlock observed at line 173. `LockSupport.parkNanos`
-        // releases the core to the reactor for at least the requested interval; on a healthy box
-        // the park returns essentially immediately, so the local <500 ms baseline is preserved.
+        // TCK-064: under constrained-CI thread pressure (2 vCPU GitHub Actions), a
+        // `Thread.onSpinWait()` loop does NOT yield the CPU — it is a JIT spin-loop hint that keeps
+        // this thread hot on a starved core, starving the server reactor that owes it bytes, and
+        // the test stalls for minutes. `LockSupport.parkNanos` releases the core to the reactor for
+        // at least the requested interval; on a healthy box the park returns essentially
+        // immediately, so the local <500 ms baseline holds.
         while (total < expectedBytes) {
             int n = stream.read(target.asSlice(total), expectedBytes - total);
             if (n < 0) {

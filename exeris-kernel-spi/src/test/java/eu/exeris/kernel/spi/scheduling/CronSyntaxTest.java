@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.scheduling;
 
@@ -137,8 +133,8 @@ class CronSyntaxTest {
             // The common spellings of "every hour" and "every day". Both stride past every value but
             // the first, so each fires exactly once per cycle. A bound at the field's upper value
             // would reject these two while admitting */59 and */23, which fire twice — backwards
-            // from the reading that would motivate the bound, and a v0.10 schedule that stops
-            // constructing on v0.11.
+            // from the reading that would motivate the bound, and a schedule that constructs today
+            // would stop constructing.
             assertThatCode(() -> new JobTrigger.Cron("0 */24 * * *")).doesNotThrowAnyException();
             assertThatCode(() -> new JobTrigger.Cron("*/60 * * * *")).doesNotThrowAnyException();
             assertThatCode(() -> new JobTrigger.Cron("* * * * */9")).doesNotThrowAnyException();

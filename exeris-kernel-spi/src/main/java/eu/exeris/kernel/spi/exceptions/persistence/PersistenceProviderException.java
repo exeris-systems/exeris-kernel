@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.persistence;
 
@@ -26,11 +22,24 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  *   <li>{@value KernelErrorCodes#EX_PERS_5003} — Query execution failure</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5004} — Authentication failure</li>
  *   <li>{@value KernelErrorCodes#EX_PERS_5005} — Transport I/O failure</li>
- *   <li>{@value KernelErrorCodes#EX_PERS_5006} — Interceptor initialization error</li>
+ *   <li>{@value KernelErrorCodes#EX_PERS_5006} — Interceptor initialization error, and
+ *       dedicated-datasource routing failure</li>
+ *   <li>{@value KernelErrorCodes#EX_PERS_5007} — No provider on the classpath</li>
+ *   <li>{@value KernelErrorCodes#EX_PERS_5008} — Column type outside the accessor's domain</li>
  * </ul>
  *
- * @since 0.5.0
+ * @apiNote Construct instances only through the static factories below: each one owns the
+ *          {@code rawArgs} layout for its code, which is what keeps the layout documented in a
+ *          single place instead of drifting across throw sites.
+ * @since 0.5
  */
+// TooManyMethods: the same reason it is suppressed on FlowEngineException — the count is the
+// contract. One named factory per rawArgs layout is what keeps string literals out of throw sites (a
+// repo-wide hard constraint) and documents each layout in exactly one place. The ninth factory
+// (ADR-080's type refusal) crossed the threshold; collapsing the family into a code-taking factory
+// would move those literals back to the call sites, which is the drift the Glass-Box layout exists
+// to prevent.
+@SuppressWarnings("PMD.TooManyMethods")
 public final class PersistenceProviderException extends ExerisKernelException {
 
     private static final String BOOTSTRAP_MSG = "Persistence provider bootstrap failure";
@@ -39,6 +48,7 @@ public final class PersistenceProviderException extends ExerisKernelException {
     private static final String AUTH_MSG = "Persistence authentication failure";
     private static final String TRANSPORT_MSG = "Persistence transport I/O failure";
     private static final String INTERCEPTOR_MSG = "Persistence interceptor initialization failure";
+    private static final String UNSUPPORTED_TYPE_MSG = "Column type outside the accessor's domain";
 
     // -----------------------------------------------------------------------
     // Private constructor — use static factories
@@ -63,7 +73,8 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * @param providerName  provider display name
      * @param connectionUrl database URL (sanitized before storage in rawArgs)
      * @param cause         root cause
-     * @return exception with rawArgs: [providerName, sanitizedUrl]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5001} with rawArgs:
+     *         [providerName, sanitizedUrl]
      */
     public static PersistenceProviderException bootstrapFailure(
             String providerName, String connectionUrl, Throwable cause) {
@@ -88,7 +99,8 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * @param providerName      provider display name
      * @param timeoutMs         configured timeout
      * @param activeConnections current active connections
-     * @return exception with rawArgs: [providerName, timeoutMs, activeConnections]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5002} with rawArgs:
+     *         [providerName, timeoutMs, activeConnections]
      */
     public static PersistenceProviderException connectionExhausted(
             String providerName, long timeoutMs, int activeConnections) {
@@ -103,7 +115,8 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * @param sqlState PostgreSQL SQLSTATE code
      * @param detail   error detail message
      * @param cause    root cause
-     * @return exception with rawArgs: [sqlState, detail]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5003} with rawArgs:
+     *         [sqlState, detail]
      */
     public static PersistenceProviderException queryFailed(
             String sqlState, String detail, Throwable cause) {
@@ -117,7 +130,8 @@ public final class PersistenceProviderException extends ExerisKernelException {
      *
      * @param mechanism     auth mechanism name
      * @param serverMessage server error message
-     * @return exception with rawArgs: [mechanism, serverMessage]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5004} with rawArgs:
+     *         [mechanism, serverMessage]
      */
     public static PersistenceProviderException authFailed(
             String mechanism, String serverMessage) {
@@ -132,7 +146,8 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * @param mechanism     auth mechanism name (or SQLSTATE in JDBC path)
      * @param serverMessage server error message
      * @param cause         root cause (may be {@code null})
-     * @return exception with rawArgs: [mechanism, serverMessage]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5004} with rawArgs:
+     *         [mechanism, serverMessage]
      */
     public static PersistenceProviderException authFailed(
             String mechanism, String serverMessage, Throwable cause) {
@@ -148,7 +163,8 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * @param fileDescriptor file descriptor
      * @param errno          OS error number
      * @param cause          root cause
-     * @return exception with rawArgs: [transportName, fileDescriptor, errno]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5005} with rawArgs:
+     *         [transportName, fileDescriptor, errno]
      */
     public static PersistenceProviderException transportFailure(
             String transportName, long fileDescriptor, int errno, Throwable cause) {
@@ -162,13 +178,15 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * failed to prepare the connection for the given isolation context.
      *
      * <p>The engine MUST discard the connection on receiving this exception —
-     * it MUST NOT be returned to the pool.
+     * it MUST NOT be returned to the pool, because the session keys the interceptor was
+     * publishing did not get set, and the connection still carries the previous borrower's.
      *
      * @param interceptorClass simple class name of the failing interceptor
      * @param isolationKey     value from {@code StorageContext.isolationKey()},
      *                         or {@code "[none]"} for system-scope operations
      * @param cause            root cause
-     * @return exception with rawArgs: [interceptorClass, isolationKey]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5006} with rawArgs:
+     *         [interceptorClass, isolationKey]
      */
     public static PersistenceProviderException interceptorInitFailed(
             String interceptorClass, String isolationKey, Throwable cause) {
@@ -184,7 +202,10 @@ public final class PersistenceProviderException extends ExerisKernelException {
      *
      * @param providerName  provider display name
      * @param dataSourceKey the routing key that was not found in the configured map
-     * @return exception with rawArgs: [providerName, dataSourceKey]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5006} with rawArgs:
+     *         [providerName, dataSourceKey] — a different layout under the same code as
+     *         {@link #interceptorInitFailed(String, String, Throwable)}, which the two messages
+     *         distinguish
      */
     public static PersistenceProviderException dedicatedDatasourceNotFound(
             String providerName, String dataSourceKey) {
@@ -203,12 +224,35 @@ public final class PersistenceProviderException extends ExerisKernelException {
      * dependencies.
      *
      * @param message human-readable diagnostic (logged before abort)
-     * @return exception with rawArgs: [message]
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5007} with rawArgs: [message]
      */
     public static PersistenceProviderException noProviderAvailable(String message) {
         return new PersistenceProviderException(
                 KernelErrorCodes.EX_PERS_5007,
                 "No PersistenceProvider available — kernel start aborted",
                 null, message);
+    }
+
+    /**
+     * A converting accessor was asked for a column type it does not implement (ADR-080 §2).
+     *
+     * <p>Refusing beats rendering: decoding an unimplemented type's bytes as text yields a plausible
+     * wrong answer on a data path. The decision reads the <em>declared</em> type name, never an OID
+     * range, and is a property of the column rather than of the row — a SQL NULL in an unsupported
+     * column refuses too, since {@code null} would claim "no value here" when the truth is "this
+     * column cannot be rendered".
+     *
+     * @param declaredTypeName the driver's name for the column type, from the result metadata
+     * @param columnIndex      zero-based column index
+     * @param accessor         the SPI method that refused, e.g. {@code "getString"}
+     * @return exception carrying {@value KernelErrorCodes#EX_PERS_5008} with rawArgs:
+     *         [declaredTypeName, columnIndex, accessor]
+     * @since 0.12
+     */
+    public static PersistenceProviderException unsupportedColumnType(
+            String declaredTypeName, int columnIndex, String accessor) {
+        return new PersistenceProviderException(
+                KernelErrorCodes.EX_PERS_5008, UNSUPPORTED_TYPE_MSG, null,
+                declaredTypeName, columnIndex, accessor);
     }
 }

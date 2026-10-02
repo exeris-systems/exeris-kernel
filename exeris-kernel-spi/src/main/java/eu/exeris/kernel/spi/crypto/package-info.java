@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * Exeris Kernel SPI – Crypto/TLS subsystem contracts (L0).
@@ -16,7 +12,7 @@
  *   <li>{@link eu.exeris.kernel.spi.crypto.TlsEngine} — stateful TLS session facade:
  *       wrap/unwrap, handshake, and graceful shutdown operations</li>
  *   <li>{@link eu.exeris.kernel.spi.crypto.CryptoProviderConfig} — immutable configuration record
- *       (declared {@code value record} on the `preview` line, JEP 401)</li>
+ *       (declared {@code value record} on the {@code preview} line, JEP 401)</li>
  *   <li>{@link eu.exeris.kernel.spi.crypto.TlsHandshakeResult} — immutable single-step handshake
  *       outcome; pre-allocated singletons ({@code COMPLETE}, {@code NEED_UNWRAP}, {@code NEED_WRAP})
  *       ensure zero allocation on the hot handshake path</li>

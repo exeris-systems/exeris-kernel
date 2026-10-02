@@ -1,0 +1,72 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package eu.exeris.kernel.core.flow;
+
+import jdk.jfr.Category;
+import jdk.jfr.Description;
+import jdk.jfr.Event;
+import jdk.jfr.FlightRecorder;
+import jdk.jfr.Label;
+import jdk.jfr.Name;
+import jdk.jfr.StackTrace;
+
+/**
+ * Emitted once per engine when the probe for a {@code FlowProgress} event-type ordinal exhausts
+ * its window, permanently disabling progress publication for the rest of that engine's lifetime.
+ *
+ * <p>Without this event the disablement is invisible: {@link FlowProgressPublisher#publishProgress}
+ * then returns silently on the cached sentinel on every terminal step, and a consumer subscribed
+ * to {@code FlowProgress} simply never receives anything — indistinguishable from a system in
+ * which no flow ever terminates.
+ */
+@Name("eu.exeris.kernel.flow.ProgressDisabled")
+@Label("Flow Progress Publication Disabled")
+@Category({"Exeris Kernel", "Flow"})
+@Description("Emitted once per engine when FlowProgress cannot claim an event ordinal and "
+        + "progress publication is disabled for the life of the process. The publisher probes a "
+        + "bounded window of hash-derived candidates; when every one collides with a registered "
+        + "type it gives up permanently. Nothing else records that: publishProgress then returns "
+        + "on a cached sentinel, silently, and a consumer subscribed to FlowProgress simply never "
+        + "receives anything - which is indistinguishable from a system where no flow ever "
+        + "terminated.")
+@StackTrace(false)
+final class FlowProgressDisabledEvent extends Event {
+
+    @Label("Event Type Name")
+    @Description("The event type whose ordinal could not be claimed")
+    /* default */ String eventTypeName;
+
+    @Label("Base Ordinal")
+    @Description("First candidate probed; the window runs upward from here")
+    /* default */ int baseOrdinal;
+
+    @Label("Probe Limit")
+    @Description("Number of consecutive candidates tried before giving up")
+    /* default */ int probeLimit;
+
+    /**
+     * Emits the {@code ProgressDisabled} event recording which ordinal window was exhausted, or
+     * does nothing if the flight recorder was never initialised or the event type is disabled.
+     *
+     * @param eventTypeName the event type whose ordinal could not be claimed
+     * @param baseOrdinal   the first candidate probed; the window runs upward from here
+     * @param probeLimit    the number of consecutive candidates tried before giving up
+     */
+    /* default */ static void emit(String eventTypeName, int baseOrdinal, int probeLimit) {
+        // Guard order matches this cycle's other new events (CommunityConnectionIdleTimeout,
+        // CommunityAcceptFault): no allocation at all when JFR was never initialised.
+        if (!FlightRecorder.isInitialized()) {
+            return;
+        }
+        FlowProgressDisabledEvent event = new FlowProgressDisabledEvent();
+        if (!event.isEnabled()) {
+            return;
+        }
+        event.eventTypeName = eventTypeName;
+        event.baseOrdinal = baseOrdinal;
+        event.probeLimit = probeLimit;
+        event.commit();
+    }
+}

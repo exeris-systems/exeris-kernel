@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -15,11 +11,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * Package-private static helpers enforcing the single-consumer invariant on
  * the inbound and outbound queue gates of {@link NativeTcpStream}.
  *
- * <p>Extracted from {@link NativeTcpStream} in v0.8 Sprint 3 (QA-016) as the
- * first seam of the stream's God-class decomposition. The semantics are:
- * one virtual thread at a time owns a given consumer slot; reentrant
- * acquisitions by the same thread are no-ops; concurrent acquisition by a
- * different thread is fail-fast.
+ * <p>One virtual thread at a time owns a given consumer slot; a reentrant acquisition by the
+ * thread already holding it is a no-op, and a concurrent acquisition attempt by a different
+ * thread is fail-fast.
  */
 final class NativeTcpStreamConsumerGate {
 

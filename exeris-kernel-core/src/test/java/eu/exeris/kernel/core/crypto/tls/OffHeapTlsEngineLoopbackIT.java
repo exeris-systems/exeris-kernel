@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.crypto.tls;
 
@@ -78,13 +74,9 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  *
  * @since 0.5.0
  */
-// v0.8 Sprint 6 (Coverage C-P0-02): @Tag("integration") removed — the class
-// name ends in "IT" so Maven Failsafe picks it up automatically on `mvn verify`
-// regardless of tags. The tag was misleading because it suggested the IT was
-// dead from CI (it ran via Failsafe all along). Keeping the JUnit tag would
-// still cause `mvn -DexcludedGroups=integration ...` opt-outs to drop the test
-// on Surefire-only paths even though Failsafe runs it; removing the tag aligns
-// observable behavior with the Failsafe-based execution model.
+// No @Tag("integration"): the class name ends in "IT", so Maven Failsafe runs it on `mvn verify`
+// regardless of tags. A JUnit tag would let `-DexcludedGroups=integration` drop it from Surefire-only
+// paths while Failsafe still runs it, and would suggest it does not run in CI when it does.
 @EnabledOnOs(OS.LINUX)
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 @DisplayName("IT: OffHeapTlsEngine — TLS 1.3 loopback handshake + round-trip")

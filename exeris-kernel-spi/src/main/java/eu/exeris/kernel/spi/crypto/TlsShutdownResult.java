@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.crypto;
 
@@ -12,21 +8,24 @@ package eu.exeris.kernel.spi.crypto;
  * SPI: Immutable result of a single TLS shutdown step.
  *
  * <h2>Valhalla Readiness</h2>
- * <p>Declared {@code value record} on the `preview` line (JEP 401, preview in JDK 28); the
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401, preview in JDK 28); the
  * distributed line compiles the same source as an identity {@code record}. Asserted by
  * {@code Class::isValue} in this carrier's ValhallaReadiness test.
  * The {@code sentCloseNotify}/{@code receivedCloseNotify} booleans and the status ordinal are
  * therefore flattenable, saving header and pointer overhead where a JVM chooses to do so — an
  * opportunity, not a behaviour this contract assumes.
  *
- * <h2>Zero-Allocation Contract</h2>
- * <p>{@link #COMPLETE} and {@link #ERROR} are pre-allocated singletons.
- * Partial-shutdown results carry two boolean flags and are cheap value types.
+ * <p><b>Allocation:</b> zero-alloc on hot path for the two terminal outcomes — {@link #COMPLETE}
+ * and {@link #ERROR} are pre-allocated constants; {@link #partial(boolean, boolean)} allocates
+ * one small carrier per partial step.
  *
  * @param status              semantic outcome of this shutdown step
  * @param sentCloseNotify     whether the local side has sent a TLS close-notify alert
  * @param receivedCloseNotify whether the peer's close-notify has been received
- * @since 0.5.0
+ * @apiNote Compare with the predicates ({@link #isComplete()}, {@link #needsMoreIo()},
+ *          {@link #isError()}) rather than by identity against the constants: a partial result is
+ *          a fresh instance and never one of them.
+ * @since 0.5
  */
 public value record TlsShutdownResult(Status status,
                                 boolean sentCloseNotify,
@@ -54,17 +53,31 @@ public value record TlsShutdownResult(Status status,
     }
 
 
-    /** Returns {@code true} if both close-notify alerts have been exchanged. */
+    /**
+     * Indicates that both sides have exchanged close-notify and the session may be released.
+     *
+     * @return {@code true} when {@link #status()} is {@link Status#COMPLETE}
+     */
     public boolean isComplete() {
         return status == Status.COMPLETE;
     }
 
-    /** Returns {@code true} if further I/O is needed to complete the shutdown. */
+    /**
+     * Indicates that the shutdown is half-done and the caller must step it again.
+     *
+     * @return {@code true} when {@link #status()} is {@link Status#NEED_MORE_IO}; the two flags
+     *         {@link #sentCloseNotify()} and {@link #receivedCloseNotify()} say which half is
+     *         still outstanding
+     */
     public boolean needsMoreIo() {
         return status == Status.NEED_MORE_IO;
     }
 
-    /** Returns {@code true} if a fatal error occurred during shutdown. */
+    /**
+     * Indicates that the shutdown failed and no graceful close is reachable on this session.
+     *
+     * @return {@code true} when {@link #status()} is {@link Status#ERROR}
+     */
     public boolean isError() {
         return status == Status.ERROR;
     }

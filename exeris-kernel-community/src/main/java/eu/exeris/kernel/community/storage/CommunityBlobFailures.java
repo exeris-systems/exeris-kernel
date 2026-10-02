@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.storage;
 
@@ -24,15 +20,14 @@ import jdk.jfr.StackTrace;
  * <p>Each factory emits the JFR event and returns the exception, so a call site reads
  * {@code throw failures.transferFailed(...)}. This deviates from the sibling
  * {@code CommunityIdentityJfrEvents} shape, which emits beside the throw: the blob drivers have some
- * twenty failure sites across seven classes, and pairing emit-and-throw by hand at each one makes
+ * twenty failure sites across eight classes, and pairing emit-and-throw by hand at each one makes
  * "recorded but not thrown" and "thrown but not recorded" both reachable by omission. Returning the
  * exception removes the pairing entirely.
  *
  * <h2>Why this is an instance</h2>
- * <p>It began as a static holder with the filesystem provider's name baked in. A second driver made
- * that name a per-driver fact, and the two honest options were to pass it at every one of the twenty
- * call sites or to bind it once. Bound once, a driver cannot attribute a failure to its sibling by
- * getting an argument wrong, and the shared event names stay shared — an operator filters
+ * <p>The provider name is bound once, at construction, rather than passed at each of the roughly
+ * twenty call sites across both drivers. Bound once, a driver cannot attribute a failure to its
+ * sibling by getting an argument wrong, and the shared event names stay shared — an operator filters
  * {@code eu.exeris.kernel.storage.*} and reads {@code providerName} to tell the drivers apart.
  *
  * <h2>Single-phase commit</h2>
@@ -46,7 +41,7 @@ import jdk.jfr.StackTrace;
  * Keys can carry application data, which is why {@link BlobStorageException} refuses to capture one
  * either. Endpoint credentials are never recorded for the same reason.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 final class CommunityBlobFailures {
 

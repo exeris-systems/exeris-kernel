@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.events;
 
@@ -22,14 +18,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.function.Consumer;
 
 /**
  * Core: In-Memory Event Bus — local distribution mechanism for subscribers within the same Kernel instance.
@@ -60,7 +56,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * from the calling thread's execution context, so they inherit active {@code ScopedValue}
  * bindings at call time — zero {@code ThreadLocal}, zero manual propagation.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 // CouplingBetweenObjects: EventBus coordinates registry, handlers and JFR — inherent to the bus role
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.CloseResource"})
@@ -181,7 +177,7 @@ public final class InMemoryEventBus implements EventBus {
     // NativeCipherContext, SecurityInterceptor, PaqsScheduler). The Throwable is not handled here:
     // it is rethrown unchanged, and the catch exists only so the wrappers no handler will ever
     // reach are released first. Narrowing it would restore the leak for exactly the types that
-    // reach this path — an Error out of a handler is the one that motivated the fix.
+    // reach this path — an Error out of a handler is the case it exists for.
     @Override
     @SuppressWarnings("java:S1181")
     public void publishAndAwait(EventDescriptor descriptor, EventPayload payload)
@@ -202,7 +198,9 @@ public final class InMemoryEventBus implements EventBus {
         // early-exit path (interrupt, RuntimeException) — every retain() is balanced.
         List<TrackingWrapper> wrappers = buildWrappers(payload, slotCount);
 
-        Queue<Throwable> failures = new ConcurrentLinkedQueue<>();
+        // Indexed by slot rather than appended as forks finish, so the failures attached to the
+        // caller's exception are in subscription order whatever order the handlers completed in.
+        AtomicReferenceArray<Throwable> failures = new AtomicReferenceArray<>(slotCount);
         // JDK 28 changed this shape twice: StructuredTaskScope gained a third type parameter
         // (the exception join() throws), and Joiner.awaitAll() was REMOVED. allUntil with a
         // never-true predicate is the same policy — every subtask runs to completion,
@@ -222,7 +220,7 @@ public final class InMemoryEventBus implements EventBus {
                 // failed — the more actionable of the two facts, and the one it cannot recover by
                 // retrying. Same defect as on the default line; the dispatch mechanism differs, the
                 // dropped failures do not.
-                failures.forEach(interruptEx::addSuppressed);
+                forEachFailure(failures, interruptEx::addSuppressed);
                 Thread.currentThread().interrupt();
                 throw interruptEx;
             }
@@ -233,13 +231,15 @@ public final class InMemoryEventBus implements EventBus {
             // publishAndAwait returning as though delivery had succeeded. Found by running the
             // default line's regression case here after the merge-up: it expected a throwable and
             // got none.
-            for (StructuredTaskScope.Subtask<Void> task : tasks) {
+            // join() lists the subtasks in fork order, which is slot order.
+            for (int i = 0; i < tasks.size(); i++) {
+                StructuredTaskScope.Subtask<Void> task = tasks.get(i);
                 if (task.state() == StructuredTaskScope.Subtask.State.FAILED) {
-                    failures.add(task.exception());
+                    failures.compareAndSet(i, null, task.exception());
                 }
             }
         }
-        throwIfFailed(failures);
+        throwIfFailed(descriptor.eventTypeOrdinal(), failures);
     }
 
     // =========================================================================
@@ -253,9 +253,7 @@ public final class InMemoryEventBus implements EventBus {
 
         int ordinal = registry.ordinalOf(eventType);
         if (ordinal < 0) {
-            throw new EventBusException(
-                    "Cannot subscribe to unregistered event type: '" + eventType + "'. "
-                    + "Register it in EventRegistry before subscribing.");
+            throw EventBusException.subscriptionRejected(eventType);
         }
 
         long seq  = subscriptionSeq.incrementAndGet();
@@ -295,16 +293,17 @@ public final class InMemoryEventBus implements EventBus {
                                      List<Slot> slots,
                                      List<TrackingWrapper> wrappers,
                                      EventDescriptor descriptor,
-                                     Queue<Throwable> failures) {
+                                     AtomicReferenceArray<Throwable> failures) {
         int slotCount = slots.size();
         for (int i = 0; i < slotCount; i++) {
             Slot slot = slots.get(i);
             TrackingWrapper wrapper = wrappers.get(i);
+            int index = i;
             scope.fork(() -> {
                 try (TrackingWrapper twrClose = wrapper) {
                     slot.handler().handle(descriptor, twrClose);
                 } catch (RuntimeException handlerEx) { //NOPMD AvoidCatchingGenericException — SPI boundary
-                    failures.add(handlerEx);
+                    failures.set(index, handlerEx);
                 }
                 return null;
             });
@@ -319,14 +318,29 @@ public final class InMemoryEventBus implements EventBus {
         }
     }
 
-    private static void throwIfFailed(Queue<Throwable> failures) {
-        if (failures.isEmpty()) {
+    private static void throwIfFailed(int eventTypeOrdinal, AtomicReferenceArray<Throwable> failures) {
+        int failed = 0;
+        for (int i = 0; i < failures.length(); i++) {
+            if (failures.get(i) != null) {
+                failed++;
+            }
+        }
+        if (failed == 0) {
             return;
         }
-        EventBusException busException =
-                new EventBusException("One or more event handlers failed during publishAndAwait");
-        failures.forEach(busException::addSuppressed);
+        EventBusException busException = EventBusException.handlersFailed(eventTypeOrdinal, failed);
+        forEachFailure(failures, busException::addSuppressed);
         throw busException;
+    }
+
+    private static void forEachFailure(AtomicReferenceArray<Throwable> failures,
+                                       Consumer<Throwable> action) {
+        for (int i = 0; i < failures.length(); i++) {
+            Throwable failure = failures.get(i);
+            if (failure != null) {
+                action.accept(failure);
+            }
+        }
     }
 
     private List<Slot> resolveSlots(int ordinal) {

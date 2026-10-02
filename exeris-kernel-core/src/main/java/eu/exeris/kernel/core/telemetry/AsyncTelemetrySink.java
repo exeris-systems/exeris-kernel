@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.telemetry;
 
@@ -59,7 +55,7 @@ import java.util.concurrent.locks.LockSupport;
  * The single internal consumer is the only thread that calls {@code emit} on
  * wrapped sinks, simplifying their thread-safety story.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @SuppressWarnings({
     "PMD.CloseResource",                  // wrapped sinks are owned externally; close() closes them once
@@ -137,12 +133,20 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         return sink;
     }
 
-    /** Returns the configured ring capacity (informational; useful for diagnostics). */
+    /**
+     * Returns the configured ring capacity (informational; useful for diagnostics).
+     *
+     * @return the ring capacity in events, as passed to {@link #start(List, int, Duration)}
+     */
     public int capacity() {
         return capacity;
     }
 
-    /** Returns the running total of dropped events since construction. */
+    /**
+     * Returns the running total of dropped events since construction.
+     *
+     * @return the number of events discarded because the ring was full when {@link #emit} was called
+     */
     public long droppedCount() {
         return droppedCount.sum();
     }
@@ -162,10 +166,10 @@ public final class AsyncTelemetrySink implements TelemetrySink {
         // permit-counted (single permit max), so producer-side over-signal is harmless;
         // when the consumer is actively draining, the call is a cheap no-op kernel hop.
         // Required because MpscArrayQueue.offer is wait-free but does NOT signal a
-        // blocking consumer (unlike ArrayBlockingQueue.offer which woke ABQ's internal
-        // condition variable). Without this unpark, events sat in the ring up to the
-        // full IDLE_PARK_NANOS budget — observed as multi-second fan-out latency
-        // under CoreFlowEngineTest's 512-iteration schedule/park/wake load (PR #139).
+        // blocking consumer (unlike ArrayBlockingQueue.offer, which wakes its internal condition
+        // variable). Without this unpark, events sit in the ring for up to the full IDLE_PARK_NANOS
+        // budget, which shows as multi-second fan-out latency under CoreFlowEngineTest's
+        // 512-iteration schedule/park/wake load.
         LockSupport.unpark(consumer);
     }
 

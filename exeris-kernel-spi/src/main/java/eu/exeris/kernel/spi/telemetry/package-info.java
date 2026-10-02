@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 /**
  * Exeris Kernel SPI – Telemetry subsystem contracts (L0).
@@ -22,7 +18,7 @@
  *   <li>{@link eu.exeris.kernel.spi.telemetry.KernelEvent} — immutable event record carrying
  *       a structured code, {@link eu.exeris.kernel.spi.telemetry.EventLevel}, wall-clock
  *       timestamp, optional {@link eu.exeris.kernel.spi.exceptions.ExerisKernelException},
- *       and a component label; declared {@code value record} on the `preview` line (JEP 401)</li>
+ *       and a component label; declared {@code value record} on the {@code preview} line (JEP 401)</li>
  *   <li>{@link eu.exeris.kernel.spi.telemetry.EventLevel} — severity enum:
  *       {@code INFO}, {@code WARN}, {@code ERROR}, {@code FATAL}</li>
  *   <li>{@link eu.exeris.kernel.spi.telemetry.TelemetryConfig} — immutable configuration record

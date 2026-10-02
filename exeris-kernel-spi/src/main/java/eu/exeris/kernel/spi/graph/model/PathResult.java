@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.graph.model;
 
@@ -15,12 +11,14 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Valhalla-Ready: Result of a shortest-path algorithm execution.
+ * Immutable result of a shortest-path algorithm run — the path found (if any), its cost,
+ * and which algorithm produced it.
  *
- * <p>Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * <h2>Valhalla Readiness</h2>
+ * <p>Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
- * Avoid identity operations.
+ * Avoid identity operations ({@code ==}, {@code synchronized}, {@code System.identityHashCode()}).
  *
  * @param source    source node ID
  * @param target    target node ID
@@ -29,7 +27,7 @@ import java.util.UUID;
  * @param hopCount  number of edges in path
  * @param algorithm algorithm used (e.g. "dijkstra", "bfs")
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings("PMD.UnusedAssignment") // hopCount record component is normalised in the compact
 // constructor (path.size()-1) — the caller-supplied value is intentionally discarded to enforce
@@ -84,18 +82,19 @@ public value record PathResult(
     }
 
     /**
-     * Gets average cost per hop.
+     * Returns the mean cost of the path's edges.
      *
-     * @return average cost (totalCost / hopCount), or 0.0 if no hops
+     * @return {@code totalCost / hopCount}, or {@code 0.0} if the path has no hops
      */
     public double averageCostPerHop() {
         return hopCount == 0 ? 0.0 : totalCost / hopCount;
     }
 
     /**
-     * Checks if this is a direct connection (single hop).
+     * Returns whether {@link #source()} and {@link #target()} are directly connected by a
+     * single edge.
      *
-     * @return true if path has exactly 2 nodes (1 edge)
+     * @return {@code true} if the path has exactly 2 nodes (1 edge)
      */
     public boolean isDirectConnection() {
         return path.size() == 2;

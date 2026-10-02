@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.crypto;
 
@@ -22,7 +18,7 @@ import java.lang.invoke.MethodType;
  * <p>Registers an OpenSSL {@code SSL_CTX_set_alpn_select_cb} upcall stub
  * at class load time. Prefers h2 over http/1.1 per RFC 7301 §3.1.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 final class CommunityAlpnSelector {
 

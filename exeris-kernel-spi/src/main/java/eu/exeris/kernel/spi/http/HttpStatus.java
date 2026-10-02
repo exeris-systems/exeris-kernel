@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.http;
 
@@ -15,21 +11,19 @@ import java.util.Objects;
  *
  * <h2>Valhalla Readiness</h2>
  * <p>No {@code synchronized}, no identity {@code ==}, no {@code System.identityHashCode()}.
- * The constants below are shared instances, which stops being observable once the carrier is a
- * value class -- callers must compare {@code code()}, never the carrier.
- * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
+ * The constants below are shared instances, which is not observable on a value class -- callers
+ * must compare {@code code()}, never the carrier.
+ * Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
  * the same source as an identity {@code record}, and the modifier is asserted by
  * {@code Class::isValue} in the module's value-carrier registry test.
- *
- * <h2>Pre-allocated Sentinels</h2>
- * <p>Common status codes are exposed as {@code static final} constants. The JVM
- * constant-folds these into call sites via C2 escape analysis — zero allocation
- * per response encode.
  *
  * @param code         numeric status code (100–599); values outside this range are rejected
  * @param reasonPhrase human-readable phrase; non-null (may be blank for HTTP/2 where it is
  *                     not transmitted on the wire, but must be non-null for API consistency)
- * @since 0.5.0
+ * @apiNote Answer with the {@code static final} constants below rather than constructing a status
+ *          per response: they are shared instances the JIT folds into the call site, so a
+ *          response-encoding path that uses them allocates no status at all.
+ * @since 0.5
  */
 public value record HttpStatus(int code, String reasonPhrase) {
 
@@ -125,6 +119,14 @@ public value record HttpStatus(int code, String reasonPhrase) {
     // Checkstyle DeclarationOrder (static variables → constructors → methods)
     // =========================================================================
 
+    /**
+     * Bounds the code to the range RFC 9110 §15 defines, so that a status which could never be
+     * written to the wire is refused where it is built rather than where it is sent.
+     *
+     * @throws IllegalArgumentException if {@code code} is outside {@code [100, 599]}
+     * @throws NullPointerException     if {@code reasonPhrase} is {@code null} — blank is legal,
+     *                                  because HTTP/2 does not carry the phrase at all
+     */
     public HttpStatus {
         if (code < 100 || code > 599) {
             throw new IllegalArgumentException(

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.hpack;
 
@@ -25,7 +21,7 @@ package eu.exeris.kernel.core.http.hpack;
  * <p>Not thread-safe. Each HTTP/2 connection owns its own encoder/decoder context
  * with independent dynamic tables (RFC 7541 §2.2).
  *
- * @since 0.5.0
+ * @since 0.5
  * @see <a href="https://www.rfc-editor.org/rfc/rfc7541#section-4">RFC 7541 §4</a>
  */
 @SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
@@ -42,10 +38,11 @@ public final class HpackDynamicTable {
     private long maxSize;
 
     /**
-     * Declared {@code value record} on the `preview` line (JEP 401); the distributed line compiles
- * the same source as an identity {@code record}, and the modifier is asserted by
- * {@code Class::isValue} in the module's value-carrier registry test.
-     * Currently relies on C2 JIT Escape Analysis for scalarization on hot-paths.
+     * Declared {@code value record} on the {@code preview} line (JEP 401); the distributed line compiles
+     * the same source as an identity {@code record}, and the modifier is asserted by
+     * {@code Class::isValue} in the module's value-carrier registry test. Each instance is
+     * referenced from the {@code entries} array for as long as it remains in the table, so it
+     * does not escape-analyze away.
      */
     private value record Entry(String name, String value) {
         /* package */ long byteSize() {
@@ -59,6 +56,7 @@ public final class HpackDynamicTable {
      * Creates a dynamic table with the given maximum size in bytes.
      *
      * @param maxTableSize maximum size in bytes (per SETTINGS_HEADER_TABLE_SIZE)
+     * @throws IllegalArgumentException if {@code maxTableSize} is negative
      */
     public HpackDynamicTable(long maxTableSize) {
         if (maxTableSize < MIN_TABLE_SIZE) {
@@ -114,8 +112,12 @@ public final class HpackDynamicTable {
     }
 
     /**
-     * Inserts a new entry at the beginning of the dynamic table.
-     * Evicts oldest entries as needed to satisfy the size constraint (§4.4).
+     * Inserts a new entry at the beginning of the dynamic table, evicting the oldest entries
+     * as needed to satisfy the size constraint (§4.4).
+     *
+     * <p>An entry whose own size is larger than the current {@link #maxSize()} is not stored:
+     * insertion empties the table instead, per §4.4's "not an error" clause for oversized
+     * entries.
      *
      * @param name  header field name
      * @param value header field value
@@ -147,6 +149,7 @@ public final class HpackDynamicTable {
      * Updates the maximum table size. Evicts entries as needed (§4.3).
      *
      * @param newMaxSize new maximum size in bytes
+     * @throws IllegalArgumentException if {@code newMaxSize} is negative
      */
     public void setMaxSize(long newMaxSize) {
         if (newMaxSize < MIN_TABLE_SIZE) {
