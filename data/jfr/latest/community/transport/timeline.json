@@ -1,17 +1,41 @@
 [ {
-  "t" : 1790942095136,
+  "t" : 1791012801017,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261560,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool.allocateSegment(CommunityArenaShardPool.java:118)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1791012801017,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool.allocateSegment(CommunityArenaShardPool.java:118)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1791012801251,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 261512,
+  "size" : 261528,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1790942095136,
+  "t" : 1791012801251,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
   "thread" : "main",
@@ -21,53 +45,29 @@
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1790942095284,
+  "t" : 1791012802777,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 261512,
+  "size" : 261552,
   "sizeKind" : "sample_weight",
-  "kind" : "exeris",
+  "kind" : "panama",
   "category" : "production",
-  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
-  "stackId" : "stk_0001"
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:130)",
+  "stackId" : "stk_0003"
 }, {
-  "t" : 1790942095284,
+  "t" : 1791012802777,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
+  "class" : "jdk.internal.foreign.NativeMemorySegmentImpl",
   "thread" : "main",
   "threadId" : 3,
   "size" : 262144,
   "sizeKind" : "tlab_size",
-  "kind" : "exeris",
+  "kind" : "panama",
   "category" : "production",
-  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1790942096744,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261536,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1790942096744,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStream.newPendingWrite(NativeTcpStream.java:928)",
-  "stackId" : "stk_0001"
+  "owner" : "eu.exeris.kernel.community.transport.NativeTcpStreamPlainSocketIo.seamWriteWithNioFallback(NativeTcpStreamPlainSocketIo.java:130)",
+  "stackId" : "stk_0003"
 } ]

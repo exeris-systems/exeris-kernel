@@ -2,20 +2,40 @@
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "kind" : "exeris",
   "category" : "production",
-  "count" : 16,
-  "events" : 16,
-  "samples" : 8,
-  "sample_weight_bytes" : 1345720,
-  "tlab_refills" : 8,
-  "tlab_bytes" : 1459776,
+  "count" : 20,
+  "events" : 20,
+  "samples" : 10,
+  "sample_weight_bytes" : 1566296,
+  "tlab_refills" : 10,
+  "tlab_bytes" : 1466552,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
-    "exeris" : 16,
+    "exeris" : 20,
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
     "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "kind" : "jdk",
+  "category" : "production",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 50504,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 157200,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
     "other" : 0
   }
 } ]
