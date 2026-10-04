@@ -24,8 +24,10 @@ last-verified: 2026-09-05
   [`commit-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/commit-conventions.md)
   and [`pr-conventions.md`](https://github.com/exeris-systems/exeris-docs/blob/main/standards/pr-conventions.md).
 - **Releases.** A milestone integrates into `main` through a single `release(x.y.z)` pull request.
-  `main` carries release versions, `development/*` carry `-SNAPSHOT`s; both publish to GitHub
-  Packages.
+  `main` carries release versions, `development/*` carry `-SNAPSHOT`s. GitHub Packages receives a
+  release version from `main` only, after the release merge, and a development line's
+  `-SNAPSHOT`; a development line that carries the plain release version publishes nothing,
+  because a release version there is immutable and its first upload is the one every consumer gets.
 - **ADR and RFC numbers are a GLOBAL namespace across the Exeris ecosystem.** Reserve the number in
   the registry **before** writing content — use the `exeris-adr-register` skill. The ADR-026
   collision in PR #129 is the cautionary tale. Filenames are kebab-case `ADR-0NN-short-title.md`;
