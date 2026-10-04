@@ -150,6 +150,10 @@ cannot do on every tier;
 `HttpRouterTest.StreamingRegistration#leadingPlaceholderTemplateMatches` pin the per-method early
 return and the literal prefix.
 
+*(On the `preview` branch `StreamResolutionMissAllocationTest` is excluded: on JDK 28 EA its
+result depends on what ran before it in the same JVM, so the miss-allocation cost is not pinned
+there (`PREVIEW-TRACK.md`).)*
+
 ## Consequences
 
 ### ✅ Positive Outcomes
