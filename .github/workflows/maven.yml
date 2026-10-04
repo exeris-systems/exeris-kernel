@@ -355,22 +355,35 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      # Publish to GitHub Packages on push to main (release versions like 0.7.0) AND on push
-      # to any RC trunk (development/0.8, development/0.9, ...) where the POM carries a
-      # `-SNAPSHOT` qualifier. The same step handles both: Maven routes release versions to
-      # <repository> and SNAPSHOTs to <snapshotRepository> (both pointing at GitHub Packages
-      # in this repo, but the URL choice is Maven's, not the workflow's).
+      # Publish to GitHub Packages. A release version is published from `main` only, after the
+      # release pull request has merged; a development line publishes its `-SNAPSHOT` and nothing
+      # else. Maven routes release versions to <repository> and SNAPSHOTs to <snapshotRepository>.
       #
-      # GitHub Packages mutability:
-      #   * Release versions are IMMUTABLE — a 409 on retry means the version is already
-      #     published, which is not a real failure (covered by continue-on-error).
-      #   * SNAPSHOTs are MUTABLE — every push to an RC trunk overwrites the previous
-      #     SNAPSHOT artifact so downstream consumers (e.g. exeris-spring-runtime) always
-      #     pull the latest RC trunk HEAD.
+      # GitHub Packages makes a release version IMMUTABLE: the first upload of `X.Y.Z` is the one
+      # every consumer gets, and any later upload of the same version is refused with 409. So a
+      # development line carrying the plain release version must not publish at all, or its first
+      # push freezes a pre-release build under the release coordinate and every later push,
+      # including the release itself, is silently refused. On `main` a refusal is a real failure
+      # and fails the step; on a development line a SNAPSHOT upload problem must not take down the
+      # pipeline this job roots, so it is reported and tolerated there.
+      #
+      # SNAPSHOTs are MUTABLE: every push to a development line overwrites the previous one, so
+      # downstream consumers pull that line's head.
       - name: Publish to GitHub Packages
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/development/'))
-        continue-on-error: true
+        continue-on-error: ${{ github.ref != 'refs/heads/main' }}
         run: |
+          set -euo pipefail
+          version="$(mvn -B -q help:evaluate -Dexpression=project.version -DforceStdout --settings .github/maven-settings.xml)"
+          case "$version" in
+            *-SNAPSHOT) ;;
+            *)
+              if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+                echo "::notice::${GITHUB_REF#refs/heads/} carries the release version $version; it is published from main after the release merge, not from here"
+                exit 0
+              fi
+              ;;
+          esac
           mvn deploy -B -e \
             --settings .github/maven-settings.xml \
             -DskipTests
