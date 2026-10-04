@@ -5,9 +5,9 @@
   "count" : 20,
   "events" : 20,
   "samples" : 10,
-  "sample_weight_bytes" : 1566296,
+  "sample_weight_bytes" : 1593504,
   "tlab_refills" : 10,
-  "tlab_bytes" : 1466552,
+  "tlab_bytes" : 1599440,
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
@@ -16,26 +16,6 @@
     "panama" : 0,
     "array" : 0,
     "jdk" : 0,
-    "other" : 0
-  }
-}, {
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "kind" : "jdk",
-  "category" : "production",
-  "count" : 2,
-  "events" : 2,
-  "samples" : 1,
-  "sample_weight_bytes" : 50504,
-  "tlab_refills" : 1,
-  "tlab_bytes" : 157200,
-  "outside_tlab" : 0,
-  "outside_tlab_bytes" : 0,
-  "by_kind" : {
-    "exeris" : 0,
-    "loom" : 0,
-    "panama" : 0,
-    "array" : 0,
-    "jdk" : 2,
     "other" : 0
   }
 } ]
