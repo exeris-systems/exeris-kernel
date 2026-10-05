@@ -1,0 +1,121 @@
+[ {
+  "class" : "java.lang.VirtualThread",
+  "kind" : "loom",
+  "category" : "production",
+  "count" : 250,
+  "events" : 250,
+  "samples" : 56,
+  "sample_weight_bytes" : 14640760,
+  "tlab_refills" : 194,
+  "tlab_bytes" : 50855936,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 250,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.lang.VirtualThread$$Lambda.0x0000000087361698",
+  "kind" : "loom",
+  "category" : "production",
+  "count" : 52,
+  "events" : 52,
+  "samples" : 0,
+  "sample_weight_bytes" : 0,
+  "tlab_refills" : 52,
+  "tlab_bytes" : 13631488,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 52,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "[Ljava.lang.Object;",
+  "kind" : "array",
+  "category" : "production",
+  "count" : 3,
+  "events" : 3,
+  "samples" : 1,
+  "sample_weight_bytes" : 89336,
+  "tlab_refills" : 2,
+  "tlab_bytes" : 524288,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 3,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+  "kind" : "loom",
+  "category" : "production",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 2,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000874a18e0",
+  "kind" : "exeris",
+  "category" : "production",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261536,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 2,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.concurrent.ForkJoinTask$RunnableExecuteAction",
+  "kind" : "loom",
+  "category" : "production",
+  "count" : 1,
+  "events" : 1,
+  "samples" : 0,
+  "sample_weight_bytes" : 0,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 1,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+} ]

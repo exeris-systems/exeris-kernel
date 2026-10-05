@@ -1,0 +1,481 @@
+[ {
+  "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 6,
+  "events" : 6,
+  "samples" : 3,
+  "sample_weight_bytes" : 784616,
+  "tlab_refills" : 3,
+  "tlab_bytes" : 786432,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 6,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.HashMap",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 6,
+  "events" : 6,
+  "samples" : 3,
+  "sample_weight_bytes" : 784696,
+  "tlab_refills" : 3,
+  "tlab_bytes" : 786432,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 6,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.ArrayList$Itr",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 4,
+  "events" : 4,
+  "samples" : 2,
+  "sample_weight_bytes" : 523088,
+  "tlab_refills" : 2,
+  "tlab_bytes" : 524288,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 4,
+    "other" : 0
+  }
+}, {
+  "class" : "org.h2.mvstore.db.ValueDataType",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 4,
+  "events" : 4,
+  "samples" : 2,
+  "sample_weight_bytes" : 523064,
+  "tlab_refills" : 2,
+  "tlab_bytes" : 524288,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 4
+  }
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "kind" : "array",
+  "category" : "third_party",
+  "count" : 4,
+  "events" : 4,
+  "samples" : 2,
+  "sample_weight_bytes" : 522976,
+  "tlab_refills" : 2,
+  "tlab_bytes" : 524288,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 4,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "org.h2.index.IndexType",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 4,
+  "events" : 4,
+  "samples" : 2,
+  "sample_weight_bytes" : 523112,
+  "tlab_refills" : 2,
+  "tlab_bytes" : 524288,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 4
+  }
+}, {
+  "class" : "org.h2.jdbc.JdbcResultSet",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261560,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.mvstore.tx.Transaction",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261480,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcQueryResult",
+  "kind" : "exeris",
+  "category" : "production",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261544,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 2,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "org.h2.command.query.Select$LazyResultQueryFlat",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261504,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.command.CommandContainer",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261544,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.command.query.Optimizer",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.table.DualTable",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261496,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.command.query.Select",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261488,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "java.util.ImmutableCollections$ListItr",
+  "kind" : "jdk",
+  "category" : "production",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261544,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
+    "other" : 0
+  }
+}, {
+  "class" : "org.h2.table.Plan$$Lambda.0x0000000087406ef8",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261552,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.command.query.Query$OffsetFetch",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "java.lang.Object",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.LinkedHashMap$Entry",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261560,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
+    "other" : 0
+  }
+}, {
+  "class" : "eu.exeris.kernel.community.persistence.CommunityHikariSupport$$Lambda.0x0000000087423370",
+  "kind" : "exeris",
+  "category" : "production",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261544,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 2,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "org.h2.index.DualCursor",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "org.h2.index.IndexCursor",
+  "kind" : "other",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261528,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 2
+  }
+}, {
+  "class" : "java.util.ArrayList",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261552,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.HashSet",
+  "kind" : "jdk",
+  "category" : "third_party",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
+    "other" : 0
+  }
+} ]

@@ -1,0 +1,81 @@
+[ {
+  "class" : "java.util.HashMap$Node",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 207,
+  "events" : 207,
+  "samples" : 45,
+  "sample_weight_bytes" : 11769936,
+  "tlab_refills" : 162,
+  "tlab_bytes" : 42467328,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 207,
+    "other" : 0
+  }
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "kind" : "array",
+  "category" : "test_harness",
+  "count" : 168,
+  "events" : 168,
+  "samples" : 36,
+  "sample_weight_bytes" : 51726240,
+  "tlab_refills" : 132,
+  "tlab_bytes" : 34603008,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 168,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "[Ljava.lang.Object;",
+  "kind" : "array",
+  "category" : "test_harness",
+  "count" : 86,
+  "events" : 86,
+  "samples" : 20,
+  "sample_weight_bytes" : 5227920,
+  "tlab_refills" : 66,
+  "tlab_bytes" : 17288224,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 86,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.ImmutableCollections$ListItr",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 81,
+  "events" : 81,
+  "samples" : 17,
+  "sample_weight_bytes" : 4446520,
+  "tlab_refills" : 64,
+  "tlab_bytes" : 16777216,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 81,
+    "other" : 0
+  }
+} ]
