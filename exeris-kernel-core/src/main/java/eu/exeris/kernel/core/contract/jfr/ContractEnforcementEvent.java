@@ -21,7 +21,7 @@ import jdk.jfr.StackTrace;
 @Name("eu.exeris.kernel.contract.Enforcement")
 @Label("Contract Enforcement")
 @Category({"Exeris Kernel", "Contract"})
-@Description("Emitted when a contract enforcement action is triggered (SOFT warning or AUDIT)")
+@Description("A SOFT or AUDIT contract violation; a HARD breach is an exception, not this event")
 @StackTrace(false)
 public class ContractEnforcementEvent extends Event {
 
@@ -35,9 +35,9 @@ public class ContractEnforcementEvent extends Event {
     @Description("Name of the constraint being enforced")
     public String constraintKey;
 
-    /** Enforcement tier applied: HARD, SOFT, or AUDIT. */
+    /** Enforcement level of the violation: SOFT or AUDIT. */
     @Label("Enforcement Level")
-    @Description("Enforcement tier applied: HARD, SOFT, or AUDIT")
+    @Description("Enforcement level of the violation: SOFT or AUDIT")
     public String enforcementLevel;
 
     /** Contextual details of the enforcement action. */

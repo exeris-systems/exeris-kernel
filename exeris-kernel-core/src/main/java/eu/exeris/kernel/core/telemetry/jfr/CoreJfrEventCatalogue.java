@@ -141,8 +141,9 @@ public final class CoreJfrEventCatalogue {
             // The contract gate emits both of these on the booting thread, before any subsystem
             // exists, so there is no start() to warm them from. ContractEnforcementEvent can also be
             // emitted later, by a capability module that reports a SOFT or AUDIT violation from its own
-            // initialize() or start(); ExecutionContract restricts assertCapability/assertEnvironment to
-            // those start-time calls, so the first emit still happens on a boot path, not a request path.
+            // initialize() or start(). ExecutionContract documents assertCapability/assertEnvironment as
+            // start-time checks, and the first emit stays on a boot path only while callers keep to that:
+            // nothing enforces it, so a caller on a request path pays the class initialization there.
             "eu.exeris.kernel.core.contract.jfr.ContractEnforcementEvent",
             "eu.exeris.kernel.core.contract.jfr.ContractResolvedEvent",
             "eu.exeris.kernel.core.crypto.openssl.NativeCipherContextFreeFailureEvent",
