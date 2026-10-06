@@ -14,7 +14,8 @@
 # Usage:
 #   tools/help-header-check/help-header-check.sh
 #
-# Needs no build: each script answers --help before it looks for anything it checks.
+# Needs no build, but needs a JDK on PATH: each script answers --help before it looks for anything
+# it checks, except that spi-api-diff reads the running JDK's release first.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

@@ -11,9 +11,8 @@
 # upgrade that restores the random serial number produces one that is correct but no longer
 # reproducible. All three read as success to anything that only checks the file is there.
 #
-# The reproducibility half of the same stream is checked by `mvn artifact:check-buildplan`, which
-# reads the build plan rather than the output and so catches a newly added plugin BEFORE it has
-# published anything.
+# Reproducibility is checked separately by `mvn artifact:check-buildplan`, which reads the build
+# plan rather than the output and so catches a newly added plugin BEFORE it has published anything.
 #
 # Usage:
 #   tools/sbom-gate/sbom-gate.sh
