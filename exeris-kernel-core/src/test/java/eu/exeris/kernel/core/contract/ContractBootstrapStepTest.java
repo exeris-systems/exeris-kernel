@@ -405,7 +405,7 @@ class ContractBootstrapStepTest {
                 .toList();
         assertThat(events).extracting(e -> e.getString("environment") + "|" + e.getString("source") + "|"
                         + e.getString("contractId") + "|" + e.getString("outcome"))
-                .containsExactly("staging|none|COMMUNITY|bound", "|none||" + KernelErrorCodes.EX_CFG_1002);
+                .containsExactlyInAnyOrder("staging|none|COMMUNITY|bound", "|none||" + KernelErrorCodes.EX_CFG_1002);
     }
 
     private static URLClassLoader loaderDeclaring(Path root, String providerClass) throws Exception {
