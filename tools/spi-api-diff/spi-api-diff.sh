@@ -57,7 +57,7 @@ while [[ $# -gt 0 ]]; do
     --history) HISTORY="${2:-}"; shift 2 ;;
     --fail-on-stable) FAIL_ON_STABLE=1; shift ;;
     --verify-surfaces) VERIFY_ONLY=1; shift ;;
-    -h|--help) sed -n '3,20p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done

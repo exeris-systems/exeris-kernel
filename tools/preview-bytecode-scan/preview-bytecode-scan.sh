@@ -26,7 +26,7 @@ EXPECT_MAJOR=69   # JDK 25 LTS
 while [ $# -gt 0 ]; do
   case "$1" in
     --expect-major) EXPECT_MAJOR="$2"; shift 2 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
