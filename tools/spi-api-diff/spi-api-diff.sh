@@ -35,9 +35,9 @@ SURFACES_CONF="$SCRIPT_DIR/stability-surfaces.conf"
 SPI_PATH="exeris-kernel-spi/src/main/java"
 # Derived from the running JDK rather than hardcoded. A fixed value silently rots the moment the
 # build's baseline moves, and fails with "release version N not supported" — a message that names
-# the flag, not the cause. Deriving also keeps the gate working on whatever JDK a contributor happens to run, since a JDK
-# cannot target a release newer than itself. Override with SPI_API_DIFF_RELEASE when diffing
-# deliberately against another level.
+# the flag, not the cause. Deriving also keeps the gate working on whatever JDK a contributor
+# happens to run, since a JDK cannot target a release newer than itself. Override with
+# SPI_API_DIFF_RELEASE when diffing deliberately against another level.
 DETECTED_RELEASE="$(java -XshowSettings:properties -version 2>&1 \
   | awk -F'= ' '/java\.specification\.version/ {gsub(/ /,"",$2); print $2}')"
 RELEASE_FLAG="${SPI_API_DIFF_RELEASE:-${DETECTED_RELEASE:-25}}"

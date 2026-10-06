@@ -13,8 +13,8 @@
 #
 # The SBOM is the quiet case: cyclonedx's `skipNotDeployed` defaults to true and central-publishing
 # sets `maven.deploy.skip`, so a release build can emit every signed artifact and no SBOM while the
-# ordinary CI SBOM gate — which runs a build where nothing skips deploy — stays green. A gate that is
-# green about a path it does not cover is worse than no gate.
+# ordinary CI SBOM gate — which runs a build where nothing skips deploy — stays green. A gate that
+# is green about a path it does not cover is worse than no gate.
 #
 # Usage:
 #   tools/release-readiness/release-readiness.sh

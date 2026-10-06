@@ -6,8 +6,8 @@
 #
 # KernelErrorCodes is declared the single source of truth for error codes
 # (.agents/policies/the-wall.md, hard constraint) and docs/subsystems/exceptions.md is what an operator actually reads when a code turns
-# up in a log. Nothing else connects the two. The drift is silent in both directions and each direction
-# fails differently:
+# up in a log. Nothing else connects the two. The drift is silent in both directions and each
+# direction fails differently:
 #
 #   - A code in the registry with no doc row reaches an operator as an identifier nothing explains,
 #     and nothing else fails on it: a whole domain can go undocumented without a red build.
