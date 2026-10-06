@@ -60,7 +60,8 @@ final class ManifestLocator {
      *
      * @param configuredPath value of {@value ContractBootstrapStep#MANIFEST_PATH_KEY}, if bound
      * @param defaultFile    file consulted when no path is configured
-     * @param classLoader    loader whose {@code license-manifest.json} resource is consulted last
+     * @param classLoader    loader whose {@code license-manifest.json} resource is consulted last; {@code null}
+     *                       means the system class loader
      * @return the manifest and its source, or {@code null} when no path is configured and no default exists
      * @throws ContractBreachException with EX-LIC-0001 if a configured path is blank, or a manifest exists
      *                                 but cannot be read or is larger than 64 KiB
@@ -100,7 +101,10 @@ final class ManifestLocator {
     }
 
     private static ManifestSource readClasspathResource(ClassLoader classLoader) {
-        try (InputStream stream = classLoader.getResourceAsStream(DEFAULT_MANIFEST_FILENAME)) {
+        // A null loader means the system class loader, as it does to the ServiceLoader that discovers
+        // the requirements; a thread's context class loader may be null.
+        ClassLoader loader = classLoader != null ? classLoader : ClassLoader.getSystemClassLoader();
+        try (InputStream stream = loader.getResourceAsStream(DEFAULT_MANIFEST_FILENAME)) {
             if (stream == null) {
                 return null;
             }

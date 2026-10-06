@@ -3355,7 +3355,7 @@ fails, and fixed to `false` both positive cases fail.
 
 **Owner:** Core / Bootstrap, Crypto, Contract subsystems.
 
-**Status: IN PROGRESS (v0.13).** Kernel side implemented on the licence-contract branch; the items under "Open within this item" remain.
+**Status: IN PROGRESS (v0.13).** Kernel side implemented in exeris-systems/exeris-kernel#608; the items under "Open within this item" remain.
 
 **Resolution:**
 - Define `ExecutionContract`, `WorkloadEnvelope`, `EnforcementLevel`, `ExecutionEnvironment` and the `EntitlementRequirement` SPI in `exeris-kernel-spi` (`eu.exeris.kernel.spi.contract`).

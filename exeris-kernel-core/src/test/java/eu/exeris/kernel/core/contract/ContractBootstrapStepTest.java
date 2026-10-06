@@ -301,6 +301,13 @@ class ContractBootstrapStepTest {
     }
 
     @Test
+    @DisplayName("A null class loader reads the classpath through the system class loader, not into a NullPointerException")
+    void nullClassLoaderFallsBackToSystemLoader(@TempDir Path dir) {
+        assertThat(ManifestLocator.resolve(Optional.empty(), dir.resolve("license-manifest.json"), null)).isNull();
+        assertThat(RequirementDiscovery.requiredCapabilities(null)).isEmpty();
+    }
+
+    @Test
     @DisplayName("A classpath manifest larger than 64 KiB is refused, naming the classpath source")
     void oversizedClasspathManifestIsRefused(@TempDir Path root) throws Exception {
         Files.write(root.resolve("license-manifest.json"), new byte[64 * 1024 + 1]);
