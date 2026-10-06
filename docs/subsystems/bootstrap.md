@@ -52,8 +52,10 @@ never on a request path.
 
 - **Dependency‑Ordered Init**  
   A directed acyclic graph (DAG) built from each subsystem's `dependsOn()` resolves the order.  
-  Config is resolved first, before the orchestrator runs; Memory is the only `FOUNDATION` subsystem in
-  Community.
+  Config is resolved first, before the orchestrator runs. The Phase 0 contract gate
+  (`ContractBootstrapStep`, ADR-088 and ADR-089) then decides the execution contract, still before any
+  subsystem is initialized, so a refused boot has allocated no memory and bound no socket. Memory is the
+  only `FOUNDATION` subsystem in Community.
 
 - **Dependency-Round Start**  
   `SERVICES` and `RUNTIME` subsystems start in dependency-safe rounds on the booting thread — see "Phase
@@ -82,11 +84,13 @@ never on a request path.
 ## Diagram 1 — Boot DAG (Flowchart)
 
 The Community subsystem set as `CommunitySubsystemProvider` registers it. Arrows are declared
-`dependsOn()` edges; the subgraphs are `BootstrapPhase` values.
+`dependsOn()` edges; the subgraphs are `BootstrapPhase` values. Config and the contract gate are steps of
+`KernelBootstrap`, not subsystems, so they are drawn outside the phases with dashed edges.
 
 ```mermaid
 flowchart TD
     CFG["Config<br/>(resolved by KernelBootstrap<br/>via ServiceLoader of ConfigProvider<br/>before the orchestrator runs)"]
+    LIC["Contract gate<br/>(ContractBootstrapStep, boot() only:<br/>manifest, entitlement, environment<br/>ADR-088 / ADR-089)"]
 
     subgraph FOUNDATION["FOUNDATION (sequential)"]
         MEM[memory]
@@ -109,7 +113,8 @@ flowchart TD
         WS[websocket]
     end
 
-    CFG -.-> MEM
+    CFG -.-> LIC
+    LIC -.-> MEM
     MEM --> CRP & SEC & PER & STO & GRP & TRP
     CRP --> TRP
     PER --> GRP
@@ -217,6 +222,7 @@ the subsystem is not marked `STOPPED`.
 only the start. A phase starts only after every subsystem of the phase before it has returned from `start()`.
 
 ```
+contract:     ContractBootstrapStep, once, before any subsystem (boot() only; inspect() skips it)
 initialize:   all subsystems, topological order (Kahn's algorithm, ties broken by name)
 start:
   FOUNDATION: memory (sequential)
@@ -233,6 +239,23 @@ to declare it.
 
 > **Config** is resolved by `KernelBootstrap` via `ServiceLoader<ConfigProvider>` (highest `priority()` wins)
 > before the orchestrator runs — it is not a `Subsystem`. `Exceptions` is not a Subsystem layer.
+>
+> **The contract gate** is not a `Subsystem` either. `KernelBootstrap.boot()` runs `ContractBootstrapStep`
+> after Config and before the orchestrator, and binds its result to `KernelProviders.EXECUTION_CONTRACT` for
+> the whole kernel scope. The environment comes from the configuration key `environment` (`development` when
+> unset; the kernel profile plays no part). With no license manifest the kernel runs under the Community
+> contract in every environment, unless the environment is `production`, `production-load-sim` or `dr-hot`
+> and an `EntitlementRequirement` is on the classpath — then the boot is refused. A manifest that is present
+> is always verified. `inspect()` initializes nothing, so it does not run the gate and binds no contract.
+>
+> **Operators: declare the environment.** With `CommunityConfigProvider` the key `environment` is the system
+> property `-Dexeris.environment` or the variable `EXERIS_ENVIRONMENT`; the manifest path is
+> `-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`. A production deployment that declares
+> nothing runs as `development`: it is not gated, and if entitlement-requiring code is on the classpath the
+> gate says so with one `SOFT` warning rather than refusing the boot. A value outside the six environment
+> ids fails the boot with `ConfigProviderException` `EX-CFG-1002`; a manifest path bound to a blank value
+> fails it with `EX-LIC-0001`. An `EntitlementRequirement` that cannot be loaded, throws, or declares `null`,
+> nothing or a malformed capability id fails it with `EX-LIC-0008`, in every environment.
 
 ---
 
@@ -289,7 +312,9 @@ halts.
 - Tracks kernel state (`INITIALIZED → STARTED → SHUTTING_DOWN`, or `FAILED`) and per-subsystem state for
   probes (`KernelHealthMonitor`)
 - Offers `KernelBootstrap.inspect(Runnable)`, which resolves the sorted subsystem inventory without calling
-  any `initialize()` or `start()`
+  any `initialize()` or `start()`, and without running the contract gate
+- Runs the Phase 0 contract gate (`eu.exeris.kernel.core.contract.ContractBootstrapStep`) before the
+  orchestrator, and binds `KernelProviders.EXECUTION_CONTRACT`
 
 ---
 
@@ -309,7 +334,11 @@ halts.
 
 A boot failure reaches the caller of `KernelBootstrap.boot()` as `KernelBootstrap.BootstrapException`
 wrapping `SubsystemOrchestrator.BootstrapException`; a missing `ConfigProvider` fails with a
-`KernelBootstrap.BootstrapException` whose message cites `EX-CFG-0001`.
+`KernelBootstrap.BootstrapException` whose message cites `EX-CFG-0001`. A refusal by the contract gate
+reaches it unwrapped, as `ContractBreachException` with an `EX-LIC-` code (see
+[exceptions.md](exceptions.md)), and is raised before the orchestrator exists: no subsystem was initialized,
+so none is stopped, and no health state is recorded. The kernel never exits the JVM; the launcher decides
+what a refused boot does to the process.
 
 ---
 
@@ -547,12 +576,19 @@ not counted.
 - every `start()`, phase by phase, including the per-subsystem JFR class warm-up
 
 **Not included:** the `KernelStart` event and `ConfigProvider` resolution before it (timed by
-`ConfigSettingsResolved.durationMs`), and `kernelMain`.
+`ConfigSettingsResolved.durationMs`), the contract gate after it, and `kernelMain`.
 
 The full event set, all in category `Exeris Kernel / Bootstrap`: `KernelStart`, `ConfigSettingsResolved`,
 `SubsystemInitialized` (also emitted on failure, with `success=false` and `errorMessage`),
 `SubsystemStarted`, `KernelBootReady`, `SubsystemStopped`, `KernelShutdownComplete`,
-`CircularDependencyDetected`, `SubsystemHealthTransition`.
+`CircularDependencyDetected`, `SubsystemHealthTransition`. The contract gate records each decision as
+`eu.exeris.kernel.contract.Resolved` (`ContractResolvedEvent`, category `Exeris Kernel / Contract`): the
+environment, the manifest source, the bound contract or the error code that refused the boot, and
+`gateDuration`, which is the gate's time outside `KernelBootReady.totalDurationMs`. A `SOFT` or `AUDIT`
+violation, and a manifest verified inside its grace period, emit `eu.exeris.kernel.contract.Enforcement`
+(`ContractEnforcementEvent`); a `SOFT` one also logs a `WARNING` through `System.Logger`. Each distinct
+violation is reported once per process. Both events exist only while a JFR recording with them enabled is
+running, so an `AUDIT` violation with no recording leaves no trace.
 
 > **JVM warm-up note:** The first requests after boot will experience JIT compilation overhead while C2 compiles the hot path. This is expected and distinct from bootstrap completion — the readiness probe reflects DAG completion, not first-request throughput.
 
@@ -691,3 +727,5 @@ coverage status.
 - [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) — crash-file decoder cut (target-state crash buffer).
 - [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — §4: Community security subsystem binding `SECURITY_PROVIDER`.
 - [ADR-066](../adr/ADR-066-preview-clean-ga-baseline.md) — subsystems start on the booting thread, not in forked scopes.
+- [ADR-088](../adr/ADR-088.link.md) — the license manifest the contract gate reads and verifies.
+- [ADR-089](../adr/ADR-089.link.md) — the contract gate, its place ahead of FOUNDATION, and its enforcement levels.

@@ -6,6 +6,7 @@ package eu.exeris.kernel.spi.context;
 
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventProvider;
@@ -127,6 +128,18 @@ public final class KernelProviders {
      * @since 0.5
      */
     public static final ScopedValue<ConfigProvider> CURRENT_CONFIG = ScopedValue.newInstance();
+
+    /**
+     * The active {@link ExecutionContract}, decided once by the kernel's contract gate.
+     *
+     * <p>Bound by {@code KernelBootstrap.boot()} in {@code exeris-kernel-core}: the contract gate runs
+     * after configuration and before any subsystem is initialized, and its contract is bound for the
+     * whole kernel scope. {@code KernelBootstrap.inspect()} runs no gate and leaves this unbound.
+     *
+     * @apiNote Reach the binding through the typed accessor {@link #executionContract()}.
+     * @since 0.13
+     */
+    public static final ScopedValue<ExecutionContract> EXECUTION_CONTRACT = ScopedValue.newInstance();
 
     /**
      * The active {@link MemoryProvider} factory (bound once during bootstrap).
@@ -870,5 +883,19 @@ public final class KernelProviders {
      */
     public static ConfigProvider config() {
         return CURRENT_CONFIG.get();
+    }
+
+    /**
+     * Returns the active {@link ExecutionContract} from the current kernel scope.
+     *
+     * <p>Available inside the scope of {@code KernelBootstrap.boot()}, once the contract gate has decided
+     * the contract.
+     *
+     * @return execution contract bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     * @since 0.13
+     */
+    public static ExecutionContract executionContract() {
+        return EXECUTION_CONTRACT.get();
     }
 }
