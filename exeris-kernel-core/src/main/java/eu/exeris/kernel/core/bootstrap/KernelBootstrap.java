@@ -142,8 +142,17 @@ public final class KernelBootstrap {
      *
      * @param kernelMain the top-level kernel runnable (your application entry point)
      * @throws BootstrapException if config resolution or subsystem boot fails
-     * @throws ContractBreachException if the Phase 0 contract gate refuses the boot; no subsystem has
-     *                                 been initialized
+     * @throws ContractBreachException if the Phase 0 contract gate refuses the boot, before any subsystem
+     *                                 is initialized,
+     *                                 with {@code EX-LIC-0001} (a manifest that cannot be read or fails the
+     *                                 schema or its signature), {@code EX-LIC-0002} (unknown issuer key),
+     *                                 {@code EX-LIC-0003} / {@code EX-LIC-0006} (outside its validity window),
+     *                                 {@code EX-LIC-0004} / {@code EX-LIC-0007} (a {@code HARD} capability or
+     *                                 environment breach), {@code EX-LIC-0005} (a production class with a
+     *                                 declared requirement and no manifest) or {@code EX-LIC-0008} (an
+     *                                 {@code EntitlementRequirement} that breaks its contract)
+     * @throws ConfigProvider.ConfigProviderException with {@code EX-CFG-1002} if the {@code environment}
+     *                                 configuration key names none of the six environment classes
      */
     public void boot(Runnable kernelMain) throws BootstrapException {
         runKernel(true, kernelMain);
@@ -236,7 +245,9 @@ public final class KernelBootstrap {
      * @param config   active configuration provider
      * @param fullBoot {@code false} for {@link #inspect(Runnable)}, which runs no gate and binds no contract
      * @return the scope carrier
-     * @throws ContractBreachException if the gate refuses the boot
+     * @throws ContractBreachException if the gate refuses the boot, with an {@code EX-LIC} code as
+     *                                 {@link ContractBootstrapStep#run} lists them
+     * @throws ConfigProvider.ConfigProviderException with {@code EX-CFG-1002} for an unknown environment
      */
     private ScopedValue.Carrier kernelScope(ConfigProvider config, boolean fullBoot) {
         ScopedValue.Carrier scope = ScopedValue.where(KernelProviders.CURRENT_CONFIG, config);

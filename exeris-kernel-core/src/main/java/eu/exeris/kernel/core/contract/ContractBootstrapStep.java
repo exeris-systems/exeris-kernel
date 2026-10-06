@@ -84,8 +84,13 @@ public final class ContractBootstrapStep {
      * @param classLoader loader that discovers {@link EntitlementRequirement} implementations and the
      *                    classpath manifest
      * @return the contract the kernel runs under
-     * @throws ContractBreachException if a requirement breaks its contract, a manifest fails verification,
-     *                                 or the environment requires an entitlement no manifest grants
+     * @throws ContractBreachException with {@code EX-LIC-0001} (a manifest that cannot be read or fails the
+     *                                 schema or its signature), {@code EX-LIC-0002} (unknown issuer key),
+     *                                 {@code EX-LIC-0003} / {@code EX-LIC-0006} (outside its validity window),
+     *                                 {@code EX-LIC-0004} / {@code EX-LIC-0007} (a {@code HARD} capability or
+     *                                 environment breach), {@code EX-LIC-0005} (a production class with a
+     *                                 declared requirement and no manifest) or {@code EX-LIC-0008} (an
+     *                                 {@code EntitlementRequirement} that breaks its contract)
      * @throws ConfigProvider.ConfigProviderException with {@code EX-CFG-1002} if the declared
      *                                 environment names none of the six environment classes
      */

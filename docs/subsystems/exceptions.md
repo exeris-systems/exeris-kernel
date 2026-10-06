@@ -437,6 +437,7 @@ Sentinel constructor — without coupling itself to any specific network protoco
 ## Owning ADRs
 
 - [ADR-083](../adr/ADR-083-exception-fault-origin.md) — A kernel exception says whose fault it is
+- [ADR-088](../adr/ADR-088.link.md) / [ADR-089](../adr/ADR-089.link.md) — the `EX-LIC-` codes of the license manifest and the contract gate
 
 ## Stability
 

@@ -727,3 +727,5 @@ coverage status.
 - [ADR-039](../adr/ADR-039-open-core-observability-boundary.md) — crash-file decoder cut (target-state crash buffer).
 - [ADR-061](../adr/ADR-061-declarable-http-route-authorization-policy.md) — §4: Community security subsystem binding `SECURITY_PROVIDER`.
 - [ADR-066](../adr/ADR-066-preview-clean-ga-baseline.md) — subsystems start on the booting thread, not in forked scopes.
+- [ADR-088](../adr/ADR-088.link.md) — the license manifest the contract gate reads and verifies.
+- [ADR-089](../adr/ADR-089.link.md) — the contract gate, its place ahead of FOUNDATION, and its enforcement levels.
