@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# SBOM gate (v0.12 Stream B — supply-chain integrity).
+# SBOM gate (supply-chain integrity).
 #
 # Asserts that every artifact this reactor publishes carries a CycloneDX SBOM that describes THAT
 # artifact and lists what it actually resolves.
@@ -11,9 +11,8 @@
 # upgrade that restores the random serial number produces one that is correct but no longer
 # reproducible. All three read as success to anything that only checks the file is there.
 #
-# The reproducibility half of the same stream is checked by `mvn artifact:check-buildplan`, which
-# reads the build plan rather than the output and so catches a newly added plugin BEFORE it has
-# published anything.
+# Reproducibility is checked separately by `mvn artifact:check-buildplan`, which reads the build
+# plan rather than the output and so catches a newly added plugin BEFORE it has published anything.
 #
 # Usage:
 #   tools/sbom-gate/sbom-gate.sh
@@ -23,7 +22,7 @@
 set -euo pipefail
 
 case "${1:-}" in
-  -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+  -h|--help) awk 'NR > 1 && !/^#/ { exit } NR > 1' "$0"; exit 0 ;;
   "") ;;
   *) echo "unknown argument: $1" >&2; exit 2 ;;
 esac

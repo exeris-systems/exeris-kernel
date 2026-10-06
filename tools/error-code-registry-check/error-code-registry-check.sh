@@ -6,22 +6,18 @@
 #
 # KernelErrorCodes is declared the single source of truth for error codes
 # (.agents/policies/the-wall.md, hard constraint) and docs/subsystems/exceptions.md is what an operator actually reads when a code turns
-# up in a log. Nothing connected the two. The drift is silent in both directions and each direction
-# fails differently:
+# up in a log. Nothing else connects the two. The drift is silent in both directions and each
+# direction fails differently:
 #
-#   - A code in the registry with no doc row reaches an operator as an identifier nothing explains.
-#     Measured at the time this gate was written: TWENTY of 84 codes, including four entire domains
-#     (EX-BLOB, EX-DIAG, EX-JOB and the EX-UNK sentinel). It was found by chasing ONE missing row
-#     and looking at the rest, not by anything failing.
+#   - A code in the registry with no doc row reaches an operator as an identifier nothing explains,
+#     and nothing else fails on it: a whole domain can go undocumented without a red build.
 #   - A doc row with no code in the registry is a promise nothing keeps — an operator greps for a
-#     code that cannot be emitted. The v0.8 documentation sweep found five of those, so this
-#     direction is not hypothetical either.
+#     code that cannot be emitted.
 #
 # The third check is different in kind and belongs here because it has the same root: an EX- code
 # written as a STRING LITERAL outside the registry is a second source of truth that no rename will
-# follow. Two existed when this gate was written — a JFR event stamping "EX-MEM-1003" by hand, and a
-# telemetry sink whose "EX-UNK-0000" fallback was not a registered code at all, so every record with
-# no code of its own was stamped with an identifier absent from the registry AND from the doc.
+# follow. A JFR event stamping a code by hand, or a fallback literal that is not a registered code,
+# stamps records with an identifier absent from the registry AND from the doc.
 #
 # NOT CHECKED, deliberately: whether every code has a thrower. It looks like the natural fourth
 # check and it would be wrong — several codes are emitted by an orchestrator or a JFR event rather

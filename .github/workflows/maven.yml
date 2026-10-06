@@ -187,6 +187,13 @@ jobs:
         #
         # Config-only, so it needs no build artifact — same reasoning as the two gates above.
         run: tools/checkstyle-parity-check/checkstyle-parity-check.sh
+      - name: Help-Header Gate
+        # Every script under tools/ that answers --help prints its whole header, exits 0, and keeps
+        # doing so when the header changes length. Found by searching for the handler, so a new
+        # script is covered from its first commit.
+        #
+        # Sources-only, so it needs no build artifact — same reasoning as the gates above.
+        run: tools/help-header-check/help-header-check.sh
 
       - name: SPI Contract-Blindness Gate
         # exeris-kernel-spi states obligations. This fails when a contract position states instead

@@ -3,9 +3,8 @@
 # Keeps docs/release/1.0-scope.md and docs/ROADMAP.md from drifting apart.
 #
 # The roadmap owns the analysis and carries a `**1.0 disposition:**` line per item. The register
-# owns the state. Nothing connected them, which is how an item can be dispositioned and then never
-# tracked -- JPMS module naming was called a GA blocker in the v0.8 readiness audit, appeared in no
-# roadmap section afterwards, and surfaced again only because somebody remembered it.
+# owns the state. Nothing else connects them, so without this check an item can be dispositioned and
+# then never tracked.
 #
 # What this checks, precisely: the set of roadmap headings carrying a 1.0 disposition equals the set
 # the register declares it accounts for, in its `roadmap-dispositions` comment block. Exact string
@@ -32,16 +31,16 @@ done
 
 # Roadmap: a `### ` heading is claimed when a later line, before the next heading, carries the
 # disposition marker.
-# Two details decide whether this extraction is right, and both were wrong in the first version:
+# Two details decide whether this extraction is right:
 #
 #   - the marker is anchored to the start of a line. Unanchored it also matches the prose in the
 #     "Road to 1.0" preamble, which describes the section rather than dispositioning an item.
 #   - the heading resets on ANY level, not just `### `. With `### ` only, that preamble match --
-#     which sits under a `## ` -- was attributed to the previous unrelated `### ` section, inventing
+#     which sits under a `## ` -- is attributed to the previous unrelated `### ` section, inventing
 #     a disposition for an item that has none and padding the count by one.
 #
-# Both symptoms were a single extra row that looked ordinary. The register was hand-fitted to the
-# broken output and the gate passed, which is the failure mode a gate is supposed to be immune to.
+# Either mistake shows as a single extra row that looks ordinary, and a register fitted to that
+# output would pass.
 awk '
   /^#+ /                    { h = "" }
   /^### /                   { h = substr($0, 5); sub(/[ \t]+$/, "", h); next }
