@@ -4,666 +4,645 @@
       "thread" : "main",
       "count" : 644
     }, {
-      "thread" : "exeris-flow--209157148332772197--7089341026650466602",
-      "count" : 6
-    }, {
-      "thread" : "exeris-flow-8961690438520483860--9197083242195289420",
-      "count" : 4
-    }, {
-      "thread" : "exeris-flow--7497437259370777969--7447956092250573633",
-      "count" : 4
-    }, {
-      "thread" : "exeris-flow-6156847007627620828--4994761106797270699",
-      "count" : 3
-    }, {
-      "thread" : "exeris-flow-2032485191779237440--9158135420092147964",
-      "count" : 3
-    }, {
-      "thread" : "exeris-flow-1470695179251232797--6780774593023378551",
-      "count" : 3
-    }, {
       "thread" : "exeris-flow-5631993309414043780--5035344793226599555",
+      "count" : 5
+    }, {
+      "thread" : "exeris-flow--209157148332772197--7089341026650466602",
+      "count" : 5
+    }, {
+      "thread" : "exeris-flow--1739051988927432204--7469035999506349364",
+      "count" : 4
+    }, {
+      "thread" : "exeris-flow--7689485565943661739--6088133226718434304",
+      "count" : 4
+    }, {
+      "thread" : "exeris-flow-7267398717568267622--8872062038372652577",
       "count" : 3
     }, {
-      "thread" : "junit-jupiter-timeout-watcher",
-      "count" : 2
+      "thread" : "exeris-flow-6880686778779709473--8332603893285822382",
+      "count" : 3
     }, {
-      "thread" : "exeris-flow-5454702517959472200--7279772360258998733",
-      "count" : 2
+      "thread" : "exeris-flow-7175645227306270198--7944227579372003014",
+      "count" : 3
+    }, {
+      "thread" : "exeris-flow--983870588530443609--5077608117280910137",
+      "count" : 3
+    }, {
+      "thread" : "exeris-flow--8480322609057812302--6058625402404187867",
+      "count" : 3
     } ],
     "topClasses" : [ {
+      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+      "count" : 505
+    }, {
       "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-      "count" : 314
+      "count" : 361
     }, {
       "class" : "java.util.HashMap$Node",
-      "count" : 207
-    }, {
-      "class" : "[Ljava.util.HashMap$Node;",
-      "count" : 168
-    }, {
-      "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
-      "count" : 161
-    }, {
-      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-      "count" : 142
-    }, {
-      "class" : "java.util.concurrent.ConcurrentHashMap",
-      "count" : 135
-    }, {
-      "class" : "[Ljava.lang.Object;",
-      "count" : 86
-    }, {
-      "class" : "java.util.ImmutableCollections$ListItr",
-      "count" : 81
+      "count" : 271
     }, {
       "class" : "eu.exeris.kernel.core.flow.FlowKey",
-      "count" : 72
+      "count" : 199
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap",
+      "count" : 181
+    }, {
+      "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+      "count" : 122
+    }, {
+      "class" : "java.util.ImmutableCollections$ListItr",
+      "count" : 116
+    }, {
+      "class" : "[Ljava.util.HashMap$Node;",
+      "count" : 116
+    }, {
+      "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
+      "count" : 56
     }, {
       "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
       "count" : 50
     }, {
-      "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-      "count" : 16
+      "class" : "[Ljava.lang.Object;",
+      "count" : 39
     }, {
       "class" : "java.lang.VirtualThread",
-      "count" : 12
-    }, {
-      "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
       "count" : 7
     }, {
-      "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
+      "class" : "java.lang.VirtualThread$VThreadContinuation",
+      "count" : 6
+    }, {
+      "class" : "jdk.internal.vm.StackChunk",
       "count" : 4
     }, {
-      "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+      "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+      "count" : 4
+    }, {
+      "class" : "java.lang.VirtualThread$VThreadContinuation$1",
       "count" : 4
     }, {
       "class" : "java.util.concurrent.ForkJoinTask$RunnableExecuteAction",
       "count" : 3
     }, {
-      "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000009e48de88",
-      "count" : 3
-    }, {
       "class" : "java.lang.String",
       "count" : 3
     }, {
-      "class" : "java.util.concurrent.atomic.AtomicLong",
+      "class" : "[B",
       "count" : 3
     }, {
-      "class" : "java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionNode",
+      "class" : "java.util.ArrayList",
       "count" : 2
     } ],
     "phaseBoundaries" : [ {
       "subsystem" : "bootstrap",
       "test_class" : "CoreBootstrapZeroAllocTckTest",
-      "file" : "CoreBootstrapZeroAllocTckTest-Bootstrap-20261005-081233.jfr",
-      "start" : 1791187953529,
-      "end" : 1791187953916,
+      "file" : "CoreBootstrapZeroAllocTckTest-Bootstrap-20261006-083003.jfr",
+      "start" : 1791275403127,
+      "end" : 1791275403502,
       "thread_id" : 3,
       "iterations" : 5000
     }, {
       "subsystem" : "security",
       "test_class" : "CoreCitadelGuardTckTest",
-      "file" : "CoreCitadelGuardTckTest-Security-20261005-081235.jfr",
-      "start" : 1791187955199,
-      "end" : 1791187955200,
+      "file" : "CoreCitadelGuardTckTest-Security-20261006-083004.jfr",
+      "start" : 1791275404994,
+      "end" : 1791275404995,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "security",
       "test_class" : "CoreStorageContextBridgeTckTest",
-      "file" : "CoreStorageContextBridgeTckTest-Security-20261005-081235.jfr",
-      "start" : 1791187955226,
-      "end" : 1791187955228,
+      "file" : "CoreStorageContextBridgeTckTest-Security-20261006-083005.jfr",
+      "start" : 1791275405074,
+      "end" : 1791275405076,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "flowengine",
       "test_class" : "CoreFlowZeroAllocTckTest",
-      "file" : "CoreFlowZeroAllocTckTest-FlowEngine-20261005-081335.jfr",
-      "start" : 1791188015748,
-      "end" : 1791188015847,
+      "file" : "CoreFlowZeroAllocTckTest-FlowEngine-20261006-083104.jfr",
+      "start" : 1791275464231,
+      "end" : 1791275464333,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "crypto",
       "test_class" : "CoreOffHeapTlsEngineZeroAllocTckTest",
-      "file" : "CoreOffHeapTlsEngineZeroAllocTckTest-Crypto-20261005-081235.jfr",
-      "start" : 1791187955829,
-      "end" : 1791187955833,
+      "file" : "CoreOffHeapTlsEngineZeroAllocTckTest-Crypto-20261006-083005.jfr",
+      "start" : 1791275405617,
+      "end" : 1791275405619,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "persistence",
       "test_class" : "CorePersistenceZeroAllocTckTest",
-      "file" : "CorePersistenceZeroAllocTckTest-Persistence-20261005-081239.jfr",
-      "start" : 1791187959240,
-      "end" : 1791187959240,
+      "file" : "CorePersistenceZeroAllocTckTest-Persistence-20261006-083008.jfr",
+      "start" : 1791275408639,
+      "end" : 1791275408640,
       "thread_id" : 3,
       "iterations" : 1000
     }, {
       "subsystem" : "telemetry",
       "test_class" : "CoreTelemetryZeroAllocTckTest",
-      "file" : "CoreTelemetryZeroAllocTckTest-Telemetry-20261005-081232.jfr",
-      "start" : 1791187952150,
-      "end" : 1791187952200,
+      "file" : "CoreTelemetryZeroAllocTckTest-Telemetry-20261006-083001.jfr",
+      "start" : 1791275401530,
+      "end" : 1791275401555,
       "thread_id" : 3,
       "iterations" : 100000
     } ],
     "unattributed" : [ {
-      "file" : "pin-crypto-steady-20261005-081235.jfr",
+      "file" : "pin-crypto-steady-20261006-083005.jfr",
       "reason" : "no_marker_and_no_tck_filename",
       "windows" : 0,
-      "events" : 7,
+      "events" : 5,
       "topClasses" : [ {
         "class" : "java.lang.VirtualThread",
         "count" : 2
       }, {
-        "class" : "java.util.LinkedHashMap",
-        "count" : 1
-      }, {
-        "class" : "[Ljava.util.HashMap$Node;",
-        "count" : 1
-      }, {
-        "class" : "java.util.concurrent.ConcurrentHashMap$MapEntry",
-        "count" : 1
-      }, {
-        "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+        "class" : "java.util.HashMap$KeySet",
         "count" : 1
       }, {
         "class" : "[B",
         "count" : 1
+      }, {
+        "class" : "java.lang.VirtualThread$VThreadContinuation$1",
+        "count" : 1
       } ]
     }, {
-      "file" : "pin-flowengine-steady-20261005-081328.jfr",
+      "file" : "pin-flowengine-steady-20261006-083056.jfr",
       "reason" : "no_marker_and_no_tck_filename",
       "windows" : 0,
-      "events" : 62,
+      "events" : 37,
       "topClasses" : [ {
         "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-        "count" : 14
-      }, {
-        "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
         "count" : 10
       }, {
         "class" : "java.lang.VirtualThread",
-        "count" : 8
-      }, {
-        "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-        "count" : 6
-      }, {
-        "class" : "[I",
         "count" : 4
       }, {
         "class" : "java.lang.VirtualThread$VThreadContinuation",
         "count" : 3
       }, {
-        "class" : "eu.exeris.kernel.core.flow.RuntimeFlowContext",
+        "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+        "count" : 3
+      }, {
+        "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+        "count" : 3
+      }, {
+        "class" : "java.util.concurrent.atomic.AtomicLong",
         "count" : 2
       }, {
-        "class" : "java.lang.Object",
+        "class" : "java.lang.VirtualThread$VThreadContinuation$1",
         "count" : 2
       }, {
-        "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
+        "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
         "count" : 2
       }, {
-        "class" : "java.lang.String",
-        "count" : 2
+        "class" : "java.lang.VirtualThread$$Lambda.0x00000000952c5d80",
+        "count" : 1
+      }, {
+        "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$$Lambda.0x000000009548f528",
+        "count" : 1
       } ]
     }, {
       "file" : "surefire.jfr",
       "reason" : "no_marker_and_no_tck_filename",
       "windows" : 0,
-      "events" : 591,
+      "events" : 458,
       "topClasses" : [ {
         "class" : "[B",
-        "count" : 183
-      }, {
-        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.SymbolTable$Entry",
-        "count" : 37
-      }, {
-        "class" : "[Ljava.lang.Object;",
-        "count" : 29
+        "count" : 138
       }, {
         "class" : "java.lang.String",
-        "count" : 23
+        "count" : 25
       }, {
-        "class" : "[I",
+        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.SymbolTable$Entry",
         "count" : 22
       }, {
-        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.Label",
+        "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
         "count" : 21
       }, {
-        "class" : "java.util.ArrayList",
+        "class" : "[Ljava.lang.Object;",
+        "count" : 18
+      }, {
+        "class" : "[I",
         "count" : 16
       }, {
-        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.MethodWriter",
+        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.Label",
+        "count" : 15
+      }, {
+        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.Type",
         "count" : 13
       }, {
-        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.tree.MethodInsnNode",
-        "count" : 12
-      }, {
-        "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.tree.VarInsnNode",
         "count" : 11
+      }, {
+        "class" : "[Lorg.jacoco.agent.rt.internal_bac9136.asm.Label;",
+        "count" : 8
       } ]
     } ]
   },
   "community" : {
     "topThreads" : [ {
       "thread" : "main",
-      "count" : 472
-    }, {
-      "thread" : "exeris-flow--7497437259370777969--7447956092250573633",
-      "count" : 4
-    }, {
-      "thread" : "exeris-flow-569309062592934055--5160532691574801713",
-      "count" : 3
+      "count" : 530
     }, {
       "thread" : "paqs/CommunityNativeTcpCarrier/NORMAL/1",
-      "count" : 3
+      "count" : 14
     }, {
-      "thread" : "exeris-flow-8326076309451454553--6617124641484928257",
+      "thread" : "JFR Periodic Tasks",
+      "count" : 6
+    }, {
+      "thread" : "community-event-loop",
+      "count" : 4
+    }, {
+      "thread" : "exeris-flow-8694359920665378029--8607404790925891453",
+      "count" : 4
+    }, {
+      "thread" : "C1 CompilerThread0",
+      "count" : 4
+    }, {
+      "thread" : "ForkJoinPool-1-worker-3",
       "count" : 2
     }, {
-      "thread" : "exeris-flow--6741769184531040579--7117772959922993555",
+      "thread" : "exeris-flow-1551023664238899637--7158730640650460970",
       "count" : 2
     }, {
-      "thread" : "exeris-flow--3163762478020676767--7498853638901262295",
+      "thread" : "exeris-flow-994120776737308651--5071609127455855447",
       "count" : 2
     }, {
-      "thread" : "exeris-flow-5660265814584144129--5737771410605087495",
-      "count" : 2
-    }, {
-      "thread" : "exeris-flow--3354701539578400593--5147946971372716114",
-      "count" : 2
-    }, {
-      "thread" : "exeris-flow-5423149965398587810--6636743324577035980",
+      "thread" : "exeris-flow-4084000953974994029--8981779617225235441",
       "count" : 2
     } ],
     "topClasses" : [ {
       "class" : "java.lang.VirtualThread",
-      "count" : 262
-    }, {
-      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-      "count" : 104
+      "count" : 311
     }, {
       "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-      "count" : 65
+      "count" : 85
     }, {
-      "class" : "java.lang.VirtualThread$$Lambda.0x0000000087361698",
-      "count" : 52
+      "class" : "java.lang.VirtualThread$$Lambda.0x000000007d3618f8",
+      "count" : 59
     }, {
-      "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
-      "count" : 49
-    }, {
-      "class" : "java.util.concurrent.ConcurrentHashMap",
-      "count" : 38
+      "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+      "count" : 37
     }, {
       "class" : "eu.exeris.kernel.core.flow.FlowKey",
-      "count" : 28
+      "count" : 23
     }, {
-      "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-      "count" : 26
+      "class" : "eu.exeris.kernel.core.flow.CoreFlowRuntime$StepPlan",
+      "count" : 20
     }, {
       "class" : "jdk.internal.vm.StackChunk",
-      "count" : 12
+      "count" : 19
+    }, {
+      "class" : "[B",
+      "count" : 10
+    }, {
+      "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
+      "count" : 10
+    }, {
+      "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+      "count" : 10
+    }, {
+      "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+      "count" : 9
     }, {
       "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
       "count" : 8
     }, {
-      "class" : "[I",
-      "count" : 7
-    }, {
-      "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
+      "class" : "java.util.ArrayList",
       "count" : 7
     }, {
       "class" : "java.lang.VirtualThread$VThreadContinuation",
-      "count" : 6
+      "count" : 7
     }, {
-      "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
-      "count" : 6
-    }, {
-      "class" : "java.util.HashMap",
-      "count" : 6
-    }, {
-      "class" : "[B",
-      "count" : 5
-    }, {
-      "class" : "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent",
-      "count" : 4
+      "class" : "java.util.concurrent.ConcurrentHashMap",
+      "count" : 7
     }, {
       "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-      "count" : 4
+      "count" : 6
     }, {
-      "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
-      "count" : 4
+      "class" : "java.lang.String",
+      "count" : 6
     }, {
       "class" : "java.util.ArrayList$Itr",
-      "count" : 4
+      "count" : 6
+    }, {
+      "class" : "[Ljava.lang.Object;",
+      "count" : 5
+    }, {
+      "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance$Seed",
+      "count" : 5
     } ],
     "phaseBoundaries" : [ {
       "subsystem" : "security",
       "test_class" : "CommunityCitadelGuardTckTest",
-      "file" : "CommunityCitadelGuardTckTest-Security-20261005-081607.jfr",
-      "start" : 1791188167984,
-      "end" : 1791188167984,
+      "file" : "CommunityCitadelGuardTckTest-Security-20261006-083333.jfr",
+      "start" : 1791275613884,
+      "end" : 1791275613885,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "security",
       "test_class" : "CommunityRequiresRoleZeroAllocTckTest",
-      "file" : "CommunityRequiresRoleZeroAllocTckTest-Security-20261005-081606.jfr",
-      "start" : 1791188166092,
-      "end" : 1791188166092,
+      "file" : "CommunityRequiresRoleZeroAllocTckTest-Security-20261006-083331.jfr",
+      "start" : 1791275611906,
+      "end" : 1791275611906,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "security",
       "test_class" : "CommunityStorageContextBridgeTckTest",
-      "file" : "CommunityStorageContextBridgeTckTest-Security-20261005-081605.jfr",
-      "start" : 1791188165822,
-      "end" : 1791188165825,
+      "file" : "CommunityStorageContextBridgeTckTest-Security-20261006-083331.jfr",
+      "start" : 1791275611685,
+      "end" : 1791275611688,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "eventbus",
       "test_class" : "CommunityEventBusZeroAllocTckTest",
-      "file" : "CommunityEventBusZeroAllocTckTest-EventBus-20261005-081418.jfr",
-      "start" : 1791188058008,
-      "end" : 1791188058187,
+      "file" : "CommunityEventBusZeroAllocTckTest-EventBus-20261006-083143.jfr",
+      "start" : 1791275503904,
+      "end" : 1791275504133,
       "thread_id" : 3,
       "iterations" : 100000
     }, {
       "subsystem" : "graph",
       "test_class" : "CommunityExecutionGraphZeroAllocTckTest",
-      "file" : "CommunityExecutionGraphZeroAllocTckTest-Graph-20261005-081400.jfr",
-      "start" : 1791188040412,
-      "end" : 1791188040422,
+      "file" : "CommunityExecutionGraphZeroAllocTckTest-Graph-20261006-083126.jfr",
+      "start" : 1791275486918,
+      "end" : 1791275486927,
       "thread_id" : 3,
       "iterations" : 1000
     }, {
       "subsystem" : "flowengine",
       "test_class" : "CommunityFlowZeroAllocTckTest",
-      "file" : "CommunityFlowZeroAllocTckTest-FlowEngine-20261005-081644.jfr",
-      "start" : 1791188204402,
-      "end" : 1791188204471,
+      "file" : "CommunityFlowZeroAllocTckTest-FlowEngine-20261006-083401.jfr",
+      "start" : 1791275641037,
+      "end" : 1791275641112,
       "thread_id" : 3,
       "iterations" : 10000
     }, {
       "subsystem" : "persistence",
       "test_class" : "CommunityPersistenceZeroAllocTckTest",
-      "file" : "CommunityPersistenceZeroAllocTckTest-Persistence-20261005-081633.jfr",
-      "start" : 1791188193492,
-      "end" : 1791188193583,
+      "file" : "CommunityPersistenceZeroAllocTckTest-Persistence-20261006-083350.jfr",
+      "start" : 1791275630692,
+      "end" : 1791275630773,
       "thread_id" : 3,
       "iterations" : 1000
     }, {
       "subsystem" : "storagecontext",
       "test_class" : "CommunityStorageContextTckTest",
-      "file" : "CommunityStorageContextTckTest-StorageContext-20261005-081608.jfr",
-      "start" : 1791188168021,
-      "end" : 1791188168030,
+      "file" : "CommunityStorageContextTckTest-StorageContext-20261006-083333.jfr",
+      "start" : 1791275613913,
+      "end" : 1791275613920,
       "thread_id" : 3,
       "iterations" : 1000000
     }, {
       "subsystem" : "transport",
       "test_class" : "CommunityTransportZeroAllocMultiReactor2TckTest",
-      "file" : "CommunityTransportZeroAllocMultiReactor2TckTest-Transport-20261005-081521.jfr",
-      "start" : 1791188121008,
-      "end" : 1791188121012,
+      "file" : "CommunityTransportZeroAllocMultiReactor2TckTest-Transport-20261006-083146.jfr",
+      "start" : 1791275506927,
+      "end" : 1791275506932,
       "thread_id" : 3,
       "iterations" : 1000
     }, {
       "subsystem" : "transport",
       "test_class" : "CommunityTransportZeroAllocMultiReactor4TckTest",
-      "file" : "CommunityTransportZeroAllocMultiReactor4TckTest-Transport-20261005-081519.jfr",
-      "start" : 1791188119558,
-      "end" : 1791188119567,
+      "file" : "CommunityTransportZeroAllocMultiReactor4TckTest-Transport-20261006-083145.jfr",
+      "start" : 1791275505428,
+      "end" : 1791275505437,
       "thread_id" : 3,
       "iterations" : 1000
     }, {
       "subsystem" : "transport",
       "test_class" : "CommunityTransportZeroAllocTckTest",
-      "file" : "CommunityTransportZeroAllocTckTest-Transport-20261005-081419.jfr",
-      "start" : 1791188059331,
-      "end" : 1791188059344,
+      "file" : "CommunityTransportZeroAllocTckTest-Transport-20261006-083145.jfr",
+      "start" : 1791275505236,
+      "end" : 1791275505249,
       "thread_id" : 3,
       "iterations" : 1000
     }, {
       "subsystem" : "memory",
       "test_class" : "CommunityZeroGcJfrMonitorTckTest",
-      "file" : "CommunityZeroGcJfrMonitorTckTest-Memory-20261005-081612.jfr",
-      "start" : 1791188172118,
-      "end" : 1791188172125,
+      "file" : "CommunityZeroGcJfrMonitorTckTest-Memory-20261006-083337.jfr",
+      "start" : 1791275617431,
+      "end" : 1791275617441,
       "thread_id" : 3,
       "iterations" : 10000
     } ],
     "unattributed" : [ {
-      "file" : "pin-eventbus-steady-20261005-081417.jfr",
+      "file" : "pin-eventbus-steady-20261006-083143.jfr",
       "reason" : "no_marker_and_no_tck_filename",
       "windows" : 0,
-      "events" : 14,
+      "events" : 11,
       "topClasses" : [ {
         "class" : "java.lang.VirtualThread",
-        "count" : 5
+        "count" : 3
       }, {
-        "class" : "java.util.ImmutableCollections$ListItr",
+        "class" : "java.util.concurrent.ConcurrentHashMap$Node",
         "count" : 2
       }, {
-        "class" : "java.lang.VirtualThread$$Lambda.0x0000000087361698",
+        "class" : "[Ljava.util.HashMap$Node;",
+        "count" : 1
+      }, {
+        "class" : "java.util.LinkedHashMap$Entry",
+        "count" : 1
+      }, {
+        "class" : "java.util.ImmutableCollections$List12",
+        "count" : 1
+      }, {
+        "class" : "[B",
         "count" : 1
       }, {
         "class" : "[Ljava.lang.Object;",
         "count" : 1
       }, {
-        "class" : "eu.exeris.kernel.core.events.InMemoryEventBus$$Lambda.0x00000000874a18e0",
+        "class" : "java.util.concurrent.ForkJoinTask$RunnableExecuteAction",
         "count" : 1
+      } ]
+    }, {
+      "file" : "pin-flowengine-steady-20261006-083408.jfr",
+      "reason" : "no_marker_and_no_tck_filename",
+      "windows" : 0,
+      "events" : 18,
+      "topClasses" : [ {
+        "class" : "java.lang.VirtualThread",
+        "count" : 3
+      }, {
+        "class" : "java.lang.VirtualThread$VThreadContinuation",
+        "count" : 2
+      }, {
+        "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
+        "count" : 2
+      }, {
+        "class" : "java.util.concurrent.atomic.AtomicBoolean",
+        "count" : 2
       }, {
         "class" : "java.util.LinkedHashMap",
         "count" : 1
       }, {
-        "class" : "java.util.HashMap$Node",
+        "class" : "[I",
         "count" : 1
-      }, {
-        "class" : "java.util.HashMap",
-        "count" : 1
-      }, {
-        "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-        "count" : 1
-      } ]
-    }, {
-      "file" : "pin-flowengine-steady-20261005-081652.jfr",
-      "reason" : "no_marker_and_no_tck_filename",
-      "windows" : 0,
-      "events" : 61,
-      "topClasses" : [ {
-        "class" : "java.util.concurrent.ConcurrentHashMap$Node",
-        "count" : 13
-      }, {
-        "class" : "java.lang.VirtualThread",
-        "count" : 9
-      }, {
-        "class" : "java.util.concurrent.ConcurrentHashMap$ReservationNode",
-        "count" : 5
-      }, {
-        "class" : "eu.exeris.kernel.core.flow.RuntimeFlowInstance",
-        "count" : 5
-      }, {
-        "class" : "[B",
-        "count" : 5
-      }, {
-        "class" : "eu.exeris.kernel.core.flow.FlowKey",
-        "count" : 4
-      }, {
-        "class" : "[Ljava.util.concurrent.ConcurrentHashMap$Node;",
-        "count" : 4
-      }, {
-        "class" : "java.lang.VirtualThread$VThreadContinuation",
-        "count" : 3
-      }, {
-        "class" : "java.util.concurrent.ForkJoinTask$AdaptedRunnableAction",
-        "count" : 2
       }, {
         "class" : "java.lang.ThreadBuilders$VirtualThreadBuilder",
-        "count" : 2
-      } ]
-    }, {
-      "file" : "pin-memory-steady-20261005-081608.jfr",
-      "reason" : "no_marker_and_no_tck_filename",
-      "windows" : 0,
-      "events" : 9,
-      "topClasses" : [ {
-        "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-        "count" : 2
-      }, {
-        "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
         "count" : 1
       }, {
-        "class" : "java.util.HashMap",
+        "class" : "java.util.concurrent.ConcurrentHashMap$Node",
+        "count" : 1
+      }, {
+        "class" : "java.util.concurrent.atomic.AtomicLong",
+        "count" : 1
+      }, {
+        "class" : "java.lang.Object",
+        "count" : 1
+      } ]
+    }, {
+      "file" : "pin-memory-steady-20261006-083334.jfr",
+      "reason" : "no_marker_and_no_tck_filename",
+      "windows" : 0,
+      "events" : 5,
+      "topClasses" : [ {
+        "class" : "java.util.LinkedHashMap",
         "count" : 1
       }, {
         "class" : "java.util.HashMap$KeyIterator",
         "count" : 1
       }, {
-        "class" : "java.util.HashMap$Node",
+        "class" : "java.lang.VirtualThread$VThreadContinuation",
         "count" : 1
       }, {
-        "class" : "java.lang.StringBuilder",
+        "class" : "eu.exeris.kernel.tck.contract.AbstractSubsystemCarrierPinningTck$$Lambda.0x000000007d83aaa0",
         "count" : 1
       }, {
         "class" : "java.lang.VirtualThread",
         "count" : 1
-      }, {
-        "class" : "java.lang.VirtualThread$VThreadContinuation$1",
-        "count" : 1
       } ]
     }, {
-      "file" : "pin-persistence-steady-20261005-081641.jfr",
+      "file" : "pin-persistence-steady-20261006-083357.jfr",
       "reason" : "no_marker_and_no_tck_filename",
       "windows" : 0,
       "events" : 60,
       "topClasses" : [ {
-        "class" : "java.util.HashMap",
-        "count" : 6
+        "class" : "java.util.ArrayList$Itr",
+        "count" : 9
+      }, {
+        "class" : "jdk.internal.vm.StackChunk",
+        "count" : 4
       }, {
         "class" : "[Ljava.lang.Object;",
         "count" : 3
       }, {
-        "class" : "org.h2.expression.ExpressionVisitor",
+        "class" : "[Lcom.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry;",
         "count" : 3
-      }, {
-        "class" : "[I",
-        "count" : 3
-      }, {
-        "class" : "org.h2.index.DualIndex",
-        "count" : 3
-      }, {
-        "class" : "eu.exeris.kernel.community.persistence.jdbc.JdbcPersistenceConnection",
-        "count" : 2
-      }, {
-        "class" : "java.lang.Object",
-        "count" : 2
-      }, {
-        "class" : "org.h2.mvstore.db.RowDataType",
-        "count" : 2
       }, {
         "class" : "[Ljava.util.HashMap$Node;",
+        "count" : 3
+      }, {
+        "class" : "org.h2.table.DualTable",
+        "count" : 3
+      }, {
+        "class" : "java.lang.ThreadLocal$ThreadLocalMap$Entry",
+        "count" : 3
+      }, {
+        "class" : "eu.exeris.kernel.community.persistence.CommunityHikariSupport$$Lambda.0x000000007d423370",
         "count" : 2
       }, {
-        "class" : "[Ljava.lang.ThreadLocal$ThreadLocalMap$Entry;",
+        "class" : "java.util.BitSet",
+        "count" : 2
+      }, {
+        "class" : "org.h2.jdbc.JdbcResultSet",
         "count" : 2
       } ]
     }, {
-      "file" : "pin-tck064-client-recv-20261005-081702.jfr",
+      "file" : "pin-tck064-client-recv-20261006-083418.jfr",
       "reason" : "no_marker_and_no_tck_filename",
       "windows" : 0,
-      "events" : 11,
+      "events" : 9,
       "topClasses" : [ {
-        "class" : "[B",
-        "count" : 3
-      }, {
         "class" : "jdk.internal.vm.StackChunk",
         "count" : 2
       }, {
         "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-        "count" : 2
-      }, {
-        "class" : "java.lang.invoke.InvokerBytecodeGenerator$2",
         "count" : 1
       }, {
-        "class" : "[Ljava.lang.Object;",
+        "class" : "jdk.internal.constant.ClassOrInterfaceDescImpl",
         "count" : 1
       }, {
-        "class" : "java.util.concurrent.locks.ReentrantLock",
+        "class" : "[I",
         "count" : 1
       }, {
-        "class" : "[Ljdk.jfr.internal.util.TimespanUnit;",
+        "class" : "[B",
         "count" : 1
-      } ]
-    }, {
-      "file" : "pin-transport-steady-20261005-081601.jfr",
-      "reason" : "no_marker_and_no_tck_filename",
-      "windows" : 0,
-      "events" : 15,
-      "topClasses" : [ {
-        "class" : "jdk.internal.vm.StackChunk",
-        "count" : 7
-      }, {
-        "class" : "java.lang.VirtualThread",
-        "count" : 2
       }, {
         "class" : "[Ljava.util.HashMap$Node;",
         "count" : 1
       }, {
-        "class" : "java.lang.Integer",
+        "class" : "java.util.ArrayList$Itr",
         "count" : 1
       }, {
-        "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
+        "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$MethodRefEntryImpl",
+        "count" : 1
+      } ]
+    }, {
+      "file" : "pin-transport-steady-20261006-083326.jfr",
+      "reason" : "no_marker_and_no_tck_filename",
+      "windows" : 0,
+      "events" : 9,
+      "topClasses" : [ {
+        "class" : "jdk.internal.vm.StackChunk",
+        "count" : 4
+      }, {
+        "class" : "[B",
         "count" : 1
       }, {
-        "class" : "java.util.HashMap$Node",
+        "class" : "java.lang.VirtualThread",
         "count" : 1
       }, {
         "class" : "java.lang.VirtualThread$VThreadContinuation$1",
         "count" : 1
       }, {
-        "class" : "[B",
+        "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+        "count" : 1
+      }, {
+        "class" : "java.lang.String",
         "count" : 1
       } ]
     }, {
       "file" : "surefire.jfr",
       "reason" : "no_marker_and_no_tck_filename",
       "windows" : 0,
-      "events" : 597,
+      "events" : 548,
       "topClasses" : [ {
         "class" : "[B",
-        "count" : 169
+        "count" : 155
       }, {
         "class" : "org.jacoco.agent.rt.internal_bac9136.asm.SymbolTable$Entry",
-        "count" : 44
+        "count" : 41
       }, {
         "class" : "[Ljava.lang.Object;",
-        "count" : 35
+        "count" : 30
       }, {
         "class" : "java.lang.String",
-        "count" : 33
-      }, {
-        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.Label",
-        "count" : 24
-      }, {
-        "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
-        "count" : 23
-      }, {
-        "class" : "java.util.ArrayList",
-        "count" : 20
-      }, {
-        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.Type",
-        "count" : 14
+        "count" : 29
       }, {
         "class" : "[I",
-        "count" : 14
+        "count" : 27
       }, {
-        "class" : "[Lorg.jacoco.agent.rt.internal_bac9136.asm.Label;",
-        "count" : 11
+        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.Label",
+        "count" : 20
+      }, {
+        "class" : "jdk.internal.classfile.impl.AbstractPoolEntry$Utf8EntryImpl",
+        "count" : 15
+      }, {
+        "class" : "[Ljava.lang.classfile.constantpool.PoolEntry;",
+        "count" : 15
+      }, {
+        "class" : "org.jacoco.agent.rt.internal_bac9136.asm.MethodWriter",
+        "count" : 12
+      }, {
+        "class" : "java.util.ArrayList",
+        "count" : 12
       } ]
     } ]
   }
