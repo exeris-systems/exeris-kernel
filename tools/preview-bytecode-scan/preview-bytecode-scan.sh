@@ -3,8 +3,8 @@
 # Preview-bytecode gate (ADR-066).
 #
 # Asserts that nothing the project DISTRIBUTES carries preview bytecode, and that every shipped
-# class targets the declared LTS class-file major. Since v0.12 no source in the repository uses a
-# preview API in any scope and the build sets no --enable-preview, so there is nothing for this
+# class targets the declared LTS class-file major. No source on this line uses a preview API in any
+# scope and the build sets no --enable-preview, so there is nothing for this
 # gate's published-only scope to exclude — it stays scoped to what ships because that is what a
 # consumer trips over, not because fixtures are exempt.
 #
@@ -111,12 +111,9 @@ def publishing_modules():
 
 # Read the JARS, not a directory glob. The scope of this gate has to be derived from what the build
 # actually publishes, because the thing it is protecting against is a consumer tripping over a stamp
-# in a downloaded artifact. A `*/target/classes/**` glob looked equivalent and was not:
-# exeris-kernel-tck had no src/main at the time, so its entire distributed surface was a test-jar
-# built from src/test — 55 of its classes shipped preview-stamped, invisible to this gate by
-# construction, for the whole milestone that advertised the opposite. That module now publishes an
-# ordinary jar, which is why the rule is written as it is: reading what the build publishes survived
-# a change in where the sources live, and a glob over src/main would not have.
+# in a downloaded artifact. A `*/target/classes/**` glob is not equivalent: a module whose published
+# jar is built from anywhere other than src/main, a test-jar for instance, would be invisible to it.
+# Reading what the build publishes holds wherever the sources live.
 expected_modules = publishing_modules()
 missing = []
 for module in expected_modules:
