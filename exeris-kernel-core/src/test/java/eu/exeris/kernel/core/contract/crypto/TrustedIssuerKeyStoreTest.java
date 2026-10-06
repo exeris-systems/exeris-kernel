@@ -55,7 +55,7 @@ class TrustedIssuerKeyStoreTest {
                 .map(keyId -> HexFormat.of().formatHex(TrustedIssuerKeyStore.getPublicKeyBytes(keyId)))
                 .collect(Collectors.toSet());
 
-        assertThat(embedded).doesNotContainAnyElementsOf(RFC8032_TEST_VECTORS.values());
+        assertThat(embedded).isNotEmpty().doesNotContainAnyElementsOf(RFC8032_TEST_VECTORS.values());
     }
 
     @Test

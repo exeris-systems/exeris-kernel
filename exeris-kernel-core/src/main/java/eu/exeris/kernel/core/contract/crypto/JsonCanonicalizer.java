@@ -134,6 +134,14 @@ public final class JsonCanonicalizer {
         return new Parser(json).parseRoot();
     }
 
+    /**
+     * Parses a JSON document whose root is an object.
+     *
+     * @param json source JSON
+     * @return root object, keys in document order
+     * @throws ContractBreachException with EX-LIC-0001 if the document is not valid JSON or its root is not
+     *                                 an object
+     */
     @SuppressWarnings("unchecked")
     public static Map<String, Object> parseJsonObject(String json) {
         Object root = parse(json);
@@ -222,7 +230,9 @@ public final class JsonCanonicalizer {
      * qualify. {@link Double#toString(double)} renders at least two significant digits, so where a
      * single digit already round-trips (for example {@code 5e-324}) it is found here.
      */
-    @SuppressWarnings("PMD.AvoidDecimalLiteralsInBigDecimalConstructor") // the exact binary value is the point
+    // new BigDecimal(double) is the exact binary value; BigDecimal.valueOf would round through
+    // Double.toString first and could hand back the two-digit form this method exists to shorten.
+    @SuppressWarnings({"PMD.AvoidDecimalLiteralsInBigDecimalConstructor", "java:S2111"})
     private static BigDecimal shortestDecimal(double magnitude) {
         BigDecimal decimal = new BigDecimal(Double.toString(magnitude)).stripTrailingZeros();
         if (decimal.precision() != 2) {

@@ -54,7 +54,6 @@ graph TD
 | `*.spi.crypto`             | `TlsEngine`, `TlsHandshakeResult`, `TlsPhase`      | `SSL_CTX*` pointers, OpenSSL symbol names   |
 | `*.spi.http`               | `HttpRequest`, `HttpResponse`, `HttpProvider`, `HttpServerEngine`, `HttpClientEngine` | HTTP wire codec implementations (`Hpack*`, `Http2*`, `Http1*`) |
 | `*.spi.exceptions`         | `ExerisKernelException` hierarchy                  | Checked exceptions on hot paths             |
-| `*.spi.contract`           | `ExecutionContract`, `ContractViolation`, `ExecutionEnvironment`, `EntitlementRequirement`, `EnforcementLevel`, `WorkloadEnvelope` | Manifest parsing, signature verification, trust roots, logging or JFR — those are Core (`eu.exeris.kernel.core.contract`) |
 
 ## 🛡️ Architectural Rules (L0 Enforcement)
 
@@ -63,10 +62,7 @@ graph TD
 2. **Immutable Carriers:** All data transfer objects must be Java `record` or deeply immutable `final class`, designed
    for Valhalla readiness (JEP 401) — no `synchronized`, no `System.identityHashCode()`, no identity comparisons (`==`)
    on these objects.
-3. **No Logic:** SPI contains only Contracts (Interfaces), Exceptions, Enums, and Constants. A value record may
-   carry the pure rules that define its own meaning and touch nothing outside it — `ExecutionContract`'s
-   `assertCapability` / `assertEnvironment`, its enforcement defaults and `communityFallback()` are such rules:
-   they decide from the record's fields alone, and reporting what they return is Core's job.
+3. **No Logic:** SPI contains only Contracts (Interfaces), Exceptions, Enums, and Constants.
 4. **Loaned Memory:** All buffer passing must use `LoanedBuffer` to enforce reference counting and zero-copy semantics.
 
 ## HTTP in SPI (Current Repository State)

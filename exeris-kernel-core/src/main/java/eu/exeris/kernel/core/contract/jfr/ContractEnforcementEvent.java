@@ -25,21 +25,36 @@ import jdk.jfr.StackTrace;
 @StackTrace(false)
 public class ContractEnforcementEvent extends Event {
 
+    /** Identifier of the execution contract. */
     @Label("Contract ID")
     @Description("Identifier of the execution contract")
     public String contractId;
 
+    /** Name of the constraint being enforced. */
     @Label("Constraint Key")
     @Description("Name of the constraint being enforced")
     public String constraintKey;
 
+    /** Enforcement tier applied: HARD, SOFT, or AUDIT. */
     @Label("Enforcement Level")
     @Description("Enforcement tier applied: HARD, SOFT, or AUDIT")
     public String enforcementLevel;
 
+    /** Contextual details of the enforcement action. */
     @Label("Details")
     @Description("Contextual details of the enforcement action")
     public String details;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ContractEnforcementEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Emits a contract enforcement event if FlightRecorder is initialized and this event is enabled.

@@ -27,30 +27,47 @@ import jdk.jfr.Timespan;
 @StackTrace(false)
 public class ContractResolvedEvent extends Event {
 
+    /** Declared execution environment, or empty when the declaration was rejected. */
     @Label("Environment")
     @Description("Declared execution environment, or empty when the declaration was rejected")
     public String environment;
 
+    /** File path or classpath resource the manifest was read from, or 'none'. */
     @Label("Manifest Source")
     @Description("File path or classpath resource the manifest was read from, or 'none'")
     public String source;
 
+    /** Identifier of the bound contract, or empty when the boot was refused. */
     @Label("Contract ID")
     @Description("Identifier of the bound contract, or empty when the boot was refused")
     public String contractId;
 
+    /** Edition of the bound contract, or empty when the boot was refused. */
     @Label("Edition")
     @Description("Edition of the bound contract, or empty when the boot was refused")
     public String edition;
 
+    /** 'bound', or the error code that refused the boot. */
     @Label("Outcome")
     @Description("'bound', or the error code that refused the boot")
     public String outcome;
 
+    /** Time the gate took, from configuration read to decision. */
     @Label("Gate Duration")
     @Description("Time the gate took, from configuration read to decision")
     @Timespan(Timespan.NANOSECONDS)
     public long gateDuration;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public ContractResolvedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Emits the event if Flight Recorder is initialized and the event is enabled.

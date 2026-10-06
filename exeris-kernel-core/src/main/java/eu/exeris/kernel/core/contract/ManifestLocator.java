@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Optional;
 
 /**
@@ -35,6 +36,23 @@ final class ManifestLocator {
      * @param source file path, or {@code classpath:license-manifest.json}
      */
     /* default */ record ManifestSource(byte[] bytes, String source) {
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof ManifestSource that
+                    && Arrays.equals(bytes, that.bytes)
+                    && source.equals(that.source);
+        }
+
+        @Override
+        public int hashCode() {
+            return 31 * Arrays.hashCode(bytes) + source.hashCode();
+        }
+
+        @Override
+        public String toString() {
+            return "ManifestSource[source=" + source + ", bytes=" + bytes.length + "]";
+        }
     }
 
     /**

@@ -89,7 +89,7 @@ public record ExecutionContract(
      * {@code gateway.rate-limit} (ADR-088 §1, {@code @CapabilityModule.name()}).
      */
     public static final Pattern CAPABILITY_ID_PATTERN =
-            Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*(?:\\.[a-z0-9]+(?:-[a-z0-9]+)*)*");
+            Pattern.compile("[a-z0-9]++(?:-[a-z0-9]++)*+(?:\\.[a-z0-9]++(?:-[a-z0-9]++)*+)*+");
 
     /**
      * Compact constructor defending against null values and providing immutable sets/maps.
