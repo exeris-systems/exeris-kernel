@@ -60,6 +60,8 @@ public final class JsonCanonicalizer {
      *
      * @param json source JSON string
      * @return canonical UTF-8 encoded bytes
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the input is not valid JSON, or holds a
+     *                                 value with no canonical form
      */
     public static byte[] canonicalize(String json) {
         return canonicalizeDetached(json, null);
@@ -70,6 +72,8 @@ public final class JsonCanonicalizer {
      *
      * @param jsonBytes source JSON UTF-8 bytes
      * @return canonical UTF-8 encoded bytes
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the input is not valid JSON, or holds a
+     *                                 value with no canonical form
      */
     public static byte[] canonicalize(byte[] jsonBytes) {
         Objects.requireNonNull(jsonBytes, "jsonBytes must not be null");
@@ -102,6 +106,8 @@ public final class JsonCanonicalizer {
      * @param json                 source JSON string
      * @param detachedPropertyKey  root-level property key to exclude, or {@code null} if none
      * @return canonical UTF-8 encoded bytes
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the input is not valid JSON, or holds a
+     *                                 value with no canonical form
      */
     public static byte[] canonicalizeDetached(String json, String detachedPropertyKey) {
         Objects.requireNonNull(json, "json must not be null");
@@ -114,6 +120,8 @@ public final class JsonCanonicalizer {
      * @param parsed              root entity as returned by {@link #parse(String)}
      * @param detachedPropertyKey root-level property key to exclude, or {@code null} if none
      * @return canonical UTF-8 encoded bytes
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the input is not valid JSON, or holds a
+     *                                 value with no canonical form
      */
     public static byte[] canonicalizeDetached(Object parsed, String detachedPropertyKey) {
         StringBuilder sb = new StringBuilder();
@@ -126,6 +134,7 @@ public final class JsonCanonicalizer {
      *
      * @param json source JSON
      * @return root JSON entity
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the input is empty or not valid JSON
      */
     public static Object parse(String json) {
         if (json == null || json.isBlank()) {

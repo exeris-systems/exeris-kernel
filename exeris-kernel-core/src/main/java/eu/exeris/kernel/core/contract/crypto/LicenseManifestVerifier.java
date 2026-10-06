@@ -94,6 +94,10 @@ public final class LicenseManifestVerifier {
      *
      * @param manifestJson raw JSON string
      * @return materialized execution contract
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
+     *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
+     *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
      */
     public static ExecutionContract verify(String manifestJson) {
         return verify(manifestJson, Instant.now());
@@ -104,6 +108,10 @@ public final class LicenseManifestVerifier {
      *
      * @param manifestBytes UTF-8 JSON bytes
      * @return materialized execution contract
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
+     *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
+     *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
      */
     public static ExecutionContract verify(byte[] manifestBytes) {
         return verify(manifestBytes, Instant.now());
@@ -115,6 +123,10 @@ public final class LicenseManifestVerifier {
      * @param manifestBytes  UTF-8 JSON bytes; malformed UTF-8 is rejected with EX-LIC-0001
      * @param evaluationTime evaluation instant for temporal validity
      * @return materialized execution contract
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
+     *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
+     *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
      */
     public static ExecutionContract verify(byte[] manifestBytes, Instant evaluationTime) {
         Objects.requireNonNull(manifestBytes, "manifestBytes must not be null");
@@ -127,6 +139,10 @@ public final class LicenseManifestVerifier {
      * @param manifestJson   raw JSON string
      * @param evaluationTime evaluation instant for temporal validity
      * @return materialized execution contract
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
+     *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
+     *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
      */
     public static ExecutionContract verify(String manifestJson, Instant evaluationTime) {
         return verify(manifestJson, evaluationTime, IssuerKeyResolver.embedded());
@@ -144,6 +160,10 @@ public final class LicenseManifestVerifier {
      * @param evaluationTime evaluation instant for temporal validity
      * @param keyResolver    resolves {@code issuer.keyId} to an Ed25519 public key
      * @return materialized execution contract
+     * @throws ContractBreachException with {@code EX-LIC-0001} if the manifest is not valid UTF-8 or JSON,
+     *                                 breaks the v1 schema or fails its signature; {@code EX-LIC-0002} if
+     *                                 its issuer key is unknown; {@code EX-LIC-0003} if it expired beyond
+     *                                 its grace period; {@code EX-LIC-0006} if it is not yet valid
      */
     public static ExecutionContract verify(
             String manifestJson, Instant evaluationTime, IssuerKeyResolver keyResolver) {
