@@ -10,10 +10,9 @@
 # starts reporting what one particular binding happens to do, defect included. That reads as
 # accurate, passes every other gate, and ships to Maven Central as the contract.
 #
-# It happened. The 0.12 Javadoc sweep's adversarial pass refuted a set of claims; the correction
-# pass then wrote sentences like "release of that buffer after the write is not currently performed
-# by the Community client engine" into an Ownership line, and "Community implementations MUST close
-# their own Bolt client" into an @implSpec. Nine such sentences reached the tree before review.
+# The shape it catches: "release of that buffer after the write is not currently performed by the
+# Community client engine" in an Ownership line, or "Community implementations MUST close their own
+# Bolt client" in an @implSpec.
 #
 # WHAT IS ALLOWED in a contract position — the three rule-7 lines and @implSpec:
 #   * an obligation on any implementation;
@@ -33,20 +32,17 @@
 # the home for "facts about this implementation that may change (Community driver behaviour)".
 #
 # CALIBRATION. The pattern is anchored by measurement, on the discipline javadoc-conventions.md
-# rule 12 states for its own regexp. A first draft matched bare tense words in a contract position:
-# 15 hits on this module and every one legitimate — "the default implementation is a no-op" is an
-# idempotency contract, "the caller never closes a published payload" is an ownership contract. The
-# discriminating signal is not the tense word but a TIER OR DRIVER AS ITS SUBJECT. Anchored that
-# way the pattern catches 9 of the 9 sentences the repair removed and raises 0 false alarms against
-# the 10 legitimate contract sentences the first draft had flagged.
+# rule 12 states for its own regexp. A bare tense word in a contract position is usually a contract:
+# "the default implementation is a no-op" is an idempotency contract, "the caller never closes a
+# published payload" an ownership contract. The discriminating signal is not the tense word but a
+# TIER OR DRIVER AS ITS SUBJECT.
 #
-# Two further corrections came from running it: a PERMISSION granted to a tier ("a Community-tier
+# Two refinements follow from the same test. A PERMISSION granted to a tier ("a Community-tier
 # implementation MAY decode it into an intermediate representation") is a contract and not a report,
-# so "MAY" no longer counts as a tense marker; and a driver technology inside a parenthetical
-# example ("(e.g., io_uring on Linux only, IOCP on Windows only)") illustrates an obligation rather
-# than being one, so parentheticals are stripped before the technology test. Each correction was
-# made because the check fired on a sentence that was right, which is the only reason to widen an
-# exception.
+# so "MAY" is not a tense marker. A driver technology inside a parenthetical example ("(e.g.,
+# io_uring on Linux only, IOCP on Windows only)") illustrates an obligation rather than being one, so
+# parentheticals are stripped before the technology test. An exception is widened only when the
+# check fires on a sentence that is right.
 #
 # Scope is exeris-kernel-spi ONLY, and that is the whole point rather than an omission: in
 # exeris-kernel-core and exeris-kernel-community the same sentence is correct, because those modules
