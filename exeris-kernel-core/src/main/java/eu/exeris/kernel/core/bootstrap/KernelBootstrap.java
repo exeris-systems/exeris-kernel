@@ -9,11 +9,14 @@ import eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents;
 import eu.exeris.kernel.core.bootstrap.jfr.KernelStartEvent;
 import eu.exeris.kernel.core.config.DynamicConfigFileWatcher;
 import eu.exeris.kernel.core.config.KernelConfigRegistry;
+import eu.exeris.kernel.core.contract.ContractBootstrapStep;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
+import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
 
 import java.io.IOException;
 import java.util.Comparator;
@@ -22,6 +25,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.ServiceLoader;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -69,9 +73,13 @@ import java.util.function.Supplier;
 // does not constitute a Demeter violation in this composition-root context.
 // AvoidCatchingGenericException: ScopedValue.call() declares 'throws Exception' —
 // we must catch the broadest type and re-wrap for callers.
+// TooManyMethods / CyclomaticComplexity: this is the composition root of the boot sequence; every step
+// (config, contract gate, orchestrator, scope, shutdown) is one small method, and their sum is the count.
 @SuppressWarnings({
     "PMD.LawOfDemeter",
-    "PMD.AvoidCatchingGenericException"
+    "PMD.AvoidCatchingGenericException",
+    "PMD.TooManyMethods",
+    "PMD.CyclomaticComplexity"
 })
 public final class KernelBootstrap {
 
@@ -88,6 +96,7 @@ public final class KernelBootstrap {
     private final SubsystemOrchestrator.FailurePolicy failurePolicy;
     private final BootstrapSelector                   selector;
     private final ClassLoader                         classLoader;
+    private final BiFunction<ConfigProvider, ClassLoader, ExecutionContract> contractGate;
     private final AtomicBoolean                       bootActive = new AtomicBoolean(false);
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile SubsystemOrchestrator activeOrchestrator;
@@ -102,6 +111,7 @@ public final class KernelBootstrap {
         this.classLoader   = builder.classLoader != null
                 ? builder.classLoader
                 : Thread.currentThread().getContextClassLoader();
+        this.contractGate  = builder.contractGate;
     }
 
     // =========================================================================
@@ -120,7 +130,10 @@ public final class KernelBootstrap {
      *   <li>Emit {@code KernelStart} JFR event.</li>
      *   <li>Resolve {@link ConfigProvider} via {@code ServiceLoader}.</li>
      *   <li>Emit {@code ConfigSettingsResolved} JFR event.</li>
-     *   <li>Bind {@code CURRENT_CONFIG} and run subsystem bootstrap within the scope.</li>
+     *   <li>Run the Phase 0 contract gate ({@code ContractBootstrapStep}, ADR-088 / ADR-089) before any
+     *       subsystem is initialized; a breach propagates as {@link ContractBreachException}.</li>
+     *   <li>Bind {@code CURRENT_CONFIG} and {@code EXECUTION_CONTRACT} and run subsystem bootstrap within
+     *       the scope.</li>
      *   <li>Call {@code orchestrator.initialize(config)} → Kahn BFS → per-subsystem init.</li>
      *   <li>Call {@code orchestrator.start(config)} → phased parallel start.</li>
      *   <li>Run {@code kernelMain}.</li>
@@ -129,6 +142,8 @@ public final class KernelBootstrap {
      *
      * @param kernelMain the top-level kernel runnable (your application entry point)
      * @throws BootstrapException if config resolution or subsystem boot fails
+     * @throws ContractBreachException if the Phase 0 contract gate refuses the boot; no subsystem has
+     *                                 been initialized
      */
     public void boot(Runnable kernelMain) throws BootstrapException {
         runKernel(true, kernelMain);
@@ -145,7 +160,8 @@ public final class KernelBootstrap {
      * can describe the static composition of <em>any</em> kernel build, infra-free. Provider discovery is
      * done by the diagnostics provider via {@link java.util.ServiceLoader}, independent of this scope.
      * {@code isRunning()} reports {@code false} for every subsystem — the honest answer for a static
-     * composition snapshot.
+     * composition snapshot. The Phase 0 contract gate does not run, because nothing is initialized:
+     * {@link KernelProviders#EXECUTION_CONTRACT} is unbound inside {@code inspector}.
      *
      * @param inspector the read-only introspection runnable
      * @throws BootstrapException if config resolution or topology resolution fails
@@ -171,7 +187,13 @@ public final class KernelBootstrap {
         BootstrapJfrEvents.emitConfigResolved(
                 config.providerName(), profile, configStartNanos, "serviceloader");
 
-        // ── Step 4: Build the orchestrator ────────────────────────────────────
+        // ── Step 4: Phase 0 contract gate (ADR-088, ADR-089) ──────────────────
+        // The execution contract is decided before any subsystem is initialized, so a breach leaves
+        // no memory allocated and no socket bound. inspect() initializes nothing, so it neither runs
+        // the gate nor binds a contract.
+        ScopedValue.Carrier scope = kernelScope(config, fullBoot);
+
+        // ── Step 5: Build the orchestrator ────────────────────────────────────
         SubsystemOrchestrator orchestrator = SubsystemOrchestrator.builder()
                 .failurePolicy(failurePolicy)
                 .selector(selector)
@@ -180,24 +202,23 @@ public final class KernelBootstrap {
         activeOrchestrator = orchestrator;
         bootActive.set(true);
 
-        // ── Step 5: Bind CURRENT_CONFIG and run the full boot inside the scope ─
+        // ── Step 6: Bind CURRENT_CONFIG and EXECUTION_CONTRACT inside the scope
         //
         // From this point every virtual thread spawned in the kernel scope
-        // inherits KernelProviders.CURRENT_CONFIG automatically — zero arg-threading,
-        // zero ThreadLocal (banned), zero static singletons.
+        // inherits KernelProviders.CURRENT_CONFIG and EXECUTION_CONTRACT
+        // automatically — zero arg-threading, zero ThreadLocal, zero static singletons.
         try {
-            ScopedValue.where(KernelProviders.CURRENT_CONFIG, config)
-                    .call(() -> {
-                        if (fullBoot) {
-                            DynamicConfigFileWatcher configWatcher =
-                                    DynamicConfigFileWatcher.forRegistry(configRegistry);
-                            runBootInsideScope(orchestrator, config, configRegistry, configWatcher, body);
-                        } else {
-                            runInspectInsideScope(orchestrator, config, body);
-                        }
-                        return null;
-                    });
-        } catch (SubsystemCircularDependencyException ex) {
+            scope.call(() -> {
+                if (fullBoot) {
+                    DynamicConfigFileWatcher configWatcher =
+                            DynamicConfigFileWatcher.forRegistry(configRegistry);
+                    runBootInsideScope(orchestrator, config, configRegistry, configWatcher, body);
+                } else {
+                    runInspectInsideScope(orchestrator, config, body);
+                }
+                return null;
+            });
+        } catch (SubsystemCircularDependencyException | ContractBreachException ex) {
             throw ex;
         } catch (SubsystemOrchestrator.BootstrapException ex) {
             throw new BootstrapException("Subsystem bootstrap failed: " + ex.getMessage(), ex);
@@ -206,6 +227,22 @@ public final class KernelBootstrap {
         } finally {
             bootActive.set(false);
         }
+    }
+
+    /**
+     * Builds the kernel scope: {@code CURRENT_CONFIG}, and for a full boot the execution contract the
+     * Phase 0 contract gate decides (ADR-088 / ADR-089) before any subsystem is initialized.
+     *
+     * @param config   active configuration provider
+     * @param fullBoot {@code false} for {@link #inspect(Runnable)}, which runs no gate and binds no contract
+     * @return the scope carrier
+     * @throws ContractBreachException if the gate refuses the boot
+     */
+    private ScopedValue.Carrier kernelScope(ConfigProvider config, boolean fullBoot) {
+        ScopedValue.Carrier scope = ScopedValue.where(KernelProviders.CURRENT_CONFIG, config);
+        return fullBoot
+                ? scope.where(KernelProviders.EXECUTION_CONTRACT, contractGate.apply(config, classLoader))
+                : scope;
     }
 
     /**
@@ -480,6 +517,7 @@ public final class KernelBootstrap {
                 SubsystemOrchestrator.FailurePolicy.FAIL_FAST;
         private BootstrapSelector selector   = BootstrapSelector.all();
         private ClassLoader       classLoader;
+        private BiFunction<ConfigProvider, ClassLoader, ExecutionContract> contractGate = ContractBootstrapStep::run;
 
         /**
          * Creates a builder with every setting at its default.
@@ -523,6 +561,18 @@ public final class KernelBootstrap {
          */
         public Builder classLoader(ClassLoader loader) {
             this.classLoader = loader;
+            return this;
+        }
+
+        /**
+         * Replaces the contract gate. Package-private: only code in the bootstrap package can reach it, so a
+         * kernel built outside this package always runs {@link ContractBootstrapStep#run}.
+         *
+         * @param gate decides the execution contract from the configuration and class loader
+         * @return this builder
+         */
+        /* default */ Builder contractGate(BiFunction<ConfigProvider, ClassLoader, ExecutionContract> gate) {
+            this.contractGate = Objects.requireNonNull(gate, "contractGate");
             return this;
         }
 

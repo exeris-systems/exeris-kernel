@@ -93,6 +93,27 @@ formatting. It implements:
 | `EX-BOOT-0004` | Memory Provider Init Failure | `[0] String providerName, [1] long reqBytes`     |
 | `EX-BOOT-3001` | Telemetry Provider Failure   | `[0] String providerName, [1] String reason`     |
 
+### Licensing / Execution Contract (`EX-LIC-`)
+
+Thrown as `eu.exeris.kernel.spi.exceptions.contract.ContractBreachException` (an `ExerisKernelException`,
+fault origin `SYSTEM`) by the Phase 0 contract gate of `KernelBootstrap.boot()` and by
+`ExecutionContract.assertCapability` / `assertEnvironment` at `HARD` enforcement (ADR-088, ADR-089). A gate
+refusal reaches the caller of `boot()` unwrapped, before any subsystem is initialized. After the gate, a `HARD`
+breach travels like any other failure from where it is raised: from a subsystem's `initialize()` or `start()` it
+is the cause of an `EX-BOOT-0002`; from `kernelMain` it reaches the caller of `boot()` unwrapped. An unknown
+value of the `environment` key fails the gate earlier, as `ConfigProviderException` `EX-CFG-1002`.
+
+| Code          | Description                               | Glass-Box Payload                                  |
+|:--------------|:------------------------------------------|:---------------------------------------------------|
+| `EX-LIC-0001` | Manifest rejected                         | `[0] String source` (file path, or `classpath:license-manifest.json`) when the manifest could not be read or exceeds 64 KiB, or `license.manifest.path` when that key is bound to a blank value; no `rawArgs` for invalid UTF-8 or JSON, a v1 schema violation (a missing `issuer` block or `keyId` included), a failed Ed25519 signature, or an embedded trust root that cannot be decoded — the message names the field or rule |
+| `EX-LIC-0002` | Unknown issuer key                        | `[0] String keyId` — the manifest's `issuer.keyId` names no trusted issuer key; a missing `issuer` block or `keyId` is a schema violation, `EX-LIC-0001` |
+| `EX-LIC-0003` | Manifest expired beyond grace             | `[0] String contractId, [1] Instant validUntil, [2] int gracePeriodDays` — evaluated after `validUntil + gracePeriodDays` |
+| `EX-LIC-0004` | Capability not entitled (`HARD`)          | `[0] String capabilityId` |
+| `EX-LIC-0005` | No manifest where an entitlement is required | `[0] String environment, [1] List<String> requiredCapabilities` (sorted) — production-class environment, an `EntitlementRequirement` on the classpath, no manifest |
+| `EX-LIC-0006` | Manifest not yet valid                    | `[0] String contractId, [1] Instant validFrom` — evaluated before `validFrom`; the grace period never applies here |
+| `EX-LIC-0007` | Environment not authorized (`HARD`)       | `[0] String environment` |
+| `EX-LIC-0008` | Invalid entitlement requirement           | `[0] String provider` — the `EntitlementRequirement` class that throws or declares `null`, nothing, or a malformed capability identifier; the service name when a provider cannot be loaded. Raised in every environment |
+
 ### Runtime (`EX-RUN-`)
 
 | Code          | Description             | Glass-Box Payload                                    |

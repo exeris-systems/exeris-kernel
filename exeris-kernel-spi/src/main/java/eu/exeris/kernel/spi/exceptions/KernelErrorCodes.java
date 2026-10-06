@@ -1299,6 +1299,104 @@ public final class KernelErrorCodes {
     public static final String EX_JOB_9004 = "EX-JOB-9004";
 
     // -----------------------------------------------------------------------
+    // EX-LIC – Licensing / Execution Contract
+    // -----------------------------------------------------------------------
+
+    /**
+     * The license manifest cannot be accepted: it could not be read, is not valid JSON or UTF-8, breaks
+     * the v1 schema of ADR-088 §1, or its Ed25519 signature does not verify.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} manifest source (file path, or {@code classpath:license-manifest.json}),
+     *       when the manifest could not be read or exceeds 64 KiB; no rawArgs otherwise — the message
+     *       names the field or rule</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0001 = "EX-LIC-0001";
+
+    /**
+     * Unknown license issuer key ID: the manifest's {@code issuer.keyId} names no trusted issuer key. A missing
+     * {@code issuer} block or {@code keyId} is a schema violation, {@code EX-LIC-0001}.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} keyId</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0002 = "EX-LIC-0002";
+
+    /**
+     * License manifest expired beyond the permitted grace period: the evaluation instant is after
+     * {@code validUntil + gracePeriodDays}.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} contractId</li>
+     *   <li>index 1 – {@code Instant} validUntil</li>
+     *   <li>index 2 – {@code int} gracePeriodDays</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0003 = "EX-LIC-0003";
+
+    /**
+     * Capability not entitled under the active execution contract (HARD enforcement breach).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} capabilityId</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0004 = "EX-LIC-0004";
+
+    /**
+     * No license manifest was found, the declared environment is a production class, and code on the
+     * classpath declares an {@code EntitlementRequirement}.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} environment</li>
+     *   <li>index 1 – {@code List<String>} required capabilities, sorted</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0005 = "EX-LIC-0005";
+
+    /**
+     * License manifest not yet valid: the evaluation instant precedes {@code validFrom}. The grace
+     * period never applies to this edge.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} contractId</li>
+     *   <li>index 1 – {@code Instant} validFrom</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0006 = "EX-LIC-0006";
+
+    /**
+     * The active execution contract does not authorize the declared environment (HARD enforcement breach).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} environment</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0007 = "EX-LIC-0007";
+
+    /**
+     * An {@code EntitlementRequirement} on the classpath breaks its contract: it cannot be loaded or
+     * instantiated, throws, or returns {@code null}, an empty set, or an identifier that is not a capability
+     * identifier. Raised by the contract gate before any subsystem is initialized, in every environment.
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} provider class name, or the service name when the provider could not
+     *       be loaded</li>
+     * </ul>
+     */
+    public static final String EX_LIC_0008 = "EX-LIC-0008";
+
+    // -----------------------------------------------------------------------
     // EX-UNK – no code of its own
     // -----------------------------------------------------------------------
 

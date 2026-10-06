@@ -3347,6 +3347,39 @@ fails, and fixed to `false` both positive cases fail.
 
 ## Known Gaps / Future Work planned for v0.13
 
+### License Manifest & Capability Entitlement Runtime Contract (ADR-088, ADR-089)
+
+**Scope:** Core & SPI (`bootstrap`, `crypto`, `contract`).
+
+**Gap:** Kernel v0.12 does not possess an offline cryptographic verification mechanism for license manifests (`license-manifest.json`) or a formal typed execution contract (`ExecutionContract`) in Phase 0 of the bootstrap sequence.
+
+**Owner:** Core / Bootstrap, Crypto, Contract subsystems.
+
+**Status: IN PROGRESS (v0.13).** Kernel side implemented on the licence-contract branch; the items under "Open within this item" remain.
+
+**Resolution:**
+- Define `ExecutionContract`, `WorkloadEnvelope`, `EnforcementLevel`, `ExecutionEnvironment` and the `EntitlementRequirement` SPI in `exeris-kernel-spi` (`eu.exeris.kernel.spi.contract`).
+- Define `ContractBreachException` in `exeris-kernel-spi` (`eu.exeris.kernel.spi.exceptions.contract`) with registered error codes `EX-LIC-0001` through `EX-LIC-0008` (catalogued in `docs/subsystems/exceptions.md`).
+- Expose `KernelProviders.EXECUTION_CONTRACT` slot.
+- Implement zero-dependency RFC 8785 JSON canonicalization (`JsonCanonicalizer`), Ed25519 signature verification (`LicenseManifestVerifier`), and an immutable embedded `TrustedIssuerKeyStore` holding `exeris-root-2026-k1` in `exeris-kernel-core`.
+- Integrate license verification in Phase 0 of `KernelBootstrap.boot()`, before the orchestrator, through `ContractBootstrapStep` (`inspect()` does not run it): with no manifest the kernel boots under the Community fallback in every environment, and fails fast (`EX-LIC-0005`) only in a production-class environment (`production`, `production-load-sim`, `dr-hot`, declared by the `environment` key) when an `EntitlementRequirement` is on the classpath.
+- Verify the manifest against the strict v1 schema of ADR-088 §1 and canonicalize it per RFC 8785, including ECMAScript number serialization; read it from `license.manifest.path` with no fallback when that key is set, and refuse one above 64 KiB.
+- Load every `EntitlementRequirement` defensively (`EX-LIC-0008` for one that breaks its contract), warn once when entitlement-requiring code runs ungated outside the production classes, and record each gate decision as `ContractResolvedEvent`.
+- Report `SOFT` and `AUDIT` violations through `ContractViolationReporter`, once per distinct violation: `SOFT` logs a `WARNING` through `System.Logger` and emits `ContractEnforcementEvent`, `AUDIT` emits the event only; `assertCapability` / `assertEnvironment` return the violation below `HARD`, and Phase 0 and the grace period report through it.
+- Implement `AbstractExecutionContractTck` and `AbstractLicenseManifestCryptoTck` in `exeris-kernel-tck` and bind concrete tests in `exeris-kernel-community`; the crypto suite verifies a golden manifest canonicalized and signed by an independent RFC 8785 implementation.
+
+**Open within this item:**
+- `authorizedInstances` and the workload envelope are carried in the contract but not metered.
+- `BlockedManifestRegistry` (ADR-088 §4 item 3, offline revocation) is not implemented.
+- The `exeris-manifest-tool` signing CLI and the `-Pproduction` capability gate belong to `exeris-tooling` and are not started.
+- The gate's cost is not measured against ADR-089's reversal threshold (5 ms); the measurement that settles it — marginal cost to `KernelBootReady` with and without a manifest, read from `ContractResolved.gateDuration` — is exeris-systems/exeris-kernel#605.
+- More than one `license-manifest.json` on the classpath is not refused: the first jar wins (exeris-systems/exeris-kernel#606).
+- No architecture rule keeps the `core.contract` packages free of cycles (exeris-systems/exeris-kernel#607).
+
+**Merge Gate:** Complete TCK coverage with passing Community bindings, zero-dependency canonicalization in Core, ArchUnit/The Wall compliance. A startup-cost claim waits for the measurement listed above.
+
+---
+
 ### Telemetry: a contract for events the kernel did not define
 
 **Gap:** Two telemetry paths exist in this kernel and only one of them is sink-agnostic, which is
