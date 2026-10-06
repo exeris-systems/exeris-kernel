@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.security;
 
@@ -21,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Contract tests for the {@link PrincipalContext} default methods — role/scope
  * membership and the short-circuiting {@code hasAnyRole}/{@code hasAnyScope}
- * overloads (v0.9 Sprint 4c Phase 3 SPI coverage). Exercised through a minimal
+ * overloads. Exercised through a minimal
  * record implementation so only the interface defaults are under test.
  */
 @DisplayName("PrincipalContext — default role/scope predicates")

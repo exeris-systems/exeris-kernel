@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.persistence;
 
@@ -20,11 +16,12 @@ import jdk.jfr.StackTrace;
  * JFR event emitted by {@link PersistenceBootstrap} when a provider is selected.
  *
  * <h2>JFR-First Contract</h2>
- * <p>The bootstrapper MUST emit this event so that JFR recordings contain a clear
- * record of which provider (Community/Enterprise) was activated and at what priority.
- * SRE tooling uses this to confirm Enterprise was chosen over Community in production.
+ * <p>{@link PersistenceBootstrap} emits this once per successful engine bootstrap — after the
+ * engine is created and every interceptor has registered without error — so a JFR recording
+ * carries a record of which provider (Community or Enterprise) was activated and at what
+ * priority; SRE tooling reads it to confirm Enterprise was chosen over Community in production.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.BootstrapSelected")
 @Label("Persistence Bootstrap — Provider Selected")
@@ -50,7 +47,7 @@ final class PersistenceBootstrapSelectedEvent extends Event {
     /* default */ int interceptorCount;
 
     /**
-     * Emits the bootstrap selected event.
+     * Emits the bootstrap-selected event if JFR recording is active; a no-op otherwise.
      *
      * @param providerClass    FQN of the selected {@link eu.exeris.kernel.spi.persistence.PersistenceProvider}
      * @param priority         provider priority

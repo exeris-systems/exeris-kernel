@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.events;
 
@@ -13,12 +9,12 @@ package eu.exeris.kernel.spi.events;
  *
  * <h2>JFR-First</h2>
  * <p>This record is the data carrier for the {@code EventEngineStatsEvent} JFR event.
- * All fields are primitives — low-allocation snapshot (zero-allocation ready for
- * {@code value record} on the `preview` line).
+ * All fields are primitives — a low-allocation snapshot, declared {@code value record} on the
+ * {@code preview} line.
  *
  * <h2>Valhalla Readiness</h2>
  * <p>All fields are primitives. No identity operations. Declared {@code value record} on the
- * `preview` line (JEP 401); asserted by {@code Class::isValue} in its ValhallaReadiness test.
+ * {@code preview} line (JEP 401); asserted by {@code Class::isValue} in its ValhallaReadiness test.
  *
  * @param publishedTotal    total number of events published since engine start
  * @param processedTotal    total number of events processed (dispatched to handlers)
@@ -28,7 +24,7 @@ package eu.exeris.kernel.spi.events;
  * @param avgDispatchNanos  exponentially-weighted average dispatch latency in nanoseconds
  * @param loopRunning       {@code true} if the event loop is currently running
  *
- * @since 0.5.0
+ * @since 0.5
  * @see EventEngine#stats()
  */
 public value record EventEngineStats(
@@ -56,9 +52,12 @@ public value record EventEngineStats(
     // CHECKSTYLE.ON: DeclarationOrder
 
     /**
-     * Returns the percentage of queue capacity currently used.
+     * Expresses queue pressure as a fraction of capacity — the number an operator alerts on when
+     * back-pressure starts to bite.
      *
-     * @return value in range [0.0, 1.0]
+     * @return {@code queueDepth / queueCapacity}, in the range [0.0, 1.0]; {@code 0.0} when
+     *         {@code queueCapacity} is zero, so an unconfigured queue reads as idle rather than
+     *         dividing by zero
      */
     public double queueUtilization() {
         if (queueCapacity <= EMPTY_CAPACITY) {
@@ -68,9 +67,11 @@ public value record EventEngineStats(
     }
 
     /**
-     * Returns the error rate as a fraction of total processed events.
+     * Expresses handler failures as a fraction of everything the engine has dispatched since
+     * start — a lifetime ratio, not a windowed rate.
      *
-     * @return value in range [0.0, 1.0]
+     * @return {@code failedTotal / processedTotal}, in the range [0.0, 1.0]; {@code 0.0} when
+     *         nothing has been processed yet
      */
     public double errorRate() {
         if (processedTotal <= EMPTY_PROCESSED) {

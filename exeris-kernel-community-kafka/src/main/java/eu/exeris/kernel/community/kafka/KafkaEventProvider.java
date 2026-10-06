@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.kafka;
 
@@ -19,7 +15,7 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * {@link EventProvider} implementation for the Community Kafka binding (since 0.7.0).
+ * {@link EventProvider} implementation for the Community Kafka binding.
  *
  * <h2>Discovery</h2>
  * <p>Registered via {@code META-INF/services/eu.exeris.kernel.spi.events.EventProvider}.
@@ -34,7 +30,7 @@ import java.util.Objects;
  * the slot is bound. Single-binding tests (no {@code ConfigProvider} on the carrier) may use
  * {@link #create(EventEngineConfig, KafkaEventConfig)} which short-circuits the lookup.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 public final class KafkaEventProvider implements EventProvider {
 
@@ -54,6 +50,16 @@ public final class KafkaEventProvider implements EventProvider {
     private static final String CFG_REQUIRE_ALL_ACKS   = "events.kafka.require-all-acks";
     private static final String CFG_LINGER_MS          = "events.kafka.producer-linger-ms";
     private static final String CFG_POLL_TIMEOUT_MS    = "events.kafka.consumer-poll-timeout-ms";
+
+    /**
+     * Instantiated reflectively by {@code ServiceLoader} through this module's
+     * {@code META-INF/services} registration of {@link EventProvider}; not meant to be
+     * constructed directly.
+     */
+    public KafkaEventProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     public String providerName() {
@@ -83,6 +89,10 @@ public final class KafkaEventProvider implements EventProvider {
     /**
      * Direct factory used by tests / TCK bindings that have already constructed an explicit
      * {@link KafkaEventConfig} (e.g. from a Testcontainers bootstrap address).
+     *
+     * @param spi   SPI-level engine configuration (engine name, queue capacity)
+     * @param kafka explicit Kafka binding configuration
+     * @return a new {@link KafkaEventEngine} wired to the given producer/consumer configuration
      */
     public static KafkaEventEngine create(EventEngineConfig spi, KafkaEventConfig kafka) {
         Objects.requireNonNull(spi,   "spi config must not be null");

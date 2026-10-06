@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.flow;
 
@@ -25,7 +21,7 @@ import jdk.jfr.StackTrace;
  * violation). Operators tracking distributed-saga health watch the rate of this
  * event to detect contention hotspots before they manifest as wake-storm failures.
  *
- * @since 0.7.0
+ * @since 0.7
  */
 @Name("eu.exeris.kernel.flow.OptimisticLockConflict")
 @Label("Distributed Saga — Optimistic-Lock Conflict")
@@ -56,6 +52,16 @@ public final class OptimisticLockConflictEvent extends Event {
     @Description("schemaVersion of the snapshot the losing writer attempted to save with — i.e. "
             + "the version it had loaded prior to the failed save")
     /* default */ long loadedSchemaVersion;
+
+    /**
+     * Constructed by {@link #emit} — and, reflectively, by the JFR runtime when this event type
+     * is registered — with every field left unset; {@code emit} assigns them and commits only if
+     * the recording has this event type enabled.
+     */
+    public OptimisticLockConflictEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /* default */ static void emit(String engineName, String phase, long loadedSchemaVersion) {
         OptimisticLockConflictEvent event = new OptimisticLockConflictEvent();

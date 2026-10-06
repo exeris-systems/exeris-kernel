@@ -1,3 +1,12 @@
+---
+title: "Scheduling Subsystem"
+type: subsystem
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-09-08
+---
+
 # Scheduling Subsystem
 
 Deferred and repeating work, scoped to the tenant that scheduled it. Decided in
@@ -120,8 +129,10 @@ carve-outs stays empty.
 
 The seam injects **both** the clock and the wait primitive. A time source alone is not sufficient: a
 test that advances a clock while the dispatcher sleeps on a real monitor still waits in wall-clock
-time. It is deliberately subsystem-local — the kernel has no unified clock abstraction yet, and this
-is shaped so migrating onto one is a substitution, not a redesign.
+time. The kernel now has a unified clock abstraction (`eu.exeris.kernel.spi.time.TimeSource`,
+[ADR-082](../adr/ADR-082-injectable-time-seam.md), since 0.12.0); `CommunitySchedulerClock` extends
+it and adds only the wait primitives (`lock()`/`awaitUntil()`/`awaitSignal()`/`signal()`) that a
+`TimeSource` alone cannot provide, since a `ReentrantLock` has no place in the SPI.
 
 ## Telemetry
 
@@ -202,3 +213,20 @@ Both slots are bound: `KernelProviders.JOB_SCHEDULER_PROVIDER` and `KernelProvid
 
 Durable job stores, leader election, distributed coordination, retry and back-off policy, job
 priorities, and dispatch-time re-validation of a captured identity.
+
+## Owning ADRs
+
+- [ADR-057](../adr/ADR-057-job-scheduler-spi.md) — Adopt a `JobScheduler` SPI dispatching on virtual threads, without a scheduled executor
+- [ADR-082](../adr/ADR-082-injectable-time-seam.md) — Time the kernel *decides* on goes through a seam; time it *measures* does not
+
+## Stability
+
+This subsystem's SPI surface (`eu.exeris.kernel.spi.scheduling.*`) is classified **preview** since
+0.11.0 in the [SPI Stability Matrix](../stability-matrix.md) — the decision is
+[ADR-057](../adr/ADR-057-job-scheduler-spi.md) and the contract tests are
+`AbstractJobSchedulerTck`. See the matrix for the semver policy this label commits to.
+
+Every other subsystem doc under `docs/subsystems/` already carried this section, and this one did
+not, so a reader checking how far they could lean on `JobScheduler` had to find the matrix
+themselves — which is the gap, not the label.
+

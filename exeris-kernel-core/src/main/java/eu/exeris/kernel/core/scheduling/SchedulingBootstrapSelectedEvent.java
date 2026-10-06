@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.scheduling;
 
@@ -23,7 +19,7 @@ import jdk.jfr.StackTrace;
  * anyone asks when a scheduler behaves unexpectedly, so it is recorded at selection rather than
  * reconstructed from behaviour. Single-phase commit on the bootstrap thread.
  *
- * @since 0.11.0
+ * @since 0.11
  */
 @Name("eu.exeris.kernel.scheduling.SchedulingBootstrapSelected")
 @Label("Scheduling Bootstrap Selected")
@@ -43,6 +39,17 @@ public final class SchedulingBootstrapSelectedEvent extends Event {
 
     @Label("Scheduler Name")
     /* default */ String schedulerName;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public SchedulingBootstrapSelectedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Records the selection.

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.bootstrap;
 
@@ -23,6 +19,18 @@ import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import java.util.List;
 import java.util.function.Supplier;
 
+/**
+ * Builds the default {@link HttpHandler} {@link CommunityHttpSubsystem} installs when the
+ * application boots the kernel without supplying its own {@code HTTP_SERVER_HANDLER} —
+ * {@code /health}, {@code /health/live}, {@code /health/ready} and {@code /db/ping}, routed through
+ * {@link HttpRouter}.
+ *
+ * <p>{@code /db/ping} runs {@code SELECT 1} through a {@link TransactionOrchestrator} built over the
+ * supplied {@link PersistenceEngine} and reports the outcome in the
+ * {@value #HEADER_PERSISTENCE} response header ({@code "unbound"} when no engine was supplied,
+ * {@code "ready"}, {@code "unexpected-result"}, or {@code "error"} on a thrown
+ * {@link RuntimeException}) — a real round trip to the database, not a liveness fiction.
+ */
 final class CommunityHttpHealthRoutes {
 
     private static final String HEADER_PERSISTENCE = "X-Exeris-Persistence";

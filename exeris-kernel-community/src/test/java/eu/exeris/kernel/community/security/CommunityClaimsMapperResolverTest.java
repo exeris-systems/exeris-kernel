@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -19,8 +15,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The reachability half of {@code ClaimsMapper} — the SPI calls itself "the <b>only</b>
- * application-customisable mapping point in the identity pipeline", and until v0.11 a booted kernel
- * could not reach it (ADR-063, cross-repo stub).
+ * application-customisable mapping point in the identity pipeline", so a booted kernel must reach it
+ * (ADR-063, cross-repo stub).
  *
  * <p>The decision is tested through {@code select(Iterable)} rather than through the classpath: a
  * service file in test resources would apply to every test in this module and make the
@@ -36,7 +32,7 @@ class CommunityClaimsMapperResolverTest {
         ClaimsMapper resolved = CommunityClaimsMapperResolver.resolve();
 
         assertThat(resolved)
-                .as("an unconfigured deployment must keep the behaviour it had before the seam opened")
+                .as("an unconfigured deployment must get the Community default mapper")
                 .isInstanceOf(CommunityClaimsMapper.class);
     }
 
@@ -123,10 +119,9 @@ class CommunityClaimsMapperResolverTest {
     }
 
     /**
-     * The wiring itself. An earlier version of this class asserted only that the provider assembled,
-     * and a mutation run — reverting {@code CommunitySecurityProvider} to build the identity provider
-     * without the resolver — left every case green. That is the change this PR exists to make, so it
-     * needs an assertion that fails when it is undone.
+     * The wiring itself. Asserting only that the provider assembles stays green when
+     * {@code CommunitySecurityProvider} builds the identity provider without the resolver, so this
+     * case asserts the resolver is what the provider uses, and fails when that wiring is removed.
      */
     @Test
     @DisplayName("the ServiceLoader boot path assembles the provider through the resolver")

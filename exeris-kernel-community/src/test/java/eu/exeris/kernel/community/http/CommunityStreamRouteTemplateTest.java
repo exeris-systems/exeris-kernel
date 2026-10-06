@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.http;
 
@@ -15,16 +11,13 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpStreamExchange;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.http.StreamEvent;
-import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.http.StreamMatch;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
-import eu.exeris.kernel.spi.transport.TransportConnection;
-import eu.exeris.kernel.spi.transport.TransportStream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import java.lang.foreign.MemorySegment;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
@@ -108,59 +101,10 @@ class CommunityStreamRouteTemplateTest {
         HttpRequest request = HttpRequest.noBody(
                 HttpMethod.POST, path, HttpVersion.HTTP_1_1, List.of());
 
-        HttpRouter.StreamMatch match = dispatcher.resolveStreamHandler(request, router);
+        StreamMatch match = dispatcher.resolveStreamHandler(request, router);
         assertThat(match).as("route must resolve as streaming for %s", path).isNotNull();
 
-        dispatcher.dispatchStream(request, new DiscardingStream(), match);
-    }
-
-    /** Accepts the SSE head and every event, and never reads — the wire is not what is under test. */
-    private static final class DiscardingStream implements TransportStream {
-
-        @Override
-        public int read(MemorySegment target, int maxBytes) {
-            return -1;
-        }
-
-        @Override
-        public void write(MemorySegment source, int length) {
-            // Discarded: this test asserts on what the handler saw, not on what reached the socket.
-        }
-
-        @Override
-        public void queueWrite(LoanedBuffer buffer, int length) {
-            buffer.close();
-        }
-
-        @Override
-        public long streamId() {
-            return 1L;
-        }
-
-        @Override
-        public boolean isBidirectional() {
-            return true;
-        }
-
-        @Override
-        public boolean isClientInitiated() {
-            return true;
-        }
-
-        @Override
-        public TransportConnection connection() {
-            return null;
-        }
-
-        @Override
-        public boolean hasPendingData() {
-            return false;
-        }
-
-        @Override
-        public void close() {
-            // no-op
-        }
+        dispatcher.dispatchStream(request, new DiscardingTransportStream(), match);
     }
 
     /** Compile-time guard: the handler above is an {@link HttpStreamExchange} consumer, nothing else. */

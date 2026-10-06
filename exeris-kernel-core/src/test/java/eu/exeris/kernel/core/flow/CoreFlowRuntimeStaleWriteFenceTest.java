@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.flow;
 
@@ -51,7 +47,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Resurrecting that row breaks the unbounded-mode "deleted on complete()" invariant
  * (docs/subsystems/flow.md).
  *
- * <p>The single-runtime start -> close -> start shape does NOT reproduce the bug: the stale
+ * <p>The single-runtime start -> close -> start shape does NOT reproduce the stale write: the stale
  * save is blocked upstream by {@code finalizeStep}'s {@code isCurrentLifecycle} re-check and
  * the {@code runInstance} loop guard, because a restart on the SAME runtime bumps that
  * runtime's own generation counter. The abandoned worker here belongs to a DIFFERENT,
@@ -60,8 +56,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <h2>Counter semantics</h2>
  * <p>{@code savesAfterReclaim} counts saves that land after engine-2 reclaimed the key.
- * Fence present ({@code !isActiveLifecycle}) -> 0 and the row stays absent. With the old
- * {@code isStaleLifecycle} predicate -> 1 and the row is resurrected.
+ * Fence present ({@code !isActiveLifecycle}) -> 0 and the row stays absent. With an
+ * {@code isStaleLifecycle} predicate in its place -> 1 and the row is resurrected.
  *
  * @since 0.9.0
  */

@@ -1,12 +1,7 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 /**
  * HTTP SPI — pure contracts for the Exeris HTTP layer.
  *
@@ -29,12 +24,12 @@
  * </ul>
  *
  * <p>
- * Any previous references to separate reactor modules such as
- * {@code exeris-kernel-spi-http} or {@code exeris-kernel-http} are obsolete
- * and do not reflect the current repository layout.
+ * There is no separate {@code exeris-kernel-spi-http} or {@code exeris-kernel-http} reactor module:
+ * the HTTP contracts are embedded in {@code exeris-kernel-spi} to keep the module graph flat and
+ * avoid a dependency hop on the hot path (ADR-009).
  * </p>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 package eu.exeris.kernel.spi.http;
 

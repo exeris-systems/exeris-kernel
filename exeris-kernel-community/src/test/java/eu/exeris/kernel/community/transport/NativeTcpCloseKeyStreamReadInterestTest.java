@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.transport;
 
@@ -38,11 +34,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * re-fires every select, re-throwing and busy-spinning the reactor (~5.7M throws/s measured).
  * Withdrawing only {@code OP_READ} merely relocates the spin onto {@code OP_WRITE} (a closed-engine
  * stream's queued egress is undrainable, so {@link NativeTcpCarrier#flushStream} never narrows
- * interest). The fix cancels the key outright and resets the stream abortively.
+ * interest). {@code closeKeyStream} therefore cancels the key outright and resets the stream
+ * abortively.
  *
- * <p>The assertion is non-vacuous: with the channel's stream unregistered, the pre-fix
- * {@code closeKeyStream} returns without touching the key, so the key would stay valid — the
- * cancellation assertion fails. The cancel happens before {@code resolveStream}, so it is
+ * <p>The assertion is non-vacuous: with the channel's stream unregistered, a {@code closeKeyStream}
+ * that resolves the stream before cancelling returns without touching the key, so the key would stay
+ * valid — the cancellation assertion fails. The cancel happens before {@code resolveStream}, so it is
  * independent of whether the stream's teardown completes or defers.
  */
 class NativeTcpCloseKeyStreamReadInterestTest {
@@ -61,7 +58,8 @@ class NativeTcpCloseKeyStreamReadInterestTest {
         // Port is irrelevant — the carrier is never started/bound; closeKeyStream only manipulates
         // the supplied SelectionKey. A valid SERVER-mode port just satisfies config validation.
         NativeTcpCarrier carrier =
-                new NativeTcpCarrier(TransportConfig.serverDefaults(8443), ALLOCATOR, null, null);
+                new NativeTcpCarrier(TransportConfig.serverDefaults(8443), ALLOCATOR, null, null,
+                        NativeTcpClientTls.none());
         try (ServerSocketChannel listener = ServerSocketChannel.open();
              Selector selector = Selector.open()) {
             listener.bind(new InetSocketAddress("127.0.0.1", 0));

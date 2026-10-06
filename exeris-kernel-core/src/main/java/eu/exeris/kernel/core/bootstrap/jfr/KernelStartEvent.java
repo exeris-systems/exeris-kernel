@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.bootstrap.jfr;
 
@@ -35,7 +31,7 @@ import jdk.jfr.StackTrace;
  *   KernelBootReadyEvent        (all subsystems RUNNING)
  * </pre>
  *
- * @since 0.5.0
+ * @since 0.5
  * @see BootstrapJfrEvents
  */
 @Name("eu.exeris.kernel.bootstrap.KernelStart")
@@ -61,6 +57,17 @@ public final class KernelStartEvent extends Event {
     /** JVM version string ({@link Runtime.Version#toString()}). */
     @Label("JVM Version")
     public String jvmVersion;
+
+    /**
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public KernelStartEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     /**
      * Emits a {@link KernelStartEvent} if JFR recording is active.

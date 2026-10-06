@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.transport.syscall;
 
@@ -15,10 +11,10 @@ import java.lang.invoke.MethodHandle;
  * for raw Berkeley socket C functions.
  *
  * <h2>Valhalla-Ready (JEP 401)</h2>
- * <p>This is a standard {@code record} whose fields are all identity-free.
+ * <p>This is a {@code value record} on the {@code preview} line, and its fields are all identity-free.
  * No {@code ==}, no {@code synchronized}, no {@code System.identityHashCode()} — it
  * scalarizes cleanly via C2 JIT Escape Analysis on the hot path.
- * Declared {@code value record} on the `preview` line (JEP 401); asserted by
+ * Declared {@code value record} on the {@code preview} line (JEP 401); asserted by
  * {@code Class::isValue} in its ValhallaReadiness test.
  *
  * <h2>C-type to ValueLayout mapping</h2>
@@ -60,7 +56,7 @@ import java.lang.invoke.MethodHandle;
  * @param socketLastError {@code int WSAGetLastError(void)} — Windows only; {@code null} on POSIX
  * @param wsaCleanup      {@code int WSACleanup(void)} — Windows only; {@code null} on POSIX.
  *                        Must be invoked to pair with {@code WSAStartup} before the owning arena is closed.
- * @since 0.5.0
+ * @since 0.5
  */
 public value record SyscallHandles(
         MethodHandle socket,

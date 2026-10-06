@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.http.sse;
 
@@ -38,10 +34,10 @@ import java.util.concurrent.locks.LockSupport;
  * concrete {@link TransportStream}; the Community NIO {@code NativeTcpStream} and the Enterprise
  * native binding both flow through this engine.
  *
- * <p><b>v0.10 protocol scope:</b> the SSE event framing ({@link SseEventEncoder}) is protocol-blind, but
+ * <p><b>Protocol scope:</b> the SSE event framing ({@link SseEventEncoder}) is protocol-blind, but
  * the response-head write is HTTP/1.1-specific (it uses {@code Http1ResponseEncoder}). HTTP/2 streaming
- * (head as HEADERS frame, body as DATA frames) needs a protocol-aware head-write seam — a follow-up; the
- * current Community path is HTTP/1.1 only.
+ * (head as HEADERS frame, body as DATA frames) needs a protocol-aware head-write seam, which is not
+ * implemented; the Community path is HTTP/1.1 only.
  *
  * <h2>Backpressure — park the VT, never an on-heap queue (obligation 4)</h2>
  * <p>The engine maintains a bounded <em>credit window</em>: at most {@code creditWindow} bytes may
@@ -61,7 +57,7 @@ import java.util.concurrent.locks.LockSupport;
  * {@link StreamClosedException#authExpired(long, long)} ({@code EX-HTTP-4012}) and the stream is reset.
  * The deadline is captured at open — never a per-emit JWKS re-fetch.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 // The engine is the cohesive lifecycle owner for one stream (open head + emit/park/credit + close +
 // fail-closed/abortive teardown); its method count and branch total reflect that single
@@ -294,11 +290,11 @@ public final class HttpStreamEngine implements HttpStreamExchange {
                     scratch.segment(), position, "Content-Type", "text/event-stream; charset=utf-8");
             position = Http1ResponseEncoder.writeHeader(
                     scratch.segment(), position, "Cache-Control", "no-cache");
-            // The SSE body has no Content-Length and is NOT chunk-framed in v0.10, so it is
+            // The SSE body has no Content-Length and is NOT chunk-framed, so it is
             // close-delimited (RFC 9112 §6.3): the stream ends when the connection closes, which is the
             // natural end of an SSE session. "Connection: close" advertises this honestly — the request
             // processor already declines keep-alive reuse for streaming routes. Transfer-Encoding: chunked
-            // (for SSE through buffering reverse proxies) is a documented v0.10 follow-up.
+            // (for SSE through buffering reverse proxies) is not implemented.
             position = Http1ResponseEncoder.writeHeader(
                     scratch.segment(), position, "Connection", "close");
             position = Http1ResponseEncoder.writeHeaderEnd(scratch.segment(), position);

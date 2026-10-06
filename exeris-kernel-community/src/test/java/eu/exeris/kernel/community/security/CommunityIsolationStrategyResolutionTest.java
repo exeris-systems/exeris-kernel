@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.security;
 
@@ -48,9 +44,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Every row here is also driven across all bindings by
  * {@code AbstractSecurityProviderTck.IsolationStrategyContract}; this class is the Community-local
- * companion, not the authoritative coverage. Case 8 in particular used to be the <i>only</i> coverage
- * of the wrong-typed deny anywhere in the repository — the abstract suite had no such case, so no
- * other binding was ever asked for that token. It now does (ADR-012 §9, enforcement layers).
+ * companion, not the authoritative coverage. Case 8, the wrong-typed deny, is also an
+ * {@code AbstractSecurityProviderTck} case, so every binding is asked for that token (ADR-012 §9,
+ * enforcement layers).
  *
  * @since 0.5.0
  */

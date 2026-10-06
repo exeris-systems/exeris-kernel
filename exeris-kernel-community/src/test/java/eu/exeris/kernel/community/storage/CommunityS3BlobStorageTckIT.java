@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.storage;
 
@@ -48,11 +44,24 @@ import java.util.Map;
  * @since 0.11.0
  */
 @Tag("integration")
-@Testcontainers
+@Testcontainers(disabledWithoutDocker = true)
 @DisplayName("TCK: Community S3 blob store (MinIO)")
 class CommunityS3BlobStorageTckIT extends AbstractBlobStorageTck {
 
-    private static final String IMAGE = "minio/minio:RELEASE.2025-04-22T22-12-26Z";
+    /**
+     * MinIO {@code RELEASE.2025-04-22T22-12-26Z} (commit {@code 0d7408fc}), as packaged by Bitnami's
+     * legacy repository, pinned by digest.
+     *
+     * <p>MinIO's own repositories ({@code quay.io/minio/minio}, {@code minio/minio}) do not serve
+     * anonymous pulls, so a runner with an empty image cache cannot fetch them. This image carries
+     * the same server build — same commit, same Go runtime — so the oracle is unchanged; only the
+     * packaging differs. The digest makes the fetch immutable: a retagged or rebuilt image is a
+     * different digest and fails the pull instead of silently changing the server under the suite.
+     */
+    private static final String IMAGE = "bitnamilegacy/minio:2025.4.22-debian-12-r2"
+            + "@sha256:50cec18ac4184af4671a78aedd5554942c8ae105d51a465fa82037949046da01";
+    /** The data drive: the image runs as a non-root user, and this is the directory it may write. */
+    private static final String DATA_DIR = "/bitnami/minio/data";
     private static final String BUCKET = "exeris-blobs";
     private static final String ACCESS_KEY = "exeris-test-access";
     private static final String SECRET_KEY = "exeris-test-secret";
@@ -71,7 +80,7 @@ class CommunityS3BlobStorageTckIT extends AbstractBlobStorageTck {
             .withEnv("MINIO_ROOT_USER", ACCESS_KEY)
             .withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
             .withCreateContainerCmdModifier(cmd -> cmd.withEntrypoint("sh"))
-            .withCommand("-c", "mkdir -p /data/" + BUCKET + " && exec minio server /data")
+            .withCommand("-c", "mkdir -p " + DATA_DIR + "/" + BUCKET + " && exec minio server " + DATA_DIR)
             .waitingFor(Wait.forHttp("/minio/health/live").forPort(MINIO_PORT).forStatusCode(200))
             .withStartupTimeout(Duration.ofMinutes(3));
 

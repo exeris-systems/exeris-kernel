@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.crypto;
 
@@ -22,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Any reordering of enum constants silently corrupts the state machine.
  *
  * <h2>TlsHandshakeResult / TlsShutdownResult Valhalla-Readiness</h2>
- * <p>Both are {@code record} types designed for future {@code value record} migration.
+ * <p>Both are {@code value record} types on the {@code preview} line.
  * Tests verify structural equality, pre-allocated singletons, and absence of identity ops.
  *
  * @since 0.5.0

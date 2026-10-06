@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -37,12 +33,22 @@ import java.util.Optional;
  *   <li>{@code KernelProviders.TELEMETRY_PROVIDER} — for health-check and pool metric events</li>
  * </ul>
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public final class CommunityPersistenceProvider implements PersistenceProvider {
 
     private static final String PROVIDER_NAME = "ExerisCommunity/JDBC+HikariCP";
     private static final CommunityRawJsonbCodec RAW_JSONB_CODEC = new CommunityRawJsonbCodec();
+
+    /**
+     * Constructs the provider that {@link java.util.ServiceLoader} instantiates to resolve the
+     * Community {@link PersistenceProvider}, per this module's registration under
+     * {@code META-INF/services/eu.exeris.kernel.spi.persistence.PersistenceProvider}.
+     */
+    public CommunityPersistenceProvider() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
 
     @Override
     public String providerId() {
@@ -82,6 +88,8 @@ public final class CommunityPersistenceProvider implements PersistenceProvider {
 
     /**
      * Community binding for the SPI persistence entity encoder contract.
+     *
+     * @return the shared raw-JSONB codec instance
      */
     public EntityEncoder<MemorySegment> entityEncoder() {
         return RAW_JSONB_CODEC;
@@ -89,6 +97,8 @@ public final class CommunityPersistenceProvider implements PersistenceProvider {
 
     /**
      * Community binding for the SPI persistence entity decoder contract.
+     *
+     * @return the shared raw-JSONB codec instance
      */
     public EntityDecoder<MemorySegment> entityDecoder() {
         return RAW_JSONB_CODEC;

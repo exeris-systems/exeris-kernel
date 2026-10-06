@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.testkit.persistence;
 
@@ -12,6 +8,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
@@ -52,7 +49,9 @@ class EmbeddedPersistenceEngineFixturesTest {
     @Test
     @DisplayName("closing a fixture that never started is a no-op")
     void closeBeforeStartIsNoOp() {
-        EmbeddedPersistenceEngineFixtures.inMemoryH2().close();
+        EmbeddedPersistenceEngineFixture fixture = EmbeddedPersistenceEngineFixtures.inMemoryH2();
+
+        assertThatCode(fixture::close).doesNotThrowAnyException();
     }
 
     @Test

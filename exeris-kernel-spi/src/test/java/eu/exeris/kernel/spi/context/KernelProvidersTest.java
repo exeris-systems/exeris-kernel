@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.context;
 
@@ -33,8 +29,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>All provider slots are unbound outside a {@code ScopedValue.where()} scope.</li>
  *   <li>Slots are correctly bound inside a scope and automatically restored on exit.</li>
  *   <li>Nested scopes shadow outer bindings — critical for test isolation.</li>
- *   <li>Bindings propagate into {@link StructuredTaskScope} forks (JEP 525),
- *       matching the structured concurrency contract.</li>
  *   <li>Convenience accessors ({@link KernelProviders#principal()},
  *       {@link KernelProviders#storageContext()}) throw the correct SPI exceptions
  *       when called outside a security scope.</li>
@@ -174,7 +168,7 @@ class KernelProvidersTest {
     }
 
     // -----------------------------------------------------------------------
-    // 4. StructuredTaskScope propagation (JEP 525 + JEP 506 interaction)
+    // 4. Convenience accessor guard methods
     // -----------------------------------------------------------------------
 
     @Nested

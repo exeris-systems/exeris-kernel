@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.memory;
 
@@ -21,8 +17,8 @@ import static org.assertj.core.api.Assertions.within;
  * null-object, and Valhalla-readiness (structural equality, no identity operations).
  *
  * <h2>Valhalla-Readiness Proof</h2>
- * <p>These tests guarantee that {@code MemoryStats} satisfies the three prerequisites
- * for migration to a {@code value record} (JEP 401):
+ * <p>These tests guarantee that {@code MemoryStats} satisfies the three properties a
+ * {@code value record} (JEP 401) depends on, which it is on the {@code preview} line:
  * <ol>
  *   <li>Structural {@code equals()}/{@code hashCode()} — no identity-based equality.</li>
  *   <li>No {@code synchronized} usage — records cannot be monitor-locked as value types.</li>

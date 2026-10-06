@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.transport;
 
@@ -42,10 +38,10 @@ package eu.exeris.kernel.spi.transport;
  * partitions) and releases them in {@link #close()}. Implementations MUST
  * make {@code close()} idempotent.
  *
+ * @since 0.5
  * @see TransportProvider
  * @see TransportConnection
  * @see TransportStream
- * @since 0.5.0
  */
 public interface TransportEngine extends AutoCloseable {
 
@@ -125,9 +121,9 @@ public interface TransportEngine extends AutoCloseable {
      * Returns a point-in-time diagnostics snapshot.
      *
      * <p>This call is non-blocking and low-allocation. {@link TransportStats} is a
-     * Valhalla-ready record — allocations will be eliminated once JEP 401 lands and
-     * the record is migrated to {@code value record}. Until then, implementations
-     * SHOULD return a cached or pool-sourced instance where possible.
+     * {@code value record} on the {@code preview} line and an identity record on the
+     * distributed line, where implementations SHOULD return a cached or pool-sourced
+     * instance where possible.
      *
      * @return current transport statistics
      */

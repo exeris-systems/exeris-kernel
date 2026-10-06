@@ -12,12 +12,14 @@ The SPI (Service Provider Interface) defines the immutable laws of the Exeris Ke
 - **`KernelContext`**: Identity-free state propagation via `ScopedValue`.
 
 ## 🧬 Valhalla Readiness
-All data structures are implemented as `record` types annotated with `@ValueCandidate`. They are architecturally ready to be promoted to `value record` (JEP 401) for zero-object-header memory efficiency.
+All data structures are implemented as `record` types annotated with `@ValueCandidate`. On the `preview` branch they are declared `value record` (JEP 401); on the distributed line they are identity records that differ only by that modifier.
 
 ## ⚖️ Licence
 
-This module is licensed under the **Apache License 2.0 with Commons Clause**.
-See the [LICENSE-COMMUNITY](../LICENSE-COMMUNITY) file in the repository root for the full text.
+This module is licensed under the **Apache License, Version 2.0** (`SPDX-License-Identifier: Apache-2.0`).
+See [LICENSE](../LICENSE) for the full text and [LICENSING.md](../LICENSING.md) for the
+open-core map. Note that Apache-2.0 section 6 grants no trademark rights — see
+[TRADEMARK.md](../TRADEMARK.md).
 
 **In brief:** you may use, modify, fork, and redistribute this module in any
 product or service — including commercial production deployments — as long as

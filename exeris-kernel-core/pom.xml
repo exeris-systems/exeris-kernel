@@ -18,6 +18,7 @@
         The "Brain": KernelBootstrap orchestrator, AbstractLoanedBuffer base class,
         WatermarkManager, ResourceArbiter. Depends only on exeris-kernel-spi.
     </description>
+    <url>https://github.com/exeris-systems/exeris-kernel</url>
 
     <properties>
     <!--
@@ -38,6 +39,7 @@
         deleting this property and running `mvn -pl exeris-kernel-core checkstyle:check`.
         -->
     <checkstyle.skip>true</checkstyle.skip>
+        <exeris.module.name>eu.exeris.kernel.core</exeris.module.name>
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Core bundle.
             Current measurement: ~74% (deepest test coverage in the reactor — TCK
@@ -70,8 +72,6 @@
         <dependency>
             <groupId>eu.exeris.preview</groupId>
             <artifactId>exeris-kernel-tck</artifactId>
-            <classifier>tests</classifier>
-            <type>test-jar</type>
             <scope>test</scope>
         </dependency>
         <!-- JMH — JVM Microbenchmark Harness (abstract benchmarks live in TCK test-jar) -->
@@ -96,6 +96,12 @@
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Test: certificate material for the OpenSSL integration tests, generated per run -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -117,6 +123,7 @@
             </resource>
         </resources>
         <plugins>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
@@ -127,6 +134,31 @@
                             <artifactId>jmh-generator-annprocess</artifactId>
                         </path>
                     </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!--
+                        PREVIEW LINE ONLY — StreamResolutionMissAllocationTest asserts that a stream-
+                        route miss allocates zero bytes per call, measured with per-thread allocation
+                        counters after a warm-up. On JDK 28 EA the measurement is not stable when the
+                        test shares a JVM with the rest of this module's suite: it reads a few bytes
+                        to a few dozen per call in most full runs and zero when run alone, and the
+                        same test is stable on the development line's JDK 25. A result that depends
+                        on what ran before it is not a measurement of the router, so it is excluded
+                        here rather than retried until green. The zero-allocation contract itself is
+                        held on the development line, over the same router sources.
+
+                        RE-ENABLE by deleting this element and running this module's full suite a few
+                        times: `mvn -pl exeris-kernel-core -am test`. If the case stays green in every
+                        run, the reason is gone.
+                    -->
+                    <excludes>
+                        <exclude>**/*$*</exclude>
+                        <exclude>**/StreamResolutionMissAllocationTest.java</exclude>
+                    </excludes>
                 </configuration>
             </plugin>
             <plugin>

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.memory;
 
@@ -12,6 +8,14 @@ import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 
 import java.util.concurrent.atomic.AtomicLong;
 
+/**
+ * Community: static allocation-bookkeeping helpers used by {@link CommunityMemoryAllocator},
+ * factored out so the allocator's own methods stay focused on the {@link
+ * eu.exeris.kernel.spi.memory.MemoryAllocator} contract they implement.
+ *
+ * <p>Holds no state of its own — every method takes the caller's configuration or counters
+ * as parameters and mutates only what is passed in.
+ */
 final class CommunityAllocatorSupport {
 
     private CommunityAllocatorSupport() {

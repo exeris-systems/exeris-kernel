@@ -1,12 +1,7 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
-
 /**
  * SPI: Pluggable identity / token-validation seam (ADR-040).
  *
@@ -31,6 +26,6 @@
  * <p>No JWT / JWKS / OIDC / PASETO / RSA / HTTP vocabulary appears in this package. Those concerns
  * live entirely in the Community / Enterprise drivers. This package is a pure contract.
  *
- * @since 0.10.0
+ * @since 0.10
  */
 package eu.exeris.kernel.spi.security.identity;

@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.spi.exceptions.events;
 
@@ -13,7 +9,8 @@ import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 
 /**
- * Thrown when an {@link EventBus} operation fails (publish overflow, subscription error).
+ * Thrown when an {@link EventBus} operation fails: a publish the bus did not accept, a
+ * {@code publishAndAwait} whose handlers failed, or a subscription the bus rejected.
  *
  * <h2>Hierarchy &amp; java:S110</h2>
  * <p>Extends {@link ExerisKernelException} directly — one level below
@@ -23,36 +20,53 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * ExerisKernelException → EventBusException}.
  *
  * <h2>rawArgs Binary Layout (Enterprise Glass-Box)</h2>
- * <p>For {@value KernelErrorCodes#EX_EVENT_6002} (queue overflow):
+ * <p>Each static factory sets one code and fills that code's layout:
  * <ul>
- *   <li>index 0 – {@code String} eventType</li>
- *   <li>index 1 – {@code long}   queueDepth</li>
- *   <li>index 2 – {@code long}   queueCapacity</li>
+ *   <li>{@link #publishOverflow(String, long, long)} → {@value KernelErrorCodes#EX_EVENT_6002}
+ *       (queue overflow): {@code [String eventType, long queueDepth, long queueCapacity]}</li>
+ *   <li>{@link #publishFailed(int, String, Throwable)} → {@value KernelErrorCodes#EX_EVENT_6009}
+ *       (publish not accepted): {@code [int eventTypeOrdinal, String reason]}</li>
+ *   <li>{@link #handlersFailed(int, int)} → {@value KernelErrorCodes#EX_EVENT_6010}
+ *       (handlers failed after delivery): {@code [int eventTypeOrdinal, int failedHandlerCount]}</li>
+ *   <li>{@link #subscriptionRejected(String)} → {@value KernelErrorCodes#EX_EVENT_6011}
+ *       (subscription rejected): {@code [String eventType]}</li>
  * </ul>
+ * <p>The two public constructors set {@value KernelErrorCodes#EX_EVENT_6001} and leave
+ * {@code rawArgs} empty.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 public class EventBusException extends ExerisKernelException {
 
     private static final String MSG_PUBLISH_OVERFLOW = "Event bus queue overflow";
+    private static final String MSG_PUBLISH_FAILED = "Event bus did not accept the event";
+    private static final String MSG_HANDLERS_FAILED = "One or more event handlers failed";
+    private static final String MSG_SUBSCRIPTION_REJECTED = "Event bus rejected the subscription";
 
     /**
-     * General-purpose constructor — use typed factory methods when possible.
+     * Constructs a bus failure with no Glass-Box arguments — for a condition the typed factories
+     * do not cover.
      *
      * @param message static message template
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6001} and leaves {@code rawArgs} empty, so a
+     *          decoder gets the code but no structured detail. Prefer a static factory where one
+     *          applies.
      */
     public EventBusException(String message) {
-        super(KernelErrorCodes.EX_EVENT_6002, message, (Throwable) null);
+        super(KernelErrorCodes.EX_EVENT_6001, message, (Throwable) null);
     }
 
     /**
-     * General-purpose constructor with cause.
+     * Constructs a bus failure that carries an upstream cause but no Glass-Box arguments.
      *
      * @param message static message template
      * @param cause   upstream throwable; may be {@code null}
+     * @apiNote Sets {@value KernelErrorCodes#EX_EVENT_6001} and leaves {@code rawArgs} empty.
+     *          Prefer {@link #publishFailed(int, String, Throwable)} for a publish the bus did not
+     *          accept.
      */
     public EventBusException(String message, Throwable cause) {
-        super(KernelErrorCodes.EX_EVENT_6002, message, cause);
+        super(KernelErrorCodes.EX_EVENT_6001, message, cause);
     }
 
     // Full-args constructor for factory methods — must precede static factory methods per DeclarationOrder
@@ -69,10 +83,71 @@ public class EventBusException extends ExerisKernelException {
      * @param eventType     the event type name that could not be published
      * @param queueDepth    current queue depth when the overflow occurred
      * @param queueCapacity maximum queue capacity
-     * @return a fully initialised {@link EventBusException}
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6002} and the three-element
+     *         {@code rawArgs} layout above
+     * @apiNote The publisher must not retry inline on this: the exception is meant to reach the
+     *          caller's structured-scope boundary so the joiner policy decides whether to fail
+     *          fast or shed the event.
      */
     public static EventBusException publishOverflow(String eventType, long queueDepth, long queueCapacity) {
         return new EventBusException(KernelErrorCodes.EX_EVENT_6002, MSG_PUBLISH_OVERFLOW, null,
                 eventType, queueDepth, queueCapacity);
+    }
+
+    /**
+     * Creates an {@code EventBusException} for a publish the bus did not accept, for a reason
+     * other than a full queue.
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_EVENT_6009}.
+     * rawArgs layout: {@code [int eventTypeOrdinal, String reason]}.
+     *
+     * @param eventTypeOrdinal ordinal of the event that was not accepted
+     * @param reason           static failure category — a constant, never a formatted string
+     * @param cause            upstream throwable; may be {@code null}
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6009}, {@code cause}, and
+     *         the two-element {@code rawArgs} layout above
+     * @apiNote No handler was given the event by the failed call. {@code reason} reaches a
+     *          decoder verbatim, so keep secrets and payload data out of it.
+     * @since 0.12
+     */
+    public static EventBusException publishFailed(int eventTypeOrdinal, String reason, Throwable cause) {
+        return new EventBusException(KernelErrorCodes.EX_EVENT_6009, MSG_PUBLISH_FAILED, cause,
+                eventTypeOrdinal, reason);
+    }
+
+    /**
+     * Creates an {@code EventBusException} for a {@code publishAndAwait} that delivered the event
+     * and whose handlers, one or more, threw.
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_EVENT_6010}.
+     * rawArgs layout: {@code [int eventTypeOrdinal, int failedHandlerCount]}.
+     *
+     * @param eventTypeOrdinal   ordinal of the delivered event
+     * @param failedHandlerCount number of handlers that threw
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6010} and the two-element
+     *         {@code rawArgs} layout above, with no cause
+     * @apiNote The caller attaches each handler's exception with {@link #addSuppressed}. The
+     *          event was delivered, so a retry runs again the handlers that succeeded.
+     * @since 0.12
+     */
+    public static EventBusException handlersFailed(int eventTypeOrdinal, int failedHandlerCount) {
+        return new EventBusException(KernelErrorCodes.EX_EVENT_6010, MSG_HANDLERS_FAILED, null,
+                eventTypeOrdinal, failedHandlerCount);
+    }
+
+    /**
+     * Creates an {@code EventBusException} for a subscription the bus rejected.
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_EVENT_6011}.
+     * rawArgs layout: {@code [String eventType]}.
+     *
+     * @param eventType the event type name the caller subscribed to
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6011} and the one-element
+     *         {@code rawArgs} layout above, with no cause
+     * @since 0.12
+     */
+    public static EventBusException subscriptionRejected(String eventType) {
+        return new EventBusException(KernelErrorCodes.EX_EVENT_6011, MSG_SUBSCRIPTION_REJECTED, null,
+                eventType);
     }
 }

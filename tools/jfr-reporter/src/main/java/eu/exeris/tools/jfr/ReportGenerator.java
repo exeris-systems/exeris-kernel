@@ -1,3 +1,7 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ * SPDX-License-Identifier: Apache-2.0
+ */
 package eu.exeris.tools.jfr;
 
 import com.fasterxml.jackson.core.JsonEncoding;
@@ -5,7 +9,10 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import eu.exeris.tools.jfr.JfrDirectoryReader.RecordingData;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,6 +22,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,14 +30,48 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 
+/**
+ * Writes the report set for one or more module {@code target/} directories.
+ *
+ * <p>Only recordings with an identity (a marker pair, or the TCK file-name shape) enter
+ * {@code evidence.json} and the module-level aggregates. Everything else — {@code surefire.jfr},
+ * {@code jmh-benchmarks.jfr}, the pinning monitor's files — is listed under {@code unattributed} in
+ * {@code jfr-summary.json} and counted nowhere else, so a TCK window is never counted twice through
+ * the JVM-wide recording that also captured it.
+ */
 final class ReportGenerator {
 
     private static final Logger LOGGER = Logger.getLogger(ReportGenerator.class.getName());
 
+    static final int SCHEMA_VERSION = 2;
+
+    static final String VERDICT_PASS = "PASS";
+    static final String VERDICT_FAIL = "FAIL";
+    static final String VERDICT_NOT_MEASURED = "NOT_MEASURED";
+
     private static final String FIELD_CLASS      = "class";
+    private static final String FIELD_COUNT      = "count";
+    private static final String FIELD_FILE       = "file";
     private static final String LOG_PREFIX       = "[jfr-reporter] ";
     private static final String LOG_PREFIX_WROTE = LOG_PREFIX + "Wrote ";
-    private static final String FIELD_COUNT      = "count";
+    private static final String UNATTRIBUTED     = "unattributed";
+
+    static final String REASON_NOT_A_MEASUREMENT = "no_marker_and_no_tck_filename";
+    static final String REASON_MULTIPLE_WINDOWS  = "multiple_windows";
+    static final String REASON_DUPLICATE_WINDOW  = "duplicate_window";
+    static final String REASON_UNPAIRED_BOUNDARY = "unpaired_boundary";
+    static final String REASON_ABORTED_WINDOW    = "aborted_window";
+
+    /** Why a recording was not measured; {@code null} on a recording that was. */
+    static final String NOT_MEASURED_NO_WINDOW = "no_window";
+    static final String NOT_MEASURED_UNSPECIFIED = "unspecified";
+    static final String NOT_MEASURED_INVALID_BUDGET = "invalid_budget";
+    static final String NOT_MEASURED_INVALID_ITERATIONS = "invalid_iterations";
+    static final String NOT_MEASURED_UNKNOWN_MODE = "unknown_mode:";
+    static final String NOT_MEASURED_BYTES_UNAVAILABLE = "bytes_unavailable";
+    private static final int TOP_FRAMES          = 20;
+    /** {@code alloc-top-classes.json} is served by GitHub Pages; unbounded it is a whole histogram. */
+    private static final int TOP_CLASSES         = 50;
 
     private final Map<String, Path> moduleDirs;
     private final String commit;
@@ -44,88 +86,264 @@ final class ReportGenerator {
         this.outDir = outDir;
     }
 
+    /**
+     * The contract block of one windowed recording, computed the way the TCK computes it:
+     * {@code eu.exeris.*}-typed events on the workload thread inside the window, against the mode and
+     * budget the marker carries.
+     *
+     * @param mode              {@code zero}, {@code bounded} or {@code unspecified}
+     * @param budget            budget per iteration, or -1
+     * @param iterations        steady-state iterations
+     * @param exerisEvents      the TCK's own count, recomputed
+     * @param bytesDelta        the {@code ThreadMXBean} delta from the end marker, or -1
+     * @param bytesPerIteration {@code bytesDelta / iterations}, or {@code null}
+     * @param verdict           {@code PASS}, {@code FAIL} or {@code NOT_MEASURED}
+     */
+    record ContractResult(String mode, int budget, double budgetBytes, int iterations, long exerisEvents,
+                          long bytesDelta, Double bytesPerIteration, String verdict,
+                          String notMeasuredReason) {
+
+        static ContractResult notMeasured(String reason) {
+            return new ContractResult(TckMarker.MODE_UNSPECIFIED, -1, TckMarker.NO_BYTE_BUDGET, 0, 0L,
+                    TckMarker.BYTES_UNAVAILABLE, null, VERDICT_NOT_MEASURED, reason);
+        }
+    }
+
+    static ContractResult evaluate(RecordingData recording) {
+        TckMarker.Window w = recording.window();
+        if (w == null) {
+            return ContractResult.notMeasured(NOT_MEASURED_NO_WINDOW);
+        }
+        String mode = w.contractMode();
+        long count = recording.contractEvents().size();
+        long delta = w.allocatedBytesDelta();
+        Double perIteration = delta >= 0 && w.iterations() > 0 ? (double) delta / w.iterations() : null;
+
+        String verdict;
+        String reason = null;
+        // Everything below the marker is untrusted input: the numbers were read from a file this
+        // tool did not write. A value out of range renders as NOT_MEASURED with a reason, never as
+        // FAIL — subsystemVerdict propagates any FAIL to the whole subsystem, and a published
+        // accusation sourced from a malformed file is worse than a gap.
+        if (w.iterations() <= 0) {
+            warnUntrusted(recording, "iterations=" + w.iterations());
+            verdict = VERDICT_NOT_MEASURED;
+            reason = NOT_MEASURED_INVALID_ITERATIONS;
+        } else if (TckMarker.MODE_ZERO.equals(mode)) {
+            boolean bytesOk = delta == TckMarker.BYTES_UNAVAILABLE || delta < w.iterations();
+            verdict = count == 0 && bytesOk ? VERDICT_PASS : VERDICT_FAIL;
+        } else if (TckMarker.MODE_BOUNDED.equals(mode)) {
+            if (w.budgetPerIteration() < 0) {
+                warnUntrusted(recording, "budgetPerIteration=" + w.budgetPerIteration());
+                verdict = VERDICT_NOT_MEASURED;
+                reason = NOT_MEASURED_INVALID_BUDGET;
+            } else {
+                verdict = count <= (long) w.iterations() * w.budgetPerIteration()
+                        ? VERDICT_PASS : VERDICT_FAIL;
+            }
+        } else if (TckMarker.MODE_BOUNDED_BYTES.equals(mode)) {
+            if (Double.isNaN(w.budgetBytes()) || w.budgetBytes() <= 0) {
+                warnUntrusted(recording, "budgetBytesPerIteration=" + w.budgetBytes());
+                verdict = VERDICT_NOT_MEASURED;
+                reason = NOT_MEASURED_INVALID_BUDGET;
+            } else if (perIteration == null) {
+                // The TCK fails outright here; the reporter has nothing to certify against.
+                verdict = VERDICT_NOT_MEASURED;
+                reason = NOT_MEASURED_BYTES_UNAVAILABLE;
+            } else {
+                // Strictly less than, matching the TCK's own isLessThan.
+                verdict = perIteration < w.budgetBytes() ? VERDICT_PASS : VERDICT_FAIL;
+            }
+        } else if (TckMarker.MODE_UNSPECIFIED.equals(mode)) {
+            verdict = VERDICT_NOT_MEASURED;
+            reason = NOT_MEASURED_UNSPECIFIED;
+        } else {
+            // Silent before: a mode this reader does not know produced the same NOT_MEASURED as a
+            // TCK that honestly stated none, and nothing said which had happened.
+            LOGGER.warning(() -> LOG_PREFIX + "WARN: " + recording.file().getFileName()
+                    + " states contract mode '" + mode + "', which this reporter does not know");
+            verdict = VERDICT_NOT_MEASURED;
+            reason = NOT_MEASURED_UNKNOWN_MODE + mode;
+        }
+        return new ContractResult(mode, w.budgetPerIteration(), w.budgetBytes(), w.iterations(), count,
+                delta, perIteration, verdict, reason);
+    }
+
+    private static void warnUntrusted(RecordingData recording, String what) {
+        LOGGER.warning(() -> LOG_PREFIX + "WARN: " + recording.file().getFileName()
+                + " carries " + what + ", which is out of range; reporting NOT_MEASURED rather "
+                + "than judging a contract against it");
+    }
+
+    /** Worst-of over recordings: any FAIL fails; else any PASS passes; else nothing was measured. */
+    static String subsystemVerdict(List<ContractResult> results) {
+        boolean anyPass = false;
+        for (ContractResult r : results) {
+            if (VERDICT_FAIL.equals(r.verdict())) {
+                return VERDICT_FAIL;
+            }
+            anyPass |= VERDICT_PASS.equals(r.verdict());
+        }
+        return anyPass ? VERDICT_PASS : VERDICT_NOT_MEASURED;
+    }
+
     void generate() throws IOException {
         LOGGER.info(() -> LOG_PREFIX + "Generating reports → " + outDir);
+        Files.createDirectories(outDir);
 
-        Map<String, Map<String, List<AllocEvent>>> allModuleEvents = new LinkedHashMap<>();
+        Map<String, Partition> perModule = new LinkedHashMap<>();
         for (Map.Entry<String, Path> entry : moduleDirs.entrySet()) {
             LOGGER.info(() -> LOG_PREFIX + "Reading module '" + entry.getKey() + "' from " + entry.getValue());
-            allModuleEvents.put(entry.getKey(), JfrDirectoryReader.readDirectory(entry.getValue()));
+            perModule.put(entry.getKey(), partition(JfrDirectoryReader.readDirectory(entry.getValue())));
         }
 
-        writeEvidence(allModuleEvents);
+        writeEvidence(perModule);
 
-        for (Map.Entry<String, Map<String, List<AllocEvent>>> moduleEntry : allModuleEvents.entrySet()) {
+        for (Map.Entry<String, Partition> moduleEntry : perModule.entrySet()) {
             String module = moduleEntry.getKey();
-            Map<String, List<AllocEvent>> subsystemEvents = moduleEntry.getValue();
-            List<AllocEvent> allEvents = subsystemEvents.values().stream().flatMap(List::stream).toList();
+            Map<String, List<RecordingData>> bySubsystem = moduleEntry.getValue().bySubsystem();
+            List<AllocEvent> allEvents = flatten(bySubsystem.values().stream().flatMap(List::stream).toList());
 
             Path moduleOutDir = outDir.resolve(module);
             Files.createDirectories(moduleOutDir);
+            writeEventReports(module, moduleOutDir, allEvents);
 
-            // Aggregated module-level reports
-            Map<String, List<String>> stacksMap = new LinkedHashMap<>();
-            AtomicInteger stackCounter = new AtomicInteger(0);
-            Map<String, String> stackIdCache = new HashMap<>();
-
-            writeTimeline(module, moduleOutDir, allEvents, stacksMap, stackIdCache, stackCounter);
-            writeStacks(module, moduleOutDir, stacksMap);
-            writeAllocTopClasses(module, moduleOutDir, allEvents);
-
-            // Per-subsystem reports
-            for (Map.Entry<String, List<AllocEvent>> subsysEntry : subsystemEvents.entrySet()) {
-                String subsystem = subsysEntry.getKey();
-                List<AllocEvent> subsysEvents = subsysEntry.getValue();
-                if (subsysEvents.isEmpty()) continue;
-
-                String safeSubsystem = subsystem.replaceAll("[^a-zA-Z0-9_\\-]", "_");
-                if (safeSubsystem.isEmpty() || safeSubsystem.equals(".") || safeSubsystem.equals("..")) continue;
-
+            for (Map.Entry<String, List<RecordingData>> subsysEntry : bySubsystem.entrySet()) {
+                List<AllocEvent> subsysEvents = flatten(subsysEntry.getValue());
+                if (subsysEvents.isEmpty()) {
+                    continue;
+                }
+                String safeSubsystem = subsysEntry.getKey().replaceAll("[^a-zA-Z0-9_\\-]", "_");
+                if (safeSubsystem.isEmpty() || safeSubsystem.equals(".") || safeSubsystem.equals("..")) {
+                    continue;
+                }
                 Path subsysOutDir = moduleOutDir.resolve(safeSubsystem);
                 Files.createDirectories(subsysOutDir);
-
-                Map<String, List<String>> subsysStacksMap = new LinkedHashMap<>();
-                AtomicInteger subsysStackCounter = new AtomicInteger(0);
-                Map<String, String> subsysStackIdCache = new HashMap<>();
-
-                writeTimeline(module + "/" + safeSubsystem, subsysOutDir, subsysEvents, subsysStacksMap, subsysStackIdCache, subsysStackCounter);
-                writeStacks(module + "/" + safeSubsystem, subsysOutDir, subsysStacksMap);
-                writeAllocTopClasses(module + "/" + safeSubsystem, subsysOutDir, subsysEvents);
+                writeEventReports(module + "/" + safeSubsystem, subsysOutDir, subsysEvents);
             }
         }
 
-        writeJfrSummary(allModuleEvents);
+        writeJfrSummary(perModule);
         LOGGER.info(() -> LOG_PREFIX + "Done.");
     }
 
-    private void writeEvidence(Map<String, Map<String, List<AllocEvent>>> allModuleEvents) throws IOException {
+    private void writeEventReports(String label, Path dir, List<AllocEvent> events) throws IOException {
+        Map<String, List<String>> stacksMap = new LinkedHashMap<>();
+        AtomicInteger stackCounter = new AtomicInteger(0);
+        Map<String, String> stackIdCache = new HashMap<>();
+        writeTimeline(label, dir, events, stacksMap, stackIdCache, stackCounter);
+        writeStacks(label, dir, stacksMap);
+        writeAllocTopClasses(label, dir, events);
+    }
+
+    /**
+     * A module's recordings split into subsystem measurements and everything else.
+     *
+     * @param bySubsystem  the measurements, grouped by lower-cased subsystem, file order kept
+     * @param unattributed the rest, each with the reason it is not a measurement
+     */
+    record Partition(Map<String, List<RecordingData>> bySubsystem, List<Unattributed> unattributed) {}
+
+    /**
+     * A recording that is not a subsystem measurement.
+     *
+     * @param recording the recording
+     * @param reason    one of the {@code REASON_*} constants
+     */
+    record Unattributed(RecordingData recording, String reason) {}
+
+    /**
+     * Splits recordings. Two measurements of the same window — the TCK's own file and the JVM-wide
+     * {@code surefire.jfr} in a JVM that ran exactly one measurement — keep the one whose name is the
+     * TCK's, else the smaller one; the other is a duplicate.
+     *
+     * @param recordings a module's recordings in file order
+     * @return the partition
+     */
+    static Partition partition(List<RecordingData> recordings) {
+        List<Unattributed> unattributed = new ArrayList<>();
+        Map<String, RecordingData> winners = new LinkedHashMap<>();
+        List<RecordingData> identified = new ArrayList<>();
+        for (RecordingData r : recordings) {
+            if (!r.identity().identified()) {
+                unattributed.add(new Unattributed(r, unattributedReason(r)));
+                continue;
+            }
+            TckMarker.Window w = r.window();
+            if (w == null) {
+                identified.add(r);
+                continue;
+            }
+            String key = w.measurementId() != TckMarker.NO_MEASUREMENT_ID
+                    ? "id:" + w.measurementId()
+                    : r.identity().subsystem() + "|" + w.testClass() + "|" + w.start().toEpochMilli();
+            RecordingData incumbent = winners.get(key);
+            if (incumbent == null) {
+                winners.put(key, r);
+            } else if (prefer(r, incumbent)) {
+                winners.put(key, r);
+                unattributed.add(new Unattributed(incumbent, REASON_DUPLICATE_WINDOW));
+            } else {
+                unattributed.add(new Unattributed(r, REASON_DUPLICATE_WINDOW));
+            }
+        }
+        identified.addAll(winners.values());
+        Map<String, List<RecordingData>> bySubsystem = new LinkedHashMap<>();
+        for (RecordingData r : identified) {
+            bySubsystem.computeIfAbsent(r.identity().subsystem(), k -> new ArrayList<>()).add(r);
+        }
+        return new Partition(bySubsystem, unattributed);
+    }
+
+    /** Why a recording is not a subsystem measurement; the reasons are mutually exclusive by order. */
+    private static String unattributedReason(RecordingData r) {
+        if (!r.pairing().aborted().isEmpty()) {
+            return REASON_ABORTED_WINDOW;
+        }
+        if (!r.pairing().unpaired().isEmpty()) {
+            return REASON_UNPAIRED_BOUNDARY;
+        }
+        if (r.windows().size() > 1) {
+            return REASON_MULTIPLE_WINDOWS;
+        }
+        return REASON_NOT_A_MEASUREMENT;
+    }
+
+    private static boolean prefer(RecordingData candidate, RecordingData incumbent) {
+        if (candidate.tckShapedName() != incumbent.tckShapedName()) {
+            return candidate.tckShapedName();
+        }
+        return candidate.events().size() < incumbent.events().size();
+    }
+
+    /** The workload-scoped events of several recordings: what a subsystem is answerable for. */
+    private static List<AllocEvent> flatten(List<RecordingData> recordings) {
+        return recordings.stream().flatMap(r -> r.workloadEvents().stream()).toList();
+    }
+
+    /** Everything inside the windows, any thread — for the diagnostic views only. */
+    private static List<AllocEvent> flattenUnscoped(List<RecordingData> recordings) {
+        return recordings.stream().flatMap(r -> r.attributedEvents().stream()).toList();
+    }
+
+    // ── evidence.json ────────────────────────────────────────────────────────
+
+    private void writeEvidence(Map<String, Partition> perModule) throws IOException {
         ObjectNode root = mapper.createObjectNode();
 
         ObjectNode meta = root.putObject("meta");
+        meta.put("schema", SCHEMA_VERSION);
         meta.put("generated", Instant.now().atOffset(ZoneOffset.UTC)
                 .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
-        meta.put("jdk", System.getProperty("java.version", "26"));
+        meta.put("jdk", System.getProperty("java.version", "unknown"));
         meta.put("commit", commit);
         meta.put("branch", branch);
 
-        for (Map.Entry<String, Map<String, List<AllocEvent>>> moduleEntry : allModuleEvents.entrySet()) {
+        for (Map.Entry<String, Partition> moduleEntry : perModule.entrySet()) {
             ObjectNode moduleNode = root.putObject(moduleEntry.getKey());
-            for (Map.Entry<String, List<AllocEvent>> subsysEntry : moduleEntry.getValue().entrySet()) {
-                List<AllocEvent> events = subsysEntry.getValue();
-                long totalEvents = events.size();
-                long exerisCount = events.stream()
-                        .filter(e -> e.className().startsWith("eu.exeris.")).count();
-                long productionCount = events.stream()
-                        .filter(e -> e.category() == Category.PRODUCTION).count();
-                long harnessCount = events.stream()
-                        .filter(e -> e.category() == Category.TEST_HARNESS).count();
-
-                ObjectNode subsysNode = moduleNode.putObject(subsysEntry.getKey());
-                subsysNode.put("verdict", verdict(moduleEntry.getKey(), productionCount));
-                subsysNode.put("total_events", totalEvents);
-                subsysNode.put("exeris_alloc_count", exerisCount);
-                subsysNode.put("exeris_production_alloc_count", productionCount);
-                subsysNode.put("exeris_test_harness_count", harnessCount);
+            for (Map.Entry<String, List<RecordingData>> subsysEntry
+                    : moduleEntry.getValue().bySubsystem().entrySet()) {
+                writeSubsystemEvidence(moduleNode.putObject(subsysEntry.getKey()), subsysEntry.getValue());
             }
         }
 
@@ -134,19 +352,132 @@ final class ReportGenerator {
         LOGGER.info(() -> LOG_PREFIX_WROTE + "evidence.json");
     }
 
-    private String verdict(String module, long productionCount) {
-        if ("core".equals(module)) {
-            return productionCount == 0 ? "VERIFIED" : "WARNING";
+    private static void writeSubsystemEvidence(ObjectNode node, List<RecordingData> recordings) {
+        List<ContractResult> results = new ArrayList<>();
+        ArrayNode recordingsNode = JsonNodeFactory.instance.arrayNode();
+        for (RecordingData r : recordings) {
+            ContractResult c = evaluate(r);
+            results.add(c);
+            ObjectNode rn = recordingsNode.addObject();
+            rn.put(FIELD_FILE, r.file().getFileName().toString());
+            rn.put("test_class", r.identity().testClass());
+            rn.put("window_source", r.identity().source().name().toLowerCase(java.util.Locale.ROOT));
+            rn.put("verdict", c.verdict());
+            ObjectNode cn = rn.putObject("contract");
+            cn.put("mode", c.mode());
+            cn.put("budget_per_iteration", c.budget());
+            cn.put("budget_bytes_per_iteration", c.budgetBytes());
+            cn.put("iterations", c.iterations());
+            cn.put("exeris_events_on_workload_thread", c.exerisEvents());
+            cn.put("allocated_bytes_delta", c.bytesDelta());
+            if (c.bytesPerIteration() == null) {
+                cn.putNull("bytes_per_iteration");
+            } else {
+                cn.put("bytes_per_iteration", c.bytesPerIteration());
+            }
+            cn.put("satisfied", VERDICT_PASS.equals(c.verdict()));
+            if (c.notMeasuredReason() == null) {
+                cn.putNull("not_measured_reason");
+            } else {
+                cn.put("not_measured_reason", c.notMeasuredReason());
+            }
         }
-        return productionCount < 1000 ? "VERIFIED" : "WARNING";
+
+        List<AllocEvent> events = flatten(recordings);
+        node.put("verdict", subsystemVerdict(results));
+        node.put("measured_recordings", results.stream().filter(r -> !VERDICT_NOT_MEASURED.equals(r.verdict())).count());
+        node.set("recordings", recordingsNode);
+        node.put("total_events", events.size());
+        // No flat exeris_* counters. They were three more passes over the same list for numbers the
+        // owned node below already carries (owned.production.events, owned.test_harness.events,
+        // and the exeris entry of each by_kind), and two of the three were misnamed: the exeris_
+        // prefix named the module while the filter was on the owner axis, so
+        // exeris_production_alloc_count counted arrays, JDK objects and virtual threads. They also
+        // covered two of the four Owner values, so total_events could not be reconciled from them.
+
+        ObjectNode owned = node.putObject("owned");
+        EnumMap<Owner, Stats> byOwner = new EnumMap<>(Owner.class);
+        for (Owner o : Owner.values()) {
+            byOwner.put(o, new Stats());
+        }
+        for (AllocEvent e : events) {
+            byOwner.get(e.ownerCategory()).add(e);
+        }
+        for (Owner o : Owner.values()) {
+            byOwner.get(o).write(owned.putObject(o.json()));
+        }
+
+        Map<String, Stats> byFrame = new LinkedHashMap<>();
+        for (AllocEvent e : events) {
+            if (e.ownerCategory() == Owner.PRODUCTION) {
+                byFrame.computeIfAbsent(e.owner().describe(), k -> new Stats()).add(e);
+            }
+        }
+        ArrayNode topFrames = node.putArray("top_production_frames");
+        byFrame.entrySet().stream()
+                .sorted(Comparator.comparingLong((Map.Entry<String, Stats> en) -> en.getValue().events).reversed())
+                .limit(TOP_FRAMES)
+                .forEach(en -> {
+                    ObjectNode fn = topFrames.addObject();
+                    fn.put("frame", en.getKey());
+                    en.getValue().write(fn);
+                });
     }
+
+    /** Per-type counters for one bucket. Bytes of different event types are never added together. */
+    static final class Stats {
+        long events;
+        long samples;
+        long sampleWeightBytes;
+        long tlabRefills;
+        long tlabBytes;
+        long outsideTlab;
+        long outsideTlabBytes;
+        final EnumMap<ObjectKind, Long> byKind = new EnumMap<>(ObjectKind.class);
+
+        void add(AllocEvent e) {
+            events++;
+            byKind.merge(e.objectKind(), 1L, Long::sum);
+            switch (e.sizeKind()) {
+                case SAMPLE_WEIGHT -> {
+                    samples++;
+                    sampleWeightBytes += e.sizeBytes();
+                }
+                case TLAB_SIZE -> {
+                    tlabRefills++;
+                    tlabBytes += e.sizeBytes();
+                }
+                case EXACT -> {
+                    outsideTlab++;
+                    outsideTlabBytes += e.sizeBytes();
+                }
+                default -> { }
+            }
+        }
+
+        void write(ObjectNode n) {
+            n.put("events", events);
+            n.put("samples", samples);
+            n.put("sample_weight_bytes", sampleWeightBytes);
+            n.put("tlab_refills", tlabRefills);
+            n.put("tlab_bytes", tlabBytes);
+            n.put("outside_tlab", outsideTlab);
+            n.put("outside_tlab_bytes", outsideTlabBytes);
+            ObjectNode kinds = n.putObject("by_kind");
+            for (ObjectKind k : ObjectKind.values()) {
+                kinds.put(k.json(), byKind.getOrDefault(k, 0L));
+            }
+        }
+    }
+
+    // ── timeline.json / stacks.json ──────────────────────────────────────────
 
     private void writeTimeline(String module, Path moduleOutDir, List<AllocEvent> events,
                                Map<String, List<String>> stacksMap,
                                Map<String, String> stackIdCache,
                                AtomicInteger stackCounter) throws IOException {
         List<AllocEvent> sorted = events.stream()
-                .sorted(Comparator.comparingLong(AllocEvent::tEpochMillis))
+                .sorted(Comparator.comparing(AllocEvent::t))
                 .toList();
         java.io.File outFile = moduleOutDir.resolve("timeline.json").toFile();
         try (JsonGenerator gen = mapper.getFactory().createGenerator(outFile, JsonEncoding.UTF8)) {
@@ -155,13 +486,18 @@ final class ReportGenerator {
             for (AllocEvent e : sorted) {
                 String stackId = resolveStackId(e.stackFrames(), stacksMap, stackIdCache, stackCounter);
                 gen.writeStartObject();
-                gen.writeNumberField("t", e.tEpochMillis());
+                // The JSON stays on milliseconds: it is an output format, not the predicate.
+                gen.writeNumberField("t", e.t().toEpochMilli());
                 gen.writeStringField("type", e.eventType());
                 gen.writeStringField(FIELD_CLASS, e.className());
                 gen.writeStringField("thread", e.threadName());
+                gen.writeNumberField("threadId", e.threadId());
                 gen.writeNumberField("size", e.sizeBytes());
+                gen.writeStringField("sizeKind", e.sizeKind().name().toLowerCase(java.util.Locale.ROOT));
+                gen.writeStringField("kind", e.objectKind().json());
+                gen.writeStringField("category", e.ownerCategory().json());
+                gen.writeStringField("owner", e.owner() != null ? e.owner().describe() : null);
                 gen.writeStringField("stackId", stackId);
-                gen.writeStringField("category", e.category().name());
                 gen.writeEndObject();
             }
             gen.writeEndArray();
@@ -177,39 +513,73 @@ final class ReportGenerator {
         LOGGER.info(() -> LOG_PREFIX_WROTE + module + "/stacks.json (" + count + " stacks)");
     }
 
+    // ── alloc-top-classes.json ───────────────────────────────────────────────
+
+    /**
+     * What a row of {@code alloc-top-classes.json} is keyed by. A record rather than the three
+     * strings concatenated, which needed a second map holding a whole event per key just to recover
+     * the parts afterwards.
+     *
+     * @param className the allocated class
+     * @param owner     who allocated it
+     * @param kind      what kind of object it is
+     */
+    private record ClassKey(String className, Owner owner, ObjectKind kind) {}
+
+    /**
+     * The busiest entries first, capped.
+     *
+     * <p>The cap is the point: this file is served by GitHub Pages, and without one
+     * {@code alloc-top-classes.json} is not a top list at all but the complete class histogram of
+     * whatever the recording saw.
+     *
+     * @param byKey the counted entries
+     * @param limit how many to keep
+     * @param <K>   the key type
+     * @return at most {@code limit} entries, highest event count first
+     */
+    static <K> List<Map.Entry<K, Stats>> rankTop(Map<K, Stats> byKey, int limit) {
+        return byKey.entrySet().stream()
+                .sorted(Comparator.comparingLong((Map.Entry<K, Stats> en) -> en.getValue().events).reversed())
+                .limit(limit)
+                .toList();
+    }
+
     private void writeAllocTopClasses(String module, Path moduleOutDir, List<AllocEvent> events) throws IOException {
-        Map<String, long[]> countMap = new LinkedHashMap<>();
+        Map<ClassKey, Stats> byKey = new LinkedHashMap<>();
         for (AllocEvent e : events) {
-            String key = e.className() + "|" + e.category().name();
-            countMap.computeIfAbsent(key, k -> new long[2]);
-            countMap.get(key)[0]++;
-            countMap.get(key)[1] += e.sizeBytes();
+            byKey.computeIfAbsent(new ClassKey(e.className(), e.ownerCategory(), e.objectKind()),
+                    k -> new Stats()).add(e);
         }
 
-        List<Map<String, Object>> topClasses = new ArrayList<>();
-        for (Map.Entry<String, long[]> entry : countMap.entrySet()) {
-            String[] parts = entry.getKey().split("\\|", 2);
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put(FIELD_CLASS, parts[0]);
-            item.put(FIELD_COUNT, entry.getValue()[0]);
-            item.put("bytes", entry.getValue()[1]);
-            item.put("category", parts[1]);
-            topClasses.add(item);
-        }
-        topClasses.sort(Comparator.comparingLong((Map<String, Object> m) -> ((Number) m.get("count")).longValue()).reversed());
+        ArrayNode top = mapper.createArrayNode();
+        rankTop(byKey, TOP_CLASSES)
+                .forEach(en -> {
+                    ObjectNode item = top.addObject();
+                    item.put(FIELD_CLASS, en.getKey().className());
+                    item.put("kind", en.getKey().kind().json());
+                    item.put("category", en.getKey().owner().json());
+                    item.put(FIELD_COUNT, en.getValue().events);
+                    en.getValue().write(item);
+                });
 
         mapper.writerWithDefaultPrettyPrinter()
-                .writeValue(moduleOutDir.resolve("alloc-top-classes.json").toFile(), topClasses);
-        final int count = topClasses.size();
+                .writeValue(moduleOutDir.resolve("alloc-top-classes.json").toFile(), top);
+        final int count = top.size();
         LOGGER.info(() -> LOG_PREFIX_WROTE + module + "/alloc-top-classes.json (" + count + " classes)");
     }
 
-    private void writeJfrSummary(Map<String, Map<String, List<AllocEvent>>> allModuleEvents) throws IOException {
+    // ── jfr-summary.json ─────────────────────────────────────────────────────
+
+    private void writeJfrSummary(Map<String, Partition> perModule) throws IOException {
         ObjectNode root = mapper.createObjectNode();
 
-        for (Map.Entry<String, Map<String, List<AllocEvent>>> moduleEntry : allModuleEvents.entrySet()) {
-            List<AllocEvent> allEvents = moduleEntry.getValue().values().stream()
+        for (Map.Entry<String, Partition> moduleEntry : perModule.entrySet()) {
+            List<RecordingData> identified = moduleEntry.getValue().bySubsystem().values().stream()
                     .flatMap(List::stream).toList();
+            // Unscoped on purpose: the thread table answers "which threads were active", and is
+            // meaningless if it can only ever name one.
+            List<AllocEvent> allEvents = flattenUnscoped(identified);
             ObjectNode moduleNode = root.putObject(moduleEntry.getKey());
 
             Map<String, Long> threadCounts = new LinkedHashMap<>();
@@ -226,21 +596,34 @@ final class ReportGenerator {
                         t.put(FIELD_COUNT, entry.getValue());
                     });
 
-            Map<String, Long> classCounts = new LinkedHashMap<>();
-            for (AllocEvent e : allEvents) {
-                classCounts.merge(e.className(), 1L, Long::sum);
-            }
-            ArrayNode topClasses = moduleNode.putArray("topClasses");
-            classCounts.entrySet().stream()
-                    .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
-                    .limit(20)
-                    .forEach(entry -> {
-                        ObjectNode c = topClasses.addObject();
-                        c.put(FIELD_CLASS, entry.getKey());
-                        c.put(FIELD_COUNT, entry.getValue());
-                    });
+            writeTopClasses(moduleNode.putArray("topClasses"), allEvents, 20);
 
-            moduleNode.putArray("phaseBoundaries");
+            ArrayNode phases = moduleNode.putArray("phaseBoundaries");
+            for (RecordingData r : identified) {
+                if (!r.windowed()) {
+                    continue;
+                }
+                TckMarker.Window w = r.window();
+                ObjectNode p = phases.addObject();
+                p.put("subsystem", r.identity().subsystem());
+                p.put("test_class", w.testClass());
+                p.put(FIELD_FILE, r.file().getFileName().toString());
+                p.put("start", w.start().toEpochMilli());
+                p.put("end", w.end().toEpochMilli());
+                p.put("thread_id", w.workloadThreadId());
+                p.put("iterations", w.iterations());
+            }
+
+            ArrayNode unattributed = moduleNode.putArray(UNATTRIBUTED);
+            for (Unattributed u : moduleEntry.getValue().unattributed()) {
+                RecordingData r = u.recording();
+                ObjectNode un = unattributed.addObject();
+                un.put(FIELD_FILE, r.file().getFileName().toString());
+                un.put("reason", u.reason());
+                un.put("windows", r.windows().size());
+                un.put("events", r.events().size());
+                writeTopClasses(un.putArray("topClasses"), r.events(), 10);
+            }
         }
 
         mapper.writerWithDefaultPrettyPrinter()
@@ -248,15 +631,32 @@ final class ReportGenerator {
         LOGGER.info(() -> LOG_PREFIX_WROTE + "jfr-summary.json");
     }
 
-    private String resolveStackId(List<String> frames,
+    private static void writeTopClasses(ArrayNode target, List<AllocEvent> events, int limit) {
+        Map<String, Long> classCounts = new LinkedHashMap<>();
+        for (AllocEvent e : events) {
+            classCounts.merge(e.className(), 1L, Long::sum);
+        }
+        classCounts.entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .limit(limit)
+                .forEach(entry -> {
+                    ObjectNode c = target.addObject();
+                    c.put(FIELD_CLASS, entry.getKey());
+                    c.put(FIELD_COUNT, entry.getValue());
+                });
+    }
+
+    private String resolveStackId(List<Frame> frames,
                                   Map<String, List<String>> stacksMap,
                                   Map<String, String> stackIdCache,
                                   AtomicInteger counter) {
-        String fingerprint = String.join("|", frames);
+        List<String> rendered = frames.stream().map(Frame::describe).toList();
+        String fingerprint = String.join("|", rendered);
         return stackIdCache.computeIfAbsent(fingerprint, k -> {
             String id = "stk_" + String.format("%04d", counter.incrementAndGet());
-            stacksMap.put(id, frames);
+            stacksMap.put(id, rendered);
             return id;
         });
     }
+
 }

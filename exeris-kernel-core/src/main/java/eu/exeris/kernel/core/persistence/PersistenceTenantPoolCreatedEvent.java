@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.persistence;
 
@@ -20,10 +16,13 @@ import jdk.jfr.StackTrace;
  * JFR event emitted when a per-tenant connection pool is created.
  *
  * <h2>Memory Tracking</h2>
- * <p>Used to correlate per-tenant pool proliferation with memory growth.
- * Peak concurrent tenant pool count should remain ≤3 under typical load.
+ * <p>Used to correlate per-tenant pool proliferation with memory growth. The number of
+ * concurrent per-tenant pools is bounded by {@code PersistenceConfig#maxTenantPools()}; a
+ * creation rate that keeps climbing toward that ceiling without matching
+ * {@link PersistenceTenantPoolReclaimedEvent} activity is the proliferation this event exists
+ * to surface.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @Name("eu.exeris.kernel.persistence.TenantPoolCreated")
 @Label("Tenant Pool Created")
@@ -56,10 +55,27 @@ public final class PersistenceTenantPoolCreatedEvent extends Event {
     public int currentPoolCount;
 
     /**
-     * Emit a tenant pool creation event.
+     * Creates an unrecorded event.
+     *
+     * <p>{@link #emit} assigns the public fields and calls {@link Event#commit()}. An instance that is never
+     * committed contributes nothing to a recording.
+     */
+    public PersistenceTenantPoolCreatedEvent() {
+        // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+        super();
+    }
+
+    /**
+     * Commits a tenant-pool-created event, or does nothing if the event type is disabled.
      *
      * <p>Guards on {@link EventType#isEnabled()} to avoid
      * allocation when JFR is off.
+     *
+     * @param providerId       stable provider identifier, e.g. {@code "postgres-community"}
+     * @param tenantKey        tenant key or schema name used as the pool identifier
+     * @param maxConnections   maximum connections configured for the new pool
+     * @param minIdle          minimum idle connections configured for the new pool
+     * @param currentPoolCount total per-tenant pools active immediately after this pool's creation
      */
     public static void emit(String providerId, String tenantKey, int maxConnections,
                            int minIdle, int currentPoolCount) {

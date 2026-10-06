@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.persistence;
 
@@ -18,8 +14,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Community-internal connection-pool warm-up helper. Extracted from
- * {@link CommunityPersistenceEngine} in QA-010 (v0.8 Sprint 1) so the engine carries
+ * Community-internal connection-pool warm-up helper, kept apart from
+ * {@link CommunityPersistenceEngine} (QA-010) so the engine carries
  * one less responsibility: the "hold N connections at once to force HikariCP to
  * materialise them concurrently before the first user request arrives" workflow lives
  * here.
@@ -38,7 +34,7 @@ import java.util.List;
  * database (auth, network) shows up at engine construction rather than on first
  * request.
  *
- * @since 0.8.0
+ * @since 0.8
  */
 final class CommunityPersistencePoolWarmup {
 
@@ -54,8 +50,8 @@ final class CommunityPersistencePoolWarmup {
      *
      * @param sharedPool the HikariCP pool to warm up
      * @param config     persistence config (warm-up flag, target count, max pool size)
-     * @throws PersistenceProviderException when an acquired connection fails validation
-     *         or pool acquisition itself raises an SQL error.
+     * @throws PersistenceProviderException ({@code EX-PERS-5001}) when an acquired connection
+     *         fails validation or pool acquisition itself raises an SQL error
      */
     /* default */ static void prewarm(HikariDataSource sharedPool, PersistenceConfig config) {
         int warmupConnections = config.poolWarmupConnections();

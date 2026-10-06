@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-09-23
 ---
 
 # Reference — build commands and the CI gates
@@ -38,13 +38,11 @@ worktree reports violations that are not there.
 
 ## Architecture guard
 
-**On this line the standalone invocation fails, and it is not a boundary breach.** It reports
-`[No Class Loaded]` — the guard's own non-vacuity assertion, saying it scanned nothing — because the
-isolated `-pl exeris-kernel-tck -am` invocation does not set this line's classpath up. Verified
-against a clean `origin/preview` checkout, where it fails identically. The guard itself runs and
-passes inside the full `mvn clean install`, which is what CI does, so **use the full build to
-satisfy the guard here** and do not read the isolated failure as a finding
-([`PREVIEW-TRACK.md`](../../PREVIEW-TRACK.md) records this).
+**On the `preview` branch none of the commands in this section can pass, and that is not a boundary
+breach.** ArchUnit cannot read class-file major 72 (JDK 28), so it loads zero classes; the suites'
+own non-empty-analysis assertion then reports `[No Class Loaded]`. The full build excludes all of
+them on that branch, so no command there verifies the Wall — the same sources are verified on the
+development line ([`PREVIEW-TRACK.md`](../../PREVIEW-TRACK.md), "Five gates cannot run here").
 
 ```bash
 mvn -q -pl exeris-kernel-tck -am -Dtest=ExerisArchitectureTest \
@@ -90,9 +88,12 @@ per module — do not lower a floor to make a build pass), then a sequenced chai
 `tls-openssl-matrix` branching off the build, and `benchmarks` plus the JFR reporting jobs on `main`
 only. `spi-compatibility-gate` deliberately does not depend on the build: it compiles the SPI alone.
 
-Other workflows: `codeql.yml`, `dependency-review.yml`, `release.yml`, and the two Claude workflows
-(`claude.yml` responds only to human `@claude` mentions; `claude-code-review.yml` reviews pull
-requests).
+Other workflows: `codeql.yml`, `dependency-review.yml`, `release.yml`, `issues.yml`,
+`guardrails.yml`, which calls the organisation's shared gates and the L2 review that posts the
+verdict, and `javadoc.yml`, which calls the Javadoc gate. The two are separate files because the
+review runner refuses to start when `guardrails.yml` differs from the copy on the default branch,
+so that file is one blob everywhere and anything a single branch needs lives beside it instead.
+`claude.yml` responds only to human `@claude` mentions and reviews nothing.
 
 ## Platform caveats
 

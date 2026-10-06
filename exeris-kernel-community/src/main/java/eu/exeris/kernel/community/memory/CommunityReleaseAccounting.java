@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.community.memory;
 
@@ -15,10 +11,10 @@ import java.util.concurrent.atomic.AtomicLong;
  * sampling config, and performs the per-buffer release bookkeeping in {@link #release(long)} (the
  * decrement mirror of {@link CommunityAllocatorSupport#trackAllocation}).
  *
- * <p>One instance is created per {@link CommunityMemoryAllocator}; each buffer holds a reference to it
- * and calls {@link #release(long)} from its {@code onRelease()}. This replaces the former per-buffer
- * {@code Runnable} close-action, so no bookkeeping object is allocated on the allocation hot path — the
- * buffer already knows its own capacity, and the counters/JFR config are allocator-wide constants.
+ * <p>One instance is created per {@link CommunityMemoryAllocator}; each buffer holds a reference to
+ * it and calls {@link #release(long)} from its {@code onRelease()}. No per-buffer bookkeeping object
+ * is allocated on the release path: the buffer already knows its own capacity, and the counters and
+ * JFR sampling config are shared, allocator-wide state held by this one instance.
  */
 final class CommunityReleaseAccounting {
 
@@ -38,9 +34,8 @@ final class CommunityReleaseAccounting {
     }
 
     /**
-     * Records the release of a buffer of {@code bytes} capacity — identical bookkeeping to the former
-     * per-buffer close-action: bump the release count, return the bytes to the outstanding total, and
-     * emit a sampled JFR event when enabled.
+     * Records the release of a buffer of {@code bytes} capacity: bumps the release count, returns
+     * the bytes to the outstanding total, and emits a sampled JFR event when enabled.
      *
      * @param bytes the released buffer's capacity (the same value {@code trackAllocation} added)
      */

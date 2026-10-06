@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.crypto.tls;
 
@@ -67,7 +63,7 @@ import java.util.concurrent.TimeUnit;
  * <p>No identity operations ({@code ==}, {@code synchronized}, {@code identityHashCode}) are
  * performed on {@link TlsStateMachine} or {@link TlsPhase}. The C2 JIT can fully scalarize
  * the phase comparison via escape analysis, eliminating the object header load entirely on
- * the hot path. Results should improve further once JEP 401 ({@code value class}) lands.
+ * the hot path.
  *
  * <h2>Does not require OpenSSL</h2>
  * <p>This benchmark exercises only the pure-Java VarHandle state machine — no FFM

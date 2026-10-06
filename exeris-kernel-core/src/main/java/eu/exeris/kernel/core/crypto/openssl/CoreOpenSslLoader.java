@@ -1,10 +1,6 @@
 /*
  * Copyright (C) 2025-2026 Exeris Systems.
- *
- * Licensed under the Apache License, Version 2.0 with Commons Clause.
- * You may use, modify, and distribute this file under those terms.
- * Commercial resale of this software as a competing product is prohibited.
- * See LICENSE-COMMUNITY in the repository root for the full text.
+ * SPDX-License-Identifier: Apache-2.0
  */
 package eu.exeris.kernel.core.crypto.openssl;
 
@@ -15,7 +11,10 @@ import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
+import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -45,7 +44,7 @@ import static java.lang.foreign.ValueLayout.JAVA_LONG;
  * <p>Shared OpenSSL constants are exposed as {@code public static final int} fields
  * so callers do not duplicate magic numbers.
  *
- * @since 0.5.0
+ * @since 0.5
  */
 @SuppressWarnings({"PMD.CyclomaticComplexity", "PMD.TooManyMethods"})
 public final class CoreOpenSslLoader {
@@ -58,6 +57,21 @@ public final class CoreOpenSslLoader {
     public static final int SSL_FILETYPE_PEM   = 1;
     /** {@code SSL_VERIFY_NONE = 0} — no peer certificate verification. */
     public static final int SSL_VERIFY_NONE    = 0;
+    /**
+     * {@code SSL_VERIFY_PEER = 1} — a client aborts the handshake when the server's certificate
+     * fails verification.
+     */
+    public static final int SSL_VERIFY_PEER    = 1;
+    /** {@code SSL_CTRL_SET_TLSEXT_HOSTNAME = 55}, the {@code SSL_ctrl} command that sets SNI. */
+    public static final int SSL_CTRL_SET_TLSEXT_HOSTNAME = 55;
+    /** {@code TLSEXT_NAMETYPE_host_name = 0}, the only SNI name type. */
+    public static final int TLSEXT_NAMETYPE_HOST_NAME = 0;
+    /** {@code X509_V_OK = 0} — the {@code SSL_get_verify_result} of a verified peer. */
+    public static final int X509_V_OK = 0;
+    /** {@code X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS = 0x4} — {@code f*.example.test} matches nothing. */
+    public static final int X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS = 0x4;
+    /** {@code X509_CHECK_FLAG_NEVER_CHECK_SUBJECT = 0x20} — the subject common name is never a host. */
+    public static final int X509_CHECK_FLAG_NEVER_CHECK_SUBJECT = 0x20;
     /**
      * {@code SSL_ERROR_SSL = 1} — fatal protocol error (e.g. non-TLS bytes on a TLS port).
      * An {@code SSL_get_error} return code; unrelated to {@link #SSL_FILETYPE_PEM} (same value {@code 1},
@@ -156,7 +170,7 @@ public final class CoreOpenSslLoader {
      * {@code GlobalMemoryArbiter.INFRASTRUCTURE} — ensuring symbols stay inside the
      * single pre-allocated memory block.
      *
-     * <h2>Library Discovery Order</h2>
+     * <h4>Library Discovery Order</h4>
      * <ol>
      *   <li>{@code EXERIS_OPENSSL_CRYPTO_PATH} → explicit path for {@code libcrypto}.</li>
      *   <li>{@code EXERIS_OPENSSL_PATH} → legacy override; controls {@code libcrypto}
@@ -170,7 +184,10 @@ public final class CoreOpenSslLoader {
      *
      * @param arena the arena whose scope governs the lifetime of the loaded symbols
      * @return immutable {@link CoreOpenSslRuntime} containing the exact runtime lookup and resolved handles
-     * @throws CryptoBootstrapException if libssl cannot be found or a required symbol is missing
+     * @throws CryptoBootstrapException if libssl cannot be found, if libssl and libcrypto
+     *                                  disagree on major version, if the resolved version
+     *                                  falls outside the supported band, or if a required
+     *                                  symbol is missing ({@code EX-NET-2002})
      */
     public static CoreOpenSslRuntime load(Arena arena) {
         ResolvedLibrary crypto = resolveCrypto(arena);
@@ -248,8 +265,72 @@ public final class CoreOpenSslLoader {
                 opt(linker, lookup, "SSL_CIPHER_get_name",
                         FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)));
 
-        CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles);
+        CoreSslHandles.ErrorQueueHandles errorQueue = new CoreSslHandles.ErrorQueueHandles(
+                req(linker, crypto.lookup(), "ERR_clear_error", FunctionDescriptor.ofVoid()));
+
+        CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles, errorQueue,
+                peerVerificationHandles(linker, ssl.lookup(), crypto.lookup()),
+                trustStoreHandles(linker, crypto.lookup()));
         return new CoreOpenSslRuntime(linker, ssl.lookup(), crypto.lookup(), handles);
+    }
+
+    /**
+     * Binds the client verification symbols. Every one is present, outside any deprecation guard,
+     * from 3.0.0 through 4.0; {@code SSL_set1_host}, which 4.0 deprecates, is not used.
+     */
+    private static CoreSslHandles.PeerVerificationHandles peerVerificationHandles(
+            Linker linker, SymbolLookup ssl, SymbolLookup crypto) {
+        ValueLayout cLong = cLong(linker);
+        return new CoreSslHandles.PeerVerificationHandles(
+                req(linker, ssl, "SSL_CTX_set1_cert_store",
+                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG)),
+                req(linker, ssl, "SSL_get0_param",
+                        FunctionDescriptor.of(JAVA_LONG, JAVA_LONG)),
+                req(linker, crypto, "X509_VERIFY_PARAM_set1_host",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG)),
+                req(linker, crypto, "X509_VERIFY_PARAM_set_hostflags",
+                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_INT)),
+                req(linker, crypto, "X509_VERIFY_PARAM_set1_ip",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG)),
+                withLongs(req(linker, ssl, "SSL_ctrl",
+                                FunctionDescriptor.of(cLong, JAVA_LONG, JAVA_INT, cLong, JAVA_LONG)),
+                        MethodType.methodType(long.class, long.class, int.class, long.class, long.class)),
+                withLongs(req(linker, ssl, "SSL_get_verify_result",
+                                FunctionDescriptor.of(cLong, JAVA_LONG)),
+                        MethodType.methodType(long.class, long.class)),
+                withLongs(req(linker, crypto, "X509_verify_cert_error_string",
+                                FunctionDescriptor.of(JAVA_LONG, cLong)),
+                        MethodType.methodType(long.class, long.class)));
+    }
+
+    private static CoreSslHandles.TrustStoreHandles trustStoreHandles(Linker linker, SymbolLookup crypto) {
+        return new CoreSslHandles.TrustStoreHandles(
+                req(linker, crypto, "X509_STORE_new", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_STORE_free", FunctionDescriptor.ofVoid(JAVA_LONG)),
+                req(linker, crypto, "X509_STORE_set_default_paths",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),
+                req(linker, crypto, "X509_STORE_load_file",
+                        FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_file", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_dir", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_file_env", FunctionDescriptor.of(JAVA_LONG)),
+                req(linker, crypto, "X509_get_default_cert_dir_env", FunctionDescriptor.of(JAVA_LONG)));
+    }
+
+    /**
+     * The platform's C {@code long}: 64 bits on LP64 Linux and macOS, 32 bits on LLP64 Windows.
+     */
+    private static ValueLayout cLong(Linker linker) {
+        return (ValueLayout) linker.canonicalLayouts().get("long");
+    }
+
+    /**
+     * Casts a handle whose C {@code long} positions follow the platform to the fixed
+     * {@code long}-typed {@code type}, so a caller's {@code invokeExact} has one shape everywhere.
+     * On LP64 the cast is the identity; on LLP64 it narrows arguments and widens the result.
+     */
+    private static MethodHandle withLongs(MethodHandle handle, MethodType type) {
+        return MethodHandles.explicitCastArguments(handle, type);
     }
 
     /**
@@ -272,7 +353,7 @@ public final class CoreOpenSslLoader {
      * @param major OpenSSL major version ({@code OPENSSL_version_major()})
      * @param minor OpenSSL minor version ({@code OPENSSL_version_minor()})
      * @param text  full human-readable version string ({@code OpenSSL_version(OPENSSL_VERSION)})
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ value record OpenSslVersion(int major, int minor, String text) {
     }
@@ -294,6 +375,7 @@ public final class CoreOpenSslLoader {
      *
      * @throws CryptoBootstrapException if a required version symbol is missing or the
      *                                  version falls outside the supported band
+     *                                  ({@code EX-NET-2002})
      */
     private static OpenSslVersion verifyOpenSslVersion(Linker linker, SymbolLookup lookup) {
         long versionNum = invokeVersionNum(linker, lookup);
@@ -314,7 +396,8 @@ public final class CoreOpenSslLoader {
      * @param minor      reported OpenSSL minor version (included in the diagnostic message only)
      * @param versionNum packed {@code OPENSSL_version_num()} value
      * @throws CryptoBootstrapException if the version is outside the supported band
-     * @since 0.9.0
+     *                                  ({@code EX-NET-2002})
+     * @since 0.9
      */
     /* package */ static void assertSupported(int major, int minor, long versionNum) {
         if (!isSupportedVersion(major, versionNum)) {
@@ -334,7 +417,7 @@ public final class CoreOpenSslLoader {
      * @param major      reported OpenSSL major version
      * @param versionNum packed {@code OPENSSL_version_num()} value
      * @return {@code true} iff {@code 3 <= major <= 4} and {@code versionNum >= 0x30000000}
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static boolean isSupportedVersion(int major, long versionNum) {
         return major >= OPENSSL_MIN_KNOWN_MAJOR
@@ -356,6 +439,9 @@ public final class CoreOpenSslLoader {
      * has already passed against the authoritative crypto-side major) rather than failing the load.
      * The mismatch exception is thrown only when the ssl-side major is resolvable <em>and</em>
      * disagrees with the crypto-side major.
+     *
+     * @throws CryptoBootstrapException if the ssl-side major is resolvable and disagrees with
+     *                                  the crypto-side major ({@code EX-NET-2002})
      */
     private static void assertSameMajor(Linker linker, SymbolLookup ssl, SymbolLookup crypto) {
         OptionalInt sslMajor = optVersionInt(linker, ssl, "OPENSSL_version_major");
@@ -371,7 +457,8 @@ public final class CoreOpenSslLoader {
      * @param sslMajor    {@code OPENSSL_version_major()} resolved via the {@code libssl} handle
      * @param cryptoMajor {@code OPENSSL_version_major()} resolved via the {@code libcrypto} handle
      * @throws CryptoBootstrapException if the two majors disagree (mixed-ABI cross-load)
-     * @since 0.9.0
+     *                                  ({@code EX-NET-2002})
+     * @since 0.9
      */
     /* package */ static void assertSameMajor(int sslMajor, int cryptoMajor) {
         if (!majorsAgree(sslMajor, cryptoMajor)) {
@@ -386,7 +473,7 @@ public final class CoreOpenSslLoader {
      * @param sslMajor    ssl-side {@code OPENSSL_version_major()}
      * @param cryptoMajor crypto-side {@code OPENSSL_version_major()}
      * @return {@code true} iff the two majors are equal
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ static boolean majorsAgree(int sslMajor, int cryptoMajor) {
         return sslMajor == cryptoMajor;
@@ -468,7 +555,7 @@ public final class CoreOpenSslLoader {
      *
      * @param lookup the live symbol lookup
      * @param path   the candidate string that resolved (filesystem path or SONAME)
-     * @since 0.9.0
+     * @since 0.9
      */
     /* package */ value record ResolvedLibrary(SymbolLookup lookup, String path) {
     }
