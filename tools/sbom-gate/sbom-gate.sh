@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# SBOM gate (v0.12 Stream B — supply-chain integrity).
+# SBOM gate (supply-chain integrity).
 #
 # Asserts that every artifact this reactor publishes carries a CycloneDX SBOM that describes THAT
 # artifact and lists what it actually resolves.

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Release-readiness gate (v0.12 Stream B S3 — Maven Central publication).
+# Release-readiness gate (Maven Central publication).
 #
 # Asserts that a `-P release` build produced everything Maven Central accepts, and that every one
 # of those files carries a signature that actually verifies.
@@ -11,11 +11,10 @@
 # was produced against a key the verifier cannot resolve. The reactor build is green in every one
 # of those cases; the upload is what fails, hours later, on an immutable channel.
 #
-# This gate exists because that already happened once here in a quieter form: cyclonedx's
-# `skipNotDeployed` defaults to true and central-publishing sets `maven.deploy.skip`, so the
-# release build emitted eleven signed artifacts and ZERO SBOMs while the ordinary CI SBOM gate —
-# which runs a build where nothing skips deploy — stayed green. A gate that is green about a path
-# it does not cover is worse than no gate.
+# The SBOM is the quiet case: cyclonedx's `skipNotDeployed` defaults to true and central-publishing
+# sets `maven.deploy.skip`, so a release build can emit every signed artifact and no SBOM while the
+# ordinary CI SBOM gate — which runs a build where nothing skips deploy — stays green. A gate that is
+# green about a path it does not cover is worse than no gate.
 #
 # Usage:
 #   tools/release-readiness/release-readiness.sh
@@ -98,8 +97,8 @@ for module, pom_path in reactor():
         required += [target / f'{stem}.jar',
                      target / f'{stem}-sources.jar',
                      target / f'{stem}-javadoc.jar']
-    # The SBOM is not a Central requirement — it is ours, and it is the file that silently went
-    # missing, so it is checked exactly like the ones Central enforces.
+    # The SBOM is not a Central requirement — it is ours, and it is the file a release build can omit
+    # silently, so it is checked exactly like the ones Central enforces.
     required.append(target / 'bom.json')
 
     for path in required:

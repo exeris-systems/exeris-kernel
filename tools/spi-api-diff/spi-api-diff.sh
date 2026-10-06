@@ -12,8 +12,6 @@
 # binary-compatible — an existing implementor's class file still links, and fails at
 # invoke time with AbstractMethodError — but source-incompatible. A gate that asks only
 # the binary question is blind to implementors, who are half of who `stable` speaks to.
-# This is not hypothetical: FlowExecutionPlan.definitionVersion() landed abstract on a
-# `stable` surface in the 0.11 line and the binary-only gate reported it green.
 #
 # Why it compiles from git rather than resolving published artifacts: the SPI module
 # depends only on `java.*` / `jdk.*` (The Wall), so every revision in history compiles
@@ -36,9 +34,8 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SURFACES_CONF="$SCRIPT_DIR/stability-surfaces.conf"
 SPI_PATH="exeris-kernel-spi/src/main/java"
 # Derived from the running JDK rather than hardcoded. A fixed value silently rots the moment the
-# build's baseline moves: this defaulted to 26 and broke the gate the day CI pinned JDK 25 LTS
-# (ADR-066), with "release version 26 not supported" — a message that names the flag, not the cause.
-# Deriving also keeps the gate working on whatever JDK a contributor happens to run, since a JDK
+# build's baseline moves, and fails with "release version N not supported" — a message that names
+# the flag, not the cause. Deriving also keeps the gate working on whatever JDK a contributor happens to run, since a JDK
 # cannot target a release newer than itself. Override with SPI_API_DIFF_RELEASE when diffing
 # deliberately against another level.
 DETECTED_RELEASE="$(java -XshowSettings:properties -version 2>&1 \
@@ -222,10 +219,9 @@ assert_filter_selects() {  # <old-jar> <new-jar> <include-list-csv> <label>
 # unaffected; implementors are broken. A gate that only asks the binary question is
 # blind to the half of the audience that implements the contract.
 #
-# Measured on this repository, v0.10.2 -> the 0.11 line, restricted to the `stable`
-# include list: --error-on-binary-incompatibility exits 0 on
-# FlowExecutionPlan.definitionVersion(), --error-on-source-incompatibility exits 1.
-# The exit code, not a marker count, because the marker count is what missed it.
+# So the gate asks japicmp's source-incompatibility check and reads its exit code: the
+# binary-incompatibility check exits 0 on a new abstract interface method, and a count of
+# binary markers reports the same false green.
 japicmp_source_break() {  # <old-jar> <new-jar> <include-list-csv> -> 0 clean, 1 break
   local out rc=0
   out="$(java -jar "$JAPICMP" -o "$1" -n "$2" -a public --ignore-missing-classes \
