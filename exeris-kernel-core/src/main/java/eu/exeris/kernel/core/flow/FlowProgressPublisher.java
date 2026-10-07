@@ -26,6 +26,7 @@ final class FlowProgressPublisher {
     private static final String FLOW_PROGRESS_EVENT_TYPE = "FlowProgress";
     private static final int FLOW_PROGRESS_ORDINAL_UNRESOLVED = Integer.MIN_VALUE;
     private static final int FLOW_PROGRESS_ORDINAL_DISABLED = -1;
+    // Not a key: a collision-probe window gives an operator no basis for choosing a value.
     private static final int FLOW_PROGRESS_ORDINAL_PROBE_LIMIT = 32;
 
     private final Object flowProgressRegistrationMonitor = new Object();

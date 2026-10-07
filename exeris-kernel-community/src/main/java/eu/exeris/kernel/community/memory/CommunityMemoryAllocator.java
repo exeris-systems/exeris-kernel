@@ -38,6 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
 final class CommunityMemoryAllocator implements MemoryAllocator {
 
     private static final long CACHE_LINE_ALIGNMENT = 64L;
+    // Not a key: MemoryProviderConfig.networkOffHeapThreshold is one, and this driver refuses any other value.
     private static final int DEFAULT_NETWORK_OFF_HEAP_THRESHOLD = 32 * 1_024;
 
     private final boolean jfrEnabled;
