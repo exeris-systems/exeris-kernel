@@ -13,6 +13,16 @@ last-verified: 2026-09-05
 The bans below and the depth of a review both follow from that class, and every verdict states
 which class it assumed. A ban applied to the wrong class is a false finding.
 
+## Banned everywhere — no scope class applies
+
+- `java.lang.ThreadLocal`, in every module and every source set: runtime, tests, the testkit and
+  tooling. ADR-007 states the ban without a scope, and a policy does not narrow an ADR. Context
+  propagates through `ScopedValue`; state that is not context belongs to an instance or a parameter.
+  `java.util.concurrent.ThreadLocalRandom` is a different type and is not covered.
+
+The scope class is still stated in the verdict; it decides the review depth, not whether this ban
+applies.
+
 ## Banned in production runtime hot paths
 
 Unless explicitly justified by a subsystem contract, or the code is test-only or tooling:
@@ -72,6 +82,12 @@ leaves nothing depends on.
 **Where the four bans do and do not reach on this branch.** `KernelTierBanArchitectureTest` covers Core and
 Community, `ExerisArchitectureTest` covers the SPI, and `CommunitySchedulingArchitectureTest` covers
 the scheduling driver twice over. There is no untested tier for these four.
+
+**The unscoped `ThreadLocal` ban reaches test code only where a suite's classpath does.**
+`KernelTierBanArchitectureTest` imports with no `ImportOption`, so it also loads Community's own
+test classes and `exeris-kernel-community-testkit`, which is a test-scope dependency of Community: a
+`ThreadLocal` field placed in either fails it. The test classes of SPI, Core and the two leaf modules
+are on no suite's classpath, and there the ban is enforced by review alone.
 
 Verify a ban by what the suite can load, never by reading its `packages` argument — and remember
 that the guard living in `exeris-kernel-community` never runs under a `-pl exeris-kernel-tck -am`

@@ -78,7 +78,8 @@ run it, and note that `-pl exeris-kernel-tck -am` does not.
 - SPI stays implementation-blind. No driver, native or OS-specific detail enters an SPI contract.
 - Core stays driver-agnostic and orchestrates through SPI contracts.
 - No framework DI in runtime kernel code — explicit construction and the `ServiceLoader` model.
-- No `ThreadLocal` for runtime context propagation; use `ScopedValue`.
+- No `ThreadLocal`, in any module or source set — ADR-007 bans it without a scope. Runtime context
+  propagates through `ScopedValue`.
 - No unstructured concurrency in runtime orchestration paths where a structured scope is expected.
 - New SPI surface, or changed observable SPI behaviour, requires executable `Abstract*Tck` coverage
   plus binding tests before merge.

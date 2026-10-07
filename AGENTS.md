@@ -42,7 +42,7 @@ are on decides what a concurrency mandate means —
 
 - The Wall holds. SPI stays implementation-blind, Core stays driver-agnostic, and the dependency
   direction never inverts.
-- No `ThreadLocal` for context propagation, no framework DI in runtime code, no `sun.misc.Unsafe`.
+- No `ThreadLocal` anywhere, tests too (ADR-007), no framework DI in runtime code, no `sun.misc.Unsafe`.
 - Native memory has an explicit owner and a deterministic lifecycle.
 - New or changed observable SPI behaviour does not merge without executable TCK coverage.
 - Classify the scope before applying a ban or judging a diff: hot path, non-hot, test-tooling,
