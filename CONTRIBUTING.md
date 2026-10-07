@@ -227,7 +227,12 @@ mvn clean install
 ```
 
 This is the **only** command that counts. `mvn clean compile` is not sufficient — it skips:
-- PMD static analysis (Priority 1-3 rules including banned `ThreadLocal` and `ExecutorService` detection)
+- PMD static analysis (Priority 1-3 rules, bound to `verify`)
+- The ArchUnit architecture guards, which ban `java.lang.ThreadLocal`, `Executors`, `CompletableFuture` and
+  `sun.misc.Unsafe` in the main classes of SPI, Core and Community, and in the test classes of Community and
+  `exeris-kernel-community-testkit`; other modules' test classes are checked by review alone
+  ([scoped bans](.agents/policies/scoped-bans.md)). The Checkstyle `[EXERIS L0]` regexes for the same types run
+  at `validate`, so `compile` does reach those, but over main sources only.
 - TCK execution in `LeakDetectionMode.PARANOID`
 - SPI isolation verification (ensures `exeris-kernel-spi` has no implementation-specific imports)
 - JFR-based zero-allocation validation on the `wrap()`/`unwrap()` hot path
