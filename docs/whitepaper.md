@@ -4,14 +4,14 @@ type: explanation
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-10-07
 ---
 
 # Exeris Kernel: The Vision & Whitepaper
 
 **Author:** Arkadiusz Przychocki, Founder & Lead Architect  
 **Status:** TRL-3 (Validated Architectural Prototype)  
-**Target:** Java 26+
+**Target:** Java 25 LTS or newer (see [support matrix](support-matrix.md))
 
 ---
 
