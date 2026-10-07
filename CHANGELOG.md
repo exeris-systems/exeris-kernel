@@ -24,6 +24,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   their test classpath (from Testcontainers 1.x) and no declared engine, Surefire 3.6 applies
   `groups`/`excludedGroups` as JUnit 4 categories, so every tagged selection runs nothing and the
   default execution runs every excluded tag (#577).
+- **The `*Research` allocation harnesses are excluded by a tag, not only by their names.** The five
+  in Core and Community carry `@Tag("research")` and run only through the `research` profile
+  (`mvn -pl exeris-kernel-core,exeris-kernel-community -Presearch test-compile surefire:test`);
+  Sonar's S2699 and S3577 are suppressed for them alone (#564).
 
 ## [0.12.0] — 2026-09-30
 

@@ -68,8 +68,12 @@
             (CommunityOpenSslPinnedMajorTest) runs only in the tls-openssl-matrix CI job, which
             selects it by name with -Dexeris.test.expectedOpenSslMajor set; without that property it
             has nothing to assert, and it fails rather than skips.
+
+            research (the *Research allocation harnesses) prints tables and asserts nothing, so it
+            is never a gate. The research profile runs it, in this module and in Core:
+              mvn -pl exeris-kernel-core,exeris-kernel-community -Presearch test-compile surefire:test
         -->
-        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback,default-trust,openssl-matrix</excludedGroups>
+        <excludedGroups>flamegraph,integration,stress,transport-pinning-recv,continuity,stream-loopback,default-trust,openssl-matrix,research</excludedGroups>
 
         <!--
             v0.8 Sprint 6 (Coverage C-P0-01): LINE coverage floor for the Community bundle.
@@ -342,6 +346,31 @@
          NOT bound to the default lifecycle — only runs with explicit -P benchmarks.
          ===================================================================== -->
     <profiles>
+        <!--
+            Runs the *Research harnesses and nothing else: the includes are replaced, not extended,
+            and the tag selects. surefire:test invoked directly takes the plugin-level configuration,
+            so the transport-pinning-recv and default-trust executions do not run alongside.
+        -->
+        <profile>
+            <id>research</id>
+            <properties>
+                <includedGroups>research</includedGroups>
+                <excludedGroups/>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <includes combine.self="override">
+                                <include>**/*Research.java</include>
+                            </includes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>targeted-test-run</id>
             <activation>

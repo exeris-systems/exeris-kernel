@@ -203,9 +203,20 @@
             current sonar-java may understand @Nested on its own. The discriminating test is to
             delete these three properties and re-run, and it has not been run.
         -->
-        <sonar.issue.ignore.multicriteria>nestedTests</sonar.issue.ignore.multicriteria>
+        <!--
+            java:S2699 "Add at least one assertion" and java:S3577 "Rename this class", suppressed on
+            the *Research harnesses only. They print a measurement table and assert nothing by
+            design, and their name keeps them out of every Surefire include; the research tag and
+            the research profile in Core and Community are how they run. Neither rule says anything
+            true about them.
+        -->
+        <sonar.issue.ignore.multicriteria>nestedTests,researchAssertions,researchNames</sonar.issue.ignore.multicriteria>
         <sonar.issue.ignore.multicriteria.nestedTests.ruleKey>java:S2187</sonar.issue.ignore.multicriteria.nestedTests.ruleKey>
         <sonar.issue.ignore.multicriteria.nestedTests.resourceKey>**/src/test/java/**/*.java</sonar.issue.ignore.multicriteria.nestedTests.resourceKey>
+        <sonar.issue.ignore.multicriteria.researchAssertions.ruleKey>java:S2699</sonar.issue.ignore.multicriteria.researchAssertions.ruleKey>
+        <sonar.issue.ignore.multicriteria.researchAssertions.resourceKey>**/src/test/java/**/*Research.java</sonar.issue.ignore.multicriteria.researchAssertions.resourceKey>
+        <sonar.issue.ignore.multicriteria.researchNames.ruleKey>java:S3577</sonar.issue.ignore.multicriteria.researchNames.ruleKey>
+        <sonar.issue.ignore.multicriteria.researchNames.resourceKey>**/src/test/java/**/*Research.java</sonar.issue.ignore.multicriteria.researchNames.resourceKey>
         <jvm.args>
             -XX:+UnlockExperimentalVMOptions
             -XX:+UseZGC
