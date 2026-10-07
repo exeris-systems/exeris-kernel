@@ -207,6 +207,21 @@
             <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+            The JUnit Vintage engine is declared so that Surefire selects by JUnit Platform tags.
+            Testcontainers 1.x puts junit:junit on this module's test classpath. When Surefire sees
+            junit:junit and no declared vintage engine, it adds the engine itself and applies
+            groups/excludedGroups as JUnit 4 categories, which no Jupiter test carries: a tagged
+            selection (-DincludedGroups=integration, the transport-pinning-recv and default-trust
+            executions) runs nothing, and the default execution runs every tag it excludes. With the
+            engine declared, the tag filters apply. This module has no JUnit 4 test, so the engine
+            discovers nothing. It goes when junit:junit leaves the test classpath.
+        -->
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
@@ -220,7 +235,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.2.5</version>
                 <configuration>
                     <!-- Inherit common JVM flags (ZGC + JFR + preview) from the parent POM. -->
                     <argLine>@{coverage.argLine} ${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED --add-opens java.base/java.io=ALL-UNNAMED</argLine>
@@ -233,7 +247,7 @@
                         CI job (`-DincludedGroups=integration -DexcludedGroups=` against this module)
                         actually discovers the classes its name promises.
 
-                        Surefire 3.2.5 defaults to Test*.java / *Test.java / *Tests.java /
+                        Surefire's default includes are Test*.java / *Test.java / *Tests.java /
                         *TestCase.java only. Every integration test in this module ends in IT, so the
                         gate selected none of them: not the persistence isolation suite it is named
                         after, nor the JDBC event-stream TCK bindings, the graph parity/churn ITs, the

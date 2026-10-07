@@ -121,7 +121,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>3.2.5</version>
                 <configuration>
                     <argLine>@{coverage.argLine} ${jvm.args} --add-opens java.base/sun.nio.ch=ALL-UNNAMED</argLine>
                     <includes>
