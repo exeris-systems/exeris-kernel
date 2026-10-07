@@ -156,16 +156,16 @@ This section separates what has been **measured** from what the TCK enforces as 
 <!-- vale Exeris.RetractedFigures = NO -->
 **Saga (`e2e-shop-order-saga`) — withdrawn in full, 2026-08-27.** Earlier revisions of this section led with a
 three-stack comparison from a dev-laptop run of 2026-05-05: a whole-deployment density table, the memory and thread
-multipliers derived from it, and a compensation-correctness asymmetry. **All of it is withdrawn** — entry **#23** of the
-[retraction register](https://github.com/exeris-systems/exeris-benchmarks/blob/main/docs/CLAIMS.md) — on three independent grounds. The comparator published as an
+multipliers derived from it, and a compensation-correctness asymmetry. **All of it is withdrawn** — entry **#23** on the
+[Withdrawn list](https://github.com/exeris-systems/exeris-benchmarks/blob/main/docs/CLAIMS.md#withdrawn) — on three independent grounds. The comparator published as an
 Axon-Framework saga arm never ran one: the orchestration was hand-rolled over a command bus, so nothing in the run is a
 property of that framework's saga implementation. The correctness columns measured our own harness, whose status poller
 did not recognise `CANCELLED` — the state a compensated saga actually writes — so compensations fired and were scored
 unresolved. And [`CONTRACT-v2.md`](https://github.com/exeris-systems/exeris-benchmarks/blob/main/scenarios/e2e-shop-order-saga/CONTRACT-v2.md) §10 classes the v1 finding **superseded**, with any
 mixed-population latency table **invalid under v2, do not cite**. No re-derived multiplier replaces those figures and
 **no v2 comparative saga numbers exist yet**; the full retraction, including the mechanism this document used to offer
-for the correctness columns, is [B2B technical whitepaper](https://github.com/exeris-systems/exeris-docs/blob/main/b2b-technical-whitepaper.md) §4.1. This entry is the one retraction in that register that
-reached distributed artefacts before it was caught, so a surviving copy of the old table is live, not historical.
+for the correctness columns, is [B2B technical whitepaper](https://github.com/exeris-systems/exeris-docs/blob/main/b2b-technical-whitepaper.md) §4.1. This withdrawal reached
+distributed artefacts before it was caught, so a surviving copy of the old table is live, not historical.
 <!-- vale Exeris.RetractedFigures = YES -->
 
 **TLS record path (JMH micro-matrix, report `20260501-123118-all` in `exeris-benchmarks/results/reports/`; publication mode: public; baseline rows `comparison_eligible`; recorded hardware profile: `linux-generic`).** The Exeris Enterprise `OffHeapTlsEngine` on the in-process Memory-BIO harness (B5) measured **~923,617 ops/s at p99 2.10 µs** — on par with the JDK `SSLEngine` baseline (B3: ~905,855 ops/s, p99 2.97 µs) and Netty tcnative (B4: ~850,225 ops/s, p99 2.72 µs). The Exeris Community FD-owner integration path (B6, real loopback socket) measured **~365,375 ops/s**: the gap versus the engine-level rows is socket-wiring overhead on the Community integration path, and per the published report B5 (Memory-BIO lens) and B6 (FD-owner) are deliberately not collapsed into a single row.
