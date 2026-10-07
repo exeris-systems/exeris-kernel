@@ -61,9 +61,12 @@ replacements is half a rule.
 
 ## What enforces them, and how far it reaches
 
-The `ThreadLocal`, `Executors`, `CompletableFuture` and `Unsafe` bans are ArchUnit rules, not PMD
-rules. If the architecture guard did not run, nothing has checked them — a green `mvn clean install`
-that skipped the guard proves nothing here.
+The `ThreadLocal`, `Executors`, `CompletableFuture` and `Unsafe` bans are enforced twice, and neither
+is PMD. Checkstyle's `[EXERIS L0]` regexes (`checkstyle.xml`, `checkstyle-tck.xml`) run at `validate`
+over main sources only; the regex is textual, skips comments but not string literals, and does not
+match `ThreadLocalRandom`. The ArchUnit rules below run in the test phase over bytecode. Test sources
+are reached by ArchUnit alone, so a build that skipped the architecture guard has not checked them
+in test code.
 
 **Reach is a property of the classpath, not of the rule text.** Every suite below declares
 `@AnalyzeClasses` over a package prefix that reads wider than what its module can actually load.
