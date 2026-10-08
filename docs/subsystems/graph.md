@@ -358,7 +358,8 @@ Community drivers without changing a single line of business code.
 kernel graph SPI is [ADR-030](../adr/ADR-030.link.md), which is owned by `exeris-spring-runtime` and
 decides the Spring-side seam *onto* this SPI rather than the SPI itself. The one graph decision the
 roadmap requires — heterogeneous multi-hop traversal, which `docs/ROADMAP.md` places **in 1.0** and
-sequences out of 0.12 — is an RFC that has not been written.
+sequences out of 0.12 — is open in
+[RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md), whose decision ADR-102 will record.
 
 ## Stability
 
