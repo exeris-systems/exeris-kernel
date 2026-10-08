@@ -3499,6 +3499,24 @@ RFC; #585 and #580 item 4 are ADR rulings (ADR-012, ADR-006).
 
 ---
 
+### Native-Image: Opt-In Build With Metadata In The Jars (ADR-103)
+
+**Scope:** `exeris-kernel-spi`, `exeris-kernel-core`, `exeris-kernel-community` (graph on PostgreSQL and Neo4j included), `exeris-kernel-community-kafka`; `RequiresRoleProcessor` in `exeris-kernel-build-config`.
+
+**Gap:** No kernel artifact ships GraalVM native-image configuration — no `META-INF/native-image/` in any module. An image built from the 0.12 artifacts fails at run time on unregistered FFM downcalls and missing classpath resources, crashes on shutdown when closing a shared arena, loads the empty role registry instead of the generated one, and loses JFR event classes resolved by name. Tracing-agent output from one run does not close the gap: it misses every path the run did not take.
+
+**Owner:** Core / Community (metadata), Build (`RequiresRoleProcessor`, CI).
+
+**Resolution:** per [ADR-103](adr/ADR-103-native-image-opt-in-build.md) — an opt-in build with HotSpot/C2 the default and the only runtime with asserted SLOs; per-module `META-INF/native-image/eu.exeris/<artifactId>/reachability-metadata.json` and `native-image.properties`, generated or checked from the declaration sites; `RequiresRoleProcessor` emits metadata for the class it generates; the fd resolver's JDK members registered and the two `--add-opens` shipped as build arguments; `NativeTcpSocketBackend` off `Arena.ofShared()`; GraalVM 25 or newer. Prerequisite: #619.
+
+**Merge Gate:** a per-module test fails on a declaration site with no metadata entry; a `native-smoke` job outside the default PR gate (label, nightly, release PR) builds a sample image with no application-side configuration and asserts boot, TLS over HTTP/1.1 and HTTP/2, persistence, JFR, the role registry, graph on both backends and a Kafka broker round trip — made red first by deleting one module's metadata file.
+
+**1.0 disposition:** **1.0-BLOCKING** — planned for 0.13; the support matrix and the performance contract already state the HotSpot/C2 pin, and this item makes the native-image half of that stance something a consumer can build.
+
+**Status (v0.13): NOT STARTED.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is proposed, with one ruling outstanding (whether an experimental GraalVM option may ship inside the kernel's jars); #619 is open.
+
+---
+
 ## Road to 1.0 — Differentiator & Table-Stakes Gaps (surfaced 2026-06-22)
 
 > This section captures gaps that make the two load-bearing product claims — **"deterministic runtime"** and **"replaces application + orchestration layer"** — *demonstrable* rather than merely asserted, plus cross-cutting table-stakes that had no owner in this document. Each entry carries an explicit **1.0 disposition** (1.0-blocking / 1.0-recommended / post-1.0). All claims code-verified 2026-06-22.
@@ -3839,9 +3857,9 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **Native-image / GraalVM — declare a performance contract, not just a yes/no.** The mechanism is concrete: Panama performs better on HotSpot because FFM downcall stubs and `MemorySegment`/`VarHandle` access are intrinsified and C2-runtime-optimized; the FFM path under native-image is younger and, without PGO, more conservative. The same logic extends to the **zero-alloc / No-Waste-Compute contract**: scalarization via Escape Analysis is peak-tier C2, profile-driven — under AOT without profiles the decisions are more conservative. PGO closes part of the gap but is operationally heavy (instrumented build → profile → optimized build). This is not "native-image is worse"; it is **"native-image is a different performance contract."** Edge/lightweight (startup without warmup, small footprint, small image) is where native-image *wins* and is part of the thesis; the throughput tier stays HotSpot/C2. The decision is *which contract*, not *whether it builds* — a build was already confirmed to compile.
 
-**Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement is a post-1.0 gated track); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate gated track (post-1.0): reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
+**Actions:** (1) **Pin the zero-alloc / No-Waste-Compute contract explicitly to HotSpot-C2** in `docs/performance-contract.md` — otherwise someone benchmarks the claim under native-image, sees it not hold, and concludes it is *false*; scoping the contract defends the claim. (2) Declare the 1.0 stance in the support matrix: **edge/lightweight = native-image target (enablement planned for 0.13 as an opt-in build, [ADR-103](adr/ADR-103-native-image-opt-in-build.md)); throughput tier = HotSpot/C2** — explicitly stated, not silently absent. (3) Track native-image *enablement* as a separate item — now [its own v0.13 entry](#native-image-opt-in-build-with-metadata-in-the-jars-adr-103), planned as an opt-in build: reachability metadata for FFM downcalls, reflection config for reflective loaders (`GeneratedRoleRegistryLoader` resolves FQNs via reflection), `ServiceLoader` registration, and JFR feature-parity (JFR-first telemetry + `RecordingStream` in TCK — *not* zero-risk; verify custom events and streaming under SubstrateVM).
 
-**1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is a **post-1.0** gated track.
+**1.0 disposition:** declare the **contract** in 1.0 (cheap, defends the claim — the `performance-contract.md` pin is near-term); native-image **enablement** is planned for **0.13** as an opt-in build under [ADR-103](adr/ADR-103-native-image-opt-in-build.md), with the HotSpot/C2 pin unchanged, and is tracked as [its own item](#native-image-opt-in-build-with-metadata-in-the-jars-adr-103).
 
 **Status (v0.12): both Actions are discharged; one example in the section is overtaken.** Action 1 — pinning the zero-allocation and per-core throughput SLOs to HotSpot/C2 — is `performance-contract.md` §2.2.1. Action 2 — declaring the 1.0 native-image stance — was outstanding until v0.12 and is now a row in `docs/support-matrix.md`, which is where this document's own 1.0 requirements list asks for it and where silence had been reading as "unknown".
 
