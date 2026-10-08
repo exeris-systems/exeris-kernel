@@ -355,12 +355,13 @@ Community drivers without changing a single line of business code.
 
 ## Owning ADRs
 
-**No ADR in this repository decides this subsystem.** The only registry entry naming the
-kernel graph SPI is [ADR-030](../adr/ADR-030.link.md), which is owned by `exeris-spring-runtime` and
-decides the Spring-side seam *onto* this SPI rather than the SPI itself. The one graph decision the
-roadmap requires — heterogeneous multi-hop traversal, which `docs/ROADMAP.md` places **in 1.0** and
-sequences out of 0.12 — is open in
-[RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md), whose decision ADR-102 will record.
+[ADR-102](../adr/ADR-102-graph-spi-anchor-and-multi-hop-traversal.md) anchors this subsystem and decides heterogeneous multi-hop traversal
+(`GraphPathSpec`, `traversePath`, `streamPathJson`), the refusal of the two-argument `findShortestPath`,
+and tenant scoping for graph access; it was written from
+[RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md). Its obligations are planned for 0.13, and
+this document describes them as shipped only once they land. The other registry entry naming the kernel
+graph SPI is [ADR-030](../adr/ADR-030.link.md), owned by `exeris-spring-runtime`, which decides the
+Spring-side seam *onto* this SPI rather than the SPI itself.
 
 ## Stability
 
