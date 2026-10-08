@@ -164,6 +164,33 @@ whose precondition has not landed keeps its `preview` row in that commit.
 - The ordering of 0.13's work follows from §1: the preconditions are SPI-changing work and land
   before the promotion commit.
 
+### Non-Goals
+
+- **`SecretProvider`.** The security surface 1.0 publishes does not include it (Context, answer 2);
+  adding it later is additive.
+- **The generic-element decode path.** It is additive to a `stable` surface and is not a
+  precondition of the codec promotion (§2).
+- **Promoting graph, contract, websocket or time.** Each stays `preview` at 1.0 for the reason §1
+  gives, and each is promoted by a 1.x minor with its own evidence.
+- **Freezing `preview` surfaces at the release candidate.** What the release candidate freezes is
+  ruled in ADR-065 amendment A1; this ADR decides only which surfaces carry the `stable` label.
+
+### Risks and Assumptions
+
+- **Assumes:** scheduling and blob have no scheduled signature change on record at the promotion
+  commit. **Reversed by:** an accepted ADR, RFC or ROADMAP entry scheduling such a change before
+  the release candidate — the surface then stays `preview` at 1.0.
+- **Assumes:** each precondition in §1 lands on the 0.13 line before the promotion commit.
+  **Reversed by:** a precondition still open when the commit is cut — its surface keeps its
+  `preview` row (§1, last paragraph), and the others are promoted without it.
+- **Assumes:** the consumers outside this repository that read the graph and time slots move to the
+  new holders within the one release the deprecated aliases exist. **Reversed by:** a consumer that
+  cannot move by the first release candidate — the removal then waits, and 1.0 freezes those
+  aliases as `stable` members naming `preview` types, which §3 exists to prevent.
+- **Risk:** five surfaces enter the freeze together, so a defect found in one of them after the
+  release candidate is fixed additively or waits for 2.0. The reviewers of each precondition's pull
+  request are the first to see it.
+
 ## Verification
 
 - §3: the `javap -public` sweep over the promoted set reports no reference to a `preview` package,
@@ -178,7 +205,9 @@ whose precondition has not landed keeps its `preview` row in that commit.
 
 - [RFC-2026-09-02](../rfc/RFC-2026-09-02-preview-spi-promotion.md) — closed by this ADR.
 - [ADR-065](ADR-065-spi-compatibility-gate.md) — the gate that enforces the labels.
-- ADR-101 (events anchor), ADR-102 (graph anchor and multi-hop traversal).
+- ADR-101 (events anchor) and ADR-102 (graph anchor and multi-hop traversal) — numbers reserved in
+  the registry; ADR-101 is proposed on its own branch, and ADR-102 is written once
+  RFC-2026-10-07 (graph multi-hop) is decided.
 - [ADR-008](ADR-008-open-core-strategy-and-commoditization-of-off-heap-tls.md),
   [ADR-014](ADR-014-requiresrole-compile-time-rbac-generation.md),
   [ADR-040](ADR-040-identity-provider-spi.md), [ADR-043](ADR-043-kernel-http-streaming-spi.md),
