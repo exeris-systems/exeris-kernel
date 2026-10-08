@@ -72,8 +72,9 @@ import static org.assertj.core.api.Assertions.fail;
  * contract accepts each of them, provided the refusal is said on the wire and the request is not
  * processed:
  * <ul>
- *   <li>a response on the request's stream with {@code :status 400} or {@code :status 431}
- *       (RFC 9113 §8.2.3, RFC 6585 §5);</li>
+ *   <li>a response on the request's stream with {@code :status 431 Request Header Fields Too Large}
+ *       (RFC 9113 §8.2.3, RFC 6585 §5) &mdash; not {@code 400}: the request is well formed, it is
+ *       the field section that is too large for this server;</li>
  *   <li>{@code RST_STREAM} on the request's stream carrying an error code other than
  *       {@code NO_ERROR} (a stream error, RFC 9113 §5.4.2);</li>
  *   <li>{@code GOAWAY} carrying an error code other than {@code NO_ERROR} whose last-stream-id is
@@ -84,7 +85,19 @@ import static org.assertj.core.api.Assertions.fail;
  * {@code 2xx} is a failure whatever else happens. When the refusal leaves the connection open the
  * case sends one more well-formed request on the next stream and waits for its outcome before judging,
  * which narrows the window in which a late handler invocation for the refused request could go unseen.
- * Whether that later request is served is not part of the contract.
+ * Whether that later request is served is not part of the contract for a block that was not
+ * decoded; it is for a block that was.
+ *
+ * <h2>The compression context outlives a refusal</h2>
+ * <p>The HPACK dynamic table is shared by every stream of a connection (RFC 9113 §4.3), and the
+ * client's encoder has already applied every insertion in a block it sent. A server that refuses
+ * a stream and keeps the connection open must therefore have applied them too: it reads an
+ * over-limit block to its end before refusing it. The cases in the
+ * {@code HpackStateAfterARefusal} group send an over-limit block whose fields after the overflow
+ * use literal-with-incremental-indexing, then a request that references those entries by dynamic
+ * index, and require that request to be served with exactly the fields the client sent. A
+ * server that instead treats the failed block as a connection error satisfies the contract by
+ * ending the connection: the case then has nothing left to judge.
  *
  * <h2>Binding obligations</h2>
  * <p>The server engine must accept cleartext HTTP/2 with prior knowledge when
@@ -343,9 +356,85 @@ public abstract class AbstractHttp2HeaderLimitTck {
         }
     }
 
+    @Nested
+    @DisplayName("The HPACK dynamic table stays in step with the client after a refusal")
+    class HpackStateAfterARefusal {
+
+        private static final int TABLE_FIRST = 62;
+        private static final int TABLE_SECOND = 63;
+
+        @Test
+        @DisplayName("Entries added after an over-limit field section are usable by the next request")
+        void entriesAfterTheListOverrunAreUsable() {
+            ByteArrayOutputStream refused = new ByteArrayOutputStream();
+            RequestBlock.writePseudoHeaders(refused, OVER_LIMIT_PATH);
+            RequestBlock.writeLiteralNewName(refused, "x-pad", "p".repeat(700));
+            RequestBlock.writeLiteralIncremental(refused, "x-dyn-one", "one");
+            RequestBlock.writeLiteralIncremental(refused, "x-dyn-two", "two");
+
+            ByteArrayOutputStream followUp = new ByteArrayOutputStream();
+            RequestBlock.writePseudoHeaders(followUp, FOLLOW_UP_PATH);
+            RequestBlock.writeInteger(followUp, 0x80, 7, TABLE_SECOND);
+            RequestBlock.writeInteger(followUp, 0x80, 7, TABLE_FIRST);
+            RequestBlock.writeLiteralNewName(followUp, "x-last", "1");
+
+            Sequence sequence = sequence(12_288, 640, 4_096, refused.toByteArray(), followUp.toByteArray());
+
+            assertFollowUpServedWithTheFieldsSent(sequence, List.of(
+                    "x-dyn-one: one", "x-dyn-two: two", "x-last: 1"));
+            assertRefused(sequence.first(), sequence.servedPaths(), "a field section over maxHeaderListSize");
+        }
+
+        @Test
+        @DisplayName("Entries added at and after an over-limit literal are usable by the next request")
+        void entriesAfterTheLiteralOverrunAreUsable() {
+            String big = "b".repeat(300);
+            ByteArrayOutputStream refused = new ByteArrayOutputStream();
+            RequestBlock.writePseudoHeaders(refused, OVER_LIMIT_PATH);
+            RequestBlock.writeLiteralIncremental(refused, "x-big", big);
+            RequestBlock.writeLiteralIncremental(refused, "x-dyn-one", "one");
+
+            ByteArrayOutputStream followUp = new ByteArrayOutputStream();
+            RequestBlock.writePseudoHeaders(followUp, FOLLOW_UP_PATH);
+            RequestBlock.writeInteger(followUp, 0x80, 7, TABLE_SECOND);
+            RequestBlock.writeInteger(followUp, 0x80, 7, TABLE_FIRST);
+            RequestBlock.writeLiteralNewName(followUp, "x-last", "1");
+
+            Sequence sequence = sequence(10_240, 20_480, 256, refused.toByteArray(), followUp.toByteArray());
+
+            assertFollowUpServedWithTheFieldsSent(sequence, List.of(
+                    "x-big: " + big, "x-dyn-one: one", "x-last: 1"));
+            assertRefused(sequence.first(), sequence.servedPaths(), "a literal over maxStringLiteralSize");
+        }
+    }
+
     // =========================================================================
     // Judgement
     // =========================================================================
+
+    /**
+     * When the refusal left the connection open, the next request decoded against the table the
+     * client's encoder holds, so it must be served with exactly the fields the client sent. A
+     * connection error ends the connection and leaves nothing to judge.
+     */
+    private static void assertFollowUpServedWithTheFieldsSent(Sequence sequence, List<String> expectedFields) {
+        if (sequence.followUp() == null) {
+            return;
+        }
+        assertThat(sequence.followUp().kind())
+                .as("the connection stayed open after the refusal, so the next request must be answered "
+                        + "on its stream, got %s", sequence.followUp())
+                .isEqualTo(Kind.STATUS);
+        assertThat(sequence.followUp().status())
+                .as("the next request references only entries the client's encoder added, so a server "
+                        + "whose dynamic table is in step with it serves the request")
+                .isEqualTo(HttpStatus.OK.code());
+        assertThat(sequence.served())
+                .as("the next request must reach the handler with exactly the fields the client sent")
+                .filteredOn(request -> FOLLOW_UP_PATH.equals(request.path()))
+                .extracting(Served::fields)
+                .containsExactly(expectedFields);
+    }
 
     private static void assertServed(Probe probe, String path, String what) {
         assertThat(probe.outcome().kind())
@@ -360,11 +449,14 @@ public abstract class AbstractHttp2HeaderLimitTck {
     }
 
     private static void assertRefused(Probe probe, String what) {
-        Outcome outcome = probe.outcome();
+        assertRefused(probe.outcome(), probe.servedPaths(), what);
+    }
+
+    private static void assertRefused(Outcome outcome, List<String> servedPaths, String what) {
         switch (outcome.kind()) {
             case STATUS -> assertThat(outcome.status())
-                    .as("%s may be answered on its stream only with 400 or 431, got %s", what, outcome)
-                    .isIn(HttpStatus.BAD_REQUEST.code(), 431);
+                    .as("%s may be answered on its stream only with 431, got %s", what, outcome)
+                    .isEqualTo(HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE.code());
             case RESET -> assertThat(outcome.errorCode())
                     .as("%s refused by RST_STREAM must carry an error code, got %s", what, outcome)
                     .isNotEqualTo(NO_ERROR);
@@ -380,7 +472,7 @@ public abstract class AbstractHttp2HeaderLimitTck {
             case CLOSED -> fail("%s: the server closed the connection without saying why — a refusal "
                     + "must be a 400/431 response, an RST_STREAM or a GOAWAY with an error code", what);
         }
-        assertThat(probe.servedPaths())
+        assertThat(servedPaths)
                 .as("%s is over the limit, so the handler must never run for it", what)
                 .doesNotContain(OVER_LIMIT_PATH);
     }
@@ -449,6 +541,43 @@ public abstract class AbstractHttp2HeaderLimitTck {
     }
 
     /**
+     * Starts a server with the given limits, sends {@code refused} on stream 1 and, when the server
+     * answered it on the stream and kept the connection open, {@code followUp} on stream 3.
+     */
+    private Sequence sequence(int maxHeaderBlockSize, int maxHeaderListSize, int maxStringLiteralSize,
+                              byte[] refused, byte[] followUp) {
+        HttpProvider provider = createProvider();
+        String host = loopbackHost();
+        int port = nextFreePort();
+        List<Served> served = new CopyOnWriteArrayList<>();
+        HttpHandler handler = exchange -> {
+            List<String> fields = exchange.request().headers().stream()
+                    .map(header -> header.name() + ": " + header.value())
+                    .toList();
+            served.add(new Served(exchange.request().path(), fields));
+            exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+        };
+
+        HttpConfig config = serverConfig(host, port, maxHeaderBlockSize, maxHeaderListSize,
+                maxStringLiteralSize);
+        try (HttpServerEngine engine = createServerEngine(provider, config)) {
+            engine.setHandler(handler);
+            engine.start();
+            try (RawH2Connection connection = RawH2Connection.open(host, port, responseTimeout())) {
+                connection.sendRequest(FIRST_STREAM, refused, false);
+                Outcome first = connection.awaitOutcome(FIRST_STREAM);
+                Outcome second = null;
+                if (first.kind() == Kind.RESET
+                        || first.kind() == Kind.STATUS && first.status() != HttpStatus.OK.code()) {
+                    connection.sendRequest(FOLLOW_UP_STREAM, followUp, false);
+                    second = connection.awaitOutcome(FOLLOW_UP_STREAM);
+                }
+                return new Sequence(first, second, List.copyOf(served));
+            }
+        }
+    }
+
+    /**
      * Allocates an ephemeral TCP port for the server to bind.
      *
      * <p>Opening and closing a {@link ServerSocket} on port 0 races another process for the port;
@@ -481,6 +610,17 @@ public abstract class AbstractHttp2HeaderLimitTck {
 
         static Outcome closed() {
             return new Outcome(Kind.CLOSED, -1, -1, -1);
+        }
+    }
+
+    /** One request the handler ran for: its path and its regular header fields, in wire order. */
+    private record Served(String path, List<String> fields) {
+    }
+
+    /** Two requests on one connection: the first's outcome, the second's if it was sent, the handler's runs. */
+    private record Sequence(Outcome first, Outcome followUp, List<Served> served) {
+        List<String> servedPaths() {
+            return served.stream().map(Served::path).toList();
         }
     }
 
@@ -556,6 +696,13 @@ public abstract class AbstractHttp2HeaderLimitTck {
         /** RFC 7541 §6.2.2: literal without indexing, name from the static table. */
         private static void writeLiteralIndexedName(ByteArrayOutputStream out, int nameIndex, String value) {
             writeInteger(out, 0x00, 4, nameIndex);
+            writeString(out, value);
+        }
+
+        /** RFC 7541 §6.2.1: literal with incremental indexing, literal name. */
+        private static void writeLiteralIncremental(ByteArrayOutputStream out, String name, String value) {
+            out.write(0x40);
+            writeString(out, name);
             writeString(out, value);
         }
 

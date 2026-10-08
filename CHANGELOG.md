@@ -65,6 +65,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [0.12.0] — 2026-09-30
 
+### Fixed
+
+- **An HTTP/2 header-size refusal keeps HPACK in step and answers `431`.** A field section over
+  `http.maxHeaderListSize`, or a literal over `http.maxStringLiteralSize`, stopped the HPACK decoder
+  part-way: fields after the overflow that use incremental indexing never entered the server's dynamic
+  table, so a later request on the connection that referenced them decoded to other fields than the
+  client sent, and the stream was answered `400`. The decoder now reads such a block to its end
+  (`HpackDecoder.HpackLimitExceededException`, applying every insertion and table-size update and
+  discarding the fields) and the Community server answers the stream `431 Request Header Fields Too
+  Large` (RFC 9113 §8.2.3, RFC 6585 §5). A block that fails to decode any other way is a connection
+  error, `GOAWAY(COMPRESSION_ERROR)` (RFC 9113 §4.3), where it was a `400` on a connection left open.
+  `http.maxHeaderBlockSize` stays a connection error. `AbstractHttp2HeaderLimitTck` now requires `431`
+  rather than `400`, and a request that references entries added by a refused block.
+
 ### Breaking
 
 None on a declared surface. [`docs/stability-matrix.md`](docs/stability-matrix.md) declares the SPI
