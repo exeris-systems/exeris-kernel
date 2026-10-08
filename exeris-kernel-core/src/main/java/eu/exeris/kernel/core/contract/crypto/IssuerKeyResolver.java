@@ -16,7 +16,7 @@ import java.util.Objects;
  *
  * <p>The kernel bootstrap resolves keys only through {@link #embedded()}, the build-time
  * {@link TrustedIssuerKeyStore}. Any other resolver yields a contract the caller holds privately:
- * nothing it produces reaches {@code KernelProviders.EXECUTION_CONTRACT}, so a resolver is a way to
+ * nothing it produces reaches {@code ContractKernelProviders.EXECUTION_CONTRACT}, so a resolver is a way to
  * verify a manifest against a key of the caller's choosing, never a way to extend the kernel's trust.
  *
  * @since 0.13

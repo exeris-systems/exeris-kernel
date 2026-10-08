@@ -39,7 +39,7 @@ Root reactor modules from [pom.xml](pom.xml):
 Present in a clone but outside the root reactor:
 
 - `tools` — build and CI tooling: `spi-api-diff` (the ADR-065 SPI compatibility gate),
-  `preview-bytecode-scan`, `sbom-gate`, `release-readiness`, `jfr-reporter`
+  `preview-bytecode-scan`, `sbom-gate`, `release-readiness`, `central-verify`, `jfr-reporter`
 
 `exeris-kernel-enterprise` is referenced by the module docs and the enterprise licence text but is **not** part of this repository; it is a separate, closed distribution.
 

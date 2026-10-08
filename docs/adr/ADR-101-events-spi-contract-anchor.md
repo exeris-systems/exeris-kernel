@@ -3,7 +3,7 @@ title: "ADR-101: Anchor the events SPI — isolation travels with the event, and
 type: adr
 visibility: public
 owning-repo: exeris-kernel
-status: draft
+status: active
 slug: adr/ADR-101
 ---
 
@@ -11,7 +11,7 @@ slug: adr/ADR-101
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED**                                                                              |
+| **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/events`                                                                           |
@@ -30,7 +30,7 @@ column. ADR-046 (payload codec), ADR-049 (log ordering and optimistic concurrenc
 that cannot be resolved by improving the code. ADR-100 names this ADR as the precondition for
 promoting `…spi.events` at 1.0.
 
-Three open questions sit on the same classes and have to be answered before the surface freezes,
+Three questions sat on the same classes and have to be answered before the surface freezes,
 because each answer changes a signature or a documented promise:
 
 - **#600 — an event carries no isolation key.** `EventDescriptor` has seven primitive components and
@@ -146,11 +146,11 @@ subscriber that forgets the comparison receives every tenant — which is the pr
 remove. The stamped key it relies on is still part of Option 1A, so a subscriber that wants to
 compare can.
 
-**Ruling required — the encoding of the key: registered `int` ordinal (1A) or 128-bit digest (1B).**
-The evidence is balanced. 1A is the smaller, cheaper, zero-allocation shape and matches the existing
+**Ruled (2026-10-08) — the encoding of the key is the registered `int` ordinal (1A), not the 128-bit
+digest (1B).** The evidence was balanced. 1A is the smaller, cheaper, zero-allocation shape and matches the existing
 ordinal pattern; its correctness rests on an application-supplied mapping being consistent across
 nodes and over time, which the kernel can enforce only per process. 1B removes that dependency at
-the cost of width and readability. The recommendation is 1A, with the obligations below making an
+the cost of width and readability. The ruling is 1A, with the obligations below making an
 unregistered key refuse rather than fall back.
 
 **Delivery rule (either encoding):**
@@ -214,10 +214,10 @@ broker round trip, and removes the reason the two methods differ.
 **Option 2C — `publish` returns a completion handle.** Rejected: a signature change on both bus kinds
 for a property only one of them has, and a handle the non-brokered bus cannot complete meaningfully.
 
-**Ruling required — where the counter lives.** (a) A new `EventEngineStats` component,
+**Ruled (2026-10-08) — the counter lives in `EventEngineStats.publishFailedTotal` (a).** (a) A new `EventEngineStats` component,
 `publishFailedTotal` (accepted, then failed asynchronously), with a bridge constructor; measured
 `new EventEngineStats(` sites: 3 in main, 14 in test sources. (b) A binding-local counter carried
-only in the JFR event. `failedTotal` is not reused: it counts handler errors. The recommendation is
+only in the JFR event. `failedTotal` is not reused: it counts handler errors. The ruling is
 (a): `…spi.events` is about to freeze, and a counter that `stats()` cannot report would need a second
 change to a stable record later.
 
@@ -248,7 +248,7 @@ is Wall-clean, tested (`KafkaEventBrokerPortTest`) and is the post-1.0 path.
 ## 🏁 The Decision
 
 **The events SPI is anchored as described in "What the SPI promises today", amended by three rulings
-(proposed): an isolation ordinal travels on `EventDescriptor` and a scoped subscription delivers only
+(accepted 2026-10-08): an isolation ordinal travels on `EventDescriptor` and a scoped subscription delivers only
 matching events; a brokered `publish` means accepted, not acknowledged, and an asynchronous failure
 is always recorded; durable emission and cross-node delivery are a documented 1.0 limit.**
 

@@ -5,7 +5,7 @@
 package eu.exeris.kernel.community.security;
 
 import eu.exeris.kernel.community.testkit.security.TestJwt;
-import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.exceptions.security.SecurityAuthenticationException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.time.TimeSource;
@@ -40,7 +40,7 @@ class CommunityTokenExpiryClockTest {
     @DisplayName("a token the wall clock accepts is refused once the bound clock passes its expiry")
     void boundClockExpiresAnOtherwiseValidToken() {
         // Wall-clock valid for five minutes. On a source parked an hour ahead it is long gone.
-        ScopedValue.where(KernelProviders.TIME_SOURCE, parkedAt(Instant.now().plusSeconds(3_600)))
+        ScopedValue.where(TimeKernelProviders.TIME_SOURCE, parkedAt(Instant.now().plusSeconds(3_600)))
                 .run(() -> {
                     CommunityOidcTokenValidator validator = boundValidator();
                     try (LoanedBuffer token = TestJwt.builder()
@@ -67,7 +67,7 @@ class CommunityTokenExpiryClockTest {
     @DisplayName("a token the wall clock calls expired is accepted when the bound clock predates it")
     void boundClockRevivesAWallClockExpiredToken() {
         // The other direction. Rejecting everything would pass the case above and fail this one.
-        ScopedValue.where(KernelProviders.TIME_SOURCE, parkedAt(Instant.now().minusSeconds(3_600)))
+        ScopedValue.where(TimeKernelProviders.TIME_SOURCE, parkedAt(Instant.now().minusSeconds(3_600)))
                 .run(() -> {
                     CommunityOidcTokenValidator validator = boundValidator();
                     try (LoanedBuffer token = TestJwt.builder().expired().toBuffer()) {

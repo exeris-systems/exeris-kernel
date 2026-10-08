@@ -4,7 +4,7 @@
  */
 package eu.exeris.kernel.core.flow;
 
-import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.flow.FlowEngineCapabilities;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
 import eu.exeris.kernel.spi.flow.model.FlowDefinition;
@@ -172,7 +172,7 @@ class CoreFlowTimeSourceTest {
                         false,
                         defaults.compensationEnabled()),
                 FlowEngineCapabilities.COMMUNITY.withProvider("core-flow-timesource-test"));
-        ScopedValue.where(KernelProviders.TIME_SOURCE, clock).run(engine::start);
+        ScopedValue.where(TimeKernelProviders.TIME_SOURCE, clock).run(engine::start);
         return engine;
     }
 

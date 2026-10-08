@@ -37,6 +37,23 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   to a `HEAD` route; where the `GET` handler runs, the `GET` rule does. `HttpRouter.routeMethod`
   names the method of the route a request is dispatched to.
 
+### Changed
+
+- **The `ScopedValue` slots of the `preview` surfaces move to holders in their own packages (ADR-100
+  §3).** `EXECUTION_CONTRACT` and `executionContract()`, added on the 0.13 line and never released,
+  leave `KernelProviders` for `spi.contract.ContractKernelProviders`. `GRAPH_PROVIDER`,
+  `GRAPH_ENGINE` and `graphEngine()` move to `spi.graph.GraphKernelProviders`, and `TIME_SOURCE` and
+  `timeSource()` to `spi.time.TimeKernelProviders`, with the behaviour of each unchanged
+  (`timeSource()` returns `TimeSource.SYSTEM` when unbound). A `stable` signature no longer names a
+  `preview` type once the bridges below are gone. `StableSignatureArchitectureTest` enforces it.
+
+### Deprecated
+
+- **`KernelProviders.GRAPH_PROVIDER`, `GRAPH_ENGINE`, `graphEngine()`, `TIME_SOURCE` and
+  `timeSource()` are deprecated for removal in the first 1.0 release candidate.** Each field is the
+  very same `ScopedValue` instance the holder declares, so a binding made through either name is
+  visible through both and each accessor delegates; migrate by naming the holder instead.
+
 ### Added
 
 - **The boot verifies a signed license manifest and enforces its entitlements (ADR-088, ADR-089,

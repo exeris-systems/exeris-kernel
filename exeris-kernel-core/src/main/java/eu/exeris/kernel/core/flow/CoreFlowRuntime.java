@@ -5,6 +5,7 @@
 package eu.exeris.kernel.core.flow;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.exceptions.flow.FlowEngineException;
 import eu.exeris.kernel.spi.flow.FlowEngineConfig;
@@ -208,7 +209,7 @@ final class CoreFlowRuntime { // NOPMD
         // inherits no ScopedValue binding — so a slot read on that thread always finds the system
         // clock, and the seam would look applied while remaining undrivable. start() is inside the
         // carrier scope, which is exactly why snapshotStore and guard are captured here too.
-        timeSource = KernelProviders.timeSource();
+        timeSource = TimeKernelProviders.timeSource();
         lifecycleGeneration.incrementAndGet();
         resetLifecycleTotals();
         closed = false;

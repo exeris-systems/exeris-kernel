@@ -16,7 +16,7 @@ status: active
 | **Date**       | 2026-03-31                                                                             |
 | **Amended**    | 2026-06-10 — §4a/§9: incomplete/unrecognized/malformed isolation claim is now terminal-deny, not SHARED-downgrade (closes the S-P0-07 fail-OPEN storage-isolation finding) |
 | **Amended**    | 2026-07-29 — §4a/§4b/§9/§10: adds the **shared-scope tier** as an orthogonal row-visibility dimension (`sharedScopeKey`), rules its carrier shape / claim name / binding-gate interpretation, and re-points the isolation mapping site from `SecurityProvider.authenticate()` to `IdentityStorageMapping.fromClaims` per ADR-040 (implements `RFC-2026-07-02`) |
-| **Amended**    | 2026-10-07 — **PROPOSED**, §4c/§4b.4/§10/§11: rules the persistence-boundary questions of the 0.13 milestone — no principal session key and no field-level encryption at rest in the kernel at 1.0 (#585), the write check pins the shared-scope tag (#611), what an absent session key yields, and a boot check on a role that bypasses row-level security (#581) |
+| **Amended**    | 2026-10-07 — **ACCEPTED** (2026-10-08), §4c/§4b.4/§10/§11: rules the persistence-boundary questions of the 0.13 milestone — no principal session key and no field-level encryption at rest in the kernel at 1.0 (#585), the write check pins the shared-scope tag (#611), what an absent session key yields, and a boot check on a role that bypasses row-level security (#581) |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -115,7 +115,7 @@ the RFC deferred to this amendment. Implementation status per sub-shape is track
   owner's row.
 - Cross-tenant mutation of another owner's row is **out of scope** for this contract and MUST NOT be
   introduced by a binding as an extension.
-- *(Amendment proposed 2026-10-07: the write pin also covers the shared-scope tag a written row
+- *(Amendment accepted 2026-10-08: the write pin also covers the shared-scope tag a written row
   carries — see §4c.2.)*
 
 ### 4b.5 Fail-closed inheritance (non-negotiable, unchanged from §4a)
@@ -171,12 +171,13 @@ knowing whether it can be. This section rules how that is known.
   separate because a wrong-typed strategy weakens the provisioned tier while a wrong-typed scope withholds
   visibility from it, so passing one says nothing about the other.
 
-## 4c) Persistence-Boundary Rulings (amendment PROPOSED 2026-10-07)
+## 4c) Persistence-Boundary Rulings (amendment ACCEPTED 2026-10-08)
 
 Four questions about what the kernel promises at the database session, raised by #585, #611 (item 4 of
 #580) and #581, plus the behaviour of an absent session key. Each states the options, the
-recommendation, and the reasons. Nothing in this section is implemented: every behaviour change it
-names is planned for 0.13. Points still open are marked **Ruling required**.
+recommendation, and the reasons. The owner ruled on 2026-10-08 that each point takes the recommended
+option. Nothing in this section is implemented: every behaviour change it names is planned for 0.13.
+The points the recommendations left open were ruled by the owner on the same date.
 
 Measured state the rulings build on:
 
@@ -216,7 +217,7 @@ Measured state the rulings build on:
   only. Policies keyed on a principal (`OWNER`, `TEAM`, `HIERARCHY`, `DEPARTMENT`, and a `CUSTOM`
   predicate that needs one) belong to the application or its generated binding.
 
-**Recommendation: Option C.**
+**Ruled (2026-10-08): Option C.**
 
 - Option A adds identity to the carrier that is identity-blind by design. `StorageContext` answers where
   rows live and who may read them as a tenancy matter. A principal field makes the persistence boundary
@@ -246,13 +247,13 @@ documents them as compiled against an application-owned key.
 - Option B: an Enterprise-tier capability.
 - Option C: **outside kernel scope at 1.0, in every tier.**
 
-**Recommendation: Option C.** The kernel's cryptography is TLS transport. Encryption at rest needs key
+**Ruled (2026-10-08): Option C.** The kernel's cryptography is TLS transport. Encryption at rest needs key
 storage, rotation, wrapping and an access policy, which is a product of its own, and once a kernel SPI
 names a scheme the kernel has to carry it. Tooling must not invent a scheme either, so `@Encrypted` has
 no kernel target at 1.0.
 
-- **Ruling required:** whether Option B stays open after 1.0. If it does, it needs its own ADR. This
-  amendment records only that no tier claims it at 1.0.
+- **Ruled (2026-10-08):** Option B stays open after 1.0 without a commitment: it returns, in any
+  tier, only through its own ADR. No tier claims it at 1.0.
 
 ### 4c.2 The write check pins the shared-scope tag (#611, item 4 of #580)
 
@@ -294,9 +295,9 @@ and with `''`, accepted.
   different one, cannot update its own row tagged `S` and keep the tag. It must re-tag to `''` or to its
   current scope. A per-deployment trigger comparing old and new rows could relax this. The kernel ships
   no DDL and does not offer one.
-- **Ruling required:** whether an owner may un-share its own row (re-tag `S` → `''`) from a request that
-  does not carry `S`. The recommended check allows it, because narrowing one's own row's visibility
-  widens nothing. Refusing it means comparing the old row, which only a trigger can do.
+- **Ruled (2026-10-08):** an owner may un-share its own row (re-tag `S` → `''`) from a request that
+  does not carry `S`. The check allows it, because narrowing one's own row's visibility widens nothing.
+  Refusing it would mean comparing the old row, which only a trigger can do.
 
 ### 4c.3 What an absent session key yields
 
@@ -324,7 +325,7 @@ Options:
   raise.** The shared-scope arm keeps matching nothing, because absent scope is the legitimate
   tenant-private case (§4b.5).
 
-**Recommendation: Option C.** The kernel promises, for every connection an engine hands out while the
+**Ruled (2026-10-08): Option C.** The kernel promises, for every connection an engine hands out while the
 RLS interceptor is installed:
 
 1. both session keys are published by this acquisition, on every strategy, and never carry the previous
@@ -363,13 +364,12 @@ write-side absence is left open. A raise turns both into a failed statement that
 reports (`EX-PERS-5003`). Kernel-owned tables carry no policy, so the system paths in Option A's
 rejection are unaffected.
 
-- **Ruling required:** whether raise-on-absence is a **MUST** for a policy that claims conformance (then
+- **Ruled (2026-10-08):** raise-on-absence is a **MUST** for a policy that claims conformance.
   `AbstractSharedScopeAccessMatrixTck` and the tenant-isolation suites gain an absent-tenant cell
-  asserting a refusal), or a **SHOULD** in the reference only (then no TCK cell, and Option B remains a
-  conforming deployment choice).
-- **Ruling required:** whether the reference text of `exeris_required_setting` is published in the
-  `RlsConnectionInterceptor` javadoc and `docs/subsystems/persistence.md`, or only described there. In
-  either case the kernel does not install it (§4b.7).
+  asserting a refusal, so Option B is not a conforming deployment choice.
+- **Ruled (2026-10-08):** the reference text of `exeris_required_setting` is published in
+  `docs/subsystems/persistence.md`, beside the reference policy, for deployments to install. The kernel
+  does not install it (§4b.7).
 
 ### 4c.4 Boot check on a role that bypasses row-level security (#581)
 
@@ -383,13 +383,13 @@ Options for the default:
 - Option B: log an error and record a JFR event, and continue.
 - Option C: no check (today).
 
-**Recommendation: Option A**, with a configuration key that downgrades it to Option B. §5 already denies
+**Ruled (2026-10-08): Option A**, with a configuration key that downgrades it to Option B. §5 already denies
 readiness when a trust prerequisite is missing. An RLS deployment whose role bypasses RLS has the same
 standing: the isolation it configured (`persistence.rlsEnabled`) is not applied. A deployment that must
 connect that way, for example a local quick-start as the database superuser, says so in configuration
 and is told about it on every boot.
 
-Proposed shape, planned for 0.13; the key, the code and the event are **to be registered** with the
+Shape, planned for 0.13; the code and the event are **to be registered** with the
 implementation:
 
 - **When:** on the first connection of each pool the engine creates while the RLS interceptor is
@@ -405,7 +405,7 @@ implementation:
   A separate code from `EX-PERS-5001` (bootstrap failure), because the operator's remedy is a role
   change, not a driver or connection fix.
 - **Downgrade:** with the key `true`, an ERROR log line and a JFR event in the persistence namespace,
-  proposed as `eu.exeris.kernel.persistence.RlsBypassRole`, carrying the same three fields.
+  named `eu.exeris.kernel.persistence.RlsBypassRole`, carrying the same three fields.
 - **TCK / IT:** a PostgreSQL integration test connecting as a `BYPASSRLS` role sees the refused boot
   by default and the error plus the event with the key set; a `NOSUPERUSER NOBYPASSRLS` role boots
   unchanged.
@@ -419,8 +419,8 @@ Limits, stated so the check is not read as more than it is:
   that table's policies without either attribute. That case stays documented (`FORCE` is required),
   because detecting it needs the policy-catalogue introspection §4b.7 rejects.
 
-- **Ruling required:** the key name, and whether the downgrade is a boolean or a two-valued
-  `refuse` / `warn` setting.
+- **Ruled (2026-10-08):** the downgrade is the boolean `persistence.rlsAllowBypassRole` (default
+  `false`), as the shape above states, not a two-valued `refuse` / `warn` setting.
 
 ## 5) Fail-Closed Lifecycle Contract
 - Bootstrap readiness is denied if required trust anchors, JWKS resolution path, or validation dependencies are unavailable.
@@ -501,7 +501,7 @@ Limits, stated so the check is not read as more than it is:
 - **Implemented now (§4b.7 enforceability signal, v0.11):** the kernel ships no RLS policy and cannot introspect the deployment's, so the deployment asserts enforceability itself via `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). `fromClaims` carries a declared shared scope onto the resolved context where the deployment has opted in, and denies it everywhere else. The tier is reachable end-to-end from that point: carrier, claim, mapping, and RLS enforcement all exist and are connected. Absent opt-in the behaviour is unchanged, so no existing deployment moves off tenant-private.
 - **Implemented now (§4b.7 wrong-typed shared scope, v0.11):** the driver-side type check that closes §4b.7's own consequence. `VerifiedClaims.claim` reports a wrong-typed claim as absent, so a malformed shared scope would reach the mapping as "none declared" and resolve to tenant-private — harmless while every declared scope was denied, and not harmless once §4b.7 made that deny conditional, since an enforcing deployment would then silently withhold visibility the caller asked for. The check sits in the binding's token validation next to the `ISOLATION_STRATEGY` one (§4a enforcement layers), denying `shared-scope-malformed`, and is pinned for every binding by `AbstractSecurityProviderTck` rather than left to each one's diligence. Both axes are checked because the structural cause is shared but the damage is not: a wrong-typed strategy weakens the tier, a wrong-typed scope withholds from it.
 - Implemented now (repository state): Community `PersistenceEngine` routes DEDICATED strategy to per-tenant pools from `PersistenceConfig.dedicatedDataSources()`.
-- **Planned for 0.13 (§4c, PROPOSED):** the scope-pinning `WITH CHECK` in the reference policy, the
+- **Planned for 0.13 (§4c, ACCEPTED 2026-10-08):** the scope-pinning `WITH CHECK` in the reference policy, the
   Community binding and the shared-scope matrix (§4c.2); the raise-on-absent-tenant reference policy
   (§4c.3); the bypass-role boot check with `persistence.rlsAllowBypassRole`, `EX-PERS-5009` and its JFR
   event (§4c.4). None of it is implemented.
@@ -527,7 +527,7 @@ Limits, stated so the check is not read as more than it is:
 - Cost: the RLS predicate becomes asymmetric (read widens, write pins). This is the honest cost of the
   write model and is why §9 demands an access **matrix** rather than a happy-path case.
 
-### Persistence-boundary rulings (amendment PROPOSED 2026-10-07, §4c)
+### Persistence-boundary rulings (amendment ACCEPTED 2026-10-08, §4c)
 - Benefit: the kernel's promise at the database session is stated as a list (two keys, published per
   acquisition, `''` for absence), so a binding knows what it can rely on and what its policy decides.
 - Benefit: a token is the only source of widened visibility. A row's own column can no longer grant it

@@ -2306,8 +2306,8 @@ those does.
 kernel instance after a crash of the first — the property neither engine can demonstrate today; the
 delivery-boundary section in `docs/subsystems/events.md` loses its "not composable today" paragraph.
 
-**1.0 disposition:** post-1.0, proposed in [ADR-101](adr/ADR-101-events-spi-contract-anchor.md)
-Ruling 3 (PROPOSED). At 1.0 the two paths are a documented limit, not composable, and `events.md`
+**1.0 disposition:** post-1.0, accepted in [ADR-101](adr/ADR-101-events-spi-contract-anchor.md)
+Ruling 3 (2026-10-08). At 1.0 the two paths are a documented limit, not composable, and `events.md`
 "Delivery Boundary" is where that is stated. Making the `OutboxBrokerPort` a configured selection
 changes no SPI signature, so it is additive after 1.0; the publish-path duplication and an
 acknowledging relay send are part of that work, not of 1.0.
@@ -3556,7 +3556,7 @@ plan compilation, as `flow.md` §"A step's next step is fixed when the plan is c
 
 **Merge Gate:** each issue's acceptance criteria.
 
-**Status (v0.13): RULED IN PART, NOT IMPLEMENTED.** ADR-012's amendment of 2026-10-07 (proposed)
+**Status (v0.13): RULED IN PART, NOT IMPLEMENTED.** ADR-012's amendment of 2026-10-07 (accepted 2026-10-08)
 rules #585, #611 (item 4 of #580) and #581; the ruling proposed for #583 is a comment on that issue.
 Neither #581 nor #583 is implemented, and #582's RFC is not written. The measurements are in #581–#585.
 
@@ -3576,7 +3576,7 @@ Neither #581 nor #583 is implemented, and #582's RFC is not written. The measure
 
 **1.0 disposition:** **1.0-BLOCKING** — planned for 0.13; the support matrix and the performance contract already state the HotSpot/C2 pin, and this item makes the native-image half of that stance something a consumer can build.
 
-**Status (v0.13): NOT STARTED.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is proposed, with one ruling outstanding (whether an experimental GraalVM option may ship inside the kernel's jars); #619 is open.
+**Status (v0.13): NOT STARTED.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is accepted (2026-10-08), including that the kernel may ship an experimental GraalVM option inside its jars when the shared-arena pool still needs it; #619 is open.
 
 ---
 
@@ -3780,6 +3780,8 @@ CI against the built artifacts.
 
 **Status (v0.12, second slice): the signing and provenance pipeline is built and gated; nothing has been published through it.** GPG signing covers every file a release carries — jar, sources, javadoc, pom and SBOM — and SLSA provenance is attested through Sigstore keyless signing on the release workflow's OIDC identity, which is the question a GPG signature does not answer (which workflow, at which commit, on which runner). The Merge Gate's "a CI job verifies the signature" is met by `tools/release-readiness`, which verifies each signature against the key *before* upload rather than after; verifying "on a fresh pull" is not yet possible because nothing signed has been published to pull.
 
+**Status (v0.13, third slice): the consumer-side verification is built; the Merge Gate is met when it has run green from `main`.** `eu.exeris:*:0.12.0` is on Maven Central, so a fresh pull can now be verified, and `tools/central-verify/central-verify.sh` does it: for every coordinate the release tag declares it fetches the files from Central into an empty directory and checks each `.asc` against the project key pinned by fingerprint, every published checksum, and that each coordinate's CycloneDX SBOM is signed and names its own group, artifact and version. Its `--self-test` negative controls (a flipped byte in a jar, an SBOM naming another version, a pin that does not match the key, a different valid key) run on every invocation. Run locally against 0.12.0 it verified 11 coordinates and 46 files, and every control failed as intended. **Not yet met:** the `central-verify` workflow has not run in CI, and a scheduled or dispatched workflow only registers once the file is on the default branch, so the clause stays open until it has run green from `main`. Provenance (`gh attestation verify`) is not part of this check.
+
 **What remains is operational, not engineering** — and that sentence was wrong in a way worth keeping, because it is the same class of claim this milestone kept finding. The four secrets (`GPG_PRIVATE_KEY`, `GPG_PASSPHRASE`, `CENTRAL_TOKEN_USERNAME`, `CENTRAL_TOKEN_PASSWORD`) are in place as organization secrets visible to this repository, with names matching what the workflow references. The `eu.exeris` namespace is verified in the Central Portal. **What was left was not "one manual run": nothing could run at all.** `workflow_dispatch` registers only a workflow present on the **default branch**, `release.yml` has never reached `main`, and so GitHub had no record of it — `GET /actions/workflows` listed six workflows and not this one. The dry run the workflow itself offers as "touching nothing remote" and explicitly allows from any branch **was runnable from no branch**, so the signing key had never been imported, `-P release` had never been built, and the readiness, SBOM and provenance steps had never executed on any ref, once. The first opportunity would have been the release integration PR that carries the file to `main` — the moment they are first depended on, which is the failure shape `tools/release-readiness` exists to prevent one level down.
 
 **The trigger changed with it, and the old reasoning did not survive re-reading.** The workflow's header argued that a tag trigger was wrong until one release had gone through by hand, because a `push: tags` trigger "turns a mistyped tag into a permanent artifact" — and then said, in the next sentence, that `autoPublish=false` means the upload is a **deployment a human still has to Publish and can Drop**. Both cannot be true. A tag now triggers the release (`v*`, with the strict `vMAJOR.MINOR.PATCH` check as a step rather than as a glob — the SPI gate's baseline filter is the precedent for not trusting the pattern), a push to a branch triggers nothing, and the dispatch is retained as the dry run. What is guarded is what actually needed guarding: that the tagged commit is **on `main`** (compared through the API, since a tag ref names no branch) and that the tag's version **agrees with the pom it points at** — a disagreement means the tag is on the wrong commit, and the old unconditional `versions:set` would have overwritten exactly that evidence.
@@ -3888,7 +3890,7 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **Merge Gate:** `AbstractSecretProviderTck` covers resolve/missing/rotation; DB + JWKS + TLS read through the seam; no plaintext secret retained in a config record beyond the resolved-handle boundary; Wall preserved.
 
-**1.0 disposition:** post-1.0. At 1.0 secrets reach the kernel through configuration and external injection, and the security surface 1.0 publishes does not include the seam, as [ADR-100](adr/ADR-100-spi-surfaces-stable-at-1-0.md) (proposed) states in its Context, answer 2. Adding `SecretProvider` afterwards is an addition to a stable surface, not a change to one.
+**1.0 disposition:** post-1.0. At 1.0 secrets reach the kernel through configuration and external injection, and the security surface 1.0 publishes does not include the seam, as [ADR-100](adr/ADR-100-spi-surfaces-stable-at-1-0.md) states in its Context, answer 2. Adding `SecretProvider` afterwards is an addition to a stable surface, not a change to one.
 
 **Status (v0.12): NOT STARTED — and the disposition above can no longer be satisfied as written.** No `SecretProvider` type exists in SPI, Core or Community; the name appears only in this document and in [RFC-2026-09-02](rfc/RFC-2026-09-02-preview-spi-promotion.md)'s inventory of what 1.0 owes. That is the point rather than the finding: the disposition makes staging conditional on **both** halves — the 1.0 docs declaring the config-plus-external-injection posture **and** the SPI landing in v0.11. The SPI did not land in v0.11 and has not landed in v0.12, so no future work can make that sentence true; only rewriting it can. One of the two has to move — schedule the SPI, or rest the staging on the documented posture alone and say so. Recorded rather than quietly read as satisfied, which is what a conditional nobody re-checks becomes.
 
