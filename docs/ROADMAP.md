@@ -2254,6 +2254,12 @@ those does.
 kernel instance after a crash of the first — the property neither engine can demonstrate today; the
 delivery-boundary section in `docs/subsystems/events.md` loses its "not composable today" paragraph.
 
+**1.0 disposition:** post-1.0, proposed in [ADR-101](adr/ADR-101-events-spi-contract-anchor.md)
+Ruling 3 (PROPOSED). At 1.0 the two paths are a documented limit, not composable, and `events.md`
+"Delivery Boundary" is where that is stated. Making the `OutboxBrokerPort` a configured selection
+changes no SPI signature, so it is additive after 1.0; the publish-path duplication and an
+acknowledging relay send are part of that work, not of 1.0.
+
 ---
 
 **Status (v0.12): OPEN, unchanged.** No selection seam landed. `KafkaEventEngine` still constructs a

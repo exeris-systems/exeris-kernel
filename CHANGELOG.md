@@ -14,6 +14,21 @@ This file is intentionally terse: it lists what landed, with a pointer to the re
 
 Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project versions follow [SemVer](https://semver.org/spec/v2.0.0.html), with the pre-1.0 caveat that minor versions may carry observable contract additions while remaining backwards-compatible at the SPI level. Which SPI surfaces are `stable` / `preview` / `experimental`, and what each label commits to for semver, is declared in [`docs/stability-matrix.md`](docs/stability-matrix.md) — the authoritative source for the semver policy.
 
+## [Unreleased]
+
+### Fixed — verification
+
+- **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
+  3.2.5.** Both are pinned once, in the root POM; the class sets were compared per execution and per
+  CI tag selection. Community and Community Kafka declare the JUnit Vintage engine: with `junit:junit` on
+  their test classpath (from Testcontainers 1.x) and no declared engine, Surefire 3.6 applies
+  `groups`/`excludedGroups` as JUnit 4 categories, so every tagged selection runs nothing and the
+  default execution runs every excluded tag (#577).
+- **The `*Research` allocation harnesses are excluded by a tag, not only by their names.** The five
+  in Core and Community carry `@Tag("research")` and run only through the `research` profile
+  (`mvn -pl exeris-kernel-core,exeris-kernel-community -Presearch test-compile surefire:test`);
+  Sonar's S2699 and S3577 are suppressed for them alone (#564).
+
 ## [0.12.0] — 2026-09-30
 
 ### Breaking

@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.http.StreamMatch;
 import eu.exeris.kernel.spi.http.StreamRouteResolver;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.management.ManagementFactory;
@@ -42,6 +43,7 @@ import java.util.function.Supplier;
  * <p>Prints tables; asserts nothing. A process is one sample: compare runs from fresh JVMs.
  */
 @DisplayName("RESEARCH: HTTP routing allocation")
+@Tag("research")
 class HttpRoutingAllocationResearch {
 
     private static final ThreadMXBean THREADS = (ThreadMXBean) ManagementFactory.getThreadMXBean();
