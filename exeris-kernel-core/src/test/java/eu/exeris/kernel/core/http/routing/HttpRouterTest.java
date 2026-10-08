@@ -405,6 +405,35 @@ class HttpRouterTest {
             router.handle(exchange);
             assertEquals(HttpStatus.NOT_FOUND, exchange.status());
         }
+
+        @Test
+        void routeMethodNamesGetWhenHeadFallsBack() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/resource", e -> e.respond(HttpStatus.OK))
+                    .build();
+            assertEquals(HttpMethod.GET, router.routeMethod(HttpMethod.HEAD, "/resource"));
+            assertEquals(HttpMethod.GET, router.routeMethod(HttpMethod.HEAD, "/resource?x=1"),
+                    "the query takes no part in matching, as in handle()");
+        }
+
+        @Test
+        void routeMethodNamesHeadWhenAHeadRouteIsDispatched() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.HEAD, "/resource", e -> e.respond(HttpStatus.NO_CONTENT))
+                    .route(HttpMethod.GET, "/resource", e -> e.respond(HttpStatus.OK))
+                    .build();
+            assertEquals(HttpMethod.HEAD, router.routeMethod(HttpMethod.HEAD, "/resource"));
+        }
+
+        @Test
+        void routeMethodKeepsTheRequestMethodWhenNothingMatchesOrNoFallbackApplies() {
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/other", e -> e.respond(HttpStatus.OK))
+                    .build();
+            assertEquals(HttpMethod.HEAD, router.routeMethod(HttpMethod.HEAD, "/missing"));
+            assertEquals(HttpMethod.GET, router.routeMethod(HttpMethod.GET, "/missing"));
+            assertEquals(HttpMethod.POST, router.routeMethod(HttpMethod.POST, "/other"));
+        }
     }
 
     @Nested
