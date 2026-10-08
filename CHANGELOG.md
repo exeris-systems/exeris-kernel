@@ -16,6 +16,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Added — verification
+
+- **The three HTTP/2 header limits are a TCK contract.** `AbstractHttp2HeaderLimitTck` judges
+  `http.maxHeaderBlockSize`, `http.maxHeaderListSize` and `http.maxStringLiteralSize` on the wire: a
+  request at each limit is served, one octet over is refused without reaching the handler, and the
+  server advertises `http.maxHeaderListSize` as `SETTINGS_MAX_HEADER_LIST_SIZE`. Community binds it
+  with `CommunityHttp2HeaderLimitTckTest`.
+
 ### Fixed — verification
 
 - **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
