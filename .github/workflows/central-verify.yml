@@ -1,0 +1,90 @@
+name: Verify the release served by Maven Central
+
+# `release.yml` proves what the build SIGNED before upload. This workflow proves what Central SERVES
+# afterwards: it fetches every `eu.exeris` coordinate of a released version into an empty directory
+# and checks each signature against the project key pinned by fingerprint in
+# `tools/central-verify/central-verify.sh`, each published checksum, and that every coordinate's
+# SBOM is signed and names the artifact it ships beside.
+#
+# Triggers, and why each exists:
+#   * `release: published` — a GitHub release for the tag; waits for Central to serve the files,
+#     since the portal's Publish step and Central's mirroring are not instantaneous.
+#   * `schedule` — a weekly look at the latest release, because what Central serves is not a
+#     property of any commit and can only be observed, not inferred from a green build.
+#   * `workflow_dispatch` — on demand, for any released version.
+# It does not run on pull requests: nothing in a pull request changes what Central serves. The
+# script's own negative controls run on every invocation, so the verifier is shown to fail on a
+# tampered artifact and under a wrong key every time it is trusted.
+#
+# Scheduled and `release` events run from the default branch, so this file has to be on `main` to
+# fire; `workflow_dispatch` is subject to the same rule.
+on:
+  release:
+    types: [ published ]
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Released version to verify (e.g. 0.12.0). Empty = the latest vMAJOR.MINOR.PATCH tag.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify signatures, checksums and SBOMs from Central
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The coordinate list is read from the release tag's own POMs, so the tag must be present.
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Resolve the version
+        id: ver
+        # Bound as environment variables and read as shell variables, never substituted into the
+        # script text: `inputs.version` is free-form text and a release tag name is chosen by
+        # whoever creates the release.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          IN_VERSION: ${{ inputs.version }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          wait=0
+          case "$EVENT_NAME" in
+            release)
+              version="${RELEASE_TAG#v}"
+              wait=45 ;;
+            workflow_dispatch)
+              version="${IN_VERSION#v}" ;;
+            *)
+              version="" ;;
+          esac
+          if [ -n "$version" ] && ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::'$version' is not a release version (expected MAJOR.MINOR.PATCH)." >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "wait=$wait"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved: version='${version:-latest tag}' wait=${wait}m"
+
+      - name: Verify the release as served by Maven Central
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          WAIT: ${{ steps.ver.outputs.wait }}
+        run: |
+          set -euo pipefail
+          args=(--self-test --wait-minutes "$WAIT")
+          if [ -n "$VERSION" ]; then
+            args+=(--version "$VERSION")
+          fi
+          tools/central-verify/central-verify.sh "${args[@]}"

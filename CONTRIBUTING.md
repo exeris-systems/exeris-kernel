@@ -332,6 +332,21 @@ The gate asserts that every coordinate has a pom, jar, sources jar, javadoc jar 
 each verifies against the key. It reports what it deliberately skipped rather than staying silent —
 `exeris-kernel-tck` is currently held back from Central, and the root POM records why.
 
+The readiness gate proves what the build signed. What Central then serves is checked by a separate
+tool that fetches a released version into an empty directory and verifies it with only the pinned
+project key in a throwaway keyring:
+
+```bash
+tools/central-verify/central-verify.sh --version 0.12.0 --self-test
+```
+
+`--self-test` first runs the negative controls: the verifier must pass an untouched artifact, then
+fail on a jar with one flipped byte, on an SBOM naming another version, on a pinned fingerprint that
+does not match the key file, and under a different valid key. The `central-verify` workflow runs
+the same command weekly, on a published GitHub release, and on demand. The signing key's
+fingerprint is pinned in the script; rotate it there and replace
+`tools/central-verify/exeris-release-key.asc` in the same change.
+
 Two things this profile does that the ordinary build does not, both of which have already bitten:
 
 - `central-publishing-maven-plugin` declares `<extensions>true</extensions>` and takes over
