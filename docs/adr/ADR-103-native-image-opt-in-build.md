@@ -204,7 +204,7 @@ supported.
      through `Linker.defaultLookup()` and allocates nothing in the arena, which its Javadoc says is
      held for API symmetry; on Windows, `SocketBackendSelection.resolve` returns before calling
      `load`, so the `WSADATA` scratch buffer `loadWindows` would allocate in the arena is never
-     requested from this class. It passes `Arena.global()` — what
+     requested from this class. It is to pass `Arena.global()` — what
      `CommunityKernelCryptoProvider` already passes to `CoreOpenSslLoader.load`, on a path measured
      green in the image — and stop closing it, since a global arena cannot be closed. `Arena.ofAuto()`
      is the alternative if a Windows FFM socket path is ever armed through this class, so a

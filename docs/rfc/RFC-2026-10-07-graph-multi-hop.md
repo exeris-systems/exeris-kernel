@@ -222,7 +222,7 @@ instead of resolving it. An existing `GraphTraversal(start, edge, maxDepth)` is 
 `GraphPathSpec(start, List.of(new GraphHop(edge, 1, maxDepth)))`, and the result semantics below make
 the two agree, so `traverseBreadthFirst` can be specified as that special case.
 
-**Result semantics (proposed).** The result is the deduplicated set of node ids reached at the end of
+**Result semantics (ruled R3, 2026-10-08).** The result is the deduplicated set of node ids reached at the end of
 the last hop — the terminal frontier — not the union of intermediate nodes. For a single hop with
 range `[1, d]` that is every node reachable in 1..d steps, which is what `traverseBreadthFirst` returns
 today. A hop that matches nothing yields an empty result, not an error. Ordering is unspecified, as it
