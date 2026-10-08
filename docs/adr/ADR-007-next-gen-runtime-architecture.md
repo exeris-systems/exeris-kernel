@@ -208,13 +208,31 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
   the kernel's: a recording dumped on exit, and `java.util.logging` handlers that the log manager resets at
   shutdown, may miss what the kernel emits during the stop. The kernel does not order itself against them.
 
-##### 5.3.5 What this does not decide
+##### 5.3.5 Non-Goals
 
 - **No overall stop deadline.** `shutdown()` remains bounded only where the transport drains (60 s). The
   platform's grace period stays the authority beyond that, as the `DRAIN_DEADLINE_NANOS` rationale states.
 - **No signal handling beyond the JVM's.** The kernel installs no `sun.misc.Signal` handler; `SIGTERM`,
   `SIGINT` and `SIGHUP` reach it only through the JVM's shutdown sequence.
 - **No change to the drain or to subsystem order.**
+
+##### 5.3.6 Risks and Assumptions
+
+- **Assumes:** no `Subsystem.stop()` depends, directly or transitively, on a kernel `ScopedValue`
+  binding (§5.3.4 measured direct reads only). **Reversed by:** the unbound-thread test in §5.4
+  failing for a `stop()` that cannot be rewritten to use references captured at start — the hook then
+  cannot run the ordered stop on its own thread, and the stop has to be marshalled onto a bound thread
+  instead.
+- **Assumes:** the JVM runs shutdown hooks to completion within the platform's grace period, so a
+  `SIGTERM` leaves time for the bounded drain. **Reversed by:** a supported deployment whose grace
+  period is shorter than the drain deadline as a rule — the drain bound then belongs in configuration,
+  which §5.3.5 leaves out.
+- **Assumes (opt-out default):** embedding hosts adopt the kernel version carrying the hook together
+  with disabling it. **Reversed by:** an embedding host that cannot disable the hook in the release that
+  adopts it — the default then becomes opt-in, accepting crash-stop for deployments that do not opt in.
+- **Risk:** the JVM's own hooks (dump-on-exit recording, `java.util.logging` reset) run concurrently with
+  the kernel's, so diagnostics emitted during the stop can be lost. The forked-process test in §5.4 is
+  the first to see it, which is why it records stop order through its own channel.
 
 #### 5.4 Verification obligations (planned for 0.13)
 
