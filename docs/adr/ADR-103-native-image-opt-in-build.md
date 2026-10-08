@@ -95,10 +95,11 @@ established, each under those conditions:
   each reached `main` as the bare `Error`, skipping the failure policy, the `FAILED` health state and
   the boot JFR event. The same reproduces on HotSpot and is filed as #619; it is a kernel defect, not
   a native-image one.
-- **Startup and footprint**, `http,persistence`, three fresh processes each: boot
-  (`KernelBootstrap` to `kernelMain`) 23–24 ms native against 665–673 ms on HotSpot (GraalVM 25 JDK,
-  C2); maximum RSS 72 MB against 271–275 MB. An image build took about two minutes at about 7.5 GB
-  peak RSS on 12 cores.
+- **Startup and footprint**, `http,persistence`: the prototype image reached `kernelMain` from
+  `KernelBootstrap` faster, and ran with a smaller resident set, than the same jars on HotSpot/C2. The prototype
+  is one machine and is not a published measurement; the figures this ADR may state are the ones
+  the `native-smoke` job records (obligations 10 and 11), as edge-tier measurements, not SLOs.
+  Building an image is costly in time and memory compared with any other check.
 - **Not measured:** the testkit under native-image, Neo4j over encrypted Bolt, Kafka compression
   codecs, aarch64, Windows.
 
@@ -124,8 +125,8 @@ remains the default and the only runtime with asserted SLOs.
 ### Option 3 — Native-image as a first-class runtime with its own SLOs
 
 Same metadata, plus asserted native-image targets and a native build in the default PR gate. The
-prototype supplies one machine's numbers, not a contract; an image build at about two minutes and
-7.5 GB per run on every PR is a cost the default gate does not carry for any other check; and the
+prototype supplies one machine's observations, not a contract; an image build on every PR is a
+cost in time and memory the default gate does not carry for any other check; and the
 §2.2.1 reasoning (AOT without profiles makes scalarization and FFM decisions more conservative)
 means a native SLO would be a second contract to defend. Rejected for 0.13.
 
@@ -261,7 +262,7 @@ supported.
   the kernel does not own it.
 - **[-] Kafka metadata names client classes.** The Kafka module's entries track `kafka-clients`
   internals selected by name; a client upgrade can add one, and only the smoke job notices.
-- **[-] CI cost.** About two minutes and about 7.5 GB peak RSS per image (measured once); the job
+- **[-] CI cost.** An image build needs far more time and memory than any other check; the job
   needs a large runner or a long budget, which is why it is outside the default gate.
 - **[-] An experimental flag may ship.** If obligation 8 ends with the pool still on a shared arena
   and the ruling allows it, Community's jar carries an option GraalVM has announced it will gate.
