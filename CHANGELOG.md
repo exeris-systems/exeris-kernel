@@ -27,6 +27,21 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   to a `HEAD` route; where the `GET` handler runs, the `GET` rule does. `HttpRouter.routeMethod`
   names the method of the route a request is dispatched to.
 
+### Added
+
+- **The boot verifies a signed license manifest and enforces its entitlements (ADR-088, ADR-089,
+  #608).** Phase 0 of `KernelBootstrap.boot()` reads `license-manifest.json` (or
+  `license.manifest.path`), checks it against ADR-088's v1 schema, canonicalizes it per RFC 8785 and
+  verifies its Ed25519 signature against the embedded `TrustedIssuerKeyStore`, before the
+  orchestrator runs. Without a manifest the kernel boots under the Community fallback, and refuses
+  the boot (`EX-LIC-0005`) only in a production-class `environment` when an
+  `EntitlementRequirement` is on the classpath. The result is the `ExecutionContract` in
+  `spi.contract` (preview); `SOFT` and `AUDIT` violations are reported once each, and every gate
+  decision is recorded as `ContractResolvedEvent`. Covered by `AbstractExecutionContractTck`,
+  `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck`. Not yet: metering,
+  offline revocation, refusing more than one manifest on the classpath (#606), and the cost
+  measurement against ADR-089's 5 ms (#605).
+
 ### Fixed — verification
 
 - **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on

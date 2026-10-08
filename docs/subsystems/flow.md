@@ -183,6 +183,20 @@ those to anything other than a linear chain would be inventing a contract the ru
 so **emitting the linear chain is the correct compilation**, and the unread attributes record a
 kernel gap rather than a generator omission. Tracked in `docs/ROADMAP.md`.
 
+### A step's next step is fixed when the plan is compiled
+
+`FlowDefinitionBuilder` accepts transitions with a `conditionTag`, but nothing at run time reads the
+tag. `CoreFlowPlanFactory` resolves each step to **one** next index when it compiles the plan: the
+step's unconditional (`"default"`) transition if it has one, otherwise its first outgoing
+transition, otherwise the next step in order. `FlowOutcome` is `CONTINUE`, `COMPLETE` or `PARK`;
+none of them names a transition. So a flow cannot route on a step's result — a failure branch, a
+timeout branch or a guarded edge is not expressible — and a second conditional transition from the
+same step is accepted and never taken. `COMPLETE` is the one result that changes the path: it ends
+the flow.
+
+Outcome-based routing is post-1.0, tracked as #582 under the roadmap entry *Tooling Asks Carried to
+v0.13*.
+
 ### Terminal-State Catalog Retention
 
 `CoreFlowRuntime` maintains a `terminalStateCatalog` map that records every flow that reaches a terminal state (`COMPLETED`, `FAILED_ROLLEDBACK`). This map serves as an in-process idempotency fence — it prevents re-scheduling or re-waking already-terminal flows within a single runtime lifetime.
