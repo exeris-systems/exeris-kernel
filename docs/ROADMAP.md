@@ -60,6 +60,14 @@ Community tier follows a **best-effort performance contract**:
 
 **Merge Gate:** Architecture sign-off on retention semantics in subsystem docs; if SPI/config surface changes, extend Flow TCK before release.
 
+**Status (v0.13): PARTIALLY DELIVERED — the limit exists and no test exercises it.**
+`FlowEngineConfig.terminalCatalogMaxSize` bounds `CoreFlowRuntime`'s terminal-state catalog as an LRU
+(`0`, the default, is unbounded; `enterpriseDefaults` sets 100 000), and an evicted key falls back to
+`FlowSnapshotStore` for the idempotency fence; `flow.md` §"Terminal-State Catalog Retention" records
+the semantics (v0.7.0, ADR-013). The config surface changed, so the Merge Gate's second clause
+applies, and it is unmet: no TCK or test configures a size above `0`, so eviction and the
+snapshot-store fallback run in no build.
+
 See also: [Flow Subsystem](./subsystems/flow.md) — Known Constraints.
 
 ---
@@ -91,6 +99,12 @@ See also: [Flow Subsystem](./subsystems/flow.md) — Known Constraints.
 **Resolution:** Add `CommunityFlowIdempotencyGuardTckTest` in `exeris-kernel-community` passing `CoreIdempotencyGuard` as the SUT. Add `CommunityFlowZeroAllocTckTest` asserting low-allocation / zero-allocation behavior on the scheduler hot path for Community tier.
 
 **Merge Gate:** Both Community bindings must pass in CI before the next Flow SPI minor bump. Enterprise binding obligation applies for out-of-repo implementations.
+
+**Status (v0.13): DELIVERED, with one deviation from the Resolution.**
+`CommunityFlowIdempotencyGuardTckTest` extends `AbstractIdempotencyGuardTck` and
+`CommunityFlowZeroAllocTckTest` extends `FlowZeroAllocTck` (bounded budget of 10 allocations per
+iteration); both run in the default build. The idempotency binding exercises a guard defined inside
+the test rather than `CoreIdempotencyGuard`, which `CoreIdempotencyGuardTckTest` binds in Core.
 
 See also: [Flow Subsystem](./subsystems/flow.md) — TCK Coverage.
 
@@ -1082,6 +1096,16 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Abstract TCK for upgrade-negotiation contract and frame ordering passes; Community binding green; carrier-pinning regression test demonstrates no PAQS starvation under N concurrent long-lived streams.
 
+**Status (v0.13): PARTIALLY DELIVERED, as two surfaces rather than one `StreamHandler`.** SSE is
+`HttpStreamExchange` with Core's `HttpStreamEngine` and `SseEventEncoder` (ADR-043, v0.10.0),
+covered by `AbstractHttpStreamExchangeTck` and `AbstractStreamRouteResolverTck` with Community
+bindings, and JFR `StreamOpened`/`StreamClosed`/`StreamBackpressurePark`/`StreamAbortiveTeardown`
+events. WebSocket is `spi.websocket` with its Community binding (ADR-084, preview, v0.12.0), covered
+by `AbstractWebSocketExchangeTck` and `AbstractWebSocketProviderTck`; see *HTTP: `WebSocketProvider`
+SPI (or SSE-Only Commitment)*. Not delivered: the carrier-pinning regression under N concurrent
+long-lived streams that the Merge Gate names, and per-handler attach/detach events for WebSocket,
+which emits engine start/stop only.
+
 ---
 
 ### HTTP: gRPC Streaming over HTTP/2
@@ -1120,7 +1144,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 - **HTTP-131 `QueryParams` SPI.** `eu.exeris.kernel.spi.http.QueryParams` — fluent builder exposing `empty()`, `add(String, Object)` (null value → skip, idiomatic for nullable filters), `addAll(String, List<?>)` (multi-value `?tag=a&tag=b`), `render()` (returns `""` when empty, otherwise `"?k1=v1&k2=v2"` with RFC 3986 query-component percent-encoding), and `isEmpty()`. Insertion-order preservation for deterministic cache keys + test stability. `AbstractQueryParamsTck` covers round-trip against the existing server-side query parser, multi-value, null-value skip semantics, and adversarial inputs (`value="evil&injected=1"`).
 - **HTTP-132 `WebClientException` predicate expansion (Community).** Add `isClientError()` (4xx), `isServerError()` (5xx), `isUnauthorized()` (401), `isForbidden()` (403), `isConflict()` (409), `isValidationError()` (422) to the existing `CommunityWebClient.WebClientException` inner class. No SPI surface change; no new exception types. Existing `isNotFound()` retained. Generator continues to use only `isNotFound()` for now; the additional predicates exist as ergonomic affordance for hand-written client code.
 - **HTTP-133 `HttpClientRequestEnricher` SPI + ADR-032.** `eu.exeris.kernel.spi.http.HttpClientRequestEnricher` — functional interface `HttpRequest enrich(HttpRequest)` with `noop()` and `chain(List<...>)` factories. Contract enforces immutable rebuild (returns a new `HttpRequest` record), zero body interaction (`LoanedBuffer` ownership untouched), and CR / LF / NUL rejection in header values (CWE-93 outbound symmetry with Security S-P0-04). `AbstractHttpClientRequestEnricherTck` covers chain composition, header-injection rejection, `ScopedValue` read-when-bound vs noop-when-unbound semantics, and null-input rejection. ADR-032 documents the contract and the rejected alternatives.
-- **HTTP-134 `CommunityKernelContextEnricher` (Community, opt-in).** Default-bundled enricher in `eu.exeris.kernel.community.http.client` reading `KernelProviders.PRINCIPAL_CONTEXT` to add `X-Tenant-Id` (from `tenantId().orElse-skip`) and `X-Principal-Id` (from `principalId()`). Unbound ScopedValue → silently skip; never throw. Bearer-token forwarding intentionally out-of-scope — the kernel does not hold the raw token (`PrincipalContext` is the parsed identity, not the JWT); applications shipping outbound Bearer must compose a custom enricher reading their own token store. W3C `traceparent` header deferred until the consolidated 1.0 GA roadmap Sprint 0.12 lands the `TraceContext` ScopedValue slot.
+- **HTTP-134 `CommunityKernelContextEnricher` (Community, opt-in).** Default-bundled enricher in `eu.exeris.kernel.community.http.client` reading `KernelProviders.PRINCIPAL_CONTEXT` to add `X-Tenant-Id` (from `tenantId().orElse-skip`) and `X-Principal-Id` (from `principalId()`). Unbound ScopedValue → silently skip; never throw. Bearer-token forwarding intentionally out-of-scope — the kernel does not hold the raw token (`PrincipalContext` is the parsed identity, not the JWT); applications shipping outbound Bearer must compose a custom enricher reading their own token store. No W3C `traceparent` header: no `TraceContext` ScopedValue slot exists; the slot belongs to *Telemetry: OTLP Metrics Export and Distributed Tracing*.
 - **HTTP-135 `CommunityWebClient` new constructor + DI Javadoc.** Add `CommunityWebClient(HttpClientEngine, MemoryAllocator, ObjectMapper, HttpClientRequestEnricher)` as the four-arg constructor; the existing three-arg constructor delegates with `HttpClientRequestEnricher.noop()` to preserve ADR-026's "no implicit behaviour" surface. Extend `CommunityWebClientIntegrationTest` to assert tenant-scoped requests arrive at the in-process handler with `X-Tenant-Id` headers. Add `community/http/client/package-info.java` documenting the canonical engine acquisition pattern: `HttpKernelProviders.httpClientEngine().orElseThrow(...)` (engine is bound by `CommunityHttpSubsystem` when `HttpConfig.mode()` is `CLIENT` or `DUAL`) and a four-arg construction example showing `chain(...)` composition with a hypothetical `BearerForwardingEnricher`.
 - **TOOL-136 `KernelClientGenerator` emission update (cross-repo `exeris-tooling`).** Update `exeris-tooling/exeris-codegen-java/src/main/java/eu/exeris/tooling/codegen/java/kernel/KernelClientGenerator.java` to emit `UriTemplate.of("/api/v1/widgets/{id}").resolve("id", id)` in place of `BASE_PATH + "/" + id` (lines 107, 173, 185 in current source) and `QueryParams.empty().add("page", page).add("size", size).render()` in place of `BASE_PATH + "?page=" + page + "&size=" + size` (line 131). Generator's `WEB_CLIENT` `ClassName` constant already migrated to `CommunityWebClient` via ADR-026 amendment; this change pins the emitted code to the new SPI primitives without touching that import. Lands as a separate PR in `exeris-tooling`, sequenced after the kernel-side SPI publication.
 
@@ -1178,6 +1202,15 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Merge Gate:** Abstract TCK for hot-reload contract (dynamic-key change → listener notified; non-dynamic-key change → reject) passes; Community binding green; no leaked file handles under sustained churn.
 
+**Status (v0.13): PARTIALLY DELIVERED — the registry reloads, the provider seam does not.** A
+full boot starts Core's `DynamicConfigFileWatcher` (a `WatchService` on a virtual thread) whenever
+the config directory exists (`exeris.config.dir`), on any tier; it reloads keys registered with
+`KernelConfigRegistry` and refuses a non-dynamic key under `EX-CFG-1004`.
+`AbstractDynamicConfigRegistryTck` is bound in Core. `ConfigProvider.watch`, the per-provider seam,
+delivers nothing on Community: `CommunityConfigProvider.watch` is a no-op. Not delivered: a
+`ConfigChangeListener` SPI, the log-level, telemetry-sink and watermark consumers, a Community
+binding of the TCK, and the file-handle churn test.
+
 ---
 
 ### TCK: ABI Symbol Resolution Suite
@@ -1210,7 +1243,7 @@ Prior-knowledge HTTP/2 (`handlePriorKnowledge` lines 88-101) is unaffected — i
 
 **Owner:** Build / Cross-cutting.
 
-**Resolution:** Add `<execution>` `jacoco:check` with a per-module `<rule>` block. Initial v0.8 thresholds (raised toward ~85% in the 1.0 GA ramp, see `1_0-gA-roadmap-consolidated.md` row #82): SPI line ≥ 60%, Core ≥ 60%, Community ≥ 55%, TCK module ≥ 70%, Build-config ≥ 50%. Enable `-Pcoverage` in the default `build-and-verify` step so the gate fires on every push and PR. Introduce a separate `exeris-kernel-coverage-aggregate` module hosting `jacoco:report-aggregate` so a single rollup `coverage.xml` is generated for downstream tooling. Keep current opt-in HTML rendering for local inspection.
+**Resolution:** Add `<execution>` `jacoco:check` with a per-module `<rule>` block. Initial v0.8 thresholds (raised toward ~85% in the 1.0 GA ramp): SPI line ≥ 60%, Core ≥ 60%, Community ≥ 55%, TCK module ≥ 70%, Build-config ≥ 50%. Enable `-Pcoverage` in the default `build-and-verify` step so the gate fires on every push and PR. Introduce a separate `exeris-kernel-coverage-aggregate` module hosting `jacoco:report-aggregate` so a single rollup `coverage.xml` is generated for downstream tooling. Keep current opt-in HTML rendering for local inspection.
 
 **Merge Gate:** `mvn verify` in the default CI job fails when any module drops below its declared threshold; per-module XML report + aggregate XML are uploaded as CI artifacts; thresholds documented in `docs/quality/coverage-gates.md`.
 
@@ -1496,6 +1529,14 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 
 **Status (v0.9):** **DEFERRED to v0.10** (covers this + the two sibling HTTP-client entries below — Generic-Element Decode and Retry/Backoff Policy). Per the 2026-05-18 "Path B" decision, Sprint 6 was **design-only**: the codec/retry surface shape is locked by the ADR-034 family, with **zero kernel SPI commits in v0.9**. Implementation lands when a concrete external consumer or a measured zero-alloc win materialises (the merge-gate trigger above).
 
+**Status (v0.13): PARTIALLY DELIVERED — one binding, not the two the Merge Gate asks for.** The
+pair is `HttpRequestBodyEncoder` / `HttpResponseBodyDecoder` with their registries, in
+`eu.exeris.kernel.spi.http` rather than a `codec` subpackage (ADR-034, v0.8.0), covered by
+`AbstractHttpRequestBodyEncoderTck` and `AbstractHttpResponseBodyDecoderTck`. Each is bound once, by
+the Jackson binding (`CommunityJsonRequestBodyEncoder`, `CommunityJsonResponseBodyDecoder`).
+`CommunityTextResponseBodyDecoder` is a second decoder with unit tests and no TCK binding; no second
+encoder exists.
+
 ---
 
 ### HTTP Client: Generic-Element Decode (`TypeReference`-style facade overload) — deferred from v0.8
@@ -1507,6 +1548,10 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 **Resolution:** Add a generics-carrying **overload on the kernel facade** decode path — a kernel-neutral type token (analogous to Jackson `TypeReference<T>`, but implementation-blind so no Jackson type crosses the SPI boundary) that preserves the full parameterized type to the resolved decoder. This is a **facade-side overload on `KernelWebClient`, NOT a codec change in `exeris-tooling`**: the generator keeps emitting the decode call and only switches collection-returning operations to the token overload; the kernel owns the type-carrying seam and the driver's Jackson binding consumes the resolved generic type. The existing `Class<?>` path stays as the default for non-generic returns. Decide whether the token threads through the decode SPI (a parallel `decode(LoanedBuffer, <type-token>, …)`) or is resolved to a parameterized `java.lang.reflect.Type` at the facade and handed to the driver — keep it implementation-blind either way.
 
 **Merge Gate:** A `List<Widget>` round-trip (plus one `Map` / nested-generic case) decodes to the correct element type via the facade token overload; the `Class<?>` path is unchanged for non-generic types; no Jackson `TypeReference` (or any driver type) appears in an SPI signature (The Wall). Naturally rides alongside the Symmetric Body Codec multi-binding work above — same decode surface, same facade seam.
+
+**Status (v0.13): NOT STARTED.** The decode path still takes `Class<?>`
+(`HttpResponseBodyDecoder.decode(LoanedBuffer, Class<?>, …)`), and `KernelWebClient` has no
+type-token overload.
 
 ---
 
@@ -1525,6 +1570,13 @@ the same change (Obligation 9 four-method → five-method; EP step 8 `EX-DIAG-10
 - Jitter strategy and failure-mode classification (transient vs permanent — DNS resolution failure, connection reset, TLS handshake failure, application-level 5xx).
 
 **Merge Gate:** Companion ADR accepted with the above decisions documented; abstract retry TCK exercises an in-process server that fails N-1 times then succeeds, asserting the policy reaches success within budget and respects `GIVE_UP` boundaries; Community binding green; zero-leak assertion on `LoanedBuffer` lifecycle across retried requests.
+
+**Status (v0.13): DELIVERED** in v0.10.0 (ADR-045, #220) as `HttpRetryPolicy` + `RetryDecision`
+in `eu.exeris.kernel.spi.http`, the `KernelWebClient` retry loop and `CommunityHttpRetryPolicy`.
+`AbstractHttpRetryPolicyTck` is bound by `CommunityHttpRetryPolicyTckTest`;
+`KernelWebClientRetryTest` covers retry-then-success, giving up at the cap and re-encoding the body
+per attempt over a programmed engine, and `KernelWebClientRequestBodyReleaseTest` the buffer
+release across attempts.
 
 ---
 
@@ -2996,7 +3048,7 @@ is the same: check the side effect, not the exit code.
 
 **Merge Gate:** every remaining remote branch has an open PR or a written reason.
 
-**1.0 disposition:** not blocking; hygiene.
+**1.0 disposition:** 1.0-recommended; hygiene, not a release blocker.
 
 **Status (v0.12): PARTIALLY DELIVERED — and the Resolution above would not have done it.** Re-counted rather than re-quoted: `git ls-remote --heads origin` returns **20**, of which six are permanent (`main`, `preview`, `gh-pages`, `development/0.12.0`, plus `development/0.11.0` and `development/0.7.1`) and three are research branches kept deliberately. The heading keeps its number because 56 was the count on the day it was surfaced.
 
@@ -3490,12 +3542,16 @@ issue holding the measurement:
 **Owner:** Persistence (#581, #580 item 4), Flow (#582, #583), Security (#585). The tooling halves
 of each are `exeris-tooling`'s and are listed in each issue.
 
-**Resolution:** #581 and #583 are implementation plus TCK once the default is chosen; #582 needs an
-RFC; #585 and #580 item 4 are ADR rulings (ADR-012, ADR-006).
+**Resolution:** #581 and #583 are implementation plus TCK once the default is chosen; #585 and #580
+item 4 are ADR rulings (ADR-012, ADR-006). #582 needs an RFC, written in 0.13, that fixes a shape adding
+to the stable flow surface; the implementation follows 1.0, which ships with the next step fixed at
+plan compilation, as `flow.md` §"A step's next step is fixed when the plan is compiled" states.
 
 **Merge Gate:** each issue's acceptance criteria.
 
-**Status (v0.13): NOT STARTED.** The measurements are in #581–#585.
+**Status (v0.13): RULED IN PART, NOT IMPLEMENTED.** ADR-012's amendment of 2026-10-07 (proposed)
+rules #585, #611 (item 4 of #580) and #581; the ruling proposed for #583 is a comment on that issue.
+Neither #581 nor #583 is implemented, and #582's RFC is not written. The measurements are in #581–#585.
 
 ---
 
@@ -3825,7 +3881,7 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **Merge Gate:** `AbstractSecretProviderTck` covers resolve/missing/rotation; DB + JWKS + TLS read through the seam; no plaintext secret retained in a config record beyond the resolved-handle boundary; Wall preserved.
 
-**1.0 disposition:** **1.0-RECOMMENDED** (B2B production blocker) — stage-able if 1.0 docs explicitly state "secrets via config + external injection" as the supported 1.0 posture, with the SPI in v0.11.
+**1.0 disposition:** post-1.0. At 1.0 secrets reach the kernel through configuration and external injection, and the security surface 1.0 publishes does not include the seam, as [ADR-100](adr/ADR-100-spi-surfaces-stable-at-1-0.md) (proposed) states in its Context, answer 2. Adding `SecretProvider` afterwards is an addition to a stable surface, not a change to one.
 
 **Status (v0.12): NOT STARTED — and the disposition above can no longer be satisfied as written.** No `SecretProvider` type exists in SPI, Core or Community; the name appears only in this document and in [RFC-2026-09-02](rfc/RFC-2026-09-02-preview-spi-promotion.md)'s inventory of what 1.0 owes. That is the point rather than the finding: the disposition makes staging conditional on **both** halves — the 1.0 docs declaring the config-plus-external-injection posture **and** the SPI landing in v0.11. The SPI did not land in v0.11 and has not landed in v0.12, so no future work can make that sentence true; only rewriting it can. One of the two has to move — schedule the SPI, or rest the staging on the documented posture alone and say so. Recorded rather than quietly read as satisfied, which is what a conditional nobody re-checks becomes.
 
@@ -4035,7 +4091,7 @@ This is a genuine product-SPI gap rather than a stylistic one. Request/response 
 
 **Merge Gate:** RFC accepted with one shape and dissent recorded. If a surface lands: `AbstractFlowSchedulerTck` covers completion after a normal terminal state, after a compensating/failed terminal state, a timeout, an awaiter racing a park, and an awaiter that gives up before the flow settles (no leak, no orphaned registration); Community binding green.
 
-**1.0 disposition:** 1.0-recommended. Flow *is* in the 1.0 core, and "replaces the orchestration layer" is one of the two load-bearing product claims — a flow nobody can wait on weakens it. Sequenced behind the v0.11 flow-versioning and continuity work rather than ahead of it.
+**1.0 disposition:** post-1.0. 1.0 ships without a completion surface; the RFC above decides its shape afterwards, and that shape has to add to the stable flow surface rather than change it.
 
 **Status (v0.12): NOT STARTED — and no longer blocked.** The sequencing condition above is discharged: the flow-versioning and continuity work it waited on shipped in v0.11 (ADR-062, ADR-064 with amendments A4/A5), so this is ripe rather than deferred. What has not happened is the decision — `docs/rfc/` carries no flow-await document, and `FlowScheduler.schedule` still returns `void`, so there is no completion surface for anything to await on. Carried to v0.13 as a decision-only slice: the RFC is one PR and it gates every shape an implementation could take.
 
