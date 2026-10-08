@@ -9,7 +9,7 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
-import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
@@ -93,11 +93,11 @@ class ContractPhaseZeroBootstrapTest {
         CONFIG.put("environment", "production");
         AtomicReference<ExecutionContract> bound = new AtomicReference<>();
 
-        bootstrap(false).boot(() -> bound.set(KernelProviders.executionContract()));
+        bootstrap(false).boot(() -> bound.set(ContractKernelProviders.executionContract()));
 
         assertThat(bound.get().edition()).isEqualTo("community");
         assertThat(INITIALIZED).hasValue(1);
-        assertThat(KernelProviders.EXECUTION_CONTRACT.isBound()).isFalse();
+        assertThat(ContractKernelProviders.EXECUTION_CONTRACT.isBound()).isFalse();
     }
 
     @Test
@@ -105,7 +105,7 @@ class ContractPhaseZeroBootstrapTest {
     void developmentIsNotGated() throws Exception {
         AtomicReference<ExecutionContract> bound = new AtomicReference<>();
 
-        bootstrap(true).boot(() -> bound.set(KernelProviders.executionContract()));
+        bootstrap(true).boot(() -> bound.set(ContractKernelProviders.executionContract()));
 
         assertThat(bound.get().edition()).isEqualTo("community");
         assertThat(INITIALIZED).hasValue(1);
@@ -127,7 +127,7 @@ class ContractPhaseZeroBootstrapTest {
         CONFIG.put("environment", "production");
         AtomicReference<Boolean> bound = new AtomicReference<>();
 
-        bootstrap(true).inspect(() -> bound.set(KernelProviders.EXECUTION_CONTRACT.isBound()));
+        bootstrap(true).inspect(() -> bound.set(ContractKernelProviders.EXECUTION_CONTRACT.isBound()));
 
         assertThat(bound.get()).isFalse();
         assertThat(INITIALIZED).hasValue(0);
@@ -141,7 +141,7 @@ class ContractPhaseZeroBootstrapTest {
         AtomicReference<ExecutionContract> bound = new AtomicReference<>();
 
         builder(false).contractGate((config, loader) -> decided).build()
-                .boot(() -> bound.set(KernelProviders.executionContract()));
+                .boot(() -> bound.set(ContractKernelProviders.executionContract()));
 
         assertThat(bound.get()).isSameAs(decided);
     }

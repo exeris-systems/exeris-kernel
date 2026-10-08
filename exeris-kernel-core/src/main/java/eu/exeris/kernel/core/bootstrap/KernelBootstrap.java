@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
@@ -170,7 +171,7 @@ public final class KernelBootstrap {
      * done by the diagnostics provider via {@link java.util.ServiceLoader}, independent of this scope.
      * {@code isRunning()} reports {@code false} for every subsystem — the honest answer for a static
      * composition snapshot. The Phase 0 contract gate does not run, because nothing is initialized:
-     * {@link KernelProviders#EXECUTION_CONTRACT} is unbound inside {@code inspector}.
+     * {@link ContractKernelProviders#EXECUTION_CONTRACT} is unbound inside {@code inspector}.
      *
      * @param inspector the read-only introspection runnable
      * @throws BootstrapException if config resolution or topology resolution fails
@@ -252,7 +253,7 @@ public final class KernelBootstrap {
     private ScopedValue.Carrier kernelScope(ConfigProvider config, boolean fullBoot) {
         ScopedValue.Carrier scope = ScopedValue.where(KernelProviders.CURRENT_CONFIG, config);
         return fullBoot
-                ? scope.where(KernelProviders.EXECUTION_CONTRACT, contractGate.apply(config, classLoader))
+                ? scope.where(ContractKernelProviders.EXECUTION_CONTRACT, contractGate.apply(config, classLoader))
                 : scope;
     }
 

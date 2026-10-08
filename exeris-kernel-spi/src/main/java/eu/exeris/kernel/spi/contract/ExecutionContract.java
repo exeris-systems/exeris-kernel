@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
  *
  * <p>Conforms to ADR-088 and ADR-089. Decided by the kernel's contract gate, a bootstrap step that runs
  * before any subsystem is initialized (ahead of the FOUNDATION phase), bound to
- * {@link eu.exeris.kernel.spi.context.KernelProviders#EXECUTION_CONTRACT}, and immutable for the lifetime
+ * {@link eu.exeris.kernel.spi.contract.ContractKernelProviders#EXECUTION_CONTRACT}, and immutable for the lifetime
  * of the JVM.
  *
  * <p>{@link #assertCapability(String)} and {@link #assertEnvironment(String)} are start-time checks: call

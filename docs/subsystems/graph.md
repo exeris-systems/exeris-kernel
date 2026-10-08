@@ -38,6 +38,7 @@ logic.
 - **No-Arena Enforcement:** All graph-related native memory is carved exclusively from L0 `MemoryAllocator` slabs.
   Drivers are prohibited from opening independent FFM `Arena` instances, ensuring full visibility to
   `GlobalMemoryArbiter` and JFR Telemetry.
+- **Slots:** the `ScopedValue` slots are `GraphKernelProviders.GRAPH_PROVIDER` and `GraphKernelProviders.GRAPH_ENGINE`, read through `GraphKernelProviders.graphEngine()`; the `KernelProviders` names of the same slots are deprecated for removal in the first 1.0 release candidate (ADR-100 §3).
 
 ---
 

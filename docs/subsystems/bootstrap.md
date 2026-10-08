@@ -241,7 +241,7 @@ to declare it.
 > before the orchestrator runs — it is not a `Subsystem`. `Exceptions` is not a Subsystem layer.
 >
 > **The contract gate** is not a `Subsystem` either. `KernelBootstrap.boot()` runs `ContractBootstrapStep`
-> after Config and before the orchestrator, and binds its result to `KernelProviders.EXECUTION_CONTRACT` for
+> after Config and before the orchestrator, and binds its result to `ContractKernelProviders.EXECUTION_CONTRACT` for
 > the whole kernel scope. The environment comes from the configuration key `environment` (`development` when
 > unset; the kernel profile plays no part). With no license manifest the kernel runs under the Community
 > contract in every environment, unless the environment is `production`, `production-load-sim` or `dr-hot`
@@ -314,7 +314,7 @@ halts.
 - Offers `KernelBootstrap.inspect(Runnable)`, which resolves the sorted subsystem inventory without calling
   any `initialize()` or `start()`, and without running the contract gate
 - Runs the Phase 0 contract gate (`eu.exeris.kernel.core.contract.ContractBootstrapStep`) before the
-  orchestrator, and binds `KernelProviders.EXECUTION_CONTRACT`
+  orchestrator, and binds `ContractKernelProviders.EXECUTION_CONTRACT`
 
 ---
 

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.tck.contract;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import org.junit.jupiter.api.DisplayName;
@@ -79,7 +80,7 @@ public abstract class AbstractEntitlementRequirementTck {
     @DisplayName("It answers with no kernel service bound, as it must before the kernel scope exists")
     void needsNoKernelService() throws Exception {
         assertThat(KernelProviders.CURRENT_CONFIG.isBound()).isFalse();
-        assertThat(KernelProviders.EXECUTION_CONTRACT.isBound()).isFalse();
+        assertThat(ContractKernelProviders.EXECUTION_CONTRACT.isBound()).isFalse();
 
         assertThat(newProvider().requiredCapabilities()).isNotEmpty();
     }

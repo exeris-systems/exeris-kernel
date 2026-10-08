@@ -19,7 +19,7 @@ import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
-import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.time.TimeSource;
 
 import java.time.Clock;
@@ -62,7 +62,7 @@ final class CommunityOidcTokenValidator implements TokenValidator {
      */
     /* default */ CommunityOidcTokenValidator(
             Map<String, RSAPublicKey> keysByKid, String expectedIssuer, String expectedAudience) {
-        this(keysByKid, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
+        this(keysByKid, expectedIssuer, expectedAudience, TimeKernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
@@ -73,7 +73,7 @@ final class CommunityOidcTokenValidator implements TokenValidator {
 
     /* default */ CommunityOidcTokenValidator(
             JwksKeyResolver keyResolver, String expectedIssuer, String expectedAudience) {
-        this(keyResolver, expectedIssuer, expectedAudience, KernelProviders.timeSource().asClock());
+        this(keyResolver, expectedIssuer, expectedAudience, TimeKernelProviders.timeSource().asClock());
     }
 
     /* default */ CommunityOidcTokenValidator(
