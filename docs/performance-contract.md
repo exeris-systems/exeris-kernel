@@ -59,7 +59,7 @@ Under **GraalVM native-image (SubstrateVM)** the contract is **different, not br
 **Consequences for benchmarking and claims:**
 
 - The targets in §2.1–§2.2 apply on **HotSpot/C2** (the *throughput tier*). Any benchmark asserting the zero-allocation or RPS-per-core claims **MUST** run on HotSpot/C2 and record the JIT tier. A native-image measurement of these specific claims is **out of contract** and must not be presented as a refutation of them.
-- **native-image is the *edge/lightweight tier*** — fast startup without warmup, small footprint, small image — a separately-scoped performance profile, not a regression of this one. Its enablement is a post-1.0 gated track (see ROADMAP "Road to 1.0" §"Scope Discipline & Declared Stances" — the Native-image / GraalVM stance).
+- **native-image is the *edge/lightweight tier*** — fast startup without warmup, small footprint, small image — a separately-scoped performance profile, not a regression of this one. Its enablement is planned for 0.13 as an opt-in build under [ADR-103](adr/ADR-103-native-image-opt-in-build.md) (proposed) and is not available in 0.12; the HotSpot/C2 pin above is unchanged by it, and native-image startup and footprint figures are published as edge-tier measurements, not as SLOs.
 
 Scoping the contract to the execution tier it was measured on **defends the claim**: an unscoped "zero-alloc" assertion benchmarked under native-image would read as false when it is merely measured against the wrong contract.
 
