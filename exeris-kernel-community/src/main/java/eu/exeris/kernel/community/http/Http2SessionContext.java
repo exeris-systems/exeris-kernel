@@ -266,7 +266,15 @@ final class Http2SessionContext implements AutoCloseable {
         assembler.validateContinuationMode(header);
     }
 
-    // HPACK decode errors surface as RuntimeException; marked as protocol-invalid for GOAWAY.
+    /**
+     * Decodes the completed header block into a request and resets the assembler.
+     *
+     * <p>A block that overran a size bound ({@code http.maxHeaderListSize},
+     * {@code http.maxStringLiteralSize}) was still read to its end, so the shared HPACK dynamic
+     * table is in step with the peer; the result is marked {@code headersTooLarge} and carries no
+     * fields. A block that failed to decode any other way leaves that table untrustworthy, and
+     * surfaces as {@link Http2CompressionException} for the caller to turn into a connection error.
+     */
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     /* default */ Http2DecodedRequest decodePendingRequest() {
         if (!assembler.isComplete()) {
@@ -278,8 +286,17 @@ final class Http2SessionContext implements AutoCloseable {
         try {
             decoder.decode(block, 0, (int) block.byteSize(),
                     (name, value, _) -> pendingHeaders.accept(name, value));
-        } catch (RuntimeException _) {
-            pendingHeaders.invalidate();
+        } catch (HpackDecoder.HpackDecodingException hpack) {
+            assembler.reset();
+            pendingEndStream = false;
+            if (hpack.isSizeLimitExceeded()) {
+                return new Http2DecodedRequest(streamId, null, "", List.of(), false, true);
+            }
+            throw new Http2CompressionException(hpack);
+        } catch (RuntimeException cause) {
+            assembler.reset();
+            pendingEndStream = false;
+            throw new Http2CompressionException(cause);
         }
         assembler.reset();
         pendingEndStream = false;

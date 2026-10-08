@@ -19,12 +19,22 @@ import java.util.List;
  *                 string when absent
  * @param headers  the regular (non-pseudo) headers, in the order they appeared on the wire
  * @param valid    {@code false} when the block violated RFC 7540 §8.1.2's pseudo-header rules or
- *                 HPACK decoding failed; a caller must respond {@code 400} rather than rely on the
- *                 other fields, which may still carry partially-decoded values
+ *                 exceeded a header size bound; a caller must refuse the stream rather than rely on
+ *                 the other fields, which may still carry partially-decoded values
+ * @param headersTooLarge {@code true} when the block was well formed but its field section, or one
+ *                 field, exceeded a configured size bound: the refusal is
+ *                 {@code 431 Request Header Fields Too Large} rather than {@code 400}
  */
 record Http2DecodedRequest(int streamId,
                            HttpMethod method,
                            String path,
                            List<HttpHeader> headers,
-                           boolean valid) {
+                           boolean valid,
+                           boolean headersTooLarge) {
+
+    /** A decoded request that is not a size refusal. */
+    /* default */ Http2DecodedRequest(int streamId, HttpMethod method, String path, List<HttpHeader> headers,
+                                       boolean valid) {
+        this(streamId, method, path, headers, valid, false);
+    }
 }
