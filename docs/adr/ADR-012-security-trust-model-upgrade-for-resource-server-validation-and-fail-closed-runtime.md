@@ -1,3 +1,12 @@
+---
+title: "ADR-012: Security Trust Model Upgrade for Resource-Server Validation and Fail-Closed Runtime"
+type: adr
+slug: adr/ADR-012
+visibility: public
+owning-repo: exeris-kernel
+status: active
+---
+
 # ADR-012: Security Trust Model Upgrade for Resource-Server Validation and Fail-Closed Runtime
 
 | Attribute      | Value                                                                                  |
@@ -7,6 +16,7 @@
 | **Date**       | 2026-03-31                                                                             |
 | **Amended**    | 2026-06-10 — §4a/§9: incomplete/unrecognized/malformed isolation claim is now terminal-deny, not SHARED-downgrade (closes the S-P0-07 fail-OPEN storage-isolation finding) |
 | **Amended**    | 2026-07-29 — §4a/§4b/§9/§10: adds the **shared-scope tier** as an orthogonal row-visibility dimension (`sharedScopeKey`), rules its carrier shape / claim name / binding-gate interpretation, and re-points the isolation mapping site from `SecurityProvider.authenticate()` to `IdentityStorageMapping.fromClaims` per ADR-040 (implements `RFC-2026-07-02`) |
+| **Amended**    | 2026-10-07 — **PROPOSED**, §4c/§4b.4/§10/§11: rules the persistence-boundary questions of the 0.13 milestone — no principal session key and no field-level encryption at rest in the kernel at 1.0 (#585), the write check pins the shared-scope tag (#611), what an absent session key yields, and a boot check on a role that bypasses row-level security (#581) |
 | **Driven By**  | ADR-007, performance contract, subsystem contracts security/transport/persistence      |
 | **Compliance** | [Strategic Pillar: Secure Fail-Closed Resource-Server Trust](../whitepaper.md)        |
 
@@ -105,6 +115,8 @@ the RFC deferred to this amendment. Implementation status per sub-shape is track
   owner's row.
 - Cross-tenant mutation of another owner's row is **out of scope** for this contract and MUST NOT be
   introduced by a binding as an extension.
+- *(Amendment proposed 2026-10-07: the write pin also covers the shared-scope tag a written row
+  carries — see §4c.2.)*
 
 ### 4b.5 Fail-closed inheritance (non-negotiable, unchanged from §4a)
 - **Absent** `sharedScopeKey` → today's behaviour, tenant-private. Existing deployments are unaffected
@@ -158,6 +170,257 @@ knowing whether it can be. This section rules how that is known.
   (deny reason `shared-scope-malformed`, pinned by `AbstractSecurityProviderTck`); the two checks stay
   separate because a wrong-typed strategy weakens the provisioned tier while a wrong-typed scope withholds
   visibility from it, so passing one says nothing about the other.
+
+## 4c) Persistence-Boundary Rulings (amendment PROPOSED 2026-10-07)
+
+Four questions about what the kernel promises at the database session, raised by #585, #611 (item 4 of
+#580) and #581, plus the behaviour of an absent session key. Each states the options, the
+recommendation, and the reasons. Nothing in this section is implemented: every behaviour change it
+names is planned for 0.13. Points still open are marked **Ruling required**.
+
+Measured state the rulings build on:
+
+- The kernel publishes exactly two session keys, `ConnectionInterceptor.SESSION_KEY_TENANT_ID`
+  (`exeris.tenant_id`) and `ConnectionInterceptor.SESSION_KEY_SHARED_SCOPE` (`exeris.shared_scope`).
+- `RlsConnectionInterceptor.publishSessionKeys` binds both on every strategy in one statement,
+  `SELECT set_config('exeris.tenant_id', ?, false), set_config('exeris.shared_scope', ?, false)`. The
+  third argument `false` makes both settings **session-scoped**, not transaction-scoped. An absent or
+  blank value is bound as `''`. The `[none]` string the class also holds is a diagnostic value for
+  `EX-PERS-5006` and is never published.
+- `StorageContext` carries `isolationKey`, `schemaName`, `dataSourceKey`, `sharedScopeKey` and a
+  `String`-valued `attributes()` map, and no principal. The `attributes()` javadoc states that its value
+  type is `String` so that no identity object can cross the persistence boundary.
+- A tenant-less context is a supported input. `ImmutableStorageContext.GLOBAL` is what
+  `KernelProviders` returns when no context is bound, what `StorageContextBridge` derives for a principal
+  without a tenant, and the default of `TransactionOrchestrator`. `CommunityPersistenceEngine` skips its
+  interceptor-presence check for a blank isolation key.
+- The kernel ships no RLS policy (§4b.7). The Community migrations under `db/migration/` define no
+  policy and no tenant column. The only policy text the kernel publishes is the reference in the
+  `RlsConnectionInterceptor` javadoc, which the four Community integration tests install
+  (`CommunityPersistenceTenantIsolationIT`, `CommunityPersistenceSharedScopeIT`,
+  `CommunityPersistenceIsolationLeakTckIT`, `CommunityRequestScopeBypassIsolationIT`), all on `TEXT`
+  tenant columns.
+- The `crypto` SPI package holds TLS transport types only (`KernelCryptoProvider`, `CryptoProviderConfig`,
+  `TlsEngine` and its result and state types). No main source names a key registry.
+- No main source reads `rolsuper` or `rolbypassrls`. `KernelErrorCodes` defines `EX-PERS-5001` to
+  `EX-PERS-5008`; `EX-PERS-5009` is unused.
+
+### 4c.1 Principal session key and field-level encryption at rest (#585)
+
+**Question 1: does a contracted principal session key, for example `exeris.principal_id`, cross the Wall?**
+
+- Option A: the RLS interceptor publishes a third key from a principal field added to `StorageContext`.
+- Option B: the kernel publishes a third key from a reserved `attributes()` entry that the security edge
+  fills.
+- Option C: **no principal key at 1.0.** The kernel publishes the tenant key and the shared-scope key
+  only. Policies keyed on a principal (`OWNER`, `TEAM`, `HIERARCHY`, `DEPARTMENT`, and a `CUSTOM`
+  predicate that needs one) belong to the application or its generated binding.
+
+**Recommendation: Option C.**
+
+- Option A adds identity to the carrier that is identity-blind by design. `StorageContext` answers where
+  rows live and who may read them as a tenancy matter. A principal field makes the persistence boundary
+  depend on the security model, which is the coupling the `String`-only `attributes()` map exists to
+  prevent.
+- Option B moves the same coupling into a map key. The kernel would then promise a key whose meaning is
+  a principal, filled by the security edge, read by the persistence edge: a contract across the Wall with
+  a weaker type.
+- A principal key would also have to meet every guarantee §4c.3 states for the existing two, with
+  publication on every strategy, clearing on reuse and a defined absent value, and a TCK matrix to
+  prove them. `TEAM`, `HIERARCHY` and `DEPARTMENT` need more than one identifier per request, which
+  one text setting cannot carry without the kernel defining an encoding for organisational structure.
+- The refusal leaves the route the SPI already has. `PersistenceEngine.registerInterceptor` accepts any
+  `ConnectionInterceptor`, so an application can publish its own session key under its own name. That
+  key is not a kernel contract: the kernel makes no promise about it, and an interceptor that
+  publishes one inherits the obligation `RlsConnectionInterceptor` meets, publishing the key on every
+  acquisition, absence included, because a session-scoped setting survives connection reuse.
+- The refusal is additive-safe: a principal key added after 1.0 changes no existing signature.
+
+For the SDK: `TENANT_ISOLATION` remains expressible against `exeris.tenant_id`. The principal-scoped
+policy values have no kernel contract to compile against. The SDK either drops or narrows them, or
+documents them as compiled against an application-owned key.
+
+**Question 2: is field-level encryption at rest with a key registry kernel scope, and in which tier?**
+
+- Option A: a Community SPI seam (an encryption service plus a key registry resolving `@Encrypted.keyId`).
+- Option B: an Enterprise-tier capability.
+- Option C: **outside kernel scope at 1.0, in every tier.**
+
+**Recommendation: Option C.** The kernel's cryptography is TLS transport. Encryption at rest needs key
+storage, rotation, wrapping and an access policy, which is a product of its own, and once a kernel SPI
+names a scheme the kernel has to carry it. Tooling must not invent a scheme either, so `@Encrypted` has
+no kernel target at 1.0.
+
+- **Ruling required:** whether Option B stays open after 1.0. If it does, it needs its own ADR. This
+  amendment records only that no tier claims it at 1.0.
+
+### 4c.2 The write check pins the shared-scope tag (#611, item 4 of #580)
+
+The reference owner policy pins `tenant_id` on write and nothing else. A tenant can therefore insert or
+update a row it owns carrying any `shared_scope` value. That includes a scope it does not hold, which
+makes the row readable by that scope's members. A request can widen visibility past what the deployment
+published, which §4b.4 forbids for reads and does not address for writes.
+
+- Option (a): **`WITH CHECK` pins the tag.** A written row is either tenant-private (`''`, or `NULL`
+  where the schema allows it) or tagged with the scope the request published.
+- Option (b): the tag is application-controlled. The reason is recorded, and `docs/subsystems/persistence.md`
+  names the consequence: any owner can publish its rows into any scope.
+- Option (c): the kernel validates the tag. Rejected: the kernel never sees the statement's column values,
+  and §4b.7 already rules that the kernel cannot introspect the deployment's policy.
+
+**Recommendation: Option (a).** It is the fail-closed reading of §4b.4: the widening is a property of
+the token (`x-exeris-shared-scope`, verified, mapped at one site, denied when not enforced). Option (b)
+would let a row's own column grant visibility that no token carried. The reference owner policy becomes:
+
+```sql
+CREATE POLICY tenant_isolation ON table_name
+  USING (tenant_id = current_setting('exeris.tenant_id', true))
+  WITH CHECK (tenant_id = current_setting('exeris.tenant_id', true)
+              AND COALESCE(shared_scope, '') IN ('', current_setting('exeris.shared_scope', true)));
+```
+
+The tenant arm shown is today's `TEXT` form. §4c.3 rules the form the tenant arm takes. Under a published
+scope `S` the check admits `''` and `S`. Under a cleared scope (`''`) it admits `''` only. Under a setting
+that was never published (`NULL`) a scoped row evaluates to `NULL` and is refused. The `FOR SELECT`
+widening policy is unchanged.
+
+Planned for 0.13 with the ruling: the `RlsConnectionInterceptor` reference text,
+`CommunityPersistenceSharedScopeIT` installing the same check, and `AbstractSharedScopeAccessMatrixTck`
+cells for (i) an insert of an own row tagged with a scope the request does not hold, refused, (ii) a
+re-tag of an own row to such a scope, refused, and (iii) an own row written with the published scope
+and with `''`, accepted.
+
+- Consequence: `WITH CHECK` sees only the new row, so an owner whose request carries no scope, or a
+  different one, cannot update its own row tagged `S` and keep the tag. It must re-tag to `''` or to its
+  current scope. A per-deployment trigger comparing old and new rows could relax this. The kernel ships
+  no DDL and does not offer one.
+- **Ruling required:** whether an owner may un-share its own row (re-tag `S` → `''`) from a request that
+  does not carry `S`. The recommended check allows it, because narrowing one's own row's visibility
+  widens nothing. Refusing it means comparing the old row, which only a trigger can do.
+
+### 4c.3 What an absent session key yields
+
+Under the reference `TEXT` policy, a request without a tenant publishes `exeris.tenant_id = ''`, the
+predicate `tenant_id = ''` matches no real tenant's row, and the statement **returns an empty result
+with no error**. A mis-scoped read therefore looks like a read of an empty table. Two further
+consequences follow from the policy text. They are derived, not measured on a live database here:
+
+- The same predicate in `WITH CHECK` admits a row whose `tenant_id` is `''`. A tenant-less request can
+  write a row that every later tenant-less request reads back.
+- On a `uuid` tenant column the unguarded cast `current_setting('exeris.tenant_id', true)::uuid` raises
+  `invalid input syntax for type uuid` on `''`. The `RlsConnectionInterceptor` javadoc currently
+  recommends `NULLIF(...)::uuid`, which turns that error back into an empty result.
+
+Options:
+
+- Option A: the kernel refuses to open a connection for a tenant-less context while RLS is enabled.
+  Rejected: tenant-less contexts are a supported input (system paths, unauthenticated paths,
+  `TransactionOrchestrator`'s default), and most of them touch no scoped table. The kernel cannot tell
+  which statements will.
+- Option B: absence yields an empty result, documented as the contract. This is today's behaviour and
+  costs nothing. Confidentiality holds, but a missing tenant binding stays silent, and write-side
+  absence is open on `TEXT`.
+- Option C: **the kernel's promise ends at publication. The reference policy makes an absent tenant key
+  raise.** The shared-scope arm keeps matching nothing, because absent scope is the legitimate
+  tenant-private case (§4b.5).
+
+**Recommendation: Option C.** The kernel promises, for every connection an engine hands out while the
+RLS interceptor is installed:
+
+1. both session keys are published by this acquisition, on every strategy, and never carry the previous
+   borrower's value;
+2. an absent or blank value is published as `''`, never as `NULL` and never as a sentinel;
+3. a tenant-less context is not refused at the persistence boundary.
+
+What `''` yields is the policy's decision, and the kernel's reference policy, planned for 0.13, decides
+it as follows:
+
+- **Tenant arm:** absence raises. On `uuid` columns the unguarded cast does this, and the `NULLIF` advice
+  is withdrawn from the reference. On `TEXT` columns, and for a message that names the cause, a
+  deployment-defined function fails the statement:
+
+  ```sql
+  CREATE FUNCTION exeris_required_setting(key text) RETURNS text
+    LANGUAGE plpgsql STABLE AS $$
+  DECLARE v text := current_setting(key, true);
+  BEGIN
+    IF v IS NULL OR v = '' THEN
+      RAISE EXCEPTION 'session key % is not published', key USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    RETURN v;
+  END $$;
+  -- USING / WITH CHECK (tenant_id = (SELECT exeris_required_setting('exeris.tenant_id')))
+  ```
+
+  The uncorrelated subquery lets the planner evaluate the function once per statement rather than per
+  row. The cost has not been measured. Whether a statement that reaches no row still raises depends on
+  the plan, and has not been measured either.
+- **Shared-scope arm:** `NULLIF(current_setting('exeris.shared_scope', true), '')` is unchanged. An
+  absent scope matches no row, which is the tenant-private case.
+
+Reasons: under Option B a missing tenant binding stays silent at the one layer that can see it, and
+write-side absence is left open. A raise turns both into a failed statement that the kernel already
+reports (`EX-PERS-5003`). Kernel-owned tables carry no policy, so the system paths in Option A's
+rejection are unaffected.
+
+- **Ruling required:** whether raise-on-absence is a **MUST** for a policy that claims conformance (then
+  `AbstractSharedScopeAccessMatrixTck` and the tenant-isolation suites gain an absent-tenant cell
+  asserting a refusal), or a **SHOULD** in the reference only (then no TCK cell, and Option B remains a
+  conforming deployment choice).
+- **Ruling required:** whether the reference text of `exeris_required_setting` is published in the
+  `RlsConnectionInterceptor` javadoc and `docs/subsystems/persistence.md`, or only described there. In
+  either case the kernel does not install it (§4b.7).
+
+### 4c.4 Boot check on a role that bypasses row-level security (#581)
+
+A role with `SUPERUSER` or `BYPASSRLS` skips every policy, `FORCE`d ones included, so RLS isolation
+then rests on application code alone and nothing reports it. Only the engine that owns the connection
+can check the role.
+
+Options for the default:
+
+- Option A: **refuse the boot** unless the deployment opts into a downgrade.
+- Option B: log an error and record a JFR event, and continue.
+- Option C: no check (today).
+
+**Recommendation: Option A**, with a configuration key that downgrades it to Option B. §5 already denies
+readiness when a trust prerequisite is missing. An RLS deployment whose role bypasses RLS has the same
+standing: the isolation it configured (`persistence.rlsEnabled`) is not applied. A deployment that must
+connect that way, for example a local quick-start as the database superuser, says so in configuration
+and is told about it on every boot.
+
+Proposed shape, planned for 0.13; the key, the code and the event are **to be registered** with the
+implementation:
+
+- **When:** on the first connection of each pool the engine creates while the RLS interceptor is
+  installed. Each pool may log in as a different role, and the check costs one query per pool, never per
+  request.
+- **What:** `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`. Either value
+  `true` is a bypass. An engine whose database is not PostgreSQL skips the check.
+- **Key:** `persistence.rlsAllowBypassRole`, `boolean`, default `false`, immutable. The name follows the
+  camelCase `persistence.*` family that `persistence.rlsEnabled` and `persistence.perTenantPooling`
+  belong to.
+- **Refusal:** `PersistenceProviderException` with a new code **`EX-PERS-5009`**, which takes the next free
+  number in the `EX-PERS-5xxx` family. rawArgs: provider name, role name, and which attribute was found.
+  A separate code from `EX-PERS-5001` (bootstrap failure), because the operator's remedy is a role
+  change, not a driver or connection fix.
+- **Downgrade:** with the key `true`, an ERROR log line and a JFR event in the persistence namespace,
+  proposed as `eu.exeris.kernel.persistence.RlsBypassRole`, carrying the same three fields.
+- **TCK / IT:** a PostgreSQL integration test connecting as a `BYPASSRLS` role sees the refused boot
+  by default and the error plus the event with the key set; a `NOSUPERUSER NOBYPASSRLS` role boots
+  unchanged.
+
+Limits, stated so the check is not read as more than it is:
+
+- It observes `current_user` at the first connection. A later `SET ROLE` issued by application SQL is
+  not observed. Role attributes are not inherited through membership in PostgreSQL, but `SET ROLE`
+  assumes them.
+- It does not detect the table-owner exemption. A role that owns an un-`FORCE`d table is exempt from
+  that table's policies without either attribute. That case stays documented (`FORCE` is required),
+  because detecting it needs the policy-catalogue introspection §4b.7 rejects.
+
+- **Ruling required:** the key name, and whether the downgrade is a boolean or a two-valued
+  `refuse` / `warn` setting.
 
 ## 5) Fail-Closed Lifecycle Contract
 - Bootstrap readiness is denied if required trust anchors, JWKS resolution path, or validation dependencies are unavailable.
@@ -238,6 +501,10 @@ knowing whether it can be. This section rules how that is known.
 - **Implemented now (§4b.7 enforceability signal, v0.11):** the kernel ships no RLS policy and cannot introspect the deployment's, so the deployment asserts enforceability itself via `exeris.security.shared-scope.enforced` (`IdentityStorageMapping.SHARED_SCOPE_ENFORCED_KEY`). `fromClaims` carries a declared shared scope onto the resolved context where the deployment has opted in, and denies it everywhere else. The tier is reachable end-to-end from that point: carrier, claim, mapping, and RLS enforcement all exist and are connected. Absent opt-in the behaviour is unchanged, so no existing deployment moves off tenant-private.
 - **Implemented now (§4b.7 wrong-typed shared scope, v0.11):** the driver-side type check that closes §4b.7's own consequence. `VerifiedClaims.claim` reports a wrong-typed claim as absent, so a malformed shared scope would reach the mapping as "none declared" and resolve to tenant-private — harmless while every declared scope was denied, and not harmless once §4b.7 made that deny conditional, since an enforcing deployment would then silently withhold visibility the caller asked for. The check sits in the binding's token validation next to the `ISOLATION_STRATEGY` one (§4a enforcement layers), denying `shared-scope-malformed`, and is pinned for every binding by `AbstractSecurityProviderTck` rather than left to each one's diligence. Both axes are checked because the structural cause is shared but the damage is not: a wrong-typed strategy weakens the tier, a wrong-typed scope withholds from it.
 - Implemented now (repository state): Community `PersistenceEngine` routes DEDICATED strategy to per-tenant pools from `PersistenceConfig.dedicatedDataSources()`.
+- **Planned for 0.13 (§4c, PROPOSED):** the scope-pinning `WITH CHECK` in the reference policy, the
+  Community binding and the shared-scope matrix (§4c.2); the raise-on-absent-tenant reference policy
+  (§4c.3); the bypass-role boot check with `persistence.rlsAllowBypassRole`, `EX-PERS-5009` and its JFR
+  event (§4c.4). None of it is implemented.
 - Repository-state disclaimer: this ADR defines target contract semantics even where implementation is currently partial, staged, or temporarily embedded.
 - Planned target state: unified JWT/JWS/JWKS/OIDC resource-server trust pipeline with deterministic deny on uncertainty, fail-closed lifecycle gates, explicit rotation TTL/staleness/outage semantics, and mandatory typed telemetry categories.
 - Anti-drift rule: if code differs from ADR text, update implementation plus TCK or amend ADR before merge.
@@ -259,6 +526,27 @@ knowing whether it can be. This section rules how that is known.
 - Cost: the canonical `ImmutableStorageContext` constructor grows to six components (§4b.2 migration note).
 - Cost: the RLS predicate becomes asymmetric (read widens, write pins). This is the honest cost of the
   write model and is why §9 demands an access **matrix** rather than a happy-path case.
+
+### Persistence-boundary rulings (amendment PROPOSED 2026-10-07, §4c)
+- Benefit: the kernel's promise at the database session is stated as a list (two keys, published per
+  acquisition, `''` for absence), so a binding knows what it can rely on and what its policy decides.
+- Benefit: a token is the only source of widened visibility. A row's own column can no longer grant it
+  (§4c.2).
+- Cost: principal-scoped policies have no kernel contract at 1.0 (§4c.1). The SDK narrows or drops
+  those values, or compiles them against application-owned keys the kernel does not guarantee.
+- Cost: an owner whose request does not carry a scope cannot keep its own row in that scope across
+  an update (§4c.2).
+- Cost: under §4c.3, a tenant-less statement against a scoped table fails rather than returning
+  nothing. A deployment that relied on the empty result sees errors after adopting the reference.
+- Cost: under §4c.4, a deployment connecting as a superuser with RLS enabled no longer boots until it
+  sets `persistence.rlsAllowBypassRole` or changes the role.
+- **SPI javadoc drift (correction planned for 0.13, not made here).** `StorageContext` (its strategy
+  table and the `isolationKey()` javadoc), `PersistenceEngine.openConnection`'s `@implSpec`,
+  `ConnectionInterceptor` (its strategy table and its example), the `KernelProviders` example and the
+  `KernelErrorCodes.EX_PERS_5006` javadoc describe `SET LOCAL exeris.tenant_id`, which is
+  transaction-scoped. The implementation issues session-scoped `set_config(..., false)`, and §4c.3's
+  guarantees depend on that scope. `ConnectionInterceptor`'s table also lists DEDICATED as a no-op,
+  where `RlsConnectionInterceptor` publishes both keys on DEDICATED too.
 
 ### Dissent recorded
 - **On the carrier (§4b.2).** The composite `Scope` record has a real argument: it names the concept

@@ -1,3 +1,12 @@
+---
+title: "ADR-065: The SPI stability declaration is machine-enforced"
+type: adr
+visibility: public
+owning-repo: exeris-kernel
+status: active
+slug: adr/ADR-065
+---
+
 # ADR-065: The SPI stability declaration is machine-enforced
 
 | Attribute       | Value                                                                                    |
@@ -5,6 +14,7 @@
 | **Status**      | **ACCEPTED**                                                                             |
 | **Deciders**    | Arkadiusz Przychocki                                                                     |
 | **Date**        | 2026-08-05                                                                               |
+| **Amended**     | 2026-10-07 — **PROPOSED**: A1, release candidates and the SPI freeze before 1.0.0 — see [Amendments](#amendments) |
 | **Scope**       | `kernel/build`                                                                           |
 | **Owning Repo** | `exeris-kernel`                                                                          |
 | **Driven By**   | [`docs/stability-matrix.md`](../stability-matrix.md) — a maturity declaration with nothing checking it; the 1.0-readiness audit's "japicmp absent" table-stakes gap |
@@ -47,6 +57,9 @@ A build gate, `tools/spi-api-diff/`, sits outside the Maven reactor (the placeme
 already established for CI tooling) and runs as its own CI job. It compares the public SPI at two
 revisions with [japicmp](https://siom79.github.io/japicmp/) and **fails the build on a
 binary-incompatible change to a surface the stability matrix declares `stable`**.
+
+*(Amendment A1, proposed 2026-10-07: which tag is "the last release" once release candidates exist,
+and what the gate freezes between a candidate and 1.0.0 — see [Amendments](#amendments).)*
 
 Four rulings carry the decision.
 
@@ -114,6 +127,8 @@ The matrix is allowed to be wrong. It is not allowed to be quietly wrong.
 - **The pre-1.0 caveat stands.** Minor versions may still carry observable contract additions; this
   gate does not convert `stable` into a semver-binding promise before 1.0. It makes the *intent*
   checkable, which is a different and smaller claim.
+  *(Amendment A1, proposed 2026-10-07: the scope of the freeze from the first 1.0.0 release
+  candidate onward — see [Amendments](#amendments).)*
 - **`preview` is not weakened into a free-for-all.** Changes there are reported in every release diff
   and belong in the release notes; they are ungated, not unrecorded.
 - **Community and Core are out of scope.** `eu.exeris.kernel.community.*` is a driver tier, not a
@@ -198,3 +213,114 @@ The matrix is allowed to be wrong. It is not allowed to be quietly wrong.
    editing it; the command is in its header.
 5. Release notes for any version carrying a `preview` incompatibility name it explicitly. Ungated is
    not unrecorded.
+
+## Amendments
+
+Each amendment is marked in place at the text it changes, not rewritten (`adr-conventions.md`
+rule 7). This section indexes them.
+
+### A1 — 2026-10-07, PROPOSED: release candidates and the SPI freeze before 1.0.0
+
+Tracked in [#614](https://github.com/exeris-systems/exeris-kernel/issues/614). v0.13.0 is the last
+minor before 1.0.0, and the release path carries no release candidate as it stands: the release
+workflow's strict tag check accepts only `^v[0-9]+\.[0-9]+\.[0-9]+$`, the release-integration skill
+opens `development/X.(Y+1).0` after every release, and the branch-and-release policy says nothing
+about a candidate or a freeze. This gate is the part of the release path a candidate changes the
+meaning of, so the ruling is recorded here. A1.1 is ruled; A1.2 and A1.4 carry points marked
+**Ruling required**.
+
+#### A1.1 — What a release candidate is (ruled)
+
+- **Tag shape.** A release candidate is the tag `vX.Y.Z-RCn`: an upper-case `RC` and a decimal
+  `n` from 1, matching `^v[0-9]+\.[0-9]+\.[0-9]+-RC[0-9]+$`. The first planned use is
+  `v1.0.0-RC1`. The release workflow's strict check accepts that shape and no other suffix:
+  `v0.12.0-rc1`, `v0.11.0-preview` and every other suffixed tag stay refused, exactly as today.
+- **Distribution.** A candidate is published to Maven Central through the same `release` profile
+  as a release. That profile already configures `central-publishing-maven-plugin` with
+  `autoPublish=false` and `waitUntil=validated`, so the workflow uploads a deployment that is
+  published by hand in the portal, or dropped. A candidate runs every gate a release runs, and the
+  existing check that the tag's version equals the `<version>` of the root `pom.xml` at the tagged
+  commit applies unchanged: the commit tagged `v1.0.0-RC1` carries `1.0.0-RC1` in its poms.
+- **Ordering.** Maven orders `1.0.0-RC1` below `1.0.0-RC2` and both below `1.0.0` (measured with
+  `maven-artifact` 3.9.16 `ComparableVersion`), so a consumer resolving the newest version never
+  prefers a candidate over the release.
+- **Permanence.** A published candidate cannot be withdrawn from Central. A defect found in `RCn`
+  is fixed in `RC(n+1)`, never by re-tagging.
+- **A candidate is never the gate's baseline.** The baseline resolver in `maven.yml` ("Diff SPI
+  against the last released version") keeps its strict `^v[0-9]+\.[0-9]+\.[0-9]+$` filter, so it
+  skips every `-RCn` tag. From the first candidate until `v1.0.0`, the SPI on the 1.0 line is
+  compared with the last release tag (`v0.13.0` once it exists), not with the newest candidate.
+  Diffing against a candidate would make whatever `RC1` changed the reference for `RC2`: the freeze
+  would follow the candidates instead of holding them to the last release.
+- **The generated record has no candidate rows.** `docs/release/spi-api-history.md` records release
+  transitions only, so the row that follows `0.13.0` is `0.13.0 → 1.0.0`.
+
+#### A1.2 — What the freeze covers — **Ruling required**
+
+Options considered:
+
+1. **Stable surfaces only (recommended).** From the first candidate, a binary-incompatible change
+   to a `stable` surface fails the build, enforced by today's `--fail-on-stable` against the last
+   release tag (A1.1). `preview` and `experimental` surfaces may still change after a candidate:
+   such a change is reported in the diff and named in the next candidate's release notes
+   (Engineering Protocol 5), and is not gated.
+2. **Stable and preview surfaces.** A new `spi-api-diff.sh` mode fails on a binary-incompatible
+   change to a `preview` surface as well, enabled on the 1.0 line from the first candidate. Today
+   the script reports a `preview` break as "Reported, not gated".
+
+Recommendation: option 1. It is ruling 2 of this ADR applied unchanged, and it needs no new tool
+mode, so the freeze runs on the gate that has already been exercised against the full release
+history. Freezing `preview` would turn a label that promises change into one that forbids it for
+the candidate period, a promise 1.0.0 itself does not make. The maturity labels are read from the
+checked-out tree's `tools/spi-api-diff/stability-surfaces.conf` (`SURFACES_CONF` in the script), so
+a surface relabelled `stable` on the 1.0 line is gated against its shape at the last release tag
+from the commit that relabels it; a surface promoted to `stable` for 1.0.0 is therefore frozen from
+its promotion, not only from the first candidate. Option 2 is the choice if candidate consumers are
+expected to build against `preview` surfaces and churn between candidates would cost them more than
+the new mode costs to build and test.
+
+Neither option covers behavioural compatibility, which stays outside this gate (§"What is NOT in
+scope").
+
+#### A1.3 — The line after 0.13.0
+
+The development line opened after the 0.13.0 release is `development/1.0.0` at `1.0.0-SNAPSHOT`,
+not `development/0.14.0`. The base resolver the skill and the branch-and-release policy name,
+`git branch -r --list 'origin/development/*' | sort -V | tail -1`, orders `development/1.0.0`
+after `development/0.13.0` (measured with GNU `sort -V`), so it returns the 1.0 line without
+change. Every candidate for 1.0.0 is cut from `development/1.0.0`'s state, and the line stays open
+after a candidate: unlike an integrated `development/X.Y.0`, it is not done until `v1.0.0`.
+
+#### A1.4 — How a candidate reaches its tag — **Ruling required**
+
+The release workflow uploads only for a tag whose commit is on `main` (the `compare` check:
+`identical` or `behind`), and the release ritual bumps the poms on `main` and tags that commit.
+Options considered:
+
+1. **A candidate goes through the release ritual (recommended).** A `release(1.0.0-RCn)` pull
+   request integrates `development/1.0.0` into `main` with the poms at `1.0.0-RCn`; the tag goes on
+   that commit on `main`. The `main`-containment check is unchanged, and `main` holds exactly what
+   Central holds. Cost: `main` carries a candidate version between a candidate and the release, and
+   `development/1.0.0` stays at `1.0.0-SNAPSHOT` throughout.
+2. **A candidate is tagged on `development/1.0.0`.** The containment check accepts that branch for
+   `-RCn` tags only. Cost: a second rule in the one guard that decides which commit can reach
+   Central, and a pom bump and revert on the development line for each candidate.
+
+Recommendation: option 1, because the guard that matters keeps a single rule and the candidate is
+produced by the same steps the release will be.
+
+#### A1.5 — Obligations of the release that carries this amendment
+
+This amendment changes no workflow, skill or policy. The changes it requires are obligations of
+the release pull request that carries the first candidate's path, planned for the 0.13.0 release:
+
+- `.github/workflows/release.yml` — the strict tag check accepts `-RC[0-9]+` as in A1.1, and its
+  comment states which suffixes are refused; the containment check follows the A1.4 ruling.
+- `.github/workflows/maven.yml` — the baseline filter is unchanged; its comment names `-RCn` tags as
+  deliberately skipped.
+- `.agents/skills/exeris-release-integration/SKILL.md` — step 7 opens `development/1.0.0` at
+  `1.0.0-SNAPSHOT` after 0.13.0; the candidate flow (A1.4) and the exception to step 8 (the 1.0 line
+  stays open after a candidate) are written down.
+- `.agents/policies/branch-and-release.md` — states the candidate tag shape, the freeze scope ruled
+  in A1.2, and the 1.0 line.
+- The ecosystem ADR index row for ADR-065 shows the amendment date once A1 is accepted.
