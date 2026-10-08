@@ -64,6 +64,15 @@ public final class CoreOpenSslLoader {
     public static final int SSL_VERIFY_PEER    = 1;
     /** {@code SSL_CTRL_SET_TLSEXT_HOSTNAME = 55}, the {@code SSL_ctrl} command that sets SNI. */
     public static final int SSL_CTRL_SET_TLSEXT_HOSTNAME = 55;
+    /**
+     * {@code SSL_CTRL_SET_MIN_PROTO_VERSION = 123}, the {@code SSL_CTX_ctrl} command behind the
+     * {@code SSL_CTX_set_min_proto_version} macro.
+     */
+    public static final int SSL_CTRL_SET_MIN_PROTO_VERSION = 123;
+    /** {@code TLS1_2_VERSION = 0x0303}. */
+    public static final int TLS1_2_VERSION = 0x0303;
+    /** {@code TLS1_3_VERSION = 0x0304}. */
+    public static final int TLS1_3_VERSION = 0x0304;
     /** {@code TLSEXT_NAMETYPE_host_name = 0}, the only SNI name type. */
     public static final int TLSEXT_NAMETYPE_HOST_NAME = 0;
     /** {@code X509_V_OK = 0} — the {@code SSL_get_verify_result} of a verified peer. */
@@ -226,7 +235,10 @@ public final class CoreOpenSslLoader {
                 opt(linker, lookup, "SSL_CTX_set_alpn_protos",
                         FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT)),
                 opt(linker, lookup, "SSL_CTX_set_alpn_select_cb",
-                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG, JAVA_LONG)));
+                        FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG, JAVA_LONG)),
+                withLongs(req(linker, lookup, "SSL_CTX_ctrl",
+                                FunctionDescriptor.of(cLong(linker), JAVA_LONG, JAVA_INT, cLong(linker), JAVA_LONG)),
+                        MethodType.methodType(long.class, long.class, int.class, long.class, long.class)));
 
         // Emit the "successful load" JFR event only AFTER SSL_CTX_new_ex is actually bound
         // (single-phase, guarded inside OpenSslLoadEvent). Emitting before req(...,

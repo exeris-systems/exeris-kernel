@@ -146,8 +146,13 @@ public final class CoreSslHandles {
      * @param sslCtxSetAlpnSelectCb    bound to {@code SSL_CTX_set_alpn_select_cb} if the symbol is present
      *                                 in the loaded OpenSSL build, else {@code null};
      *                                 {@code (long ctxPtr, long callbackPtr, long argPtr) -> void}
+     * @param sslCtxCtrl               bound to {@code SSL_CTX_ctrl}, cast to
+     *                                 {@code (long ctxPtr, int cmd, long larg, long parg) -> long}; the
+     *                                 C {@code long} positions follow the platform
      * @since 0.5
      */
+    // one guarded FFM invoke per bound symbol: the sum grows with the surface
+    @SuppressWarnings("PMD.CyclomaticComplexity")
     public record CtxHandles(
             MethodHandle sslServerMethod,
             MethodHandle sslClientMethod,
@@ -158,7 +163,8 @@ public final class CoreSslHandles {
             MethodHandle sslCtxCheckPrivateKey,
             MethodHandle sslCtxSetVerify,
             MethodHandle sslCtxSetAlpnProtos,
-            MethodHandle sslCtxSetAlpnSelectCb) {
+            MethodHandle sslCtxSetAlpnSelectCb,
+            MethodHandle sslCtxCtrl) {
 
         /**
          * {@code TLS_server_method()} → native method pointer for {@code SSL_CTX_new_ex}.
@@ -275,6 +281,25 @@ public final class CoreSslHandles {
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_check_private_key failed", t);
+            }
+        }
+
+        /**
+         * {@code SSL_CTX_set_min_proto_version(ctxPtr, version)}, which OpenSSL defines as
+         * {@code SSL_CTX_ctrl(ctx, SSL_CTRL_SET_MIN_PROTO_VERSION, version, NULL)}; the macro is
+         * not an exported symbol.
+         *
+         * @param ctxPtr  the {@code SSL_CTX*} pointer
+         * @param version a protocol version constant (see {@link CoreOpenSslLoader#TLS1_3_VERSION})
+         * @return {@code 1} if the context now refuses every older protocol, {@code 0} otherwise
+         */
+        public long invokeCtxSetMinProtoVersion(long ctxPtr, int version) {
+            try {
+                return (long) sslCtxCtrl.invokeExact(
+                        ctxPtr, CoreOpenSslLoader.SSL_CTRL_SET_MIN_PROTO_VERSION, (long) version, 0L);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_CTX_ctrl failed", t);
             }
         }
 

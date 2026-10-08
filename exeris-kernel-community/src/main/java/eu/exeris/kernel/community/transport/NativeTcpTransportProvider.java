@@ -122,6 +122,7 @@ public final class NativeTcpTransportProvider implements TransportProvider {
         KernelCryptoProvider cryptoProvider =
                 KernelProviders.CRYPTO_PROVIDER.isBound() ? KernelProviders.CRYPTO_PROVIDER.get() : null;
 
+        NativeTcpTlsFloor.require();
         CryptoProviderConfig listenerConfig = resolveListenerCryptoConfig(config);
         NativeTcpClientTls clientTls =
                 NativeTcpClientTlsResolver.resolve(config, cryptoProvider, listenerConfig, requirement);
@@ -234,6 +235,6 @@ public final class NativeTcpTransportProvider implements TransportProvider {
             TransportTlsDeclinedEvent.emit(config.mode().name(), TLS_PROPERTY);
             return null;
         }
-        return CryptoProviderConfig.httpsServer(Path.of(certPath), Path.of(keyPath));
+        return NativeTcpTlsFloor.apply(CryptoProviderConfig.httpsServer(Path.of(certPath), Path.of(keyPath)));
     }
 }
