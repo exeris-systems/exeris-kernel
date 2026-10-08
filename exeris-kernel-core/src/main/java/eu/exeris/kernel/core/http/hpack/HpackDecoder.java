@@ -499,6 +499,7 @@ public final class HpackDecoder {
             SIZE_LIMIT_EXCEEDED
         }
 
+        /** What this failure leaves behind; see {@link #kind()}. */
         private final Kind kind;
 
         /**
