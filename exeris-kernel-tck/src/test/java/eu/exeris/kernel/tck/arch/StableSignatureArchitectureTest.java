@@ -41,17 +41,26 @@ public class StableSignatureArchitectureTest {
 
     private static final String CONF = "tools/spi-api-diff/stability-surfaces.conf";
 
+    private static final String KERNEL_PROVIDERS = "eu.exeris.kernel.spi.context.KernelProviders";
+
     /**
-     * Deprecated-for-removal bridges, by {@code Class#member}. They are the same {@code ScopedValue}
-     * instances as the holders in the owning packages and are removed in the first 1.0 release
-     * candidate, which is when this list is deleted.
+     * Deprecated-for-removal bridges, each the full member: owner, name, parameter types and the
+     * field or return type, followed by the preview type it names. A new overload or a new member
+     * that merely shares a name with one of these is therefore not exempt. They are the same
+     * {@code ScopedValue} instances as the holders in the owning packages and are removed in the
+     * first 1.0 release candidate, which is when this list is deleted.
      */
     private static final Set<String> REMOVED_IN_FIRST_RELEASE_CANDIDATE = Set.of(
-            "KernelProviders#GRAPH_PROVIDER",
-            "KernelProviders#GRAPH_ENGINE",
-            "KernelProviders#graphEngine",
-            "KernelProviders#TIME_SOURCE",
-            "KernelProviders#timeSource");
+            KERNEL_PROVIDERS + "#GRAPH_PROVIDER:java.lang.ScopedValue"
+                    + " names eu.exeris.kernel.spi.graph.GraphProvider",
+            KERNEL_PROVIDERS + "#GRAPH_ENGINE:java.lang.ScopedValue"
+                    + " names eu.exeris.kernel.spi.graph.GraphEngine",
+            KERNEL_PROVIDERS + ".graphEngine():eu.exeris.kernel.spi.graph.GraphEngine"
+                    + " names eu.exeris.kernel.spi.graph.GraphEngine",
+            KERNEL_PROVIDERS + "#TIME_SOURCE:java.lang.ScopedValue"
+                    + " names eu.exeris.kernel.spi.time.TimeSource",
+            KERNEL_PROVIDERS + ".timeSource():eu.exeris.kernel.spi.time.TimeSource"
+                    + " names eu.exeris.kernel.spi.time.TimeSource");
 
     /**
      * Packages that are {@code preview} today and that ADR-100 §1 promotes to {@code stable} in the
@@ -93,12 +102,14 @@ public class StableSignatureArchitectureTest {
         Set<JavaClass> supertypes = new LinkedHashSet<>(owner.getRawInterfaces());
         owner.getRawSuperclass().ifPresent(supertypes::add);
         for (JavaClass supertype : supertypes) {
-            report(owner, "<supertype>", supertype, labels, violations);
+            report(owner, "<supertype>", owner.getName() + "#<supertype>", supertype, labels, violations);
         }
         for (JavaField field : owner.getFields()) {
             if (isExposed(field.getModifiers())) {
                 for (JavaClass type : field.getType().getAllInvolvedRawTypes()) {
-                    report(owner, field.getName(), type, labels, violations);
+                    report(owner, field.getName(),
+                            owner.getName() + "#" + field.getName() + ":" + field.getRawType().getName(),
+                            type, labels, violations);
                 }
             }
         }
@@ -110,18 +121,20 @@ public class StableSignatureArchitectureTest {
             unit.getParameterTypes().forEach(p -> types.addAll(p.getAllInvolvedRawTypes()));
             unit.getExceptionTypes().forEach(e -> types.addAll(e.getAllInvolvedRawTypes()));
             for (JavaClass type : types) {
-                report(owner, unit.getName(), type, labels, violations);
+                report(owner, unit.getName(),
+                        unit.getFullName() + ":" + unit.getRawReturnType().getName(),
+                        type, labels, violations);
             }
         }
     }
 
-    private static void report(JavaClass owner, String member, JavaClass named,
+    private static void report(JavaClass owner, String member, String signature, JavaClass named,
                                Map<String, String> labels, List<String> violations) {
         String level = labelOf(named, labels);
         if (!"preview".equals(level) && !"experimental".equals(level)) {
             return;
         }
-        if (REMOVED_IN_FIRST_RELEASE_CANDIDATE.contains(topLevel(owner).getSimpleName() + "#" + member)
+        if (REMOVED_IN_FIRST_RELEASE_CANDIDATE.contains(signature + " names " + named.getName())
                 || PROMOTED_BY_THE_PROMOTION_COMMIT.stream().anyMatch(named.getName()::startsWith)) {
             return;
         }

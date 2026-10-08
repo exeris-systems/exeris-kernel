@@ -26,12 +26,14 @@
 #                                          [--wait-minutes N] [--workdir DIR]
 #                                          [--base-url URL] [--key-file FILE]
 #
-#   --version       release to verify; default is the highest local `vMAJOR.MINOR.PATCH` tag
+#   --version       release to verify, MAJOR.MINOR.PATCH or a release candidate MAJOR.MINOR.PATCH-RCn;
+#                   default is the highest local final `vMAJOR.MINOR.PATCH` tag (never a release candidate)
 #   --self-test     run the negative controls first: the verifier must PASS an untouched artifact,
 #                   then FAIL on a tampered jar, on a tampered SBOM, on a wrong pinned fingerprint
 #                   and under a genuinely different key. A verifier that cannot fail proves nothing.
 #   --wait-minutes  poll up to N minutes for the release to appear on Central (propagation after
-#                   publication is not instant); default 0
+#                   publication is not instant); default 0. One deadline covers the whole invocation,
+#                   the --self-test probe and the verification run together
 #   --workdir       keep downloads here (default: a temporary directory, removed on exit)
 #
 # Requires: gpg, python3, network access to repo1.maven.org, and the release tag in the local clone
@@ -178,7 +180,10 @@ def verify_checksums(path):
         sumfile = path.with_name(path.name + '.' + ext)
         if not sumfile.is_file():
             raise Failure(f'{path.name}: no .{ext} checksum was downloaded')
-        want = sumfile.read_text().split()[0].strip().lower()
+        served = sumfile.read_text().split()
+        if not served:
+            raise Failure(f'{path.name}: the served .{ext} checksum file is empty')
+        want = served[0].strip().lower()
         h = hashlib.new(algo)
         with open(path, 'rb') as f:
             for chunk in iter(lambda: f.read(1 << 20), b''):
@@ -319,15 +324,18 @@ def main():
     args = ap.parse_args(sys.argv[1:])
 
     version = args.version or latest_tag()
-    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise Failure(f'{version!r} is not a release version (expected MAJOR.MINOR.PATCH)')
+    if not re.fullmatch(r'\d+\.\d+\.\d+(-RC\d+)?', version):
+        raise Failure(f'{version!r} is not a release version (expected MAJOR.MINOR.PATCH or '
+                      f'MAJOR.MINOR.PATCH-RCn)')
     base = args.base_url.rstrip('/')
     work = pathlib.Path(args.workdir) if args.workdir else pathlib.Path(tempfile.mkdtemp(prefix='cv-'))
     work.mkdir(parents=True, exist_ok=True)
+    # One deadline for the whole invocation: the self-test's probe and the real run draw on the same
+    # budget, so the total wait never exceeds --wait-minutes.
+    deadline = time.time() + args.wait_minutes * 60
     try:
         if args.self_test:
             # Controls need a release to exist; wait for it the same way the real run does.
-            deadline = time.time() + args.wait_minutes * 60
             while True:
                 try:
                     fetch(f'{base}/{GROUP.replace(".", "/")}/exeris-kernel-spi/{version}/'
@@ -342,7 +350,6 @@ def main():
         coords = coordinates(version)
         print(f'central-verify: {GROUP}:* {version} — {len(coords)} coordinate(s) from tag v{version}, '
               f'fetched from {base}')
-        deadline = time.time() + args.wait_minutes * 60
         keyring = Keyring(args.key_file, PIN)
         files = 0
         try:
