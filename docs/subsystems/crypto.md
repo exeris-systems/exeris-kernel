@@ -129,9 +129,11 @@ Every Community `SSL_CTX`, server and client, carries a minimum protocol version
 set on the context. A peer that negotiates below the floor fails the handshake. Any other value, such
 as `TLSv1.1`, `TLSv1.4`, `1.3` or a differently cased name, makes `createTlsEngine` and
 `createClientTlsEngine` throw `CryptoBootstrapException` (`EX-NET-2002`) naming the value; nothing falls
-back to OpenSSL's own floor. A booted kernel has no setting that lowers the floor: `crypto.tls.minVersion`
-is not read (see [config.md](config.md)), so a Community listener refuses a client that speaks only
-TLS 1.2 and a Community client refuses such a server.
+back to OpenSSL's own floor. The Community transport takes the floor from `crypto.tls.minVersion`
+(see [config.md](config.md)): absent or blank keeps `TLSv1.3`, so a Community listener refuses a
+client that speaks only TLS 1.2 and a Community client refuses such a server, unless the key is
+`TLSv1.2`. A value other than `TLSv1.2` or `TLSv1.3` fails the transport's construction
+(`EX-NET-4004`, cause `EX-NET-2002`) before any native allocation.
 
 ### Client Peer Verification
 

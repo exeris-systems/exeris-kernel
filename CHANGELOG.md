@@ -23,9 +23,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   completed a handshake against the default `TLSv1.3` configuration. `CommunityKernelCryptoProvider`
   now sets the floor on each `SSL_CTX` (`TLSv1.2` or `TLSv1.3`), and a value naming neither makes
   `createTlsEngine` and `createClientTlsEngine` throw `CryptoBootstrapException` (`EX-NET-2002`)
-  instead of falling back to the library's. A Community listener now refuses a client that speaks
-  only TLS 1.2, and a Community client refuses such a server; no setting lowers the floor in a booted
-  kernel.
+  instead of falling back to the library's. The default floor `TLSv1.3` now holds: a Community
+  listener refuses a client that speaks only TLS 1.2, and a Community client refuses such a server,
+  unless `crypto.tls.minVersion` is set to `TLSv1.2`. That key is now read when a transport is built;
+  a value other than `TLSv1.2` or `TLSv1.3` fails the transport's construction (`EX-NET-4004`, cause
+  `EX-NET-2002`).
 - **A bound `HttpRoutePolicy` is asked about the route the router dispatches to.** The Community
   dispatcher removes the query component, and asks a `HEAD` request as `GET` when `HttpRouter`
   serves it from the `GET` route because no `HEAD` route matches; it passed the raw request-target

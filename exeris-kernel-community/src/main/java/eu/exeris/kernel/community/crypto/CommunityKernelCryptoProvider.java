@@ -230,6 +230,20 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	}
 
 	/**
+	 * {@code minimumTlsVersion} itself when this provider serves it.
+	 *
+	 * @param minimumTlsVersion a {@code CryptoProviderConfig#minimumTlsVersion} value
+	 * @return {@code minimumTlsVersion}
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) if it is neither {@code TLSv1.2} nor
+	 *         {@code TLSv1.3}
+	 * @since 0.13
+	 */
+	public static String requireSupportedMinimumTlsVersion(String minimumTlsVersion) {
+		resolveMinimumProtocol(minimumTlsVersion);
+		return minimumTlsVersion;
+	}
+
+	/**
 	 * The OpenSSL protocol version that {@code minimumTlsVersion} names. Only the versions this
 	 * provider serves are accepted, and a name that matches none is refused rather than mapped to a
 	 * default.
