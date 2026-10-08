@@ -20,7 +20,7 @@ import java.util.List;
  * <h2>Lifecycle</h2>
  * <ol>
  *   <li>Created once by {@link GraphProvider#createEngine(GraphConfig)} during bootstrap</li>
- *   <li>Bound to {@code ScopedValue} via {@code KernelProviders.GRAPH_ENGINE}</li>
+ *   <li>Bound to {@code ScopedValue} via {@code GraphKernelProviders.GRAPH_ENGINE}</li>
  *   <li>Subsystems call {@link #openSession()} for each unit-of-work</li>
  *   <li>{@link #close()} releases all engine resources at shutdown</li>
  * </ol>

@@ -6,7 +6,6 @@ package eu.exeris.kernel.spi.context;
 
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
-import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventProvider;
@@ -20,6 +19,7 @@ import eu.exeris.kernel.spi.flow.FlowProvider;
 import eu.exeris.kernel.spi.flow.IdempotencyGuard;
 import eu.exeris.kernel.spi.flow.model.FlowSnapshotStore;
 import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.spi.graph.GraphKernelProviders;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
@@ -31,6 +31,7 @@ import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.storage.blob.BlobStorageProvider;
 import eu.exeris.kernel.spi.storage.blob.BlobStore;
+import eu.exeris.kernel.spi.time.TimeKernelProviders;
 import eu.exeris.kernel.spi.time.TimeSource;
 import eu.exeris.kernel.spi.telemetry.TelemetryProvider;
 import eu.exeris.kernel.spi.telemetry.TelemetrySink;
@@ -128,18 +129,6 @@ public final class KernelProviders {
      * @since 0.5
      */
     public static final ScopedValue<ConfigProvider> CURRENT_CONFIG = ScopedValue.newInstance();
-
-    /**
-     * The active {@link ExecutionContract}, decided once by the kernel's contract gate.
-     *
-     * <p>Bound by {@code KernelBootstrap.boot()} in {@code exeris-kernel-core}: the contract gate runs
-     * after configuration and before any subsystem is initialized, and its contract is bound for the
-     * whole kernel scope. {@code KernelBootstrap.inspect()} runs no gate and leaves this unbound.
-     *
-     * @apiNote Reach the binding through the typed accessor {@link #executionContract()}.
-     * @since 0.13
-     */
-    public static final ScopedValue<ExecutionContract> EXECUTION_CONTRACT = ScopedValue.newInstance();
 
     /**
      * The active {@link MemoryProvider} factory (bound once during bootstrap).
@@ -484,26 +473,34 @@ public final class KernelProviders {
      * The active {@link GraphProvider} factory (bound once during bootstrap).
      *
      * @apiNote Read this slot only from bootstrap code that has to introspect the provider; a
-     *          graph call site reads {@link #GRAPH_ENGINE} instead.
+     *          graph call site reads {@link GraphKernelProviders#GRAPH_ENGINE} instead.
      * @since 0.5
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link GraphKernelProviders#GRAPH_PROVIDER}, which declares this very {@link ScopedValue} instance.
+     *             A binding made through either name is visible through both.
      */
-    public static final ScopedValue<GraphProvider> GRAPH_PROVIDER = ScopedValue.newInstance();
+    @Deprecated(forRemoval = true, since = "0.13")
+    public static final ScopedValue<GraphProvider> GRAPH_PROVIDER = GraphKernelProviders.GRAPH_PROVIDER;
 
     /**
-     * The kernel-wide {@link GraphEngine} (created from {@link #GRAPH_PROVIDER}).
+     * The kernel-wide {@link GraphEngine} (created from {@link GraphKernelProviders#GRAPH_PROVIDER}).
      *
      * <p>This is the primary slot for all graph operations. Bound once during bootstrap for the
      * kernel's lifetime; the class documentation says which threads see it.
      *
      * {@snippet lang="java" :
-     * try (GraphSession session = KernelProviders.graphEngine().openSession()) {
+     * try (GraphSession session = GraphKernelProviders.graphEngine().openSession()) {
      *     List<UUID> nodes = session.traverseBreadthFirst(traversal);
      * }
      * }
      *
      * @since 0.5
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link GraphKernelProviders#GRAPH_ENGINE}, which declares this very {@link ScopedValue} instance.
+     *             A binding made through either name is visible through both.
      */
-    public static final ScopedValue<GraphEngine> GRAPH_ENGINE = ScopedValue.newInstance();
+    @Deprecated(forRemoval = true, since = "0.13")
+    public static final ScopedValue<GraphEngine> GRAPH_ENGINE = GraphKernelProviders.GRAPH_ENGINE;
 
     // =========================================================================
     // Security / Context Slots (L1 Citadel)
@@ -577,12 +574,16 @@ public final class KernelProviders {
      *
      * <p>Bound once at bootstrap.
      *
-     * @apiNote Read it through {@link #timeSource()} rather than directly: an unbound kernel must
+     * @apiNote Read it through {@link TimeKernelProviders#timeSource()} rather than directly: an unbound kernel must
      *          still tell the time, and a call site that forgets its own {@code orElse} looks
      *          migrated while remaining undrivable.
      * @since 0.12
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link TimeKernelProviders#TIME_SOURCE}, which declares this very {@link ScopedValue} instance.
+     *             A binding made through either name is visible through both.
      */
-    public static final ScopedValue<TimeSource> TIME_SOURCE = ScopedValue.newInstance();
+    @Deprecated(forRemoval = true, since = "0.13")
+    public static final ScopedValue<TimeSource> TIME_SOURCE = TimeKernelProviders.TIME_SOURCE;
 
     /**
      * The authenticated {@link PrincipalContext} for the current request scope.
@@ -698,9 +699,12 @@ public final class KernelProviders {
      * @return graph engine bound by the kernel bootstrapper
      * @throws java.util.NoSuchElementException if called outside the kernel scope
      *         or if graph was not bootstrapped
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link GraphKernelProviders#graphEngine()}.
      */
+    @Deprecated(forRemoval = true, since = "0.13")
     public static GraphEngine graphEngine() {
-        return GRAPH_ENGINE.get();
+        return GraphKernelProviders.graphEngine();
     }
 
     /**
@@ -867,9 +871,12 @@ public final class KernelProviders {
      *
      * @return the bound source, or {@link TimeSource#SYSTEM}; never {@code null}
      * @since 0.12
+     * @deprecated since 0.13, for removal in the first 1.0 release candidate: use
+     *             {@link TimeKernelProviders#timeSource()}, which behaves identically.
      */
+    @Deprecated(forRemoval = true, since = "0.13")
     public static TimeSource timeSource() {
-        return TIME_SOURCE.orElse(TimeSource.SYSTEM);
+        return TimeKernelProviders.timeSource();
     }
 
     /**
@@ -883,19 +890,5 @@ public final class KernelProviders {
      */
     public static ConfigProvider config() {
         return CURRENT_CONFIG.get();
-    }
-
-    /**
-     * Returns the active {@link ExecutionContract} from the current kernel scope.
-     *
-     * <p>Available inside the scope of {@code KernelBootstrap.boot()}, once the contract gate has decided
-     * the contract.
-     *
-     * @return execution contract bound by the kernel bootstrapper
-     * @throws java.util.NoSuchElementException if called outside the kernel scope
-     * @since 0.13
-     */
-    public static ExecutionContract executionContract() {
-        return EXECUTION_CONTRACT.get();
     }
 }

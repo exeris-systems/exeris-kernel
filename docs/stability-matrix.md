@@ -101,6 +101,15 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.http` | **mixed** | 0.5.0 | ADR-009 / ADR-032 / ADR-034 / ADR-043 | see per-surface rows below | yes (HTTP/3 path) |
 | `…spi.util` | _internal_ | 0.5.0 | — | — | — |
 
+**Slot holders.** A `stable` signature names no `preview` type (ADR-100 §3). The `ScopedValue` slots
+of the `preview` surfaces therefore live in the package that owns their type:
+`…spi.contract.ContractKernelProviders` (`EXECUTION_CONTRACT`), `…spi.graph.GraphKernelProviders`
+(`GRAPH_PROVIDER`, `GRAPH_ENGINE`) and `…spi.time.TimeKernelProviders` (`TIME_SOURCE`). The graph and
+time members released in 0.5 and 0.12 stay on `KernelProviders` as `@Deprecated(forRemoval = true)`
+bridges that are the holders' own `ScopedValue` instances, and are removed in the first 1.0 release
+candidate. `StableSignatureArchitectureTest` fails a `stable` class whose public or protected
+signature names a `preview` or `experimental` type.
+
 ² `exceptions`: ADR-083 (0.12.0) added `FaultOrigin` and a non-final `ExerisKernelException.faultOrigin()`
 to this `stable` surface. Both are **additive**: the method carries a default, so every existing
 subclass compiles and behaves exactly as before, and the compatibility gate reports
