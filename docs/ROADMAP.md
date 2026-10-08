@@ -3100,6 +3100,13 @@ files of `exeris-kernel-tck`'s `contract/http` package contain **no** reference 
 `maxRequestBodyBytes`, `maxResponseBodyBytes` or `maxRequestHeaderSize`, so a second engine could
 ignore every one of them and pass the shared suite. Measured 2026-09-03.
 
+**Status (v0.13): PARTIAL.** The three HTTP/2 header keys — `maxHeaderBlockSize`,
+`maxHeaderListSize`, `maxStringLiteralSize` — are asserted on the wire by
+`AbstractHttp2HeaderLimitTck`, bound for Community by `CommunityHttp2HeaderLimitTckTest`, with a case
+at and over each limit. The other four — `maxRequestBodyBytes`, `maxResponseBodyBytes`,
+`maxRequestHeaderCount`, `maxRequestHeaderSize` — remain unasserted: `AbstractHttpClientEngineTck`
+copies them into the configuration it builds and no case observes them.
+
 ---
 
 ### Build: The SPI Gate's Baseline Is Hardened On One Line And Not The Other (surfaced 2026-09-01)
