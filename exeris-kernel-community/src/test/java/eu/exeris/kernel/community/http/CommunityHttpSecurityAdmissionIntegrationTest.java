@@ -400,6 +400,103 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
         assertThat(handlerInvoked.get()).isTrue();
     }
 
+    /**
+     * A fail-open policy: one declared route, and {@code permitAll()} for every route it does not
+     * recognise. Under it, any request the policy fails to recognise as {@code /api/orders} while the
+     * router still dispatches it there reaches the handler unauthenticated — so this is the policy that
+     * makes a mismatch between what the policy is asked and what the router serves observable.
+     */
+    private static final HttpRoutePolicy FAIL_OPEN_POLICY = (method, path) ->
+            method == HttpMethod.GET && "/api/orders".equals(path)
+                    ? RouteRequirement.requiringAnyScope(Set.of("security:read"))
+                    : RouteRequirement.permitAll();
+
+    @Test
+    @DisplayName("A query string does not move a request off its route's requirement")
+    void queryStringDoesNotBypassPathMatchedRequirement() {
+        AtomicBoolean handlerInvoked = new AtomicBoolean(false);
+
+        int status = statusWithoutToken(FAIL_OPEN_POLICY, HttpMethod.GET, "/api/orders?page=1",
+                handlerInvoked);
+
+        assertThat(status)
+                .as("the router dispatches /api/orders?page=1 to /api/orders, so the policy must be "
+                        + "asked about /api/orders and not fall through to its permit-all answer")
+                .isEqualTo(401);
+        assertThat(handlerInvoked.get()).isFalse();
+    }
+
+    @Test
+    @DisplayName("HEAD is decided by the GET requirement it is served under")
+    void headIsDecidedByTheGetRequirement() {
+        AtomicBoolean handlerInvoked = new AtomicBoolean(false);
+
+        int status = statusWithoutToken(FAIL_OPEN_POLICY, HttpMethod.HEAD, "/api/orders",
+                handlerInvoked);
+
+        assertThat(status)
+                .as("HEAD /api/orders runs the GET /api/orders handler, so it carries GET's requirement "
+                        + "rather than the policy's permit-all answer for an undeclared method")
+                .isEqualTo(401);
+        assertThat(handlerInvoked.get()).isFalse();
+    }
+
+    @Test
+    @DisplayName("A query string does not move a public route onto the unmatched denial")
+    void queryStringKeepsPublicRoutePublic() {
+        AtomicBoolean handlerInvoked = new AtomicBoolean(false);
+
+        int status = statusWithoutToken(ROUTE_POLICY, HttpMethod.GET, "/api/public?page=1",
+                handlerInvoked);
+
+        assertThat(status)
+                .as("the other direction of the same mismatch: under a fail-closed policy a query string "
+                        + "must not turn a declared public route into an unmatched, denied one")
+                .isEqualTo(200);
+        assertThat(handlerInvoked.get()).isTrue();
+    }
+
+    private static int statusWithoutToken(HttpRoutePolicy policy, HttpMethod method, String target,
+                                          AtomicBoolean handlerInvoked) {
+        int[] status = new int[1];
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
+            .where(KernelProviders.SECURITY_PROVIDER,
+                new CommunitySecurityProvider(TestJwt.keySet(), TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE))
+            .where(HttpKernelProviders.HTTP_ROUTE_POLICY, policy)
+            .run(() -> {
+                int port = nextFreePort();
+                HttpProvider provider = new CommunityHttpProvider();
+
+                try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
+                     HttpClientEngine client = provider.createClientEngine(clientConfig(port))) {
+                    server.setHandler(HttpRouter.builder()
+                            .route(HttpMethod.GET, "/api/orders", exchange -> {
+                                handlerInvoked.set(true);
+                                exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+                            })
+                            .route(HttpMethod.GET, "/api/public", exchange -> {
+                                handlerInvoked.set(true);
+                                exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+                            })
+                            .build());
+
+                    server.start();
+                    client.start();
+
+                    HttpResponse response = client.send(HttpRequest.noBody(
+                            method, target, HttpVersion.HTTP_1_1, List.of()));
+                    try {
+                        status[0] = response.status().code();
+                    } finally {
+                        if (response.body() != null) {
+                            response.body().close();
+                        }
+                    }
+                }
+            });
+        return status[0];
+    }
+
     private static void withHttpSecurityScope(Runnable testCase) {
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
             .where(KernelProviders.SECURITY_PROVIDER,

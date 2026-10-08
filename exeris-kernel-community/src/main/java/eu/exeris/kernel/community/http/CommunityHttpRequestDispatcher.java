@@ -168,7 +168,7 @@ final class CommunityHttpRequestDispatcher {
     private RouteRequirement resolveRequirement(HttpRequest request) {
         return routePolicy == null
                 ? RouteRequirement.permitAll()
-                : routePolicy.requirementFor(request.method(), request.path());
+                : RoutePolicyQuery.requirementFor(routePolicy, request);
     }
 
     /**

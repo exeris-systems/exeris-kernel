@@ -16,6 +16,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Security
+
+- **A bound `HttpRoutePolicy` is asked about the route the router dispatches to.** The Community
+  dispatcher removes the query component and asks `HEAD` as `GET`, as `HttpRouter` matches; it passed
+  the raw request-target and method before, so under a policy answering `permitAll()` for unmatched
+  routes, `GET /p?x=1` and `HEAD /p` reached the `/p` handler without the requirement declared for
+  `GET /p` (GHSA-6gmf-jp4g-gvmh, CWE-863; affects 0.11.0–0.12.0 with a policy bound). A policy no
+  longer sees `HEAD`: its `GET` answer governs `HEAD` on the same path.
+
 ### Fixed — verification
 
 - **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
