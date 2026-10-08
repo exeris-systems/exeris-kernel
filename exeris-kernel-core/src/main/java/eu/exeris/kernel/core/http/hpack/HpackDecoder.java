@@ -156,21 +156,23 @@ public final class HpackDecoder {
      * @param offset   byte offset into {@code block}
      * @param length   byte length of the header block
      * @param listener callback receiving decoded header fields
-     * @throws HpackLimitExceededException ({@code EX-HTTP-4002}) if the block is well formed but
-     *                                a configured size bound (string literal or cumulative header
-     *                                list) was exceeded. The block has been read to its end first:
-     *                                every insertion and table-size update has been applied, so the
-     *                                dynamic table is the one the peer's encoder holds, and the
-     *                                connection's HPACK state stays usable. Fields already
+     * @throws HpackDecodingException ({@code EX-HTTP-4002}) when the block cannot be decoded;
+     *                                {@link HpackDecodingException#kind()} says what that leaves
+     *                                behind. Kind {@link HpackDecodingException.Kind#SIZE_LIMIT_EXCEEDED}:
+     *                                the block is well formed but exceeded a configured size bound
+     *                                (string literal or cumulative header list), and has been read to
+     *                                its end first, so every insertion and table-size update has been
+     *                                applied, the dynamic table is the one the peer's encoder holds
+     *                                and the connection's HPACK state stays usable; fields already
      *                                delivered to {@code listener} are incomplete and must be
-     *                                discarded by the caller.
-     * @throws HpackDecodingException ({@code EX-HTTP-4002}) if {@code block} does not hold a
-     *                                well-formed header field representation sequence (RFC 7541
-     *                                §3.1, including a malformed or non-decodable string literal
-     *                                per §5.2), refers to an invalid table index, or carries a
-     *                                dynamic table size update the protocol limit forbids. Decoding
-     *                                stopped part-way, so the dynamic table can no longer be
-     *                                trusted: RFC 9113 §4.3 makes this a connection error.
+     *                                discarded by the caller. Kind
+     *                                {@link HpackDecodingException.Kind#MALFORMED}: {@code block} does
+     *                                not hold a well-formed header field representation sequence
+     *                                (RFC 7541 §3.1, including a malformed or non-decodable string
+     *                                literal per §5.2), refers to an invalid table index, or carries
+     *                                a dynamic table size update the protocol limit forbids; decoding
+     *                                stopped part-way, so the dynamic table can no longer be trusted
+     *                                and RFC 9113 §4.3 makes this a connection error.
      * @implNote After a bound is exceeded, a literal that is not indexed is skipped octet-wise and
      *           never allocated. A literal with incremental indexing is still materialised when the
      *           entry could fit the dynamic table, because the table must hold the same entry the
@@ -214,7 +216,7 @@ public final class HpackDecoder {
             }
         }
         if (limitExceeded) {
-            throw new HpackLimitExceededException(limitMessage, limitObserved, limitBound);
+            throw HpackDecodingException.sizeLimitExceeded(limitMessage, limitObserved, limitBound);
         }
     }
 
@@ -235,7 +237,9 @@ public final class HpackDecoder {
     private void decodeLiteralIncremental(MemorySegment block, long end, HeaderListener listener) {
         int nameIndex = readInteger(block, end, 6);
         String name = resolveName(block, end, nameIndex, true);
-        String value = readStringLiteral(block, end, true);
+        // A name skipped as too large for the table already doomed the entry: the value is read
+        // only to be passed over.
+        String value = readStringLiteral(block, end, nameIndex != 0 || name != null);
         if (name == null || value == null) {
             // A string the table cannot hold: the peer's encoder emptied its table to make room
             // for an entry that does not fit (RFC 7541 §4.4), and so must this one.
@@ -471,23 +475,46 @@ public final class HpackDecoder {
      *
      * @since 0.5
      */
-    public static class HpackDecodingException extends ExerisKernelException {
+    public static final class HpackDecodingException extends ExerisKernelException {
 
         private static final String ERROR_CODE = KernelErrorCodes.EX_HTTP_4002;
 
         /**
-         * Creates an exception with no chained cause.
+         * What a decoding failure leaves behind, which decides how a caller must answer it.
+         */
+        public enum Kind {
+            /**
+             * The block is not a well-formed header block, or refers to a table entry that does
+             * not exist. Decoding stopped part-way, so the dynamic table can no longer be trusted:
+             * a connection error of type {@code COMPRESSION_ERROR} (RFC 9113 §4.3).
+             */
+            MALFORMED,
+
+            /**
+             * The block is well formed but exceeded a configured size bound (string literal or
+             * cumulative header list). The decoder read it to its end, so the dynamic table matches
+             * the peer's and the connection's HPACK state is intact: the request is refused with
+             * {@code 431 Request Header Fields Too Large} (RFC 9113 §8.2.3, RFC 6585 §5).
+             */
+            SIZE_LIMIT_EXCEEDED
+        }
+
+        private final Kind kind;
+
+        /**
+         * Creates a {@link Kind#MALFORMED} exception with no chained cause.
          *
          * @param messageTemplate static, pre-defined message template — no runtime formatting
          * @param rawArgs         domain arguments for the {@code EX-HTTP-4002} Glass-Box payload
          */
         public HpackDecodingException(String messageTemplate, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, rawArgs);
+            this.kind = Kind.MALFORMED;
         }
 
         /**
-         * Creates an exception chained to the failure that caused it, such as a Huffman
-         * decoding error.
+         * Creates a {@link Kind#MALFORMED} exception chained to the failure that caused it, such
+         * as a Huffman decoding error.
          *
          * @param messageTemplate static, pre-defined message template — no runtime formatting
          * @param cause           the underlying failure
@@ -495,29 +522,42 @@ public final class HpackDecoder {
          */
         public HpackDecodingException(String messageTemplate, Throwable cause, Object... rawArgs) {
             super(ERROR_CODE, messageTemplate, cause, rawArgs);
+            this.kind = Kind.MALFORMED;
         }
-    }
 
-    /**
-     * A well-formed header block that exceeded a configured size bound (string literal or
-     * cumulative header list). Distinct from {@link HpackDecodingException} in what it leaves
-     * behind: the decoder read the block to its end, so the dynamic table matches the peer's and
-     * the connection's HPACK state is intact. The request is refused with
-     * {@code 431 Request Header Fields Too Large} (RFC 9113 §8.2.3, RFC 6585 §5); a plain
-     * {@link HpackDecodingException} is a connection error (RFC 9113 §4.3).
-     *
-     * @since 0.13
-     */
-    public static final class HpackLimitExceededException extends HpackDecodingException {
+        private HpackDecodingException(Kind kind, String messageTemplate, Object... rawArgs) {
+            super(ERROR_CODE, messageTemplate, rawArgs);
+            this.kind = kind;
+        }
 
         /**
-         * Creates the exception.
+         * Creates a {@link Kind#SIZE_LIMIT_EXCEEDED} exception.
          *
          * @param messageTemplate static, pre-defined message template — no runtime formatting
          * @param rawArgs         the observed size and the bound, for the {@code EX-HTTP-4002} payload
+         * @return the exception, ready to throw
          */
-        public HpackLimitExceededException(String messageTemplate, Object... rawArgs) {
-            super(messageTemplate, rawArgs);
+        public static HpackDecodingException sizeLimitExceeded(String messageTemplate, Object... rawArgs) {
+            return new HpackDecodingException(Kind.SIZE_LIMIT_EXCEEDED, messageTemplate, rawArgs);
+        }
+
+        /**
+         * Returns what this failure leaves behind.
+         *
+         * @return {@link Kind#SIZE_LIMIT_EXCEEDED} when the block was fully read and only a size
+         *         bound was exceeded; {@link Kind#MALFORMED} otherwise
+         */
+        public Kind kind() {
+            return kind;
+        }
+
+        /**
+         * Returns whether this failure is a refusal on size alone.
+         *
+         * @return {@code true} when {@link #kind()} is {@link Kind#SIZE_LIMIT_EXCEEDED}
+         */
+        public boolean isSizeLimitExceeded() {
+            return kind == Kind.SIZE_LIMIT_EXCEEDED;
         }
     }
 }

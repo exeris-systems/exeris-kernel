@@ -11,8 +11,9 @@ import eu.exeris.kernel.core.http.hpack.HpackDecoder;
  * connection shares, can no longer be trusted, so RFC 9113 §4.3 makes it a connection error of
  * type {@code COMPRESSION_ERROR} rather than a failure of the one stream.
  *
- * <p>Distinct from {@link HpackDecoder.HpackLimitExceededException}, which leaves the decoder in
- * step with the peer and so is answered on the stream alone.
+ * <p>Distinct from a decode failure of kind
+ * {@link HpackDecoder.HpackDecodingException.Kind#SIZE_LIMIT_EXCEEDED}, which leaves the decoder
+ * in step with the peer and so is answered on the stream alone.
  */
 final class Http2CompressionException extends RuntimeException {
 

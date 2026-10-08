@@ -99,6 +99,12 @@ import static org.assertj.core.api.Assertions.fail;
  * server that instead treats the failed block as a connection error satisfies the contract by
  * ending the connection: the case then has nothing left to judge.
  *
+ * <p>The other half of the same rule is the {@code MalformedBlock} group: a block that does not
+ * decode at all, such as an indexed field with index 0 or one beyond both tables, leaves the shared
+ * context in an unknown state, so it is a connection error of type {@code COMPRESSION_ERROR}
+ * (RFC 9113 §4.3) &mdash; a {@code GOAWAY} carrying error code {@code 0x9} whose last-stream-id is
+ * below the stream, with the handler never invoked. A {@code 400} on the stream is not that.
+ *
  * <h2>Binding obligations</h2>
  * <p>The server engine must accept cleartext HTTP/2 with prior knowledge when
  * {@link HttpConfig#maxVersion()} is {@link HttpVersion#HTTP_2} and
@@ -130,6 +136,7 @@ public abstract class AbstractHttp2HeaderLimitTck {
     private static final int SETTINGS_ENABLE_PUSH = 0x2;
     private static final int SETTINGS_MAX_HEADER_LIST_SIZE = 0x6;
     private static final long NO_ERROR = 0x0;
+    private static final long COMPRESSION_ERROR = 0x9;
 
     /** RFC 9113 §6.5.2: the per-field overhead counted into the decoded field-section size. */
     private static final int FIELD_OVERHEAD = 32;
@@ -408,9 +415,67 @@ public abstract class AbstractHttp2HeaderLimitTck {
         }
     }
 
+    @Nested
+    @DisplayName("A header block that does not decode is a COMPRESSION_ERROR connection error")
+    class MalformedBlock {
+
+        private static final int BLOCK = 4_096;
+        private static final int LIST = 4_096;
+        private static final int LITERAL = 1_024;
+        /** Beyond the 61 static entries and the empty dynamic table. */
+        private static final int INDEX_BEYOND_TABLES = 200;
+
+        @Test
+        @DisplayName("An indexed field with index 0 ends the connection with GOAWAY(COMPRESSION_ERROR)")
+        void indexZeroIsACompressionError() {
+            Probe probe = probe(BLOCK, LIST, LITERAL, blockEndingWithIndexed(0), false);
+
+            assertCompressionError(probe, "an indexed header field with index 0");
+        }
+
+        @Test
+        @DisplayName("An indexed field beyond the static and dynamic tables ends the connection with "
+                + "GOAWAY(COMPRESSION_ERROR)")
+        void indexBeyondTheTablesIsACompressionError() {
+            Probe probe = probe(BLOCK, LIST, LITERAL, blockEndingWithIndexed(INDEX_BEYOND_TABLES), false);
+
+            assertCompressionError(probe, "an indexed header field beyond both tables");
+        }
+
+        private static byte[] blockEndingWithIndexed(int index) {
+            ByteArrayOutputStream block = new ByteArrayOutputStream();
+            RequestBlock.writePseudoHeaders(block, OVER_LIMIT_PATH);
+            RequestBlock.writeInteger(block, 0x80, 7, index);
+            return block.toByteArray();
+        }
+    }
+
     // =========================================================================
     // Judgement
     // =========================================================================
+
+    /**
+     * RFC 9113 §4.3: a field block that does not decode leaves the compression context, which every
+     * stream shares, in an unknown state, so it is a connection error of type
+     * {@code COMPRESSION_ERROR}. Anything softer lets later requests decode against a table that no
+     * longer matches the client's.
+     */
+    private static void assertCompressionError(Probe probe, String what) {
+        Outcome outcome = probe.outcome();
+        assertThat(outcome.kind())
+                .as("%s must end the connection with a GOAWAY, got %s", what, outcome)
+                .isEqualTo(Kind.GOAWAY);
+        assertThat(outcome.errorCode())
+                .as("%s must be reported as COMPRESSION_ERROR (RFC 9113 §4.3), got %s", what, outcome)
+                .isEqualTo(COMPRESSION_ERROR);
+        assertThat(outcome.lastStreamId())
+                .as("GOAWAY's last-stream-id must say the stream was not processed (RFC 9113 §6.8), got %s",
+                        outcome)
+                .isLessThan(FIRST_STREAM);
+        assertThat(probe.servedPaths())
+                .as("%s must never reach the handler", what)
+                .isEmpty();
+    }
 
     /**
      * When the refusal left the connection open, the next request decoded against the table the
@@ -474,7 +539,8 @@ public abstract class AbstractHttp2HeaderLimitTck {
         }
         assertThat(servedPaths)
                 .as("%s is over the limit, so the handler must never run for it", what)
-                .doesNotContain(OVER_LIMIT_PATH);
+                .filteredOn(OVER_LIMIT_PATH::equals)
+                .isEmpty();
     }
 
     // =========================================================================

@@ -560,7 +560,8 @@ class HpackDecoderTest {
 
             assertThatThrownBy(() -> new HpackDecoder(table, allocator, 100, UNBOUNDED)
                     .decode(segment(block), 0, block.length, (n, v, s) -> delivered.add(n + "=" + v)))
-                    .isInstanceOf(HpackDecoder.HpackLimitExceededException.class)
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
                     .hasMessageContaining("header list size");
 
             assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
@@ -582,7 +583,8 @@ class HpackDecoderTest {
 
             assertThatThrownBy(() -> new HpackDecoder(table, allocator, UNBOUNDED, 16)
                     .decode(segment(block), 0, block.length, (n, v, s) -> { }))
-                    .isInstanceOf(HpackDecoder.HpackLimitExceededException.class)
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit)
                     .hasMessageContaining("string literal");
 
             assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
@@ -602,7 +604,8 @@ class HpackDecoderTest {
 
             assertThatThrownBy(() -> new HpackDecoder(table, allocator, UNBOUNDED, 16)
                     .decode(segment(block), 0, block.length, (n, v, s) -> { }))
-                    .isInstanceOf(HpackDecoder.HpackLimitExceededException.class);
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
 
             assertThat(contents(table)).containsExactlyElementsOf(referenceTable(block, 4096));
             assertThat(contents(table)).containsExactly("x-after=a", "x-big=" + big);
@@ -623,7 +626,8 @@ class HpackDecoderTest {
             assertThat(contents(table)).containsExactly("x-seed=s");
 
             assertThatThrownBy(() -> decoder.decode(segment(block), 0, block.length, (n, v, s) -> { }))
-                    .isInstanceOf(HpackDecoder.HpackLimitExceededException.class);
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
 
             HpackDynamicTable reference = new HpackDynamicTable(96);
             HpackDecoder referenceDecoder = new HpackDecoder(reference, allocator, UNBOUNDED, UNBOUNDED);
@@ -645,7 +649,8 @@ class HpackDecoderTest {
 
             HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 100, UNBOUNDED);
             assertThatThrownBy(() -> decoder.decode(segment(refused), 0, refused.length, (n, v, s) -> { }))
-                    .isInstanceOf(HpackDecoder.HpackLimitExceededException.class);
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
 
             List<String> delivered = new ArrayList<>();
             decoder.decode(segment(next), 0, next.length, (n, v, s) -> delivered.add(n + "=" + v));
@@ -667,7 +672,8 @@ class HpackDecoderTest {
             decoder.decode(segment(seed), 0, seed.length, (n, v, s) -> { });
 
             assertThatThrownBy(() -> decoder.decode(segment(block), 0, block.length, (n, v, s) -> { }))
-                    .isInstanceOf(HpackDecoder.HpackLimitExceededException.class);
+                    .isInstanceOf(HpackDecoder.HpackDecodingException.class)
+                    .satisfies(SizeLimitRefusal::assertSizeLimit);
 
             assertThat(table.maxSize()).isZero();
             assertThat(table.size()).isZero();
@@ -688,13 +694,23 @@ class HpackDecoderTest {
                 HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 100, UNBOUNDED);
                 assertThatThrownBy(() -> decoder.decode(segment(block), 0, block.length, (n, v, s) -> { }))
                         .isInstanceOf(HpackDecoder.HpackDecodingException.class)
-                        .isNotInstanceOf(HpackDecoder.HpackLimitExceededException.class);
+                        .satisfies(SizeLimitRefusal::assertMalformed);
             }
 
             HpackDecoder decoder = new HpackDecoder(new HpackDynamicTable(4096), allocator, 100, UNBOUNDED);
             assertThatThrownBy(() -> decoder.decode(segment(truncated), 0, cut, (n, v, s) -> { }))
                     .isInstanceOf(HpackDecoder.HpackDecodingException.class)
-                    .isNotInstanceOf(HpackDecoder.HpackLimitExceededException.class);
+                    .satisfies(SizeLimitRefusal::assertMalformed);
+        }
+
+        private static void assertSizeLimit(Throwable thrown) {
+            assertThat(((HpackDecoder.HpackDecodingException) thrown).kind())
+                    .isEqualTo(HpackDecoder.HpackDecodingException.Kind.SIZE_LIMIT_EXCEEDED);
+        }
+
+        private static void assertMalformed(Throwable thrown) {
+            assertThat(((HpackDecoder.HpackDecodingException) thrown).kind())
+                    .isEqualTo(HpackDecoder.HpackDecodingException.Kind.MALFORMED);
         }
 
         private List<String> referenceTable(byte[] block, long tableSize) {

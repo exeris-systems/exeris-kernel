@@ -286,10 +286,13 @@ final class Http2SessionContext implements AutoCloseable {
         try {
             decoder.decode(block, 0, (int) block.byteSize(),
                     (name, value, _) -> pendingHeaders.accept(name, value));
-        } catch (HpackDecoder.HpackLimitExceededException _) {
+        } catch (HpackDecoder.HpackDecodingException hpack) {
             assembler.reset();
             pendingEndStream = false;
-            return new Http2DecodedRequest(streamId, null, "", List.of(), false, true);
+            if (hpack.isSizeLimitExceeded()) {
+                return new Http2DecodedRequest(streamId, null, "", List.of(), false, true);
+            }
+            throw new Http2CompressionException(hpack);
         } catch (RuntimeException cause) {
             assembler.reset();
             pendingEndStream = false;
