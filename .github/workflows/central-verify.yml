@@ -26,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Released version to verify (e.g. 0.12.0). Empty = the latest vMAJOR.MINOR.PATCH tag.'
+        description: 'Released version to verify (e.g. 0.12.0 or 1.0.0-RC1). Empty = the latest final vMAJOR.MINOR.PATCH tag.'
         required: false
         type: string
 
@@ -61,23 +61,36 @@ jobs:
           case "$EVENT_NAME" in
             release)
               version="${RELEASE_TAG#v}"
-              wait=45 ;;
+              wait=45
+              # Final releases and release candidates (ADR-065 amendment A1) are published to
+              # Central; any other tag is not a Central release and has nothing to verify.
+              if ! printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-RC[0-9]+)?$'; then
+                echo "::notice::Tag '$RELEASE_TAG' is not a release version (vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-RCn); nothing to verify."
+                {
+                  echo "skip=true"
+                  echo "version="
+                  echo "wait=0"
+                } >> "$GITHUB_OUTPUT"
+                exit 0
+              fi ;;
             workflow_dispatch)
               version="${IN_VERSION#v}" ;;
             *)
               version="" ;;
           esac
-          if [ -n "$version" ] && ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::'$version' is not a release version (expected MAJOR.MINOR.PATCH)." >&2
+          if [ -n "$version" ] && ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-RC[0-9]+)?$'; then
+            echo "::error::'$version' is not a release version (expected MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-RCn)." >&2
             exit 1
           fi
           {
+            echo "skip=false"
             echo "version=$version"
             echo "wait=$wait"
           } >> "$GITHUB_OUTPUT"
           echo "resolved: version='${version:-latest tag}' wait=${wait}m"
 
       - name: Verify the release as served by Maven Central
+        if: steps.ver.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.ver.outputs.version }}
           WAIT: ${{ steps.ver.outputs.wait }}

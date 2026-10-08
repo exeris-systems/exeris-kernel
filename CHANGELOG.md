@@ -69,6 +69,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed — verification
 
+- **`central-verify` verifies release candidates and skips tags that are not releases.** A GitHub
+  release for `vMAJOR.MINOR.PATCH-RCn` is verified against Central like a final release (ADR-065
+  amendment A1); a release for any other tag ends the run with a notice instead of failing it. The
+  default "latest tag" stays the highest final release. With `--self-test`, the probe and the real run
+  share one `--wait-minutes` deadline, and an empty served checksum file is a failure line for that
+  file instead of a traceback.
 - **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
   3.2.5.** Both are pinned once, in the root POM; the class sets were compared per execution and per
   CI tag selection. Community and Community Kafka declare the JUnit Vintage engine: with `junit:junit` on
