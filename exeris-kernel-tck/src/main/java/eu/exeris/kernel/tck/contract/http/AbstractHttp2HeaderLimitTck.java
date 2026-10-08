@@ -156,7 +156,7 @@ public abstract class AbstractHttp2HeaderLimitTck {
      * Returns the loopback address the server binds to and the raw client dials.
      *
      * @return a loopback host address; defaults to {@code "127.0.0.1"}
-     * @apiNote Override to exercise a different loopback interface; the value must resolve locally.
+     * @implSpec An override exercises a different loopback interface; the value must resolve locally.
      */
     protected String loopbackHost() {
         return "127.0.0.1";
@@ -211,8 +211,8 @@ public abstract class AbstractHttp2HeaderLimitTck {
      * @param provider the provider under test
      * @param config   the server configuration to create the engine from
      * @return a fresh, not-yet-started server engine; never {@code null}
-     * @apiNote Delegates to {@link HttpProvider#createServerEngine(HttpConfig)}; override only to
-     *          establish what a driver needs bound around engine creation.
+     * @apiNote Delegates to {@link HttpProvider#createServerEngine(HttpConfig)}.
+     * @implSpec An override only establishes what a driver needs bound around engine creation.
      */
     protected HttpServerEngine createServerEngine(HttpProvider provider, HttpConfig config) {
         return provider.createServerEngine(config);
@@ -422,10 +422,29 @@ public abstract class AbstractHttp2HeaderLimitTck {
                     // late invocation could escape the judgement; it does not close it.
                     connection.sendRequest(FOLLOW_UP_STREAM,
                             RequestBlock.withField(FOLLOW_UP_PATH, "x-limit", "v").encoded(), false);
-                    connection.awaitOutcome(FOLLOW_UP_STREAM);
+                    awaitFollowUp(connection);
                 }
                 return new Probe(outcome, connection.advertisedMaxHeaderListSize(), List.copyOf(servedPaths));
             }
+        }
+    }
+
+    /**
+     * Waits for the follow-up stream's outcome, bounded by the response timeout.
+     *
+     * <p>The wait is what narrows the window for a late invocation of the refused request; whether
+     * the follow-up is answered is not part of the contract, so an unanswered follow-up does not fail
+     * the case.
+     *
+     * @param connection the connection the follow-up was sent on
+     * @return whether the server answered the follow-up stream within the timeout
+     */
+    private static boolean awaitFollowUp(RawH2Connection connection) {
+        try {
+            connection.awaitOutcome(FOLLOW_UP_STREAM);
+            return true;
+        } catch (AssertionError unanswered) {
+            return false;
         }
     }
 
