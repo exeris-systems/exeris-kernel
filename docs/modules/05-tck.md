@@ -121,6 +121,12 @@ when its client verifies; the Community client binds it (`CommunityHttpClientTls
 and the Core fixture client, which speaks no TLS, does not. Its servers are the JDK's TLS stack and a
 ClientHello probe, so no case depends on the provider's own server.
 
+`AbstractHttp2HeaderLimitTck` (since 0.13) judges the three HTTP/2 header keys of `HttpConfig` —
+`maxHeaderBlockSize`, `maxHeaderListSize`, `maxStringLiteralSize` — from a raw socket speaking cleartext
+HTTP/2 with prior knowledge. For each key a request at the limit is served and a request one octet over
+it is refused without reaching the handler, and the server advertises `maxHeaderListSize` as
+`SETTINGS_MAX_HEADER_LIST_SIZE`. The Community server binds it (`CommunityHttp2HeaderLimitTckTest`).
+
 ### Current Core Binding Coverage (HTTP)
 
 Concrete Core bindings now present:
