@@ -16,6 +16,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Security
+
+- **A bound `HttpRoutePolicy` is asked about the route the router dispatches to.** The Community
+  dispatcher removes the query component, and asks a `HEAD` request as `GET` when `HttpRouter`
+  serves it from the `GET` route because no `HEAD` route matches; it passed the raw request-target
+  and method before, so under a policy answering `permitAll()` for unmatched routes, `GET /p?x=1`
+  and `HEAD /p` reached the `GET /p` handler without its requirement (GHSA-6gmf-jp4g-gvmh, CWE-863;
+  affects 0.11.0–0.12.0 with a policy bound). A `HEAD` rule now governs only a request dispatched
+  to a `HEAD` route; where the `GET` handler runs, the `GET` rule does. `HttpRouter.routeMethod`
+  names the method of the route a request is dispatched to.
+
 ### Fixed — verification
 
 - **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
