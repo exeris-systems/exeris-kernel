@@ -34,6 +34,7 @@ import java.util.function.IntSupplier;
 final class CommunityTenantPoolRegistry {
 
     private static final long MIN_RECLAIM_CADENCE_MS = 250L;
+    // Not a key: it clamps persistence.idleTimeoutMs / 4, an input already configured; a second knob could disagree.
     private static final long MAX_RECLAIM_CADENCE_MS = 5_000L;
 
     private final String providerId;
