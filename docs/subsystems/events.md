@@ -237,7 +237,7 @@ wired into any runtime path. `CommunityEventEngine`, for its part, constructs th
 directly with no seam to substitute. So a deployment gets durable emission on one node *or* cross-node
 fan-out, not both from one engine. This is a current limit, not a contract: the outbox-orchestrator-driven
 Kafka delivery path is listed as deferred in that module's `package-info`. [ADR-101](../adr/ADR-101-events-spi-contract-anchor.md)
-(PROPOSED) keeps it a documented limit at 1.0 and places a configured broker-port selection after 1.0.
+(accepted 2026-10-08) keeps it a documented limit at 1.0 and places a configured broker-port selection after 1.0.
 
 ### Multi-node substrate inventory
 
