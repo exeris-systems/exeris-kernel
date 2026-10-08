@@ -86,7 +86,7 @@ This preserves ADR-026's "no implicit behaviour" surface and avoids magic-by-def
 ### What the default enricher cannot do today
 
 - **Bearer token forwarding.** The kernel does not hold the raw `Authorization: Bearer <token>` string — `PrincipalContext` is the *parsed* identity (UUIDv7, roles, scopes) consumed by the JWT validator at the HTTP edge. Applications that need outbound Bearer propagation must hold the token outside kernel SPI (in application memory or via a custom `ScopedValue` of their own) and ship a custom enricher that reads from it.
-- **W3C `traceparent` / `tracestate`.** No `TraceContext` `ScopedValue` slot exists, so the default enricher emits no correlation header. The slot is part of the roadmap entry *Telemetry: OTLP Metrics Export and Distributed Tracing*; once it exists, `CommunityKernelContextEnricher` gains a third header (`traceparent`) read from it.
+- **W3C `traceparent` / `tracestate`.** No `TraceContext` `ScopedValue` slot exists in 0.8.0. The consolidated 1.0 GA roadmap (Sprint 0.12, B2 P1-9) places the slot — until then, the default enricher emits no correlation header. After the slot lands, `CommunityKernelContextEnricher` will gain a third header (`traceparent`) read from the new slot. *(2026-10-08: the roadmap cited here is not a published document, and no release placed the slot. The slot belongs to the [ROADMAP entry *Telemetry: OTLP Metrics Export and Distributed Tracing*](../ROADMAP.md#telemetry-otlp-metrics-export-and-distributed-tracing); until it exists the default enricher emits no correlation header.)*
 
 These are documented limitations, not bugs.
 
@@ -177,7 +177,7 @@ No `KernelClientGenerator` change is required in `exeris-tooling` for this enric
 - ADR-014 — `@RequiresRole` Compile-Time RBAC Generation — same `PrincipalContext.roleMask()` path the enricher reads from
 - ADR-006 — Spring-Free Kernel Boundary (The Wall) — enricher contract sees only SPI types
 - Security audit S-P0-04 (2026-05-13, `docs/release/security-privacy-audit-v0.8.md`) — server-side CRLF/NUL rejection; enricher mirrors on outbound
-- [ROADMAP — Telemetry: OTLP Metrics Export and Distributed Tracing](../ROADMAP.md#telemetry-otlp-metrics-export-and-distributed-tracing) — the `TraceContext` slot that would extend this enricher's default emission set with `traceparent`
+- Consolidated 1.0 GA roadmap row #63 (`docs/release/1_0-gA-roadmap-consolidated.md`) — Sprint 0.12 W3C `traceparent` ScopedValue slot that extends this enricher's default emission set after it lands *(2026-10-08: not a published document; the slot is tracked in the [ROADMAP entry *Telemetry: OTLP Metrics Export and Distributed Tracing*](../ROADMAP.md#telemetry-otlp-metrics-export-and-distributed-tracing))*
 
 ## Amendments
 
@@ -203,3 +203,11 @@ No `KernelClientGenerator` change is required in `exeris-tooling` for this enric
   or throws; the engine reads it during `send` and neither closes nor retains it. The enricher's own obligation, never to read, retain or
   close the body, is unchanged, and so is the rest of this decision. The obligation is marked in
   place, not rewritten (`adr-conventions.md` rule 7).
+- **2026-10-08 — the `traceparent` slot is tracked in the ROADMAP, not in the consolidated
+  roadmap this ADR cites.** The limitation bullet and the References row point at
+  `docs/release/1_0-gA-roadmap-consolidated.md`, which is not part of the published repository, and
+  say Sprint 0.12 places a `TraceContext` `ScopedValue` slot. No release placed it: no
+  `TraceContext` type exists in SPI, Core or Community. The slot belongs to the ROADMAP entry
+  *Telemetry: OTLP Metrics Export and Distributed Tracing*, and both places now point there.
+  **Nothing about the decision changes**: the default enricher emits no correlation header until the
+  slot exists. Both are marked in place, not rewritten (`adr-conventions.md` rule 7).
