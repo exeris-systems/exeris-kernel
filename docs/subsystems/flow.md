@@ -188,14 +188,16 @@ kernel gap rather than a generator omission. Tracked in `docs/ROADMAP.md`.
 `FlowDefinitionBuilder` accepts transitions with a `conditionTag`, but nothing at run time reads the
 tag. `CoreFlowPlanFactory` resolves each step to **one** next index when it compiles the plan: the
 step's unconditional (`"default"`) transition if it has one, otherwise its first outgoing
-transition, otherwise the next step in order. `FlowOutcome` is `CONTINUE`, `COMPLETE` or `PARK`;
-none of them names a transition. So a flow cannot route on a step's result — a failure branch, a
-timeout branch or a guarded edge is not expressible — and a second conditional transition from the
-same step is accepted and never taken. `COMPLETE` is the one result that changes the path: it ends
-the flow.
+transition, otherwise the next step in order. `FlowOutcome` is `CONTINUE`, `COMPLETE`, `PARK` or
+`FAIL`, and none of them names a transition: `CONTINUE` takes the precomputed step, `COMPLETE` ends
+the flow, `PARK` waits, and `FAIL` unwinds the compensation stack. So a flow cannot route on a step's
+result — a failure branch, a timeout branch or a guarded edge is not expressible — and a second
+conditional transition from the same step is accepted and never taken.
 
-Outcome-based routing is post-1.0, tracked as #582 under the roadmap entry *Tooling Asks Carried to
-v0.13*.
+Outcome-based routing is #582, under the roadmap entry *Tooling Asks Carried to v0.13*. An RFC in
+0.13 decides its shape, and the shape has to add to the flow surface 1.0 declares stable rather than
+change it: a new constant in `FlowOutcome` stops every `switch` expression over it without a
+`default` from compiling. The implementation and its TCK follow 1.0.
 
 ### Terminal-State Catalog Retention
 

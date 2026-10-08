@@ -3543,15 +3543,15 @@ issue holding the measurement:
 of each are `exeris-tooling`'s and are listed in each issue.
 
 **Resolution:** #581 and #583 are implementation plus TCK once the default is chosen; #585 and #580
-item 4 are ADR rulings (ADR-012, ADR-006). #582 needs an RFC and is post-1.0: 1.0 ships with the next
-step fixed at plan compilation, which `flow.md` §"A step's next step is fixed when the plan is
-compiled" states.
+item 4 are ADR rulings (ADR-012, ADR-006). #582 needs an RFC, written in 0.13, that fixes a shape adding
+to the stable flow surface; the implementation follows 1.0, which ships with the next step fixed at
+plan compilation, as `flow.md` §"A step's next step is fixed when the plan is compiled" states.
 
 **Merge Gate:** each issue's acceptance criteria.
 
 **Status (v0.13): RULED IN PART, NOT IMPLEMENTED.** ADR-012's amendment of 2026-10-07 (proposed)
 rules #585, #611 (item 4 of #580) and #581; the ruling proposed for #583 is a comment on that issue.
-Neither #581 nor #583 is implemented, and #582 is post-1.0. The measurements are in #581–#585.
+Neither #581 nor #583 is implemented, and #582's RFC is not written. The measurements are in #581–#585.
 
 ---
 
