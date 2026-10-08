@@ -11,6 +11,7 @@ import eu.exeris.kernel.core.http.routing.HttpRouter;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpConfig;
+import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
 import eu.exeris.kernel.spi.http.HttpMethod;
@@ -441,6 +442,31 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
         assertThat(handlerInvoked.get()).isFalse();
     }
 
+    /**
+     * A fail-open policy that declares a requirement for {@code HEAD} alone. Against a router with a
+     * registered {@code HEAD} route, the {@code HEAD} rule is the one that governs it — a resolver that
+     * asks every {@code HEAD} as {@code GET} takes the permit-all {@code GET} answer instead.
+     */
+    private static final HttpRoutePolicy HEAD_RULE_POLICY = (method, path) ->
+            method == HttpMethod.HEAD && "/api/orders".equals(path)
+                    ? RouteRequirement.requiringAnyScope(Set.of("security:read"))
+                    : RouteRequirement.permitAll();
+
+    @Test
+    @DisplayName("A registered HEAD route is decided by the HEAD requirement")
+    void registeredHeadRouteIsDecidedByTheHeadRequirement() {
+        AtomicBoolean handlerInvoked = new AtomicBoolean(false);
+
+        int status = statusWithoutToken(HEAD_RULE_POLICY, HttpMethod.HEAD, "/api/orders",
+                handlerInvoked, true);
+
+        assertThat(status)
+                .as("the router dispatches HEAD /api/orders to its HEAD route, so the policy must be "
+                        + "asked about HEAD, not answered by the permit-all GET rule")
+                .isEqualTo(401);
+        assertThat(handlerInvoked.get()).isFalse();
+    }
+
     @Test
     @DisplayName("A query string does not move a public route onto the unmatched denial")
     void queryStringKeepsPublicRoutePublic() {
@@ -458,6 +484,11 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
 
     private static int statusWithoutToken(HttpRoutePolicy policy, HttpMethod method, String target,
                                           AtomicBoolean handlerInvoked) {
+        return statusWithoutToken(policy, method, target, handlerInvoked, false);
+    }
+
+    private static int statusWithoutToken(HttpRoutePolicy policy, HttpMethod method, String target,
+                                          AtomicBoolean handlerInvoked, boolean withHeadRoute) {
         int[] status = new int[1];
         ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR)
             .where(KernelProviders.SECURITY_PROVIDER,
@@ -469,16 +500,17 @@ class CommunityHttpSecurityAdmissionIntegrationTest {
 
                 try (HttpServerEngine server = provider.createServerEngine(serverConfig(port));
                      HttpClientEngine client = provider.createClientEngine(clientConfig(port))) {
-                    server.setHandler(HttpRouter.builder()
-                            .route(HttpMethod.GET, "/api/orders", exchange -> {
-                                handlerInvoked.set(true);
-                                exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
-                            })
-                            .route(HttpMethod.GET, "/api/public", exchange -> {
-                                handlerInvoked.set(true);
-                                exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
-                            })
-                            .build());
+                    HttpHandler respondOk = exchange -> {
+                        handlerInvoked.set(true);
+                        exchange.respond(HttpResponse.noBody(HttpStatus.OK, exchange.request().version()));
+                    };
+                    HttpRouter.Builder routes = HttpRouter.builder()
+                            .route(HttpMethod.GET, "/api/orders", respondOk)
+                            .route(HttpMethod.GET, "/api/public", respondOk);
+                    if (withHeadRoute) {
+                        routes.route(HttpMethod.HEAD, "/api/orders", respondOk);
+                    }
+                    server.setHandler(routes.build());
 
                     server.start();
                     client.start();

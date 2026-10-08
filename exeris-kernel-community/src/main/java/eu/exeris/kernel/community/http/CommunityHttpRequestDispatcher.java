@@ -97,7 +97,7 @@ final class CommunityHttpRequestDispatcher {
         // same carrier the authorization decision reads and the handling branch needs it too. One
         // resolution, one path match: asking the policy twice would let two answers disagree about
         // what a route is.
-        RouteRequirement requirement = resolveRequirement(request);
+        RouteRequirement requirement = resolveRequirement(request, handler);
         boolean longRunning = requirement != null
                 && requirement.execution() == RouteRequirement.Execution.LONG_RUNNING;
 
@@ -149,7 +149,7 @@ final class CommunityHttpRequestDispatcher {
                     HttpKernelProviders.HTTP_REQUEST_BODY_DECODER_REGISTRY, requestBodyDecoderRegistry);
         }
         ScopedValue.Carrier streamScope = carrier;
-        authorize(request, resolveRequirement(request), denial, () -> streamScope.run(openStream));
+        authorize(request, resolveRequirement(request, null), denial, () -> streamScope.run(openStream));
     }
 
 
@@ -161,14 +161,19 @@ final class CommunityHttpRequestDispatcher {
      * refined by amendment A1), so an application that declares nothing carries no edge authorization
      * at all.
      *
+     * <p>The policy is asked about the route the request is dispatched to, as {@link RoutePolicyQuery}
+     * resolves it, not about the request-target as sent.
+     *
      * @param request the parsed request whose route is being resolved
+     * @param handler the root handler a respond-once request is dispatched to, or {@code null} for a
+     *                stream open
      * @return the requirement the bound {@link HttpRoutePolicy} declares for this route, or an
      *         unconditional permit-all requirement when no policy is bound
      */
-    private RouteRequirement resolveRequirement(HttpRequest request) {
+    private RouteRequirement resolveRequirement(HttpRequest request, HttpHandler handler) {
         return routePolicy == null
                 ? RouteRequirement.permitAll()
-                : RoutePolicyQuery.requirementFor(routePolicy, request);
+                : RoutePolicyQuery.requirementFor(routePolicy, request, handler);
     }
 
     /**
