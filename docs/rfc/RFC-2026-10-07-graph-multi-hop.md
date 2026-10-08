@@ -422,7 +422,7 @@ The decision is recorded in ADR-102, which also anchors the graph subsystem as p
 ### Rulings (2026-10-08)
 
 The owner ruled that each point takes the option recommended below. A point whose recommendation
-covers only part of it is marked **Not ruled** for the remainder.
+covers only part of it had its remainder ruled by the owner on the same date.
 
 - **R1 — the refusal's exception.** Options: `GraphQueryException` `EX-GRPH-5002` with
   `queryType = "SHORTEST_PATH"` and a detail naming the three-argument overload (existing code, but the
@@ -444,13 +444,13 @@ covers only part of it is marked **Not ruled** for the remainder.
 - **R3 — result semantics.** **Ruled:** terminal frontier, not the union of every node visited
   on the path. Terminal frontier is what a recommendation query asks for and what makes
   `traverseBreadthFirst` a special case.
-- **R4 — direction in `traverseBreadthFirst`.** **Ruled:** `traversePath` honours direction. **Not ruled:** whether
-  `traverseBreadthFirst` is brought into line in the same release — a behaviour change for any caller
-  relying on a descriptor whose direction is not `OUTGOING` — or the divergence is documented and
-  fixed separately.
+- **R4 — direction in `traverseBreadthFirst`.** **Ruled:** `traversePath` honours direction. **Ruled (2026-10-08):**
+  `traverseBreadthFirst` is brought into line in the same release, honouring the descriptor's
+  direction — a behaviour change for any caller relying on a descriptor whose direction is not
+  `OUTGOING`, recorded in the release notes.
 - **R5 — the two unread `GraphTraversal` flags.** **Ruled:** `GraphPathSpec` omits `includeStartNode` and
-  `includePayload`, since no backend reads them. **Not ruled:** whether `GraphTraversal` keeps them as
-  documented no-ops or they are implemented; that is a separate decision.
+  `includePayload`, since no backend reads them. **Ruled (2026-10-08):** on `GraphTraversal` the two
+  flags are deprecated, with javadoc stating they have no effect; they are not implemented.
 
 ### Risks of the recommendation
 
@@ -468,10 +468,10 @@ covers only part of it is marked **Not ruled** for the remainder.
 
 | Field                | Value |
 |:---------------------|:------|
-| **Outcome**          | Option A: an ordered `GraphPathSpec` consumed by `traversePath` and `streamPathJson`; the two-argument `findShortestPath` refuses (R1). Rulings R1 to R3 and the first part of R4 and R5 as recorded above. |
+| **Outcome**          | Option A: an ordered `GraphPathSpec` consumed by `traversePath` and `streamPathJson`; the two-argument `findShortestPath` refuses (R1). Rulings R1 to R5 as recorded above. |
 | **Date**             | 2026-10-08 |
 | **Resulting ADR(s)** | ADR-102 (to be written; the decision is recorded there) |
-| **Notes**            | The `traverseBreadthFirst` direction question (R4) and the `GraphTraversal` flags (R5) were not ruled. |
+| **Notes**            | R4 also brings `traverseBreadthFirst` into line on direction; R5 deprecates the two `GraphTraversal` flags. |
 
 ## Open questions / follow-ups
 

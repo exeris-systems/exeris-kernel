@@ -177,7 +177,7 @@ Four questions about what the kernel promises at the database session, raised by
 #580) and #581, plus the behaviour of an absent session key. Each states the options, the
 recommendation, and the reasons. The owner ruled on 2026-10-08 that each point takes the recommended
 option. Nothing in this section is implemented: every behaviour change it names is planned for 0.13.
-Points the recommendation does not decide are marked **Not ruled**.
+The points the recommendations left open were ruled by the owner on the same date.
 
 Measured state the rulings build on:
 
@@ -252,8 +252,8 @@ storage, rotation, wrapping and an access policy, which is a product of its own,
 names a scheme the kernel has to carry it. Tooling must not invent a scheme either, so `@Encrypted` has
 no kernel target at 1.0.
 
-- **Not ruled:** whether Option B stays open after 1.0. If it does, it needs its own ADR. This
-  amendment records only that no tier claims it at 1.0.
+- **Ruled (2026-10-08):** Option B stays open after 1.0 without a commitment: it returns, in any
+  tier, only through its own ADR. No tier claims it at 1.0.
 
 ### 4c.2 The write check pins the shared-scope tag (#611, item 4 of #580)
 
@@ -364,13 +364,12 @@ write-side absence is left open. A raise turns both into a failed statement that
 reports (`EX-PERS-5003`). Kernel-owned tables carry no policy, so the system paths in Option A's
 rejection are unaffected.
 
-- **Not ruled:** whether raise-on-absence is a **MUST** for a policy that claims conformance (then
+- **Ruled (2026-10-08):** raise-on-absence is a **MUST** for a policy that claims conformance.
   `AbstractSharedScopeAccessMatrixTck` and the tenant-isolation suites gain an absent-tenant cell
-  asserting a refusal), or a **SHOULD** in the reference only (then no TCK cell, and Option B remains a
-  conforming deployment choice).
-- **Not ruled:** whether the reference text of `exeris_required_setting` is published in the
-  `RlsConnectionInterceptor` javadoc and `docs/subsystems/persistence.md`, or only described there. In
-  either case the kernel does not install it (§4b.7).
+  asserting a refusal, so Option B is not a conforming deployment choice.
+- **Ruled (2026-10-08):** the reference text of `exeris_required_setting` is published in
+  `docs/subsystems/persistence.md`, beside the reference policy, for deployments to install. The kernel
+  does not install it (§4b.7).
 
 ### 4c.4 Boot check on a role that bypasses row-level security (#581)
 

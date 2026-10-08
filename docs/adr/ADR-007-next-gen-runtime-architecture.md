@@ -183,9 +183,8 @@ is turned off rather than raced.
 - **Switch — ruled (2026-10-08): a `KernelBootstrap.Builder` method**, because an embedding host
   builds the bootstrap in code (the Spring host runtime calls `KernelBootstrap.builder()`), and a boot
   option cannot be overridden by a configuration file the host does not control. This
-  amendment defines no configuration key: whether one should exist — so a standalone operator who owns
-  signals can turn the hook off without code — and its name were not ruled, and a key would be a later
-  amendment. Existing kernel keys are `<subsystem>.<camelCase>` (for example
+  amendment defines no configuration key; a key that lets a standalone operator who owns signals turn
+  the hook off without code would be a later amendment. Existing kernel keys are `<subsystem>.<camelCase>` (for example
   `http.h2cUpgradeEnabled`); no key under a `kernel.` or `bootstrap.` prefix is read through
   `ConfigProvider`, so there is no namespace to follow. If a key is
   ever added, the builder setting wins over it.
@@ -309,8 +308,8 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
   section; no earlier text is changed. Adds a public idempotent `KernelBootstrap.shutdown()`, one JVM
   shutdown hook registered by standalone `boot()` that runs the existing ordered stop on `SIGTERM`, and a
   switch an embedding host uses to turn the hook off and call `shutdown()` from its own lifecycle. The hook
-  is opt-out and the switch is a builder method (ruled 2026-10-08); a configuration key beside the
-  builder switch was not ruled and is not part of this amendment. Driven by #542; the TCK binding is #461.
+  is opt-out and the switch is a builder method (ruled 2026-10-08); no configuration key is
+  defined beside the builder switch. Driven by #542; the TCK binding is #461.
 
 ## Engineering Protocol
 
