@@ -3,7 +3,7 @@ title: "ADR-103: Native-image opt-in build"
 type: adr
 visibility: public
 owning-repo: exeris-kernel
-status: draft
+status: active
 slug: adr/ADR-103
 ---
 
@@ -11,7 +11,7 @@ slug: adr/ADR-103
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED**                                                                              |
+| **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/runtime` — `exeris-kernel-spi`, `exeris-kernel-core`, `exeris-kernel-community`, `exeris-kernel-community-kafka`, `exeris-kernel-build-config` (the `@RequiresRole` processor) |
@@ -199,12 +199,12 @@ supported.
    and OpenSSL 3 on the host for the TLS paths, as on the JVM.
 
 8. **Shared arenas.**
-   - **`NativeTcpSocketBackend` moves off `Arena.ofShared()`** (recommended). Its arena backs no
+   - **`NativeTcpSocketBackend` moves off `Arena.ofShared()`.** Its arena backs no
      allocation on the path that creates it: on POSIX, `CoreSyscallLoader.load` resolves symbols
      through `Linker.defaultLookup()` and allocates nothing in the arena, which its Javadoc says is
      held for API symmetry; on Windows, `SocketBackendSelection.resolve` returns before calling
      `load`, so the `WSADATA` scratch buffer `loadWindows` would allocate in the arena is never
-     requested from this class. The recommendation is to pass `Arena.global()` — what
+     requested from this class. It passes `Arena.global()` — what
      `CommunityKernelCryptoProvider` already passes to `CoreOpenSslLoader.load`, on a path measured
      green in the image — and stop closing it, since a global arena cannot be closed. `Arena.ofAuto()`
      is the alternative if a Windows FFM socket path is ever armed through this class, so a
@@ -214,9 +214,10 @@ supported.
      arena cannot be used across threads and neither a global nor an automatic arena can be closed.
    - **`-H:+SharedArenaSupport` ships in Community's `native-image.properties` only if the pool still
      needs it** after the socket backend moves, which an image shutdown after pool use shows.
-     **Ruling required:** whether the kernel may ship an experimental GraalVM option inside its jars.
-     The alternative is to leave the pool's arena kind to a later change and document the flag as the
-     consumer's own build argument, at the cost of "no configuration of its own".
+     **Ruled (2026-10-08):** the kernel may ship an experimental GraalVM option inside
+     its jars, so Community's `native-image.properties` carries the flag when the pool still needs it.
+     The rejected alternative was to document the flag as the consumer's own build argument, at the
+     cost of "no configuration of its own".
    - `NativeCipherContext` creates no arena and needs no change.
 
 9. **No GraalVM type in the kernel.** No `org.graalvm.nativeimage.*` type appears in SPI, and no
@@ -265,7 +266,7 @@ supported.
 - **[-] CI cost.** An image build needs far more time and memory than any other check; the job
   needs a large runner or a long budget, which is why it is outside the default gate.
 - **[-] An experimental flag may ship.** If obligation 8 ends with the pool still on a shared arena
-  and the ruling allows it, Community's jar carries an option GraalVM has announced it will gate.
+  and the pool needs the flag, Community's jar carries an option GraalVM has announced it will gate.
 
 ### 📋 What is NOT in scope
 

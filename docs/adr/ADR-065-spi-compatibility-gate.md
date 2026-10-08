@@ -14,7 +14,7 @@ slug: adr/ADR-065
 | **Status**      | **ACCEPTED**                                                                             |
 | **Deciders**    | Arkadiusz Przychocki                                                                     |
 | **Date**        | 2026-08-05                                                                               |
-| **Amended**     | 2026-10-07 — **PROPOSED**: A1, release candidates and the SPI freeze before 1.0.0 — see [Amendments](#amendments) |
+| **Amended**     | 2026-10-07 — **ACCEPTED** (2026-10-08): A1, release candidates and the SPI freeze before 1.0.0 — see [Amendments](#amendments) |
 | **Scope**       | `kernel/build`                                                                           |
 | **Owning Repo** | `exeris-kernel`                                                                          |
 | **Driven By**   | [`docs/stability-matrix.md`](../stability-matrix.md) — a maturity declaration with nothing checking it; the 1.0-readiness audit's "japicmp absent" table-stakes gap |
@@ -58,7 +58,7 @@ already established for CI tooling) and runs as its own CI job. It compares the 
 revisions with [japicmp](https://siom79.github.io/japicmp/) and **fails the build on a
 binary-incompatible change to a surface the stability matrix declares `stable`**.
 
-*(Amendment A1, proposed 2026-10-07: which tag is "the last release" once release candidates exist,
+*(Amendment A1, accepted 2026-10-08: which tag is "the last release" once release candidates exist,
 and what the gate freezes between a candidate and 1.0.0 — see [Amendments](#amendments).)*
 
 Four rulings carry the decision.
@@ -127,7 +127,7 @@ The matrix is allowed to be wrong. It is not allowed to be quietly wrong.
 - **The pre-1.0 caveat stands.** Minor versions may still carry observable contract additions; this
   gate does not convert `stable` into a semver-binding promise before 1.0. It makes the *intent*
   checkable, which is a different and smaller claim.
-  *(Amendment A1, proposed 2026-10-07: the scope of the freeze from the first 1.0.0 release
+  *(Amendment A1, accepted 2026-10-08: the scope of the freeze from the first 1.0.0 release
   candidate onward — see [Amendments](#amendments).)*
 - **`preview` is not weakened into a free-for-all.** Changes there are reported in every release diff
   and belong in the release notes; they are ungated, not unrecorded.
@@ -219,15 +219,15 @@ The matrix is allowed to be wrong. It is not allowed to be quietly wrong.
 Each amendment is marked in place at the text it changes, not rewritten (`adr-conventions.md`
 rule 7). This section indexes them.
 
-### A1 — 2026-10-07, PROPOSED: release candidates and the SPI freeze before 1.0.0
+### A1 — 2026-10-07, ACCEPTED 2026-10-08: release candidates and the SPI freeze before 1.0.0
 
 Tracked in [#614](https://github.com/exeris-systems/exeris-kernel/issues/614). v0.13.0 is the last
 minor before 1.0.0, and the release path carries no release candidate as it stands: the release
 workflow's strict tag check accepts only `^v[0-9]+\.[0-9]+\.[0-9]+$`, the release-integration skill
 opens `development/X.(Y+1).0` after every release, and the branch-and-release policy says nothing
 about a candidate or a freeze. This gate is the part of the release path a candidate changes the
-meaning of, so the ruling is recorded here. A1.1 is ruled; A1.2 and A1.4 carry points marked
-**Ruling required**.
+meaning of, so the ruling is recorded here. A1.1 was ruled with the proposal; A1.2 and A1.4 were
+ruled on 2026-10-08, each taking the option it recommended.
 
 #### A1.1 — What a release candidate is (ruled)
 
@@ -255,11 +255,11 @@ meaning of, so the ruling is recorded here. A1.1 is ruled; A1.2 and A1.4 carry p
 - **The generated record has no candidate rows.** `docs/release/spi-api-history.md` records release
   transitions only, so the row that follows `0.13.0` is `0.13.0 → 1.0.0`.
 
-#### A1.2 — What the freeze covers — **Ruling required**
+#### A1.2 — What the freeze covers (ruled 2026-10-08: option 1)
 
 Options considered:
 
-1. **Stable surfaces only (recommended).** From the first candidate, a binary-incompatible change
+1. **Stable surfaces only (ruled).** From the first candidate, a binary-incompatible change
    to a `stable` surface fails the build, enforced by today's `--fail-on-stable` against the last
    release tag (A1.1). `preview` and `experimental` surfaces may still change after a candidate:
    such a change is reported in the diff and named in the next candidate's release notes
@@ -268,7 +268,7 @@ Options considered:
    change to a `preview` surface as well, enabled on the 1.0 line from the first candidate. Today
    the script reports a `preview` break as "Reported, not gated".
 
-Recommendation: option 1. It is ruling 2 of this ADR applied unchanged, and it needs no new tool
+Ruled: option 1. It is ruling 2 of this ADR applied unchanged, and it needs no new tool
 mode, so the freeze runs on the gate that has already been exercised against the full release
 history. Freezing `preview` would turn a label that promises change into one that forbids it for
 the candidate period, a promise 1.0.0 itself does not make. The maturity labels are read from the
@@ -291,13 +291,13 @@ after `development/0.13.0` (measured with GNU `sort -V`), so it returns the 1.0 
 change. Every candidate for 1.0.0 is cut from `development/1.0.0`'s state, and the line stays open
 after a candidate: unlike an integrated `development/X.Y.0`, it is not done until `v1.0.0`.
 
-#### A1.4 — How a candidate reaches its tag — **Ruling required**
+#### A1.4 — How a candidate reaches its tag (ruled 2026-10-08: option 1)
 
 The release workflow uploads only for a tag whose commit is on `main` (the `compare` check:
 `identical` or `behind`), and the release ritual bumps the poms on `main` and tags that commit.
 Options considered:
 
-1. **A candidate goes through the release ritual (recommended).** A `release(1.0.0-RCn)` pull
+1. **A candidate goes through the release ritual (ruled).** A `release(1.0.0-RCn)` pull
    request integrates `development/1.0.0` into `main` with the poms at `1.0.0-RCn`; the tag goes on
    that commit on `main`. The `main`-containment check is unchanged, and `main` holds exactly what
    Central holds. Cost: `main` carries a candidate version between a candidate and the release, and
@@ -306,7 +306,7 @@ Options considered:
    `-RCn` tags only. Cost: a second rule in the one guard that decides which commit can reach
    Central, and a pom bump and revert on the development line for each candidate.
 
-Recommendation: option 1, because the guard that matters keeps a single rule and the candidate is
+Ruled: option 1, because the guard that matters keeps a single rule and the candidate is
 produced by the same steps the release will be.
 
 #### A1.5 — Obligations of the release that carries this amendment
@@ -323,4 +323,4 @@ the release pull request that carries the first candidate's path, planned for th
   stays open after a candidate) are written down.
 - `.agents/policies/branch-and-release.md` — states the candidate tag shape, the freeze scope ruled
   in A1.2, and the 1.0 line.
-- The ecosystem ADR index row for ADR-065 shows the amendment date once A1 is accepted.
+- The ecosystem ADR index row for ADR-065 shows the amendment date now that A1 is accepted.

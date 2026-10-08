@@ -10,10 +10,10 @@ status: active
 
 |                    |                                                                          |
 |:-------------------|:-------------------------------------------------------------------------|
-| **Status**         | **OPEN** — options laid out, decision not taken                          |
+| **Status**         | **ACCEPTED** — Option A; decision recorded in ADR-102, to be written     |
 | **Author(s)**      | Arkadiusz Przychocki                                                     |
 | **Date Opened**    | 2026-10-07                                                               |
-| **Date Closed**    | —                                                                        |
+| **Date Closed**    | 2026-10-08                                                               |
 | **Target ADR(s)**  | ADR-102 (graph subsystem anchor; records the shape chosen here)          |
 | **Affected Repos** | `exeris-kernel` (authoritative); `exeris-spring-runtime` (exposes `GraphSession` to Spring beans through the [ADR-030](../adr/ADR-030.link.md) seam) |
 | **Reviewers**      | —                                                                        |
@@ -231,7 +231,7 @@ is for BFS today.
 **Direction.** `traversePath` honours each hop's `GraphEdgeDescriptor.direction` and `bidirectional`.
 Without it the commonest recommendation shape —
 `User -[PURCHASED]-> Product <-[PURCHASED]- User` — is not expressible. This diverges from
-`traverseBreadthFirst`, which ignores direction today; see Ruling required R4.
+`traverseBreadthFirst`, which ignores direction today; see ruling R4.
 
 **`StorageContext`.** The whole path is one statement on one connection (PostgreSQL) or one query in
 one driver session (Neo4j), so every hop runs under the scope bound for the request by construction.
@@ -419,35 +419,38 @@ The decision is recorded in ADR-102, which also anchors the graph subsystem as p
 - **Search all types for #466** — answers a question the caller did not ask, and changes the answer
   when an unrelated edge type is registered.
 
-### Ruling required
+### Rulings (2026-10-08)
+
+The owner ruled that each point takes the option recommended below. A point whose recommendation
+covers only part of it is marked **Not ruled** for the remainder.
 
 - **R1 — the refusal's exception.** Options: `GraphQueryException` `EX-GRPH-5002` with
   `queryType = "SHORTEST_PATH"` and a detail naming the three-argument overload (existing code, but the
   code's meaning is "query execution failure", not "caller error"); a new `EX-GRPH-5006` (an accurate
   code, plus a `KernelErrorCodes` entry and a `graph.md` row); `UnsupportedOperationException` (no
-  Exeris code). Recommended: `EX-GRPH-5002`, because it adds no code to a preview surface and keeps the
-  graph exception family single. Also to rule: whether the overload is removed outright in 0.13, which
-  preview permits, or kept refusing and deprecated for removal before promotion; recommended: keep it
-  refusing and deprecated, so a caller gets a named error instead of a missing method.
+  Exeris code). **Ruled:** `EX-GRPH-5002`, because it adds no code to a preview surface and keeps the
+  graph exception family single. The overload is not removed outright in 0.13, which preview permits;
+  it is kept refusing and deprecated for removal before promotion, so a caller gets a named error
+  instead of a missing method.
 - **R2 — isolation for tenant-scoped graph access.** The cross-tenant case cannot pass on Neo4j, which
   has no per-scope routing, nor on PostgreSQL under `SHARED`, whose generated edge tables have no
   column for an RLS policy. Options: the graph engine refuses a traversal under a non-system
   `StorageContext` whose strategy the binding cannot scope (fail-closed); route by scope (Neo4j
   database per `DEDICATED` tenant, a tenant column under `SHARED`); or document the strategies the graph
-  subsystem supports and leave the others unscoped. Recommended: refuse what cannot be scoped, declare
+  subsystem supports and leave the others unscoped. **Ruled:** refuse what cannot be scoped, declare
   `SEPARATED_SCHEMA` and `DEDICATED` on PostgreSQL as supported, and run the cross-tenant case per
   declared strategy. This rule applies to the existing one-hop methods as well, which is why it is a
   separate ruling.
-- **R3 — result semantics.** Terminal frontier (recommended, above) or the union of every node visited
+- **R3 — result semantics.** **Ruled:** terminal frontier, not the union of every node visited
   on the path. Terminal frontier is what a recommendation query asks for and what makes
   `traverseBreadthFirst` a special case.
-- **R4 — direction in `traverseBreadthFirst`.** `traversePath` honours direction (recommended). Whether
+- **R4 — direction in `traverseBreadthFirst`.** **Ruled:** `traversePath` honours direction. **Not ruled:** whether
   `traverseBreadthFirst` is brought into line in the same release — a behaviour change for any caller
   relying on a descriptor whose direction is not `OUTGOING` — or the divergence is documented and
   fixed separately.
-- **R5 — the two unread `GraphTraversal` flags.** `GraphPathSpec` omits `includeStartNode` and
-  `includePayload` (recommended), since no backend reads them; whether `GraphTraversal` keeps them as
-  documented no-ops or they are implemented is a separate decision.
+- **R5 — the two unread `GraphTraversal` flags.** **Ruled:** `GraphPathSpec` omits `includeStartNode` and
+  `includePayload`, since no backend reads them. **Not ruled:** whether `GraphTraversal` keeps them as
+  documented no-ops or they are implemented; that is a separate decision.
 
 ### Risks of the recommendation
 
@@ -463,14 +466,12 @@ The decision is recorded in ADR-102, which also anchors the graph subsystem as p
 
 ## Decision Record
 
-Filled in when the RFC closes.
-
 | Field                | Value |
 |:---------------------|:------|
-| **Outcome**          | —     |
-| **Date**             | —     |
-| **Resulting ADR(s)** | ADR-102 (expected) |
-| **Notes**            | —     |
+| **Outcome**          | Option A: an ordered `GraphPathSpec` consumed by `traversePath` and `streamPathJson`; the two-argument `findShortestPath` refuses (R1). Rulings R1 to R3 and the first part of R4 and R5 as recorded above. |
+| **Date**             | 2026-10-08 |
+| **Resulting ADR(s)** | ADR-102 (to be written; the decision is recorded there) |
+| **Notes**            | The `traverseBreadthFirst` direction question (R4) and the `GraphTraversal` flags (R5) were not ruled. |
 
 ## Open questions / follow-ups
 

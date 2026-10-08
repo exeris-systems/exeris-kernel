@@ -4,14 +4,14 @@ type: adr
 slug: adr/ADR-100
 visibility: public
 owning-repo: exeris-kernel
-status: draft
+status: active
 ---
 
 # ADR-100: The SPI surfaces that 1.0 declares stable
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **PROPOSED**                                                                              |
+| **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/spi`                                                                              |
@@ -95,9 +95,9 @@ does not hold the other promotions back.
 
 The decode path for parameterized targets (Context, answer 1) is added as a `default` method beside
 the `Class<?>` one, so out-of-tree decoders keep compiling and linking. That is additive to a `stable`
-surface, which ADR-065 permits in a minor release. **Ruling required:** whether it lands in 0.13 or
-in a 1.x minor. Recommendation: 1.x, unless a consumer needs it before the release candidate — the
-seam is additive either way, and 0.13's capacity is better spent on the preconditions above.
+surface, which ADR-065 permits in a minor release. **Ruled (2026-10-08):** it lands in a 1.x minor, not
+in 0.13, unless a consumer needs it before the release candidate — the seam is additive either way,
+and 0.13's capacity is better spent on the preconditions above.
 
 ### 3. A `stable` signature names no `preview` type
 
@@ -115,11 +115,11 @@ binding made through either name is visible through both, and each accessor dele
 members are `@Deprecated(forRemoval = true, since = "0.13")`.
 
 The bridge members are removed before 1.0.0, so 1.0 freezes a `KernelProviders` that names no
-`preview` type. **Ruling required:** when. The options are 0.13.0 itself (no bridge release) or the
-first release candidate. The release-candidate gate of ADR-065 compares against `v0.13.0`, where the
+`preview` type. **Ruled (2026-10-08):** they are removed in the first release
+candidate, not in 0.13.0 itself (which would leave no bridge release). The release-candidate gate of ADR-065 compares against `v0.13.0`, where the
 members are `stable`, so removing them there is reported as a `stable` break; this ADR would then be
 the one sanctioned exception, by member, and the release-candidate pull request names it.
-Recommendation: remove them in the first release candidate, so 0.13.0 ships one release in which
+That way 0.13.0 ships one release in which
 consumers on the old names compile with a deprecation warning — one consumer outside this
 repository reads `KernelProviders.GRAPH_ENGINE` today.
 
@@ -206,8 +206,8 @@ whose precondition has not landed keeps its `preview` row in that commit.
 - [RFC-2026-09-02](../rfc/RFC-2026-09-02-preview-spi-promotion.md) — closed by this ADR.
 - [ADR-065](ADR-065-spi-compatibility-gate.md) — the gate that enforces the labels.
 - ADR-101 (events anchor) and ADR-102 (graph anchor and multi-hop traversal) — numbers reserved in
-  the registry; ADR-101 is proposed on its own branch, and ADR-102 is written once
-  RFC-2026-10-07 (graph multi-hop) is decided.
+  the registry; ADR-101 is accepted, and ADR-102 is written from the accepted
+  RFC-2026-10-07 (graph multi-hop).
 - [ADR-008](ADR-008-open-core-strategy-and-commoditization-of-off-heap-tls.md),
   [ADR-014](ADR-014-requiresrole-compile-time-rbac-generation.md),
   [ADR-040](ADR-040-identity-provider-spi.md), [ADR-043](ADR-043-kernel-http-streaming-spi.md),

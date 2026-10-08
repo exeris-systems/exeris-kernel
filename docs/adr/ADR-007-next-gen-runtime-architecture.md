@@ -15,7 +15,7 @@ status: active
 | **Deciders**   | Arkadiusz Przychocki                                   |
 | **Date**       | 2025-12-11 (Updated: 2026-02-22)                       |
 | **Compliance** | [Strategic Pillar: No-Waste Compute](../whitepaper.md) |
-| **Amended**    | 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**PROPOSED**), see [Amendments](#amendments) |
+| **Amended**    | 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**ACCEPTED** 2026-10-08), see [Amendments](#amendments) |
 
 ## Context and Problem Statement
 
@@ -80,7 +80,7 @@ We abandon buffer ownership by business logic. Buffers are exclusively **"loaned
 
 ### 5. Kernel Lifecycle and Process Termination
 
-> **PROPOSED 2026-10-07, planned for 0.13** — see [Amendments](#amendments). Nothing in this section is
+> **ACCEPTED 2026-10-08, planned for 0.13** (proposed 2026-10-07) — see [Amendments](#amendments). Nothing in this section is
 > implemented yet; until it is, `docs/subsystems/bootstrap.md` describes the shipped behaviour.
 
 #### 5.1 Context
@@ -132,7 +132,7 @@ works today.
   keeps sole ownership of signals and calls the entry point from its own lifecycle. Cost: one new public
   method and one boot option, and an obligation on every `Subsystem.stop()` stated in §5.3.4.
 
-#### 5.3 Decision (proposed)
+#### 5.3 Decision
 
 ##### 5.3.1 A public stop entry point
 
@@ -176,18 +176,19 @@ release. Exactly one party owns signals, so `SIGTERM` starts one stop sequence. 
 idempotent a second call is harmless, but that does not make two owners ordered, which is why the hook
 is turned off rather than raced.
 
-- **Default — Ruling required.** Recommended: **opt-out** (installed unless disabled). A default that
+- **Default — ruled (2026-10-08): opt-out.** The hook is installed unless disabled. A default that
   stays crash-stop for every deployment that has not read this section repeats Option A. Consequence: an
   embedding host must disable the hook in the same release that adopts the kernel version carrying it,
   or it runs two owners (Option B's cost) until it does.
-- **Switch — Ruling required.** Recommended: a `KernelBootstrap.Builder` method, because an embedding host
+- **Switch — ruled (2026-10-08): a `KernelBootstrap.Builder` method**, because an embedding host
   builds the bootstrap in code (the Spring host runtime calls `KernelBootstrap.builder()`), and a boot
-  option cannot be overridden by a configuration file the host does not control. Whether a configuration
-  key also exists — so a standalone operator who owns signals can turn the hook off without code — and
-  its name are open. Existing kernel keys are `<subsystem>.<camelCase>` (for example
+  option cannot be overridden by a configuration file the host does not control. This
+  amendment defines no configuration key: whether one should exist — so a standalone operator who owns
+  signals can turn the hook off without code — and its name were not ruled, and a key would be a later
+  amendment. Existing kernel keys are `<subsystem>.<camelCase>` (for example
   `http.h2cUpgradeEnabled`); no key under a `kernel.` or `bootstrap.` prefix is read through
-  `ConfigProvider`, so there is no namespace to follow. If a key exists,
-  the builder setting wins over it.
+  `ConfigProvider`, so there is no namespace to follow. If a key is
+  ever added, the builder setting wins over it.
 
 ##### 5.3.4 What must hold on the stopping thread
 
@@ -304,12 +305,12 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
 
 ## Amendments
 
-- **2026-10-07 — §5 Kernel Lifecycle and Process Termination (PROPOSED, planned for 0.13).** New
+- **2026-10-07 — §5 Kernel Lifecycle and Process Termination (ACCEPTED 2026-10-08, planned for 0.13; proposed 2026-10-07).** New
   section; no earlier text is changed. Adds a public idempotent `KernelBootstrap.shutdown()`, one JVM
   shutdown hook registered by standalone `boot()` that runs the existing ordered stop on `SIGTERM`, and a
-  switch an embedding host uses to turn the hook off and call `shutdown()` from its own lifecycle. Two
-  points await a ruling: whether the hook is opt-out or opt-in, and whether a configuration key exists
-  beside the builder switch. Driven by #542; the TCK binding is #461.
+  switch an embedding host uses to turn the hook off and call `shutdown()` from its own lifecycle. The hook
+  is opt-out and the switch is a builder method (ruled 2026-10-08); a configuration key beside the
+  builder switch was not ruled and is not part of this amendment. Driven by #542; the TCK binding is #461.
 
 ## Engineering Protocol
 

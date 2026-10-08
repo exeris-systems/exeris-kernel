@@ -2306,8 +2306,8 @@ those does.
 kernel instance after a crash of the first — the property neither engine can demonstrate today; the
 delivery-boundary section in `docs/subsystems/events.md` loses its "not composable today" paragraph.
 
-**1.0 disposition:** post-1.0, proposed in [ADR-101](adr/ADR-101-events-spi-contract-anchor.md)
-Ruling 3 (PROPOSED). At 1.0 the two paths are a documented limit, not composable, and `events.md`
+**1.0 disposition:** post-1.0, accepted in [ADR-101](adr/ADR-101-events-spi-contract-anchor.md)
+Ruling 3 (2026-10-08). At 1.0 the two paths are a documented limit, not composable, and `events.md`
 "Delivery Boundary" is where that is stated. Making the `OutboxBrokerPort` a configured selection
 changes no SPI signature, so it is additive after 1.0; the publish-path duplication and an
 acknowledging relay send are part of that work, not of 1.0.
@@ -3556,7 +3556,7 @@ plan compilation, as `flow.md` §"A step's next step is fixed when the plan is c
 
 **Merge Gate:** each issue's acceptance criteria.
 
-**Status (v0.13): RULED IN PART, NOT IMPLEMENTED.** ADR-012's amendment of 2026-10-07 (proposed)
+**Status (v0.13): RULED IN PART, NOT IMPLEMENTED.** ADR-012's amendment of 2026-10-07 (accepted 2026-10-08)
 rules #585, #611 (item 4 of #580) and #581; the ruling proposed for #583 is a comment on that issue.
 Neither #581 nor #583 is implemented, and #582's RFC is not written. The measurements are in #581–#585.
 
@@ -3576,7 +3576,7 @@ Neither #581 nor #583 is implemented, and #582's RFC is not written. The measure
 
 **1.0 disposition:** **1.0-BLOCKING** — planned for 0.13; the support matrix and the performance contract already state the HotSpot/C2 pin, and this item makes the native-image half of that stance something a consumer can build.
 
-**Status (v0.13): NOT STARTED.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is proposed, with one ruling outstanding (whether an experimental GraalVM option may ship inside the kernel's jars); #619 is open.
+**Status (v0.13): NOT STARTED.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is accepted (2026-10-08), including that the kernel may ship an experimental GraalVM option inside its jars when the shared-arena pool still needs it; #619 is open.
 
 ---
 
@@ -3888,7 +3888,7 @@ only a rebuilt engine reading a row it did not write can actually exercise.
 
 **Merge Gate:** `AbstractSecretProviderTck` covers resolve/missing/rotation; DB + JWKS + TLS read through the seam; no plaintext secret retained in a config record beyond the resolved-handle boundary; Wall preserved.
 
-**1.0 disposition:** post-1.0. At 1.0 secrets reach the kernel through configuration and external injection, and the security surface 1.0 publishes does not include the seam, as [ADR-100](adr/ADR-100-spi-surfaces-stable-at-1-0.md) (proposed) states in its Context, answer 2. Adding `SecretProvider` afterwards is an addition to a stable surface, not a change to one.
+**1.0 disposition:** post-1.0. At 1.0 secrets reach the kernel through configuration and external injection, and the security surface 1.0 publishes does not include the seam, as [ADR-100](adr/ADR-100-spi-surfaces-stable-at-1-0.md) states in its Context, answer 2. Adding `SecretProvider` afterwards is an addition to a stable surface, not a change to one.
 
 **Status (v0.12): NOT STARTED — and the disposition above can no longer be satisfied as written.** No `SecretProvider` type exists in SPI, Core or Community; the name appears only in this document and in [RFC-2026-09-02](rfc/RFC-2026-09-02-preview-spi-promotion.md)'s inventory of what 1.0 owes. That is the point rather than the finding: the disposition makes staging conditional on **both** halves — the 1.0 docs declaring the config-plus-external-injection posture **and** the SPI landing in v0.11. The SPI did not land in v0.11 and has not landed in v0.12, so no future work can make that sentence true; only rewriting it can. One of the two has to move — schedule the SPI, or rest the staging on the documented posture alone and say so. Recorded rather than quietly read as satisfied, which is what a conditional nobody re-checks becomes.
 
