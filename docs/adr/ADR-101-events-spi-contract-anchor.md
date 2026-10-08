@@ -30,8 +30,8 @@ column. ADR-046 (payload codec), ADR-049 (log ordering and optimistic concurrenc
 that cannot be resolved by improving the code. ADR-100 names this ADR as the precondition for
 promoting `…spi.events` at 1.0.
 
-Three questions sat on the same classes and have to be answered before the surface freezes,
-because each answer changes a signature or a documented promise:
+Three questions sat on the same classes and had to be answered before the surface froze (they
+were answered on 2026-10-08), because each answer changes a signature or a documented promise:
 
 - **#600 — an event carries no isolation key.** `EventDescriptor` has seven primitive components and
   no tenant field; `EventBus.subscribe(String, EventHandler)` filters by type only. A subscriber that
@@ -101,7 +101,7 @@ aggregate id, type name and timestamp, with flags fixed to `FLAG_PERSISTENT | FL
 
 ### Ruling 1 (#600) — where the isolation key lives
 
-**Option 1A — a registered `int` isolation ordinal on `EventDescriptor` *(recommended)*.** An eighth
+**Option 1A — a registered `int` isolation ordinal on `EventDescriptor` *(ruled 2026-10-08)*.** An eighth
 component, `int isolationOrdinal`, where `0` means *unscoped* (no bound context, or a context whose
 `isolationKey()` is empty) and a positive value is a registered isolation key.
 
@@ -192,7 +192,7 @@ event reaches only unscoped subscribers.
 
 ### Ruling 2 (#544) — what `publish` promises on a brokered bus
 
-**Option 2A — fire-and-forget with an observable failure *(recommended)*.** On a brokered bus a
+**Option 2A — fire-and-forget with an observable failure *(ruled 2026-10-08)*.** On a brokered bus a
 normal return from `publish` means the binding's client **accepted** the record for sending; it does
 not mean the broker acknowledged it. A failure detected before return is refused as today
 (`EX-EVENT-6009`). A failure after return is never reported to the caller and is always recorded: the
@@ -223,7 +223,7 @@ change to a stable record later.
 
 ### Ruling 3 — durable emission vs cross-node delivery at 1.0
 
-**Option 3A — a documented 1.0 limit; the broker-port selection is post-1.0 *(recommended)*.** At 1.0
+**Option 3A — a documented 1.0 limit; the broker-port selection is post-1.0 *(ruled 2026-10-08)*.** At 1.0
 the transactional outbox and cross-node fan-out are not composable, and the documentation says so
 (`events.md` "Delivery Boundary"). Making the `OutboxBrokerPort` a configured selection — the engine
 taking its port from configuration, and the Kafka module running the orchestrator with

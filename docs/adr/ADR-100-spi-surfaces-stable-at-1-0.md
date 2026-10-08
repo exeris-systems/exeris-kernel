@@ -96,8 +96,8 @@ does not hold the other promotions back.
 The decode path for parameterized targets (Context, answer 1) is added as a `default` method beside
 the `Class<?>` one, so out-of-tree decoders keep compiling and linking. That is additive to a `stable`
 surface, which ADR-065 permits in a minor release. **Ruled (2026-10-08):** it lands in a 1.x minor, not
-in 0.13, unless a consumer needs it before the release candidate — the seam is additive either way,
-and 0.13's capacity is better spent on the preconditions above.
+in 0.13 — the seam is additive either way, and 0.13's capacity is better spent on the preconditions
+above.
 
 ### 3. A `stable` signature names no `preview` type
 

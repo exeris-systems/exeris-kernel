@@ -3425,7 +3425,7 @@ fails, and fixed to `false` both positive cases fail.
 **Resolution:**
 - Define `ExecutionContract`, `WorkloadEnvelope`, `EnforcementLevel`, `ExecutionEnvironment` and the `EntitlementRequirement` SPI in `exeris-kernel-spi` (`eu.exeris.kernel.spi.contract`).
 - Define `ContractBreachException` in `exeris-kernel-spi` (`eu.exeris.kernel.spi.exceptions.contract`) with registered error codes `EX-LIC-0001` through `EX-LIC-0008` (catalogued in `docs/subsystems/exceptions.md`).
-- Expose `KernelProviders.EXECUTION_CONTRACT` slot.
+- Expose the `ContractKernelProviders.EXECUTION_CONTRACT` slot.
 - Implement zero-dependency RFC 8785 JSON canonicalization (`JsonCanonicalizer`), Ed25519 signature verification (`LicenseManifestVerifier`), and an immutable embedded `TrustedIssuerKeyStore` holding `exeris-root-2026-k1` in `exeris-kernel-core`.
 - Integrate license verification in Phase 0 of `KernelBootstrap.boot()`, before the orchestrator, through `ContractBootstrapStep` (`inspect()` does not run it): with no manifest the kernel boots under the Community fallback in every environment, and fails fast (`EX-LIC-0005`) only in a production-class environment (`production`, `production-load-sim`, `dr-hot`, declared by the `environment` key) when an `EntitlementRequirement` is on the classpath.
 - Verify the manifest against the strict v1 schema of ADR-088 §1 and canonicalize it per RFC 8785, including ECMAScript number serialization; read it from `license.manifest.path` with no fallback when that key is set, and refuse one above 64 KiB.
