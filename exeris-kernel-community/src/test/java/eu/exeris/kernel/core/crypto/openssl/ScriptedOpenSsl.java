@@ -137,7 +137,7 @@ public final class ScriptedOpenSsl {
      */
     public CoreSslHandles handles() {
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
-                null, null, null, bind("sslCtxFree", void.class, long.class), null, null, null, null, null, null);
+                null, null, null, bind("sslCtxFree", void.class, long.class), null, null, null, null, null, null, null);
         CoreSslHandles.HandshakeHandles handshake = new CoreSslHandles.HandshakeHandles(
                 bind("sslNew", long.class, long.class),
                 bind("ctxFree", void.class, long.class),

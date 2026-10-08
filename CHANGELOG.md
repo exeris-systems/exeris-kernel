@@ -18,6 +18,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Security
 
+- **The Community crypto provider enforces `CryptoProviderConfig#minimumTlsVersion`.** Every context,
+  listener and verifying client alike, was created without a protocol floor, so a TLS 1.2-only peer
+  completed a handshake against the default `TLSv1.3` configuration. `CommunityKernelCryptoProvider`
+  now sets the floor on each `SSL_CTX` (`TLSv1.2` or `TLSv1.3`), and a value naming neither makes
+  `createTlsEngine` and `createClientTlsEngine` throw `CryptoBootstrapException` (`EX-NET-2002`)
+  instead of falling back to the library's. A Community listener now refuses a client that speaks
+  only TLS 1.2, and a Community client refuses such a server; no setting lowers the floor in a booted
+  kernel.
 - **A bound `HttpRoutePolicy` is asked about the route the router dispatches to.** The Community
   dispatcher removes the query component, and asks a `HEAD` request as `GET` when `HttpRouter`
   serves it from the `GET` route because no `HEAD` route matches; it passed the raw request-target
