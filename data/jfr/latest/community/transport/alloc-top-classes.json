@@ -5,7 +5,7 @@
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261568,
+  "sample_weight_bytes" : 261552,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
@@ -19,8 +19,8 @@
     "other" : 0
   }
 }, {
-  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
-  "kind" : "jdk",
+  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
+  "kind" : "exeris",
   "category" : "production",
   "count" : 2,
   "events" : 2,
@@ -31,21 +31,21 @@
   "outside_tlab" : 0,
   "outside_tlab_bytes" : 0,
   "by_kind" : {
-    "exeris" : 0,
+    "exeris" : 2,
     "loom" : 0,
     "panama" : 0,
     "array" : 0,
-    "jdk" : 2,
+    "jdk" : 0,
     "other" : 0
   }
 }, {
-  "class" : "eu.exeris.kernel.community.transport.NativeTcpStreamPendingWrite",
+  "class" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Allocation",
   "kind" : "exeris",
   "category" : "production",
   "count" : 2,
   "events" : 2,
   "samples" : 1,
-  "sample_weight_bytes" : 261560,
+  "sample_weight_bytes" : 261568,
   "tlab_refills" : 1,
   "tlab_bytes" : 262144,
   "outside_tlab" : 0,
