@@ -1,0 +1,101 @@
+[ {
+  "class" : "java.util.HashMap$Node",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 224,
+  "events" : 224,
+  "samples" : 61,
+  "sample_weight_bytes" : 85739144,
+  "tlab_refills" : 163,
+  "tlab_bytes" : 42729472,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 224,
+    "other" : 0
+  }
+}, {
+  "class" : "[Ljava.util.HashMap$Node;",
+  "kind" : "array",
+  "category" : "test_harness",
+  "count" : 179,
+  "events" : 179,
+  "samples" : 48,
+  "sample_weight_bytes" : 12530808,
+  "tlab_refills" : 131,
+  "tlab_bytes" : 34340864,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 179,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.ImmutableCollections$ListItr",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 90,
+  "events" : 90,
+  "samples" : 25,
+  "sample_weight_bytes" : 6538984,
+  "tlab_refills" : 65,
+  "tlab_bytes" : 17039360,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 90,
+    "other" : 0
+  }
+}, {
+  "class" : "[Ljava.lang.Object;",
+  "kind" : "array",
+  "category" : "test_harness",
+  "count" : 88,
+  "events" : 88,
+  "samples" : 23,
+  "sample_weight_bytes" : 6012256,
+  "tlab_refills" : 65,
+  "tlab_bytes" : 17039360,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 88,
+    "jdk" : 0,
+    "other" : 0
+  }
+}, {
+  "class" : "java.util.HashMap",
+  "kind" : "jdk",
+  "category" : "test_harness",
+  "count" : 2,
+  "events" : 2,
+  "samples" : 1,
+  "sample_weight_bytes" : 261568,
+  "tlab_refills" : 1,
+  "tlab_bytes" : 262144,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 0,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 2,
+    "other" : 0
+  }
+} ]

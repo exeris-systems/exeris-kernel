@@ -1,0 +1,21 @@
+[ {
+  "class" : "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent",
+  "kind" : "exeris",
+  "category" : "production",
+  "count" : 50,
+  "events" : 50,
+  "samples" : 25,
+  "sample_weight_bytes" : 6484408,
+  "tlab_refills" : 25,
+  "tlab_bytes" : 6553600,
+  "outside_tlab" : 0,
+  "outside_tlab_bytes" : 0,
+  "by_kind" : {
+    "exeris" : 50,
+    "loom" : 0,
+    "panama" : 0,
+    "array" : 0,
+    "jdk" : 0,
+    "other" : 0
+  }
+} ]
