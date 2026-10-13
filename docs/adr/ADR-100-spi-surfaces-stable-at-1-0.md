@@ -205,9 +205,10 @@ whose precondition has not landed keeps its `preview` row in that commit.
 
 - [RFC-2026-09-02](../rfc/RFC-2026-09-02-preview-spi-promotion.md) — closed by this ADR.
 - [ADR-065](ADR-065-spi-compatibility-gate.md) — the gate that enforces the labels.
-- ADR-101 (events anchor) and ADR-102 (graph anchor and multi-hop traversal) — numbers reserved in
-  the registry; ADR-101 is accepted, and ADR-102 is written from the accepted
-  RFC-2026-10-07 (graph multi-hop).
+- [ADR-101](ADR-101-events-spi-contract-anchor.md) (events anchor) and
+  [ADR-102](ADR-102-graph-spi-anchor-and-multi-hop-traversal.md) (graph anchor and multi-hop traversal, written from the accepted
+  [RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md)) — the two anchors this ADR names as
+  preconditions.
 - [ADR-008](ADR-008-open-core-strategy-and-commoditization-of-off-heap-tls.md),
   [ADR-014](ADR-014-requiresrole-compile-time-rbac-generation.md),
   [ADR-040](ADR-040-identity-provider-spi.md), [ADR-043](ADR-043-kernel-http-streaming-spi.md),
