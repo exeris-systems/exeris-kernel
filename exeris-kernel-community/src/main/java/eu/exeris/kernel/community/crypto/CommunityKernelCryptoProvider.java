@@ -247,6 +247,11 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	 * The OpenSSL protocol version that {@code minimumTlsVersion} names. Only the versions this
 	 * provider serves are accepted, and a name that matches none is refused rather than mapped to a
 	 * default.
+	 *
+	 * @param minimumTlsVersion a {@code CryptoProviderConfig#minimumTlsVersion} value
+	 * @return the OpenSSL protocol version constant for {@code minimumTlsVersion}
+	 * @throws CryptoBootstrapException ({@code EX-NET-2002}) if it is neither {@code TLSv1.2} nor
+	 *         {@code TLSv1.3}
 	 */
 	/* default */ static int resolveMinimumProtocol(String minimumTlsVersion) {
 		return switch (minimumTlsVersion) {
