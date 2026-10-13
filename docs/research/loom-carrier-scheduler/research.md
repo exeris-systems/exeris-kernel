@@ -125,8 +125,10 @@ not a locality result, and is reported as one.
   the host isolates none, so processes outside the benchmark can still run on every CPU.
 - **JDK.** Loom EA, `28-testing`, branch `fibers`; the exact build string is recorded per trial.
 - **Trials.** One fresh JVM per trial, n ≥ 5 per cell, arm order randomised per repetition. 10 s
-  warmup, 30 s measurement. A trial that fails a gate is marked invalid and
-  listed in the campaign summary; it is never folded into a percentile.
+  warmup, 30 s measurement. A trial that fails a measurement gate is invalid,
+  listed in the campaign summary and never used. A valid trial whose arm could not carry the target
+  rate is a result about that arm: it is counted per cell ("sustained k of n") and kept out of the
+  percentiles, which describe only runs that kept up.
 - **Rates.** 50 / 70 / 85 % of `A_iso`'s median saturation rate, measured in the same campaign;
   90 / 95 % are added once the lower rungs are stable.
 - **HYP-CACHE workload.** In-flight state is set by rate × delay × state per request (Little's law), not
