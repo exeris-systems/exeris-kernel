@@ -10,11 +10,11 @@ status: active
 
 |                    |                                                                          |
 |:-------------------|:-------------------------------------------------------------------------|
-| **Status**         | **ACCEPTED** — Option A; decision recorded in ADR-102, to be written     |
+| **Status**         | **ACCEPTED** — Option A; decision recorded in [ADR-102](../adr/ADR-102-graph-spi-anchor-and-multi-hop-traversal.md)  |
 | **Author(s)**      | Arkadiusz Przychocki                                                     |
 | **Date Opened**    | 2026-10-07                                                               |
 | **Date Closed**    | 2026-10-08                                                               |
-| **Target ADR(s)**  | ADR-102 (graph subsystem anchor; records the shape chosen here)          |
+| **Target ADR(s)**  | [ADR-102](../adr/ADR-102-graph-spi-anchor-and-multi-hop-traversal.md) (graph subsystem anchor; records the shape chosen here) |
 | **Affected Repos** | `exeris-kernel` (authoritative); `exeris-spring-runtime` (exposes `GraphSession` to Spring beans through the [ADR-030](../adr/ADR-030.link.md) seam) |
 | **Reviewers**      | —                                                                        |
 
@@ -470,7 +470,7 @@ covers only part of it had its remainder ruled by the owner on the same date.
 |:---------------------|:------|
 | **Outcome**          | Option A: an ordered `GraphPathSpec` consumed by `traversePath` and `streamPathJson`; the two-argument `findShortestPath` refuses (R1). Rulings R1 to R5 as recorded above. |
 | **Date**             | 2026-10-08 |
-| **Resulting ADR(s)** | ADR-102 (to be written; the decision is recorded there) |
+| **Resulting ADR(s)** | [ADR-102](../adr/ADR-102-graph-spi-anchor-and-multi-hop-traversal.md) (the decision is recorded there) |
 | **Notes**            | R4 also brings `traverseBreadthFirst` into line on direction; R5 deprecates the two `GraphTraversal` flags. |
 
 ## Open questions / follow-ups

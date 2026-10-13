@@ -128,7 +128,7 @@ works today.
   A process that boots many kernels in sequence (the `exeris-kernel-community-testkit` fixtures do) accumulates hooks
   unless each is removed.
 - **C. A public, idempotent stop entry point, plus one hook that an embedding host turns off
-  *(recommended)*.** Standalone boot gets an orderly `SIGTERM` stop with no host code; an embedding host
+  *(ruled 2026-10-08)*.** Standalone boot gets an orderly `SIGTERM` stop with no host code; an embedding host
   keeps sole ownership of signals and calls the entry point from its own lifecycle. Cost: one new public
   method and one boot option, and an obligation on every `Subsystem.stop()` stated in §5.3.4.
 
