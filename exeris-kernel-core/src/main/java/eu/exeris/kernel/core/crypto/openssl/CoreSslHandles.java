@@ -292,6 +292,7 @@ public final class CoreSslHandles {
          * @param ctxPtr  the {@code SSL_CTX*} pointer
          * @param version a protocol version constant (see {@link CoreOpenSslLoader#TLS1_3_VERSION})
          * @return {@code 1} if the context now refuses every older protocol, {@code 0} otherwise
+         * @throws TlsException ({@code EX-NET-2001}) wrapping any throwable raised by the FFM call
          */
         public long invokeCtxSetMinProtoVersion(long ctxPtr, int version) {
             try {
