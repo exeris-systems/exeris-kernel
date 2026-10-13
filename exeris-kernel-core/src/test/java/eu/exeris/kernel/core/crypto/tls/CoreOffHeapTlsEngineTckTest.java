@@ -134,6 +134,18 @@ class CoreOffHeapTlsEngineTckTest extends AbstractCryptoEngineTck {
     }
 
     /**
+     * The handshake floor is applied where the TLS context is built from the
+     * {@link CryptoProviderConfig}. {@link TckProvider} hands every engine one shared,
+     * certificate-less context that it built without reading the configuration, so this binding
+     * bypasses that layer and cannot honour {@code minimumTlsVersion}. The floor is covered
+     * against the provider that builds the context by {@code CommunityKernelCryptoProviderTckTest}.
+     */
+    @Override
+    protected boolean honoursMinimumTlsVersion() {
+        return false;
+    }
+
+    /**
      * {@code OffHeapTlsEngine} is a fd-owner BIO: {@code beginHandshake()} cannot
      * step before a real socket fd is bound, so it MUST fail fast with a lifecycle
      * error rather than driving {@code SSL_accept} on an unbound {@code SSL*}.
