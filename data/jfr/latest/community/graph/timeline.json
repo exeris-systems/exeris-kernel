@@ -1,19 +1,19 @@
 [ {
-  "t" : 1791793927985,
+  "t" : 1791881723702,
   "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSqlHelper",
+  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSession$$Lambda.0x00000000142dd4c8",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 101528,
+  "size" : 261560,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.graph.CommunityGraphSession.<init>(CommunityGraphSession.java:56)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1791793927985,
+  "t" : 1791881723702,
   "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSqlHelper",
+  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSession$$Lambda.0x00000000142dd4c8",
   "thread" : "main",
   "threadId" : 3,
   "size" : 262144,
@@ -22,28 +22,4 @@
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.graph.CommunityGraphSession.<init>(CommunityGraphSession.java:56)",
   "stackId" : "stk_0001"
-}, {
-  "t" : 1791793927991,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.spi.graph.model.PathResult",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 261520,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.spi.graph.model.PathResult.notFound(PathResult.java:124)",
-  "stackId" : "stk_0002"
-}, {
-  "t" : 1791793927991,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.spi.graph.model.PathResult",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 262144,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.spi.graph.model.PathResult.notFound(PathResult.java:124)",
-  "stackId" : "stk_0002"
 } ]
