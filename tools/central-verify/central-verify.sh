@@ -25,13 +25,22 @@
 #   tools/central-verify/central-verify.sh [--version X.Y.Z] [--self-test]
 #                                          [--wait-minutes N] [--workdir DIR]
 #                                          [--base-url URL] [--key-file FILE]
+#   tools/central-verify/central-verify.sh --classify-tag TAG
 #
-#   --version       release to verify; default is the highest local `vMAJOR.MINOR.PATCH` tag
+#   --version       release to verify, MAJOR.MINOR.PATCH or a release candidate MAJOR.MINOR.PATCH-RCn;
+#                   default is the highest local final `vMAJOR.MINOR.PATCH` tag (never a release candidate)
 #   --self-test     run the negative controls first: the verifier must PASS an untouched artifact,
 #                   then FAIL on a tampered jar, on a tampered SBOM, on a wrong pinned fingerprint
-#                   and under a genuinely different key. A verifier that cannot fail proves nothing.
-#   --wait-minutes  poll up to N minutes for the release to appear on Central (propagation after
-#                   publication is not instant); default 0
+#                   under a genuinely different key and on an empty served checksum file, and the
+#                   release-tag classification. A verifier that cannot fail proves nothing. The
+#                   controls run against a fixed reference release (`SELFTEST_VERSION`), so they do
+#                   not depend on the target version being on Central yet.
+#   --wait-minutes  poll up to N minutes for the target release to appear on Central (propagation
+#                   after publication is not instant); default 0. The deadline starts after the
+#                   --self-test controls have finished and bounds only the polling for the target
+#   --classify-tag  print `verify` for a release tag (vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-RCn)
+#                   and `skip` for any other tag, then exit 0; the workflow calls this instead of
+#                   carrying its own copy of the pattern
 #   --workdir       keep downloads here (default: a temporary directory, removed on exit)
 #
 # Requires: gpg, python3, network access to repo1.maven.org, and the release tag in the local clone
@@ -67,6 +76,10 @@ GROUP = 'eu.exeris'
 PIN = os.environ['PINNED_FINGERPRINT']
 REPO = pathlib.Path(os.environ['REPO_ROOT'])
 CHECKSUMS = [('md5', 'md5'), ('sha1', 'sha1'), ('sha256', 'sha256'), ('sha512', 'sha512')]
+# A final release that stays on Central for good; the negative controls tamper with copies of it.
+SELFTEST_VERSION = '0.12.0'
+TAG_PATTERN = re.compile(r'v\d+\.\d+\.\d+(-RC\d+)?')
+VERSION_PATTERN = re.compile(r'\d+\.\d+\.\d+(-RC\d+)?')
 
 
 class Failure(Exception):
@@ -78,6 +91,11 @@ def git(*args):
     if proc.returncode != 0:
         raise Failure(f'git {" ".join(args)} failed: {proc.stderr.strip()}')
     return proc.stdout
+
+
+def classify_tag(tag):
+    """`verify` for a release tag, `skip` for any other tag."""
+    return 'verify' if TAG_PATTERN.fullmatch(tag) else 'skip'
 
 
 def latest_tag():
@@ -178,7 +196,10 @@ def verify_checksums(path):
         sumfile = path.with_name(path.name + '.' + ext)
         if not sumfile.is_file():
             raise Failure(f'{path.name}: no .{ext} checksum was downloaded')
-        want = sumfile.read_text().split()[0].strip().lower()
+        served = sumfile.read_text().split()
+        if not served:
+            raise Failure(f'{path.name}: the served .{ext} checksum file is empty')
+        want = served[0].strip().lower()
         h = hashlib.new(algo)
         with open(path, 'rb') as f:
             for chunk in iter(lambda: f.read(1 << 20), b''):
@@ -267,6 +288,13 @@ def self_test(base, work, version, key_file):
         expect_failure('tampered jar: whole coordinate', jar,
                        lambda: verify_set(good, t, artifact, version, packaging))
 
+        # (i-a) a served checksum file with no content must be refused, not crash the verifier.
+        e = work / 'selftest' / 'empty-checksum'
+        shutil.copytree(src, e)
+        (e / (jar + '.sha1')).write_bytes(b'')
+        expect_failure('empty served checksum file', 'checksum file is empty',
+                       lambda: verify_checksums(e / jar))
+
         # (i-b) an SBOM that is validly signed but about another version must still be refused.
         s = work / 'selftest' / 'wrong-sbom'
         shutil.copytree(src, s)
@@ -305,6 +333,14 @@ def self_test(base, work, version, key_file):
     finally:
         subprocess.run(['gpgconf', '--homedir', eph, '--kill', 'all'], capture_output=True)
         shutil.rmtree(eph, ignore_errors=True)
+    # The tag filter decides whether a release is verified at all; pin both directions.
+    for tag, want in [('v1.0.0', 'verify'), ('v1.0.0-RC1', 'verify'), ('v1.0.0-beta', 'skip'),
+                      ('v1.0.0-rc1', 'skip'), ('preview/v0.12.0', 'skip')]:
+        got = classify_tag(tag)
+        if got != want:
+            raise Failure(f'tag classification: {tag} is {got}, expected {want}')
+    print('    tag classification: v1.0.0, v1.0.0-RC1 verify; v1.0.0-beta, v1.0.0-rc1, '
+          'preview/v0.12.0 skip')
     print('central-verify: negative controls PASSED (every control failed as expected)')
 
 
@@ -315,34 +351,30 @@ def main():
     ap.add_argument('--wait-minutes', type=int, default=0)
     ap.add_argument('--workdir')
     ap.add_argument('--base-url', default='https://repo1.maven.org/maven2')
+    ap.add_argument('--classify-tag')
     ap.add_argument('--key-file', default=os.environ['DEFAULT_KEY_FILE'])
     args = ap.parse_args(sys.argv[1:])
 
+    if args.classify_tag is not None:
+        print(classify_tag(args.classify_tag))
+        return
+
     version = args.version or latest_tag()
-    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise Failure(f'{version!r} is not a release version (expected MAJOR.MINOR.PATCH)')
+    if not VERSION_PATTERN.fullmatch(version):
+        raise Failure(f'{version!r} is not a release version (expected MAJOR.MINOR.PATCH or '
+                      f'MAJOR.MINOR.PATCH-RCn)')
     base = args.base_url.rstrip('/')
     work = pathlib.Path(args.workdir) if args.workdir else pathlib.Path(tempfile.mkdtemp(prefix='cv-'))
     work.mkdir(parents=True, exist_ok=True)
     try:
         if args.self_test:
-            # Controls need a release to exist; wait for it the same way the real run does.
-            deadline = time.time() + args.wait_minutes * 60
-            while True:
-                try:
-                    fetch(f'{base}/{GROUP.replace(".", "/")}/exeris-kernel-spi/{version}/'
-                          f'exeris-kernel-spi-{version}.pom', work / 'probe.pom', tries=1)
-                    break
-                except Failure:
-                    if time.time() >= deadline:
-                        raise
-                    time.sleep(30)
-            self_test(base, work, version, args.key_file)
+            self_test(base, work, SELFTEST_VERSION, args.key_file)
+        # The deadline starts here, so the controls never eat into the wait for the target.
+        deadline = time.time() + args.wait_minutes * 60
 
         coords = coordinates(version)
         print(f'central-verify: {GROUP}:* {version} — {len(coords)} coordinate(s) from tag v{version}, '
               f'fetched from {base}')
-        deadline = time.time() + args.wait_minutes * 60
         keyring = Keyring(args.key_file, PIN)
         files = 0
         try:

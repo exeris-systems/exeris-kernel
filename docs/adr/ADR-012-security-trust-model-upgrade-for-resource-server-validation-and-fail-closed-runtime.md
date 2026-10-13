@@ -269,7 +269,7 @@ published, which §4b.4 forbids for reads and does not address for writes.
 - Option (c): the kernel validates the tag. Rejected: the kernel never sees the statement's column values,
   and §4b.7 already rules that the kernel cannot introspect the deployment's policy.
 
-**Recommendation: Option (a).** It is the fail-closed reading of §4b.4: the widening is a property of
+**Ruled (2026-10-08): Option (a).** It is the fail-closed reading of §4b.4: the widening is a property of
 the token (`x-exeris-shared-scope`, verified, mapped at one site, denied when not enforced). Option (b)
 would let a row's own column grant visibility that no token carried. The reference owner policy becomes:
 
