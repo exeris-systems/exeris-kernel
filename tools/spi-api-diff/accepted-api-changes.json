@@ -16,5 +16,11 @@
     "since": "0.13",
     "adr": "ADR-071",
     "justification": "Core method: the descriptor is unchanged, the failure contract is not. A field section over http.maxHeaderListSize or a literal over http.maxStringLiteralSize is now read to its end, applying every dynamic-table insertion and size update and discarding the fields, and fails with HpackDecodingException of kind SIZE_LIMIT_EXCEEDED, where it stopped part-way and left the table short of what the client assumed. Every other decode failure keeps kind MALFORMED. The Community HTTP/2 server maps SIZE_LIMIT_EXCEEDED to a 431 stream response and MALFORMED to GOAWAY(COMPRESSION_ERROR), where both were a 400 on an open connection, and AbstractHttp2HeaderLimitTck no longer accepts 400 for an oversized field section. A caller that decodes through HpackDecoder and treats every HpackDecodingException alike keeps compiling and now sees the table in step with the client; one that must tell a refusal from a corrupt block reads HpackDecodingException#kind(). The release notes carry the behaviour change. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.crypto.AbstractCryptoEngineTck#bindToSocket(eu.exeris.kernel.spi.crypto.TlsEngine, java.nio.channels.SocketChannel)",
+    "since": "0.13",
+    "adr": "ADR-074",
+    "justification": "TCK contract: AbstractCryptoEngineTck gains three cases asserting CryptoProviderConfig#minimumTlsVersion as the handshake floor (a TLS 1.2-only peer refused at the default TLSv1.3, served at TLSv1.2; an unsupported value fails createTlsEngine). They drive a handshake through the new template method bindToSocket, which throws by default, so an existing binding fails them until it implements it or returns false from honoursMinimumTlsVersion() because its provider does not build the TLS context from the configuration. Source-compatible; no SPI class changes."
   }
 ]

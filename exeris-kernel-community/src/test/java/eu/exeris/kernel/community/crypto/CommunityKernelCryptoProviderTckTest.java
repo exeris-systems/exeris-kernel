@@ -6,11 +6,14 @@ package eu.exeris.kernel.community.crypto;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.crypto.KernelCryptoProvider;
+import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.tck.contract.crypto.AbstractCryptoEngineTck;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+
+import java.nio.channels.SocketChannel;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -53,5 +56,10 @@ class CommunityKernelCryptoProviderTckTest extends AbstractCryptoEngineTck {
 	@Override
 	protected boolean requiresExternalBindBeforeHandshake() {
 		return true;
+	}
+
+	@Override
+	protected void bindToSocket(TlsEngine engine, SocketChannel channel) {
+		((CommunityTlsEngine) engine).bindSocketChannel(channel);
 	}
 }

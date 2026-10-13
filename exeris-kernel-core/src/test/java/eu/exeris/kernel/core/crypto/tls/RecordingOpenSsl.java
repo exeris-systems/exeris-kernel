@@ -61,7 +61,7 @@ final class RecordingOpenSsl {
 
     CoreSslHandles handles() {
         CoreSslHandles.CtxHandles ctx = new CoreSslHandles.CtxHandles(
-                null, null, null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null, null, null);
         CoreSslHandles.HandshakeHandles handshake = new CoreSslHandles.HandshakeHandles(
                 bind("sslNew", long.class, long.class),
                 bind("sslFree", void.class, long.class),
