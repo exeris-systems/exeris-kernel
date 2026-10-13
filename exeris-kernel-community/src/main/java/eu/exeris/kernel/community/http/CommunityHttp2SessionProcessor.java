@@ -69,6 +69,7 @@ final class CommunityHttp2SessionProcessor {
     private static final String CRLF = "\r\n";
     private static final long HTTP2_FRAME_LOOP_INVALID = -1L;
     private static final long HTTP2_FRAME_LOOP_STOP = -2L;
+    private static final long HTTP2_FRAME_LOOP_COMPRESSION_ERROR = -3L;
     private static final int HTTP2_MAX_HEADER_BLOCK_BYTES = 65_536;
     private static final int HTTP2_MAX_FRAME_PAYLOAD_BYTES = 16 * 1024;
     private static final int HTTP2_FLAG_END_STREAM = 0x01;
@@ -155,6 +156,12 @@ final class CommunityHttp2SessionProcessor {
                 return;
             }
 
+            if (offset == HTTP2_FRAME_LOOP_COMPRESSION_ERROR) {
+                CommunityHttp2ControlFrames.sendGoAway(
+                        allocator, stream, session.lastProcessedStreamId(), Http2ErrorCode.COMPRESSION_ERROR);
+                return;
+            }
+
             long unreadBytes = CommunityHttpBufferOps.compactUnreadBytes(aggregate, bufferedBytes, offset);
             offset = 0;
             bufferedBytes = unreadBytes;
@@ -202,6 +209,8 @@ final class CommunityHttp2SessionProcessor {
                     return HTTP2_FRAME_LOOP_STOP;
                 }
                 offset = frameEnd;
+            } catch (Http2CompressionException _) {
+                return HTTP2_FRAME_LOOP_COMPRESSION_ERROR;
             } catch (RuntimeException _) {
                 return HTTP2_FRAME_LOOP_INVALID;
             }
@@ -368,6 +377,12 @@ final class CommunityHttp2SessionProcessor {
         boolean requestEndedInHeaders = session.pendingEndStream();
         Http2DecodedRequest decoded = session.decodePendingRequest();
         session.setLastProcessedStreamId(decoded.streamId());
+
+        if (decoded.headersTooLarge()) {
+            writeHttp2NoBodyResponse(stream, session, decoded.streamId(),
+                    HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE);
+            return;
+        }
 
         if (!decoded.valid()) {
             writeHttp2NoBodyResponse(stream, session, decoded.streamId(), HttpStatus.BAD_REQUEST);

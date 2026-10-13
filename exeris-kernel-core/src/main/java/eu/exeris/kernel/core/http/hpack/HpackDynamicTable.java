@@ -217,7 +217,7 @@ public final class HpackDynamicTable {
     // Internal
     // =========================================================================
 
-    private void clear() {
+    /* default */ void clear() {
         head = 0;
         count = 0;
         currentSize = 0;

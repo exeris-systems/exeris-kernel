@@ -67,6 +67,22 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   server advertises `http.maxHeaderListSize` as `SETTINGS_MAX_HEADER_LIST_SIZE`. Community binds it
   with `CommunityHttp2HeaderLimitTckTest`.
 
+### Fixed
+
+- **An oversized HTTP/2 field section is refused with `431`, and a malformed HPACK block closes the
+  connection with `GOAWAY(COMPRESSION_ERROR)`.** A field section over `http.maxHeaderListSize`, or a
+  literal over `http.maxStringLiteralSize`, stopped the HPACK decoder part-way: fields after the
+  overflow that use incremental indexing never entered the server's dynamic table, so a later request
+  on the connection that referenced them decoded to other fields than the client sent, and the stream
+  was answered `400`. The decoder now reads such a block to its end, applying every insertion and
+  table-size update and discarding the fields, and the Community server answers the stream
+  `431 Request Header Fields Too Large` (RFC 9113 §8.2.3, RFC 6585 §5). A block that fails to decode
+  any other way is `GOAWAY(COMPRESSION_ERROR)` (RFC 9113 §4.3); it was a `400` on a connection left
+  open. `http.maxHeaderBlockSize` stays `GOAWAY(PROTOCOL_ERROR)`. A binding of
+  `AbstractHttp2HeaderLimitTck` must now answer `431` (or reset the stream, or send `GOAWAY`) for an
+  oversized field section or literal, where `400` was accepted, and must keep serving a request that
+  references entries added by a refused block.
+
 ### Fixed — verification
 
 - **Surefire and Failsafe are on 3.6.0, and every execution selects the test classes it selected on
