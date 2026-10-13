@@ -274,10 +274,12 @@ Each obligation is testable. All land in 0.13.
 - **Assumes:** a PostgreSQL container is available to the TCK lanes. **Reversed by:** a lane that
   cannot run one, in which case the PostgreSQL cases move to a separately tagged gate and the primitive
   does not merge until that gate is green.
-- **Assumes:** the benefit rests on the round-trip count, which is structural. **Reversed by:** a
-  measured allocation ratio far below the derived 35x to 41x does not reverse the decision, because
-  the round-trip count and the missing streaming variant stand alone; it changes only what is
-  published.
+- **Assumes:** the benefit rests on the round-trip count, which is structural: one request per
+  `traversePath` instead of one per hop. **Reversed by:** no allocation measurement. A measured
+  allocation ratio of any size does not reverse the decision, because the round-trip count and the
+  missing streaming variant stand alone; it changes only what is published. The derivation lives in
+  RFC-2026-10-07, and no allocation factor is published until the measurement defined in
+  "Verification obligations" has run.
 - **Assumes:** a caller relying on a non-`OUTGOING` direction on `traverseBreadthFirst` is rare, since
   the SPI never honoured it. **Reversed by:** a consumer that depends on the old result, which moves to
   an explicit `OUTGOING` descriptor.
@@ -311,8 +313,8 @@ case is the one #466 asks for: the current two cases cannot tell "searched and f
 does not pass: the direction case needs one case per direction, not only a positive one.
 
 **Allocation figure, measurement definition.** No factor is published in `graph.md` or the ROADMAP
-until this has run. The roadmap's figure of roughly forty times is a derivation over a single-type
-stand-in on one backend, not a measurement.
+until this has run. Any allocation factor the roadmap or the RFC carries is a derivation over a
+single-type stand-in on one backend, not a measurement.
 
 - **Workloads.** W1, client composition: one single-type traversal from a start node returning N = 500
   ids over `PURCHASED`, then one single-type traversal over `SIMILAR_TO` per returned id, each returning
