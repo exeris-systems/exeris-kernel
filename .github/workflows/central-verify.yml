@@ -37,6 +37,8 @@ jobs:
   verify:
     name: Verify signatures, checksums and SBOMs from Central
     runs-on: ubuntu-latest
+    # Must cover the self-test controls, the longest wait (45 minutes, set in "Resolve the version")
+    # and the verification itself: keep it at least 15 minutes above that wait.
     timeout-minutes: 60
     steps:
       - name: Checkout Code
@@ -64,7 +66,7 @@ jobs:
               wait=45
               # Final releases and release candidates (ADR-065 amendment A1) are published to
               # Central; any other tag is not a Central release and has nothing to verify.
-              if ! printf '%s' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-RC[0-9]+)?$'; then
+              if [ "$(tools/central-verify/central-verify.sh --classify-tag "$RELEASE_TAG")" != verify ]; then
                 echo "::notice::Tag '$RELEASE_TAG' is not a release version (vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-RCn); nothing to verify."
                 {
                   echo "skip=true"
