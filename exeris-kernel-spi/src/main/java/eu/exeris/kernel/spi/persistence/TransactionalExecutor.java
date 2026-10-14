@@ -26,7 +26,7 @@ import java.util.function.Function;
  *
  * <h2>Usage</h2>
  * {@snippet lang="java" :
- * TransactionalExecutor tx = ...; // injected via KernelProviders or constructor
+ * TransactionalExecutor tx = KernelProviders.transactionalExecutor(); // or passed to a constructor
  *
  * // Managed write — explicit bounds, auto commit/rollback, retry on 40001
  * tx.executeManaged(conn -> {
@@ -44,7 +44,9 @@ import java.util.function.Function;
  *
  * <h2>Retry Semantics</h2>
  * <p>PostgreSQL {@code 40001} (serialization failure) and {@code 40P01} (deadlock)
- * are retried up to the configured maximum with exponential back-off.
+ * are retried up to the configured maximum with exponential back-off. The executor bound to
+ * {@link eu.exeris.kernel.spi.context.KernelProviders#TRANSACTIONAL_EXECUTOR} takes that maximum
+ * from {@code persistence.transaction.retry.maxAttempts}, which defaults to a single attempt.
  *
  * <h2>ScopedValue Flow</h2>
  * <p>The {@link eu.exeris.kernel.spi.security.StorageContext} is read from

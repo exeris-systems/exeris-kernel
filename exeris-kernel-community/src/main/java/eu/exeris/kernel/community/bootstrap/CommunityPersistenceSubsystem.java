@@ -7,6 +7,8 @@ package eu.exeris.kernel.community.bootstrap;
 import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
+import eu.exeris.kernel.core.persistence.TransactionOrchestrator;
+import eu.exeris.kernel.core.persistence.TransactionRetryPolicy;
 import eu.exeris.kernel.core.telemetry.JfrCommitGate;
 import eu.exeris.kernel.core.telemetry.JfrEventCommitter;
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
@@ -17,6 +19,7 @@ import eu.exeris.kernel.spi.persistence.ConnectionInterceptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 
 import java.util.Comparator;
 import java.util.List;
@@ -27,6 +30,11 @@ import java.util.function.UnaryOperator;
  * Bootstraps the Community persistence engine over a HikariCP-pooled JDBC connection, and publishes
  * the shared {@link PersistenceEngine} other subsystems read through
  * {@link CommunityBootstrapServices}.
+ *
+ * <p>Next to the engine it binds a {@link TransactionalExecutor} over that engine, so a caller that
+ * needs a transaction boundary reads {@link KernelProviders#TRANSACTIONAL_EXECUTOR} rather than
+ * constructing its own; the executor's retry policy comes from
+ * {@link TransactionRetryPolicy#fromConfig(ConfigProvider)}.
  *
  * <p>Depends on {@code memory} only, and runs in the SERVICES phase. During {@code initialize()} it
  * also resolves {@link CommunityAdmissionConfig#CURRENT} directly from config and separately
@@ -52,6 +60,7 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     private PersistenceProvider persistenceProvider;
     private PersistenceEngine persistenceEngine;
+    private TransactionalExecutor transactionalExecutor;
     // ADR-035 / VT-JFR safety: commits admission + connection-acquire JFR events off the request
     // virtual thread (JDK 26+35 carrier-bound-buffer crash). Owned here because this subsystem owns
     // the admission path that emits them; lifetime bounded to RUNNING.
@@ -86,6 +95,9 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
                 CommunityAdmissionConfig.CONFIG_FILE,
                 CommunityAdmissionConfig.KEY_PREFIX,
                 _ -> CommunityAdmissionConfig.CURRENT = CommunityAdmissionConfig.fromConfigProvider(configProvider));
+        // Resolved before the engine exists: a configuration refusal here must not leave an open
+        // pool behind, and stop() never runs for a subsystem whose initialize() threw.
+        TransactionRetryPolicy retryPolicy = TransactionRetryPolicy.fromConfig(configProvider);
         persistenceProvider = resolveProvider();
         PersistenceConfig config = CommunityPersistenceConfigResolver.buildPersistenceConfig(
                 configProvider,
@@ -95,6 +107,7 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
                 DEFAULT_MIN_IDLE_CONNECTIONS,
                 DEFAULT_MAX_TENANT_POOLS);
         persistenceEngine = PersistenceBootstrap.load(persistenceProvider, config, interceptors(config));
+        transactionalExecutor = new TransactionOrchestrator(persistenceEngine, retryPolicy);
         // Community-internal handoff: subsystems whose initialize() runs in a later phase
         // (e.g. flow during RUNTIME) cannot yet see PERSISTENCE_ENGINE via ScopedValue.
         // The bootstrap-services registry bridges that gap without exposing internals
@@ -132,12 +145,13 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
 
     @Override
     public UnaryOperator<ScopedValue.Carrier> providerBindings() {
-        if (persistenceProvider == null || persistenceEngine == null) {
+        if (persistenceProvider == null || persistenceEngine == null || transactionalExecutor == null) {
             return defaultProviderBindings();
         }
         return CommunityCarrierBindings.operator(
                 CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_PROVIDER, persistenceProvider),
-                CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_ENGINE, persistenceEngine)
+                CommunityCarrierBindings.binding(KernelProviders.PERSISTENCE_ENGINE, persistenceEngine),
+                CommunityCarrierBindings.binding(KernelProviders.TRANSACTIONAL_EXECUTOR, transactionalExecutor)
         );
     }
 

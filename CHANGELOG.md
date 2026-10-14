@@ -73,6 +73,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck`. Not yet: metering,
   offline revocation, refusing more than one manifest on the classpath (#606), and the cost
   measurement against ADR-089's 5 ms (#605).
+- **`KernelProviders.TRANSACTIONAL_EXECUTOR` publishes the kernel's `TransactionalExecutor`.** The
+  Community persistence subsystem binds a `TransactionOrchestrator` over the shared engine next to
+  `PERSISTENCE_ENGINE`, for the same scope, so a caller reads `KernelProviders.transactionalExecutor()`
+  instead of constructing one. Its retry policy comes from `persistence.transaction.retry.maxAttempts`
+  (default `1`, no retry) and `persistence.transaction.retry.baseDelayMs` (default `50`), resolved by
+  `TransactionRetryPolicy.fromConfig`; a `maxAttempts` below `1` fails the boot. Enterprise binds
+  the slot in its own persistence subsystem separately.
 
 ### Added — verification
 
