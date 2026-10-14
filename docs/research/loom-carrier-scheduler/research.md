@@ -185,10 +185,10 @@ Open items, in the order they block measurement:
    60–70 % `%usr` per carrier on the same handler shape therefore comes from the transport path,
    not from the carrier loop. The poller hand-off methods (`tryParkPoller`, `canParkPoller`,
    `unparkPoller`, `registerPinnedPoller`) have no callers, so the shared `carrierState` they
-   would race on cannot be the cause. Next: profile the carrier threads (async-profiler, `cpu`
-   and `wall`) under `/delayed` with the benchmark target. Blocks HYP-CPU, and HYP-TAIL's CPU column.
-2. **Harness identity.** Kernel SHA, clean-tree check, JDK build string, per-trial isolation
-   check, achieved-rate gate. Blocks every hypothesis.
+   would race on cannot be the cause. Resolved for this track: with the benchmark target on a
+   shielded host the premium does not appear (Results, HYP-CPU).
+2. **Harness identity.** Done in `exeris-benchmarks`: kernel SHA, clean-tree check, JDK build
+   string, per-trial isolation check, achieved-rate outcome.
 3. **Tests that exercise the scheduler.** `ExerisCarrierSchedulerTest` runs on the stock JDK,
    where `newThread` returns `null` and tasks fall back to `Thread.ofVirtual()`, so the locality
    path never executes. A test profile on the Loom EA JDK has to assert carrier placement,
@@ -210,18 +210,44 @@ Open items, in the order they block measurement:
 
 ## Results
 
-*Not started. The pilot is archived as non-evidence and is not a result of this track.*
+Backend `jdk` only, two regimes, kernel `bc26f9a0e8fc`, Loom EA b18-20260917, 10 fresh JVMs per
+(arm, rate) on a cpuset-shielded host. Full report: `exeris-benchmarks`,
+`results/reports/2026-10-14-loom-carrier-scheduler-pinned-carriers-and-the-open-loop-tail.md`.
+The pilot is archived as non-evidence and is not a result of this track.
 
 ### Summary
 
+- **HYP-TAIL — supported near capacity only; mechanism untested.** At 85 % (both regimes) and 90 %
+  (CPU-bound) `D`'s p99 separates completely from `A_iso` and `C_iso` (exact Mann–Whitney
+  p ≤ 2.2 × 10⁻⁵). At 50 % no arm separates. At 70 % with the 30 ms backend `D` is the worst arm,
+  bimodal across JVMs, unexplained. The falsification criterion (not below `A_iso` at three or more
+  rates) is not met; the statement's "at every rate" is not met either. Floating carriers wait
+  1–10 % for a CPU near capacity and pinned ones do not, but no `perf sched` trace was taken.
+- **HYP-CPU — not falsified.** At 50 % `D` uses 1.21 CPUs against `A_iso`'s 1.22 (1 ms backend)
+  and 1.25 against 1.32 (30 ms backend). The pilot's CPU premium does not reproduce.
+- **HYP-CACHE — not run.** In-flight state stays far inside L3 in both regimes.
+
 ### Data
 
-| Config | Metric | Value | vs Baseline |
-|:-------|:-------|:------|:------------|
-| | | | |
+p99, median of 10 sustained trials (9 where one did not sustain the rate), ms.
 
-Campaign data lives in `exeris-benchmarks` on the matching branch; this section cites it by
-campaign directory and commit.
+| Regime | Rate | `A_iso` | `C_iso` | `D` |
+|:-------|:-----|--:|--:|--:|
+| 1 ms backend, 100 connections | 50 % | 2.63 | 2.68 | 2.67 |
+| | 70 % | 2.46 | 2.54 | 2.47 |
+| | 85 % | 11.89 | 10.79 | **2.58** |
+| | 90 % | 21.39 | 13.46 | **2.58** |
+| 30 ms backend, 5,000 connections | 50 % | 41.23 | 43.57 | 39.49 |
+| | 70 % | 65.81 | 52.91 | 96.32 |
+| | 85 % | 181.25 | 240.13 | **52.61** |
+
+Campaigns, in `exeris-benchmarks` `results/raw/loom-carrier-scheduler/`:
+`20261009T040618Z-jdk-kbc26f9a0e8fc` (harness `84685a1c`, 129 of 129 trials valid) and
+`20261013T191957Z-jdk-kbc26f9a0e8fc` (harness `e33e9595`, 99 of 99 valid).
+
+Next, in order: a `perf sched` and wall-clock profile of `D` at 70 % with the 30 ms backend; the
+same for a floating arm at 85 %, which is the trace HYP-TAIL's mechanism clause names; the `kernel`
+backend; the HYP-CACHE sweep.
 
 ---
 
