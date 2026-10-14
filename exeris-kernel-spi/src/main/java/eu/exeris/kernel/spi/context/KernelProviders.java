@@ -25,6 +25,7 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProvider;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.PrincipalContext;
 import eu.exeris.kernel.spi.security.SecurityProvider;
@@ -247,6 +248,28 @@ public final class KernelProviders {
      * @since 0.5
      */
     public static final ScopedValue<PersistenceEngine> PERSISTENCE_ENGINE = ScopedValue.newInstance();
+
+    /**
+     * The kernel-wide {@link TransactionalExecutor}, built over {@link #PERSISTENCE_ENGINE}.
+     *
+     * <p>Bound by the same bootstrap step, for the same lifetime and on the same threads as
+     * {@link #PERSISTENCE_ENGINE}: whenever the engine is bound, so is this executor, and when
+     * persistence is not configured both stay unbound. A caller that needs a transaction boundary
+     * reads this slot instead of constructing its own executor over the engine.
+     *
+     * <p>The retry policy for serialization failures and deadlocks is bootstrap configuration:
+     * {@code persistence.transaction.retry.maxAttempts} (default {@code 1}, no retry) and
+     * {@code persistence.transaction.retry.baseDelayMs} (the first back-off delay, default
+     * {@code 50}), shared by every caller of this slot.
+     *
+     * {@snippet lang="java" :
+     * KernelProviders.transactionalExecutor().executeManaged(conn ->
+     *     conn.prepare("INSERT INTO events (id) VALUES ($1)").bindString(0, id).executeUpdate());
+     * }
+     *
+     * @since 0.13
+     */
+    public static final ScopedValue<TransactionalExecutor> TRANSACTIONAL_EXECUTOR = ScopedValue.newInstance();
 
     // =========================================================================
     // Events Slots (L3 Logic Engines)
@@ -680,6 +703,18 @@ public final class KernelProviders {
      */
     public static PersistenceEngine persistenceEngine() {
         return PERSISTENCE_ENGINE.get();
+    }
+
+    /**
+     * Returns the active {@link TransactionalExecutor} from the current scope.
+     *
+     * @return transactional executor bound by the kernel bootstrapper
+     * @throws java.util.NoSuchElementException if called outside the kernel scope
+     *         or if persistence was not bootstrapped
+     * @since 0.13
+     */
+    public static TransactionalExecutor transactionalExecutor() {
+        return TRANSACTIONAL_EXECUTOR.get();
     }
 
     /**

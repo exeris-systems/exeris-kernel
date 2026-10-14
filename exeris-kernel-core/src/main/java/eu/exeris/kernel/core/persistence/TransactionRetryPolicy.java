@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.core.persistence;
 
+import eu.exeris.kernel.spi.config.ConfigProvider;
+
 /**
  * Valhalla-ready retry policy used by {@link TransactionOrchestrator} and
  * related persistence components.
@@ -25,6 +27,15 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
 
     /** Default: 1 attempt, no retry. */
     public static final TransactionRetryPolicy NONE = new TransactionRetryPolicy(1, 0L, 1.0);
+
+    /** Configuration key for the total number of attempts; {@code 1} means no retry. */
+    public static final String MAX_ATTEMPTS_KEY = "persistence.transaction.retry.maxAttempts";
+
+    /** Configuration key for the first back-off delay in milliseconds. */
+    public static final String BASE_DELAY_MS_KEY = "persistence.transaction.retry.baseDelayMs";
+
+    /** First back-off delay used when retry is enabled but no delay is configured. */
+    public static final long DEFAULT_BASE_DELAY_MS = 50L;
 
     private static final int    MIN_ATTEMPTS    = 1;
     private static final long   MIN_DELAY_MS    = 0L;
@@ -63,6 +74,29 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
      */
     public static TransactionRetryPolicy exponential(int maxAttempts, long baseDelayMs) {
         return new TransactionRetryPolicy(maxAttempts, baseDelayMs, 2.0);
+    }
+
+    /**
+     * Resolves the policy the kernel-published executor uses from bootstrap configuration.
+     *
+     * <p>With {@value #MAX_ATTEMPTS_KEY} absent or {@code 1} the result is {@link #NONE}, so an
+     * unconfigured kernel makes exactly one attempt. A larger value yields
+     * {@link #exponential(int, long)} starting at {@value #BASE_DELAY_MS_KEY}, or
+     * {@value #DEFAULT_BASE_DELAY_MS} ms when that key is absent.
+     *
+     * @param config configuration to read; must not be {@code null}
+     * @return the configured policy
+     * @throws IllegalArgumentException if a configured value is out of range (attempts below 1,
+     *                                  negative delay)
+     * @since 0.13
+     */
+    public static TransactionRetryPolicy fromConfig(ConfigProvider config) {
+        int maxAttempts = config.getIntOrDefault(MAX_ATTEMPTS_KEY, MIN_ATTEMPTS);
+        long baseDelayMs = config.getLongOrDefault(BASE_DELAY_MS_KEY, DEFAULT_BASE_DELAY_MS);
+        if (maxAttempts == MIN_ATTEMPTS) {
+            return NONE;
+        }
+        return exponential(maxAttempts, baseDelayMs);
     }
 
     /**

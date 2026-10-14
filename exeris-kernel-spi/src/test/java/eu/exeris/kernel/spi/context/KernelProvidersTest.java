@@ -81,6 +81,19 @@ class KernelProvidersTest {
         }
 
         @Test
+        @DisplayName("TRANSACTIONAL_EXECUTOR.isBound() == false outside kernel context")
+        void transactionalExecutorUnbound() {
+            assertThat(KernelProviders.TRANSACTIONAL_EXECUTOR.isBound()).isFalse();
+        }
+
+        @Test
+        @DisplayName("transactionalExecutor() throws NoSuchElementException when unbound")
+        void transactionalExecutorAccessorThrowsWhenUnbound() {
+            assertThatThrownBy(KernelProviders::transactionalExecutor)
+                    .isInstanceOf(NoSuchElementException.class);
+        }
+
+        @Test
         @DisplayName("PRINCIPAL_CONTEXT.isBound() == false outside security scope")
         void principalContextUnbound() {
             assertThat(KernelProviders.PRINCIPAL_CONTEXT.isBound()).isFalse();

@@ -461,6 +461,25 @@ PersistenceProvider provider = BootstrapProviderSelector.loadHighestPriority(
                 "No PersistenceProvider found on classpath. Add a persistence provider jar."
         ));
 ```
+
+### 5. Transaction Boundary from the Kernel Slot (since 0.13)
+
+Whenever persistence is bootstrapped, the kernel binds a `TransactionalExecutor` over the shared
+engine to `KernelProviders.TRANSACTIONAL_EXECUTOR`, next to `PERSISTENCE_ENGINE` and for the same
+scope. Code that needs a transaction boundary reads it instead of constructing a
+`TransactionOrchestrator` of its own; a constructor parameter remains the way to supply a different
+executor, for example in a unit test.
+
+```java
+KernelProviders.transactionalExecutor().executeManaged(conn ->
+        conn.prepare("INSERT INTO events (id, data) VALUES ($1, $2)")
+            .bindString(0, id).bindBytes(1, payload).executeUpdate());
+```
+
+The executor retries PostgreSQL `40001` and `40P01` according to
+`persistence.transaction.retry.maxAttempts` (default `1`, a single attempt) and
+`persistence.transaction.retry.baseDelayMs` (default `50`, doubling per retry). A retry runs the
+whole callback again, so enable it only for work whose side effects stay inside the transaction.
 ---
 
 

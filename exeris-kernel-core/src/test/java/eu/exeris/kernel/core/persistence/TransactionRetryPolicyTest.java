@@ -4,9 +4,15 @@
  */
 package eu.exeris.kernel.core.persistence;
 
+import eu.exeris.kernel.spi.config.ConfigProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.util.Map;
+import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>{@link TransactionRetryPolicy#NONE} — single attempt, no delay</li>
  *   <li>{@link TransactionRetryPolicy#exponential} factory — correct multiplier</li>
  *   <li>{@link TransactionRetryPolicy#delayFor} — delay capped at 30 s, first attempt = 0</li>
+ *   <li>{@link TransactionRetryPolicy#fromConfig} — configuration keys and their defaults</li>
  *   <li>Valhalla-readiness: record is identity-free, fields immutable</li>
  * </ul>
  *
@@ -141,6 +148,72 @@ class TransactionRetryPolicyTest {
             TransactionRetryPolicy policy = TransactionRetryPolicy.exponential(3, 50L);
             String str = policy.toString();
             assertThat(str).contains("3", "50", "2.0");
+        }
+    }
+
+    @Nested
+    @DisplayName("fromConfig() resolution")
+    class FromConfig {
+
+        @Test
+        @DisplayName("no retry keys configured resolves to NONE")
+        void unconfiguredIsNone() {
+            assertThat(TransactionRetryPolicy.fromConfig(config(Map.of(), Map.of())))
+                    .isSameAs(TransactionRetryPolicy.NONE);
+        }
+
+        @Test
+        @DisplayName("maxAttempts=1 resolves to NONE even when a delay is configured")
+        void singleAttemptIgnoresDelay() {
+            ConfigProvider config = config(
+                    Map.of(TransactionRetryPolicy.MAX_ATTEMPTS_KEY, 1),
+                    Map.of(TransactionRetryPolicy.BASE_DELAY_MS_KEY, 200L));
+
+            assertThat(TransactionRetryPolicy.fromConfig(config)).isSameAs(TransactionRetryPolicy.NONE);
+        }
+
+        @Test
+        @DisplayName("maxAttempts>1 resolves to exponential back-off with the configured delay")
+        void multipleAttemptsUseConfiguredDelay() {
+            ConfigProvider config = config(
+                    Map.of(TransactionRetryPolicy.MAX_ATTEMPTS_KEY, 4),
+                    Map.of(TransactionRetryPolicy.BASE_DELAY_MS_KEY, 200L));
+
+            assertThat(TransactionRetryPolicy.fromConfig(config))
+                    .isEqualTo(TransactionRetryPolicy.exponential(4, 200L));
+        }
+
+        @Test
+        @DisplayName("maxAttempts>1 without a delay key starts at the default delay")
+        void multipleAttemptsDefaultDelay() {
+            ConfigProvider config = config(Map.of(TransactionRetryPolicy.MAX_ATTEMPTS_KEY, 3), Map.of());
+
+            assertThat(TransactionRetryPolicy.fromConfig(config))
+                    .isEqualTo(TransactionRetryPolicy.exponential(3, TransactionRetryPolicy.DEFAULT_BASE_DELAY_MS));
+        }
+
+        @Test
+        @DisplayName("maxAttempts=0 is rejected rather than silently disabling the executor")
+        void zeroAttemptsRejected() {
+            ConfigProvider config = config(Map.of(TransactionRetryPolicy.MAX_ATTEMPTS_KEY, 0), Map.of());
+
+            assertThatThrownBy(() -> TransactionRetryPolicy.fromConfig(config))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("maxAttempts must be >= 1");
+        }
+
+        private static ConfigProvider config(Map<String, Integer> ints, Map<String, Long> longs) {
+            return new ConfigProvider() {
+                @Override public Supplier<KernelSettings> kernelSettings() { return KernelSettings::defaults; }
+                @Override public Optional<String> getString(String key) { return Optional.empty(); }
+                @Override public Optional<Integer> getInt(String key) { return Optional.ofNullable(ints.get(key)); }
+                @Override public Optional<Long> getLong(String key) { return Optional.ofNullable(longs.get(key)); }
+                @Override public Optional<Boolean> getBoolean(String key) { return Optional.empty(); }
+                @Override public <T> Optional<T> get(String key, Class<T> type) { return Optional.empty(); }
+                @Override public void watch(String file, String key, Consumer<Object> callback) {
+                    // no hot reload in this fixture
+                }
+            };
         }
     }
 }
