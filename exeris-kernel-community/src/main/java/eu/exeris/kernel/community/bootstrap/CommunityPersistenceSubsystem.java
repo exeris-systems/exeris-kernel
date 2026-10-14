@@ -95,6 +95,9 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
                 CommunityAdmissionConfig.CONFIG_FILE,
                 CommunityAdmissionConfig.KEY_PREFIX,
                 _ -> CommunityAdmissionConfig.CURRENT = CommunityAdmissionConfig.fromConfigProvider(configProvider));
+        // Resolved before the engine exists: a configuration refusal here must not leave an open
+        // pool behind, and stop() never runs for a subsystem whose initialize() threw.
+        TransactionRetryPolicy retryPolicy = TransactionRetryPolicy.fromConfig(configProvider);
         persistenceProvider = resolveProvider();
         PersistenceConfig config = CommunityPersistenceConfigResolver.buildPersistenceConfig(
                 configProvider,
@@ -104,8 +107,7 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
                 DEFAULT_MIN_IDLE_CONNECTIONS,
                 DEFAULT_MAX_TENANT_POOLS);
         persistenceEngine = PersistenceBootstrap.load(persistenceProvider, config, interceptors(config));
-        transactionalExecutor = new TransactionOrchestrator(
-                persistenceEngine, TransactionRetryPolicy.fromConfig(configProvider));
+        transactionalExecutor = new TransactionOrchestrator(persistenceEngine, retryPolicy);
         // Community-internal handoff: subsystems whose initialize() runs in a later phase
         // (e.g. flow during RUNTIME) cannot yet see PERSISTENCE_ENGINE via ScopedValue.
         // The bootstrap-services registry bridges that gap without exposing internals

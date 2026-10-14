@@ -202,6 +202,18 @@ class TransactionRetryPolicyTest {
                     .hasMessageContaining("maxAttempts must be >= 1");
         }
 
+        @Test
+        @DisplayName("a negative delay is rejected even when maxAttempts=1 leaves it unused")
+        void negativeDelayRejectedWithSingleAttempt() {
+            ConfigProvider config = config(
+                    Map.of(TransactionRetryPolicy.MAX_ATTEMPTS_KEY, 1),
+                    Map.of(TransactionRetryPolicy.BASE_DELAY_MS_KEY, -5L));
+
+            assertThatThrownBy(() -> TransactionRetryPolicy.fromConfig(config))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("baseDelayMs must be >= 0");
+        }
+
         private static ConfigProvider config(Map<String, Integer> ints, Map<String, Long> longs) {
             return new ConfigProvider() {
                 @Override public Supplier<KernelSettings> kernelSettings() { return KernelSettings::defaults; }

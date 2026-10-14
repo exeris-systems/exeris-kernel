@@ -36,6 +36,11 @@ import java.net.Socket;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,8 +103,8 @@ class CommunityPersistenceBootstrapIntegrationTest {
     }
 
     @Test
-    @DisplayName("KernelBootstrap builds the bound executor from the configured retry policy")
-    void persistenceSubsystemReadsRetryPolicyFromConfig() {
+    @DisplayName("KernelBootstrap refuses an invalid retry policy before opening any pooled connection")
+    void persistenceSubsystemReadsRetryPolicyFromConfig() throws SQLException {
         String databaseName = "exeris_bootstrap_retry_" + System.nanoTime();
         String previousJdbcUrl = System.getProperty("exeris.persistence.jdbcUrl");
         String previousUsername = System.getProperty("exeris.persistence.username");
@@ -128,6 +133,18 @@ class CommunityPersistenceBootstrapIntegrationTest {
         }
 
         assertThat(KernelProviders.TRANSACTIONAL_EXECUTOR.isBound()).isFalse();
+        // stop() never runs for a subsystem whose initialize() threw, so a pool opened before the
+        // refusal would stay open: the probe's own session must be the database's only one.
+        assertThat(openSessions(h2Url(databaseName))).isEqualTo(1);
+    }
+
+    private static int openSessions(String jdbcUrl) throws SQLException {
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, "sa", "");
+             Statement statement = connection.createStatement();
+             ResultSet sessions = statement.executeQuery("SELECT COUNT(*) FROM INFORMATION_SCHEMA.SESSIONS")) {
+            assertThat(sessions.next()).isTrue();
+            return sessions.getInt(1);
+        }
     }
 
     @Test

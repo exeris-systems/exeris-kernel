@@ -82,7 +82,8 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
      * <p>With {@value #MAX_ATTEMPTS_KEY} absent or {@code 1} the result is {@link #NONE}, so an
      * unconfigured kernel makes exactly one attempt. A larger value yields
      * {@link #exponential(int, long)} starting at {@value #BASE_DELAY_MS_KEY}, or
-     * {@value #DEFAULT_BASE_DELAY_MS} ms when that key is absent.
+     * {@value #DEFAULT_BASE_DELAY_MS} ms when that key is absent. Both values are validated
+     * whatever the attempt count, so a negative delay is refused even where it would go unused.
      *
      * @param config configuration to read; must not be {@code null}
      * @return the configured policy
@@ -93,10 +94,8 @@ public record TransactionRetryPolicy(int maxAttempts, long baseDelayMs, double b
     public static TransactionRetryPolicy fromConfig(ConfigProvider config) {
         int maxAttempts = config.getIntOrDefault(MAX_ATTEMPTS_KEY, MIN_ATTEMPTS);
         long baseDelayMs = config.getLongOrDefault(BASE_DELAY_MS_KEY, DEFAULT_BASE_DELAY_MS);
-        if (maxAttempts == MIN_ATTEMPTS) {
-            return NONE;
-        }
-        return exponential(maxAttempts, baseDelayMs);
+        TransactionRetryPolicy configured = exponential(maxAttempts, baseDelayMs);
+        return maxAttempts == MIN_ATTEMPTS ? NONE : configured;
     }
 
     /**
