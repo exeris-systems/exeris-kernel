@@ -10,10 +10,12 @@ import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryStats;
+import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Proxy;
 import java.util.NoSuchElementException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -126,6 +128,19 @@ class KernelProvidersTest {
     @Nested
     @DisplayName("2. Bound slots — inside ScopedValue.where()")
     class BoundSlots {
+
+        @Test
+        @DisplayName("transactionalExecutor() returns the instance bound to TRANSACTIONAL_EXECUTOR")
+        void transactionalExecutorReturnsBound() {
+            TransactionalExecutor bound = (TransactionalExecutor) Proxy.newProxyInstance(
+                    TransactionalExecutor.class.getClassLoader(),
+                    new Class<?>[] {TransactionalExecutor.class},
+                    (_, method, _) -> {
+                        throw new UnsupportedOperationException(method.getName());
+                    });
+            ScopedValue.where(KernelProviders.TRANSACTIONAL_EXECUTOR, bound).run(() ->
+                    assertThat(KernelProviders.transactionalExecutor()).isSameAs(bound));
+        }
 
         @Test
         @DisplayName("MEMORY_ALLOCATOR.isBound() == true inside ScopedValue.where()")

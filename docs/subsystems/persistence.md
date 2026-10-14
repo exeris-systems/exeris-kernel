@@ -480,6 +480,7 @@ The executor retries PostgreSQL `40001` and `40P01` according to
 `persistence.transaction.retry.maxAttempts` (default `1`, a single attempt) and
 `persistence.transaction.retry.baseDelayMs` (default `50`, doubling per retry). A retry runs the
 whole callback again, so enable it only for work whose side effects stay inside the transaction.
+
 ---
 
 

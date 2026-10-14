@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.config.CommunityConfigProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,6 +67,18 @@ class CommunityPersistenceSubsystemTest {
 
         assertThat(config.maxPoolSize()).isEqualTo(19);
         assertThat(config.minIdleConnections()).isEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("providerBindings before initialize publishes no persistence slot")
+    void providerBindingsBeforeInitializeBindsNothing() {
+        new CommunityPersistenceSubsystem().providerBindings()
+                .apply(ScopedValue.where(KernelProviders.CURRENT_CONFIG, new StubConfigProvider()))
+                .run(() -> {
+                    assertThat(KernelProviders.PERSISTENCE_PROVIDER.isBound()).isFalse();
+                    assertThat(KernelProviders.PERSISTENCE_ENGINE.isBound()).isFalse();
+                    assertThat(KernelProviders.TRANSACTIONAL_EXECUTOR.isBound()).isFalse();
+                });
     }
 
     private static final class StubConfigProvider implements ConfigProvider {
