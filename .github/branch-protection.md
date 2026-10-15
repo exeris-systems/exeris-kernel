@@ -102,7 +102,7 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   `<configLocation>`, which silently overrides `-Dcheckstyle.config.location` — a bogus path did
   not even fail. That last one is fixed here by making it a property, and it is the general lesson:
   a gate that reports clean has to be shown finding something before the report is believed.
-- **`docs-review`** — an L2 review (ADR-085 §J.33). It produces findings for a human to weigh, and
+- **`review`** — an L2 review (ADR-085 §J.33). It produces findings for a human to weigh, and
   a reviewer's judgement is not a merge gate.
 - **`Analyze (java-kotlin)`** (CodeQL), **`Scan PR Dependencies`**, **`security/snyk`** — advisory
   security surfaces. They are watched, not gated, so a third-party advisory database update cannot
