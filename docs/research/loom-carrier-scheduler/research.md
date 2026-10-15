@@ -50,6 +50,24 @@ CPU bounds the open-loop tail:
 > than `A_iso` at 50 % load and a profile of the carrier threads attributes the excess to
 > `ExerisCarrierThread` / `ExerisCarrierScheduler` frames.
 
+> **HYP-CAPACITY (capacity at a fixed tail).** Held to a p99 objective — 5 ms with the 1 ms
+> backend, 65 ms with the 30 ms backend — the pinned custom scheduler (`D`) carries a higher rate
+> than the isolated stock scheduler (`A_iso`).
+>
+> *Falsified*, per regime, if `D`'s capacity is not above `A_iso`'s on a ladder of 70–100 % of
+> `A_iso`'s saturation in steps of 5 %, 5 fresh JVMs per cell. A rate passes when at least 4 of its
+> trials are valid, every valid trial sustained the rate, and their median p99 is inside the
+> objective; an arm's capacity is the highest rate up to which every rate passes.
+
+The objectives were fixed with the first campaigns' results known: 5 ms is about twice the p99
+every arm reaches at 50–70 % with the 1 ms backend, and 65 ms is twice the 32.5 ms a request costs
+with nothing queued behind the 30 ms backend.
+
+The capacity ladders add arm `B_pin`, the stock `ForkJoinPool` with each worker pinned to one CPU:
+the cell of the scheduling-algorithm × pinning table the first campaigns did not have. It carries
+no hypothesis of its own. Where its capacity lands attributes `D`'s: at `D`'s, pinning carries
+it; at `A_iso`'s, the per-carrier queues do; in between, both.
+
 HYP-TAIL and HYP-CPU are independent of HYP-CACHE. A track that confirms HYP-TAIL and refutes
 HYP-CACHE is a scheduling result,
 not a locality result, and is reported as one.
@@ -173,6 +191,15 @@ change the measurements depend on:
   patches `java.base` with it, so the SPI types resolve on a JDK without the `fibers` branch.
 - Community: locality backend selection in `NativeTcpCarrier`, reactor and acceptor CPU affinity,
   reactor-count override.
+
+Arm `B_pin` is not kernel code: it is `PinnedForkJoinScheduler` in the `exeris-benchmarks`
+target, so the capacity ladders measure the same kernel commit as the first campaigns. It builds
+its pool with the built-in scheduler's arguments and properties, its workers are the JDK's
+`CarrierThread`s (so the carrier-only paths — lazy submit after a park, external submit on yield,
+compensation around blocking calls — apply to them), and it takes the two submit paths the JDK
+reserves for the built-in scheduler by identity under the same conditions. Each worker binds
+itself to a free CPU when it starts and releases it when it ends, because the pool retires idle
+workers after 30 s and starts new ones.
 
 Open items, in the order they block measurement:
 
