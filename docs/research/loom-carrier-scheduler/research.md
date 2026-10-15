@@ -220,7 +220,7 @@ The pilot is archived as non-evidence and is not a result of this track.
 - **HYP-TAIL — supported near capacity only; mechanism confirmed for the stock scheduler.** At
   85 % (both regimes) and 90 % (CPU-bound) `D`'s p99 separates completely from `A_iso` and `C_iso`
   (exact Mann–Whitney p ≤ 2.2 × 10⁻⁵). At 50 % no arm separates. At 70 % with the 30 ms backend
-  `D` is the worst arm, bimodal across JVMs, and the stall is on the mock backend's side (its CPU
+  `D` is the worst arm, bimodal across JVMs, and the stall is observed on the mock backend's side (its CPU
   hits its ceiling near second 53 in 9 of 10 `D` trials, never under the other arms; pinning, the
   read sub-poller, GC and connection churn ruled out); why only `D` triggers it is open. The
   falsification criterion (not below `A_iso` at three or more rates) is not met; "at every rate"
@@ -252,9 +252,11 @@ Diagnostic runs (exploratory, recorders attached): `exeris-benchmarks`
 `results/raw/loom-carrier-scheduler-diag/20261015T041646Z-h71112fae47da` and
 `20261015T093021Z-h596d216ecca5`; the report's §5.5 summarises them.
 
-Next, in order: a JIT log of the mock backend at I/O-bound 70 % under `D`, to settle why the
-backend stalls only under the pinned arm; what drives `C_iso`'s tail at 85 %; the `kernel`
-backend; the HYP-CACHE sweep.
+Next, in order: why the backend stalls only under the pinned arm at I/O-bound 70 % — a 60 s
+warmup (does the jump follow the mock's age or the measurement phase), a JIT, deoptimisation and
+pinning record of the mock with its `ForkJoinPool` size, and the arrival pattern at the mock under
+`D` against `A_iso` (if pinned carriers send burstier traffic, the trigger is the scheduler's);
+what drives `C_iso`'s tail at 85 %; the `kernel` backend; the HYP-CACHE sweep.
 
 ---
 
