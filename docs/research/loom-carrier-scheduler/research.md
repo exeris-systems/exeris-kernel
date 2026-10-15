@@ -217,12 +217,15 @@ The pilot is archived as non-evidence and is not a result of this track.
 
 ### Summary
 
-- **HYP-TAIL — supported near capacity only; mechanism untested.** At 85 % (both regimes) and 90 %
-  (CPU-bound) `D`'s p99 separates completely from `A_iso` and `C_iso` (exact Mann–Whitney
-  p ≤ 2.2 × 10⁻⁵). At 50 % no arm separates. At 70 % with the 30 ms backend `D` is the worst arm,
-  bimodal across JVMs, unexplained. The falsification criterion (not below `A_iso` at three or more
-  rates) is not met; the statement's "at every rate" is not met either. Floating carriers wait
-  1–10 % for a CPU near capacity and pinned ones do not, but no `perf sched` trace was taken.
+- **HYP-TAIL — supported near capacity only; mechanism confirmed for the stock scheduler.** At
+  85 % (both regimes) and 90 % (CPU-bound) `D`'s p99 separates completely from `A_iso` and `C_iso`
+  (exact Mann–Whitney p ≤ 2.2 × 10⁻⁵). At 50 % no arm separates. At 70 % with the 30 ms backend
+  `D` is the worst arm, bimodal across JVMs, and the stall is on the mock backend's side (its CPU
+  hits its ceiling near second 53 in 9 of 10 `D` trials, never under the other arms; pinning, the
+  read sub-poller, GC and connection churn ruled out); why only `D` triggers it is open. The
+  falsification criterion (not below `A_iso` at three or more rates) is not met; "at every rate"
+  is not met either. Diagnostic scheduler traces show `A_iso`'s workers stacked on one CPU in its
+  slow windows and no stacking behind `C_iso`'s tail.
 - **HYP-CPU — not falsified.** At 50 % `D` uses 1.21 CPUs against `A_iso`'s 1.22 (1 ms backend)
   and 1.25 against 1.32 (30 ms backend). The pilot's CPU premium does not reproduce.
 - **HYP-CACHE — not run.** In-flight state stays far inside L3 in both regimes.
@@ -245,8 +248,12 @@ Campaigns, in `exeris-benchmarks` `results/raw/loom-carrier-scheduler/`:
 `20261009T040618Z-jdk-kbc26f9a0e8fc` (harness `84685a1c`, 129 of 129 trials valid) and
 `20261013T191957Z-jdk-kbc26f9a0e8fc` (harness `e33e9595`, 99 of 99 valid).
 
-Next, in order: a `perf sched` and wall-clock profile of `D` at 70 % with the 30 ms backend; the
-same for a floating arm at 85 %, which is the trace HYP-TAIL's mechanism clause names; the `kernel`
+Diagnostic runs (exploratory, recorders attached): `exeris-benchmarks`
+`results/raw/loom-carrier-scheduler-diag/20261015T041646Z-h71112fae47da` and
+`20261015T093021Z-h596d216ecca5`; the report's §5.5 summarises them.
+
+Next, in order: a JIT log of the mock backend at I/O-bound 70 % under `D`, to settle why the
+backend stalls only under the pinned arm; what drives `C_iso`'s tail at 85 %; the `kernel`
 backend; the HYP-CACHE sweep.
 
 ---
