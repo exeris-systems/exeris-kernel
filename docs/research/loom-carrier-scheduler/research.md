@@ -51,22 +51,41 @@ CPU bounds the open-loop tail:
 > `ExerisCarrierThread` / `ExerisCarrierScheduler` frames.
 
 > **HYP-CAPACITY (capacity at a fixed tail).** Held to a p99 objective — 5 ms with the 1 ms
-> backend, 65 ms with the 30 ms backend — the pinned custom scheduler (`D`) carries a higher rate
+> backend, 80 ms with the 30 ms backend — the pinned custom scheduler (`D`) carries a higher rate
 > than the isolated stock scheduler (`A_iso`).
 >
-> *Falsified*, per regime, if `D`'s capacity is not above `A_iso`'s on a ladder of 70–100 % of
-> `A_iso`'s saturation in steps of 5 %, 5 fresh JVMs per cell. A rate passes when at least 4 of its
-> trials are valid, every valid trial sustained the rate, and their median p99 is inside the
-> objective; an arm's capacity is the highest rate up to which every rate passes.
+> *Falsified*, per regime, if `D`'s capacity is not above `A_iso`'s on a ladder of 50 % and
+> 70–100 % of `A_iso`'s saturation in steps of 5 %, 5 fresh JVMs per cell. A rate passes when at
+> least 4 of its trials are valid, every valid trial sustained the rate, and their median p99 is
+> inside the objective. An arm's capacity — the primary result — is the highest rate up to which
+> every rate passes; the highest passing rate is reported beside it as supplementary.
 
-The objectives were fixed with the first campaigns' results known: 5 ms is about twice the p99
-every arm reaches at 50–70 % with the 1 ms backend, and 65 ms is twice the 32.5 ms a request costs
-with nothing queued behind the 30 ms backend.
+The objectives were fixed with the first campaigns' results known, so each is placed where no
+known median decides it. 5 ms is about twice the p99 every arm reaches at 50–70 % with the 1 ms
+backend, and far from every median of that regime (2.5 ms at 70 %, 10.8 ms and above at 85 %).
+With the 30 ms backend the objective is 80 ms rather than twice the 32.5 ms a request costs with
+nothing queued (65 ms), because 65 ms lies on `A_iso`'s known median at 70 % (65.8 ms) and would
+leave that rung to chance; the nearest known medians to 80 ms are 65.8 and 96.3 ms. The move does
+not favour `D`: its known median at 70 % (96.3 ms) fails either objective. The 50 % rung anchors
+the ladder — capacity counts only rates below which nothing failed, so the lowest rung has to be
+one every arm passed in the first campaigns (2.6–2.7 ms and 39–44 ms).
 
 The capacity ladders add arm `B_pin`, the stock `ForkJoinPool` with each worker pinned to one CPU:
 the cell of the scheduling-algorithm × pinning table the first campaigns did not have. It carries
 no hypothesis of its own. Where its capacity lands attributes `D`'s: at `D`'s, pinning carries
 it; at `A_iso`'s, the per-carrier queues do; in between, both.
+
+`B_pin` differs from `A_iso` in two ways at once: the binding, and being the stock scheduler
+reproduced through the SPI. Arm `B_float` — the same class with the binding off — separates them.
+It runs at 85 % only, 5 fresh JVMs per regime, beside the ladder. The reproduction is accepted when
+`B_float`'s p99 does not separate from `A_iso`'s (exact two-sided Mann–Whitney p ≥ 0.05) and its
+median p99 lies inside the range of `A_iso`'s trials. If it is not accepted, `B_pin` is read against
+`B_float` instead of `A_iso`: both go through the SPI, so the binding is still the one difference.
+With 5 trials per arm the check detects only large differences; it guards against a broken
+reproduction, not a subtle one.
+
+The ladders also re-measure `D` at 70 % with the 30 ms backend, where the backend stalled in 9 of
+10 trials of the first campaign; whether that recurs is a result either way.
 
 HYP-TAIL and HYP-CPU are independent of HYP-CACHE. A track that confirms HYP-TAIL and refutes
 HYP-CACHE is a scheduling result,
@@ -199,7 +218,8 @@ its pool with the built-in scheduler's arguments and properties, its workers are
 compensation around blocking calls — apply to them), and it takes the two submit paths the JDK
 reserves for the built-in scheduler by identity under the same conditions. Each worker binds
 itself to a free CPU when it starts and releases it when it ends, because the pool retires idle
-workers after 30 s and starts new ones.
+workers after 30 s and starts new ones. With `loom.bench.pinned.bind=false` it binds nothing (arm
+`B_float`).
 
 Open items, in the order they block measurement:
 
