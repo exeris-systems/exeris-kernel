@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * through the active failure policy, while fatal {@link VirtualMachineError}
  * instances propagate untouched.
  *
- * @since 0.13.0
+ * @since 0.13
  */
 public abstract class AbstractSubsystemErrorRoutingTck {
 
@@ -95,8 +95,7 @@ public abstract class AbstractSubsystemErrorRoutingTck {
 
         Throwable thrown = bootCapturing(List.of(base, probe), false, () -> kernelMainRan.set(true));
 
-        assertThat(thrown).isNotNull();
-        assertThat(thrown).isNotInstanceOf(Error.class);
+        assertThat(thrown).isNotNull().isNotInstanceOf(Error.class);
         assertThat(rootCause(thrown)).isSameAs(error);
         assertThat(kernelMainRan).isFalse();
         assertThat(base.stopCount()).isEqualTo(1);
@@ -114,8 +113,7 @@ public abstract class AbstractSubsystemErrorRoutingTck {
 
         Throwable thrown = bootCapturing(List.of(base, probe), true, () -> kernelMainRan.set(true));
 
-        assertThat(thrown).isNotNull();
-        assertThat(thrown).isNotInstanceOf(Error.class);
+        assertThat(thrown).isNotNull().isNotInstanceOf(Error.class);
         assertThat(rootCause(thrown)).isSameAs(error);
         assertThat(kernelMainRan).isFalse();
         assertThat(base.stopCount()).isEqualTo(1);

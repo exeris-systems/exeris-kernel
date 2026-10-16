@@ -87,8 +87,8 @@ class CoreSubsystemErrorRoutingTckTest extends AbstractSubsystemErrorRoutingTck 
             @Override public BootstrapPhase phase() { return BootstrapPhase.SERVICES; }
             @Override public boolean isOptional() { return false; }
             @Override public void initialize() { throw new NoClassDefFoundError("tck/Missing"); }
-            @Override public void start() { }
-            @Override public void stop() { }
+            @Override public void start() { /* nothing to start */ }
+            @Override public void stop() { /* nothing to release */ }
         };
 
         SubsystemOrchestrator orchestrator = newOrchestrator(SubsystemOrchestrator.FailurePolicy.FAIL_FAST, List.of(failing));
@@ -108,8 +108,8 @@ class CoreSubsystemErrorRoutingTckTest extends AbstractSubsystemErrorRoutingTck 
             @Override public BootstrapPhase phase() { return BootstrapPhase.SERVICES; }
             @Override public boolean isOptional() { return false; }
             @Override public void initialize() { throw new NoClassDefFoundError("tck/Missing"); }
-            @Override public void start() { }
-            @Override public void stop() { }
+            @Override public void start() { /* nothing to start */ }
+            @Override public void stop() { /* nothing to release */ }
         };
 
         SubsystemOrchestrator orchestrator = newOrchestrator(SubsystemOrchestrator.FailurePolicy.FAIL_FAST, List.of(failing));
@@ -149,7 +149,7 @@ class CoreSubsystemErrorRoutingTckTest extends AbstractSubsystemErrorRoutingTck 
             @Override public String name() { return "dep"; }
             @Override public List<String> dependsOn() { return List.of(); }
             @Override public BootstrapPhase phase() { return BootstrapPhase.FOUNDATION; }
-            @Override public void initialize() { }
+            @Override public void initialize() { /* nothing to initialise */ }
             @Override public void start() { running = true; }
             @Override public void stop() { running = false; depStopCount.incrementAndGet(); }
             @Override public boolean isRunning() { return running; }
@@ -160,7 +160,7 @@ class CoreSubsystemErrorRoutingTckTest extends AbstractSubsystemErrorRoutingTck 
             @Override public String name() { return "failing"; }
             @Override public List<String> dependsOn() { return List.of("dep"); }
             @Override public BootstrapPhase phase() { return BootstrapPhase.SERVICES; }
-            @Override public void initialize() { }
+            @Override public void initialize() { /* nothing to initialise */ }
             @Override public void start() { running = true; }
             @Override
             public void stop() {

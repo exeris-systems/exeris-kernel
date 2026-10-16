@@ -292,6 +292,8 @@ public final class SubsystemOrchestrator {
         return List.copyOf(orderedSubsystems);
     }
 
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
     private List<Subsystem> discoverSelected(ConfigProvider config) throws BootstrapException {
         try {
             Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
@@ -362,8 +364,12 @@ public final class SubsystemOrchestrator {
     /**
      * Graceful shutdown — calls {@code stop()} on each subsystem for which
      * {@link Subsystem#isRunning()} reports {@code true}, in strict reverse topological order.
-     * Never throws — a {@code stop()} that throws is caught and logged as WARNING.
+     * A {@code stop()} that throws is caught and logged as WARNING, and the shutdown continues
+     * with the next subsystem. The one exception is a {@link VirtualMachineError}, which
+     * propagates unchanged and ends the shutdown.
      */
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
     public void shutdown() {
         if (terminated.get()) {
             return;
@@ -568,6 +574,8 @@ public final class SubsystemOrchestrator {
     // Subsystem lifecycle helpers
     // =========================================================================
 
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
     private void doInitialize(Subsystem subsystem, KernelProfile profile) throws BootstrapException {
         long initStartNanos = System.nanoTime();
         LOG.log(System.Logger.Level.INFO,
@@ -635,6 +643,8 @@ public final class SubsystemOrchestrator {
         handleFailure(subsystem, wrapped);
     }
 
+    @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
+                                    // VirtualMachineError is rethrown by rethrowIfFatal
     private void doStart(Subsystem subsystem, BootstrapPhase phase, String profile)
             throws BootstrapException {
         long startNanos = System.nanoTime();
