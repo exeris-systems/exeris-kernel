@@ -5,7 +5,12 @@
       "allDeclaredFields": true
     },
     {
-      "type": "com.zaxxer.hikari.pool.PoolBase"
+      "type": "com.zaxxer.hikari.pool.PoolBase",
+      "fields": [
+        {
+          "name": "catalog"
+        }
+      ]
     },
     {
       "type": "com.zaxxer.hikari.pool.PoolEntry",
@@ -194,7 +199,12 @@
       ]
     },
     {
-      "type": "java.sql.SQLException"
+      "type": "java.sql.SQLException",
+      "fields": [
+        {
+          "name": "next"
+        }
+      ]
     },
     {
       "type": "java.sql.Statement[]"

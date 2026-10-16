@@ -316,7 +316,7 @@ first emit therefore still ran the holder's `<clinit>` on a virtual thread, incl
 with `Class.getDeclaringClass()` and initialises it outermost-first, which is the order the first
 emit would have taken.
 
-Two catalogues carry the answer, and every event class in the kernel is in exactly one of their
+Three catalogues carry the answer, and every event class in the kernel is in exactly one of their
 buckets:
 
 | | |

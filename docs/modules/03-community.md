@@ -132,7 +132,9 @@ The metadata covers:
 - Atomic field updates accessed via `MethodHandles.Lookup.findVarHandle` (`CommunityTlsClientTrust.refCount` and `FairnessTracker.BucketMetrics` counter fields).
 - Socket channel and file descriptor members probed by `SocketChannelFdReflectionResolver` (`sun.nio.ch.SocketChannelImpl.getFDVal()`, fields `fd`, `fdVal`, and `java.io.FileDescriptor.fd`).
 - Flyway migration SQL resources listed in `CommunityPersistenceEngine.MIGRATION_RESOURCES`.
-- Reflected configuration fields in `com.zaxxer.hikari.HikariConfig`.
+- Reflected configuration fields in `com.zaxxer.hikari.HikariConfig`, and the HikariCP pool members that
+  `HikariDataSource(HikariConfig)` reaches reflectively (field-updater targets, `FastList` array types,
+  `Thread.isVirtual`).
 - Internal queue field offsets across superclass hierarchies for JCTools queues instantiated in the Community runtime (`MpscUnboundedArrayQueue`, `SpscArrayQueue`, `SpscUnboundedArrayQueue`).
 
 The companion `native-image.properties` configures required native-image build arguments:
@@ -142,6 +144,24 @@ The companion `native-image.properties` configures required native-image build a
 - `-H:+SharedArenaSupport`: experimental GraalVM flag (ADR-103 obligation 8) that enables closing shared foreign memory arenas allocated by `CommunityArenaShardPool`.
 
 The metadata is guarded by `CommunityReachabilityMetadataTest`, which scans all compiled classes using the JDK ClassFile API. It verifies that `FunctionDescriptor` construction is confined to centralized enum tables, downcalls are delegated to Core, upcalls are restricted to `CommunityAlpnSelector`, the `-H:+SharedArenaSupport` argument matches active declaration sites (while runtime opens are unconditional), and the committed metadata matches the synthesized model byte-for-byte.
+
+The companion `exeris-kernel-community-kafka` module ships reachability metadata at
+`META-INF/native-image/eu.exeris/exeris-kernel-community-kafka/reachability-metadata.json`.
+
+The Kafka metadata covers:
+- Client serializers, deserializers, partition assignors, metrics reporters, and security credentials providers derived directly from the producer and consumer `ConfigDef` specifications parsed against default configuration properties (`ByteArraySerializer`, `ByteArrayDeserializer`, `CooperativeStickyAssignor`, `RangeAssignor`, `JmxReporter`, `DefaultJwtRetriever`, `DefaultJwtValidator`).
+- Internal kafka-clients classes and reflection targets (`AppInfoParser$AppInfo` built by `registerAppInfo` and introspected via `AppInfoParser$AppInfoMBean` getters by `MBeanServer.registerMBean`, and shaded protobuf `ExtensionRegistry.getEmptyRegistry()`).
+- The `kafka/kafka-version.properties` classpath resource loaded by client bootstrap.
+- JFR event types from `KafkaJfrEventCatalogue` (`KafkaPublishFailedEvent`, `KafkaConsumerLoopFailedEvent`, `KafkaEventLogAppendFailedEvent`).
+
+The Kafka metadata is guarded by `KafkaReachabilityMetadataTest`, which verifies that `Properties` construction is confined to the three package-private builder methods, client classes in the by-name table resolve against the runtime classpath, and the committed metadata matches the model derived from the producer/consumer ConfigDef and the by-name table byte-for-byte.
+
+The rules for producing this metadata are set by
+[ADR-103](../adr/ADR-103-native-image-opt-in-build.md). On HotSpot the files are inert; they matter only
+to a GraalVM 25 native-image build, verified on Linux x86-64 only; aarch64, Windows, encrypted Bolt and
+Kafka compression codecs are unverified. The cost is that a new
+declaration site fails the guard until the committed file is regenerated: the test writes the expected
+file under `target/native-image-expected/` and names the copy command.
 
 ## Stability
 

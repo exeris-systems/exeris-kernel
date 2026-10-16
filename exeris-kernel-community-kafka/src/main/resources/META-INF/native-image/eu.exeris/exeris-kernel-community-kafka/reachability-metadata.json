@@ -1,0 +1,110 @@
+{
+  "reflection": [
+    {
+      "type": "eu.exeris.kernel.community.kafka.KafkaConsumerLoopFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.kafka.KafkaEventLogAppendFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.community.kafka.KafkaPublishFailedEvent"
+    },
+    {
+      "type": "org.apache.kafka.clients.consumer.CooperativeStickyAssignor",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.clients.consumer.RangeAssignor",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.common.metrics.JmxReporter",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.common.security.oauthbearer.DefaultJwtRetriever",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.common.security.oauthbearer.DefaultJwtValidator",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.common.serialization.ByteArrayDeserializer",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.common.serialization.ByteArraySerializer",
+      "methods": [
+        {
+          "name": "<init>",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.common.utils.AppInfoParser$AppInfo"
+    },
+    {
+      "type": "org.apache.kafka.common.utils.AppInfoParser$AppInfoMBean",
+      "methods": [
+        {
+          "name": "getCommitId",
+          "parameterTypes": []
+        },
+        {
+          "name": "getStartTimeMs",
+          "parameterTypes": []
+        },
+        {
+          "name": "getVersion",
+          "parameterTypes": []
+        }
+      ]
+    },
+    {
+      "type": "org.apache.kafka.shaded.com.google.protobuf.ExtensionRegistry",
+      "methods": [
+        {
+          "name": "getEmptyRegistry",
+          "parameterTypes": []
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "glob": "kafka/kafka-version.properties"
+    }
+  ]
+}
