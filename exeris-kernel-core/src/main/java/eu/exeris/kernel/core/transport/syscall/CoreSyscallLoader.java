@@ -5,7 +5,6 @@
 package eu.exeris.kernel.core.transport.syscall;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
@@ -13,10 +12,6 @@ import java.lang.invoke.MethodHandle;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
-
-import static java.lang.foreign.ValueLayout.ADDRESS;
-import static java.lang.foreign.ValueLayout.JAVA_INT;
-import static java.lang.foreign.ValueLayout.JAVA_LONG;
 
 /**
  * Core: Explicit caller-owned loader that resolves Berkeley socket symbols via Project Panama FFM.
@@ -101,32 +96,15 @@ public final class CoreSyscallLoader {
         Linker linker = Linker.nativeLinker();
         SymbolLookup lookup = linker.defaultLookup();
 
-        MethodHandle socket = req(linker, lookup, "socket",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT));
-
-        MethodHandle bind = req(linker, lookup, "bind",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT));
-
-        MethodHandle listen = req(linker, lookup, "listen",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT));
-
-        MethodHandle accept = req(linker, lookup, "accept",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, ADDRESS));
-
-        MethodHandle connect = req(linker, lookup, "connect",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, ADDRESS, JAVA_INT));
-
-        MethodHandle close = req(linker, lookup, "close",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT));
-
-        MethodHandle send = req(linker, lookup, "send",
-                FunctionDescriptor.of(JAVA_LONG, JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT));
-
-        MethodHandle recv = req(linker, lookup, "recv",
-                FunctionDescriptor.of(JAVA_LONG, JAVA_INT, ADDRESS, JAVA_LONG, JAVA_INT));
-
-        MethodHandle fcntl = req(linker, lookup, "fcntl",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_INT, JAVA_LONG));
+        MethodHandle socket = req(linker, lookup, SyscallDowncall.POSIX_SOCKET);
+        MethodHandle bind = req(linker, lookup, SyscallDowncall.POSIX_BIND);
+        MethodHandle listen = req(linker, lookup, SyscallDowncall.POSIX_LISTEN);
+        MethodHandle accept = req(linker, lookup, SyscallDowncall.POSIX_ACCEPT);
+        MethodHandle connect = req(linker, lookup, SyscallDowncall.POSIX_CONNECT);
+        MethodHandle close = req(linker, lookup, SyscallDowncall.POSIX_CLOSE);
+        MethodHandle send = req(linker, lookup, SyscallDowncall.POSIX_SEND);
+        MethodHandle recv = req(linker, lookup, SyscallDowncall.POSIX_RECV);
+        MethodHandle fcntl = req(linker, lookup, SyscallDowncall.POSIX_FCNTL);
 
         LOG.log(System.Logger.Level.INFO,
                 "[CoreSyscallLoader] POSIX socket handles resolved successfully");
@@ -161,43 +139,25 @@ public final class CoreSyscallLoader {
 
         invokeWsaStartup(linker, ws2, arena);
 
-        MethodHandle socket = req(linker, ws2, "socket",
-                FunctionDescriptor.of(JAVA_LONG, JAVA_INT, JAVA_INT, JAVA_INT));
-
-        MethodHandle bind = req(linker, ws2, "bind",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT));
-
-        MethodHandle listen = req(linker, ws2, "listen",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_INT));
-
-        MethodHandle accept = req(linker, ws2, "accept",
-                FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, ADDRESS, ADDRESS));
-
-        MethodHandle connect = req(linker, ws2, "connect",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT));
-
-        MethodHandle close = req(linker, ws2, "closesocket",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG));
+        MethodHandle socket = req(linker, ws2, SyscallDowncall.WINDOWS_SOCKET);
+        MethodHandle bind = req(linker, ws2, SyscallDowncall.WINDOWS_BIND);
+        MethodHandle listen = req(linker, ws2, SyscallDowncall.WINDOWS_LISTEN);
+        MethodHandle accept = req(linker, ws2, SyscallDowncall.WINDOWS_ACCEPT);
+        MethodHandle connect = req(linker, ws2, SyscallDowncall.WINDOWS_CONNECT);
+        MethodHandle close = req(linker, ws2, SyscallDowncall.WINDOWS_CLOSESOCKET);
 
         java.lang.invoke.MethodType sendRecvType = java.lang.invoke.MethodType.methodType(
                 long.class, long.class, MemorySegment.class, int.class, int.class);
 
-        MethodHandle sendRaw = req(linker, ws2, "send",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT, JAVA_INT));
+        MethodHandle sendRaw = req(linker, ws2, SyscallDowncall.WINDOWS_SEND);
         MethodHandle send = java.lang.invoke.MethodHandles.explicitCastArguments(sendRaw, sendRecvType);
 
-        MethodHandle recvRaw = req(linker, ws2, "recv",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, ADDRESS, JAVA_INT, JAVA_INT));
+        MethodHandle recvRaw = req(linker, ws2, SyscallDowncall.WINDOWS_RECV);
         MethodHandle recv = java.lang.invoke.MethodHandles.explicitCastArguments(recvRaw, sendRecvType);
 
-        MethodHandle ioctlsocket = req(linker, ws2, "ioctlsocket",
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_LONG));
-
-        MethodHandle wsaGetLastError = req(linker, ws2, "WSAGetLastError",
-                FunctionDescriptor.of(JAVA_INT));
-
-        MethodHandle wsaCleanup = req(linker, ws2, "WSACleanup",
-                FunctionDescriptor.of(JAVA_INT));
+        MethodHandle ioctlsocket = req(linker, ws2, SyscallDowncall.WINDOWS_IOCTLSOCKET);
+        MethodHandle wsaGetLastError = req(linker, ws2, SyscallDowncall.WINDOWS_WSA_GET_LAST_ERROR);
+        MethodHandle wsaCleanup = req(linker, ws2, SyscallDowncall.WINDOWS_WSA_CLEANUP);
 
         LOG.log(System.Logger.Level.INFO,
                 "[CoreSyscallLoader] Winsock2 handles resolved successfully");
@@ -229,8 +189,7 @@ public final class CoreSyscallLoader {
      * @param arena  the arena that owns the WSADATA scratch buffer
      */
     private static void invokeWsaStartup(Linker linker, SymbolLookup ws2, Arena arena) {
-        MethodHandle wsaStartup = req(linker, ws2, "WSAStartup",
-                FunctionDescriptor.of(JAVA_INT, JAVA_INT, JAVA_LONG));
+        MethodHandle wsaStartup = req(linker, ws2, SyscallDowncall.WINDOWS_WSA_STARTUP);
 
         // 408 bytes covers all known Win32/Win64 WSADATA struct sizes.
         // Allocated via the caller-supplied arena — memory policy is the caller's concern.
@@ -273,13 +232,12 @@ public final class CoreSyscallLoader {
     // Handle factory
     // =========================================================================
 
-    private static MethodHandle req(Linker linker, SymbolLookup lookup,
-                                    String sym, FunctionDescriptor desc) {
-        Optional<MemorySegment> addr = lookup.find(sym);
+    private static MethodHandle req(Linker linker, SymbolLookup lookup, SyscallDowncall downcall) {
+        Optional<MemorySegment> addr = lookup.find(downcall.symbol());
         if (addr.isEmpty()) {
             throw new IllegalStateException(
-                    "[CoreSyscallLoader] Required socket symbol not found: '" + sym + "'.");
+                    "[CoreSyscallLoader] Required socket symbol not found: '" + downcall.symbol() + "'.");
         }
-        return linker.downcallHandle(addr.get(), desc);
+        return linker.downcallHandle(addr.get(), downcall.descriptor());
     }
 }

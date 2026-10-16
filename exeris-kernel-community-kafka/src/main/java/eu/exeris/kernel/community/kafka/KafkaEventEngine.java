@@ -95,9 +95,11 @@ import java.util.function.Function;
  */
 @SuppressWarnings({
         // KafkaEventEngine bundles publish + consume + producer + consumer wiring intentionally;
-        // splitting it would dilute the single Kafka-binding entry point.
+        // splitting it would dilute the single Kafka-binding entry point. Package-private client
+        // property builders are co-located here for centralized native-image metadata derivation.
         "PMD.ExcessiveImports",
-        "PMD.CouplingBetweenObjects"
+        "PMD.CouplingBetweenObjects",
+        "PMD.TooManyMethods"
 })
 public final class KafkaEventEngine implements EventEngine {
 
@@ -210,14 +212,41 @@ public final class KafkaEventEngine implements EventEngine {
                 loop.isRunning());
     }
 
-    private static Producer<byte[], byte[]> createProducer(KafkaEventConfig cfg) {
+    /**
+     * Builds standard Kafka producer configuration properties for the given binding configuration.
+     *
+     * @param cfg Kafka binding configuration
+     * @return populated producer properties
+     */
+    /* default */ static Properties producerProperties(KafkaEventConfig cfg) {
         Properties props = new Properties();
         props.put("bootstrap.servers",  cfg.bootstrapServers());
         props.put("key.serializer",     ByteArraySerializer.class.getName());
         props.put("value.serializer",   ByteArraySerializer.class.getName());
         props.put("acks",               cfg.requireAllAcks() ? "all" : "1");
         props.put("linger.ms",          Long.toString(cfg.producerLingerMs()));
-        return new KafkaProducer<>(props);
+        return props;
+    }
+
+    /**
+     * Builds standard Kafka consumer configuration properties for the given binding configuration.
+     *
+     * @param config Kafka binding configuration
+     * @return populated consumer properties
+     */
+    /* default */ static Properties consumerProperties(KafkaEventConfig config) {
+        Properties props = new Properties();
+        props.put("bootstrap.servers",  config.bootstrapServers());
+        props.put("group.id",           config.consumerGroupId());
+        props.put("key.deserializer",   ByteArrayDeserializer.class.getName());
+        props.put("value.deserializer", ByteArrayDeserializer.class.getName());
+        props.put("enable.auto.commit", "true");
+        props.put("auto.offset.reset",  "earliest");
+        return props;
+    }
+
+    private static Producer<byte[], byte[]> createProducer(KafkaEventConfig cfg) {
+        return new KafkaProducer<>(producerProperties(cfg));
     }
 
     /**
@@ -437,13 +466,7 @@ public final class KafkaEventEngine implements EventEngine {
         }
 
         private void run() {
-            Properties props = new Properties();
-            props.put("bootstrap.servers",  config.bootstrapServers());
-            props.put("group.id",           config.consumerGroupId());
-            props.put("key.deserializer",   ByteArrayDeserializer.class.getName());
-            props.put("value.deserializer", ByteArrayDeserializer.class.getName());
-            props.put("enable.auto.commit", "true");
-            props.put("auto.offset.reset",  "earliest");
+            Properties props = consumerProperties(config);
 
             try (Consumer<byte[], byte[]> consumer = consumerFactory.apply(props)) {
                 long pollNanos = config.consumerPollTimeout().toNanos();
