@@ -319,6 +319,12 @@ class CoreReachabilityMetadataTest {
     private static void registerJcToolsFieldOffsets(ReachabilityMetadata.Builder builder, Path classesDir)
             throws IOException, ClassNotFoundException {
         Set<String> queueClasses = discoverInstantiatedQueueClasses(classesDir);
+        if (!queueClasses.isEmpty()) {
+            builder.registerMethod("sun.misc.Unsafe", "getAndSetObject",
+                    "java.lang.Object", "long", "java.lang.Object");
+            builder.registerMethod("sun.misc.Unsafe", "getAndAddLong",
+                    "java.lang.Object", "long", "long");
+        }
         ClassLoader loader = CoreReachabilityMetadataTest.class.getClassLoader();
 
         for (String queueClass : queueClasses) {

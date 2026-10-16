@@ -5,12 +5,11 @@
 package eu.exeris.kernel.community.crypto;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
+
 
 /**
  * Server-side ALPN protocol selector for the Community TLS stack.
@@ -39,15 +38,11 @@ final class CommunityAlpnSelector {
 	@SuppressWarnings("PMD.AvoidCatchingGenericException")
 	private static MemorySegment resolveStub() {
 		try {
+			CommunityForeignCall call = CommunityForeignCall.ALPN_SELECT_CALLBACK;
 			java.lang.invoke.MethodHandle callbackHandle = MethodHandles.lookup()
-					.findStatic(CommunityAlpnSelector.class, "selectCallback",
-							MethodType.methodType(int.class, long.class, long.class,
-									long.class, long.class, int.class, long.class));
-			FunctionDescriptor alpnCbDesc = FunctionDescriptor.of(
-					ValueLayout.JAVA_INT,
-					ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG, ValueLayout.JAVA_LONG,
-					ValueLayout.JAVA_LONG, ValueLayout.JAVA_INT, ValueLayout.JAVA_LONG);
-			return Linker.nativeLinker().upcallStub(callbackHandle, alpnCbDesc, Arena.global());
+					.findStatic(call.targetClass(), call.targetMethod(),
+							call.descriptor().toMethodType());
+			return Linker.nativeLinker().upcallStub(callbackHandle, call.descriptor(), Arena.global());
 		} catch (NoSuchMethodException | IllegalAccessException | RuntimeException _) {
 			return null;
 		}

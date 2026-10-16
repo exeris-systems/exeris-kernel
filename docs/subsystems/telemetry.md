@@ -412,7 +412,11 @@ its own module's class loader, because a driver's events ship in the driver's ar
 `JfrEventCatalogueCoverageTest` is what makes names safe — it resolves every one and matches the
 union of both buckets against the event classes each module actually declares, so a new event class
 that nobody classified fails the build, and so does a name left behind by a rename, a group keyed on
-a subsystem name nothing reports, and a subsystem that never warms.
+a subsystem name nothing reports, and a subsystem that never warms. Beyond warm-up safety, catalogue
+names feed native-image reachability metadata generation: each module's reachability guard computes
+the transitive enclosing-class closure for every catalogued event name and registers the resulting
+types in `reachability-metadata.json`, ensuring complete JFR metadata under GraalVM without manual
+reflection tables.
 
 ---
 
