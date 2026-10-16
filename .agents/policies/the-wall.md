@@ -28,6 +28,8 @@ the poms disagree, the poms win and this file is the defect.
 | `exeris-kernel-community-testkit` | Shared test fixtures | — |
 | `exeris-kernel-tck` | Contract tests (`Abstract*Tck`) and `ExerisArchitectureTest`, the ArchUnit Wall guard — **SPI reach only**; the Core/Community half is `KernelTierBanArchitectureTest` in Community | SPI |
 | `exeris-kernel-diagnostics-cli` | Diagnostics tooling (thin, coverage-ungated) | — |
+| `exeris-kernel-native-smoke` | Test tooling (`-Pnative` only, unpublished) | Community |
+| `exeris-kernel-native-smoke-kafka` | Test tooling (`-Pnative` only, unpublished) | Community Kafka |
 | `exeris-kernel-bom` / `-parent` / `-build-config` | Build plumbing; build-config ships the lint rulesets and is itself lint-exempt | — |
 
 **The Community row is enumerated, not adjectival, because both adjectives that preceded it were

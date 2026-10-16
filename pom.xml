@@ -689,7 +689,29 @@
             </build>
         </profile>
 
-
+        <profile>
+            <id>native</id>
+            <!--
+                Native smoke verification profile (ADR-103). Activates the GraalVM native image
+                modules and tooling outside the default build gates, ensuring HotSpot remains
+                the default platform while validating native reachability.
+            -->
+            <modules>
+                <module>exeris-kernel-native-smoke</module>
+                <module>exeris-kernel-native-smoke-kafka</module>
+            </modules>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.graalvm.buildtools</groupId>
+                            <artifactId>native-maven-plugin</artifactId>
+                            <version>1.1.14</version>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
     </profiles>
 
     <distributionManagement>
