@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <ul>
  *   <li>The {@link SocketBackendMode} selection from JVM property / env vars.</li>
- *   <li>The {@link SocketBackendSelection} resolution result (mode +
+ *   <li>The {@link SocketBackendSelection} resolution result (mode + arena +
  *       syscall handles + armed flag + diagnostic detail string).</li>
  *   <li>The {@link AtomicBoolean} latches that turn first-server-start and
  *       first-client-connect into one-shot validation triggers.</li>
@@ -215,6 +215,7 @@ final class NativeTcpSocketBackend {
     }
 
     /* default */ record SocketBackendSelection(SocketBackendMode requestedMode,
+                                                Arena socketBackendArena,
                                                 SyscallHandles socketHandles,
                                                 boolean ffmSocketBackendArmed,
                                                 String detail) {
@@ -225,6 +226,7 @@ final class NativeTcpSocketBackend {
                 return new SocketBackendSelection(
                         configuredMode,
                         null,
+                        null,
                         false,
                         "NIO backend pinned explicitly; Core syscall load skipped.");
             }
@@ -232,13 +234,14 @@ final class NativeTcpSocketBackend {
                 String detail = configuredMode == SocketBackendMode.POSIX_HYBRID
                         ? resolveRequestedFallbackDetail(true, true)
                         : resolveAutoFallbackDetail(true, true);
-                return new SocketBackendSelection(configuredMode, null, false, detail);
+                return new SocketBackendSelection(configuredMode, null, null, false, detail);
             }
 
+            // The handles live as long as the process, and the POSIX load allocates nothing in the arena.
+            Arena arena = Arena.global();
             SyscallHandles handles = null;
             try {
-                // The handles live as long as the process, and the POSIX load allocates nothing in the arena.
-                handles = CoreSyscallLoader.load(Arena.global());
+                handles = CoreSyscallLoader.load(arena);
             } catch (IllegalCallerException | IllegalStateException | UnsupportedOperationException ex) {
                 LOG.log(System.Logger.Level.DEBUG,
                         "[NativeTcpSocketBackend] Community-owned Core socket load unavailable; "
@@ -255,7 +258,7 @@ final class NativeTcpSocketBackend {
                     detail = "Core socket seam probe unavailable on this platform; "
                             + ACTIVE_NIO_FALLBACK_DETAIL;
                 }
-                return new SocketBackendSelection(configuredMode, null, false, detail);
+                return new SocketBackendSelection(configuredMode, null, null, false, detail);
             }
 
             boolean plainSocketIoAvailable = handles.supportsPlainSocketIo();
@@ -263,7 +266,7 @@ final class NativeTcpSocketBackend {
             boolean winsockModel = handles.hasIoctlsocket();
             boolean seamArmed = plainSocketIoAvailable && fdAccessAvailable && !winsockModel;
             String detail = resolveDetail(configuredMode, seamArmed, plainSocketIoAvailable, winsockModel);
-            return new SocketBackendSelection(configuredMode, handles, seamArmed, detail);
+            return new SocketBackendSelection(configuredMode, arena, handles, seamArmed, detail);
         }
 
         private static String resolveDetail(SocketBackendMode configuredMode,

@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 
+import java.lang.foreign.Arena;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
@@ -28,6 +30,22 @@ class NativeTcpSocketBackendArenaTest {
     void clearBackendOverride() {
         System.clearProperty(NativeTcpSocketBackend.SOCKET_BACKEND_PROPERTY);
         System.clearProperty(NativeTcpSocketBackend.SOCKET_BACKEND_ENV_ALIAS);
+    }
+
+    @Test
+    @DisplayName("the resolved syscall handles are bound to the global arena")
+    void resolvedHandlesUseTheGlobalArena() {
+        NativeTcpSocketBackend.SocketBackendSelection selection =
+                NativeTcpSocketBackend.SocketBackendSelection.resolve();
+
+        assertThat(selection.socketHandles())
+                .as("Syscall handles must resolve when the backend is not pinned to NIO (property '%s' or env '%s')",
+                        NativeTcpSocketBackend.SOCKET_BACKEND_PROPERTY,
+                        NativeTcpSocketBackend.SOCKET_BACKEND_ENV)
+                .isNotNull();
+        assertThat(selection.socketBackendArena())
+                .as("a closeable arena here would make every image shutdown depend on shared-arena support")
+                .isSameAs(Arena.global());
     }
 
     @Test
