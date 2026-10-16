@@ -61,6 +61,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **`RequiresRoleProcessor` emits native-image reachability metadata for the `RoleCheckRegistry` it
+  generates.** Next to the class it writes `reachability-metadata.json`, by default under
+  `META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry/`, overridable with the
+  processor option `exeris.requiresrole.nativeImageMetadataDir` (which must start with
+  `META-INF/native-image/`). It registers the type and the five accessors `GeneratedRoleRegistryLoader`
+  binds; without it a native image loads the fail-closed empty registry and every `@RequiresRole` denies
+  (ADR-103).
 - **The boot verifies a signed license manifest and enforces its entitlements (ADR-088, ADR-089,
   #608).** Phase 0 of `KernelBootstrap.boot()` reads `license-manifest.json` (or
   `license.manifest.path`), checks it against ADR-088's v1 schema, canonicalizes it per RFC 8785 and

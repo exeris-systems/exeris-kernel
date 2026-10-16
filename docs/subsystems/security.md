@@ -360,6 +360,13 @@ contract end-to-end.
    (reflective `Class.forName` by FQN, then `MethodHandle` binding of the five static accessors). The
    per-request accessors invoke the bound handles via `invokeExact` — no `Method.invoke`, allocation-free.
    When the class is absent the loader returns a fail-closed empty registry (Sprint 4 SEC-080).
+4. **Native-image reachability metadata (ADR-103 obligation 5):** When annotated methods exist,
+   `RequiresRoleProcessor` also emits reachability metadata at
+   `META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry/reachability-metadata.json`
+   (configurable via the `exeris.requiresrole.nativeImageMetadataDir` processor option, which must
+   start with `META-INF/native-image/`). The metadata registers `RoleCheckRegistry` and the five
+   static accessors reflectively bound by `GeneratedRoleRegistryLoader`; without it, a native image
+   loads the fail-closed empty registry (every `@RequiresRole` denies).
 
 ```text
 Hot-path check (RoleMatch.ANY): (principal.roleMask() & registry.requiredAny(methodId)) != 0L
