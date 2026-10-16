@@ -15,10 +15,19 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 import java.io.IOException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.net.URI;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -56,24 +65,43 @@ class RequiresRoleProcessorTest {
             public enum RoleMatch { ANY, ALL }
             """;
 
+    private static final String ADMIN_API_FIXTURE = """
+            package fixtures;
+            import eu.exeris.kernel.spi.security.RequiresRole;
+            import eu.exeris.kernel.spi.security.RoleMatch;
+            public class AdminApi {
+                @RequiresRole({"ROLE_ADMIN"})
+                public void purgeCache() {}
+
+                @RequiresRole(value = {"ROLE_ADMIN", "ROLE_AUDITOR"}, match = RoleMatch.ALL)
+                public void replayLog() {}
+
+                @RequiresRole({"ROLE_OPERATOR", "tenant.metrics.read"})
+                public void readMetrics() {}
+            }
+            """;
+
+    private static final String EXPECTED_METADATA_JSON = """
+            {
+              "reflection": [
+                {
+                  "type": "eu.exeris.kernel.security.generated.RoleCheckRegistry",
+                  "methods": [
+                    { "name": "requiredAny", "parameterTypes": ["int"] },
+                    { "name": "requiredAll", "parameterTypes": ["int"] },
+                    { "name": "matchIsAll", "parameterTypes": ["int"] },
+                    { "name": "methodCount", "parameterTypes": [] },
+                    { "name": "roleNameToBit", "parameterTypes": ["java.lang.String"] }
+                  ]
+                }
+              ]
+            }
+            """;
+
     @Test
     @DisplayName("Generates RoleCheckRegistry with deterministic method IDs and ANY/ALL masks")
     void generatesRegistry(@TempDir Path workDir) throws IOException {
-        String fixture = """
-                package fixtures;
-                import eu.exeris.kernel.spi.security.RequiresRole;
-                import eu.exeris.kernel.spi.security.RoleMatch;
-                public class AdminApi {
-                    @RequiresRole({"ROLE_ADMIN"})
-                    public void purgeCache() {}
-
-                    @RequiresRole(value = {"ROLE_ADMIN", "ROLE_AUDITOR"}, match = RoleMatch.ALL)
-                    public void replayLog() {}
-
-                    @RequiresRole({"ROLE_OPERATOR", "tenant.metrics.read"})
-                    public void readMetrics() {}
-                }
-                """;
+        String fixture = ADMIN_API_FIXTURE;
 
         compileWithProcessor(workDir, List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, fixture));
 
@@ -149,7 +177,177 @@ class RequiresRoleProcessorTest {
         assertThat(registry).doesNotExist();
     }
 
+    @Test
+    @DisplayName("No @RequiresRole declarations produces no reachability metadata file")
+    void noAnnotationsProducesNoMetadata(@TempDir Path workDir) throws IOException {
+        String fixture = """
+                package fixtures;
+                public class Plain { public void hi() {} }
+                """;
+        compileWithProcessor(workDir, List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, fixture));
+
+        Path classesDir = workDir.resolve("classes");
+        if (Files.exists(classesDir)) {
+            try (Stream<Path> stream = Files.walk(classesDir)) {
+                assertThat(stream.filter(Files::isRegularFile))
+                        .noneMatch(path -> path.getFileName().toString()
+                                .equals(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Emits reachability metadata at default path")
+    void emitsReachabilityMetadataAtDefaultPath(@TempDir Path workDir) throws IOException {
+        compileWithProcessor(workDir, List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, ADMIN_API_FIXTURE));
+
+        Path metadataFile = workDir.resolve("classes")
+                .resolve(RequiresRoleProcessor.DEFAULT_NATIVE_IMAGE_METADATA_DIR)
+                .resolve(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE);
+        assertThat(metadataFile).exists();
+        String content = Files.readString(metadataFile, StandardCharsets.UTF_8);
+        assertThat(content).isEqualTo(EXPECTED_METADATA_JSON);
+    }
+
+    @Test
+    @DisplayName("Metadata names members the generated class declares with expected signatures")
+    void metadataNamesMembersTheGeneratedClassDeclares(@TempDir Path workDir) throws Exception {
+        compileWithProcessor(workDir, List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, ADMIN_API_FIXTURE));
+
+        Path metadataFile = workDir.resolve("classes")
+                .resolve(RequiresRoleProcessor.DEFAULT_NATIVE_IMAGE_METADATA_DIR)
+                .resolve(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE);
+        assertThat(metadataFile).exists();
+        String json = Files.readString(metadataFile, StandardCharsets.UTF_8);
+
+        Pattern methodPattern = Pattern.compile(
+                "\\{\\s*\"name\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"parameterTypes\"\\s*:\\s*\\[([^\\]]*)\\]\\s*\\}");
+        Matcher matcher = methodPattern.matcher(json);
+        record RegisteredMethod(String name, Class<?>[] paramTypes) {}
+        List<RegisteredMethod> methods = new ArrayList<>();
+        while (matcher.find()) {
+            String name = matcher.group(1);
+            String rawParams = matcher.group(2).trim();
+            Class<?>[] params;
+            if (rawParams.isEmpty()) {
+                params = new Class<?>[0];
+            } else {
+                String[] split = rawParams.split("\\s*,\\s*");
+                params = new Class<?>[split.length];
+                for (int i = 0; i < split.length; i++) {
+                    String clean = split[i].replace("\"", "").trim();
+                    params[i] = switch (clean) {
+                        case "int" -> int.class;
+                        case "java.lang.String" -> String.class;
+                        default -> throw new AssertionError("Unexpected parameter type: " + clean);
+                    };
+                }
+            }
+            methods.add(new RegisteredMethod(name, params));
+        }
+
+        assertThat(methods)
+                .as("Metadata must register exactly five methods")
+                .hasSize(5);
+
+        Map<String, Class<?>> expectedReturns = Map.of(
+                "requiredAny", long.class,
+                "requiredAll", long.class,
+                "matchIsAll", boolean.class,
+                "methodCount", int.class,
+                "roleNameToBit", int.class
+        );
+
+        Path classesDir = workDir.resolve("classes");
+        try (URLClassLoader loader = new URLClassLoader(new URL[]{classesDir.toUri().toURL()})) {
+            Class<?> clazz = Class.forName(RequiresRoleProcessor.GENERATED_CLASS_FQN, true, loader);
+            for (RegisteredMethod rm : methods) {
+                Method method = clazz.getDeclaredMethod(rm.name(), rm.paramTypes());
+                assertThat(Modifier.isPublic(method.getModifiers()))
+                        .as("method %s must be public", rm.name())
+                        .isTrue();
+                assertThat(Modifier.isStatic(method.getModifiers()))
+                        .as("method %s must be static", rm.name())
+                        .isTrue();
+                assertThat(method.getReturnType())
+                        .as("method %s return type", rm.name())
+                        .isEqualTo(expectedReturns.get(rm.name()));
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("Option exeris.requiresrole.nativeImageMetadataDir overrides reachability metadata path")
+    void metadataDirOptionOverridesPath(@TempDir Path workDir) throws IOException {
+        String customDir = "META-INF/native-image/com.acme/app";
+        List<String> options = List.of(
+                "-A" + RequiresRoleProcessor.NATIVE_IMAGE_METADATA_DIR_OPTION + "=" + customDir);
+
+        ProcessorRun run = compileWithProcessor(workDir,
+                List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, ADMIN_API_FIXTURE),
+                options);
+        assertThat(run.ok()).isTrue();
+
+        Path classesDir = workDir.resolve("classes");
+        Path overriddenFile = classesDir.resolve(customDir)
+                .resolve(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE);
+        Path defaultFile = classesDir.resolve(RequiresRoleProcessor.DEFAULT_NATIVE_IMAGE_METADATA_DIR)
+                .resolve(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE);
+
+        assertThat(overriddenFile).exists();
+        assertThat(Files.readString(overriddenFile, StandardCharsets.UTF_8)).isEqualTo(EXPECTED_METADATA_JSON);
+        assertThat(defaultFile).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("Option with trailing slash strips slash and writes to normalized path")
+    void metadataDirOptionStripsTrailingSlash(@TempDir Path workDir) throws IOException {
+        String customDir = "META-INF/native-image/com.acme/app";
+        List<String> options = List.of(
+                "-A" + RequiresRoleProcessor.NATIVE_IMAGE_METADATA_DIR_OPTION + "=" + customDir + "/");
+
+        ProcessorRun run = compileWithProcessor(workDir,
+                List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, ADMIN_API_FIXTURE),
+                options);
+        assertThat(run.ok()).isTrue();
+
+        Path classesDir = workDir.resolve("classes");
+        Path overriddenFile = classesDir.resolve(customDir)
+                .resolve(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE);
+        assertThat(overriddenFile).exists();
+    }
+
+    @Test
+    @DisplayName("Option specifying path outside META-INF/native-image/ causes compile error and emits no metadata")
+    void metadataDirOutsideNativeImageRootIsCompileError(@TempDir Path workDir) throws IOException {
+        List<String> options = List.of(
+                "-A" + RequiresRoleProcessor.NATIVE_IMAGE_METADATA_DIR_OPTION + "=resources/x");
+
+        ProcessorRun run = compileWithProcessor(workDir,
+                List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, ADMIN_API_FIXTURE),
+                options);
+        assertThat(run.ok()).isFalse();
+        assertThat(run.diagnostics())
+                .contains(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_DIR_OPTION)
+                .contains("META-INF/native-image/");
+
+        Path classesDir = workDir.resolve("classes");
+        if (Files.exists(classesDir)) {
+            try (Stream<Path> stream = Files.walk(classesDir)) {
+                assertThat(stream.filter(Files::isRegularFile))
+                        .noneMatch(path -> path.getFileName().toString()
+                                .equals(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE));
+            }
+        }
+    }
+
     private static ProcessorRun compileWithProcessor(Path workDir, List<String> sources) throws IOException {
+        return compileWithProcessor(workDir, sources, List.of());
+    }
+
+    private static ProcessorRun compileWithProcessor(Path workDir,
+                                                     List<String> sources,
+                                                     List<String> extraOptions) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         assertThat(compiler).as("system Java compiler must be available").isNotNull();
 
@@ -160,6 +358,9 @@ class RequiresRoleProcessorTest {
                 .map(InMemorySource::new)
                 .map(JavaFileObject.class::cast)
                 .toList();
+
+        List<String> options = new ArrayList<>(List.of("-proc:full", "--release", "25"));
+        options.addAll(extraOptions);
 
         StringBuilder diagnostics = new StringBuilder();
         boolean ok;
@@ -173,7 +374,7 @@ class RequiresRoleProcessorTest {
                     fileManager,
                     diagnostic -> diagnostics.append(diagnostic.getKind())
                             .append(": ").append(diagnostic.getMessage(null)).append('\n'),
-                    List.of("-proc:full", "--release", "25"),
+                    options,
                     null,
                     units
             ).call();
