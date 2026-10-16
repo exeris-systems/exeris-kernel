@@ -180,7 +180,7 @@ supported.
    `reachability-metadata.json` next to the `RoleCheckRegistry` it generates, registering the type
    and the static accessors `GeneratedRoleRegistryLoader` binds. Where no class is generated, the
    loader still returns the fail-closed empty registry, in the image as on the JVM. A processor test
-   asserts the emitted file.
+   asserts the emitted file. _(Amended 2026-10-16: the file's location is fixed — see Amendments.)_
 
 6. **File-descriptor access: register the resolver, ship the opens.** `NativeTcpCarrier`,
    `NativeTcpStream`, `NativeTcpStreamTlsHandshake` and `CommunityTlsEngine` obtain the socket's fd
@@ -209,6 +209,8 @@ supported.
      green in the image — and stop closing it, since a global arena cannot be closed. `Arena.ofAuto()`
      is the alternative if a Windows FFM socket path is ever armed through this class, so a
      per-carrier `WSADATA` buffer is reclaimed rather than retained; it is not measured in an image.
+     _(Amended 2026-10-16: on Windows the arena also scopes the `Ws2_32.dll` library lookup — see
+     Amendments.)_
    - **`CommunityArenaShardPool` keeps `Arena.ofShared()`.** Its segments travel inside
      `LoanedBuffer`s across threads, and `close()` frees every shard deterministically; a confined
      arena cannot be used across threads and neither a global nor an automatic arena can be closed.
@@ -309,6 +311,29 @@ supported.
 - [`docs/ROADMAP.md`](../ROADMAP.md) — *Native-Image: Opt-In Build With Metadata In The Jars
   (ADR-103)*, and the "Native-image / GraalVM" stance under *Scope Discipline & Declared Stances*.
 - #619 — an `Error` from a subsystem bypasses the failure policy and escapes `KernelBootstrap`.
+
+## Amendments
+
+- **2026-10-16 — Obligation 5: where the processor writes its metadata.** Obligation 3's
+  `META-INF/native-image/eu.exeris/<artifactId>/` cannot apply to `RequiresRoleProcessor`, because the
+  file lands in the consumer's artifact, whose coordinates the processor does not know. The processor
+  writes `reachability-metadata.json` to the class output under
+  `META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry/`, a directory keyed on
+  the generated package, so it never collides with a kernel jar's `eu.exeris/<artifactId>`.
+  native-image reads configuration from `META-INF/native-image/` and any of its subdirectories. The
+  processor option `exeris.requiresrole.nativeImageMetadataDir` overrides the directory, and a value
+  outside `META-INF/native-image/` is a compile error. The file registers the type and exactly the five
+  static accessors `GeneratedRoleRegistryLoader` binds — `requiredAny(int)`, `requiredAll(int)`,
+  `matchIsAll(int)`, `methodCount()`, `roleNameToBit(String)` — and is written only when a class is
+  generated. That native-image picks the file up from this directory is asserted by the `native-smoke`
+  job (obligation 10), which builds with the default.
+- **2026-10-16 — Obligation 8: the arena also scopes the Windows library lookup.** On Windows,
+  `CoreSyscallLoader.loadWindows` resolves its symbols through `SymbolLookup.libraryLookup("Ws2_32.dll",
+  arena)` as well as allocating the `WSADATA` buffer in the arena. The `Arena.ofAuto()` alternative
+  therefore also ties the library lookup's lifetime to garbage collection, and under `Arena.global()`
+  both the buffer and the loaded library are held for the life of the process. Neither path is reached
+  today: `SocketBackendSelection.resolve` returns before `load` on Windows. The ruling for the POSIX
+  path is unchanged.
 
 ## Engineering Protocol
 
