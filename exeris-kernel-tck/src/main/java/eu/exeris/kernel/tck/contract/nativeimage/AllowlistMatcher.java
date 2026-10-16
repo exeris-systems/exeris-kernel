@@ -26,6 +26,9 @@ final class AllowlistMatcher {
         Set<String> seenKeys = new LinkedHashSet<>();
         Map<DeclarationSiteScanner.AllowlistEntry, Integer> matchCounts = new LinkedHashMap<>();
 
+        Map<String, DeclarationSiteScanner.AllowlistEntry> wildcards = new LinkedHashMap<>();
+        Map<String, List<DeclarationSiteScanner.AllowlistEntry>> specifics = new LinkedHashMap<>();
+
         for (DeclarationSiteScanner.AllowlistEntry entry : allowlist) {
             if (entry.disposition().isBlank()) {
                 errors.add("blank disposition for allowlist entry: " + formatEntry(entry));
@@ -36,20 +39,35 @@ final class AllowlistMatcher {
                 errors.add("duplicate allowlist entry for " + formatEntry(entry));
             }
             matchCounts.put(entry, 0);
+
+            String groupKey = entry.ownerClass() + "#" + entry.api();
+            if (entry.methodName() == null) {
+                wildcards.put(groupKey, entry);
+            } else {
+                specifics.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(entry);
+            }
+        }
+
+        for (Map.Entry<String, DeclarationSiteScanner.AllowlistEntry> wildEntry : wildcards.entrySet()) {
+            if (specifics.containsKey(wildEntry.getKey())) {
+                errors.add("overlapping wildcard and method-specific allowlist entry for "
+                        + formatEntry(wildEntry.getValue()));
+            }
         }
 
         for (DeclarationSite site : sites) {
-            boolean matched = false;
+            DeclarationSiteScanner.AllowlistEntry matchedEntry = null;
             for (DeclarationSiteScanner.AllowlistEntry entry : allowlist) {
                 if (entry.ownerClass().equals(site.declaringClass())
                         && entry.api().equals(site.api())
                         && (entry.methodName() == null || entry.methodName().equals(site.methodName()))) {
-                    matchCounts.put(entry, matchCounts.get(entry) + 1);
-                    matched = true;
+                    matchedEntry = entry;
                     break;
                 }
             }
-            if (!matched) {
+            if (matchedEntry != null) {
+                matchCounts.put(matchedEntry, matchCounts.get(matchedEntry) + 1);
+            } else {
                 errors.add("new declaration site " + site.declaringClass() + "." + site.methodName()
                         + " → " + site.api() + ": add metadata coverage or a disposition");
             }

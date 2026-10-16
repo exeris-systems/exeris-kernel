@@ -26,6 +26,7 @@ import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.invoke.VarHandle;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
@@ -358,6 +359,49 @@ class ReachabilityMetadataRenderingTest {
     }
 
     @Test
+    @DisplayName("DowncallRef constructor rejects unsupported option value types")
+    void downcallRefRejectsUnsupportedOptionTypes() {
+        assertThatThrownBy(() -> ReachabilityMetadata.builder()
+                .registerDowncall("jint", List.of("jlong"), Map.of("bad", new Object())))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Unsupported option value type");
+    }
+
+    @Test
+    @DisplayName("Downcall with nested map options renders as nested JSON object")
+    void downcallNestedMapOptionsRendering() {
+        ReachabilityMetadata downcallModel = ReachabilityMetadata.builder()
+                .registerDowncall("jint", List.of("jlong"), Map.of(
+                        "captureCallState", true,
+                        "nested", Map.of("enabled", true, "timeout", 100)
+                ))
+                .build();
+        String json = downcallModel.render();
+        String expected = """
+{
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong"
+        ],
+        "options": {
+          "captureCallState": true,
+          "nested": {
+            "enabled": true,
+            "timeout": 100
+          }
+        }
+      }
+    ]
+  }
+}
+""";
+        assertThat(json).isEqualTo(expected);
+    }
+
+    @Test
     @DisplayName("Single top-level sections render valid JSON without misplaced commas")
     void singleSectionRendering() {
         ReachabilityMetadata reflOnly = ReachabilityMetadata.builder()
@@ -558,6 +602,21 @@ class ReachabilityMetadataRenderingTest {
                     assertThat(msg).contains("stale allowlist entry for pkg.ClassD → Class.forName");
                 });
     }
+
+    @Test
+    @DisplayName("Allowlist rejects wildcard and method-specific overlap as a configuration error")
+    void allowlistRejectsWildcardAndMethodSpecificOverlap() {
+        DeclarationSite site = new DeclarationSite("pkg.ClassA", "m1", "Class.forName");
+        DeclarationSiteScanner.AllowlistEntry wildcard =
+                DeclarationSiteScanner.allow("pkg.ClassA", "Class.forName", "wildcard disposition");
+        DeclarationSiteScanner.AllowlistEntry specific =
+                DeclarationSiteScanner.allow("pkg.ClassA", "m1", "Class.forName", "specific disposition");
+
+        assertThatThrownBy(() -> DeclarationSiteScanner.assertAllowlistMatches(List.of(site), List.of(wildcard, specific)))
+                .isInstanceOf(AssertionError.class)
+                .hasMessageContaining("overlapping wildcard and method-specific allowlist entry for pkg.ClassA → Class.forName");
+    }
+
 
     @Test
     @DisplayName("Positive fixture detects exact sorted declaration sites across all API families and invoke shapes")
@@ -784,29 +843,22 @@ class ReachabilityMetadataRenderingTest {
 
     private static Path resolveSpiClassesDir() {
         CodeSource source = MemoryAllocator.class.getProtectionDomain().getCodeSource();
-        if (source != null && source.getLocation() != null) {
-            try {
-                Path loc = Path.of(source.getLocation().toURI());
-                if (Files.isDirectory(loc)) {
-                    return loc;
-                }
-                Path candidate = loc.getParent().resolve("classes");
-                if (Files.isDirectory(candidate)) {
-                    return candidate;
-                }
-            } catch (Exception ignored) {
-                // fall through to repository relative layout
+        if (source == null || source.getLocation() == null) {
+            throw new IllegalStateException("Could not determine CodeSource location for MemoryAllocator");
+        }
+        try {
+            Path loc = Path.of(source.getLocation().toURI());
+            if (Files.isDirectory(loc)) {
+                return loc;
             }
+            Path candidate = loc.getParent().resolve("classes");
+            if (Files.isDirectory(candidate)) {
+                return candidate;
+            }
+            throw new IllegalStateException("CodeSource location is not a classes directory: " + loc);
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException("Invalid CodeSource URI for MemoryAllocator: " + source.getLocation(), e);
         }
-        Path candidate = Path.of("..", "exeris-kernel-spi", "target", "classes").normalize();
-        if (Files.isDirectory(candidate)) {
-            return candidate;
-        }
-        candidate = Path.of("exeris-kernel-spi", "target", "classes").normalize();
-        if (Files.isDirectory(candidate)) {
-            return candidate;
-        }
-        throw new IllegalStateException("Could not locate compiled classes for exeris-kernel-spi");
     }
 
     @Test

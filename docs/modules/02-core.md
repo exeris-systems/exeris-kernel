@@ -148,6 +148,24 @@ graph LR
     COREMAIN[exeris-kernel-core main\nhttp1/http2/hpack codecs] --> RUNTIME[Driver tiers\nCommunity/Enterprise]
 ```
 
+## Native-image metadata
+
+The module ships reachability metadata at
+`META-INF/native-image/eu.exeris/exeris-kernel-core/reachability-metadata.json`.
+
+The metadata covers:
+- Foreign downcall descriptors declared in `OpenSslDowncall` and `SyscallDowncall`.
+- JFR event types and their enclosing classes from `CoreJfrEventCatalogue`.
+- Atomic field updates accessed via `MethodHandles.Lookup.findVarHandle`.
+- Classpath resources, including `KernelVersion.RESOURCE` (`exeris-kernel.properties`) and
+  the consumer manifest (`license-manifest.json`).
+- Internal queue field offsets in `org.jctools.queues.MpscArrayQueue` superclasses.
+
+The metadata is guarded by `CoreReachabilityMetadataTest`, which scans all compiled classes using the
+JDK ClassFile API. It enforces that `FunctionDescriptor` construction is confined to centralized enum tables,
+that downcall creation is restricted to designated loader classes, that all declaration sites match explicit
+allowlist dispositions, and that the committed metadata file matches the synthesized model byte-for-byte.
+
 ## Stability
 
 Core implementations bind to SPI surfaces whose maturity is declared in the

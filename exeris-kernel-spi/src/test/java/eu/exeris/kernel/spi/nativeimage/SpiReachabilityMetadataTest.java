@@ -23,7 +23,6 @@ import java.lang.classfile.constantpool.Utf8Entry;
 import java.lang.classfile.instruction.ConstantInstruction;
 import java.lang.classfile.instruction.InvokeDynamicInstruction;
 import java.lang.classfile.instruction.InvokeInstruction;
-import java.lang.constant.DirectMethodHandleDesc;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -160,23 +159,11 @@ class SpiReachabilityMetadataTest {
                 }
             }
         }
-        if (instruction instanceof ConstantInstruction.LoadConstantInstruction ldc) {
-            if (ldc.constantEntry() instanceof MethodHandleEntry mhe) {
-                MemberRefEntry ref = mhe.reference();
-                String owner = ref.owner().asInternalName();
-                String name = ref.name().stringValue();
-                String flagged = checkInvokeOrRef(owner, name);
-                if (flagged != null) {
-                    return flagged;
-                }
-            }
-        } else if (instruction instanceof ConstantInstruction ci
-                && ci.constantValue() instanceof DirectMethodHandleDesc dmhd) {
-            String desc = dmhd.owner().descriptorString();
-            String owner = desc.startsWith("L") && desc.endsWith(";")
-                    ? desc.substring(1, desc.length() - 1)
-                    : desc;
-            String name = dmhd.methodName();
+        if (instruction instanceof ConstantInstruction.LoadConstantInstruction ldc
+                && ldc.constantEntry() instanceof MethodHandleEntry mhe) {
+            MemberRefEntry ref = mhe.reference();
+            String owner = ref.owner().asInternalName();
+            String name = ref.name().stringValue();
             String flagged = checkInvokeOrRef(owner, name);
             if (flagged != null) {
                 return flagged;

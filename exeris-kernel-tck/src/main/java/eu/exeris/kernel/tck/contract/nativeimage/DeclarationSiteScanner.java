@@ -336,8 +336,7 @@ public final class DeclarationSiteScanner {
                 List<Instruction> instructions = collectInstructions(codeModel);
                 for (int index = 0; index < instructions.size(); index++) {
                     Instruction instruction = instructions.get(index);
-                    String api = DeclarationSiteDetector.detectFlaggedApi(
-                            instruction, instructions, index, className, methodName);
+                    String api = DeclarationSiteDetector.detectFlaggedApi(instruction);
                     if (api != null) {
                         sites.add(new DeclarationSite(className, methodName, api));
                     }
