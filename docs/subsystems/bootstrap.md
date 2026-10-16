@@ -70,12 +70,17 @@ never on a request path.
       dropped together with its transitive dependents; every other failure still aborts. No Community
       subsystem declares itself optional, so on the Community tier alone `DEGRADE` boots exactly like
       `FAIL_FAST`.
+    - What counts as a failure: a `SubsystemException`, any other `RuntimeException`, and any `Error` other
+      than a `VirtualMachineError` — a `LinkageError` or `ServiceConfigurationError` from a missing native
+      binding or a provider that cannot load is a failure of that subsystem like any other. A
+      `VirtualMachineError` is not a subsystem failure: it is neither wrapped nor recorded, and it
+      propagates unchanged under both policies.
 
 - **Ordered Shutdown**  
   `shutdown()` calls `stop()` in reverse topological order, and only on subsystems whose `isRunning()`
   reports `true`. The orchestrator imposes no deadline of its own: each `stop()` does whatever its
-  subsystem does, and one that throws is logged at `WARNING` and skipped. The transport subsystem's
-  `stop()` is the one that drains: `NativeTcpCarrier.stop()` closes ingress, keeps the reactors serving
+  subsystem does, and one that throws anything other than a `VirtualMachineError` is logged at `WARNING`
+  and skipped. The transport subsystem's `stop()` is the one that drains: `NativeTcpCarrier.stop()` closes ingress, keeps the reactors serving
   while `PaqsScheduler.close()` waits for streams in service to finish under a 60-second hard deadline,
   and only then force-closes what is left.
 
@@ -323,7 +328,7 @@ halts.
 | Code             | Carried by | `rawArgs` | When |
 |------------------|------------|-----------|------|
 | **EX‑BOOT‑0001** | `SubsystemCircularDependencyException` — a plain `RuntimeException`, not an `ExerisKernelException` | None. Members are read from `cycleMembers()` (insertion-ordered `Set<String>`); the JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` carries them as one `String` joined with `", "`, plus `errorCode`. | Dependency cycle found by the sort, during `SubsystemOrchestrator.initialize()` or `resolveTopology()`, before any subsystem is initialized. The set holds every subsystem the sort could not order, including those that only depend on the cycle. `KernelBootstrap` rethrows it unwrapped. |
-| **EX‑BOOT‑0002** | `SubsystemException` | `[0] String subsystemName`, `[1] SubsystemException.Phase phase`, `[2] String detail` | `initialize()` or `start()` threw. The orchestrator wraps any other unchecked exception in one (`detail` = its message, original as cause) and, unless `DEGRADE` drops the subsystem, throws `SubsystemOrchestrator.BootstrapException` with it as cause. The orchestrator never raises it for `stop()`. The sorter's "depends on missing subsystem" `BootstrapException` cites this code in its message only, with no `rawArgs`. |
+| **EX‑BOOT‑0002** | `SubsystemException` | `[0] String subsystemName`, `[1] SubsystemException.Phase phase`, `[2] String detail` | `initialize()` or `start()` threw. The orchestrator wraps any other unchecked exception, including an `Error` other than a `VirtualMachineError`, in one (`detail` = the exception's message, or its `toString()` for an `Error`; original as cause) and, unless `DEGRADE` drops the subsystem, throws `SubsystemOrchestrator.BootstrapException` with it as cause. The orchestrator never raises it for `stop()`. The sorter's "depends on missing subsystem" `BootstrapException` cites this code in its message only, with no `rawArgs`. |
 | **EX‑BOOT‑0003** | — | Registry layout: `[0] String subsystemName`, `[1] long deadlineMs` | Defined in `KernelErrorCodes` only. The orchestrator enforces no deadline and nothing in this repository throws it. |
 | **EX‑BOOT‑0004** | `MemoryBootstrapException` | `[0] String providerName`, `[1] long requestedBytes` (`-1` if unknown); the message-only constructor leaves `rawArgs` empty | `CommunityMemoryProvider` cannot create its allocator. Raised inside `memory`'s `initialize()`, so the caller sees it as the cause of an `EX-BOOT-0002`. |
 | **EX‑BOOT‑3001** | `TelemetryBootstrapException` | `[0] String providerName`, `[1] String reason` | `CommunityTelemetryProvider` cannot construct a sink. Telemetry is not a Boot DAG subsystem. |
@@ -333,7 +338,7 @@ halts.
 > surfaces it without touching infrastructure.
 
 A boot failure reaches the caller of `KernelBootstrap.boot()` as `KernelBootstrap.BootstrapException`
-wrapping `SubsystemOrchestrator.BootstrapException`; a missing `ConfigProvider` fails with a
+wrapping `SubsystemOrchestrator.BootstrapException` (a `VirtualMachineError` reaches it raw); a missing `ConfigProvider` fails with a
 `KernelBootstrap.BootstrapException` whose message cites `EX-CFG-0001`. A refusal by the contract gate
 reaches it unwrapped, as `ContractBreachException` with an `EX-LIC-` code (see
 [exceptions.md](exceptions.md)), and is raised before the orchestrator exists: no subsystem was initialized,
@@ -439,6 +444,7 @@ failure is logged and never fails the subsystem.
   subsystem is initialized
 - `CoreBootstrapOrchestratorTckTest`, `CoreBootstrapOrchestratorRealSortTckTest` — `AbstractBootstrapOrchestratorTck`
 - `CoreFailurePolicyTckTest` — `AbstractFailurePolicyTck` (FAIL_FAST vs DEGRADE)
+- `CoreSubsystemErrorRoutingTckTest` — `AbstractSubsystemErrorRoutingTck` (routing non-fatal `Error` through failure policy; `VirtualMachineError` raw propagation)
 - `CoreBootstrapZeroAllocTckTest` — `BootstrapZeroAllocTck`
 - `CoreHealthMonitorTckTest`, `CoreProviderBindingLifecycleTckTest`, `KernelBootstrapTest`, `ScopedValueBindingTest`
 

@@ -357,7 +357,7 @@ class KernelBootstrapTest {
      * <p>Supports multiple SPI registrations simultaneously (e.g. both
      * {@link ConfigProvider} and {@link eu.exeris.kernel.spi.bootstrap.SubsystemProvider}).
      */
-    private static final class DualServiceShimLoader extends ClassLoader {
+    static final class DualServiceShimLoader extends ClassLoader {
 
         /** {@code "META-INF/services/" + interfaceName → implementationClassName} */
         private final Map<String, String> resourceMap;

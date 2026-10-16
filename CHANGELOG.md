@@ -98,6 +98,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **An `Error` thrown by a subsystem goes through the failure policy instead of escaping
+  `KernelBootstrap` raw (#619).** `SubsystemOrchestrator` caught only `RuntimeException` around
+  `initialize()` and `start()`, so a `NoClassDefFoundError`, `ExceptionInInitializerError`,
+  `ServiceConfigurationError` or any other `Error` skipped the failure policy, the `FAILED` health state and
+  the `SubsystemInitialized(success=false)` event, and reached the caller of `boot()` unwrapped; under
+  `DEGRADE` an optional subsystem failing that way aborted the whole boot. Such an `Error` is now wrapped
+  in `SubsystemException` (`EX-BOOT-0002`) like any other unchecked failure, so an optional subsystem
+  under `DEGRADE` is dropped and every other case fails as `KernelBootstrap.BootstrapException` with the
+  `Error` as root cause. An `Error` from provider discovery fails the boot as `BootstrapException`; one
+  from `stop()` is logged and skipped like an exception. A `VirtualMachineError` still propagates
+  unchanged. The `Subsystem` Javadoc states the rule. New TCK `AbstractSubsystemErrorRoutingTck`, bound
+  in Core by `CoreSubsystemErrorRoutingTckTest`.
 - **An oversized HTTP/2 field section is refused with `431`, and a malformed HPACK block closes the
   connection with `GOAWAY(COMPRESSION_ERROR)`.** A field section over `http.maxHeaderListSize`, or a
   literal over `http.maxStringLiteralSize`, stopped the HPACK decoder part-way: fields after the
