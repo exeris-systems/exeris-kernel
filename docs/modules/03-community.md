@@ -1,3 +1,12 @@
+---
+title: "Physical Tier: Community (The Muscle)"
+type: module
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-06-20
+---
+
 # Physical Tier: Community (The Muscle)
 
 **Module:** `exeris-kernel-community`
@@ -110,6 +119,29 @@ The Community tier is an engineering-grade, production-ready engine — not a cr
 Garbage Collector from the network hot-path entirely (the bottleneck for 95% of applications). The upgrade path to
 Enterprise targets the remaining bottlenecks: OS-level syscall overhead (solved by `io_uring`) and heap-bound DB
 drivers (solved by the native persistence driver).
+
+## Native-image metadata
+
+The module ships reachability metadata at
+`META-INF/native-image/eu.exeris/exeris-kernel-community/reachability-metadata.json` and build arguments at
+`META-INF/native-image/eu.exeris/exeris-kernel-community/native-image.properties`.
+
+The metadata covers:
+- Foreign downcall descriptor for `SSL_set_fd` and direct upcall plus reflection method entry for `CommunityAlpnSelector.selectCallback`, declared in `CommunityForeignCall`.
+- JFR event types and their enclosing classes from `CommunityJfrEventCatalogue`.
+- Atomic field updates accessed via `MethodHandles.Lookup.findVarHandle` (`CommunityTlsClientTrust.refCount` and `FairnessTracker.BucketMetrics` counter fields).
+- Socket channel and file descriptor members probed by `SocketChannelFdReflectionResolver` (`sun.nio.ch.SocketChannelImpl.getFDVal()`, fields `fd`, `fdVal`, and `java.io.FileDescriptor.fd`).
+- Flyway migration SQL resources listed in `CommunityPersistenceEngine.MIGRATION_RESOURCES`.
+- Reflected configuration fields in `com.zaxxer.hikari.HikariConfig`.
+- Internal queue field offsets across superclass hierarchies for JCTools queues instantiated in the Community runtime (`MpscUnboundedArrayQueue`, `SpscArrayQueue`, `SpscUnboundedArrayQueue`).
+
+The companion `native-image.properties` configures required native-image build arguments:
+- `--enable-monitoring=jfr`: enables Flight Recorder event emission and monitoring in the native image runtime.
+- `--add-opens=java.base/sun.nio.ch=ALL-UNNAMED`: opens internal NIO socket channel implementation packages for `SocketChannelFdReflectionResolver` descriptor extraction.
+- `--add-opens=java.base/java.io=ALL-UNNAMED`: opens internal `FileDescriptor` fields for fallback descriptor access.
+- `-H:+SharedArenaSupport`: experimental GraalVM flag (ADR-103 obligation 8) that enables closing shared foreign memory arenas allocated by `CommunityArenaShardPool`.
+
+The metadata is guarded by `CommunityReachabilityMetadataTest`, which scans all compiled classes using the JDK ClassFile API. It verifies that `FunctionDescriptor` construction is confined to centralized enum tables, downcalls are delegated to Core, upcalls are restricted to `CommunityAlpnSelector`, the `-H:+SharedArenaSupport` argument matches active declaration sites (while runtime opens are unconditional), and the committed metadata matches the synthesized model byte-for-byte.
 
 ## Stability
 

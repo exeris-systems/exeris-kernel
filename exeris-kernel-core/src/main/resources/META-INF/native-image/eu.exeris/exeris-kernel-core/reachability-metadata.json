@@ -473,6 +473,27 @@
           "name": "producerLimit"
         }
       ]
+    },
+    {
+      "type": "sun.misc.Unsafe",
+      "methods": [
+        {
+          "name": "getAndAddLong",
+          "parameterTypes": [
+            "java.lang.Object",
+            "long",
+            "long"
+          ]
+        },
+        {
+          "name": "getAndSetObject",
+          "parameterTypes": [
+            "java.lang.Object",
+            "long",
+            "java.lang.Object"
+          ]
+        }
+      ]
     }
   ],
   "resources": [
