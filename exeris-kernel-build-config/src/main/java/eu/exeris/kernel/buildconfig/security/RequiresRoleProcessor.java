@@ -102,7 +102,11 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
     /** Reserved range for kernel system roles (bits {@code [0, 8)}). Mirrors {@code KernelRoles}. */
     public static final int SYSTEM_ROLE_BIT_LIMIT = 8;
 
-    /** Processor option to override the output directory for reachability-metadata.json. */
+    /**
+     * Processor option to override the output directory for reachability-metadata.json.
+     * Must be a relative path under {@code META-INF/native-image/} with no empty,
+     * {@code '.'}, or {@code '..'} segments.
+     */
     public static final String NATIVE_IMAGE_METADATA_DIR_OPTION =
             "exeris.requiresrole.nativeImageMetadataDir";
 
@@ -313,19 +317,33 @@ public final class RequiresRoleProcessor extends AbstractProcessor {
         if (option == null) {
             return DEFAULT_NATIVE_IMAGE_METADATA_DIR;
         }
-        if (!option.startsWith(NATIVE_IMAGE_METADATA_DIR_PREFIX)) {
-            processingEnv.getMessager().printMessage(
-                    Diagnostic.Kind.ERROR,
-                    "RequiresRoleProcessor option " + NATIVE_IMAGE_METADATA_DIR_OPTION
-                            + " must start with " + NATIVE_IMAGE_METADATA_DIR_PREFIX
-                            + " but was: " + option);
-            return null;
+        if (option.startsWith(NATIVE_IMAGE_METADATA_DIR_PREFIX)) {
+            String rest = option.substring(NATIVE_IMAGE_METADATA_DIR_PREFIX.length());
+            while (rest.endsWith("/")) {
+                rest = rest.substring(0, rest.length() - 1);
+            }
+            if (isValidMetadataDirRest(rest)) {
+                return NATIVE_IMAGE_METADATA_DIR_PREFIX + rest;
+            }
         }
-        String dir = option;
-        while (dir.endsWith("/")) {
-            dir = dir.substring(0, dir.length() - 1);
+        processingEnv.getMessager().printMessage(
+                Diagnostic.Kind.ERROR,
+                "RequiresRoleProcessor option " + NATIVE_IMAGE_METADATA_DIR_OPTION
+                        + " must be a relative path under META-INF/native-image/ with no empty, '.' or '..' segment, but was: "
+                        + option);
+        return null;
+    }
+
+    private static boolean isValidMetadataDirRest(String rest) {
+        if (rest.isEmpty() || rest.contains("\\")) {
+            return false;
         }
-        return dir;
+        for (String segment : rest.split("/", -1)) {
+            if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void assignApplicationBits() {

@@ -7,6 +7,8 @@ package eu.exeris.kernel.buildconfig.security;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
@@ -334,6 +336,37 @@ class RequiresRoleProcessorTest {
         Path classesDir = workDir.resolve("classes");
         if (Files.exists(classesDir)) {
             try (Stream<Path> stream = Files.walk(classesDir)) {
+                assertThat(stream.filter(Files::isRegularFile))
+                        .noneMatch(path -> path.getFileName().toString()
+                                .equals(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "META-INF/native-image/../../../escaped",
+            "META-INF/native-image/a/../b",
+            "META-INF/native-image/./a",
+            "META-INF/native-image//a",
+            "META-INF/native-image/",
+            "META-INF/native-image/a\\..\\b"
+    })
+    @DisplayName("Option with empty, '.', or '..' segments causes compile error and emits no metadata")
+    void metadataDirWithInvalidSegmentsIsCompileError(String invalidDir, @TempDir Path workDir) throws IOException {
+        List<String> options = List.of(
+                "-A" + RequiresRoleProcessor.NATIVE_IMAGE_METADATA_DIR_OPTION + "=" + invalidDir);
+
+        ProcessorRun run = compileWithProcessor(workDir,
+                List.of(REQUIRES_ROLE_SOURCE, ROLE_MATCH_SOURCE, ADMIN_API_FIXTURE),
+                options);
+        assertThat(run.ok()).isFalse();
+        assertThat(run.diagnostics())
+                .contains(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_DIR_OPTION)
+                .contains("META-INF/native-image/");
+
+        if (Files.exists(workDir)) {
+            try (Stream<Path> stream = Files.walk(workDir)) {
                 assertThat(stream.filter(Files::isRegularFile))
                         .noneMatch(path -> path.getFileName().toString()
                                 .equals(RequiresRoleProcessor.NATIVE_IMAGE_METADATA_FILE));
