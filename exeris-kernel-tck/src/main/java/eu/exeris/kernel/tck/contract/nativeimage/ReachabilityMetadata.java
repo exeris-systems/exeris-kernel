@@ -213,9 +213,34 @@ public final class ReachabilityMetadata {
         DowncallRef {
             Objects.requireNonNull(returnType, "returnType");
             Objects.requireNonNull(parameterTypes, "parameterTypes");
-            options = options == null || options.isEmpty()
-                    ? Collections.emptyMap()
-                    : Collections.unmodifiableMap(new TreeMap<>(options));
+            if (options == null || options.isEmpty()) {
+                options = Collections.emptyMap();
+            } else {
+                Map<String, Object> copy = new TreeMap<>();
+                for (Map.Entry<String, Object> entry : options.entrySet()) {
+                    Objects.requireNonNull(entry.getKey(), "option key");
+                    copy.put(entry.getKey(), validateOptionValue(entry.getValue()));
+                }
+                options = Collections.unmodifiableMap(copy);
+            }
+        }
+
+        private static Object validateOptionValue(Object value) {
+            Objects.requireNonNull(value, "option value");
+            if (value instanceof Boolean || value instanceof Number || value instanceof String) {
+                return value;
+            }
+            if (value instanceof Map<?, ?> map) {
+                Map<String, Object> copy = new TreeMap<>();
+                for (Map.Entry<?, ?> entry : map.entrySet()) {
+                    if (!(entry.getKey() instanceof String key)) {
+                        throw new IllegalArgumentException("Option map keys must be String: " + entry.getKey());
+                    }
+                    copy.put(key, validateOptionValue(entry.getValue()));
+                }
+                return Collections.unmodifiableMap(copy);
+            }
+            throw new IllegalArgumentException("Unsupported option value type: " + value.getClass().getName());
         }
 
         @Override

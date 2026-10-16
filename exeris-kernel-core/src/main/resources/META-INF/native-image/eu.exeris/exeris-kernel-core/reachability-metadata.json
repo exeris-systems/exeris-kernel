@@ -1,0 +1,701 @@
+{
+  "reflection": [
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$CircularDependencyDetectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$ConfigSettingsResolvedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$KernelBootReadyEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$KernelShutdownCompleteEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemHealthTransitionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemInitializedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemStartedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemStoppedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.bootstrap.jfr.KernelStartEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.config.KernelConfigRegistry",
+      "fields": [
+        {
+          "name": "sealed"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.config.jfr.DynamicReloadEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.config.jfr.DynamicReloadEvent$DynamicFieldReloadedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.config.jfr.DynamicReloadEvent$DynamicReloadFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.config.jfr.ImmutableReloadEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.config.jfr.ImmutableReloadEvent$ImmutableReloadRefusedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.contract.jfr.ContractEnforcementEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.contract.jfr.ContractResolvedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.openssl.CryptoContextAllocEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.openssl.NativeCipherContext",
+      "fields": [
+        {
+          "name": "refCount"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.openssl.NativeCipherContextFreeFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.openssl.OpenSslLoadEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.tls.OffHeapTlsEngine",
+      "fields": [
+        {
+          "name": "closedFlag"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.tls.TlsEngineBindEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.tls.TlsEngineCloseEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.tls.TlsHandshakeEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.tls.TlsHandshakeFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.tls.TlsPhaseTransitionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.crypto.tls.TlsStateMachine",
+      "fields": [
+        {
+          "name": "phaseOrdinal"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.EventBootstrapSelectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.jfr.EventBusPublishEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.jfr.OutboxBatchFlushedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.jfr.OutboxDlqEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.jfr.OutboxLoopFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.jfr.OutboxStateTransitionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.jfr.ProjectionAppliedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.jfr.ProjectionHandlerFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.events.outbox.OutboxStateMachine",
+      "fields": [
+        {
+          "name": "state"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowBootstrapSelectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowDeferredWakeFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowDefinitionMigratedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowEngineShutdownEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowProgressDisabledEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowSchemaMismatchEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowSnapshotPersistFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowStepFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.FlowTimeoutEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.flow.WakeOnLoadFallbackEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.graph.AlgoOrchestratorEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.graph.GraphBootstrapSelectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.graph.GraphMetadataDiscoveryEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.graph.GraphSyncFailedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.graph.GraphSyncOperationEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.http.jfr.HttpAggregateBufferForcedReleaseEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.http.jfr.HttpAggregateBufferHeldEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.http.jfr.StreamAbortiveTeardownEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.http.jfr.StreamBackpressureParkEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.http.jfr.StreamClosedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.http.jfr.StreamOpenedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.http.routing.HttpRouterRegisteredEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.AbstractLoanedBuffer",
+      "fields": [
+        {
+          "name": "refCount"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.CloseActionFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.LeakDetectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.LeakTracker$LeakAction",
+      "fields": [
+        {
+          "name": "firedState"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.MemoryEnvironmentProbe"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.MemoryEnvironmentProbe$MemoryEnvironmentProbedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.MemoryMaintenanceEvents"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.MemoryMaintenanceEvents$CycleEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.MemoryMaintenanceEvents$FailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.MemoryMaintenanceTask",
+      "fields": [
+        {
+          "name": "loopActive"
+        },
+        {
+          "name": "maintenanceThread"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.MemoryPressureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.PeekMisuseEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.ResourceArbiter",
+      "fields": [
+        {
+          "name": "logicActionOrdinal"
+        },
+        {
+          "name": "logicDecisionNs"
+        },
+        {
+          "name": "transportActionOrdinal"
+        },
+        {
+          "name": "transportDecisionNs"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.ResourceArbiterDecisionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.memory.WatermarkManager",
+      "fields": [
+        {
+          "name": "lastAllocatedBytes"
+        },
+        {
+          "name": "lastTotalBytes"
+        },
+        {
+          "name": "levelOrdinal"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.AdmissionDecisionEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.AdmissionDecisionEvent$JfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.ConnectionAcquireEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.ConnectionHoldEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.PersistenceAdmissionStageEvent$JfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.PersistenceBootstrapSelectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.PersistenceEngineBootstrapEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.PersistenceTenantPoolCreatedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.PersistenceTenantPoolReclaimedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.RequestSessionLifecycleEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.SchemaMigrationRefusedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.persistence.TransactionLifecycleEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.scheduling.SchedulingBootstrapSelectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.security.CitadelGuard",
+      "fields": [
+        {
+          "name": "sealedFlag"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents"
+    },
+    {
+      "type": "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$InsufficientPrivilegesEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$PrincipalBoundEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$RoleRegistryLoadedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$SecurityContextMissingEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.security.jfr.SecurityJfrEvents$StorageContextDerivedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.storage.StorageBootstrapSelectedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.AsyncTelemetryDropEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.JfrCommitDropEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$CarrierPinnedJfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLatencyJfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelLifecycleJfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$KernelMetricJfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$MemoryExhaustionJfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.telemetry.jfr.TelemetryJfrEvents$TransportBindJfrEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.jfr.ConnectionEstablishedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.jfr.PaqsHandlerFailureEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.jfr.StreamAcceptedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.jfr.StreamLifecycleEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.jfr.StreamShedEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.jfr.TransportIngressQueueDepthEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.jfr.TransportQueueBackpressureAlertEvent"
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.scheduler.AdmissionController",
+      "fields": [
+        {
+          "name": "activeStreamCount"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.scheduler.DrainCoordinator",
+      "fields": [
+        {
+          "name": "busyAtSeal"
+        },
+        {
+          "name": "busyStreams"
+        },
+        {
+          "name": "draining"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.scheduler.DrainCoordinator$StreamWork",
+      "fields": [
+        {
+          "name": "busy"
+        }
+      ]
+    },
+    {
+      "type": "eu.exeris.kernel.core.transport.scheduler.StreamLoadShedder",
+      "fields": [
+        {
+          "name": "shedCountField"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.MpscArrayQueueConsumerIndexField",
+      "fields": [
+        {
+          "name": "consumerIndex"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.MpscArrayQueueProducerIndexField",
+      "fields": [
+        {
+          "name": "producerIndex"
+        }
+      ]
+    },
+    {
+      "type": "org.jctools.queues.MpscArrayQueueProducerLimitField",
+      "fields": [
+        {
+          "name": "producerLimit"
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "glob": "exeris-kernel.properties"
+    },
+    {
+      "glob": "license-manifest.json"
+    }
+  ],
+  "foreign": {
+    "downcalls": [
+      {
+        "returnType": "jint",
+        "parameterTypes": []
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint",
+          "jint",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint",
+          "jint",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint",
+          "void*",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jint",
+          "void*",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jlong",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "jlong",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "void*",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jint",
+        "parameterTypes": [
+          "jlong",
+          "void*",
+          "jint",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": []
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jint",
+          "jint",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jlong",
+          "jlong",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jlong",
+          "void*",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jint",
+          "void*",
+          "jlong",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "jlong",
+        "parameterTypes": [
+          "jlong",
+          "jint",
+          "jlong",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": []
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": [
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": [
+          "jlong",
+          "jint"
+        ]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": [
+          "jlong",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": [
+          "jlong",
+          "jint",
+          "void*"
+        ]
+      },
+      {
+        "returnType": "void",
+        "parameterTypes": [
+          "jlong",
+          "jlong",
+          "jlong"
+        ]
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": []
+      },
+      {
+        "returnType": "void*",
+        "parameterTypes": [
+          "jint"
+        ]
+      }
+    ]
+  }
+}

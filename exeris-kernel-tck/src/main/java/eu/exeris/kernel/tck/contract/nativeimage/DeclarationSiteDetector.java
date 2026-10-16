@@ -11,8 +11,6 @@ import java.lang.classfile.constantpool.MethodHandleEntry;
 import java.lang.classfile.instruction.ConstantInstruction;
 import java.lang.classfile.instruction.InvokeDynamicInstruction;
 import java.lang.classfile.instruction.InvokeInstruction;
-import java.lang.constant.DirectMethodHandleDesc;
-import java.util.List;
 
 /**
  * Package-private detector matching instructions against flagged reflection, foreign, and loader APIs.
@@ -23,15 +21,11 @@ final class DeclarationSiteDetector {
     }
 
     // Keep in sync with eu.exeris.kernel.spi.nativeimage.SpiReachabilityMetadataTest.checkInstruction
-    static String detectFlaggedApi(Instruction instruction,
-                                   List<Instruction> instructions,
-                                   int index,
-                                   String className,
-                                   String methodName) {
+    static String detectFlaggedApi(Instruction instruction) {
         if (instruction instanceof InvokeInstruction inv) {
             String owner = inv.owner().asInternalName();
             String name = inv.name().stringValue();
-            return checkInvokeOrRef(owner, name, instructions, index, className, methodName);
+            return checkInvokeOrRef(owner, name);
         }
         if (instruction instanceof InvokeDynamicInstruction indy) {
             for (LoadableConstantEntry arg : indy.invokedynamic().bootstrap().arguments()) {
@@ -39,31 +33,19 @@ final class DeclarationSiteDetector {
                     MemberRefEntry ref = mhe.reference();
                     String owner = ref.owner().asInternalName();
                     String name = ref.name().stringValue();
-                    String flagged = checkInvokeOrRef(owner, name, instructions, index, className, methodName);
+                    String flagged = checkInvokeOrRef(owner, name);
                     if (flagged != null) {
                         return flagged;
                     }
                 }
             }
         }
-        if (instruction instanceof ConstantInstruction.LoadConstantInstruction ldc) {
-            if (ldc.constantEntry() instanceof MethodHandleEntry mhe) {
-                MemberRefEntry ref = mhe.reference();
-                String owner = ref.owner().asInternalName();
-                String name = ref.name().stringValue();
-                String flagged = checkInvokeOrRef(owner, name, instructions, index, className, methodName);
-                if (flagged != null) {
-                    return flagged;
-                }
-            }
-        } else if (instruction instanceof ConstantInstruction ci
-                && ci.constantValue() instanceof DirectMethodHandleDesc dmhd) {
-            String desc = dmhd.owner().descriptorString();
-            String owner = desc.startsWith("L") && desc.endsWith(";")
-                    ? desc.substring(1, desc.length() - 1)
-                    : desc;
-            String name = dmhd.methodName();
-            String flagged = checkInvokeOrRef(owner, name, instructions, index, className, methodName);
+        if (instruction instanceof ConstantInstruction.LoadConstantInstruction ldc
+                && ldc.constantEntry() instanceof MethodHandleEntry mhe) {
+            MemberRefEntry ref = mhe.reference();
+            String owner = ref.owner().asInternalName();
+            String name = ref.name().stringValue();
+            String flagged = checkInvokeOrRef(owner, name);
             if (flagged != null) {
                 return flagged;
             }
@@ -71,12 +53,8 @@ final class DeclarationSiteDetector {
         return null;
     }
 
-    private static String checkInvokeOrRef(String owner,
-                                           String name,
-                                           List<Instruction> instructions,
-                                           int index,
-                                           String className,
-                                           String methodName) {
+
+    private static String checkInvokeOrRef(String owner, String name) {
         if ("java/lang/Class".equals(owner)) {
             return checkClassApi(name);
         }
@@ -87,7 +65,7 @@ final class DeclarationSiteDetector {
             return "Module.getResourceAsStream";
         }
         if ("java/lang/invoke/MethodHandles$Lookup".equals(owner)) {
-            return checkLookupApi(name, instructions, index, className, methodName);
+            return checkLookupApi(name);
         }
         if ("java/lang/reflect/Array".equals(owner) && "newInstance".equals(name)) {
             return "Array.newInstance";
@@ -156,16 +134,8 @@ final class DeclarationSiteDetector {
         return null;
     }
 
-    private static String checkLookupApi(String name,
-                                         List<Instruction> instructions,
-                                         int index,
-                                         String className,
-                                         String methodName) {
+    private static String checkLookupApi(String name) {
         if (name.startsWith("find") || name.startsWith("unreflect")) {
-            if ("findVarHandle".equals(name) && instructions != null && index >= 3) {
-                // Ensure literals are extractable, failing loudly on dynamic or non-literal arguments.
-                VarHandleTargetExtractor.extract(className, methodName, instructions, index);
-            }
             return "MethodHandles$Lookup." + name;
         }
         return null;

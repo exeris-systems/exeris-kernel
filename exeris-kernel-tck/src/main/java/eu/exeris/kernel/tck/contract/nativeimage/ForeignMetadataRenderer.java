@@ -71,7 +71,7 @@ final class ForeignMetadataRenderer {
                     sb.append("          \"");
                     JsonEscaper.escape(sb, opt.getKey());
                     sb.append("\": ");
-                    renderOptionValue(sb, opt.getValue());
+                    renderOptionValue(sb, opt.getValue(), 10);
                     firstOpt = false;
                 }
                 sb.append("\n        }");
@@ -81,11 +81,32 @@ final class ForeignMetadataRenderer {
         }
     }
 
-    private static void renderOptionValue(StringBuilder sb, Object val) {
+    private static void renderOptionValue(StringBuilder sb, Object val, int indent) {
         if (val instanceof Boolean b) {
             sb.append(b);
         } else if (val instanceof Number n) {
             sb.append(n);
+        } else if (val instanceof Map<?, ?> map) {
+            if (map.isEmpty()) {
+                sb.append("{}");
+                return;
+            }
+            sb.append("{\n");
+            boolean first = true;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (!first) {
+                    sb.append(",\n");
+                }
+                sb.append(" ".repeat(indent + 2));
+                sb.append('"');
+                JsonEscaper.escape(sb, String.valueOf(entry.getKey()));
+                sb.append("\": ");
+                renderOptionValue(sb, entry.getValue(), indent + 2);
+                first = false;
+            }
+            sb.append('\n');
+            sb.append(" ".repeat(indent));
+            sb.append('}');
         } else {
             sb.append('"');
             JsonEscaper.escape(sb, String.valueOf(val));
