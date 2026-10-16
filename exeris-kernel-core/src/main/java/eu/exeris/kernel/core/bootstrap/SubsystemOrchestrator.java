@@ -247,17 +247,7 @@ public final class SubsystemOrchestrator {
 
         KernelProfile profile = config.kernelSettings().get().profile();
 
-        // 1. Build registry from all SubsystemProviders (priority-sorted)
-        Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
-        LOG.log(System.Logger.Level.INFO,
-                "{0} subsystem(s) in registry: {1}", registry.size(), registry.keySet());
-
-        // 2. Apply selector — compute transitive closure
-        List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
-        LOG.log(System.Logger.Level.INFO,
-                "Selector resolved {0} subsystem(s): {1}",
-                selected.size(),
-                selected.stream().map(Subsystem::name).collect(java.util.stream.Collectors.joining(", ")));
+        List<Subsystem> selected = discoverSelected(config);
 
         // 3. Topological sort — Kahn's BFS, throws on cycle
         sortAndAdoptTopologicalOrder(selected);
@@ -297,10 +287,26 @@ public final class SubsystemOrchestrator {
      *         registry, or the registry contains a duplicate subsystem name
      */
     public List<Subsystem> resolveTopology(ConfigProvider config) throws BootstrapException {
-        Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
-        List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
+        List<Subsystem> selected = discoverSelected(config);
         sortAndAdoptTopologicalOrder(selected);
         return List.copyOf(orderedSubsystems);
+    }
+
+    private List<Subsystem> discoverSelected(ConfigProvider config) throws BootstrapException {
+        try {
+            Map<String, Subsystem> registry = SubsystemRegistryLoader.loadRegistry(config, classLoader, LOG);
+            LOG.log(System.Logger.Level.INFO,
+                    "{0} subsystem(s) in registry: {1}", registry.size(), registry.keySet());
+            List<Subsystem> selected = SubsystemRegistryLoader.applySelectorClosure(selector, registry);
+            LOG.log(System.Logger.Level.INFO,
+                    "Selector resolved {0} subsystem(s): {1}",
+                    selected.size(),
+                    selected.stream().map(Subsystem::name).collect(java.util.stream.Collectors.joining(", ")));
+            return selected;
+        } catch (Error ex) { // NOPMD — discovery failure is converted to BootstrapException
+            rethrowIfFatal(ex);
+            throw new BootstrapException("Subsystem discovery failed: " + ex, ex);
+        }
     }
 
     /**
@@ -380,7 +386,8 @@ public final class SubsystemOrchestrator {
                     subsystem.stop();
                     BootstrapJfrEvents.emitStopped(subsystem.name(), stopStartNanos);
                     healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.STOPPED);
-                } catch (RuntimeException ex) { // NOPMD — stop() must never throw; swallowed by design
+                } catch (RuntimeException | Error ex) { // NOPMD — stop() must never throw; swallowed by design
+                    rethrowIfFatal(ex);
                     LOG.log(System.Logger.Level.WARNING,
                             "  [{0}] stop() threw — ignoring: {1}",
                             subsystem.name(), ex.getMessage());
@@ -606,15 +613,26 @@ public final class SubsystemOrchestrator {
                     subsystem.phase().name(), false, ex.getMessage());
             handleFailure(subsystem, ex);
         } catch (RuntimeException ex) { // NOPMD — subsystem.initialize() may throw any unchecked
-            SubsystemException wrapped = new SubsystemException(
-                    subsystem.name(), SubsystemException.Phase.INITIALIZE,
-                    ex.getMessage(), ex);
-            healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
-            BootstrapJfrEvents.emitInitialized(
-                    subsystem.name(), initStartNanos, profile,
-                    subsystem.phase().name(), false, ex.getMessage());
-            handleFailure(subsystem, wrapped);
+            handleUncheckedInitializeFailure(subsystem, ex, ex.getMessage(), profile, initStartNanos);
+        } catch (Error ex) { // NOPMD — an Error from a subsystem is routed through the failure policy
+            rethrowIfFatal(ex);
+            handleUncheckedInitializeFailure(subsystem, ex, ex.toString(), profile, initStartNanos);
         }
+    }
+
+    private void handleUncheckedInitializeFailure(Subsystem subsystem,
+                                                  Throwable cause,
+                                                  String detail,
+                                                  KernelProfile profile,
+                                                  long initStartNanos) throws BootstrapException {
+        SubsystemException wrapped = new SubsystemException(
+                subsystem.name(), SubsystemException.Phase.INITIALIZE,
+                detail, cause);
+        healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
+        BootstrapJfrEvents.emitInitialized(
+                subsystem.name(), initStartNanos, profile,
+                subsystem.phase().name(), false, detail);
+        handleFailure(subsystem, wrapped);
     }
 
     private void doStart(Subsystem subsystem, BootstrapPhase phase, String profile)
@@ -648,7 +666,8 @@ public final class SubsystemOrchestrator {
             if (subsystem.isRunning()) {
                 try {
                     CoreJfrEventCatalogue.warmHotPath(subsystem.name());
-                } catch (RuntimeException ex) { // NOPMD — a warm-up must not fail a started subsystem
+                } catch (RuntimeException | Error ex) { // NOPMD — a warm-up must not fail a started subsystem
+                    rethrowIfFatal(ex);
                     LOG.log(System.Logger.Level.WARNING,
                             "  [{0}] JFR event warm-up failed; the subsystem is running and its events will "
                                     + "initialise at their first emit: {1}",
@@ -663,11 +682,20 @@ public final class SubsystemOrchestrator {
             healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
             handleFailure(subsystem, ex);
         } catch (RuntimeException ex) { // NOPMD — subsystem.start() may throw any unchecked
-            healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
-            handleFailure(subsystem, new SubsystemException(
-                    subsystem.name(), SubsystemException.Phase.START,
-                    ex.getMessage(), ex));
+            handleUncheckedStartFailure(subsystem, ex, ex.getMessage());
+        } catch (Error ex) { // NOPMD — an Error from a subsystem is routed through the failure policy
+            rethrowIfFatal(ex);
+            handleUncheckedStartFailure(subsystem, ex, ex.toString());
         }
+    }
+
+    private void handleUncheckedStartFailure(Subsystem subsystem,
+                                             Throwable cause,
+                                             String detail) throws BootstrapException {
+        healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
+        handleFailure(subsystem, new SubsystemException(
+                subsystem.name(), SubsystemException.Phase.START,
+                detail, cause));
     }
 
     // =========================================================================
@@ -867,6 +895,12 @@ public final class SubsystemOrchestrator {
 
     private static long elapsedMs(long nanoStart) {
         return (System.nanoTime() - nanoStart) / 1_000_000;
+    }
+
+    private static void rethrowIfFatal(Throwable throwable) {
+        if (throwable instanceof VirtualMachineError fatal) {
+            throw fatal;
+        }
     }
 
     // =========================================================================
