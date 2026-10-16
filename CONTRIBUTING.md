@@ -379,6 +379,40 @@ exists before it).
 > `Permission denied` and exit 126. Check with `git ls-files -s tools/**/*.sh` — every gate there
 > should read `100755`.
 
+### Native image (opt-in, GraalVM 25)
+
+GraalVM native-image builds are opt-in and run outside the default build gates (ADR-103). No kernel
+build, test, or release step requires GraalVM; HotSpot/C2 remains the default runtime platform.
+
+**Toolchain prerequisites:**
+- GraalVM 25 or newer:
+  ```bash
+  sdk install java 25.0.2-graal
+  ```
+- Running Docker daemon (for Testcontainers backends).
+- OpenSSL 3 host library (`libssl.so.3` on Linux).
+
+**Building and verifying smoke images:**
+The smoke modules (`exeris-kernel-native-smoke` and `exeris-kernel-native-smoke-kafka`) live under the
+inactive-by-default `native` Maven profile and consume the reactor jars installed to `~/.m2`:
+
+```bash
+# Step 1: Install reactor jars to local Maven repository
+mvn clean install -DskipTests
+
+# Step 2: Compile native images and run verification harness
+JAVA_HOME=~/.sdkman/candidates/java/25.0.2-graal mvn -Pnative -pl exeris-kernel-native-smoke,exeris-kernel-native-smoke-kafka verify
+```
+
+**Testing red failure modes:**
+To verify that missing reachability metadata fails the smoke verification:
+
+```bash
+bash tools/native-smoke/strip-metadata.sh <artifactId>
+```
+
+`strip-metadata.sh` edits the jar in `~/.m2` in place; re-run `mvn install -DskipTests` to restore it.
+
 ---
 
 ## Local Environment

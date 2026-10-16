@@ -3576,7 +3576,7 @@ Neither #581 nor #583 is implemented, and #582's RFC is not written. The measure
 
 **1.0 disposition:** **1.0-BLOCKING** — planned for 0.13; the support matrix and the performance contract already state the HotSpot/C2 pin, and this item makes the native-image half of that stance something a consumer can build.
 
-**Status (v0.13): NOT STARTED.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is accepted (2026-10-08), including that the kernel may ship an experimental GraalVM option inside its jars when the shared-arena pool still needs it; #619 is open.
+**Status (v0.13): IN PROGRESS.** [ADR-103](adr/ADR-103-native-image-opt-in-build.md) is accepted (2026-10-08), including that the kernel may ship an experimental GraalVM option inside its jars when the shared-arena pool still needs it. Delivered: an `Error` from a subsystem goes through the failure policy (#619), `RequiresRoleProcessor` emits metadata for the registry it generates, and the socket backend no longer uses a shared arena. The sample images and the `native-smoke` job are in place and stay red until the per-module metadata lands.
 
 ---
 

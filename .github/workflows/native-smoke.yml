@@ -1,0 +1,115 @@
+name: Native Smoke
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    branches:
+      - main
+      - 'development/**'
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+    inputs:
+      strip_metadata_of:
+        description: 'Module to strip reachability-metadata.json from'
+        type: choice
+        default: none
+        options:
+          - none
+          - exeris-kernel-core
+          - exeris-kernel-community
+          - exeris-kernel-community-kafka
+
+jobs:
+  native-smoke:
+    name: Native Smoke (GraalVM 25)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    concurrency:
+      group: native-smoke-${{ github.ref }}
+      cancel-in-progress: true
+    if: >-
+      github.event_name != 'pull_request' ||
+      ((github.event.action != 'labeled' || github.event.label.name == 'native-smoke') &&
+       (contains(github.event.pull_request.labels.*.name, 'native-smoke') ||
+        (github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'development/'))))
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check out newest development branch on schedule
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          NEWEST_DEV="$(git ls-remote --heads origin | grep -o 'refs/heads/development/[0-9]\+\.[0-9]\+\.[0-9]\+' | sed 's#refs/heads/##' | sort -V | tail -1)"
+          if [ -z "$NEWEST_DEV" ]; then
+            echo "::error::Could not resolve newest development branch on schedule"
+            exit 1
+          fi
+          echo "Checking out $NEWEST_DEV"
+          git fetch origin "$NEWEST_DEV"
+          git checkout "$NEWEST_DEV"
+
+      - name: Set up GraalVM 25
+        uses: graalvm/setup-graalvm@27b360dbb857524eaf0b4c4cef364d38e5b4f173 # v1.6.7
+        with:
+          java-version: '25.0.2'
+          distribution: 'graalvm'
+          cache: 'maven'
+          native-image-job-reports: 'true'
+
+      - name: OpenSSL 3 Host Library Guard
+        run: |
+          set -euo pipefail
+          openssl version
+          if [ ! -e /usr/lib/x86_64-linux-gnu/libssl.so.3 ]; then
+            echo "::error::Required host library /usr/lib/x86_64-linux-gnu/libssl.so.3 not found"
+            exit 1
+          fi
+
+      - name: Build reactor jars and install to local repository
+        run: |
+          mvn -B -e install -DskipTests
+
+      - name: Strip metadata from target module if requested
+        env:
+          STRIP_TARGET: ${{ inputs.strip_metadata_of }}
+        run: |
+          set -euo pipefail
+          TARGET="${STRIP_TARGET:-none}"
+          if [ -n "$TARGET" ] && [ "$TARGET" != "none" ]; then
+            echo "Stripping reachability metadata from $TARGET"
+            bash tools/native-smoke/strip-metadata.sh "$TARGET"
+          fi
+
+      - name: Build native smoke images and run verification harness
+        run: |
+          mvn -B -e -Pnative -pl exeris-kernel-native-smoke,exeris-kernel-native-smoke-kafka verify
+
+      - name: Check failsafe verification reports
+        if: always()
+        run: |
+          bash tools/native-smoke/check-reports.sh
+
+      - name: Clean kernel snapshots from local repository cache
+        if: always()
+        run: |
+          rm -rf ~/.m2/repository/eu/exeris
+
+      - name: Upload failsafe reports and measurement data
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: native-smoke-reports-${{ github.run_number }}
+          path: |
+            exeris-kernel-native-smoke/target/failsafe-reports/
+            exeris-kernel-native-smoke-kafka/target/failsafe-reports/
+            exeris-kernel-native-smoke/target/native-smoke-measurements.json
+            exeris-kernel-native-smoke-kafka/target/native-smoke-measurements.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -82,7 +82,9 @@ per module — do not lower a floor to make a build pass), then a sequenced chai
 `tls-openssl-matrix` branching off the build, and `benchmarks` plus the JFR reporting jobs on `main`
 only. `spi-compatibility-gate` deliberately does not depend on the build: it compiles the SPI alone.
 
-Other workflows: `codeql.yml`, `dependency-review.yml`, `release.yml`, `issues.yml`,
+Other workflows: `codeql.yml`, `dependency-review.yml`, `native-smoke.yml` (opt-in native image verification;
+its nightly schedule trigger remains dormant until merged to `main` because GitHub Actions evaluates schedules
+exclusively from the default branch), `release.yml`, `issues.yml`,
 `guardrails.yml`, which calls the organisation's shared gates and the L2 review that posts the
 verdict, and `javadoc.yml`, which calls the Javadoc gate. The two are separate files because the
 review runner refuses to start when `guardrails.yml` differs from the copy on the default branch,
