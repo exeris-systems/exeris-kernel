@@ -97,7 +97,8 @@ def publishing_modules():
     the property no gate may have.
     """
     root = ET.parse('pom.xml').getroot()
-    names = [m.text.strip() for m in root.iter(POM_NS + 'module')]
+    # The default reactor only: a profile's <modules> are not part of the build this gate checks.
+    names = [m.text.strip() for m in root.findall(f'{POM_NS}modules/{POM_NS}module')]
     expected = []
     for name in names:
         module_pom = pathlib.Path(name) / 'pom.xml'

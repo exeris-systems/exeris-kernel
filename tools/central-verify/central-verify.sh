@@ -114,7 +114,8 @@ def coordinates(version):
         raise Failure(f'tag {tag} carries pom version {have}, not {version}')
     excluded = {e.text.strip() for e in root.iter(NS + 'excludeArtifact') if e.text}
     out = [(root.findtext(NS + 'artifactId').strip(), 'pom')]
-    for m in root.iter(NS + 'module'):
+    # The default reactor only: a profile's <modules> are never published.
+    for m in root.findall(f'{NS}modules/{NS}module'):
         mod = ET.fromstring(git('show', f'{tag}:{m.text.strip()}/pom.xml'))
         packaging = (mod.findtext(NS + 'packaging') or 'jar').strip()
         out.append((mod.findtext(NS + 'artifactId').strip(), packaging))

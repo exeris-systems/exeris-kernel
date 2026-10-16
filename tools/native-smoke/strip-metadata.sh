@@ -40,7 +40,13 @@ fi
 
 ENTRY_PATH="META-INF/native-image/eu.exeris/$ARTIFACT_ID/reachability-metadata.json"
 
-if ! unzip -l "$JAR_FILE" | grep -Fq "$ENTRY_PATH"; then
+# The listing is captured first: under pipefail, `grep -q` exiting at the first match can make the
+# producer die of SIGPIPE on a large jar and turn a present entry into "not found".
+if ! LISTING=$(unzip -Z1 "$JAR_FILE"); then
+  echo "ERROR: Cannot list $JAR_FILE" >&2
+  exit 1
+fi
+if ! grep -Fxq "$ENTRY_PATH" <<<"$LISTING"; then
   echo "ERROR: Entry $ENTRY_PATH not found in $JAR_FILE" >&2
   exit 1
 fi
@@ -48,7 +54,11 @@ fi
 echo "Stripping $ENTRY_PATH from $JAR_FILE"
 zip -d "$JAR_FILE" "$ENTRY_PATH"
 
-if unzip -l "$JAR_FILE" | grep -Fq "$ENTRY_PATH"; then
+if ! LISTING=$(unzip -Z1 "$JAR_FILE"); then
+  echo "ERROR: Cannot list $JAR_FILE after stripping" >&2
+  exit 1
+fi
+if grep -Fxq "$ENTRY_PATH" <<<"$LISTING"; then
   echo "ERROR: Entry $ENTRY_PATH is still present in $JAR_FILE after zip -d" >&2
   exit 1
 fi

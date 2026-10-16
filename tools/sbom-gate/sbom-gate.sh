@@ -57,7 +57,8 @@ def reactor_modules():
     """
     root = ET.parse('pom.xml').getroot()
     out = []
-    for name in [m.text.strip() for m in root.iter(NS + 'module')]:
+    # The default reactor only: a profile's <modules> are not part of the release build.
+    for name in [m.text.strip() for m in root.findall(f'{NS}modules/{NS}module')]:
         pom = pathlib.Path(name) / 'pom.xml'
         if pom.is_file():
             out.append((name, pom))
