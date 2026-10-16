@@ -77,15 +77,23 @@ class CommunityReachabilityMetadataTest {
     );
 
     private static final List<String> HIKARI_BY_NAME = List.of(
-            // PoolBase.<init>: pool lifecycle and logger target
+            // HikariPool$HouseKeeper.<init>:
+            // AtomicReferenceFieldUpdater.newUpdater(PoolBase.class, String.class, "catalog")
             "com.zaxxer.hikari.pool.PoolBase",
-            // PoolEntry.<clinit>: AtomicIntegerFieldUpdater state updater registration
+            // PoolEntry.<clinit>: AtomicIntegerFieldUpdater.newUpdater(PoolEntry.class, "state")
             "com.zaxxer.hikari.pool.PoolEntry",
-            // ConcurrentBag.values(): bag entry array allocation
+            // ConcurrentBag.lambda$new$0 (threadList supplier, useWeakThreadLocals=false):
+            // new FastList(IConcurrentBagEntry.class, 16) -> Array.newInstance
             "com.zaxxer.hikari.util.ConcurrentBag$IConcurrentBagEntry[]",
-            // PoolEntry.<init>: FastList openStatements array allocation
-            "java.sql.Statement[]",
-            // PoolBase / DriverDataSource: exception hierarchy resolution
+            // PoolEntry.<init>: new FastList(Statement.class, 16) -> Array.newInstance;
+            // FastList.add regrows via Array.newInstance
+            "java.sql.Statement[]"
+    );
+
+    private static final List<String> JDK_BY_NAME_ON_HIKARI_PATH = List.of(
+            // JDK SQLException.<clinit>:
+            // AtomicReferenceFieldUpdater.newUpdater(SQLException.class, SQLException.class, "next");
+            // first SQLException Hikari constructs
             "java.sql.SQLException"
     );
 
@@ -335,7 +343,15 @@ class CommunityReachabilityMetadataTest {
         for (String typeName : HIKARI_BY_NAME) {
             builder.registerType(typeName);
         }
+        for (String typeName : JDK_BY_NAME_ON_HIKARI_PATH) {
+            builder.registerType(typeName);
+        }
+        builder.registerField("com.zaxxer.hikari.pool.PoolBase", "catalog");
         builder.registerField("com.zaxxer.hikari.pool.PoolEntry", "state");
+        builder.registerField("java.sql.SQLException", "next");
+        // ConcurrentBag.resolveThreadIsVirtual (<clinit>):
+        // publicLookup().findVirtual(Thread.class, "isVirtual", ...); catches only
+        // NoSuchMethodException/IllegalAccessException, so a missing registration fails ConcurrentBag.<clinit>
         builder.registerMethod("java.lang.Thread", "isVirtual");
 
         // 7. jctools field offsets across instantiated queue superclass chains

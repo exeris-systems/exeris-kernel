@@ -134,6 +134,17 @@ The companion `native-image.properties` configures required native-image build a
 
 The metadata is guarded by `CommunityReachabilityMetadataTest`, which scans all compiled classes using the JDK ClassFile API. It verifies that `FunctionDescriptor` construction is confined to centralized enum tables, downcalls are delegated to Core, upcalls are restricted to `CommunityAlpnSelector`, the `-H:+SharedArenaSupport` argument matches active declaration sites (while runtime opens are unconditional), and the committed metadata matches the synthesized model byte-for-byte.
 
+The companion `exeris-kernel-community-kafka` module ships reachability metadata at
+`META-INF/native-image/eu.exeris/exeris-kernel-community-kafka/reachability-metadata.json`.
+
+The Kafka metadata covers:
+- Client serializers, deserializers, partition assignors, metrics reporters, and security credentials providers derived directly from the producer and consumer `ConfigDef` specifications parsed against default configuration properties (`ByteArraySerializer`, `ByteArrayDeserializer`, `CooperativeStickyAssignor`, `RangeAssignor`, `JmxReporter`, `DefaultJwtRetriever`, `DefaultJwtValidator`).
+- Internal kafka-clients classes and reflection targets (`AppInfoParser$AppInfo` built by `registerAppInfo` and introspected via `AppInfoParser$AppInfoMBean` getters by `MBeanServer.registerMBean`, and shaded protobuf `ExtensionRegistry.getEmptyRegistry()`).
+- The `kafka/kafka-version.properties` classpath resource loaded by client bootstrap.
+- JFR event types from `KafkaJfrEventCatalogue` (`KafkaPublishFailedEvent`, `KafkaConsumerLoopFailedEvent`, `KafkaEventLogAppendFailedEvent`).
+
+The Kafka metadata is guarded by `KafkaReachabilityMetadataTest`, which verifies that `Properties` construction is confined to the three package-private builder methods, client classes in the by-name table resolve against the runtime classpath, and the committed metadata matches the model derived from the producer/consumer ConfigDef and the by-name table byte-for-byte.
+
 ## Stability
 
 Community providers (priority 0) implement SPI surfaces classified in the
