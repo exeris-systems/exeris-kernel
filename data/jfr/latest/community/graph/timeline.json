@@ -1,17 +1,17 @@
 [ {
-  "t" : 1792218668812,
+  "t" : 1792306611824,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "[B",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 261560,
+  "size" : 148696,
   "sizeKind" : "sample_weight",
   "kind" : "array",
   "category" : "test_harness",
-  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:78)",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
   "stackId" : "stk_0001"
 }, {
-  "t" : 1792218668812,
+  "t" : 1792306611824,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "[B",
   "thread" : "main",
@@ -20,6 +20,30 @@
   "sizeKind" : "tlab_size",
   "kind" : "array",
   "category" : "test_harness",
-  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:78)",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
   "stackId" : "stk_0001"
+}, {
+  "t" : 1792306611832,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261568,
+  "sizeKind" : "sample_weight",
+  "kind" : "array",
+  "category" : "test_harness",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0002"
+}, {
+  "t" : 1792306611832,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[B",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "array",
+  "category" : "test_harness",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0002"
 } ]
