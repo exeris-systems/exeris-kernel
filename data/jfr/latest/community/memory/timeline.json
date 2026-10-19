@@ -1,337 +1,337 @@
 [ {
-  "t" : 1792306685698,
+  "t" : 1792394271823,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 117144,
+  "sizeKind" : "sample_weight",
+  "kind" : "jdk",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792394271823,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "java.util.concurrent.ConcurrentLinkedQueue$Node",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 117480,
+  "sizeKind" : "tlab_size",
+  "kind" : "jdk",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.memory.CommunityArenaShardPool$Bucket.offerIfBelow(CommunityArenaShardPool$Bucket.java:267)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792394271823,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116336,
+  "size" : 116856,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685698,
+  "t" : 1792394271823,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 97304,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685699,
+  "t" : 1792394271823,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116288,
+  "size" : 96640,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685699,
+  "t" : 1792394271823,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 88792,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685700,
+  "t" : 1792394271824,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 88160,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685700,
+  "t" : 1792394271824,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685700,
+  "t" : 1792394271824,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685700,
+  "t" : 1792394271824,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685701,
+  "t" : 1792394271824,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685701,
+  "t" : 1792394271824,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685701,
+  "t" : 1792394271825,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685701,
+  "t" : 1792394271825,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685701,
+  "t" : 1792394271825,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685702,
+  "t" : 1792394271825,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685702,
+  "t" : 1792394271826,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685702,
+  "t" : 1792394271826,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685702,
+  "t" : 1792394271826,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685702,
+  "t" : 1792394271826,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685703,
+  "t" : 1792394271826,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685703,
+  "t" : 1792394271826,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685703,
+  "t" : 1792394271827,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685703,
+  "t" : 1792394271827,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685704,
+  "t" : 1792394271827,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685704,
+  "t" : 1792394271827,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685704,
+  "t" : 1792394271827,
   "type" : "jdk.ObjectAllocationSample",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116320,
+  "size" : 116960,
   "sizeKind" : "sample_weight",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 }, {
-  "t" : 1792306685704,
+  "t" : 1792394271827,
   "type" : "jdk.ObjectAllocationInNewTLAB",
   "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
   "thread" : "main",
   "threadId" : 3,
-  "size" : 116936,
+  "size" : 117552,
   "sizeKind" : "tlab_size",
   "kind" : "exeris",
   "category" : "production",
   "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792306685704,
-  "type" : "jdk.ObjectAllocationSample",
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 116320,
-  "sizeKind" : "sample_weight",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
-}, {
-  "t" : 1792306685704,
-  "type" : "jdk.ObjectAllocationInNewTLAB",
-  "class" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer",
-  "thread" : "main",
-  "threadId" : 3,
-  "size" : 116936,
-  "sizeKind" : "tlab_size",
-  "kind" : "exeris",
-  "category" : "production",
-  "owner" : "eu.exeris.kernel.community.memory.CommunityLoanedBuffer.allocateOwnedPooled(CommunityLoanedBuffer.java:109)",
-  "stackId" : "stk_0001"
+  "stackId" : "stk_0002"
 } ]
