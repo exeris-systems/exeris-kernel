@@ -177,10 +177,9 @@ owner may instead require plaintext, or require verified TLS, which refuses the 
 cannot be armed rather than building it plaintext; the S3 blob client requires what its endpoint's
 scheme names. No setting keeps TLS and skips verification.
 
-**Server chains.** The Community server loads its certificate with `SSL_CTX_use_certificate_file`,
-which takes the first certificate of the file, so it presents its leaf and no intermediates. A client
-of a server whose certificate is chained holds those intermediates in its trust file, next to the
-root.
+**Server chains.** The Community server loads its certificate file with `SSL_CTX_use_certificate_chain_file`: the first certificate is the leaf, and every later certificate in the file is sent to the peer after it. A client verifies that chain against its own trust, so a client that trusts only the root accepts a chained server. An intermediate belongs in the client's trust file only where the server sends its leaf alone.
+
+**Server ALPN.** The Community server selects only a protocol `CryptoProviderConfig#alpnProtocols` names, `h2` before `http/1.1` when both are named. An offer with no protocol in common, including `http/1.1` alone to a list naming `h2` alone, completes the handshake with no ALPN protocol; a list naming neither registers no selection.
 
 **Symbols.** Bound by `CoreOpenSslLoader` into `CoreSslHandles.PeerVerificationHandles` and
 `TrustStoreHandles`; every one is present, outside any deprecation guard, from OpenSSL 3.0 through

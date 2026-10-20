@@ -5,6 +5,7 @@
 package eu.exeris.kernel.community.websocket;
 
 import eu.exeris.kernel.community.transport.CommunityAdmissionCeilingResolver;
+import eu.exeris.kernel.community.transport.CommunityOutboundTls;
 import eu.exeris.kernel.community.transport.CommunityReactorCountResolver;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.transport.NativeTcpTransportProvider;
@@ -19,6 +20,7 @@ import eu.exeris.kernel.spi.websocket.WebSocketConfig;
 
 import java.io.IOException;
 import java.net.ServerSocket;
+import java.util.List;
 
 /**
  * Builds the TCP carrier a WebSocket engine listens on.
@@ -39,6 +41,9 @@ import java.net.ServerSocket;
  * question for its own ADR, and answering it in this file would be answering it by accident.
  */
 final class CommunityWebSocketTransportFactory {
+
+    /** The ALPN list a WSS listener offers: the WebSocket upgrade is an HTTP/1.1 exchange, which h2 cannot carry. */
+    /* default */ static final List<String> LISTENER_ALPN = List.of("http/1.1");
 
     private CommunityWebSocketTransportFactory() {
     }
@@ -79,10 +84,10 @@ final class CommunityWebSocketTransportFactory {
         TransportConfig transportConfig = buildTransportConfig(config, port, configProvider);
         NativeTcpTransportProvider provider = new NativeTcpTransportProvider();
         if (KernelProviders.MEMORY_ALLOCATOR.isBound()) {
-            return provider.createEngine(transportConfig);
+            return provider.createEngine(transportConfig, CommunityOutboundTls.AMBIENT, LISTENER_ALPN);
         }
         return ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator)
-                .call(() -> provider.createEngine(transportConfig));
+                .call(() -> provider.createEngine(transportConfig, CommunityOutboundTls.AMBIENT, LISTENER_ALPN));
     }
 
     /* default */ static TransportConfig buildTransportConfig(WebSocketConfig config, int port,

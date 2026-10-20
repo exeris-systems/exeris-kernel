@@ -242,8 +242,7 @@ The fault event carries the exception **class** and never its message, matching
 
 ## Client TLS
 
-A listener serves TLS when it holds certificate material. What a `CLIENT` or `DUAL` carrier does with
-its **outbound** connections is decided once, when `NativeTcpTransportProvider` builds it:
+A listener serves TLS when it holds certificate material. The ALPN list it offers is set by its owner: the HTTP listener offers `h2` then `http/1.1` when `http.maxVersion` permits HTTP/2 and `http/1.1` alone otherwise (`NativeTcpTransportProvider#createEngine(TransportConfig, CommunityOutboundTls, List<String>)`); a carrier built without a list offers `h2` then `http/1.1`. A listener selects only a protocol its list names; the WebSocket listener's list is `http/1.1` alone, so a WSS listener never selects `h2`. What a `CLIENT` or `DUAL` carrier does with its **outbound** connections is decided once, when `NativeTcpTransportProvider` builds it:
 
 | Posture | When | Outbound connections |
 | :-- | :-- | :-- |

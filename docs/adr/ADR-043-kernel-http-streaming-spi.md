@@ -13,6 +13,7 @@ slug: adr/ADR-043
 | **Status**      | **ACCEPTED**                                                                                       |
 | **Deciders**    | Arkadiusz Przychocki                                                                               |
 | **Date**        | 2026-06-21                                                                                         |
+| **Revised**     | 2026-09-26 (A1), 2026-10-20 (A2)                                                                   |
 | **Scope**       | `kernel/transport` (cross-repo obligations: `exeris-sdk`, `exeris-tooling`, `exeris-kernel-enterprise`) |
 | **Owning Repo** | `exeris-kernel`                                                                                    |
 | **Driven By**   | [RFC-2026-06-18](../rfc/RFC-2026-06-18-http-streaming-spi.md) (Kernel HTTP server-push / streaming SPI) |
@@ -121,6 +122,9 @@ that returns a handler it has wrapped gets that nesting from the driver as it st
   `EventSource` against TLS the kernel terminates is served respond-once. Workarounds: terminate
   TLS upstream and speak HTTP/1.1 to the kernel, or, without TLS, set `http.maxVersion=HTTP_1_1`,
   which disables both of those paths to HTTP/2. `http.maxVersion` does not reach ALPN selection.
+  *(2026-10-20: the ALPN half of this limitation is lifted — see
+  [Amendment A2](#amendment-a2-2026-10-20--alpn-selection-honours-httpmaxversion). The stream-route
+  half stands.)*
 - The Enterprise native streaming binding, still listed under *What is NOT in scope*, resolves
   through the same interface when it is built. Today the Enterprise HTTP engine serves respond-once
   routes only.
@@ -149,6 +153,15 @@ cannot do on every tier;
 `HttpRouterTest.StreamingRegistration#streamTemplateOnlyMethodResolves` and
 `HttpRouterTest.StreamingRegistration#leadingPlaceholderTemplateMatches` pin the per-method early
 return and the literal prefix.
+
+## Amendment A2 (2026-10-20) — ALPN selection honours `http.maxVersion`
+
+A1 records that `http.maxVersion` did not reach ALPN selection, so a TLS listener capped at HTTP/1.1
+still negotiated `h2`. That half of the limitation is lifted. A Community TLS listener derives the
+protocols it offers from `HttpConfig#maxVersion`, and the ALPN callback selects only a protocol that
+list names: a listener capped at HTTP/1.1 selects `http/1.1`, and a client that offers only `h2` gets
+no protocol. The stream-route half of the A1 limitation stands: on a connection that negotiates
+HTTP/2, a stream route is still not resolved. The Decision and A1 are otherwise unchanged.
 
 ## Consequences
 

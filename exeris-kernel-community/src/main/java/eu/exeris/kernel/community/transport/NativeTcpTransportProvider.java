@@ -14,7 +14,7 @@ import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportMode;
 import eu.exeris.kernel.spi.transport.TransportProvider;
 
-import java.nio.file.Path;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -53,9 +53,10 @@ public final class NativeTcpTransportProvider implements TransportProvider {
 
     /* default */ static final String PROVIDER_NAME = "ExerisCommunity/NativeTcpCarrier";
 
-    private static final String PROVIDER_ID = "community-transport";
     /** Opt-out from TLS for any transport that would otherwise have it; anything but "false" leaves it on. */
-    private static final String TLS_PROPERTY = "exeris.transport.tls";
+    /* default */ static final String TLS_PROPERTY = "exeris.transport.tls";
+
+    private static final String PROVIDER_ID = "community-transport";
 
     /**
      * Instantiated reflectively by {@code ServiceLoader} through this module's
@@ -110,6 +111,31 @@ public final class NativeTcpTransportProvider implements TransportProvider {
      * @since 0.12
      */
     public TransportEngine createEngine(TransportConfig config, CommunityOutboundTls requirement) {
+        return createEngine(config, requirement, NativeTcpListenerMaterial.DEFAULT);
+    }
+
+    /**
+     * Builds a {@link NativeTcpCarrier} as {@link #createEngine(TransportConfig, CommunityOutboundTls)}
+     * does, with a listener's ALPN answer narrowed to {@code listenerAlpn}.
+     *
+     * <p>Community-internal, for an owner that derives the protocols its listener may select from its
+     * own configuration, such as the HTTP engine's {@code http.maxVersion}. A protocol is
+     * selected only when the list names it, and the list must name {@code http/1.1}, which every
+     * listener serves. A {@code CLIENT} configuration has no listener, so the list does not apply to it.
+     *
+     * @param config       the transport configuration to build an engine for
+     * @param requirement  what the owner requires of outbound connections
+     * @param listenerAlpn the ALPN protocol names a listener offers, in preference order
+     * @return a new, unstarted {@link NativeTcpCarrier}
+     * @throws IllegalArgumentException if {@code listenerAlpn} does not name {@code http/1.1}, or as
+     *                                  {@link #createEngine(TransportConfig, CommunityOutboundTls)}
+     * @throws TransportException       ({@code EX-NET-4004}) as
+     *                                  {@link #createEngine(TransportConfig, CommunityOutboundTls)}
+     * @since 0.13
+     */
+    public TransportEngine createEngine(TransportConfig config, CommunityOutboundTls requirement,
+                                        List<String> listenerAlpn) {
+        NativeTcpListenerMaterial.requireHttp11(listenerAlpn);
         requireApplicable(config, requirement);
         if (!KernelProviders.MEMORY_ALLOCATOR.isBound()) {
             throw TransportException.bootstrapFailure(
@@ -123,7 +149,7 @@ public final class NativeTcpTransportProvider implements TransportProvider {
                 KernelProviders.CRYPTO_PROVIDER.isBound() ? KernelProviders.CRYPTO_PROVIDER.get() : null;
 
         NativeTcpTlsFloor.require();
-        CryptoProviderConfig listenerConfig = resolveListenerCryptoConfig(config);
+        CryptoProviderConfig listenerConfig = NativeTcpListenerMaterial.resolve(config, listenerAlpn);
         NativeTcpClientTls clientTls =
                 NativeTcpClientTlsResolver.resolve(config, cryptoProvider, listenerConfig, requirement);
         try {
@@ -195,46 +221,5 @@ public final class NativeTcpTransportProvider implements TransportProvider {
      */
     /* default */ static boolean tlsWanted() {
         return !"false".equalsIgnoreCase(System.getProperty(TLS_PROPERTY));
-    }
-
-    /**
-     * The listener's TLS configuration: {@code null} for a {@code CLIENT}, which listens on nothing,
-     * and for a listener with no material or whose TLS was declined.
-     */
-    private static CryptoProviderConfig resolveListenerCryptoConfig(TransportConfig config) {
-        if (config == null || config.mode() == TransportMode.CLIENT) {
-            return null;
-        }
-        return resolveListenerMaterial(config);
-    }
-
-    /**
-     * The server and dual answer, which material gates and the opt-out can then decline.
-     *
-     * <p>Validation runs before the opt-out on purpose: half-configured material is a deployment
-     * mistake and stays a boot failure even when TLS was declined, because the next deployment that
-     * drops the decline would otherwise start with a broken pair and no warning.
-     */
-    private static CryptoProviderConfig resolveListenerMaterial(TransportConfig config) {
-        String certPath = config.certPath();
-        String keyPath = config.keyPath();
-        if (certPath == null && keyPath == null) {
-            return null;
-        }
-        if (certPath == null || keyPath == null) {
-            throw TransportException.bootstrapFailure(
-                    PROVIDER_NAME,
-                    "TLS is misconfigured: both certPath and keyPath must be set together or both be null",
-                    null);
-        }
-        if (!tlsWanted()) {
-            // A listener that holds valid material and serves plaintext anyway is the one case here
-            // that is invisible from the outside and security-relevant: the socket looks like every
-            // other plaintext socket. The knob is legitimate — TLS terminated at a sidecar — but it
-            // must not be silent, so the decision leaves a trail the way every other bind does.
-            TransportTlsDeclinedEvent.emit(config.mode().name(), TLS_PROPERTY);
-            return null;
-        }
-        return NativeTcpTlsFloor.apply(CryptoProviderConfig.httpsServer(Path.of(certPath), Path.of(keyPath)));
     }
 }

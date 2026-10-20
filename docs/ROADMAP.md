@@ -3328,20 +3328,20 @@ stream routes on its HTTP/1.1 path only. `CommunityHttp2SessionProcessor` has no
 so a request for a stream route that arrives over HTTP/2 goes to `handle` and is answered by
 whichever respond-once route matches its path, or `404`. A connection reaches HTTP/2 with or without
 TLS. With TLS terminated by the kernel, `CommunityAlpnSelector#selectCallback` selects `h2` whenever
-the client offers it and reads no configuration, so a browser `EventSource` over kernel-terminated
-TLS is on HTTP/2. On a connection without TLS, an `h2c` upgrade or a prior-knowledge HTTP/2 preface
+the client offers it and `http.maxVersion` permits HTTP/2, so a browser `EventSource` over
+kernel-terminated TLS is on HTTP/2 unless the listener is capped at HTTP/1.1. On a connection
+without TLS, an `h2c` upgrade or a prior-knowledge HTTP/2 preface
 is handed to the HTTP/2 session before stream resolution runs. Workarounds today: terminate TLS
-upstream and speak HTTP/1.1 to the kernel; without TLS, set `http.maxVersion=HTTP_1_1`, which
-disables both of those paths to HTTP/2. Because `http.maxVersion` does not reach ALPN selection, no
-setting keeps a TLS client on HTTP/1.1.
+upstream and speak HTTP/1.1 to the kernel, or set `http.maxVersion=HTTP_1_1`, which disables both
+of those paths to HTTP/2 and keeps a TLS listener from selecting `h2`.
 
 **Owner:** HTTP subsystem (the Community HTTP/2 session and the Core SSE engine).
 
 **Resolution:** resolve stream routes in `CommunityHttp2SessionProcessor` through the same
 `StreamRouteResolver`, and give the stream engine an HTTP/2 path: a response `HEADERS` frame, then
 `DATA` frames per event, with the stream's flow-control window as the credit `emit` parks on.
-Separately, make ALPN selection honour `http.maxVersion`, so that a deployment can keep TLS clients
-on HTTP/1.1 in the meantime.
+ALPN selection honours `http.maxVersion` as of 0.13 (#533), so a deployment keeps its TLS clients
+on HTTP/1.1 by setting it.
 
 **Merge Gate:** a client that negotiates `h2` over TLS receives a `text/event-stream` response and
 one event per `emit`; the backpressure park is exercised against the HTTP/2 flow-control window; a
@@ -3349,6 +3349,9 @@ request over `h2c` resolves the same route.
 
 **Status (v0.12): OPEN.** Recorded by ADR-043 Amendment A1 as an unmet part of the Decision's
 "HTTP/1.1 + h2", not a narrowing of it.
+
+**Status (v0.13): PARTIAL.** The ALPN half is delivered: a listener's ALPN answer follows
+`http.maxVersion` (#533). Stream resolution over HTTP/2 stays OPEN.
 
 ---
 
