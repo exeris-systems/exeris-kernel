@@ -6,15 +6,21 @@ package eu.exeris.kernel.tck.contract.bootstrap;
 
 import eu.exeris.kernel.spi.bootstrap.BootstrapPhase;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.ServiceConfigurationError;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -65,6 +71,78 @@ public abstract class AbstractSubsystemErrorRoutingTck {
      * @throws Exception if an unhandled harness failure occurs
      */
     protected abstract Throwable bootCapturing(List<Subsystem> subsystems, boolean degrade, Runnable kernelMain) throws Exception;
+
+    /**
+     * Boots a kernel whose initialization deadline is {@code deadline}, executing {@code kernelMain} if the
+     * boot completes successfully. Only {@code initialize()} is bounded by the deadline.
+     *
+     * @param subsystems the subsystems to register for this boot scenario
+     * @param degrade    {@code true} for {@code DEGRADE} failure policy; {@code false} for {@code FAIL_FAST}
+     * @param deadline   the initialization deadline the kernel is built with
+     * @param kernelMain the application payload to execute inside the booted kernel scope
+     * @return the {@link Throwable} thrown by boot, or {@code null} if boot completed successfully
+     * @throws Exception if an unhandled harness failure occurs
+     */
+    protected abstract Throwable bootCapturingWithInitDeadline(List<Subsystem> subsystems, boolean degrade,
+                                                               Duration deadline, Runnable kernelMain) throws Exception;
+
+    /**
+     * Deadline used by the initialization-deadline cases. Short enough that the hanging probe always passes it.
+     */
+    static final Duration INIT_DEADLINE = Duration.ofMillis(200);
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("FAIL_FAST + optional: initialize() past the deadline aborts boot with EX-BOOT-0003")
+    void failFastInitDeadlineAbortsBoot() throws Exception {
+        BaseSubsystem base = new BaseSubsystem();
+        HangingProbeSubsystem probe = new HangingProbeSubsystem(true);
+        AtomicBoolean kernelMainRan = new AtomicBoolean(false);
+
+        long startNanos = System.nanoTime();
+        Throwable thrown = bootCapturingWithInitDeadline(List.of(base, probe), false, INIT_DEADLINE,
+                () -> kernelMainRan.set(true));
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startNanos);
+
+        assertThat(probe.sawInterrupt()).as("the deadline interrupts the hung initialize()").isTrue();
+        assertThat(elapsed).as("the interrupt arrives at the deadline, not after the probe gives up")
+                .isLessThan(Duration.ofSeconds(3));
+        SubsystemInitDeadlineException deadline = causeInChain(thrown, SubsystemInitDeadlineException.class);
+        assertThat(deadline).isNotNull();
+        assertThat(deadline.errorCode()).isEqualTo("EX-BOOT-0003");
+        assertThat(deadline.rawArgs()).containsExactly("probe", INIT_DEADLINE.toMillis());
+        assertThat(kernelMainRan).isFalse();
+        assertThat(base.stopCount()).isEqualTo(1);
+        assertThat(probe.stopCount()).isZero();
+        assertThat(Thread.currentThread().isInterrupted()).isFalse();
+    }
+
+    @Test
+    @Timeout(value = 10, unit = TimeUnit.SECONDS)
+    @DisplayName("DEGRADE + optional: initialize() past the deadline skips the subsystem and boots kernelMain")
+    void degradeOptionalInitDeadlineSkipsSubsystem() throws Exception {
+        BaseSubsystem base = new BaseSubsystem();
+        HangingProbeSubsystem probe = new HangingProbeSubsystem(true);
+        AtomicBoolean kernelMainRan = new AtomicBoolean(false);
+
+        AtomicBoolean kernelMainSawInterrupt = new AtomicBoolean(true);
+        long startNanos = System.nanoTime();
+        Throwable thrown = bootCapturingWithInitDeadline(List.of(base, probe), true, INIT_DEADLINE, () -> {
+            kernelMainRan.set(true);
+            kernelMainSawInterrupt.set(Thread.currentThread().isInterrupted());
+        });
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - startNanos);
+
+        assertThat(thrown).isNull();
+        assertThat(kernelMainRan).isTrue();
+        assertThat(probe.sawInterrupt()).as("the deadline interrupts the hung initialize()").isTrue();
+        assertThat(elapsed).as("the interrupt arrives at the deadline, not after the probe gives up")
+                .isLessThan(Duration.ofSeconds(3));
+        assertThat(kernelMainSawInterrupt).as("the deadline's interrupt never reaches application code").isFalse();
+        assertThat(base.startCount()).isEqualTo(1);
+        assertThat(probe.stopCount()).isZero();
+        assertThat(Thread.currentThread().isInterrupted()).isFalse();
+    }
 
     @ParameterizedTest(name = "{0} in {1}")
     @MethodSource("errorAndPhaseCases")
@@ -133,6 +211,20 @@ public abstract class AbstractSubsystemErrorRoutingTck {
 
         assertThat(thrown).isSameAs(vme);
         assertThat(kernelMainRan).isFalse();
+    }
+
+    /**
+     * Walks the cause chain of {@code thrown} and returns the first instance of {@code type}, or {@code null}.
+     */
+    private static <T extends Throwable> T causeInChain(Throwable thrown, Class<T> type) {
+        Throwable current = thrown;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return type.cast(current);
+            }
+            current = current.getCause();
+        }
+        return null;
     }
 
     static Stream<Arguments> errorAndPhaseCases() {
@@ -303,6 +395,77 @@ public abstract class AbstractSubsystemErrorRoutingTck {
         @SuppressWarnings("unchecked")
         private static <E extends Throwable> void sneakyThrow(Throwable e) throws E {
             throw (E) e;
+        }
+    }
+    /**
+     * Services-phase probe whose {@code initialize()} blocks until the orchestrator interrupts it, the way a
+     * subsystem that waits on an unavailable dependency does. The wait is bounded so a missing deadline fails
+     * the case by assertion rather than by hanging the build.
+     */
+    static final class HangingProbeSubsystem implements Subsystem {
+        private final boolean optional;
+        private final CountDownLatch never = new CountDownLatch(1);
+        private final AtomicInteger stopCount = new AtomicInteger();
+        private final AtomicBoolean sawInterrupt = new AtomicBoolean();
+        private volatile boolean running;
+
+        HangingProbeSubsystem(boolean optional) {
+            super();
+            this.optional = optional;
+        }
+
+        @Override
+        public String name() {
+            return "probe";
+        }
+
+        @Override
+        public List<String> dependsOn() {
+            return List.of("base");
+        }
+
+        @Override
+        public BootstrapPhase phase() {
+            return BootstrapPhase.SERVICES;
+        }
+
+        @Override
+        public boolean isOptional() {
+            return optional;
+        }
+
+        @Override
+        public void initialize() {
+            try {
+                never.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException _) {
+                sawInterrupt.set(true);
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        boolean sawInterrupt() {
+            return sawInterrupt.get();
+        }
+
+        @Override
+        public void start() {
+            running = true;
+        }
+
+        @Override
+        public void stop() {
+            running = false;
+            stopCount.incrementAndGet();
+        }
+
+        @Override
+        public boolean isRunning() {
+            return running;
+        }
+
+        int stopCount() {
+            return stopCount.get();
         }
     }
 }

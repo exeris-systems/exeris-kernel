@@ -125,7 +125,7 @@ EX-MEM-1002  Buffer leak detected           (no rawArgs — JFR-only: BufferLeak
 EX-MEM-1003  Peek-view ownership misuse     (no rawArgs — JFR-only: PeekViewMisuse event fields errorCode, callerMethod)
 EX-BOOT-0001 DAG cycle detected             (no rawArgs — the exception is a plain RuntimeException; JFR CircularDependencyDetected field cycleMembers is one ", "-joined String)
 EX-BOOT-0002 Subsystem lifecycle failure    rawArgs[0]=String subsystemName,    [1]=Phase phase,            [2]=String detail
-EX-BOOT-0003 Bootstrap deadline exceeded    (reserved — raised by no kernel code path; no rawArgs layout)
+EX-BOOT-0003 Bootstrap deadline exceeded    rawArgs[0]=String subsystemName,    [1]=long deadlineMs
 EX-BOOT-0004 Memory provider bootstrap      rawArgs[0]=String providerName,     [1]=long requestedBytes
 EX-BOOT-3001 Telemetry provider failure     rawArgs[0]=String providerName,     [1]=String reason
 EX-NET-2001  TLS wrap/handshake failure     rawArgs[0]=int nativeErrorCode,     [1]=String detail          (a client refusal's detail names what [0] holds; see crypto.md → Error Codes)
@@ -215,6 +215,7 @@ Every critical lifecycle transition MUST emit a typed JFR event. No `Logger.info
 
 | Event Class             | When Emitted                                    | Key Fields                                            |
 |:------------------------|:------------------------------------------------|:------------------------------------------------------|
+| `BootstrapJfrEvents.SubsystemInitDeadlineExceededEvent` *(eu.exeris.kernel.core.bootstrap.jfr; JFR event name `eu.exeris.kernel.bootstrap.SubsystemInitDeadlineExceeded`)* | Emitted by the initialization-deadline watchdog when a subsystem's `initialize()` runs past its deadline (EX-BOOT-0003), while `initialize()` may still be blocked | `subsystemName`, `deadlineMs`, `errorCode` |
 | `TelemetryJfrEvents.KernelLifecycleJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | Kernel bootstrap, subsystem lifecycle (including completion of each subsystem `initialize()`), warnings, and errors | `errorCode`, `level`, `component`, `message` |
 | `CommunityAllocationEvent` *(implemented, community module; `eu.exeris.kernel.community.memory.CommunityAllocationEvent`)* | Community-tier buffer allocation (when `jfrEnabled=true`, sampled) | `allocationBytes`, `totalCount` |
 | `TelemetryJfrEvents.MemoryExhaustionJfrEvent` *(eu.exeris.kernel.core.telemetry.jfr)* | On every `MemoryExhaustedException` (EX-MEM-1001) | `errorCode`, `requestedBytes`, `availableBytes`, `component` |
@@ -322,7 +323,7 @@ buckets:
 
 | | |
 |:--|:--|
-| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 91 event classes — 48 warmed, 43 deliberately cold |
+| `CoreJfrEventCatalogue` (`eu.exeris.kernel.core.telemetry.jfr`) | 94 event classes — 48 warmed, 46 deliberately cold |
 | `CommunityJfrEventCatalogue` (`eu.exeris.kernel.community.telemetry`) | 34 event classes — 30 warmed, 4 deliberately cold |
 | `KafkaJfrEventCatalogue` (`eu.exeris.kernel.community.kafka`) | 3 event classes — all warmed, in two groups because the driver has two seams: `kafka-engine` warms at `KafkaEventEngine.start()`, `kafka-appender` at `KafkaEventStreamAppender` construction. The driver ships its own catalogue and its own guard, because the Community guard runs in the module it depends on and cannot see it |
 

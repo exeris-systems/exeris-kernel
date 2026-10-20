@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -69,6 +70,37 @@ class CoreSubsystemErrorRoutingTckTest extends AbstractSubsystemErrorRoutingTck 
                 .failurePolicy(policy)
                 .selector(BootstrapSelector.all())
                 .classLoader(shim)
+                .build();
+        try {
+            bootstrap.boot(kernelMain);
+            return null;
+        } catch (Throwable t) {
+            return t;
+        }
+    }
+
+    @Override
+    protected Throwable bootCapturingWithInitDeadline(List<Subsystem> subsystems,
+                                                      boolean degrade,
+                                                      Duration deadline,
+                                                      Runnable kernelMain) throws Exception {
+        FailurePolicySubsystemProvider.subsystems = subsystems;
+        ClassLoader shim = new KernelBootstrapTest.DualServiceShimLoader(
+                Thread.currentThread().getContextClassLoader(),
+                Map.of(
+                        "eu.exeris.kernel.spi.config.ConfigProvider",
+                        KernelBootstrapTest.StubConfigProvider.class.getName(),
+                        "eu.exeris.kernel.spi.bootstrap.SubsystemProvider",
+                        FailurePolicySubsystemProvider.class.getName()
+                ));
+        SubsystemOrchestrator.FailurePolicy policy = degrade
+                ? SubsystemOrchestrator.FailurePolicy.DEGRADE
+                : SubsystemOrchestrator.FailurePolicy.FAIL_FAST;
+        KernelBootstrap bootstrap = KernelBootstrap.builder()
+                .failurePolicy(policy)
+                .selector(BootstrapSelector.all())
+                .classLoader(shim)
+                .initializeDeadline(deadline)
                 .build();
         try {
             bootstrap.boot(kernelMain);

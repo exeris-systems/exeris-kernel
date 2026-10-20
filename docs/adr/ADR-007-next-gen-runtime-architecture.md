@@ -11,11 +11,11 @@ status: active
 
 | Attribute      | Value                                                  |
 |:---------------|:-------------------------------------------------------|
-| **Status**     | **ACCEPTED**                                           |
+| **Status**     | **ACCEPTED** (2025-12-11, upd. 2026-10-20)             |
 | **Deciders**   | Arkadiusz Przychocki                                   |
-| **Date**       | 2025-12-11 (Updated: 2026-02-22)                       |
+| **Date**       | 2025-12-11 (Updated: 2026-10-20)                       |
 | **Compliance** | [Strategic Pillar: No-Waste Compute](../whitepaper.md) |
-| **Amended**    | 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**ACCEPTED** 2026-10-08), see [Amendments](#amendments) |
+| **Amended**    | 2026-10-20 — initialization deadline on §5 (EX-BOOT-0003); 2026-10-07 — §5 Kernel Lifecycle and Process Termination (**ACCEPTED** 2026-10-08), see [Amendments](#amendments) |
 
 ## Context and Problem Statement
 
@@ -310,6 +310,11 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
   switch an embedding host uses to turn the hook off and call `shutdown()` from its own lifecycle. The hook
   is opt-out and the switch is a builder method (ruled 2026-10-08); no configuration key is
   defined beside the builder switch. Driven by #542; the TCK binding is #461.
+- **2026-10-20 — Initialization deadline (EX-BOOT-0003) on §5 Kernel Lifecycle.** A subsystem whose `initialize()` never
+  returns is a lifecycle failure as well as a boot failure, so §5 now bounds each `initialize()` by a deadline, 300 seconds by default. The deadline is set through the
+  `KernelBootstrap` builder (`initializeDeadline(Duration)`), with no configuration key; `Duration.ZERO` disables it.
+  A missed deadline interrupts the booting thread and fails the boot with `EX-BOOT-0003` under the same failure policy
+  as any other initialization failure. Only `initialize()` is bounded. `start()` and `stop()` are not.
 
 ## Engineering Protocol
 

@@ -14,10 +14,13 @@ import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.config.KernelProfile;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.ExerisKernelException;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.SubsystemException;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException;
 
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -95,6 +98,8 @@ import java.util.function.UnaryOperator;
 })
 public final class SubsystemOrchestrator {
 
+    /* default */ static final Duration DEFAULT_INITIALIZE_DEADLINE = Duration.ofSeconds(300);
+
     /**
      * Zero-dependency JDK logger (JEP 264).
      * L0 mandates no external logging framework — System.Logger delegates to
@@ -158,6 +163,8 @@ public final class SubsystemOrchestrator {
     private final FailurePolicy     failurePolicy;
     private final BootstrapSelector selector;
     private final ClassLoader       classLoader;
+    /** Initialization deadline in nanoseconds; {@code 0} means no deadline is armed. */
+    private final long              initializeDeadlineNanos;
     private final KernelHealthMonitor healthMonitor = new KernelHealthMonitor();
     private final Object orderedSubsystemsLock = new Object();
 
@@ -203,6 +210,7 @@ public final class SubsystemOrchestrator {
         this.classLoader   = builder.classLoader != null
                 ? builder.classLoader
                 : Thread.currentThread().getContextClassLoader();
+        this.initializeDeadlineNanos = InitDeadlines.budgetNanos(builder.initializeDeadline);
     }
 
     // =========================================================================
@@ -581,7 +589,7 @@ public final class SubsystemOrchestrator {
         LOG.log(System.Logger.Level.INFO,
                 "  init [{0}] (phase={1})", subsystem.name(), subsystem.phase());
         try {
-            subsystem.initialize();
+            InitDeadlineWatch.initialize(subsystem, healthMonitor, initializeDeadlineNanos);
 
             // ── Compose provider enricher after successful init ───────────
             // Each subsystem's UnaryOperator<ScopedValue.Carrier> is composed onto
@@ -614,7 +622,7 @@ public final class SubsystemOrchestrator {
             BootstrapJfrEvents.emitInitialized(
                     subsystem.name(), initStartNanos, profile,
                     subsystem.phase().name(), true, "");
-        } catch (SubsystemException ex) {
+        } catch (SubsystemException | SubsystemInitDeadlineException ex) {
             healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.FAILED);
             BootstrapJfrEvents.emitInitialized(
                     subsystem.name(), initStartNanos, profile,
@@ -835,7 +843,7 @@ public final class SubsystemOrchestrator {
     // Failure policy enforcement
     // =========================================================================
 
-    private void handleFailure(Subsystem subsystem, SubsystemException failure)
+    private void handleFailure(Subsystem subsystem, ExerisKernelException failure)
             throws BootstrapException {
 
         // FOUNDATION subsystems are ALWAYS mandatory — DEGRADE cannot save them
@@ -934,6 +942,7 @@ public final class SubsystemOrchestrator {
         private FailurePolicy     failurePolicy = FailurePolicy.FAIL_FAST;
         private BootstrapSelector selector      = BootstrapSelector.all();
         private ClassLoader       classLoader;
+        private Duration          initializeDeadline = DEFAULT_INITIALIZE_DEADLINE;
 
         /**
          * Creates a builder with every setting at its default.
@@ -978,6 +987,25 @@ public final class SubsystemOrchestrator {
          */
         public Builder classLoader(ClassLoader loaderClass) {
             this.classLoader = loaderClass;
+            return this;
+        }
+
+        /**
+         * Sets how long one subsystem's {@code initialize()} may run before the orchestrator interrupts the
+         * booting thread and fails the boot with {@link SubsystemInitDeadlineException} (EX-BOOT-0003).
+         * Default: 300 seconds. {@link Duration#ZERO} disables the deadline.
+         *
+         * <p>Only {@code initialize()} is bounded; {@code start()} and {@code stop()} are not. An
+         * {@code initialize()} that ignores interruption still holds the boot until it returns, and the
+         * deadline then applies to that return.
+         *
+         * @param deadline the longest one {@code initialize()} may run; {@link Duration#ZERO} for none
+         * @return this builder
+         * @throws IllegalArgumentException if {@code deadline} is negative, or positive but shorter than
+         *                                   one millisecond
+         */
+        public Builder initializeDeadline(Duration deadline) {
+            this.initializeDeadline = InitDeadlines.requireValidDeadline(deadline);
             return this;
         }
 

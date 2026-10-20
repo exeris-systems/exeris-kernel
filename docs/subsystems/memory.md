@@ -312,7 +312,7 @@ sequenceDiagram
         BS->>MA: MemoryAllocator.close() (e.g. CommunityMemoryAllocator, closing its CommunityArenaShardPool)
         Note over MA: All slabs returned. Shard arenas closed.
     else timeout fires (60s hard limit)
-        BS->>BS: emit EX-BOOT-0003 (Glass-Box)
+        Note over BS: not EX-BOOT-0003, the initialization deadline
         BS->>MA: forceReleaseArenas()
         Note over MA: ⚠️ Force-release. Any VT still holding a LoanedBuffer<br/>will encounter SIGSEGV on next segment access.<br/>This is acceptable — the hard timeout implies<br/>the JVM is about to exit(1).
     end

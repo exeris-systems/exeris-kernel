@@ -40,5 +40,11 @@
     "since": "0.13",
     "adr": "ADR-101",
     "justification": "Behaviour on the Kafka binding (ADR-101 Ruling 2): a record the Kafka client rejects through the send callback before send returns (an ApiException such as a record too large, or the metadata timeout after max.block.ms) was lost before 0.13: publish returned normally and nothing recorded it. It is now refused with EX-EVENT-6009, as a thrown send already was, and is not counted as published. A send that fails after publish has returned is recorded, never thrown: a KafkaPublishFailedEvent with publishMode \"publishAsync\" and EventEngineStats#publishFailedTotal. No signature changes: EventEngineStats keeps its seven-argument constructor, which reports 0 for the new component, on the preview spi.events package."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.bootstrap.KernelBootstrap$Builder#initializeDeadline(java.time.Duration)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour: Subsystem#initialize() is bounded by an initialization deadline of 300 s by default (ADR-007 amendment 2026-10-20). A subsystem whose initialize() is still running at the deadline is interrupted, and boot fails with EX-BOOT-0003 (SubsystemInitDeadlineException, rawArgs [subsystemName, deadlineMs]); under DEGRADE an optional subsystem is dropped with its dependents. Before 0.13 such a boot waited indefinitely. KernelBootstrap.Builder#initializeDeadline(Duration) changes the deadline, and Duration.ZERO restores the unbounded wait. The new SPI exception is additive; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
   }
 ]

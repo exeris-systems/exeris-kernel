@@ -131,6 +131,7 @@ public final class CoreJfrEventCatalogue {
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$KernelBootReadyEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$KernelShutdownCompleteEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemHealthTransitionEvent",
+            "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemInitDeadlineExceededEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemInitializedEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemStartedEvent",
             "eu.exeris.kernel.core.bootstrap.jfr.BootstrapJfrEvents$SubsystemStoppedEvent",
