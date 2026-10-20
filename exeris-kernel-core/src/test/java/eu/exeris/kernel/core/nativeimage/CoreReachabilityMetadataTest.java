@@ -76,10 +76,8 @@ class CoreReachabilityMetadataTest {
                     "covered-by-metadata: syscall downcall descriptors declared in centralized enum table"),
 
             // Downcall linkage sites
-            allow("eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader", "req", "Linker.downcallHandle",
-                    "covered-by-metadata: required OpenSSL downcalls defined in OpenSslDowncall enum"),
-            allow("eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader", "lambda$opt$0", "Linker.downcallHandle",
-                    "covered-by-metadata: optional OpenSSL downcalls defined in OpenSslDowncall enum"),
+            allow("eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader", "link", "Linker.downcallHandle",
+                    "covered-by-metadata: required and optional OpenSSL downcalls defined in OpenSslDowncall enum"),
             allow("eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime", "requiredDowncall",
                     "Linker.downcallHandle",
                     "covered-by-caller: the descriptor is supplied by the consuming module, "

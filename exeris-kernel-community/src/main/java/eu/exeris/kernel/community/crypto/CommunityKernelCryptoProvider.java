@@ -85,7 +85,8 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		sslSetFd = runtime.optionalSslHandle(
 				CommunityForeignCall.SSL_SET_FD.symbol(),
 				CommunityForeignCall.SSL_SET_FD.descriptor());
-		if (sslSetFd == null) {
+		CommunityForeignCall.Resolution resolution = CommunityForeignCall.SSL_SET_FD.resolution();
+		if (sslSetFd == null && resolution == CommunityForeignCall.Resolution.REQUIRED) {
 			throw new CryptoBootstrapException(
 					PROVIDER_NAME,
 					"Required OpenSSL symbol SSL_set_fd not found");

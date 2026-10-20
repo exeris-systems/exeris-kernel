@@ -8,6 +8,9 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 
 import static java.lang.foreign.ValueLayout.JAVA_INT;
@@ -110,9 +113,15 @@ public final class SyscallErrno {
         try {
             Linker linker = Linker.nativeLinker();
             SymbolLookup lookup = linker.defaultLookup();
-            SyscallDowncall[] candidates = IS_MAC
-                    ? new SyscallDowncall[]{SyscallDowncall.BSD_ERROR, SyscallDowncall.ERRNO_LOCATION}
-                    : new SyscallDowncall[]{SyscallDowncall.ERRNO_LOCATION, SyscallDowncall.BSD_ERROR};
+            List<SyscallDowncall> candidates = new ArrayList<>();
+            for (SyscallDowncall row : SyscallDowncall.values()) {
+                if (SyscallDowncall.Group.ERRNO.equals(row.anyOf())) {
+                    candidates.add(row);
+                }
+            }
+            if (IS_MAC) {
+                Collections.reverse(candidates);
+            }
             for (SyscallDowncall candidate : candidates) {
                 MethodHandle handle = lookup.find(candidate.symbol())
                         .map(address -> linker.downcallHandle(address, candidate.descriptor()))
