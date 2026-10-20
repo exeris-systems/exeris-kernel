@@ -388,6 +388,17 @@ Session End:
 **Rule:** Business logic code MUST NEVER hold a reference to a `NativeCipherContext` or any
 `MemorySegment` beyond the scope of a single `wrap()`/`unwrap()` call.
 
+### Key Material Zeroization
+
+Core binds `OPENSSL_cleanse` (`OpenSslDowncall#OPENSSL_CLEANSE`) and exposes it as
+`CoreOpenSslRuntime#cleanse(MemorySegment)`, which zeroes a native segment through the C routine
+rather than a Java fill. Every secret the TLS path holds is owned by OpenSSL, which clears it inside
+`SSL_free` and `SSL_CTX_free`, so no Java-owned segment holds key material and no call site invokes
+`cleanse` today. The Java-owned segments on the TLS path are the session budget placeholder and the
+SNI and address staging buffers, none of which is secret. The `SensitiveBuffer` SPI that would
+guarantee zeroization before arena release is deferred with FIPS scope (see ROADMAP, "Off-Heap Key
+Material Zeroization").
+
 ---
 
 ## SPI Contract (The Wall)

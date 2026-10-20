@@ -254,7 +254,8 @@ public final class CoreOpenSslLoader {
         CoreSslHandles handles = new CoreSslHandles(ctx, handshake, ioHandles, errorQueue,
                 peerVerificationHandles(linker, ssl.lookup(), crypto.lookup()),
                 trustStoreHandles(linker, crypto.lookup()));
-        return new CoreOpenSslRuntime(linker, ssl.lookup(), crypto.lookup(), handles);
+        MethodHandle cleanse = req(linker, crypto.lookup(), OpenSslDowncall.OPENSSL_CLEANSE);
+        return new CoreOpenSslRuntime(linker, ssl.lookup(), crypto.lookup(), handles, cleanse);
     }
 
     /**
