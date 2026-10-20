@@ -1,3 +1,12 @@
+---
+title: "Physical Tier: Core (The Brain)"
+type: module
+visibility: public
+owning-repo: exeris-kernel
+status: active
+last-verified: 2026-08-12
+---
+
 # Physical Tier: Core (The Brain)
 
 **Module:** `exeris-kernel-core`
@@ -147,6 +156,31 @@ graph LR
     CORETEST --> FIXTURE[CoreHttpProviderFixture\n(test-only)]
     COREMAIN[exeris-kernel-core main\nhttp1/http2/hpack codecs] --> RUNTIME[Driver tiers\nCommunity/Enterprise]
 ```
+
+## Native-image metadata
+
+The module ships reachability metadata at
+`META-INF/native-image/eu.exeris/exeris-kernel-core/reachability-metadata.json`.
+
+The metadata covers:
+- Foreign downcall descriptors declared in `OpenSslDowncall` and `SyscallDowncall`.
+- JFR event types and their enclosing classes from `CoreJfrEventCatalogue`.
+- Atomic field updates accessed via `MethodHandles.Lookup.findVarHandle`.
+- Classpath resources, including `KernelVersion.RESOURCE` (`exeris-kernel.properties`) and
+  the consumer manifest (`license-manifest.json`).
+- Internal queue field offsets in `org.jctools.queues.MpscArrayQueue` superclasses.
+
+The metadata is guarded by `CoreReachabilityMetadataTest`, which scans all compiled classes using the
+JDK ClassFile API. It enforces that `FunctionDescriptor` construction is confined to centralized enum tables,
+that downcall creation is restricted to designated loader classes, that all declaration sites match explicit
+allowlist dispositions, and that the committed metadata file matches the synthesized model byte-for-byte.
+
+The rules for producing this metadata are set by
+[ADR-103](../adr/ADR-103-native-image-opt-in-build.md). On HotSpot the files are inert; they matter only
+to a GraalVM 25 native-image build, verified on Linux x86-64 only; aarch64 and Windows images are
+unverified. The cost is that a new
+declaration site fails the guard until the committed file is regenerated: the test writes the expected
+file under `target/native-image-expected/` and names the copy command.
 
 ## Stability
 

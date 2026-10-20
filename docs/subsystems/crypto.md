@@ -95,29 +95,29 @@ newest-major-first OS candidate lists for `libssl`/`libcrypto` (`.so.4` before `
 equivalent DLL names on Windows), honours the `EXERIS_OPENSSL_SSL_PATH` /
 `EXERIS_OPENSSL_CRYPTO_PATH` / `EXERIS_OPENSSL_PATH` environment overrides first, and version-gates
 the result to `3 <= OPENSSL_version_major() <= 4` with a packed-version floor of `0x30000000`
-(OpenSSL 3.0.0). The resolved handles use the provider-aware `SSL_CTX_new_ex` constructor, not the
-legacy `SSL_CTX_new`, and every pointer-typed parameter is bound as a raw `JAVA_LONG` — not
-`ADDRESS` — so a downcall exchanges a bare `long`, never a `MemorySegment` wrapper:
+(OpenSSL 3.0.0).
+
+All OpenSSL downcall descriptors used by Core are declared in `OpenSslDowncall`, which serves as the
+single place where an OpenSSL symbol and its function descriptor are added. Descriptors are evaluated
+once during enum class initialization after `Linker.nativeLinker()` is available,
+providing static layout definitions for `CoreOpenSslLoader` and native-image metadata generation.
+
+The resolved handles use the provider-aware `SSL_CTX_new_ex` constructor, not the legacy `SSL_CTX_new`.
+Except for callback and buffer parameters in `SSL_CTX_set_verify` and `SSL_CTX_set_alpn_protos` (as well
+as the return type of `OpenSSL_version`), which use `ADDRESS`, pointer-typed parameters are bound as raw
+`JAVA_LONG` — not `ADDRESS` — so a downcall exchanges a bare `long`, never a `MemorySegment` wrapper:
 
 ```java
 Linker linker = Linker.nativeLinker();
-SymbolLookup ssl = /* resolved candidate, e.g. libssl.so.4 or libssl.so.3 */;
+SymbolLookup lookup = /* resolved candidates, e.g. ssl.or(crypto) */;
 
-static final MethodHandle sslCtxNewEx =
-        linker.downcallHandle(ssl.find("SSL_CTX_new_ex").orElseThrow(),
-                FunctionDescriptor.of(JAVA_LONG, JAVA_LONG, JAVA_LONG, JAVA_LONG));
-
-static final MethodHandle sslWrite =
-        linker.downcallHandle(ssl.find("SSL_write").orElseThrow(),
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
-
-static final MethodHandle sslRead =
-        linker.downcallHandle(ssl.find("SSL_read").orElseThrow(),
-                FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT));
+MethodHandle sslCtxNewEx = req(linker, lookup, OpenSslDowncall.SSL_CTX_NEW_EX);
+MethodHandle sslWrite = req(linker, lookup, OpenSslDowncall.SSL_WRITE);
+MethodHandle sslRead = req(linker, lookup, OpenSslDowncall.SSL_READ);
 ```
 
-All `MethodHandle` instances are `static final` — the JIT constant-folds them, eliminating
-virtual dispatch on the cipher hot-path. The `JAVA_LONG` layout choice (rather than `ADDRESS`) is
+All `MethodHandle` instances are bound once at load and held in final fields of `CoreSslHandles`, so
+the cipher hot path invokes them with `invokeExact` and performs no symbol lookup. The `JAVA_LONG` layout choice (rather than `ADDRESS`) is
 deliberate: it is what lets `wrap()`/`unwrap()` pass a raw address without the JVM constructing a
 `MemorySegment` for the call, matching the zero-wrapper-object claim in Overview above.
 

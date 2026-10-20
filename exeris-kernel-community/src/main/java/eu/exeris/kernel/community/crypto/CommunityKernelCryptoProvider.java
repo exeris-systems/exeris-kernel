@@ -20,7 +20,6 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 
 import java.lang.foreign.Arena;
-import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
@@ -82,14 +81,9 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 	/* default */ CommunityKernelCryptoProvider(ClientPeerBinder peerBinder) {
 		this.peerBinder = Objects.requireNonNull(peerBinder, "peerBinder must not be null");
 		runtime = CoreOpenSslLoader.load(Arena.global());
-		FunctionDescriptor setFdDescriptor =
-				FunctionDescriptor.of(
-						ValueLayout.JAVA_INT,
-						ValueLayout.JAVA_LONG,
-						ValueLayout.JAVA_INT);
 		sslSetFd = runtime.optionalSslHandle(
-				"SSL_set_fd",
-				setFdDescriptor);
+				CommunityForeignCall.SSL_SET_FD.symbol(),
+				CommunityForeignCall.SSL_SET_FD.descriptor());
 		if (sslSetFd == null) {
 			throw new CryptoBootstrapException(
 					PROVIDER_NAME,

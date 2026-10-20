@@ -4,14 +4,12 @@
  */
 package eu.exeris.kernel.core.transport.syscall;
 
-import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
 import java.lang.invoke.MethodHandle;
 import java.util.Locale;
 
-import static java.lang.foreign.ValueLayout.ADDRESS;
 import static java.lang.foreign.ValueLayout.JAVA_INT;
 
 /**
@@ -112,12 +110,12 @@ public final class SyscallErrno {
         try {
             Linker linker = Linker.nativeLinker();
             SymbolLookup lookup = linker.defaultLookup();
-            String[] candidates = IS_MAC
-                    ? new String[]{"__error", "__errno_location"}
-                    : new String[]{"__errno_location", "__error"};
-            for (String symbol : candidates) {
-                MethodHandle handle = lookup.find(symbol)
-                        .map(address -> linker.downcallHandle(address, FunctionDescriptor.of(ADDRESS)))
+            SyscallDowncall[] candidates = IS_MAC
+                    ? new SyscallDowncall[]{SyscallDowncall.BSD_ERROR, SyscallDowncall.ERRNO_LOCATION}
+                    : new SyscallDowncall[]{SyscallDowncall.ERRNO_LOCATION, SyscallDowncall.BSD_ERROR};
+            for (SyscallDowncall candidate : candidates) {
+                MethodHandle handle = lookup.find(candidate.symbol())
+                        .map(address -> linker.downcallHandle(address, candidate.descriptor()))
                         .orElse(null);
                 if (handle != null) {
                     return handle;
