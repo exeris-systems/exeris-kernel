@@ -34,5 +34,11 @@
     "since": "0.13",
     "adr": "ADR-101",
     "justification": "TCK contract: the IsolationScoping cases require a binding's engine to return an IsolationKeyRegistry from EventEngine#isolationRegistry() and its bus to implement EventBus#subscribeScoped; both SPI defaults refuse, so a binding that has adopted neither fails those cases until it implements them. Source-compatible; the SPI additions are default methods and an eighth EventDescriptor component behind a retained seven-argument constructor."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.events.EventBus#publish(eu.exeris.kernel.spi.events.EventDescriptor, eu.exeris.kernel.spi.events.EventPayload)",
+    "since": "0.13",
+    "adr": "ADR-101",
+    "justification": "Behaviour on the Kafka binding (ADR-101 Ruling 2): a record the Kafka client rejects through the send callback before send returns (an ApiException such as a record too large, or the metadata timeout after max.block.ms) was lost before 0.13: publish returned normally and nothing recorded it. It is now refused with EX-EVENT-6009, as a thrown send already was, and is not counted as published. A send that fails after publish has returned is recorded, never thrown: a KafkaPublishFailedEvent with publishMode \"publishAsync\" and EventEngineStats#publishFailedTotal. No signature changes: EventEngineStats keeps its seven-argument constructor, which reports 0 for the new component, on the preview spi.events package."
   }
 ]

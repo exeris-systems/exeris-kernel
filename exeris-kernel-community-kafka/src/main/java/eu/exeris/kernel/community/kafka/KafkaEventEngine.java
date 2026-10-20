@@ -28,9 +28,12 @@ import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.Callback;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 
@@ -117,6 +120,7 @@ public final class KafkaEventEngine implements EventEngine {
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicLong publishedTotal = new AtomicLong(0L);
+    private final AtomicLong publishFailedTotal = new AtomicLong(0L);
 
     /**
      * Constructs the engine from SPI and Kafka-specific configuration: creates the underlying
@@ -153,7 +157,7 @@ public final class KafkaEventEngine implements EventEngine {
         this.producer          = Objects.requireNonNull(producer, "producer");
         this.publishBus        = new KafkaPublishBus(spiConfig.engineName(),
                                                      producer, registry, isolationRegistry, kafkaConfig,
-                                                     localDelegate, publishedTotal);
+                                                     localDelegate, publishedTotal, publishFailedTotal);
         this.loop          = new ConsumerLoop(spiConfig.engineName(), kafkaConfig,
                                               registry, localDelegate,
                                               Objects.requireNonNull(consumerFactory, "consumerFactory"));
@@ -220,6 +224,7 @@ public final class KafkaEventEngine implements EventEngine {
     public EventEngineStats stats() {
         return new EventEngineStats(
                 publishedTotal.get(),
+                publishFailedTotal.get(),
                 loop.processedTotal(),
                 0L,                       // failed deliveries — no DLQ in MVP
                 0,                        // local queue depth — Kafka-driven
@@ -296,6 +301,7 @@ public final class KafkaEventEngine implements EventEngine {
         private final KafkaEventConfig         config;
         private final EventBus                 localDelegate;
         private final AtomicLong               publishedTotal;
+        private final AtomicLong               publishFailedTotal;
 
         private KafkaPublishBus(String engineName,
                                 Producer<byte[], byte[]> producer,
@@ -303,14 +309,16 @@ public final class KafkaEventEngine implements EventEngine {
                                 IsolationKeyRegistry isolationRegistry,
                                 KafkaEventConfig config,
                                 EventBus localDelegate,
-                                AtomicLong publishedTotal) {
-            this.engineName        = engineName;
-            this.producer          = producer;
-            this.registry          = registry;
-            this.isolationRegistry = isolationRegistry;
-            this.config            = config;
-            this.localDelegate     = localDelegate;
-            this.publishedTotal    = publishedTotal;
+                                AtomicLong publishedTotal,
+                                AtomicLong publishFailedTotal) {
+            this.engineName         = engineName;
+            this.producer           = producer;
+            this.registry           = registry;
+            this.isolationRegistry  = isolationRegistry;
+            this.config             = config;
+            this.localDelegate      = localDelegate;
+            this.publishedTotal     = publishedTotal;
+            this.publishFailedTotal = publishFailedTotal;
         }
 
         @Override
@@ -321,11 +329,17 @@ public final class KafkaEventEngine implements EventEngine {
             // contract is to wrap them in EventBusException. payload.close() is auto-run
             // via try-with-resources to satisfy the RAII ownership transfer. publishedTotal
             // is incremented only after producer.send returns so failed publishes do not
-            // inflate the counter.
+            // inflate the counter. A rejection the producer reports before send returns is refused
+            // here like a synchronous throw; one reported after the return is recorded by the
+            // callback instead, because publish promises acceptance, not acknowledgement.
             try (payload) {
                 EventDescriptor stamped = IsolationStamp.stamp(descriptor, isolationRegistry);
                 ProducerRecord<byte[], byte[]> producerRecord = buildRecord(stamped, payload);
-                producer.send(producerRecord);
+                AsyncFailureRecorder recorder = new AsyncFailureRecorder(engineName,
+                        producerRecord.topic(), stamped.eventTypeOrdinal(), publishFailedTotal);
+                producer.send(producerRecord, recorder);
+                recorder.sendReturned();
+                recorder.throwIfRejectedBeforeReturn();
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
                 // The stamp and buildRecord throw EventBusException for refused isolation and
@@ -368,6 +382,72 @@ public final class KafkaEventEngine implements EventEngine {
                         ex.getClass().getName(), String.valueOf(ex.getMessage()));
                 throw EventBusException.publishFailed(
                         descriptor.eventTypeOrdinal(), REASON_DELIVERY_FAILED, ex);
+            }
+        }
+
+        /**
+         * The callback of one publish. A completion the producer delivers on the publishing thread
+         * before {@code send} returns is a rejection of the record: it is kept for {@code publish} to
+         * refuse, and nothing is recorded. Any other completion is an asynchronous failure: it is
+         * counted and emitted from the producer's I/O thread, which does not block.
+         *
+         * <p>The two mutable fields are read and written only on the publishing thread, so they need
+         * no synchronisation: an I/O-thread completion never reads them, because it is not the
+         * publishing thread.
+         */
+        private static final class AsyncFailureRecorder implements Callback {
+
+            private final Thread publisher = Thread.currentThread();
+            private final String engineName;
+            private final String topic;
+            private final int eventTypeOrdinal;
+            private final AtomicLong publishFailedTotal;
+            private boolean sending = true;
+            private Exception rejection;
+
+            private AsyncFailureRecorder(String engineName,
+                                         String topic,
+                                         int eventTypeOrdinal,
+                                         AtomicLong publishFailedTotal) {
+                this.engineName = engineName;
+                this.topic = topic;
+                this.eventTypeOrdinal = eventTypeOrdinal;
+                this.publishFailedTotal = publishFailedTotal;
+            }
+
+            @Override
+            public void onCompletion(RecordMetadata metadata, Exception exception) {
+                if (exception == null) {
+                    return;
+                }
+                if (publisher.equals(Thread.currentThread()) && sending) {
+                    rejection = exception;
+                    return;
+                }
+                publishFailedTotal.incrementAndGet();
+                // "publishAsync" names a send the producer completed exceptionally after publish
+                // returned; "publish" and "publishAndAwait" name the paths that refuse the call.
+                KafkaPublishFailedEvent.emit(engineName, topic, eventTypeOrdinal, "publishAsync",
+                        exception.getClass().getName(), String.valueOf(exception.getMessage()));
+            }
+
+            /** Marks the end of {@code send} on the publishing thread; later completions are asynchronous. */
+            private void sendReturned() {
+                sending = false;
+            }
+
+            /**
+             * Rethrows a rejection the producer reported on the publishing thread, so that the caller's
+             * synchronous-failure handling refuses the publish exactly as it does for a thrown send.
+             */
+            private void throwIfRejectedBeforeReturn() {
+                if (rejection == null) {
+                    return;
+                }
+                if (rejection instanceof RuntimeException runtime) {
+                    throw runtime;
+                }
+                throw new KafkaException(rejection);
             }
         }
 

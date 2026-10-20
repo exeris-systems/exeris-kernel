@@ -78,6 +78,34 @@ class EventEngineStatsTest {
             assertThat(s.avgDispatchNanos()).isEqualTo(350L);
             assertThat(s.loopRunning()).isTrue();
         }
+
+        @Test
+        @DisplayName("the seven-argument bridge reports no publish failures, other arguments unchanged")
+        void bridgeReportsZeroPublishFailures() {
+            EventEngineStats s = new EventEngineStats(100L, 95L, 2L, 10L, 1000L, 350L, true);
+            assertThat(s.publishFailedTotal()).isZero();
+            assertThat(s.publishedTotal()).isEqualTo(100L);
+            assertThat(s.processedTotal()).isEqualTo(95L);
+            assertThat(s.failedTotal()).isEqualTo(2L);
+            assertThat(s.queueDepth()).isEqualTo(10L);
+            assertThat(s.queueCapacity()).isEqualTo(1000L);
+            assertThat(s.avgDispatchNanos()).isEqualTo(350L);
+            assertThat(s.loopRunning()).isTrue();
+        }
+
+        @Test
+        @DisplayName("the eight-argument canonical order is publishedTotal, publishFailedTotal, processedTotal, ...")
+        void canonicalOrderPlacesPublishFailedTotalSecond() {
+            EventEngineStats s = new EventEngineStats(100L, 7L, 95L, 2L, 10L, 1000L, 350L, true);
+            assertThat(s.publishedTotal()).isEqualTo(100L);
+            assertThat(s.publishFailedTotal()).isEqualTo(7L);
+            assertThat(s.processedTotal()).isEqualTo(95L);
+            assertThat(s.failedTotal()).isEqualTo(2L);
+            assertThat(s.queueDepth()).isEqualTo(10L);
+            assertThat(s.queueCapacity()).isEqualTo(1000L);
+            assertThat(s.avgDispatchNanos()).isEqualTo(350L);
+            assertThat(s.loopRunning()).isTrue();
+        }
     }
 
     // =========================================================================

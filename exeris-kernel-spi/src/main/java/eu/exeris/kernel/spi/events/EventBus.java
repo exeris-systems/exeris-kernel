@@ -75,6 +75,12 @@ public interface EventBus {
      * Hands an event to the bus for fan-out and returns without waiting for any handler —
      * completion is not observable through this method.
      *
+     * <p>On a brokered bus a normal return means the binding's client has accepted the event for
+     * sending; it does not mean the broker has acknowledged it. A failure the client reports after
+     * this call has returned is never thrown to the caller: the binding records it instead, as a
+     * JFR event and in {@link EventEngineStats#publishFailedTotal()}. A caller that needs the
+     * broker's acknowledgement uses {@link #publishAndAwait}.
+     *
      * @param descriptor routing metadata (non-null)
      * @param payload    event payload (non-null; use {@link EventPayload#empty()} for no-data events)
      * @throws EventBusException {@code EX-EVENT-6002} when the backing queue is at capacity and
@@ -82,7 +88,8 @@ public interface EventBus {
      *         ({@link EventEngineConfig#busPublishFailFast()}); {@code rawArgs} carry
      *         {@code [String eventType, long queueDepth, long queueCapacity]}.
      *         {@code EX-EVENT-6009} when the bus does not accept the event for any other reason,
-     *         including an isolation refusal described on {@link EventEngine#bus()};
+     *         including an isolation refusal described on {@link EventEngine#bus()}, and a
+     *         brokered binding that refuses the record before this method returns;
      *         {@code rawArgs} carry {@code [int eventTypeOrdinal, String reason]} and the upstream
      *         failure, when there is one, is the cause
      * @apiNote Ownership of {@code payload} passes to the bus on entry: do not close it after this
