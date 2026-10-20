@@ -48,6 +48,16 @@ final class PathParamHttpExchange implements HttpExchange {
     }
 
     @Override
+    public String remoteAddress() {
+        return delegate.remoteAddress();
+    }
+
+    @Override
+    public int remotePort() {
+        return delegate.remotePort();
+    }
+
+    @Override
     public void respond(HttpResponse response) {
         delegate.respond(response);
     }
