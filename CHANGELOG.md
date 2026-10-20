@@ -171,6 +171,19 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   request at each limit is served, one octet over is refused without reaching the handler, and the
   server advertises `http.maxHeaderListSize` as `SETTINGS_MAX_HEADER_LIST_SIZE`. Community binds it
   with `CommunityHttp2HeaderLimitTckTest`.
+- **The native symbols a binding needs are a TCK contract.** `AbstractAbiSymbolResolutionTck` takes a
+  manifest derived from the descriptor tables the loaders bind from, never hand-listed, and fails when a
+  `REQUIRED` symbol does not resolve in the host library (every miss named in one failure), when an
+  alternatives group has no resolvable member, and, on a run pinned to one OpenSSL major, when an
+  `OPTIONAL` symbol is missing. `OpenSslDowncall`, `SyscallDowncall` and `CommunityForeignCall` now state
+  each row's library, platform and resolution; `CoreOpenSslLoader` binds every OpenSSL row from those attributes, and `SyscallErrno` takes its errno candidates from the `errno` group (the version probes and the syscall loader keep their own dispatch, with the attributes pinned by tests).
+  Core binds the suite for OpenSSL and for the socket syscalls, Community for `SSL_set_fd`.
+- **The TLS matrix refuses a class that executed fewer tests than its floor.** The report check that
+  only refused a skip or an empty class is `.github/scripts/tls-matrix-floor.sh`, reading
+  `.github/tls-matrix-floors.txt`: a minimum executed count per class (tests minus skipped), zero-skip
+  where a skip is a gap, and a total. The OpenSSL-gated Community classes that no matrix step selected
+  are now selected and floored, and the Core TCK bindings that skip by design have a floor instead of an
+  exemption.
 
 ### Fixed
 
