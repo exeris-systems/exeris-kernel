@@ -24,6 +24,40 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — events: a tenant publish needs a registered key (ADR-101)
+
+Publishing under a tenant's `StorageContext` now stamps the event with that tenant's isolation ordinal,
+and an ordinal exists only for a key the engine has been told about. This is the step for an application
+that publishes under a tenant context.
+
+1. **Register every tenant key before the first publish under its context.** The engine's registry is
+   reached through `EventEngine.isolationRegistry()`, and the ordinal is one you choose and keep for the
+   life of the deployment:
+
+   ```java
+   EventEngine engine = KernelProviders.EVENT_ENGINE.get();
+   engine.isolationRegistry().register(IsolationKeySpec.of("tenant-a", 101));
+   ```
+
+   Use the same key-to-ordinal mapping on every node, and do not reuse an ordinal for a different key.
+   Registration is idempotent for an identical spec, and a conflict raises `EX-EVENT-6012`.
+2. **Expect `EX-EVENT-6009` for an unregistered key.** A publish under a bound key that is not registered
+   is refused with `EX-EVENT-6009`, reason `"unregistered-isolation-key"`. Before 0.13 it was accepted.
+   This is the behaviour, with no escape hatch: an accepted publish under a key the engine does not know
+   would be delivered to unscoped subscribers only, which is the fail-open reading this change removes.
+   Code that publishes from a request or job bound to a tenant (for example, an authenticated request
+   handled by `SecurityInterceptor`, or a job restored with `CapturedContext`) sees the refusal on its
+   first such publish, so register the keys before the first request is served.
+3. **Scoped subscribers.** A subscriber serving one tenant calls `EventBus.subscribeScoped`, made under
+   that tenant's bound context. `EventBus.subscribe` is unchanged and still receives every event. The
+   scoped call refuses with `EX-EVENT-6011` when no key is bound, the bound key is empty, or the key is not
+   registered.
+4. **Schema.** Migration `V0.13.0__add_event_isolation_ordinal.sql` adds `isolation_ordinal INT NOT NULL
+   DEFAULT 0` to `exeris_outbox` and `exeris_event_log` through the schema ledger. Existing rows read as
+   unscoped. No consumer edit is needed.
+
+---
+
 ## 0.11.x → 0.12.x
 
 Where each `### Breaking` entry of [`CHANGELOG.md`](CHANGELOG.md#0120--2026-09-30) is handled:

@@ -44,6 +44,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **A publish under a bound but unregistered isolation key is refused (ADR-101).** A publish now resolves
+  its isolation ordinal from the publisher's bound `STORAGE_CONTEXT`, so a publish under a tenant key that
+  the engine's `isolationRegistry()` does not hold is refused with `EX-EVENT-6009` (reason
+  `"unregistered-isolation-key"`), and was accepted before. There is no escape hatch: a refusal is
+  fail-closed by design. Register each tenant key before publishing under its context. The outbox relay and
+  the Kafka consumer loop are not affected, because they do not re-stamp. See `MIGRATION.md`.
 - **The `ScopedValue` slots of the `preview` surfaces move to holders in their own packages (ADR-100
   §3).** `EXECUTION_CONTRACT` and `executionContract()`, added on the 0.13 line and never released,
   leave `KernelProviders` for `spi.contract.ContractKernelProviders`. `GRAPH_PROVIDER`,
@@ -67,6 +73,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   the exchange. `HttpStreamExchange` carries the same pair. Community binds both on HTTP/1.1, TLS and
   HTTP/2 exchanges, pinned by `AbstractHttpServerPeerAddressTck`. The Enterprise tier does not override
   them yet, so its exchanges report `null` and `-1`.
+
+- **Tenant isolation for events (ADR-101, Ruling 1).** `EventDescriptor` carries an `isolationOrdinal`
+  (`0` = unscoped). `EventBus.subscribeScoped(eventType, handler)` delivers only the events published under
+  the subscriber's bound isolation key. `EventEngine.isolationRegistry()` returns an `IsolationKeyRegistry`
+  (`IsolationKeySpec`), and `EX-EVENT-6012` reports a key conflict. The Kafka binding carries the ordinal in
+  the record header `exeris-isolation-ordinal` on every producer path and reads it on the consumer loop. The
+  Community JDBC outbox and event log gain `isolation_ordinal` (migration `V0.13.0__add_event_isolation_ordinal.sql`).
+  `EventDescriptor`'s seven-argument constructor and `of` remain, and produce unscoped descriptors. The
+  `AbstractEventBusTck`, `AbstractEventRegistryTck`, `AbstractKafkaEventEngineTck` and `EventBusZeroAllocTck`
+  suites carry the cases. See `docs/subsystems/events.md` "Isolation (ADR-101)".
 - **GraalVM native-image is supported as an opt-in build.** The Core, Community and Kafka jars ship
   reachability metadata (the SPI's file is empty) under `META-INF/native-image/eu.exeris/<artifactId>/`, and Community ships the image
   build arguments it needs (`--enable-monitoring=jfr`, two `--add-opens`, `-H:+SharedArenaSupport`), so an

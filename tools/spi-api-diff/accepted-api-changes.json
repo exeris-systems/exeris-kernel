@@ -22,5 +22,17 @@
     "since": "0.13",
     "adr": "ADR-074",
     "justification": "TCK contract: AbstractCryptoEngineTck gains three cases asserting CryptoProviderConfig#minimumTlsVersion as the handshake floor (a TLS 1.2-only peer refused at the default TLSv1.3, served at TLSv1.2; an unsupported value fails createTlsEngine). They drive a handshake through the new template method bindToSocket, which throws by default, so an existing binding fails them until it implements it or returns false from honoursMinimumTlsVersion() because its provider does not build the TLS context from the configuration. Source-compatible; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.events.EventEngine#bus()",
+    "since": "0.13",
+    "adr": "ADR-101",
+    "justification": "Behaviour: the bus an engine returns stamps each publication with the isolation ordinal of the bound KernelProviders.STORAGE_CONTEXT (ADR-101 Ruling 1). A publish under a bound isolation key that is not registered in EventEngine#isolationRegistry() is now refused with EX-EVENT-6009 \"unregistered-isolation-key\", and a descriptor carrying a non-zero ordinal other than the bound one with \"isolation-mismatch\"; before 0.13 both were published unscoped. The security interceptor binds a tenant context on every authenticated request, so an application registers every tenant key before publishing under it (MIGRATION.md). No signature changes: EventDescriptor keeps its seven-argument constructor and of(...), and the new members are additive on the preview spi.events package."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.events.AbstractEventBusTck",
+    "since": "0.13",
+    "adr": "ADR-101",
+    "justification": "TCK contract: the IsolationScoping cases require a binding's engine to return an IsolationKeyRegistry from EventEngine#isolationRegistry() and its bus to implement EventBus#subscribeScoped; both SPI defaults refuse, so a binding that has adopted neither fails those cases until it implements them. Source-compatible; the SPI additions are default methods and an eighth EventDescriptor component behind a retained seven-argument constructor."
   }
 ]
