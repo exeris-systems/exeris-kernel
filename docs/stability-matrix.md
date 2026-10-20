@@ -197,7 +197,7 @@ gated nor reported by the compatibility gate, so completeness here is enforced, 
 | Client retry: `HttpRetryPolicy`, `RetryDecision`, `HttpAttemptOutcome` | **preview** | 0.10.0 | ADR-045 | `AbstractHttpRetryPolicyTck` |
 | Route authorization: `HttpRoutePolicy`, `RouteRequirement` | **preview** | 0.11.0 | ADR-061, ADR-077 | `AbstractHttpRoutePolicyTck` |
 | `HttpStreamExchange` / `HttpStreamHandler` / `StreamEvent` (SSE server-push) | **preview** | 0.10.0 | ADR-043 | `AbstractHttpStreamExchangeTck` |
-| ↳ `HttpStreamExchange.remoteAddress()` / `remotePort()` — the same peer contract as `HttpExchange`'s pair; the row above stays **preview** | **preview** | 0.13.0 | ADR-043 | `CommunityHttpStreamEnginePeerTest`, `PathParamStreamExchangeTest`; not in `AbstractHttpServerPeerAddressTck` |
+| ↳ `HttpStreamExchange.remoteAddress()` / `remotePort()` — the same peer contract as `HttpExchange`'s pair; the row above stays **preview** | **preview** | 0.13.0 | ADR-043 | `HttpStreamEnginePeerTest` (Core), `PathParamStreamExchangeTest`; not in `AbstractHttpServerPeerAddressTck` |
 | Stream-route resolution: `StreamRouteResolver`, `StreamMatch` | **preview** | 0.12.0 | ADR-043 (A1) | `AbstractStreamRouteResolverTck` |
 
 > One asymmetry is deliberate and worth stating, because it looks like an error: `HttpProvider` is
