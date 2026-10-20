@@ -17,9 +17,11 @@ import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.contract.ContractKernelProviders;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
+import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
@@ -98,6 +100,7 @@ public final class KernelBootstrap {
     private final BootstrapSelector                   selector;
     private final ClassLoader                         classLoader;
     private final BiFunction<ConfigProvider, ClassLoader, ExecutionContract> contractGate;
+    private final Duration                            initializeDeadline;
     private final AtomicBoolean                       bootActive = new AtomicBoolean(false);
     @SuppressWarnings("java:S3077") // safe publication; the referent owns its thread-safety
     private volatile SubsystemOrchestrator activeOrchestrator;
@@ -113,6 +116,7 @@ public final class KernelBootstrap {
                 ? builder.classLoader
                 : Thread.currentThread().getContextClassLoader();
         this.contractGate  = builder.contractGate;
+        this.initializeDeadline = builder.initializeDeadline;
     }
 
     // =========================================================================
@@ -208,6 +212,7 @@ public final class KernelBootstrap {
                 .failurePolicy(failurePolicy)
                 .selector(selector)
                 .classLoader(classLoader)
+                .initializeDeadline(initializeDeadline)
                 .build();
         activeOrchestrator = orchestrator;
         bootActive.set(true);
@@ -530,6 +535,7 @@ public final class KernelBootstrap {
         private BootstrapSelector selector   = BootstrapSelector.all();
         private ClassLoader       classLoader;
         private BiFunction<ConfigProvider, ClassLoader, ExecutionContract> contractGate = ContractBootstrapStep::run;
+        private Duration initializeDeadline = SubsystemOrchestrator.DEFAULT_INITIALIZE_DEADLINE;
 
         /**
          * Creates a builder with every setting at its default.
@@ -573,6 +579,24 @@ public final class KernelBootstrap {
          */
         public Builder classLoader(ClassLoader loader) {
             this.classLoader = loader;
+            return this;
+        }
+
+        /**
+         * Sets how long one subsystem's {@code initialize()} may run before the boot fails with
+         * {@link SubsystemInitDeadlineException} (EX-BOOT-0003). Default: 300 seconds.
+         * {@link Duration#ZERO} disables the deadline.
+         *
+         * <p>Forwarded to {@link SubsystemOrchestrator.Builder#initializeDeadline(Duration)}; see there for
+         * which phases are bounded and the limit on an {@code initialize()} that ignores interruption.
+         *
+         * @param deadline the longest one {@code initialize()} may run; {@link Duration#ZERO} for none
+         * @return this builder
+         * @throws IllegalArgumentException if {@code deadline} is negative, or positive but shorter than
+         *                                   one millisecond
+         */
+        public Builder initializeDeadline(Duration deadline) {
+            this.initializeDeadline = InitDeadlines.requireValidDeadline(deadline);
             return this;
         }
 

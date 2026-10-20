@@ -76,6 +76,22 @@ never on a request path.
       `VirtualMachineError` is not a subsystem failure: it is neither wrapped nor recorded, and it
       propagates unchanged under both policies.
 
+- **Initialization Deadline**  
+  `SubsystemOrchestrator.Builder#initializeDeadline(Duration)`, forwarded by `KernelBootstrap.Builder#initializeDeadline(Duration)`,
+  bounds each `initialize()` call. The default is 300 seconds. `Duration.ZERO` disables the deadline, and a negative value
+  or a positive one under 1 ms throws `IllegalArgumentException`. With a deadline set, each `initialize()` gets its own platform daemon watchdog,
+  named `exeris-boot-init-deadline-<name>`. When the deadline passes, the watchdog emits the JFR event
+  `SubsystemInitDeadlineExceeded`, marks the subsystem `FAILED`, and interrupts the booting thread. The deadline holds even
+  when `initialize()` then returns normally: the boot fails with `SubsystemInitDeadlineException` (EX-BOOT-0003), and any
+  throwable `initialize()` threw becomes its cause. The failure policy then applies as it does to any initialization
+  failure, so an optional subsystem is dropped under `DEGRADE` together with its dependents. With the deadline disabled,
+  no watchdog is armed and nothing is allocated for it.
+  - *Scope.* Only `initialize()` is bounded. `start()` and `stop()` are not, and the orchestrator imposes no deadline on
+    them.
+  - *Limit.* `initialize()` runs on the booting thread, so the deadline can end it only when it responds to the
+    interrupt. An `initialize()` that ignores interruption still holds the boot until it returns. A blocking socket read on
+    a platform boot thread, such as `main`, is not interruptible. On a virtual thread the interrupt closes the socket.
+
 - **Ordered Shutdown**  
   `shutdown()` calls `stop()` in reverse topological order, and only on subsystems whose `isRunning()`
   reports `true`. The orchestrator imposes no deadline of its own: each `stop()` does whatever its
@@ -157,6 +173,7 @@ stateDiagram-v2
 
     REGISTERED --> INITIALIZED : initialize() returned
     REGISTERED --> FAILED      : initialize() threw (EX-BOOT-0002)
+    REGISTERED --> FAILED      : initialize() ran past the deadline (EX-BOOT-0003)
 
     INITIALIZED --> RUNNING    : start() returned
     INITIALIZED --> FAILED     : start() threw (EX-BOOT-0002)
@@ -329,7 +346,7 @@ halts.
 |------------------|------------|-----------|------|
 | **EX‑BOOT‑0001** | `SubsystemCircularDependencyException` — a plain `RuntimeException`, not an `ExerisKernelException` | None. Members are read from `cycleMembers()` (insertion-ordered `Set<String>`); the JFR event `eu.exeris.kernel.bootstrap.CircularDependencyDetected` carries them as one `String` joined with `", "`, plus `errorCode`. | Dependency cycle found by the sort, during `SubsystemOrchestrator.initialize()` or `resolveTopology()`, before any subsystem is initialized. The set holds every subsystem the sort could not order, including those that only depend on the cycle. `KernelBootstrap` rethrows it unwrapped. |
 | **EX‑BOOT‑0002** | `SubsystemException` | `[0] String subsystemName`, `[1] SubsystemException.Phase phase`, `[2] String detail` | `initialize()` or `start()` threw. The orchestrator wraps any other unchecked exception, including an `Error` other than a `VirtualMachineError`, in one (`detail` = the exception's message, or its `toString()` for an `Error`; original as cause) and, unless `DEGRADE` drops the subsystem, throws `SubsystemOrchestrator.BootstrapException` with it as cause. The orchestrator never raises it for `stop()`. The sorter's "depends on missing subsystem" `BootstrapException` cites this code in its message only, with no `rawArgs`. |
-| **EX‑BOOT‑0003** | — | Registry layout: `[0] String subsystemName`, `[1] long deadlineMs` | Defined in `KernelErrorCodes` only. The orchestrator enforces no deadline and nothing in this repository throws it. |
+| **EX‑BOOT‑0003** | `SubsystemInitDeadlineException` | `[0] String subsystemName`, `[1] long deadlineMs` | An `initialize()` ran past the initialization deadline (see "Initialization Deadline" above). The orchestrator throws `SubsystemOrchestrator.BootstrapException` with this as cause, unless `DEGRADE` drops the subsystem. The throwable `initialize()` threw, if any, is this exception's cause. Never raised for `start()` or `stop()`. |
 | **EX‑BOOT‑0004** | `MemoryBootstrapException` | `[0] String providerName`, `[1] long requestedBytes` (`-1` if unknown); the message-only constructor leaves `rawArgs` empty | `CommunityMemoryProvider` cannot create its allocator. Raised inside `memory`'s `initialize()`, so the caller sees it as the cause of an `EX-BOOT-0002`. |
 | **EX‑BOOT‑3001** | `TelemetryBootstrapException` | `[0] String providerName`, `[1] String reason` | `CommunityTelemetryProvider` cannot construct a sink. Telemetry is not a Boot DAG subsystem. |
 
@@ -587,7 +604,7 @@ not counted.
 The full event set, all in category `Exeris Kernel / Bootstrap`: `KernelStart`, `ConfigSettingsResolved`,
 `SubsystemInitialized` (also emitted on failure, with `success=false` and `errorMessage`),
 `SubsystemStarted`, `KernelBootReady`, `SubsystemStopped`, `KernelShutdownComplete`,
-`CircularDependencyDetected`, `SubsystemHealthTransition`. The contract gate records each decision as
+`CircularDependencyDetected`, `SubsystemHealthTransition`, `SubsystemInitDeadlineExceeded`. The contract gate records each decision as
 `eu.exeris.kernel.contract.Resolved` (`ContractResolvedEvent`, category `Exeris Kernel / Contract`): the
 environment, the manifest source, the bound contract or the error code that refused the boot, and
 `gateDuration`, which is the gate's time outside `KernelBootReady.totalDurationMs`. A `SOFT` or `AUDIT`

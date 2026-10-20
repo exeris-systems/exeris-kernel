@@ -136,14 +136,11 @@ public final class KernelErrorCodes {
     public static final String EX_BOOT_0002 = "EX-BOOT-0002";
 
     /**
-     * Kernel bootstrap sequence aborted: a mandatory subsystem did not complete initialization
-     * within a deadline.
+     * Kernel bootstrap sequence aborted: a subsystem's {@code initialize()} did not return within
+     * the initialization deadline.
      *
-     * <p><b>Reserved.</b> No kernel code path raises this code: the orchestrator imposes no
-     * deadline on {@code initialize()} or {@code start()}, so a subsystem that never returns holds
-     * the boot until it does. No exception is constructed with the code and no event records it.
-     * It publishes no {@code rawArgs} layout, because a layout with no thrower is a promise nothing
-     * checks; the layout is defined together with the first thrower.
+     * <p>Raised as {@link eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException}.
+     * {@code rawArgs}: {@code [0] String subsystemName}, {@code [1] long deadlineMs}.
      */
     public static final String EX_BOOT_0003 = "EX-BOOT-0003";
 

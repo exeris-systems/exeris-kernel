@@ -44,6 +44,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **A subsystem's `initialize()` is bounded by a 300-second deadline (EX-BOOT-0003).** The orchestrator
+  interrupts the booting thread when one `initialize()` runs past the deadline, and the boot fails with
+  `SubsystemInitDeadlineException` (`EX-BOOT-0003`, rawArgs `[subsystemName, deadlineMs]`). The deadline
+  holds even when `initialize()` then returns normally. The failure policy applies as for any other
+  initialization failure, so an optional subsystem is dropped under `DEGRADE`. This is a behaviour change
+  for adopters: an `initialize()` that legitimately takes longer than 300 seconds, such as a large
+  migration, now fails the boot. Raise the limit with `KernelBootstrap.Builder#initializeDeadline(Duration)`
+  (or `SubsystemOrchestrator.Builder#initializeDeadline(Duration)`), or pass `Duration.ZERO` to restore an
+  unbounded wait. Only `initialize()` is bounded; `start()` and `stop()` are not. An `initialize()` that
+  ignores interruption still holds the boot until it returns. The JFR event
+  `eu.exeris.kernel.bootstrap.SubsystemInitDeadlineExceeded` records the expiry while `initialize()` is
+  still blocked.
 - **A publish under a bound but unregistered isolation key is refused (ADR-101).** A publish now resolves
   its isolation ordinal from the publisher's bound `STORAGE_CONTEXT`, so a publish under a tenant key that
   the engine's `isolationRegistry()` does not hold is refused with `EX-EVENT-6009` (reason

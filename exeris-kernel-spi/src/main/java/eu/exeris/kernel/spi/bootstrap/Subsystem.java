@@ -132,6 +132,11 @@ public interface Subsystem {
      * method inside the kernel scope that binds
      * {@link eu.exeris.kernel.spi.context.KernelProviders#CURRENT_CONFIG}.
      *
+     * @apiNote When the initialization deadline passes, the orchestrator interrupts the booting
+     *          thread and fails the boot with {@code EX-BOOT-0003}, whether or not this method then
+     *          returns.
+     * @implSpec Respond to interruption: a method that ignores the interrupt still holds the boot
+     *           until it returns.
      * @throws SubsystemException ({@code EX-BOOT-0002}) if initialization fails
      *         unrecoverably; any other unchecked exception — a {@link RuntimeException},
      *         or an {@link Error} such as a {@link LinkageError} or
