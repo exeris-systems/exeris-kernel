@@ -4,7 +4,7 @@ type: reference
 visibility: public
 owning-repo: exeris-kernel
 status: active
-last-verified: 2026-09-05
+last-verified: 2026-10-15
 ---
 
 # Branch Protection — required checks
@@ -44,6 +44,7 @@ Names must match the workflow's `name:` exactly.
 | `docs / docs-lint` | `guardrails.yml` → `exeris-systems/.github` | Frontmatter, filenames, the ADR registry, retracted figures. ADR-085 §J.31. |
 | `commits / commit-lint` | `guardrails.yml` → `exeris-systems/.github` | The pull-request title, which is the squash-commit subject that reaches the branch. |
 | `pr-body / pr-body-check` | `guardrails.yml` → `exeris-systems/.github` | The classification block parses, so the review can be routed from the body alone. |
+| `review / verdict` | `guardrails.yml` → `exeris-systems/.github` `review.yml`; required by the organisation ruleset `exeris-code-verdict`, not by this repository's rulesets | The L2 review's verdict (ADR-087 §B.8): red when the review is BLOCKED, absent, invalid, or rests on a mandatory gate that did not run. The findings are a person's to weigh; the check makes sure a review covering the head exists before a merge. |
 
 The five `maven.yml` gates below `SonarCloud` above already ran on every pull request and blocked
 nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
@@ -105,8 +106,6 @@ nothing. A gate that runs and cannot fail a merge is an observation, not a gate.
   `<configLocation>`, which silently overrides `-Dcheckstyle.config.location` — a bogus path did
   not even fail. That last one is fixed here by making it a property, and it is the general lesson:
   a gate that reports clean has to be shown finding something before the report is believed.
-- **`review`** — an L2 review (ADR-085 §J.33). It produces findings for a human to weigh, and
-  a reviewer's judgement is not a merge gate.
 - **`Analyze (java-kotlin)`** (CodeQL), **`Scan PR Dependencies`**, **`security/snyk`** — advisory
   security surfaces. They are watched, not gated, so a third-party advisory database update cannot
   block an unrelated merge on its own. The CodeQL context is `Analyze (java-kotlin)` — read from
