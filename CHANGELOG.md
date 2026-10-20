@@ -61,6 +61,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **GraalVM native-image is supported as an opt-in build.** The Core, Community and Kafka jars ship
+  reachability metadata (the SPI's file is empty) under `META-INF/native-image/eu.exeris/<artifactId>/`, and Community ships the image
+  build arguments it needs (`--enable-monitoring=jfr`, two `--add-opens`, `-H:+SharedArenaSupport`), so an
+  application builds an image with no configuration of its own for the kernel. GraalVM 25 or newer, OpenSSL 3
+  on the host. HotSpot/C2 stays the default and the only runtime with asserted performance targets. Each
+  module's metadata is checked against its declaration sites by a unit test. ADR-103.
+
 - **`RequiresRoleProcessor` emits native-image reachability metadata for the `RoleCheckRegistry` it
   generates.** Next to the class it writes `reachability-metadata.json`, by default under
   `META-INF/native-image/eu.exeris.kernel.security.generated/role-check-registry/`, overridable with the
