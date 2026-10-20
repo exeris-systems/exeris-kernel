@@ -83,6 +83,8 @@ enum OpenSslDowncall {
     X509_GET_DEFAULT_CERT_FILE_ENV("X509_get_default_cert_file_env", FunctionDescriptor.of(JAVA_LONG)),
     X509_GET_DEFAULT_CERT_DIR_ENV("X509_get_default_cert_dir_env", FunctionDescriptor.of(JAVA_LONG)),
 
+    OPENSSL_CLEANSE("OPENSSL_cleanse", FunctionDescriptor.ofVoid(JAVA_LONG, JAVA_LONG)),
+
     OPENSSL_VERSION_NUM("OpenSSL_version_num", FunctionDescriptor.of(JAVA_LONG)),
     OPENSSL_VERSION_MAJOR("OPENSSL_version_major", FunctionDescriptor.of(JAVA_INT)),
     OPENSSL_VERSION_MINOR("OPENSSL_version_minor", FunctionDescriptor.of(JAVA_INT)),

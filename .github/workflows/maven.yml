@@ -878,7 +878,7 @@ jobs:
         run: |
           mvn -pl exeris-kernel-core \
             -Dexeris.test.expectedOpenSslMajor=${{ matrix.soname_major }} \
-            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
+            -Dtest='CoreOpenSslRuntimeTest,CoreOpenSslVersionGateTest,CoreOpenSslPinnedVersionAssertionTest,CoreOpenSslCleanseTest,OpenSslLoadEventTest,CoreOffHeapTlsEngineTckTest,CoreOffHeapTlsEngineZeroAllocTckTest' \
             test -B -e
 
       - name: Run core TLS ITs against OpenSSL ${{ matrix.openssl_version }}
@@ -963,6 +963,7 @@ jobs:
             fi
           }
           require_ran exeris-kernel-core/target/surefire-reports CoreOpenSslPinnedVersionAssertionTest
+          require_ran exeris-kernel-core/target/surefire-reports CoreOpenSslCleanseTest
           for cls in OffHeapTlsEngineLoopbackIT OffHeapTlsEngineErrorQueueIT OffHeapTlsEnginePeerVerificationIT; do
             require_ran exeris-kernel-core/target/failsafe-reports "$cls"
           done

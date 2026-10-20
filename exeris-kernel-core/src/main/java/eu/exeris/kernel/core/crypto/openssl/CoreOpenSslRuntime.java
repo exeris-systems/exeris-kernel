@@ -38,16 +38,19 @@ public final class CoreOpenSslRuntime {
     private final SymbolLookup cryptoLookup;
     private final SymbolLookup mergedLookup;
     private final CoreSslHandles handles;
+    private final MethodHandle cleanse;
 
     /* package */ CoreOpenSslRuntime(Linker linker,
                                      SymbolLookup sslLookup,
                                      SymbolLookup cryptoLookup,
-                                     CoreSslHandles handles) {
+                                     CoreSslHandles handles,
+                                     MethodHandle cleanse) {
         this.linker = Objects.requireNonNull(linker, "linker must not be null");
         this.sslLookup = Objects.requireNonNull(sslLookup, "sslLookup must not be null");
         this.cryptoLookup = Objects.requireNonNull(cryptoLookup, "cryptoLookup must not be null");
         this.mergedLookup = sslLookup.or(cryptoLookup);
         this.handles = Objects.requireNonNull(handles, "handles must not be null");
+        this.cleanse = Objects.requireNonNull(cleanse, "cleanse must not be null");
     }
 
     /**
@@ -57,6 +60,34 @@ public final class CoreOpenSslRuntime {
      */
     public CoreSslHandles handles() {
         return handles;
+    }
+
+    /**
+     * Overwrites the bytes of {@code segment} with zeros through {@code OPENSSL_cleanse}.
+     *
+     * <p>The native routine is used instead of a Java fill because the C compiler may not elide
+     * it as a dead store before the memory is released, which is the property a zeroization
+     * before release depends on. A {@code null} or zero-length segment is a no-op. The segment and
+     * its arena stay owned by the caller; this method neither releases nor retains them.
+     *
+     * @param segment the native segment to zero, or {@code null}
+     * @throws IllegalArgumentException if {@code segment} is a heap segment: its address is not a
+     *                                  native pointer, so the native routine would write elsewhere
+     * @throws IllegalStateException    if the native call fails for a reason other than an {@link Error}
+     */
+    public void cleanse(MemorySegment segment) {
+        if (segment == null || segment.byteSize() == 0L) {
+            return;
+        }
+        if (!segment.isNative()) {
+            throw new IllegalArgumentException("OPENSSL_cleanse needs a native segment, not a heap segment");
+        }
+        try {
+            cleanse.invokeExact(segment.address(), segment.byteSize());
+        } catch (Throwable throwable) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+            FfmErrors.rethrowIfError(throwable);
+            throw new IllegalStateException("OPENSSL_cleanse invocation failed", throwable);
+        }
     }
 
     /**

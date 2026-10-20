@@ -1602,9 +1602,9 @@ release across attempts.
 
 **Resolution:** Bind `OPENSSL_cleanse` from `libcrypto` and expose it via the OpenSSL runtime facade; audit existing call-sites that hold key material (`OffHeapTlsEngine` handshake state, native cipher contexts, JWT signing material) and route their disposal through cleanse before arena release. Promote to a `SensitiveBuffer` SPI marker if additional call-sites accumulate, with `close()` contractually guaranteeing cleanse before underlying arena release.
 
-**Merge Gate:** `OPENSSL_cleanse` binding present and invoked from every identified secret-holding path on disposal; TCK assertion via a probe segment proves zeroed buffer contents after disposal for at least one representative path.
+**Merge Gate:** `OPENSSL_cleanse` binding present and exposed through `CoreOpenSslRuntime#cleanse`; the audit records zero identified secret-holding Java-owned segments, so zero disposal sites invoke it; the probe test `CoreOpenSslCleanseTest` proves zeroed segment contents against the real routine, including sub-slice isolation.
 
-**Status (v0.9):** **DEFERRED / CARRIED** — not implemented in v0.9 (no `OPENSSL_cleanse` binding landed). Carried forward; pairs naturally with the FIPS workstream below.
+**Status (v0.13):** **BINDING DELIVERED — AUDIT RECORDED.** `OPENSSL_cleanse` is bound against `libcrypto` and exposed as `CoreOpenSslRuntime#cleanse`. The audit of Java-owned segments that hold key material found none. OpenSSL owns the TLS secrets (key schedule, master and session secrets) and frees them with `OPENSSL_clear_free` inside `SSL_free`/`SSL_CTX_free`. The private key is loaded by OpenSSL from a path, so Java never holds it. The session slab in `NativeCipherContext` is a budget placeholder that OpenSSL never writes to. The SNI and address staging in `OffHeapTlsEngine` is not secret. `CommunityJwksFetcher` handles public keys. The S3 signing secret and the Argon2 buffers are heap values, where `OPENSSL_cleanse` does not apply. The TLS plaintext slab holds application data, not key material. With zero identified paths, no call site is routed through cleanse. The `SensitiveBuffer` SPI stays deferred with the FIPS workstream below.
 
 ---
 

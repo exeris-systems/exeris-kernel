@@ -102,6 +102,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   default `terminalCatalogMaxSize` the no-op does not hold across an engine restart (bounded mode also needs a
   snapshot store and a row within the saga TTL), and a non-terminal durable row is resumed rather than treated
   as a duplicate, which raises no event.
+- **Core binds `OPENSSL_cleanse` and exposes it as `CoreOpenSslRuntime#cleanse(MemorySegment)`.** The
+  facade zeroes a native segment through the C routine, skipping null and zero-length segments and
+  refusing a heap segment. The
+  zeroization audit found no Java-owned segment that holds key material (OpenSSL owns and clears the
+  TLS secrets), so no call site invokes it yet; the `SensitiveBuffer` SPI remains deferred with FIPS
+  scope. `CoreOpenSslCleanseTest` runs against the pinned OpenSSL matrix.
 
 - **`EventEngineStats.publishFailedTotal()` counts asynchronous publish failures on a brokered bus (ADR-101
   Ruling 2).** The new component is kept apart from `failedTotal`, which still counts handler errors only. The
