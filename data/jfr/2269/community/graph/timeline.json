@@ -1,0 +1,73 @@
+[ {
+  "t" : 1792479981799,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "[B",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261560,
+  "sizeKind" : "sample_weight",
+  "kind" : "array",
+  "category" : "test_harness",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792479981799,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "[B",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 102128,
+  "sizeKind" : "tlab_size",
+  "kind" : "array",
+  "category" : "test_harness",
+  "owner" : "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck.runSingleIteration(ExecutionGraphZeroAllocTck.java:77)",
+  "stackId" : "stk_0001"
+}, {
+  "t" : 1792479981802,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSqlHelper",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 101528,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.graph.CommunityGraphSession.<init>(CommunityGraphSession.java:56)",
+  "stackId" : "stk_0002"
+}, {
+  "t" : 1792479981802,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.community.graph.CommunityGraphSqlHelper",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.community.graph.CommunityGraphSession.<init>(CommunityGraphSession.java:56)",
+  "stackId" : "stk_0002"
+}, {
+  "t" : 1792479981809,
+  "type" : "jdk.ObjectAllocationSample",
+  "class" : "eu.exeris.kernel.spi.graph.model.PathResult",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 261560,
+  "sizeKind" : "sample_weight",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.spi.graph.model.PathResult.notFound(PathResult.java:124)",
+  "stackId" : "stk_0003"
+}, {
+  "t" : 1792479981809,
+  "type" : "jdk.ObjectAllocationInNewTLAB",
+  "class" : "eu.exeris.kernel.spi.graph.model.PathResult",
+  "thread" : "main",
+  "threadId" : 3,
+  "size" : 262144,
+  "sizeKind" : "tlab_size",
+  "kind" : "exeris",
+  "category" : "production",
+  "owner" : "eu.exeris.kernel.spi.graph.model.PathResult.notFound(PathResult.java:124)",
+  "stackId" : "stk_0003"
+} ]
