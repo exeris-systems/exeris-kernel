@@ -900,7 +900,12 @@ public final class KernelErrorCodes {
      *           {@code "interrupted"} — the publishing thread was interrupted while waiting for
      *           queue space, no cause is attached, and the thread's interrupt status is left set;
      *           {@code "unregistered-type"} — the descriptor's ordinal is not registered with the
-     *           engine's registry, and no cause is attached.
+     *           engine's registry, and no cause is attached; {@code "unregistered-isolation-key"} —
+     *           the publishing thread is bound to a storage context whose isolation key is not
+     *           registered in {@link eu.exeris.kernel.spi.events.EventEngine#isolationRegistry()}, and
+     *           no cause is attached; {@code "isolation-mismatch"} — the descriptor's isolation
+     *           ordinal is non-zero and does not equal the ordinal of the bound context's key, or no
+     *           context is bound, and no cause is attached.
      * @since 0.12
      */
     public static final String EX_EVENT_6009 = "EX-EVENT-6009";
@@ -936,10 +941,30 @@ public final class KernelErrorCodes {
      * {@link eu.exeris.kernel.spi.exceptions.events.EventBusException#subscriptionRejected(String)}.
      *
      * @implNote The kernel's in-memory bus raises it when the type is not registered in the
-     *           {@code EventRegistry}; register the type before subscribing.
+     *           {@code EventRegistry}; register the type before subscribing. A scoped subscription
+     *           ({@link eu.exeris.kernel.spi.events.EventBus#subscribeScoped}) is refused on the same
+     *           code, with the same single-element layout, when no storage context is bound, the
+     *           bound isolation key is empty, the key is not registered, or the bus does not support
+     *           scoped subscriptions.
      * @since 0.12
      */
     public static final String EX_EVENT_6011 = "EX-EVENT-6011";
+
+    /**
+     * Isolation key registry conflict: an isolation key was registered with a different ordinal than
+     * the one it already holds, or an ordinal was registered for a different key (ADR-101).
+     *
+     * <p><b>rawArgs layout for Glass-Box:</b>
+     * <ul>
+     *   <li>index 0 – {@code String} isolationKey  (the key being registered)</li>
+     *   <li>index 1 – {@code int}    ordinal       (the ordinal being registered)</li>
+     * </ul>
+     * <p>No cause is set. Raised by
+     * {@link eu.exeris.kernel.spi.exceptions.events.EventRegistryException#isolationKeyConflict(String, int)}.
+     *
+     * @since 0.13
+     */
+    public static final String EX_EVENT_6012 = "EX-EVENT-6012";
 
     // -----------------------------------------------------------------------
     // EX-FLOW – Flow Engine / Saga Orchestration subsystem

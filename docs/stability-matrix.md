@@ -83,13 +83,13 @@ this is informational and **not** a dependency of the open-core surface.
 > **`spi.flow` in v0.12 — `FlowDefinitionBuilder.version(int)`.** Same shape, same reason: a `default` method rather than an abstract one, so out-of-tree builders keep both linking and compiling. The default *throws* instead of returning a value, which is the deliberate difference from `registerMigration`'s and `FlowExecutionPlan.definitionVersion()`'s: a builder that silently ignored a requested version would produce a v1 definition claiming to be v3 — the exact confusion ADR-064 exists to prevent. Additive in both senses the gate asks, so it passes clean; the note is here because the *behaviour* of the default is the contract, and no diff reports that.
 | `…spi.memory` | **stable** | 0.5.0 | — (foundational) | `AbstractMemoryAllocatorTck`, `…LoanedBufferTck`, `…MemoryGovernorTck`, +5 | yes (slab pools) |
 | `…spi.transport` | **stable** | 0.5.0 | — (foundational) | `AbstractTransportProviderTck`, `…EngineTck`, `…StreamTck`, `…ConnectionTck` | yes (`io_uring`/QUIC) |
-| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) [^eventbuscode] | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
+| `…spi.exceptions`² | **stable** | 0.5.0 | — (Glass-Box contract); ADR-083 (fault origin) [^eventbuscode] [^eventisolationcode] | `AbstractDisclosureModeTck` (+ `…GlassBoxTckTest` in TCK, incl. `$FaultOriginContract`) | — |
 | `…spi.telemetry` | **stable** | 0.5.0 | — (Glass-Box contract) | `AbstractTelemetryProviderTck`, `…SinkTck`, `…RingBufferTck`, `…JfrTelemetrySinkTck` | yes (binary glass-box sink) |
 | `…spi.bootstrap` | **stable** | 0.5.0 | ADR-007 | `AbstractBootstrapOrchestratorTck`, `…SubsystemLifecycleTck`, `…FailurePolicyTck`, `…SubsystemErrorRoutingTck`, +4 | — |
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
 | `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck`, `…EntitlementRequirementTck` | — |
-| `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
+| `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] [^eventisolation] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
@@ -310,3 +310,17 @@ maturity change here.
     method is the change, and no diff reports that. `AbstractEventBusTck` skips its five
     in-process cases on a brokered bus, through an assumption on `isBrokered()`, and adds one case
     every bus runs.
+
+[^eventisolation]: **Behavioural note, 0.13 (ADR-101).** A publish is stamped with the isolation ordinal
+    of the publisher's bound `StorageContext`, so a publish under a bound but unregistered isolation key
+    is refused with `EX-EVENT-6009` (reason `"unregistered-isolation-key"`). Before 0.13 the same publish
+    was accepted. Callers that publish under a tenant context must register each tenant key with
+    `EventEngine.isolationRegistry()` first. The API-diff gate reports the additions; this note is here
+    because the refusal is a behavioural change that no diff reports. `EventBus.subscribe` is unchanged
+    and still receives every event. The anchor column stays `—` until ADR-101 is ACCEPTED with its
+    obligations landed.
+
+[^eventisolationcode]: **Additive, 0.13 (ADR-101).** `EX-EVENT-6012` (isolation key registry conflict,
+    rawArgs `[String isolationKey, int ordinal]`) is new. `EX-EVENT-6009` gains the reasons
+    `"unregistered-isolation-key"` and `"isolation-mismatch"`, and `EX-EVENT-6011` also covers a refused
+    scoped subscription, with its existing `[eventType]` layout unchanged.

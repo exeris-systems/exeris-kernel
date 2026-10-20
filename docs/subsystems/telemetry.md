@@ -145,9 +145,10 @@ EX-EVENT-6001 Generic event failure         (no rawArgs — the diagnostic is ge
 EX-EVENT-6002 Bus queue overflow            rawArgs[0]=String eventType,        [1]=long queueDepth,        [2]=long queueCapacity
 EX-EVENT-6003 Registry conflict             rawArgs[0]=String eventType,        [1]=int ordinal
 EX-EVENT-6004 Provider boot failure         rawArgs[0]=String providerName,     [1]=String reason           ← intentional duplicate of EX-FLOW-7001 schema; different subsystem domain
-EX-EVENT-6009 Bus publish failure           rawArgs[0]=int eventTypeOrdinal,    [1]=String reason           (reason: delivery-failed | interrupted | unregistered-type)
+EX-EVENT-6009 Bus publish failure           rawArgs[0]=int eventTypeOrdinal,    [1]=String reason           (reason: delivery-failed | interrupted | unregistered-type | unregistered-isolation-key | isolation-mismatch)
 EX-EVENT-6010 Event handlers failed         rawArgs[0]=int eventTypeOrdinal,    [1]=int failedHandlerCount  (handler exceptions in getSuppressed())
 EX-EVENT-6011 Subscription rejected         rawArgs[0]=String eventType
+EX-EVENT-6012 Isolation key conflict        rawArgs[0]=String isolationKey,     [1]=int ordinal
 EX-FLOW-7001 Provider boot failure          rawArgs[0]=String providerName,     [1]=String reason           ← intentional duplicate of EX-EVENT-6004 schema; different subsystem domain
 EX-FLOW-7002 Lifecycle / schedule fail      rawArgs[0]=String engineName,       [1]=String phase,           [2]=String staticReasonCode, [3]=int contextVal   (phase WAKE: [3]=long idMost, [4]=long idLeast)
 EX-FLOW-7003 Step execution failure         rawArgs[0]=String defName,          [1]=long idMost,            [2]=long idLeast,            [3]=int stepIdx, [4]=String reason, [5]=String causeType
