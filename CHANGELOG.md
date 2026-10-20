@@ -61,6 +61,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **`HttpExchange` reports the client's transport address.** `remoteAddress()` and `remotePort()` return
+  the immediate transport peer of the connection that carries the exchange, which is the proxy when one
+  sits in front; the kernel reads no forwarded header. `null` and `-1` mean no network transport backs
+  the exchange. `HttpStreamExchange` carries the same pair. Community binds both on HTTP/1.1, TLS and
+  HTTP/2 exchanges, pinned by `AbstractHttpServerPeerAddressTck`. The Enterprise tier does not override
+  them yet, so its exchanges report `null` and `-1`.
 - **GraalVM native-image is supported as an opt-in build.** The Core, Community and Kafka jars ship
   reachability metadata (the SPI's file is empty) under `META-INF/native-image/eu.exeris/<artifactId>/`, and Community ships the image
   build arguments it needs (`--enable-monitoring=jfr`, two `--add-opens`, `-H:+SharedArenaSupport`), so an

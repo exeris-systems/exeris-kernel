@@ -78,6 +78,43 @@ public interface HttpExchange {
     }
 
     /**
+     * Returns the IP address literal of the immediate transport peer of the connection that carries
+     * this exchange, in the same form as
+     * {@link eu.exeris.kernel.spi.transport.TransportConnection#remoteAddress()}: an IPv4 or IPv6
+     * literal, never a host name.
+     *
+     * <p>Behind a proxy or load balancer this is the proxy, not the client behind it. The kernel
+     * interprets no {@code Forwarded}, {@code X-Forwarded-For} or {@code X-Real-IP} header; whether to
+     * trust one, and which hop to read it from, is deployment policy.
+     *
+     * <p>Every HTTP/2 stream on one connection reports the same peer. The value is fixed for the
+     * life of the exchange and stays readable after the response is written or the connection closes.
+     *
+     * @return the peer's IP address literal, or {@code null} when the exchange is not backed by a
+     *         network transport
+     * @implSpec An engine backed by a transport overrides this and {@link #remotePort()}. A decorator
+     *           delegates both. Neither method allocates per call.
+     * @apiNote Null means the peer is unknown, and it is never a usable key: a per-client limiter
+     *          must treat it as its own case rather than bucketing every unknown peer together.
+     * @since 0.13
+     */
+    default String remoteAddress() {
+        return null;
+    }
+
+    /**
+     * Returns the port of the immediate transport peer, as reported by {@link #remoteAddress()}.
+     *
+     * @return the peer's port number, or {@code -1} when the exchange is not backed by a network
+     *         transport; meaningful only when {@link #remoteAddress()} is non-null
+     * @implSpec Overridden together with {@link #remoteAddress()}, under the same contract.
+     * @since 0.13
+     */
+    default int remotePort() {
+        return -1;
+    }
+
+    /**
      * Writes the given response to the wire and finalises this exchange.
      *
      * @param response response to write; must not be {@code null}

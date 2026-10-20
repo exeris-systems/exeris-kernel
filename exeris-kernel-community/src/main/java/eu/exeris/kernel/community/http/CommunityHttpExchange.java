@@ -75,6 +75,18 @@ final class CommunityHttpExchange implements HttpExchange {
         return request;
     }
 
+    // Read from the connection on each call rather than captured at construction: the connection
+    // already holds the peer address as an immutable value, so the exchange adds no field for it.
+    @Override
+    public String remoteAddress() {
+        return stream.connection().remoteAddress();
+    }
+
+    @Override
+    public int remotePort() {
+        return stream.connection().remotePort();
+    }
+
     @Override
     public void respond(HttpResponse response) {
         Objects.requireNonNull(response, "response must not be null");

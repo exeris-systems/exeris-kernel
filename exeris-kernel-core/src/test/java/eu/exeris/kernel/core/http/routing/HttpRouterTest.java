@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -130,6 +131,24 @@ class HttpRouterTest {
 
     @Nested
     class PathParameterMatch {
+
+        @Test
+        void templatedRouteSeesThePeerThroughThePathParamDecorator() {
+            AtomicReference<String> address = new AtomicReference<>();
+            AtomicInteger port = new AtomicInteger();
+            HttpRouter router = HttpRouter.builder()
+                    .route(HttpMethod.GET, "/x/{id}", e -> {
+                        address.set(e.remoteAddress());
+                        port.set(e.remotePort());
+                        e.respond(HttpStatus.OK);
+                    })
+                    .build();
+            CapturingExchange exchange = CapturingExchange.getFrom("/x/42", "10.1.2.3", 51234);
+            router.handle(exchange);
+            assertEquals(HttpStatus.OK, exchange.status());
+            assertEquals("10.1.2.3", address.get());
+            assertEquals(51234, port.get());
+        }
 
         @Test
         void templateRouteResolvesAndCapturesParam() {
@@ -656,24 +675,44 @@ class HttpRouterTest {
     private static final class CapturingExchange implements HttpExchange {
 
         private final HttpRequest request;
+        private final String peerAddress;
+        private final int peerPort;
         private HttpStatus capturedStatus;
 
-        private CapturingExchange(HttpRequest request) {
+        private CapturingExchange(HttpRequest request, String peerAddress, int peerPort) {
             this.request = request;
+            this.peerAddress = peerAddress;
+            this.peerPort = peerPort;
         }
 
         static CapturingExchange get(String path) {
             return of(HttpMethod.GET, path);
         }
 
+        static CapturingExchange getFrom(String path, String peerAddress, int peerPort) {
+            return new CapturingExchange(
+                    HttpRequest.noBody(HttpMethod.GET, path, HttpVersion.HTTP_1_1, List.of()),
+                    peerAddress, peerPort);
+        }
+
         static CapturingExchange of(HttpMethod method, String path) {
             return new CapturingExchange(
-                    HttpRequest.noBody(method, path, HttpVersion.HTTP_1_1, List.of()));
+                    HttpRequest.noBody(method, path, HttpVersion.HTTP_1_1, List.of()), null, -1);
         }
 
         @Override
         public HttpRequest request() {
             return request;
+        }
+
+        @Override
+        public String remoteAddress() {
+            return peerAddress;
+        }
+
+        @Override
+        public int remotePort() {
+            return peerPort;
         }
 
         @Override

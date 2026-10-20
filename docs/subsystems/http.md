@@ -38,6 +38,7 @@ Key contracts:
 - `HttpProvider`
 - `HttpServerEngine`, `HttpClientEngine`
 - `HttpHandler`, `HttpExchange`
+- `HttpExchange.remoteAddress()` / `remotePort()` — the immediate transport peer (see *Client transport address*)
 - `HttpRequest`, `HttpResponse`, `HttpHeader`, `HttpStatus`
 - `HttpConfig`, `HttpMode`, `HttpMethod`, `HttpVersion`
 - `HttpKernelProviders` (ScopedValue slots)
@@ -122,6 +123,7 @@ HTTP abstract TCK suites present:
 - `AbstractHttp2HeaderLimitTck` (since 0.13.0, [ADR-071](../adr/ADR-071-operational-limit-configuration-path.md)) — the three HTTP/2 header keys of `HttpConfig`, judged on the wire over cleartext HTTP/2 with prior knowledge: a header block (`maxHeaderBlockSize`, compressed, HEADERS plus CONTINUATION), a decoded field section (`maxHeaderListSize`, sized per RFC 9113 §6.5.2) and a single decoded name or value (`maxStringLiteralSize`) equal to its limit is served, and one octet over is refused without reaching the handler — by `431` on the stream, `RST_STREAM`, or `GOAWAY` naming the stream unprocessed (`400` is not a refusal of a field section that is too large); `maxHeaderListSize` is the value advertised as `SETTINGS_MAX_HEADER_LIST_SIZE`. A refusal that keeps the connection open must also keep the HPACK dynamic table in step with the client (RFC 9113 §4.3): the suite sends an over-limit block whose later fields use literal-with-incremental-indexing, then a request that references those entries by dynamic index, and requires it to be served with exactly the fields the client sent. Bound at Community tier (`CommunityHttp2HeaderLimitTckTest`), where an oversized header block draws `GOAWAY(PROTOCOL_ERROR)`, an oversized field section or literal a `431` on the stream after the block has been read to its end (every insertion and table-size update applied, the fields discarded), and a block that fails to decode any other way `GOAWAY(COMPRESSION_ERROR)`.
 - `AbstractHealthEndpointTck` (since 0.7.0) — pins the readiness/liveness endpoint contract for any `HttpHandler` binding that surfaces a `HealthProbe`. Bound at Community tier (`CommunityHealthEndpointTckTest`).
 - `AbstractHttpClientTlsPeerVerificationTck` (since 0.12.0, [ADR-074](../adr/ADR-074-http-client-peer-addressing.md) Amendment A1) — the TLS clause of `HttpClientEngine#send`, a suite apart from `AbstractHttpClientEngineTck`; bound at Community tier (`CommunityHttpClientTlsPeerVerificationTckTest`), not by the Core fixture client, which speaks no TLS, nor by Enterprise. See *Client TLS* below.
+- `AbstractHttpServerPeerAddressTck` (since 0.13.0, [ADR-009](../adr/ADR-009-http-codec-module.md)) — pins `HttpExchange.remoteAddress()` / `remotePort()` as the connecting socket's own address and port: plaintext HTTP/1.1, two live connections on different ports, a keep-alive connection, HTTP/1.1 and HTTP/2 over TLS (ALPN confirmed before the observation is judged), cleartext HTTP/2 with prior knowledge, and on Linux a client bound to `127.0.0.2`, so the address itself is discriminated. Its `startServer` must serve TLS, so a binding cannot skip the TLS cases. Bound at Community tier (`CommunityHttpServerPeerAddressTckTest`).
 - `AbstractHttpStreamExchangeTck` (since 0.10.0, [ADR-043](../adr/ADR-043-kernel-http-streaming-spi.md)) — pins the SSE streaming contract: open / emit-N / graceful close / disconnect-via-`StreamClosedException`, backpressure park-and-resume on window credit, no respond-once regression, and (v0.11) `pathParams()` being non-null and immutable — the map is routing state, so a handler able to write to it could change what a later request resolves to. Community binding required; Enterprise native overlay declared as a cross-repo obligation.
 
 These verify SPI-level HTTP contract behavior and ServiceLoader/provider semantics.
@@ -188,6 +190,17 @@ surface consumed by `exeris-tooling`'s `KernelClientGenerator` for typed per-ent
 body and releases it after `send` returns or throws; the engine reads it during `send` and neither
 closes nor retains it. `KernelWebClient`, as that caller, releases each attempt's encoded body before
 any retry wait (ADR-034 Amendment A1).
+
+### Client transport address (since 0.13.0)
+
+`HttpExchange.remoteAddress()` and `HttpExchange.remotePort()` report the peer of the connection that
+carries the exchange: the IP address literal and port of the socket the request arrived on. Behind a
+proxy or load balancer that peer is the proxy. The kernel interprets no `Forwarded`,
+`X-Forwarded-For` or `X-Real-IP` header; whether to trust one, and which hop to read it from, is
+deployment policy. Every HTTP/2 stream on one connection reports the same peer. An exchange that no
+network transport backs returns `null` and `-1`, and a per-client limiter must treat `null` as its
+own case rather than as a shared key. The values are read from the connection on each call, so the
+exchange holds no copy of them. `HttpStreamExchange` carries the same pair under the same contract.
 
 ### Client peer addressing (since v0.12.0, [ADR-074](../adr/ADR-074-http-client-peer-addressing.md))
 

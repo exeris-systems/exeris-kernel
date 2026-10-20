@@ -303,6 +303,26 @@ public final class HttpStreamEngine implements HttpStreamExchange {
     }
 
     /**
+     * Returns the peer address of the transport connection that holds this stream open.
+     *
+     * @return the peer's IP address literal, from the stream's connection on each call
+     */
+    @Override
+    public String remoteAddress() {
+        return stream.connection().remoteAddress();
+    }
+
+    /**
+     * Returns the peer port of the transport connection that holds this stream open.
+     *
+     * @return the peer's port number, from the stream's connection on each call
+     */
+    @Override
+    public int remotePort() {
+        return stream.connection().remotePort();
+    }
+
+    /**
      * Diagnostic seam: bytes outstanding (queued to the transport but not yet released).
      *
      * @return outstanding queued bytes

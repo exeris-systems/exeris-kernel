@@ -413,7 +413,7 @@ final class CommunityHttp2SessionProcessor {
                     HttpVersion.HTTP_2,
                     decoded.headers(),
                     requestBody);
-            InMemoryHttp2Exchange exchange = new InMemoryHttp2Exchange(request, allocator, encoderRegistry);
+            InMemoryHttp2Exchange exchange = new InMemoryHttp2Exchange(request, stream, allocator, encoderRegistry);
             requestDispatcher.dispatch(request, exchange, handler);
             if (!CommunityHttpRequestDispatcher.isResponded(exchange)) {
                 exchange.respond(HttpResponse.noBody(HttpStatus.INTERNAL_SERVER_ERROR, HttpVersion.HTTP_2));
