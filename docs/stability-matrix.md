@@ -89,7 +89,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.context` | **stable** | 0.5.0 | ADR-007 (ScopedValue propagation) | exercised via bootstrap/diagnostics TCKs | — |
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
 | `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck`, `…EntitlementRequirementTck` | — |
-| `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] [^eventisolation] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
+| `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] [^eventisolation] [^eventbuspublish] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
 | `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +3 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
@@ -324,3 +324,13 @@ maturity change here.
     rawArgs `[String isolationKey, int ordinal]`) is new. `EX-EVENT-6009` gains the reasons
     `"unregistered-isolation-key"` and `"isolation-mismatch"`, and `EX-EVENT-6011` also covers a refused
     scoped subscription, with its existing `[eventType]` layout unchanged.
+
+[^eventbuspublish]: **Behavioural note, 0.13 (ADR-101 Ruling 2).** On a brokered bus `EventBus.publish`
+    returns once the binding's client has accepted the event, not once the broker has acknowledged
+    it, and a failure the client reports after that return is never thrown to the caller. The Community Kafka
+    bus records it as a `KafkaPublishFailedEvent` with `publishMode` `"publishAsync"` and counts it
+    in `EventEngineStats.publishFailedTotal()`, a counter separate from `failedTotal`, which counts
+    handler errors. `EventEngineStats` gains that component, and its seven-argument constructor is
+    kept as a bridge that reports zero. The API-diff gate reports the new component and constructor;
+    the note is here because the narrowed promise of `publish` on a brokered bus is the change, and no
+    diff reports that.

@@ -156,9 +156,9 @@ to the in-memory bus and never sees either mode.
 The Kafka driver bypasses the local `EventQueue` (`NoOpQueue` slot) and does not map
 `busPublishFailFast` onto anything: it never raises `EX-EVENT-6002`. A failure `producer.send` throws
 synchronously surfaces as `EX-EVENT-6009` with reason `delivery-failed` and the Kafka exception as the
-cause. `publish` does not wait on the send's future and registers no callback, so a failure the producer
-reports asynchronously reaches neither the caller nor `KafkaPublishFailedEvent`; `publishAndAwait` waits
-on that future and surfaces it as the same `EX-EVENT-6009`.
+cause. `publish` does not wait on the send's future; it registers a callback, and a failure the producer
+completes exceptionally after `publish` has returned is recorded rather than thrown (see *Brokered publish* below).
+`publishAndAwait` waits on that future and surfaces the failure as the same `EX-EVENT-6009`.
 
 ---
 
@@ -168,7 +168,7 @@ on that future and surfaces it as the same `EX-EVENT-6009`.
 
 | Component         | Responsibility                                                                          |
 |:------------------|:----------------------------------------------------------------------------------------|
-| **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`); `publish` is fire-and-forget, `publishAndAwait` blocks (see *Delivery Boundary* for what it waits on) |
+| **`EventBus`**    | Pub/Sub. Manages subscriptions (returns `SubscriptionToken`); `publish` returns once the bus accepts the event (on a brokered bus: accepted, not acknowledged; see *Brokered `publish`* below), `publishAndAwait` blocks (see *Delivery Boundary* for what it waits on) |
 | **`EventQueue`**  | Bounded backpressure buffer. Community: an in-memory heap `LinkedBlockingDeque`, not durable |
 | **`EventLoop`**   | Drains the queue. Community: one virtual thread, dispatching each batch through a per-batch `StructuredScope` |
 | **`EventRegistry`** | Type system. Maps event names → `int` ordinals for O(1) hot-path routing            |
@@ -230,6 +230,24 @@ nothing about any handler. A handler may run after the call returns, on another 
 process, sees none of the publisher's `ScopedValue` bindings, and cannot make the call throw
 `EX-EVENT-6010`. Code that uses `publishAndAwait` to learn that a handler ran does not carry over to the
 Kafka driver unchanged.
+
+**Brokered `publish` means accepted, not acknowledged.** On a brokered bus a normal return from `publish`
+means the binding's client has accepted the record for sending; the broker's acknowledgement is not
+awaited. A failure that refuses the record is thrown as `EX-EVENT-6009` in two cases:
+
+- `producer.send` throws, as described above; or
+- the producer rejects the record before accepting it and reports that through the send's callback on
+  the calling thread, before `send` returns. A record too large and a metadata timeout after
+  `max.block.ms` are rejections of this kind. The send's own future is never read for them, so `publish`
+  throws the rejection rather than returning normally; a caller that treated a normal return as acceptance
+  sees the failure.
+
+A send the producer completes exceptionally after `publish` has returned is never thrown to the caller.
+The callback records it as `KafkaPublishFailedEvent` with `publishMode` `"publishAsync"` and increments
+`EventEngineStats.publishFailedTotal()`, a counter separate from `failedTotal`, which counts handler
+errors. A completion from the producer's I/O thread while `send` is still running is recorded the same
+way, because only a completion on the calling thread is a rejection. The callback does not block.
+A caller that needs the broker's acknowledgement uses `publishAndAwait`, which blocks on it.
 
 **The two are not composable today.** `KafkaEventEngine` runs no outbox orchestrator at all — its
 `EventQueue` slot is a `NoOpQueue`, and `KafkaEventBrokerPort` ships as a built adapter that is not
@@ -523,7 +541,7 @@ Per-event allocation is bounded to one heap `byte[]` payload per row/record (no 
 **Bindings (status):**
 
 - PostgreSQL event-log — **shipped (ADR-049, v0.10)**: `JdbcEventStreamAppender` / `JdbcEventStreamReader` over the dedicated `exeris_event_log` table (per-`StreamId` monotonic ordering + append-with-expected-version OCC → `EX-EVENT-6008`; `V0.10.0` migration). Bound into `KernelProviders.EVENT_STREAM_APPENDER` / `EVENT_STREAM_READER` by `CommunityEventsSubsystem` when a persistence engine is present. Distinct from the transactional `exeris_outbox` delivery drain.
-- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; the ADR-049 durable event-log binding shipped in v0.10 — `KafkaEventStreamAppender` / `KafkaEventStreamReader` over a `streamId`-keyed log topic (log-authoritative per-`StreamId` sequence + append-with-expected-version OCC → `EX-EVENT-6008`), single-writer-per-stream best-effort (Kafka has no cross-instance CAS). Publish-side failures the bus observes (since v0.8 Sprint 5, JFR-091 — see *Backpressure by Design* for which ones `publish` observes) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the bus wraps the cause as `EX-EVENT-6009` with reason `delivery-failed`. **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
+- Kafka driver — **shipped in 0.7 Sprint 5b2** (`exeris-kernel-community-kafka`). `KafkaEventEngine` exposes the consumer roundtrip via its in-process `EventBus` delegate today; the ADR-049 durable event-log binding shipped in v0.10 — `KafkaEventStreamAppender` / `KafkaEventStreamReader` over a `streamId`-keyed log topic (log-authoritative per-`StreamId` sequence + append-with-expected-version OCC → `EX-EVENT-6008`), single-writer-per-stream best-effort (Kafka has no cross-instance CAS). Publish-side failures the bus observes (since v0.8 Sprint 5, JFR-091 — see *Backpressure by Design* for which ones `publish` observes) emit `KafkaPublishFailedEvent` (JFR name `eu.exeris.kernel.events.kafka.PublishFailed`, fields `engineName, topic, eventTypeOrdinal, publishMode, exceptionClass, exceptionMessage`) before the bus wraps the cause as `EX-EVENT-6009` with reason `delivery-failed`. A send the producer completes exceptionally after `publish` has returned emits the same event with `publishMode` `"publishAsync"` and is counted in `publishFailedTotal` instead (see *Delivery Boundary*). **Payload bytes are never logged** (Glass-Box secret-safe contract); the `topic` lookup is best-effort and falls back to `"<unknown>"` on unregistered ordinals so the JFR emit never NPEs inside the catch block.
 - Enterprise off-heap log — out-of-repo, target-state.
 
 ---

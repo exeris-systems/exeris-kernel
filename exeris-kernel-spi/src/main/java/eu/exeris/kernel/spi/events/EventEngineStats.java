@@ -15,19 +15,27 @@ package eu.exeris.kernel.spi.events;
  * <h2>Valhalla Readiness</h2>
  * <p>All fields are primitives. No identity operations. Ready for {@code value record} migration.
  *
- * @param publishedTotal    total number of events published since engine start
- * @param processedTotal    total number of events processed (dispatched to handlers)
- * @param failedTotal       total number of events that caused handler errors
- * @param queueDepth        current number of events waiting in the queue
- * @param queueCapacity     maximum queue capacity
- * @param avgDispatchNanos  exponentially-weighted average dispatch latency in nanoseconds
- * @param loopRunning       {@code true} if the event loop is currently running
+ * @param publishedTotal       total number of events accepted by the publishing call since engine start
+ * @param publishFailedTotal   total number of events accepted by the publishing call that the binding
+ *                             later failed to deliver, observed asynchronously; always zero on a bus
+ *                             that is not brokered. Counts publish failures only, never handler errors.
+ *                             The failure is counted when the client reports it, which can precede the
+ *                             count of the acceptance, so a snapshot may briefly show it ahead of
+ *                             {@code publishedTotal}
+ * @param processedTotal       total number of events processed (dispatched to handlers)
+ * @param failedTotal          total number of events that caused handler errors; publish failures are
+ *                             counted by {@code publishFailedTotal}, not here
+ * @param queueDepth           current number of events waiting in the queue
+ * @param queueCapacity        maximum queue capacity
+ * @param avgDispatchNanos     exponentially-weighted average dispatch latency in nanoseconds
+ * @param loopRunning          {@code true} if the event loop is currently running
  *
  * @since 0.5
  * @see EventEngine#stats()
  */
 public record EventEngineStats(
         long publishedTotal,
+        long publishFailedTotal,
         long processedTotal,
         long failedTotal,
         long queueDepth,
@@ -40,7 +48,7 @@ public record EventEngineStats(
 
     /** Zero-state snapshot (useful for pre-start or test contexts). */
     public static final EventEngineStats ZERO =
-            new EventEngineStats(0L, 0L, 0L, 0L, 0L, 0L, false);
+            new EventEngineStats(0L, 0L, 0L, 0L, 0L, 0L, 0L, false);
 
     /** Sentinel for an empty queue capacity — avoids PMD AvoidLiteralsInIfCondition. */
     private static final long EMPTY_CAPACITY = 0L;
@@ -49,6 +57,31 @@ public record EventEngineStats(
     private static final long EMPTY_PROCESSED = 0L;
 
     // CHECKSTYLE.ON: DeclarationOrder
+
+    /**
+     * Creates a snapshot without a publish-failure count, for a binding that observes no
+     * asynchronous publish failures and therefore reports none. Kept so that callers written
+     * against the seven components still compile.
+     *
+     * @param publishedTotal    total number of events accepted by the publishing call since engine start
+     * @param processedTotal    total number of events processed (dispatched to handlers)
+     * @param failedTotal       total number of events that caused handler errors
+     * @param queueDepth        current number of events waiting in the queue
+     * @param queueCapacity     maximum queue capacity
+     * @param avgDispatchNanos  exponentially-weighted average dispatch latency in nanoseconds
+     * @param loopRunning       {@code true} if the event loop is currently running
+     */
+    public EventEngineStats(
+            long publishedTotal,
+            long processedTotal,
+            long failedTotal,
+            long queueDepth,
+            long queueCapacity,
+            long avgDispatchNanos,
+            boolean loopRunning) {
+        this(publishedTotal, 0L, processedTotal, failedTotal, queueDepth, queueCapacity,
+                avgDispatchNanos, loopRunning);
+    }
 
     /**
      * Expresses queue pressure as a fraction of capacity — the number an operator alerts on when

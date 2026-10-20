@@ -50,6 +50,20 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `"unregistered-isolation-key"`), and was accepted before. There is no escape hatch: a refusal is
   fail-closed by design. Register each tenant key before publishing under its context. The outbox relay and
   the Kafka consumer loop are not affected, because they do not re-stamp. See `MIGRATION.md`.
+
+- **On a brokered bus, a normal return from `EventBus.publish` means the client accepted the record, not that
+  the broker acknowledged it (ADR-101 Ruling 2).** Two client-side failures change:
+  - A record the Kafka client rejects before accepting it (a record too large, or a metadata timeout after
+    `max.block.ms`) was lost: nothing read the failed send, and `publish` returned normally. `publish` now
+    throws `EX-EVENT-6009` (reason `delivery-failed`) for these, so a caller that ignored the return will
+    see the failure.
+  - A send the producer completes exceptionally after `publish` has returned is never thrown. It is recorded
+    as `KafkaPublishFailedEvent` with `publishMode` `"publishAsync"` and counted in
+    `EventEngineStats.publishFailedTotal()`.
+
+  A caller that needs the broker's acknowledgement uses `publishAndAwait`, unchanged. `EventBus.publish`
+  states the promise in its Javadoc.
+
 - **The `ScopedValue` slots of the `preview` surfaces move to holders in their own packages (ADR-100
   §3).** `EXECUTION_CONTRACT` and `executionContract()`, added on the 0.13 line and never released,
   leave `KernelProviders` for `spi.contract.ContractKernelProviders`. `GRAPH_PROVIDER`,
@@ -66,6 +80,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   visible through both and each accessor delegates; migrate by naming the holder instead.
 
 ### Added
+
+- **`EventEngineStats.publishFailedTotal()` counts asynchronous publish failures on a brokered bus (ADR-101
+  Ruling 2).** The new component is kept apart from `failedTotal`, which still counts handler errors only. The
+  seven-argument constructor remains as a bridge that reports zero, so existing callers compile unchanged.
+  `…spi.events` is `preview`; the change is recorded in `docs/stability-matrix.md`.
 
 - **`HttpExchange` reports the client's transport address.** `remoteAddress()` and `remotePort()` return
   the immediate transport peer of the connection that carries the exchange, which is the proxy when one
