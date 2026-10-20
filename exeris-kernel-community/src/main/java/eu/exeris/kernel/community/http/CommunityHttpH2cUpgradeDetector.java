@@ -7,7 +7,6 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.transport.TransportStream;
 
@@ -66,7 +65,7 @@ final class CommunityHttpH2cUpgradeDetector {
      * configured {@link HttpConfig#maxVersion()} allows HTTP/2 negotiation.
      */
     /* default */ boolean isH2cEnabled() {
-        return config.h2cUpgradeEnabled() && supportsHttp2(config.maxVersion());
+        return config.h2cUpgradeEnabled() && config.maxVersion().supportsMultiplexing();
     }
 
     /**
@@ -85,7 +84,7 @@ final class CommunityHttpH2cUpgradeDetector {
                                                      HttpHandler handler,
                                                      ProcessingState state,
                                                      long totalBytes) {
-        if (!supportsHttp2(config.maxVersion())) {
+        if (!config.maxVersion().supportsMultiplexing()) {
             return false;
         }
         LoanedBuffer aggregate = state.aggregate();
@@ -154,10 +153,6 @@ final class CommunityHttpH2cUpgradeDetector {
             }
         }
         return hasUpgradeH2c && hasConnectionUpgrade;
-    }
-
-    private static boolean supportsHttp2(HttpVersion maxVersion) {
-        return maxVersion == HttpVersion.HTTP_2 || maxVersion == HttpVersion.HTTP_3;
     }
 
     private static boolean containsCsvTokenIgnoreCase(String headerValue, String token) {

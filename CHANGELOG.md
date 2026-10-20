@@ -158,6 +158,24 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **The Community server sends its whole certificate chain, not its leaf alone (#532).** The server loaded its
+  certificate file with `SSL_CTX_use_certificate_file`, which keeps only the first certificate, so a client that
+  trusts the root alone could not verify a chained server. It now loads the file with
+  `SSL_CTX_use_certificate_chain_file`, which sends every certificate after the leaf. The new handle is
+  `CoreSslHandles.CtxHandles#invokeCtxUseCertChainFile`.
+- **ALPN selection honours `http.maxVersion` (#533).** The HTTPS listener selected `h2` whenever a client offered
+  it and ignored its own configuration. The listener's ALPN list now comes from `HttpConfig#maxVersion`: a listener
+  capped at HTTP/1.1 offers and selects `http/1.1` only, and an offer of `h2` alone to it is answered with no ALPN
+  protocol. The h2c and prior-knowledge paths and ALPN share one predicate, `HttpVersion#supportsMultiplexing`.
+- **A WSS listener never selects `h2`.** The WebSocket engine built its TCP listener with the default
+  ALPN list, so a client offering `h2` was answered `h2` on a connection that can only serve the
+  HTTP/1.1 upgrade. Its list is now `http/1.1` alone, and the Community ALPN selector selects only a
+  protocol the listener's list names, so a list naming `h2` without `http/1.1` no longer falls back to
+  `http/1.1`.
+- **A failed release no longer hides a failed client-engine binding (#558).**
+  `CommunityKernelCryptoProvider#createClientTlsEngine` threw the release failure when the peer binding had failed
+  and the release also failed, so the caller lost the binding failure. The release failure is now attached to the
+  binding failure as a suppressed exception, and the binding failure is the one thrown.
 - **An `Error` thrown by a subsystem goes through the failure policy instead of escaping
   `KernelBootstrap` raw (#619).** `SubsystemOrchestrator` caught only `RuntimeException` around
   `initialize()` and `start()`, so a `NoClassDefFoundError`, `ExceptionInInitializerError`,

@@ -215,6 +215,7 @@ public final class CoreOpenSslLoader {
                 req(linker, lookup, OpenSslDowncall.SSL_CTX_NEW_EX),
                 req(linker, lookup, OpenSslDowncall.SSL_CTX_FREE),
                 req(linker, lookup, OpenSslDowncall.SSL_CTX_USE_CERTIFICATE_FILE),
+                req(linker, lookup, OpenSslDowncall.SSL_CTX_USE_CERTIFICATE_CHAIN_FILE),
                 req(linker, lookup, OpenSslDowncall.SSL_CTX_USE_PRIVATEKEY_FILE),
                 req(linker, lookup, OpenSslDowncall.SSL_CTX_CHECK_PRIVATE_KEY),
                 req(linker, lookup, OpenSslDowncall.SSL_CTX_SET_VERIFY),

@@ -30,6 +30,8 @@ enum OpenSslDowncall {
     SSL_CTX_FREE("SSL_CTX_free", FunctionDescriptor.ofVoid(JAVA_LONG)),
     SSL_CTX_USE_CERTIFICATE_FILE("SSL_CTX_use_certificate_file",
             FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT)),
+    SSL_CTX_USE_CERTIFICATE_CHAIN_FILE("SSL_CTX_use_certificate_chain_file",
+            FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG)),
     SSL_CTX_USE_PRIVATEKEY_FILE("SSL_CTX_use_PrivateKey_file",
             FunctionDescriptor.of(JAVA_INT, JAVA_LONG, JAVA_LONG, JAVA_INT)),
     SSL_CTX_CHECK_PRIVATE_KEY("SSL_CTX_check_private_key", FunctionDescriptor.of(JAVA_INT, JAVA_LONG)),

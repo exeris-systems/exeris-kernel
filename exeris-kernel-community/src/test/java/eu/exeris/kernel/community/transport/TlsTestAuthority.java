@@ -82,16 +82,7 @@ public final class TlsTestAuthority {
     public static TlsTestAuthority root(Path directory, String name) {
         KeyPair keys = newKeyPair();
         X500Name subject = new X500Name("CN=" + name);
-        try {
-            X509v3CertificateBuilder builder = builder(subject, subject, keys);
-            builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
-            builder.addExtension(Extension.keyUsage, true,
-                    new KeyUsage(KeyUsage.keyCertSign | KeyUsage.cRLSign));
-            Issued written = write(directory, name, keys, builder, keys);
-            return new TlsTestAuthority(directory, name, subject, keys, written.certificate());
-        } catch (IOException | GeneralSecurityException | OperatorCreationException e) {
-            throw new IllegalStateException("root generation failed", e);
-        }
+        return certificateAuthority(directory, name, subject, subject, keys, keys);
     }
 
     /**
@@ -101,6 +92,17 @@ public final class TlsTestAuthority {
      */
     public Path certificate() {
         return certificate;
+    }
+
+    /**
+     * An intermediate authority this one signs, written into the same directory. It is a CA
+     * certificate, so it issues leaves and can sit in the middle of a served chain.
+     *
+     * @param name the file-name stem and common name
+     * @return the intermediate authority
+     */
+    public TlsTestAuthority intermediate(String name) {
+        return certificateAuthority(directory, name, subject, new X500Name("CN=" + name), newKeyPair(), keys);
     }
 
     /**
@@ -156,6 +158,20 @@ public final class TlsTestAuthority {
      */
     public static GeneralName ip(String address) {
         return new GeneralName(GeneralName.iPAddress, address);
+    }
+
+    private static TlsTestAuthority certificateAuthority(Path directory, String name, X500Name issuer,
+                                                         X500Name subject, KeyPair keys, KeyPair signer) {
+        try {
+            X509v3CertificateBuilder builder = builder(issuer, subject, keys);
+            builder.addExtension(Extension.basicConstraints, true, new BasicConstraints(true));
+            builder.addExtension(Extension.keyUsage, true,
+                    new KeyUsage(KeyUsage.keyCertSign | KeyUsage.cRLSign));
+            Issued written = write(directory, name, keys, builder, signer);
+            return new TlsTestAuthority(directory, name, subject, keys, written.certificate());
+        } catch (IOException | GeneralSecurityException | OperatorCreationException e) {
+            throw new IllegalStateException("certificate authority generation failed", e);
+        }
     }
 
     private static X509v3CertificateBuilder builder(X500Name issuer, X500Name subject, KeyPair keys) {

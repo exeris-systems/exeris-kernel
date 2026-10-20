@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.crypto;
 
+import eu.exeris.kernel.community.transport.TlsTestAuthority;
 import eu.exeris.kernel.community.transport.TlsTestCertificate;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslLoader;
 import eu.exeris.kernel.core.crypto.openssl.CoreOpenSslRuntime;
@@ -78,6 +79,19 @@ class CommunityServerContextErrorQueueTest {
                 Files.createDirectories(material.resolve("second")));
 
         assertRefusedWithAnEmptyQueue(first.certificate(), second.privateKey());
+    }
+
+    @Test
+    @DisplayName("a chain file whose second block does not parse is refused, and the queue is left empty")
+    void unparsableChainBlockLeavesTheQueueEmpty() throws Throwable {
+        Path directory = Files.createDirectories(material.resolve("garbage-chain"));
+        TlsTestAuthority authority = TlsTestAuthority.root(directory, "garbage-chain-ca");
+        TlsTestAuthority.Issued leaf = authority.issue(TlsTestAuthority.ip("127.0.0.1"));
+        Path chain = directory.resolve("leaf-and-garbage.crt");
+        Files.writeString(chain, Files.readString(leaf.certificate())
+                + "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n");
+
+        assertRefusedWithAnEmptyQueue(chain, leaf.privateKey());
     }
 
     private static void assertRefusedWithAnEmptyQueue(Path certificate, Path privateKey) throws Throwable {

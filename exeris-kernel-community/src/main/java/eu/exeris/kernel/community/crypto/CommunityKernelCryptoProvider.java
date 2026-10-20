@@ -26,6 +26,7 @@ import java.lang.invoke.MethodHandle;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Objects;
+import java.util.OptionalLong;
 
 /**
  * Community {@link KernelCryptoProvider} that creates {@link TlsEngine} instances backed by
@@ -170,7 +171,14 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 		try {
 			peerBinder.bind(engine.delegate(), peer);
 		} catch (RuntimeException | Error failure) {
-			engine.close();
+			try {
+				engine.close();
+			} catch (RuntimeException | Error releaseFailure) {
+				// the binding failure is the outcome the caller acts on; a failed release rides along
+				if (!releaseFailure.equals(failure)) {
+					failure.addSuppressed(releaseFailure);
+				}
+			}
 			throw failure;
 		}
 		return engine;
@@ -376,14 +384,11 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 			CryptoProviderConfig config, MemoryAllocator allocator) {
 		int certResult;
 		try (LoanedBuffer cert = toCString(config.certChainPath(), allocator)) {
-			certResult = ctx.invokeCtxUseCertFile(
-					sslCtxPtr,
-					cert.segment().address(),
-					CoreOpenSslLoader.SSL_FILETYPE_PEM);
+			certResult = ctx.invokeCtxUseCertChainFile(sslCtxPtr, cert.segment().address());
 		}
 		if (certResult != SSL_SUCCESS) {
 			throw new CryptoBootstrapException(PROVIDER_NAME,
-					"SSL_CTX_use_certificate_file failed", certResult);
+					"SSL_CTX_use_certificate_chain_file failed", certResult);
 		}
 
 		int keyResult;
@@ -404,9 +409,10 @@ public final class CommunityKernelCryptoProvider implements KernelCryptoProvider
 					PROVIDER_NAME,
 					"SSL_CTX_check_private_key mismatch");
 		}
-		if (CommunityAlpnSelector.STUB != null) {
+		OptionalLong alpnArgument = CommunityAlpnSelector.argumentFor(config.alpnProtocols());
+		if (CommunityAlpnSelector.STUB != null && alpnArgument.isPresent()) {
 			ctx.invokeCtxSetAlpnSelectCb(
-					sslCtxPtr, CommunityAlpnSelector.STUB.address(), NULL_PTR);
+					sslCtxPtr, CommunityAlpnSelector.STUB.address(), alpnArgument.getAsLong());
 		}
 	}
 

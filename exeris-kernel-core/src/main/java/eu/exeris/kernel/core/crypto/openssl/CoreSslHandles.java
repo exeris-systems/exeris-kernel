@@ -134,6 +134,8 @@ public final class CoreSslHandles {
      * @param sslCtxFree               bound to {@code SSL_CTX_free}; {@code (long ctxPtr) -> void}
      * @param sslCtxUseCertificateFile bound to {@code SSL_CTX_use_certificate_file};
      *                                 {@code (long ctxPtr, long pathAddr, int fileType) -> int}
+     * @param sslCtxUseCertificateChainFile bound to {@code SSL_CTX_use_certificate_chain_file};
+     *                                 {@code (long ctxPtr, long pathAddr) -> int}
      * @param sslCtxUsePrivateKeyFile  bound to {@code SSL_CTX_use_PrivateKey_file};
      *                                 {@code (long ctxPtr, long pathAddr, int fileType) -> int}
      * @param sslCtxCheckPrivateKey    bound to {@code SSL_CTX_check_private_key};
@@ -159,6 +161,7 @@ public final class CoreSslHandles {
             MethodHandle sslCtxNewEx,
             MethodHandle sslCtxFree,
             MethodHandle sslCtxUseCertificateFile,
+            MethodHandle sslCtxUseCertificateChainFile,
             MethodHandle sslCtxUsePrivateKeyFile,
             MethodHandle sslCtxCheckPrivateKey,
             MethodHandle sslCtxSetVerify,
@@ -249,6 +252,26 @@ public final class CoreSslHandles {
             } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
                 FfmErrors.rethrowIfError(t);
                 throw new TlsException("SSL_CTX_use_certificate_file failed", t);
+            }
+        }
+
+        /**
+         * {@code SSL_CTX_use_certificate_chain_file} → 1 on success.
+         *
+         * <p>The first certificate in the PEM file is the leaf and every later one is a chain member,
+         * which the context sends to its peer. A file holding one certificate behaves as
+         * {@link #invokeCtxUseCertFile} does with {@code SSL_FILETYPE_PEM}.
+         *
+         * @param ctxPtr   the {@code SSL_CTX*} pointer
+         * @param pathAddr address of the NUL-terminated certificate chain file path
+         * @return {@code 1} on success, {@code 0} otherwise
+         */
+        public int invokeCtxUseCertChainFile(long ctxPtr, long pathAddr) {
+            try {
+                return (int) sslCtxUseCertificateChainFile.invokeExact(ctxPtr, pathAddr);
+            } catch (Throwable t) { //NOPMD AvoidCatchingGenericException — FFM invokeExact declares Throwable
+                FfmErrors.rethrowIfError(t);
+                throw new TlsException("SSL_CTX_use_certificate_chain_file failed", t);
             }
         }
 
