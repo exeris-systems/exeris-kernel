@@ -48,6 +48,7 @@ class CommunityEventStoreTckTest extends AbstractEventStoreTck {
                         "payload BYTEA NOT NULL, " +
                             "occurred_at BIGINT NOT NULL, " +
                             "published_at BIGINT, " +
+                            "isolation_ordinal INT NOT NULL DEFAULT 0, " +
                             "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP" +
                             ")");
             connection.executeUpdate(

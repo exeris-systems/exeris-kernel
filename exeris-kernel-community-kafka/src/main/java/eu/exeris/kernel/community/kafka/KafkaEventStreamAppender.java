@@ -138,7 +138,7 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
             long next = head + 1L;
             byte[] recordKey = KafkaEventCodec.streamKey(descriptor);
             byte[] frame = KafkaEventLogCodec.encode(next, descriptor, payload);
-            send(streamId, recordKey, frame);
+            send(streamId, recordKey, frame, descriptor.isolationOrdinal());
             heads.put(key, next);
             return new AppendResult(next);
         } finally {
@@ -146,9 +146,11 @@ public final class KafkaEventStreamAppender implements EventStreamAppender {
         }
     }
 
-    private void send(StreamId streamId, byte[] recordKey, byte[] frame) {
+    private void send(StreamId streamId, byte[] recordKey, byte[] frame, int isolationOrdinal) {
+        ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>(logTopic, recordKey, frame);
+        KafkaIsolationHeader.write(producerRecord.headers(), isolationOrdinal);
         try {
-            producer.send(new ProducerRecord<>(logTopic, recordKey, frame)).get();
+            producer.send(producerRecord).get();
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             KafkaEventLogAppendFailedEvent.emit(engineName, streamId.streamType(),

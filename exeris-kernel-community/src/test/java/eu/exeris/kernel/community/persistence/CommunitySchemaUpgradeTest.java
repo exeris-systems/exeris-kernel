@@ -164,7 +164,7 @@ class CommunitySchemaUpgradeTest {
                             + "ledger's version column is TEXT, so a SQL sort gives 0.10.0 before "
                             + "0.5.0. Apply order is the runner's job and has its own test; what "
                             + "this one is about is that nothing was skipped")
-                    .containsExactlyInAnyOrder("0.5.0", "0.7.0", "0.10.0", "0.11.0", "0.11.1", "0.11.2");
+                    .containsExactlyInAnyOrder("0.5.0", "0.7.0", "0.10.0", "0.11.0", "0.11.1", "0.11.2", "0.13.0");
             assertThat(rowCount(ds.dataSource(), SAGA_TABLE))
                     .as("re-applying over an existing row must not duplicate or drop it")
                     .isEqualTo(1);
@@ -189,7 +189,100 @@ class CommunitySchemaUpgradeTest {
         }
     }
 
+    @Nested
+    @DisplayName("Outbox and event log rows written before the isolation column (ADR-101)")
+    class PublicationRowsBeforeIsolation {
+
+        @Test
+        @DisplayName("gain isolation_ordinal on upgrade, and every existing row reads 0 (unscoped)")
+        void existingRowsBackfillToUnscoped() throws SQLException {
+            Database ds = databaseWithPre013PublicationTables();
+
+            upgrade(ds);
+
+            assertThat(intValue(ds.dataSource(), "SELECT isolation_ordinal FROM exeris_outbox"))
+                    .as("an outbox row published before isolation had no scope, which is 0")
+                    .isZero();
+            assertThat(intValue(ds.dataSource(), "SELECT isolation_ordinal FROM exeris_event_log"))
+                    .as("an event-log row written before isolation had no scope, which is 0")
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("keep the outbox payload and the event-log payload they were written with")
+        void payloadsAreUnchanged() throws SQLException {
+            Database ds = databaseWithPre013PublicationTables();
+
+            upgrade(ds);
+
+            try (Connection c = ds.dataSource().getConnection();
+                 Statement s = c.createStatement();
+                 ResultSet r = s.executeQuery("SELECT payload FROM exeris_outbox")) {
+                assertThat(r.next()).isTrue();
+                assertThat(r.getBytes(1)).isEqualTo(OUTBOX_PAYLOAD);
+            }
+            try (Connection c = ds.dataSource().getConnection();
+                 Statement s = c.createStatement();
+                 ResultSet r = s.executeQuery("SELECT payload FROM exeris_event_log")) {
+                assertThat(r.next()).isTrue();
+                assertThat(r.getBytes(1)).isEqualTo(OUTBOX_PAYLOAD);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- fixtures
+
+    private static final byte[] OUTBOX_PAYLOAD = {1, 2, 3};
+
+    /**
+     * A database holding the outbox and the event log exactly as {@code V0.5.0} and {@code V0.10.0}
+     * created them, with one row in each, and no isolation column.
+     */
+    private static Database databaseWithPre013PublicationTables() throws SQLException {
+        String url = "jdbc:h2:mem:upgrade_pub_" + System.nanoTime()
+                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
+        JdbcDataSource ds = new JdbcDataSource();
+        ds.setURL(url);
+        ds.setUser("sa");
+        ds.setPassword("");
+
+        try (Connection c = ds.getConnection()) {
+            CommunityPersistenceMigrationRunner.executeStatements(c,
+                    CommunityPersistenceMigrationRunner.readMigrationResource("db/migration/V0.5.0__create_outbox.sql"));
+            CommunityPersistenceMigrationRunner.executeStatements(c,
+                    CommunityPersistenceMigrationRunner.readMigrationResource("db/migration/V0.10.0__create_event_log.sql"));
+        }
+        try (Connection c = ds.getConnection();
+             PreparedStatement p = c.prepareStatement(
+                     "INSERT INTO exeris_outbox (id, aggregate_id, aggregate_type, event_type, payload, occurred_at) "
+                             + "VALUES (?, ?, ?, ?, ?, ?)")) {
+            p.setObject(1, java.util.UUID.randomUUID());
+            p.setString(2, "agg-1");
+            p.setString(3, "Order");
+            p.setString(4, "OrderPlaced");
+            p.setBytes(5, OUTBOX_PAYLOAD);
+            p.setLong(6, 1L);
+            p.executeUpdate();
+        }
+        try (Connection c = ds.getConnection();
+             PreparedStatement p = c.prepareStatement(
+                     "INSERT INTO exeris_event_log (stream_id_high, stream_id_low, committed_sequence, "
+                             + "event_id_high, event_id_low, event_type_ordinal, event_flags, occurred_at, payload) "
+                             + "VALUES (1, 2, 1, 3, 4, 7, 0, 1, ?)")) {
+            p.setBytes(1, OUTBOX_PAYLOAD);
+            p.executeUpdate();
+        }
+        return new Database(ds, url);
+    }
+
+    private static int intValue(DataSource dataSource, String sql) throws SQLException {
+        try (Connection c = dataSource.getConnection();
+             Statement s = c.createStatement();
+             ResultSet r = s.executeQuery(sql)) {
+            assertThat(r.next()).as("a row MUST exist for %s", sql).isTrue();
+            return r.getInt(1);
+        }
+    }
 
     /**
      * A database holding the saga table as {@code V0.7.0} created it, with one parked saga in it and

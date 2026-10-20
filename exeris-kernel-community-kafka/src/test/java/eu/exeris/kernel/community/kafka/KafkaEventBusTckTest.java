@@ -29,7 +29,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>A {@link MockProducer} that completes every send stands in for the broker's acknowledgement,
  * and the consumer loop runs over a {@link MockConsumer} that holds no records, so starting the
  * engine reaches no broker and no handler is ever invoked. The bus reports itself brokered, which
- * skips the five cases that assert in-process fan-out; the cases every bus owes run here, in the
+ * skips the cases that assert in-process fan-out or in-process isolation delivery (the broker
+ * round trip covers those in the Kafka engine TCK); the cases every bus owes run here, in the
  * default build.
  */
 @DisplayName("Community Kafka: EventBus TCK (mock producer and consumer, no broker)")

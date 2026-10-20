@@ -14,6 +14,8 @@ import eu.exeris.kernel.spi.persistence.EventStore;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
+import eu.exeris.kernel.spi.persistence.QueryResult;
+import eu.exeris.kernel.spi.persistence.RowCursor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +49,21 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
     private static final String SQL_DELETE_OUTBOX =
             "DELETE FROM exeris_outbox WHERE id = $1";
 
+    /**
+     * Reads the isolation ordinal alongside the event columns, so the relayed descriptor keeps the
+     * scope the publisher recorded. {@link EventStore.OutboxEvent} is stable and carries no ordinal,
+     * which is why this adapter issues its own SELECT rather than reusing the store's. The WHERE,
+     * ORDER BY, LIMIT and lock clauses must match {@code CommunityJdbcEventStore}'s poll statement,
+     * which reads the same queue; the two differ only in the selected columns.
+     */
+    private static final String SQL_POLL_PENDING =
+            "SELECT id, aggregate_id, aggregate_type, event_type, payload, occurred_at, isolation_ordinal "
+                    + "FROM exeris_outbox "
+                    + "WHERE published_at IS NULL "
+                    + "ORDER BY outbox_seq ASC "
+                    + "LIMIT $1 "
+                    + "FOR UPDATE SKIP LOCKED";
+
     private final PersistenceEngine persistenceEngine;
     private final CommunityEventRegistry eventRegistry;
     private final AtomicInteger dynamicOrdinalSequence = new AtomicInteger(1_000_000);
@@ -72,19 +89,34 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
      * @param maxItems maximum number of events to return (must be &gt; 0)
      * @return ordered list of pending entries; empty list if the outbox is empty
      */
-    @SuppressWarnings("PMD.CloseResource")
+    // One entry per row, and the batch is bounded by maxItems, so the loop allocates per row by design.
+    @SuppressWarnings({"PMD.CloseResource", "PMD.AvoidInstantiatingObjectsInLoops"})
     @Override
     public List<OutboxBrokerPort.OutboxEntry> pollPending(int maxItems) {
+        if (maxItems <= 0) {
+            throw new IllegalArgumentException("maxItems must be > 0, got: " + maxItems);
+        }
         try (PersistenceConnection connection = persistenceEngine.openConnection()) {
             connection.beginTransaction();
             try {
-                EventStore store = new CommunityJdbcEventStore(connection);
-                List<EventStore.OutboxEvent> events = store.pollPending(maxItems);
-                List<OutboxBrokerPort.OutboxEntry> entries = new ArrayList<>(events.size());
-                for (EventStore.OutboxEvent event : events) {
-                    EventDescriptor descriptor = toDescriptor(event);
-                    EventPayload payload = CommunityHeapEventPayload.wrap(event.payload());
-                    entries.add(new OutboxBrokerPort.OutboxEntry(descriptor, payload));
+                List<OutboxBrokerPort.OutboxEntry> entries = new ArrayList<>(maxItems);
+                try (PersistenceStatement statement = connection.prepare(SQL_POLL_PENDING)) {
+                    statement.bindInt(0, maxItems);
+                    try (QueryResult result = statement.executeQuery()) {
+                        while (result.next()) {
+                            RowCursor row = result.row();
+                            EventStore.OutboxEvent event = new EventStore.OutboxEvent(
+                                    row.getUuid(0),
+                                    row.getString(1),
+                                    row.getString(2),
+                                    row.getString(3),
+                                    row.getBytes(4),
+                                    row.getLong(5));
+                            EventDescriptor descriptor = toDescriptor(event, row.getInt(6));
+                            EventPayload payload = CommunityHeapEventPayload.wrap(event.payload());
+                            entries.add(new OutboxBrokerPort.OutboxEntry(descriptor, payload));
+                        }
+                    }
                 }
                 // NOTE: committing here releases the FOR UPDATE SKIP LOCKED row locks.
                 // This is acceptable for the Community single-orchestrator model — rows already
@@ -174,7 +206,7 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
         }
     }
 
-    private EventDescriptor toDescriptor(EventStore.OutboxEvent event) {
+    private EventDescriptor toDescriptor(EventStore.OutboxEvent event, int isolationOrdinal) {
         UUID eventId = event.eventId();
         UUID streamId = streamUuid(event.aggregateId());
         int ordinal = resolveOrdinal(event.eventType());
@@ -185,7 +217,8 @@ final class CommunityJdbcOutboxEventStoreAdapter implements OutboxEventStore {
                 streamId.getLeastSignificantBits(),
                 ordinal,
                 EventDescriptor.FLAG_PERSISTENT | EventDescriptor.FLAG_ASYNC,
-                event.occurredAt()
+                event.occurredAt(),
+                isolationOrdinal
         );
     }
 
