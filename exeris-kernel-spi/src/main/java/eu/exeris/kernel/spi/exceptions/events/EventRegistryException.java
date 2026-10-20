@@ -32,6 +32,7 @@ public class EventRegistryException extends ExerisKernelException {
 
     private static final String MSG_DUPLICATE  = "Event type already registered with different settings";
     private static final String MSG_POST_START = "Event type registration rejected after engine start";
+    private static final String MSG_ISOLATION_CONFLICT = "Isolation key registered with a conflicting ordinal";
 
     /**
      * Constructs a registry failure with no Glass-Box arguments.
@@ -91,5 +92,23 @@ public class EventRegistryException extends ExerisKernelException {
     public static EventRegistryException postStartRejected(String eventType) {
         return new EventRegistryException(KernelErrorCodes.EX_EVENT_6003, MSG_POST_START, null,
                 eventType, -1);
+    }
+
+    /**
+     * Creates an {@code EventRegistryException} for an isolation key registration that conflicts
+     * with an existing one.
+     *
+     * <p>Sets error code {@value KernelErrorCodes#EX_EVENT_6012}.
+     * rawArgs layout: {@code [String isolationKey, int ordinal]}.
+     *
+     * @param isolationKey the isolation key being registered
+     * @param ordinal      the ordinal being registered
+     * @return an exception carrying {@value KernelErrorCodes#EX_EVENT_6012} and the two-element
+     *         {@code rawArgs} layout above, with no cause
+     * @since 0.13
+     */
+    public static EventRegistryException isolationKeyConflict(String isolationKey, int ordinal) {
+        return new EventRegistryException(KernelErrorCodes.EX_EVENT_6012, MSG_ISOLATION_CONFLICT, null,
+                isolationKey, ordinal);
     }
 }

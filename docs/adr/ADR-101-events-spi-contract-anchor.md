@@ -11,7 +11,7 @@ slug: adr/ADR-101
 
 | Attribute       | Value                                                                                     |
 |:----------------|:------------------------------------------------------------------------------------------|
-| **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
+| **Status**      | **ACCEPTED** (2026-10-08, upd. 2026-10-20)                                                |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-07                                                                                |
 | **Scope**       | `kernel/events`                                                                           |
@@ -182,13 +182,14 @@ unregistered key refuse rather than fall back.
 would make frames written by 0.12 decode with the first four payload bytes read as an ordinal — on
 the log topic, permanently, since that topic is replayed. The ordinal therefore travels as a Kafka
 **record header** (four bytes, big-endian) written on every producer path (`KafkaPublishBus`,
-`KafkaEventStreamAppender`, `KafkaEventBrokerPort`) and read on every consumer path; an absent header
-decodes as `0`. Both frame layouts stay byte-identical, and a record written by 0.12 is read as
+`KafkaEventStreamAppender`, `KafkaEventBrokerPort`) and read on every consumer path *[amended 2026-10-20:
+the log replay path reads no header, see Amendments]*; an absent header decodes as `0`. Both frame layouts stay byte-identical, and a record written by 0.12 is read as
 unscoped, which is the fail-closed reading. Core's `EventDescriptorCodec` places the ordinal at offset
 48 inside its existing padding; its size stays 64 bytes and a 0.12 frame (zero padding) decodes as
 `0`. The JDBC outbox and event log gain an `isolation_ordinal` column (default `0`) through the
 schema ledger (ADR-073), written from the context bound at append time; without it an outbox-relayed
-event reaches only unscoped subscribers.
+event reaches only unscoped subscribers. *[Amended 2026-10-20: the write point and the log's ordinal
+source are stated under Amendments.]*
 
 ### Ruling 2 (#544) — what `publish` promises on a brokered bus
 
@@ -260,12 +261,15 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
 1. **SPI change, one commit.** `EventDescriptor` gains `isolationOrdinal` with the seven-arg bridge
    constructor and seven-arg `of` retained; `EventBus.subscribeScoped` lands as a refusing default;
    the isolation-key registry lands with `EventRegistry`'s semantics (caller-defined ordinal,
-   uniqueness arbitrated, `EX-EVENT-6003`-shaped conflict, positive ordinals only); the two new
+   uniqueness arbitrated, an `EX-EVENT-6003`-shaped conflict *(2026-10-20: the conflict is
+   `EX-EVENT-6012`; see Amendments)*, positive ordinals only); the two new
    `EX-EVENT-6009` reasons are added to `KernelErrorCodes.EX_EVENT_6009`'s Javadoc. The
    `stability-matrix.md` note and `stability-surfaces.conf` entry land in the same commit (ADR-065).
+   *(2026-10-20: no `stability-surfaces.conf` edit is needed; see Amendments.)*
 2. **Bindings.** `InMemoryEventBus` filters scoped slots by `int` comparison with no added allocation
    on the unscoped path; Community `PersistentQueueingBus` and `KafkaPublishBus` stamp at publish;
-   the Kafka record header is written on all three producer paths and read on both consumer paths;
+   the Kafka record header is written on all three producer paths and read on both consumer paths
+   *(2026-10-20: the log replay path reads no header; see Amendments)*;
    `EventDescriptorCodec` uses its padding; the outbox and event-log tables gain `isolation_ordinal`.
 3. **`publish` contract text.** `EventBus.publish`'s Javadoc states that on a brokered bus a normal
    return means accepted by the binding's client, not acknowledged, and that a later failure is
@@ -354,6 +358,41 @@ Implementation is planned for 0.13 (wave W2). Until it lands, none of the behavi
 - [RFC-2026-09-02](../rfc/RFC-2026-09-02-preview-spi-promotion.md) — the promotion question this
   anchor unblocks.
 - [docs/subsystems/events.md](../subsystems/events.md) — "Delivery Boundary".
+
+## Amendments
+
+- **2026-10-20 — Ruling 1 implementation wording (#600).** Implementing Ruling 1 met five points where
+  the text and the existing code disagree. The rulings are unchanged in substance. Each point below
+  states the form that was built, and the original text is marked in place where it stands.
+  - **Conflict code.** A registry conflict on an isolation key raises `EX-EVENT-6012`, with rawArgs
+    `[String isolationKey, int ordinal]`, not `EX-EVENT-6003`. Index 0 of `EX-EVENT-6003` is the event
+    type name in the stable error taxonomy, and an isolation key in that slot would change what an
+    operator reads there.
+  - **Replay path.** The durable log consumer (`KafkaEventLog` into `KafkaEventStream`) hands back
+    payloads only, and `EventStream` exposes no descriptor. No record header is read on that path, and
+    replay is not filtered by isolation, as the "not in scope" section already states. The log codec
+    decodes a descriptor from a supplied ordinal and is tested against the header value, so a later
+    replay filter has the decoding in place.
+  - **Outbox ordinal.** `EventStore.append(OutboxEvent)` is the stable `spi.persistence` write path and
+    carries no ordinal. `CommunityJdbcEventStore.append` resolves the ordinal on the calling thread,
+    through `KernelProviders.EVENT_ENGINE` and that engine's `isolationRegistry()`, from the bound
+    `STORAGE_CONTEXT`. An unbound, unscoped or unregistered key writes `0`, and the append never refuses on
+    account of the context. No `spi.persistence` type changes. The relay reads the column through its own
+    SELECT and builds the descriptor from it.
+  - **Event-log ordinal.** The log appenders persist `descriptor.isolationOrdinal()` as the descriptor
+    arrives. Stamping happens where a publication enters the bus, and the appender is not on that path.
+    An appender that refused a missing context would be a new contract that no publish path needs. This
+    replaces the original statement that the log is written from the context bound at append time.
+  - **Stability surface.** Obligation 1 names an entry in `tools/spi-api-diff/stability-surfaces.conf`,
+    and none is needed. The gate classifies whole packages, `eu.exeris.kernel.spi.events` stays
+    `preview`, and the change adds no package.
+  - **Registry accessor.** The registry is reached through `EventEngine.isolationRegistry()`. The method
+    is a refusing default, following `EventEngine`'s other optional capabilities: a binding without
+    scoping refuses with `EX-EVENT-6001`.
+
+  The publish refusal reasons `unregistered-isolation-key` and `isolation-mismatch` are recorded under
+  `EX-EVENT-6009`, and the scoped-subscription refusal stays `EX-EVENT-6011` with its existing rawArgs
+  layout. Migration `V0.13.0` adds the two `isolation_ordinal` columns, default `0`.
 
 ## Engineering Protocol
 

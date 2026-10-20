@@ -81,7 +81,8 @@ public interface EventBus {
      *         the engine is configured to refuse rather than block
      *         ({@link EventEngineConfig#busPublishFailFast()}); {@code rawArgs} carry
      *         {@code [String eventType, long queueDepth, long queueCapacity]}.
-     *         {@code EX-EVENT-6009} when the bus does not accept the event for any other reason;
+     *         {@code EX-EVENT-6009} when the bus does not accept the event for any other reason,
+     *         including an isolation refusal described on {@link EventEngine#bus()};
      *         {@code rawArgs} carry {@code [int eventTypeOrdinal, String reason]} and the upstream
      *         failure, when there is one, is the cause
      * @apiNote Ownership of {@code payload} passes to the bus on entry: do not close it after this
@@ -111,6 +112,29 @@ public interface EventBus {
      *           {@link EventRegistry} does not know, so register the type before subscribing.
      */
     SubscriptionToken subscribe(String eventType, EventHandler handler);
+
+    /**
+     * Registers a handler that receives only the publications made under the subscriber's own
+     * isolation key, and returns the handle that revokes it (ADR-101).
+     *
+     * <p>The subscriber's scope is the isolation key bound on the calling thread through
+     * {@link eu.exeris.kernel.spi.context.KernelProviders#STORAGE_CONTEXT} at the moment of this
+     * call. {@link #subscribe} is unchanged: it receives every event, scoped or not.
+     *
+     * @param eventType the event type name (e.g. {@code "UserCreated"})
+     * @param handler   the handler (non-null)
+     * @return an opaque {@link SubscriptionToken} for later unsubscription
+     * @throws EventBusException {@code EX-EVENT-6011} if no storage context is bound, the bound key
+     *         is empty, the bound key is not registered in {@link EventEngine#isolationRegistry()},
+     *         or the bus does not support scoped subscriptions; {@code rawArgs} carry
+     *         {@code [String eventType]}
+     * @implSpec The default refuses every call. A bus that cannot scope a subscriber must not
+     *           silently widen it to an unscoped subscription.
+     * @since 0.13
+     */
+    default SubscriptionToken subscribeScoped(String eventType, EventHandler handler) {
+        throw EventBusException.subscriptionRejected(eventType);
+    }
 
     /**
      * Revokes the subscription the token identifies, so no publication after this call reaches

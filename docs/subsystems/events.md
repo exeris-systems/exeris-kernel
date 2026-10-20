@@ -284,6 +284,44 @@ The "one log, four views" family — streaming, sourcing, KV, distributed — al
 
 ---
 
+## Isolation (ADR-101)
+
+An event carries the tenant it was published under, so a subscriber serving one tenant does not receive another tenant's events. **[ADR-101](../adr/ADR-101-events-spi-contract-anchor.md)** (Ruling 1) gives the descriptor an `isolationOrdinal`: `0` is unscoped, and a positive value is a registered isolation key.
+
+**Delivery rules.**
+
+1. **Stamped at publish from the bound storage context.** The engine's `bus()` resolves the effective ordinal from `KernelProviders.STORAGE_CONTEXT`. An unbound context, or one whose `isolationKey()` is empty, resolves to `0`. A registered key resolves to its ordinal. An unregistered key refuses the publish with `EX-EVENT-6009`, reason `"unregistered-isolation-key"`. A descriptor carrying `0` under a bound key is stamped with the bound ordinal. A descriptor carrying a non-zero ordinal that differs from the effective one is refused with `EX-EVENT-6009`, reason `"isolation-mismatch"`. A publisher can neither forget nor forge the key.
+2. **Internal redistribution is not re-stamped.** The Kafka consumer loop's republish onto its local delegate and the outbox relay carry the ordinal they decoded or persisted.
+3. **Scoped subscription.** `EventBus.subscribeScoped(eventType, handler)` captures the caller's bound key at call time and delivers only events whose ordinal equals it. With no bound context, an empty key, an unregistered key, or a binding that does not support scoping, it refuses with `EX-EVENT-6011` and rawArgs `[eventType]`.
+4. **Unscoped subscription is unchanged.** `subscribe(eventType, handler)` still receives every event of the type, scoped or not. A subscriber serving a tenant must use `subscribeScoped`.
+5. **No bound context, unscoped delivery.** An event published with no bound context reaches only unscoped subscribers.
+
+**Registration.** Register every tenant key before publishing under its context, through the engine's registry:
+
+```java
+EventEngine engine = KernelProviders.EVENT_ENGINE.get();
+engine.isolationRegistry().register(IsolationKeySpec.of("tenant-a", 101));
+
+ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared("tenant-a"))
+        .run(() -> engine.bus().publish(descriptor, payload));
+```
+
+The application supplies the ordinals, as it supplies event-type ordinals. `IsolationKeyRegistry.register` is idempotent for an identical spec and refuses a key held under a different ordinal, or an ordinal claimed by a different key, with `EX-EVENT-6012` and rawArgs `[isolationKey, ordinal]`. The mapping from key to ordinal must be the same on every node and across restarts, because a brokered bus carries the ordinal to other processes and the log keeps it. The kernel refuses an unregistered key; it cannot detect two nodes that disagree.
+
+**Kafka wire.** The ordinal travels as the record header `exeris-isolation-ordinal`, four bytes big-endian, written on the publish, appender and broker-port paths. An absent header, or one whose value is not four bytes, decodes as `0`. Both frame layouts are unchanged, so a record written before this rule decodes as unscoped.
+
+**Outbox and event log.** `exeris_outbox` and `exeris_event_log` gain `isolation_ordinal INT NOT NULL DEFAULT 0` through migration `V0.13.0`. The outbox ordinal is read from the context bound when the row is appended; an unresolvable key writes `0`, and the append does not refuse on account of the context. The relay rebuilds the descriptor with the stored ordinal, so an outbox-relayed event reaches the same subscribers as a direct publish. The event-log appender persists the descriptor's ordinal as it arrives.
+
+**Limits.**
+
+- The cross-node key-to-ordinal mapping is the application's responsibility.
+- The Kafka consumer loop trusts the isolation header as written. Write access to a topic is therefore the trust boundary: a producer that can write to the topic can name any ordinal.
+- Replay through `EventStreamReader` is not filtered by isolation, and the replay path does not read the header.
+- `subscribe` still sees every tenant's events. Only `subscribeScoped` is isolated.
+- A publication under a bound key that is not registered is refused. Register every tenant key before publishing under its context.
+
+**Current state:** 0.13 — the SPI (`EventDescriptor.isolationOrdinal`, `EventBus.subscribeScoped`, `IsolationKeySpec`, `IsolationKeyRegistry`, `EventEngine.isolationRegistry()`), the Core stamp and scoped routing, the Community and Kafka bindings, migration `V0.13.0`, and the `AbstractEventBusTck`, `AbstractEventRegistryTck`, `AbstractKafkaEventEngineTck` and `EventBusZeroAllocTck` cases that cover them.
+
 ## Binding-Agnostic `topic` (ADR-050)
 
 The SDK `@DomainEvent.topic` attribute captures an author's routing target; **[ADR-050](../adr/ADR-050-events-binding-agnostic-topic.md)** gives it a kernel sink so it becomes portable across bindings.
@@ -311,9 +349,10 @@ The SDK `@DomainEvent.topic` attribute captures an author's routing target; **[A
 | `EX-EVENT-6006` | Projection Handler Failure | `[0] String projectionName, [1] int eventTypeOrdinal` — defined, not raised in this repository: `Projection` rethrows the handler's own exception and emits `ProjectionHandlerFailureEvent` |
 | `EX-EVENT-6007` | Event-Loop VT Uncaught | `[0] String loopName, [1] String exceptionType` — defined, not raised in this repository: `CommunityEventLoop` emits `EventLoopFailureEvent` |
 | `EX-EVENT-6008` | Append Version Conflict | `[0] String streamType, [1] long expectedVersion, [2] long actualVersion` (`EventStreamAppendConflictException.versionConflict`) |
-| `EX-EVENT-6009` | Publish Not Accepted  | `[0] int eventTypeOrdinal, [1] String reason` (`EventBusException.publishFailed`). The kernel's bindings emit `delivery-failed` (the queue or broker client threw; its exception is the cause), `unregistered-type` (the Kafka bus was handed an ordinal its registry does not know; no cause) and `interrupted` (interrupted while waiting for queue space; no cause, interrupt status left set). No handler was given the event |
+| `EX-EVENT-6009` | Publish Not Accepted  | `[0] int eventTypeOrdinal, [1] String reason` (`EventBusException.publishFailed`). The kernel's bindings emit `delivery-failed` (the queue or broker client threw; its exception is the cause), `unregistered-type` (the Kafka bus was handed an ordinal its registry does not know; no cause), `interrupted` (interrupted while waiting for queue space; no cause, interrupt status left set), `unregistered-isolation-key` (the bound storage context's isolation key is not registered; no cause) and `isolation-mismatch` (the descriptor's isolation ordinal is non-zero and does not match the bound context, or no context is bound; no cause). No handler was given the event |
 | `EX-EVENT-6010` | Handlers Failed After Delivery | `[0] int eventTypeOrdinal, [1] int failedHandlerCount` (`EventBusException.handlersFailed`). Raised by `publishAndAwait` on a bus that is not brokered only; no cause, each handler's exception attached as suppressed. The event was delivered, so a retry re-runs the handlers that succeeded |
-| `EX-EVENT-6011` | Subscription Rejected | `[0] String eventType` (`EventBusException.subscriptionRejected`). The in-memory bus raises it for a type the `EventRegistry` does not know — register the type before subscribing |
+| `EX-EVENT-6011` | Subscription Rejected | `[0] String eventType` (`EventBusException.subscriptionRejected`). The in-memory bus raises it for a type the `EventRegistry` does not know — register the type before subscribing. `subscribeScoped` raises it when no storage context is bound, the bound isolation key is empty or unregistered, or the bus does not support scoped subscriptions |
+| `EX-EVENT-6012` | Isolation Key Conflict | `[0] String isolationKey, [1] int ordinal` (`EventRegistryException.isolationKeyConflict`). `IsolationKeyRegistry.register` refused a key already held under a different ordinal, or an ordinal already claimed by a different key (ADR-101) |
 
 Each exception class's message constructors set its code and leave `rawArgs` empty; the layouts above
 are those of the static factories named in each row.

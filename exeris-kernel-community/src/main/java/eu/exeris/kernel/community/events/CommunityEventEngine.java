@@ -6,6 +6,8 @@ package eu.exeris.kernel.community.events;
 
 import eu.exeris.kernel.community.events.jfr.CommunityEventQueueOverflowEvent;
 import eu.exeris.kernel.core.events.InMemoryEventBus;
+import eu.exeris.kernel.core.events.isolation.CoreIsolationKeyRegistry;
+import eu.exeris.kernel.core.events.isolation.IsolationStamp;
 import eu.exeris.kernel.core.events.outbox.OutboxBrokerPort;
 import eu.exeris.kernel.core.events.outbox.OutboxEventStore;
 import eu.exeris.kernel.core.events.outbox.OutboxOrchestrator;
@@ -20,6 +22,7 @@ import eu.exeris.kernel.spi.events.EventLoop;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventQueue;
 import eu.exeris.kernel.spi.events.EventRegistry;
+import eu.exeris.kernel.spi.events.IsolationKeyRegistry;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 
@@ -41,6 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
 final class CommunityEventEngine implements EventEngine {
 
     private final CommunityEventRegistry registry;
+    private final CoreIsolationKeyRegistry isolationRegistry;
     private final CommunityEventQueue queue;
     private final CommunityEventLoop loop;
     private final EventBus bus;
@@ -53,13 +57,14 @@ final class CommunityEventEngine implements EventEngine {
     /* default */ CommunityEventEngine(EventEngineConfig config) {
         Objects.requireNonNull(config, "config");
         this.registry = new CommunityEventRegistry();
+        this.isolationRegistry = new CoreIsolationKeyRegistry();
         this.failFastOnFull = config.busPublishFailFast();
         this.queue = new CommunityEventQueue(config.queueCapacity(), failFastOnFull);
         this.loop = new CommunityEventLoop(registry, queue, config.batchSize());
 
-        InMemoryEventBus delegateBus = new InMemoryEventBus(registry);
+        InMemoryEventBus delegateBus = new InMemoryEventBus(registry, isolationRegistry);
         this.bus = new PersistentQueueingBus(config.engineName(), delegateBus, queue,
-                registry, publishedTotal, failFastOnFull);
+                registry, isolationRegistry, publishedTotal, failFastOnFull);
         this.outboxOrchestrator = buildOutboxOrchestrator(config, delegateBus, registry);
     }
 
@@ -107,6 +112,18 @@ final class CommunityEventEngine implements EventEngine {
     @Override
     public EventRegistry registry() {
         return registry;
+    }
+
+    /**
+     * Returns this engine's tenant isolation key registry (ADR-101). The bus stamps publications from
+     * it, and the outbox append resolves the bound key through the engine's accessor. The event-log
+     * appender records the ordinal it is given and resolves nothing.
+     *
+     * @return the non-null isolation key registry
+     */
+    @Override
+    public IsolationKeyRegistry isolationRegistry() {
+        return isolationRegistry;
     }
 
     /**
@@ -215,6 +232,7 @@ final class CommunityEventEngine implements EventEngine {
         private final EventBus delegate;
         private final EventQueue queue;
         private final CommunityEventRegistry registry;
+        private final IsolationKeyRegistry isolationRegistry;
         private final AtomicLong publishedTotal;
         private final boolean failFastOnFull;
 
@@ -223,12 +241,14 @@ final class CommunityEventEngine implements EventEngine {
                 EventBus delegate,
                 EventQueue queue,
                 CommunityEventRegistry registry,
+                IsolationKeyRegistry isolationRegistry,
                 AtomicLong publishedTotal,
                 boolean failFastOnFull) {
             this.engineName = Objects.requireNonNull(engineName, "engineName");
             this.delegate = Objects.requireNonNull(delegate, "delegate");
             this.queue = Objects.requireNonNull(queue, "queue");
             this.registry = Objects.requireNonNull(registry, "registry");
+            this.isolationRegistry = Objects.requireNonNull(isolationRegistry, "isolationRegistry");
             this.publishedTotal = Objects.requireNonNull(publishedTotal, "publishedTotal");
             this.failFastOnFull = failFastOnFull;
         }
@@ -253,9 +273,10 @@ final class CommunityEventEngine implements EventEngine {
          */
         @Override
         public void publish(EventDescriptor descriptor, EventPayload payload) {
+            EventDescriptor stamped = stampOrClose(descriptor, payload);
             publishedTotal.incrementAndGet();
-            enqueuePersistent(descriptor, payload);
-            delegate.publish(descriptor, payload);
+            enqueuePersistent(stamped, payload);
+            delegate.publish(stamped, payload);
         }
 
         /**
@@ -269,6 +290,19 @@ final class CommunityEventEngine implements EventEngine {
         @Override
         public SubscriptionToken subscribe(String eventType, EventHandler handler) {
             return delegate.subscribe(eventType, handler);
+        }
+
+        /**
+         * Delegates scoped subscription to the wrapped bus, which captures the calling thread's
+         * bound isolation key.
+         *
+         * @param eventType the event type name (non-null)
+         * @param handler   the handler (non-null)
+         * @return the token returned by the delegate
+         */
+        @Override
+        public SubscriptionToken subscribeScoped(String eventType, EventHandler handler) {
+            return delegate.subscribeScoped(eventType, handler);
         }
 
         /**
@@ -297,9 +331,23 @@ final class CommunityEventEngine implements EventEngine {
          */
         @Override
         public void publishAndAwait(EventDescriptor descriptor, EventPayload payload) throws InterruptedException {
+            EventDescriptor stamped = stampOrClose(descriptor, payload);
             publishedTotal.incrementAndGet();
-            enqueuePersistent(descriptor, payload);
-            delegate.publishAndAwait(descriptor, payload);
+            enqueuePersistent(stamped, payload);
+            delegate.publishAndAwait(stamped, payload);
+        }
+
+        /**
+         * Resolves the publication's isolation ordinal from the publisher's bound context. A refusal
+         * closes the caller's payload before it propagates, so nothing reaches the queue or a handler.
+         */
+        private EventDescriptor stampOrClose(EventDescriptor descriptor, EventPayload payload) {
+            try {
+                return IsolationStamp.stamp(descriptor, isolationRegistry);
+            } catch (EventBusException refused) {
+                payload.close();
+                throw refused;
+            }
         }
 
         private void enqueuePersistent(EventDescriptor descriptor, EventPayload payload) {

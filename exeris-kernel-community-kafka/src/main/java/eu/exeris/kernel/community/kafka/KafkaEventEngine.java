@@ -5,6 +5,8 @@
 package eu.exeris.kernel.community.kafka;
 
 import eu.exeris.kernel.core.events.InMemoryEventBus;
+import eu.exeris.kernel.core.events.isolation.CoreIsolationKeyRegistry;
+import eu.exeris.kernel.core.events.isolation.IsolationStamp;
 import eu.exeris.kernel.spi.events.EventBatchProcessor;
 import eu.exeris.kernel.spi.events.EventBus;
 import eu.exeris.kernel.spi.events.EventDescriptor;
@@ -17,6 +19,7 @@ import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventQueue;
 import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.events.IsolationKeyRegistry;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
 import eu.exeris.kernel.spi.exceptions.events.EventEngineException;
@@ -105,6 +108,7 @@ public final class KafkaEventEngine implements EventEngine {
 
     private final EventEngineConfig spiConfig;
     private final KafkaEventRegistry registry;
+    private final CoreIsolationKeyRegistry isolationRegistry;
     private final InMemoryEventBus  localDelegate;
     private final EventBus          publishBus;
     private final NoOpQueue         queue;
@@ -142,13 +146,14 @@ public final class KafkaEventEngine implements EventEngine {
                                    Function<Properties, Consumer<byte[], byte[]>> consumerFactory) {
         this.spiConfig = Objects.requireNonNull(spiConfig, "spiConfig");
         Objects.requireNonNull(kafkaConfig, "kafkaConfig");
-        this.registry      = new KafkaEventRegistry();
-        this.localDelegate = new InMemoryEventBus(registry);
-        this.queue         = new NoOpQueue(spiConfig.queueCapacity());
-        this.producer      = Objects.requireNonNull(producer, "producer");
-        this.publishBus    = new KafkaPublishBus(spiConfig.engineName(),
-                                                 producer, registry, kafkaConfig,
-                                                 localDelegate, publishedTotal);
+        this.registry          = new KafkaEventRegistry();
+        this.isolationRegistry = new CoreIsolationKeyRegistry();
+        this.localDelegate     = new InMemoryEventBus(registry, isolationRegistry);
+        this.queue             = new NoOpQueue(spiConfig.queueCapacity());
+        this.producer          = Objects.requireNonNull(producer, "producer");
+        this.publishBus        = new KafkaPublishBus(spiConfig.engineName(),
+                                                     producer, registry, isolationRegistry, kafkaConfig,
+                                                     localDelegate, publishedTotal);
         this.loop          = new ConsumerLoop(spiConfig.engineName(), kafkaConfig,
                                               registry, localDelegate,
                                               Objects.requireNonNull(consumerFactory, "consumerFactory"));
@@ -172,6 +177,17 @@ public final class KafkaEventEngine implements EventEngine {
     @Override
     public EventRegistry registry() {
         return registry;
+    }
+
+    /**
+     * Returns this engine's tenant isolation key registry (ADR-101). Keys are resolved here before
+     * a publication is stamped, and the consumer side reads the ordinal back from the record header.
+     *
+     * @return the non-null isolation key registry
+     */
+    @Override
+    public IsolationKeyRegistry isolationRegistry() {
+        return isolationRegistry;
     }
 
     @Override
@@ -276,6 +292,7 @@ public final class KafkaEventEngine implements EventEngine {
         private final String                   engineName;
         private final Producer<byte[], byte[]> producer;
         private final KafkaEventRegistry       registry;
+        private final IsolationKeyRegistry     isolationRegistry;
         private final KafkaEventConfig         config;
         private final EventBus                 localDelegate;
         private final AtomicLong               publishedTotal;
@@ -283,15 +300,17 @@ public final class KafkaEventEngine implements EventEngine {
         private KafkaPublishBus(String engineName,
                                 Producer<byte[], byte[]> producer,
                                 KafkaEventRegistry registry,
+                                IsolationKeyRegistry isolationRegistry,
                                 KafkaEventConfig config,
                                 EventBus localDelegate,
                                 AtomicLong publishedTotal) {
-            this.engineName     = engineName;
-            this.producer       = producer;
-            this.registry       = registry;
-            this.config         = config;
-            this.localDelegate  = localDelegate;
-            this.publishedTotal = publishedTotal;
+            this.engineName        = engineName;
+            this.producer          = producer;
+            this.registry          = registry;
+            this.isolationRegistry = isolationRegistry;
+            this.config            = config;
+            this.localDelegate     = localDelegate;
+            this.publishedTotal    = publishedTotal;
         }
 
         @Override
@@ -304,12 +323,14 @@ public final class KafkaEventEngine implements EventEngine {
             // is incremented only after producer.send returns so failed publishes do not
             // inflate the counter.
             try (payload) {
-                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(descriptor, payload);
+                EventDescriptor stamped = IsolationStamp.stamp(descriptor, isolationRegistry);
+                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(stamped, payload);
                 producer.send(producerRecord);
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
-                // buildRecord can throw EventBusException for unregistered ordinals — propagate
-                // it unchanged; the generic Kafka-failure wrap below would mask the real cause.
+                // The stamp and buildRecord throw EventBusException for refused isolation and
+                // unregistered ordinals — propagate it unchanged; the generic Kafka-failure wrap
+                // below would mask the real cause.
                 throw ex;
             } catch (RuntimeException ex) { //NOPMD AvoidCatchingGenericException
                 // JFR-091: post-mortem trail for publish-side failures (timeout, broker
@@ -331,12 +352,13 @@ public final class KafkaEventEngine implements EventEngine {
             Objects.requireNonNull(descriptor, "descriptor");
             Objects.requireNonNull(payload,    "payload");
             try (payload) {
-                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(descriptor, payload);
+                EventDescriptor stamped = IsolationStamp.stamp(descriptor, isolationRegistry);
+                ProducerRecord<byte[], byte[]> producerRecord = buildRecord(stamped, payload);
                 producer.send(producerRecord).get();
                 publishedTotal.incrementAndGet();
             } catch (EventBusException ex) {
-                // Surface unregistered-ordinal failures unchanged — generic Kafka-failure wrap
-                // below would mask the real cause.
+                // Surface stamp and unregistered-ordinal refusals unchanged — the generic
+                // Kafka-failure wrap below would mask the real cause.
                 throw ex;
             } catch (ExecutionException | RuntimeException ex) { //NOPMD KafkaException is RuntimeException
                 // JFR-091: same publish-side failure post-mortem as publish() above; "publishAndAwait"
@@ -376,6 +398,11 @@ public final class KafkaEventEngine implements EventEngine {
         }
 
         @Override
+        public SubscriptionToken subscribeScoped(String eventType, EventHandler handler) {
+            return localDelegate.subscribeScoped(eventType, handler);
+        }
+
+        @Override
         public void unsubscribe(SubscriptionToken token) {
             localDelegate.unsubscribe(token);
         }
@@ -389,7 +416,9 @@ public final class KafkaEventEngine implements EventEngine {
             String topic = effectiveTopic(spec, config);   // ADR-050: honour the topic override
             byte[] key   = KafkaEventCodec.streamKey(descriptor);
             byte[] value = KafkaEventCodec.encode(descriptor, payload);
-            return new ProducerRecord<>(topic, key, value);
+            ProducerRecord<byte[], byte[]> producerRecord = new ProducerRecord<>(topic, key, value);
+            KafkaIsolationHeader.write(producerRecord.headers(), descriptor.isolationOrdinal());
+            return producerRecord;
         }
     }
 
@@ -538,7 +567,8 @@ public final class KafkaEventEngine implements EventEngine {
             if (frame == null || frame.length == 0) {
                 return;
             }
-            EventDescriptor descriptor = KafkaEventCodec.decodeDescriptor(frame);
+            EventDescriptor descriptor = KafkaEventCodec.decodeDescriptor(frame,
+                    KafkaIsolationHeader.read(consumerRecord.headers()));
             // PERF-071: zero-copy payload tail — slice over the consumer record's value array,
             // no fresh byte[] + arraycopy. Slice keeps the frame array reachable for GC for
             // the lifetime of the payload's reference count.

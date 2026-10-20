@@ -72,7 +72,8 @@ final class CommunityPersistenceEngine implements PersistenceEngine, PhysicalCon
             "db/migration/V0.10.0__create_event_log.sql",
             "db/migration/V0.11.0__add_saga_step_name.sql",
             "db/migration/V0.11.1__add_saga_definition_version.sql",
-            "db/migration/V0.11.2__add_saga_compensation_step_names.sql"
+            "db/migration/V0.11.2__add_saga_compensation_step_names.sql",
+            "db/migration/V0.13.0__add_event_isolation_ordinal.sql"
     );
 
     private static final String ENGINE_CLOSED_MESSAGE = "CommunityPersistenceEngine is closed";

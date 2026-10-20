@@ -7,6 +7,8 @@ package eu.exeris.kernel.tck.contract.events;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventRegistry;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.events.IsolationKeyRegistry;
+import eu.exeris.kernel.spi.events.IsolationKeySpec;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.events.EventRegistryException;
 import org.junit.jupiter.api.AfterEach;
@@ -269,6 +271,68 @@ public abstract class AbstractEventRegistryTck {
             assertThat(registry.size())
                     .as("size() MUST be unchanged after idempotent re-registration of a topic-carrying spec")
                     .isEqualTo(sizeAfterFirst);
+        }
+    }
+    @Nested
+    @DisplayName("Isolation key registration — EX-EVENT-6012 (ADR-101)")
+    class IsolationKeyRegistration {
+
+        private static final String KEY_A = "registry-tck-tenant-a";
+        private static final String KEY_B = "registry-tck-tenant-b";
+        private static final int    ORD_A = 101;
+        private static final int    ORD_B = 102;
+
+        @Test
+        @DisplayName("re-registering the identical isolation key spec is idempotent")
+        void identicalSpecIsIdempotent() {
+            IsolationKeyRegistry isolation = engine.isolationRegistry();
+            isolation.register(IsolationKeySpec.of(KEY_A, ORD_A));
+            int sizeAfterFirst = isolation.size();
+
+            assertThatCode(() -> isolation.register(IsolationKeySpec.of(KEY_A, ORD_A)))
+                    .as("re-registering the identical IsolationKeySpec MUST NOT throw")
+                    .doesNotThrowAnyException();
+            assertThat(isolation.size())
+                    .as("size() MUST be unchanged after idempotent re-registration")
+                    .isEqualTo(sizeAfterFirst);
+        }
+
+        @Test
+        @DisplayName("the same key under a different ordinal throws EX-EVENT-6012 with rawArgs [key, newOrdinal]")
+        void sameKeyDifferentOrdinalConflicts() {
+            IsolationKeyRegistry isolation = engine.isolationRegistry();
+            isolation.register(IsolationKeySpec.of(KEY_A, ORD_A));
+
+            assertThatThrownBy(() -> isolation.register(IsolationKeySpec.of(KEY_A, ORD_B)))
+                    .as("a key already held under another ordinal MUST raise EX-EVENT-6012")
+                    .isInstanceOfSatisfying(EventRegistryException.class, ex -> {
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6012);
+                        assertThat(ex.rawArgs())
+                                .as("rawArgs MUST carry the conflicting registration")
+                                .containsExactly(KEY_A, ORD_B);
+                    });
+            assertThat(isolation.ordinalOf(KEY_A))
+                    .as("a refused registration MUST leave the original binding in place")
+                    .isEqualTo(ORD_A);
+        }
+
+        @Test
+        @DisplayName("a different key under an ordinal already claimed throws EX-EVENT-6012 with rawArgs [key, ordinal]")
+        void sameOrdinalDifferentKeyConflicts() {
+            IsolationKeyRegistry isolation = engine.isolationRegistry();
+            isolation.register(IsolationKeySpec.of(KEY_A, ORD_A));
+
+            assertThatThrownBy(() -> isolation.register(IsolationKeySpec.of(KEY_B, ORD_A)))
+                    .as("an ordinal already claimed by another key MUST raise EX-EVENT-6012")
+                    .isInstanceOfSatisfying(EventRegistryException.class, ex -> {
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6012);
+                        assertThat(ex.rawArgs())
+                                .as("rawArgs MUST carry the conflicting registration")
+                                .containsExactly(KEY_B, ORD_A);
+                    });
+            assertThat(isolation.isRegistered(KEY_B))
+                    .as("a refused registration MUST NOT leave a partial entry behind")
+                    .isFalse();
         }
     }
 }

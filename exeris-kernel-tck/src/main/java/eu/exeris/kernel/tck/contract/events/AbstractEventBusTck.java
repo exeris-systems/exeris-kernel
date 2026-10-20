@@ -9,10 +9,13 @@ import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventEngine;
 import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventPayload;
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.events.IsolationKeySpec;
 import eu.exeris.kernel.spi.events.SubscriptionToken;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.events.EventBusException;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -606,6 +609,254 @@ public abstract class AbstractEventBusTck {
     }
 
     // =========================================================================
+    // Isolation scoping (ADR-101)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Isolation scoping — a subscriber receives its own tenant's publications (ADR-101)")
+    class IsolationScoping {
+
+        private static final String TENANT_A = "tenant-a";
+        private static final String TENANT_B = "tenant-b";
+        private static final String TENANT_Z = "tenant-z";
+        private static final int    ORD_A    = 101;
+        private static final int    ORD_B    = 102;
+        /** Window for a late, unexpected delivery to surface before the exact-contents assertion. */
+        private static final long   QUIET_WINDOW_MS = 200L;
+
+        @BeforeEach
+        void registerTenantKeys() {
+            engine.isolationRegistry().register(IsolationKeySpec.of(TENANT_A, ORD_A));
+            engine.isolationRegistry().register(IsolationKeySpec.of(TENANT_B, ORD_B));
+        }
+
+        // ── Delivery: on a bus that is not brokered ──────────────────────────────
+
+        @Test
+        @DisplayName("publishAndAwait() delivers each tenant's event to that tenant's scoped subscriber only")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void crossTenantProbeAwait() throws Exception {
+            assumeFalse(engine.bus().isBrokered(), BROKERED_AWAIT);
+            List<String> received = new CopyOnWriteArrayList<>();
+            List<String> unscoped = new CopyOnWriteArrayList<>();
+            subscribeAs(TENANT_A, "A", received, new CountDownLatch(0));
+            subscribeAs(TENANT_B, "B", received, new CountDownLatch(0));
+            subscribeUnscoped(unscoped);
+
+            asTenant(TENANT_A).call(() -> {
+                engine.bus().publishAndAwait(scopedDescriptor(ORDINAL_USER_CREATED, 0), EventPayload.empty());
+                return null;
+            });
+            assertThat(received).as("tenant A's publication reaches tenant A only").containsExactly("A:101");
+
+            asTenant(TENANT_B).call(() -> {
+                engine.bus().publishAndAwait(scopedDescriptor(ORDINAL_USER_CREATED, 0), EventPayload.empty());
+                return null;
+            });
+            assertThat(received).as("tenant B's publication reaches tenant B only")
+                    .containsExactly("A:101", "B:102");
+            assertThat(unscoped).as("an unscoped subscriber receives every scoped publication")
+                    .containsExactly("U:101", "U:102");
+        }
+
+        @Test
+        @DisplayName("publish() delivers each tenant's event to that tenant's scoped subscriber only; no extra delivery")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void crossTenantProbePublish() throws Exception {
+            assumeFalse(engine.bus().isBrokered(), BROKERED_FAN_OUT);
+            List<String> received = new CopyOnWriteArrayList<>();
+            List<String> unscoped = new CopyOnWriteArrayList<>();
+            CountDownLatch delivered = new CountDownLatch(4);
+            subscribeAs(TENANT_A, "A", received, delivered);
+            subscribeAs(TENANT_B, "B", received, delivered);
+            engine.bus().subscribe(TYPE_USER_CREATED, (d, p) -> {
+                try (p) {
+                    unscoped.add("U:" + d.isolationOrdinal());
+                }
+                delivered.countDown();
+            });
+
+            asTenant(TENANT_A).call(() -> {
+                engine.bus().publish(scopedDescriptor(ORDINAL_USER_CREATED, 0), EventPayload.empty());
+                return null;
+            });
+            asTenant(TENANT_B).call(() -> {
+                engine.bus().publish(scopedDescriptor(ORDINAL_USER_CREATED, 0), EventPayload.empty());
+                return null;
+            });
+
+            assertThat(delivered.await(5, TimeUnit.SECONDS)).as("every subscriber's delivery arrives").isTrue();
+            TimeUnit.MILLISECONDS.sleep(QUIET_WINDOW_MS);
+            assertThat(received).as("exactly one delivery per tenant, and nothing across tenants")
+                    .containsExactlyInAnyOrder("A:101", "B:102");
+            assertThat(unscoped).as("an unscoped subscriber receives every scoped publication, once each")
+                    .containsExactlyInAnyOrder("U:101", "U:102");
+        }
+
+        @Test
+        @DisplayName("with no bound context, an unscoped subscriber receives and a scoped one does not")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void noContextReachesUnscopedOnly() throws Exception {
+            assumeFalse(engine.bus().isBrokered(), BROKERED_AWAIT);
+            List<String> unscoped = new CopyOnWriteArrayList<>();
+            List<String> scoped = new CopyOnWriteArrayList<>();
+            engine.bus().subscribe(TYPE_USER_CREATED, (d, p) -> {
+                try (p) {
+                    unscoped.add("U:" + d.isolationOrdinal());
+                }
+            });
+            subscribeAs(TENANT_A, "A", scoped, new CountDownLatch(0));
+
+            engine.bus().publishAndAwait(scopedDescriptor(ORDINAL_USER_CREATED, 0), EventPayload.empty());
+
+            assertThat(unscoped).as("the unscoped subscriber receives an unscoped publication").containsExactly("U:0");
+            assertThat(scoped).as("a scoped subscriber never receives an unscoped publication").isEmpty();
+        }
+
+        @Test
+        @DisplayName("under a bound key, a descriptor carrying 0 arrives carrying the bound ordinal")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void stampedZeroArrivesWithBoundOrdinal() throws Exception {
+            assumeFalse(engine.bus().isBrokered(), BROKERED_AWAIT);
+            List<String> received = new CopyOnWriteArrayList<>();
+            subscribeAs(TENANT_A, "A", received, new CountDownLatch(0));
+
+            asTenant(TENANT_A).call(() -> {
+                engine.bus().publishAndAwait(scopedDescriptor(ORDINAL_USER_CREATED, 0), EventPayload.empty());
+                return null;
+            });
+
+            assertThat(received).as("the publisher's bound key stamps the ordinal on the way in")
+                    .containsExactly("A:101");
+        }
+
+        @Test
+        @DisplayName("a pre-stamped descriptor carrying the bound ordinal is delivered to its subscriber")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void preStampedMatchingDescriptorIsDelivered() throws Exception {
+            assumeFalse(engine.bus().isBrokered(), BROKERED_AWAIT);
+            List<String> received = new CopyOnWriteArrayList<>();
+            subscribeAs(TENANT_A, "A", received, new CountDownLatch(0));
+
+            asTenant(TENANT_A).call(() -> {
+                engine.bus().publishAndAwait(scopedDescriptor(ORDINAL_USER_CREATED, ORD_A), EventPayload.empty());
+                return null;
+            });
+
+            assertThat(received).containsExactly("A:101");
+        }
+
+        // ── Refusal: on every bus ───────────────────────────────────────────────
+
+        @Test
+        @DisplayName("a forged ordinal under tenant A, and tenant A's ordinal with no context, are refused with EX-EVENT-6009 mismatch")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void forgedOrdinalIsRefused() throws Exception {
+            TrackingPayload forged = new TrackingPayload(new AtomicInteger());
+            Throwable underA = asTenant(TENANT_A).call(() -> catchThrowable(() ->
+                    engine.bus().publish(scopedDescriptor(ORDINAL_USER_CREATED, ORD_B), forged)));
+            assertRefusedWith6009(underA, ORDINAL_USER_CREATED, "isolation-mismatch", forged);
+
+            TrackingPayload unbound = new TrackingPayload(new AtomicInteger());
+            Throwable noContext = catchThrowable(() ->
+                    engine.bus().publish(scopedDescriptor(ORDINAL_USER_CREATED, ORD_A), unbound));
+            assertRefusedWith6009(noContext, ORDINAL_USER_CREATED, "isolation-mismatch", unbound);
+        }
+
+        @Test
+        @DisplayName("a forged ordinal is refused on publishAndAwait too, releasing the payload")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void forgedOrdinalIsRefusedOnAwait() throws Exception {
+            TrackingPayload forged = new TrackingPayload(new AtomicInteger());
+            Throwable thrown = asTenant(TENANT_A).call(() -> catchThrowable(() ->
+                    engine.bus().publishAndAwait(scopedDescriptor(ORDINAL_USER_CREATED, ORD_B), forged)));
+            assertRefusedWith6009(thrown, ORDINAL_USER_CREATED, "isolation-mismatch", forged);
+        }
+
+        @Test
+        @DisplayName("a bound key the registry does not hold is refused with EX-EVENT-6009 unregistered-isolation-key")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void unregisteredKeyIsRefused() throws Exception {
+            TrackingPayload payload = new TrackingPayload(new AtomicInteger());
+            Throwable thrown = asTenant(TENANT_Z).call(() -> catchThrowable(() ->
+                    engine.bus().publish(scopedDescriptor(ORDINAL_USER_CREATED, 0), payload)));
+            assertRefusedWith6009(thrown, ORDINAL_USER_CREATED, "unregistered-isolation-key", payload);
+        }
+
+        @Test
+        @DisplayName("subscribeScoped() with no context, with system scope, or with an unregistered key is refused with EX-EVENT-6011")
+        void subscribeScopedRefusals() {
+            assertSubscribeScopedRefused(() -> engine.bus().subscribeScoped(TYPE_USER_CREATED, (d, p) -> p.close()));
+            assertSubscribeScopedRefused(() -> ScopedValue.where(KernelProviders.STORAGE_CONTEXT,
+                    ImmutableStorageContext.system()).call(() ->
+                    engine.bus().subscribeScoped(TYPE_USER_CREATED, (d, p) -> p.close())));
+            assertSubscribeScopedRefused(() -> asTenant(TENANT_Z).call(() ->
+                    engine.bus().subscribeScoped(TYPE_USER_CREATED, (d, p) -> p.close())));
+        }
+
+        // ── helpers ─────────────────────────────────────────────────────────────
+
+        private EventDescriptor scopedDescriptor(int ordinal, int isolationOrdinal) {
+            UUID id = UUID.randomUUID();
+            return EventDescriptor.of(
+                    id.getMostSignificantBits(), id.getLeastSignificantBits(),
+                    0L, 0L,
+                    ordinal, 0x02 /* ASYNC */, System.currentTimeMillis(), isolationOrdinal);
+        }
+
+        private static ScopedValue.Carrier asTenant(String tenant) {
+            return ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared(tenant));
+        }
+
+        /** Subscribes under {@code tenant}'s context and records {@code label:ordinal} per delivery. */
+        private void subscribeAs(String tenant, String label, List<String> received, CountDownLatch delivered)
+                throws Exception {
+            asTenant(tenant).call(() -> engine.bus().subscribeScoped(TYPE_USER_CREATED, (d, p) -> {
+                try (p) {
+                    received.add(label + ":" + d.isolationOrdinal());
+                }
+                delivered.countDown();
+            }));
+        }
+
+        /** Subscribes with no bound context, so the subscriber is unscoped; each delivery records {@code U:ordinal}. */
+        private void subscribeUnscoped(List<String> received) {
+            engine.bus().subscribe(TYPE_USER_CREATED, (d, p) -> {
+                try (p) {
+                    received.add("U:" + d.isolationOrdinal());
+                }
+            });
+        }
+
+        private static void assertRefusedWith6009(Throwable thrown, int ordinal, String reason,
+                                                  TrackingPayload payload) {
+            assertThat(thrown).as("the publication MUST be refused").isNotNull();
+            assertThat(thrown)
+                    .as("a refused publication MUST throw EventBusException")
+                    .isInstanceOfSatisfying(EventBusException.class, ex -> {
+                        assertThat(ex.errorCode())
+                                .as("a publication refused for isolation MUST carry EX-EVENT-6009")
+                                .isEqualTo(KernelErrorCodes.EX_EVENT_6009);
+                        assertThat(ex.rawArgs())
+                                .as("EX-EVENT-6009 rawArgs MUST be [eventTypeOrdinal, reason]")
+                                .containsExactly(ordinal, reason);
+                    });
+            assertThat(payload.closeCalls())
+                    .as("a refused publication MUST release the payload it was handed exactly once")
+                    .isOne();
+        }
+
+        private static void assertSubscribeScopedRefused(org.junit.jupiter.api.function.ThrowingSupplier<?> action) {
+            assertThatThrownBy(action::get)
+                    .as("a scoped subscription with no usable scope MUST be refused")
+                    .isInstanceOfSatisfying(EventBusException.class, ex -> {
+                        assertThat(ex.errorCode()).isEqualTo(KernelErrorCodes.EX_EVENT_6011);
+                        assertThat(ex.rawArgs()).containsExactly(TYPE_USER_CREATED);
+                    });
+        }
+    }
+
+    // =========================================================================
     // Inner helper — TrackingPayload
     // =========================================================================
 
@@ -630,6 +881,8 @@ public abstract class AbstractEventBusTck {
         }
 
         int retainCalls() { return retainCalls.get(); }
+
+        int closeCalls() { return closeCalls.get(); }
 
         @Override
         public java.lang.foreign.MemorySegment segment() {

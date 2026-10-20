@@ -389,6 +389,12 @@ class KernelErrorCodesTest {
         void exEvent6011() {
             assertThat(KernelErrorCodes.EX_EVENT_6011).isEqualTo("EX-EVENT-6011");
         }
+
+        @Test
+        @DisplayName("EX_EVENT_6012 == 'EX-EVENT-6012' (isolation key registry conflict)")
+        void exEvent6012() {
+            assertThat(KernelErrorCodes.EX_EVENT_6012).isEqualTo("EX-EVENT-6012");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -569,7 +575,7 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_EVENT_6001, KernelErrorCodes.EX_EVENT_6002,
                     KernelErrorCodes.EX_EVENT_6003, KernelErrorCodes.EX_EVENT_6004,
                     KernelErrorCodes.EX_EVENT_6009, KernelErrorCodes.EX_EVENT_6010,
-                    KernelErrorCodes.EX_EVENT_6011,
+                    KernelErrorCodes.EX_EVENT_6011, KernelErrorCodes.EX_EVENT_6012,
                     KernelErrorCodes.EX_FLOW_7001, KernelErrorCodes.EX_FLOW_7002,
                     KernelErrorCodes.EX_FLOW_7003, KernelErrorCodes.EX_FLOW_7004,
                     KernelErrorCodes.EX_CFG_1001, KernelErrorCodes.EX_CFG_1002, KernelErrorCodes.EX_CFG_1003,
