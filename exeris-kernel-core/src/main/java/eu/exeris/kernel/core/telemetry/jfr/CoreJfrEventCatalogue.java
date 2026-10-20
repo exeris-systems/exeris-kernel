@@ -79,14 +79,16 @@ public final class CoreJfrEventCatalogue {
                     "eu.exeris.kernel.core.events.jfr.OutboxBatchFlushedEvent",
                     "eu.exeris.kernel.core.events.jfr.OutboxDlqEvent",
                     "eu.exeris.kernel.core.events.jfr.OutboxLoopFailureEvent")),
-            // flow — per step, per timeout and per snapshot write, on the virtual thread running the flow.
+            // flow — per step, per timeout and per snapshot write, on the virtual thread running the flow;
+            // per absorbed choreography Start, on the thread the event bus dispatches the delivery on.
             Map.entry("flow", List.of(
                     "eu.exeris.kernel.core.flow.FlowStepFailedEvent",
                     "eu.exeris.kernel.core.flow.FlowTimeoutEvent",
                     "eu.exeris.kernel.core.flow.FlowDeferredWakeFailedEvent",
                     "eu.exeris.kernel.core.flow.FlowSnapshotPersistFailedEvent",
                     "eu.exeris.kernel.core.flow.FlowSchemaMismatchEvent",
-                    "eu.exeris.kernel.core.flow.WakeOnLoadFallbackEvent")),
+                    "eu.exeris.kernel.core.flow.WakeOnLoadFallbackEvent",
+                    "eu.exeris.kernel.core.flow.ChoreographyStartIgnoredEvent")),
             // memory — taken on whichever virtual thread is allocating, and a pressure episode
             // produces them in a burst.
             Map.entry("memory", List.of(

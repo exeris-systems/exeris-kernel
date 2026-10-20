@@ -74,6 +74,25 @@ final class CoreFlowRuntime { // NOPMD
     private static final int  STEP_PROCEED             = Integer.MIN_VALUE;
     private static final int  EXIT_RUN_LOOP            = -1;
 
+    /** What a schedule call did with the instance it was asked to start. */
+    /* default */ enum ScheduleOutcome {
+        /** A run was launched for the instance. */
+        STARTED,
+        /** A run already holds the instance; the request was absorbed. */
+        RUNNING,
+        /** The instance is parked; it was re-registered as parked and not run. */
+        PARKED,
+        /** The instance reached a terminal state; nothing was run. */
+        TERMINAL,
+        /** The runtime's lifecycle ended before the run could launch; no run holds the instance. */
+        NOT_LAUNCHED;
+
+        /** Whether the call found an instance already held by the engine and absorbed the request. */
+        /* default */ boolean absorbed() {
+            return this == RUNNING || this == PARKED || this == TERMINAL;
+        }
+    }
+
     private final FlowEngineConfig config;
     private final FlowProgressPublisher progressPublisher;
     private final Scheduler scheduler = new Scheduler();
@@ -352,12 +371,19 @@ final class CoreFlowRuntime { // NOPMD
                 config.engineName(), key.instanceIdMost(), key.instanceIdLeast());
     }
 
-    private void schedule(CoreFlowExecutionPlan plan, FlowContext context) {
+    /**
+     * Admits a flow for execution, or reports why it did not start.
+     *
+     * @return {@link ScheduleOutcome#STARTED} when a run was launched, the state of the instance the
+     *         call found when it absorbed the request, or {@link ScheduleOutcome#NOT_LAUNCHED} when
+     *         the lifecycle ended before the launch
+     */
+    private ScheduleOutcome schedule(CoreFlowExecutionPlan plan, FlowContext context) {
         ensureStarted();
         FlowKey key = FlowKey.from(context);
         parkedLookupMisses.clearMiss(key);
         if (terminalStateCatalog.isTerminal(key)) {
-            return;
+            return ScheduleOutcome.TERMINAL;
         }
 
         RuntimeFlowInstance instance = liveInstances.compute(key, (flowKey, current) -> {
@@ -372,14 +398,8 @@ final class CoreFlowRuntime { // NOPMD
         });
 
         if (instance.isTerminal() || terminalStateCatalog.isTerminal(key)) {
-            // FLOW-107: catalog miss with a terminal snapshot row means the in-memory entry
-            // was evicted under bounded LRU. Re-cache the terminal state so subsequent
-            // resubmits short-circuit on the in-memory fast path.
-            if (instance.isTerminal()) {
-                terminalStateCatalog.recordTerminal(key, instance.state());
-            }
-            liveInstances.remove(key, instance);
-            return;
+            retireTerminal(key, instance);
+            return ScheduleOutcome.TERMINAL;
         }
 
         instance.captureEventEngine();
@@ -387,21 +407,68 @@ final class CoreFlowRuntime { // NOPMD
         int startStep = instance.beginScheduleForSchedule();
         if (startStep == RuntimeFlowInstance.PARKED_SCHEDULE_NOOP) {
             ensureParkedRegistration(instance);
-            return;
+            return ScheduleOutcome.PARKED;
         }
         if (startStep < 0) {
-            return;
+            // Refused only because a run already holds the instance, or because it finished in
+            // the window since the terminal check above.
+            return heldOutcome(instance);
         }
         if (instance.state() == FlowState.PARKED) {
             ensureParkedRegistration(instance);
             instance.markNotScheduled();
-            return;
+            return ScheduleOutcome.PARKED;
         }
 
         if (parkedInstances.remove(key) != null) {
             parkedFlows.decrement();
         }
-        launch(instance, startStep);
+        return launch(instance, startStep) ? ScheduleOutcome.STARTED : ScheduleOutcome.NOT_LAUNCHED;
+    }
+
+    private static ScheduleOutcome heldOutcome(RuntimeFlowInstance instance) {
+        return instance.isTerminal() ? ScheduleOutcome.TERMINAL : ScheduleOutcome.RUNNING;
+    }
+
+    /**
+     * Drops a terminal instance from the live index. A catalog miss with a terminal snapshot row
+     * means the in-memory entry was evicted under the bounded LRU, so the terminal state is cached
+     * again and subsequent resubmits short-circuit on the in-memory fast path.
+     */
+    private void retireTerminal(FlowKey key, RuntimeFlowInstance instance) {
+        if (instance.isTerminal()) {
+            terminalStateCatalog.recordTerminal(key, instance.state());
+        }
+        liveInstances.remove(key, instance);
+    }
+
+    /**
+     * Submits a choreography Start through the same admission as the public schedule call, returning
+     * what that call did so the choreography bridge can report a Start that did not start a flow.
+     */
+    /* default */ ScheduleOutcome submitStart(FlowExecutionPlan plan, FlowContext context) {
+        return schedule(Scheduler.castPlan(plan), context);
+    }
+
+    /**
+     * Names the state of the instance a Start was absorbed for, for the diagnostic event. Cold path:
+     * runs only after an absorbed Start.
+     *
+     * @param key     the instance the Start named
+     * @param outcome what the schedule call reported for it
+     * @return {@code RUNNING}, {@code PARKED}, the terminal {@link FlowState} name, or {@code TERMINAL}
+     *         when the terminal state is no longer cached
+     */
+    /* default */ String existingState(FlowKey key, ScheduleOutcome outcome) {
+        if (outcome != ScheduleOutcome.TERMINAL) {
+            return outcome.name();
+        }
+        FlowState terminal = terminalStateCatalog.stateOf(key);
+        return terminal != null ? terminal.name() : outcome.name();
+    }
+
+    /* default */ String engineName() {
+        return config.engineName();
     }
 
     private void park(FlowContext context) {
@@ -727,10 +794,17 @@ final class CoreFlowRuntime { // NOPMD
         return false;
     }
 
-    private void launch(RuntimeFlowInstance instance, int startStep) {
+    /**
+     * Launches a run of the instance from the given step, unless the engine's lifecycle has ended.
+     *
+     * @param instance  the instance to run
+     * @param startStep the step the run starts from
+     * @return {@code true} when a run was launched, {@code false} when the lifecycle had ended
+     */
+    private boolean launch(RuntimeFlowInstance instance, int startStep) {
         if (!isActiveLifecycle(instance)) {
             instance.markNotScheduled();
-            return;
+            return false;
         }
         int admitted = activeFlows.incrementAndGet();
         if (admitted > config.maxConcurrentFlows()) {
@@ -758,6 +832,7 @@ final class CoreFlowRuntime { // NOPMD
             instance.markNotScheduled();
             throw startFailure;
         }
+        return true;
     }
 
     private void runInstance(RuntimeFlowInstance instance, int startStep) {
@@ -1160,7 +1235,7 @@ final class CoreFlowRuntime { // NOPMD
         if (staleLifecycle || snapshotStore == null) {
             return;
         }
-        // FLOW-107: in bounded-catalog mode the durable snapshot is the idempotency fence
+        // In bounded-catalog mode the durable snapshot is the idempotency fence
         // for COMPLETED entries that may have been evicted from the in-memory catalog.
         // Retain the snapshot here; lifetime is governed by DIST-303 saga TTL retention.
         if (terminalStateCatalog.isBounded()) {
@@ -1341,6 +1416,15 @@ final class CoreFlowRuntime { // NOPMD
             synchronized (lock) {
                 // get() — not containsKey — to mark the entry as recently accessed under accessOrder=true.
                 return map.get(key) != null;
+            }
+        }
+
+        /* default */ FlowState stateOf(FlowKey key) {
+            if (maxSize == 0) {
+                return map.get(key);
+            }
+            synchronized (lock) {
+                return map.get(key);
             }
         }
 

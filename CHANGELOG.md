@@ -93,6 +93,16 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **A choreography `Start` for an instance the engine already holds is pinned as a no-op, and the absorbed
+  delivery is observable.** A running, parked or completed instance is not run again and the supplied plan is
+  ignored; `AbstractFlowChoreographyTck` pins each state for every binding. Each absorbed `Start` emits the new
+  JFR event `eu.exeris.kernel.flow.ChoreographyStartIgnored` (`engineName`, `instanceIdMost`,
+  `instanceIdLeast`, `existingState` naming the `FlowState`: `RUNNING`, `PARKED`, `COMPLETED` or
+  `FAILED_ROLLEDBACK`, or `TERMINAL` when the finished instance's state is no longer cached). Two limits are documented on `ChoreographyDecision.Start`: with the
+  default `terminalCatalogMaxSize` the no-op does not hold across an engine restart (bounded mode also needs a
+  snapshot store and a row within the saga TTL), and a non-terminal durable row is resumed rather than treated
+  as a duplicate, which raises no event.
+
 - **`EventEngineStats.publishFailedTotal()` counts asynchronous publish failures on a brokered bus (ADR-101
   Ruling 2).** The new component is kept apart from `failedTotal`, which still counts handler errors only. The
   seven-argument constructor remains as a bridge that reports zero, so existing callers compile unchanged.
