@@ -4,10 +4,14 @@
  */
 package eu.exeris.kernel.tck.contract.events;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.events.EventDescriptor;
 import eu.exeris.kernel.spi.events.EventEngine;
+import eu.exeris.kernel.spi.events.EventHandler;
 import eu.exeris.kernel.spi.events.EventPayload;
 import eu.exeris.kernel.spi.events.EventTypeSpec;
+import eu.exeris.kernel.spi.events.IsolationKeySpec;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,9 +19,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -72,6 +78,23 @@ public abstract class AbstractKafkaEventEngineTck {
     private static final String  TYPE_KAFKA_TOPICED    = "KafkaTckTopicedProbe";
     private static final int     ORDINAL_KAFKA_TOPICED = 30_050;
     private static final String  TOPIC_OVERRIDE        = "exeris-tck.orders.created";
+
+    // ADR-101 — isolation probes. Each probe publishes one payload byte as its tag, so a subscriber
+    // can name the event it saw without reading the descriptor.
+    private static final String  ISOLATION_KEY_A       = "exeris-tck-tenant-a";
+    private static final String  ISOLATION_KEY_B       = "exeris-tck-tenant-b";
+    private static final int     ISOLATION_ORDINAL_A   = 101;
+    private static final int     ISOLATION_ORDINAL_B   = 102;
+    private static final int     TAG_UNSCOPED          = 0;
+    private static final int     TAG_TENANT_A          = 1;
+    private static final int     TAG_TENANT_B          = 2;
+    private static final int     TAG_SENTINEL          = 9;
+    /**
+     * Lets a delivery that the consumer loop has already polled reach its handler before an
+     * exact-contents assertion runs. It assumes the binding polls with a timeout of at most 250 ms,
+     * so twice that covers one poll cycle; a binding with a longer poll timeout must raise this value.
+     */
+    private static final long    QUIET_WINDOW_MS       = 500L;
 
     private EventEngine engine;
 
@@ -370,6 +393,151 @@ public abstract class AbstractKafkaEventEngineTck {
                     .isTrue();
         } finally {
             fresh.close();
+        }
+    }
+
+    // =========================================================================
+    // ADR-101 — isolation across the broker
+    // =========================================================================
+
+    @Test
+    @Timeout(value = 90, unit = TimeUnit.SECONDS)
+    @DisplayName("(ADR-101) publish(): each tenant's event reaches that tenant's scoped subscriber and the unscoped one only")
+    void isolationProbeOnPublish() throws Exception {
+        assertIsolationProbe(false);
+    }
+
+    @Test
+    @Timeout(value = 90, unit = TimeUnit.SECONDS)
+    @DisplayName("(ADR-101) publishAndAwait(): the same probe holds across the broker hop")
+    void isolationProbeOnPublishAndAwait() throws Exception {
+        assertIsolationProbe(true);
+    }
+
+    @Test
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    @DisplayName("(ADR-101) an unscoped publication reaches an unscoped subscriber and not a scoped one")
+    void unscopedPublicationReachesUnscopedOnly() throws Exception {
+        engine.isolationRegistry().register(IsolationKeySpec.of(ISOLATION_KEY_A, ISOLATION_ORDINAL_A));
+        UUID streamId = UUID.randomUUID();
+        List<String> seenByScoped = new CopyOnWriteArrayList<>();
+        List<String> seenByUnscoped = new CopyOnWriteArrayList<>();
+        CountDownLatch unscopedDelivered = new CountDownLatch(1);
+
+        subscribeScopedAs(ISOLATION_KEY_A, "A", streamId, seenByScoped, -1, null);
+        engine.bus().subscribe(TYPE_KAFKA_PROBE,
+                recordTags("U", streamId, seenByUnscoped, TAG_UNSCOPED, unscopedDelivered));
+
+        publishTagged(null, TAG_UNSCOPED, streamId, false);
+
+        assertThat(unscopedDelivered.await(45, TimeUnit.SECONDS))
+                .as("an unscoped publication MUST reach the unscoped subscriber through the broker")
+                .isTrue();
+        TimeUnit.MILLISECONDS.sleep(QUIET_WINDOW_MS);
+        assertThat(seenByUnscoped).containsExactly("U:0");
+        assertThat(seenByScoped)
+                .as("a scoped subscriber MUST NOT receive an unscoped publication")
+                .isEmpty();
+    }
+
+    /**
+     * Publishes one event per tenant, plus an unscoped one and a trailing tenant-B sentinel, all on
+     * one stream (so one partition, so offset order), then checks that each subscriber received
+     * exactly the events its scope admits.
+     */
+    private void assertIsolationProbe(boolean awaitMode) throws Exception {
+        engine.isolationRegistry().register(IsolationKeySpec.of(ISOLATION_KEY_A, ISOLATION_ORDINAL_A));
+        engine.isolationRegistry().register(IsolationKeySpec.of(ISOLATION_KEY_B, ISOLATION_ORDINAL_B));
+        UUID streamId = UUID.randomUUID();
+        List<String> seenByA = new CopyOnWriteArrayList<>();
+        List<String> seenByB = new CopyOnWriteArrayList<>();
+        List<String> seenByU = new CopyOnWriteArrayList<>();
+        CountDownLatch sentinelAtB = new CountDownLatch(1);
+
+        subscribeScopedAs(ISOLATION_KEY_A, "A", streamId, seenByA, -1, null);
+        subscribeScopedAs(ISOLATION_KEY_B, "B", streamId, seenByB, TAG_SENTINEL, sentinelAtB);
+        engine.bus().subscribe(TYPE_KAFKA_PROBE, recordTags("U", streamId, seenByU, -1, null));
+
+        publishTagged(null, TAG_UNSCOPED, streamId, awaitMode);
+        publishTagged(ISOLATION_KEY_A, TAG_TENANT_A, streamId, awaitMode);
+        publishTagged(ISOLATION_KEY_B, TAG_TENANT_B, streamId, awaitMode);
+        publishTagged(ISOLATION_KEY_B, TAG_SENTINEL, streamId, awaitMode);
+
+        assertThat(sentinelAtB.await(45, TimeUnit.SECONDS))
+                .as("the trailing sentinel MUST reach tenant B's subscriber through the broker")
+                .isTrue();
+        TimeUnit.MILLISECONDS.sleep(QUIET_WINDOW_MS);
+
+        assertThat(seenByA)
+                .as("tenant A's subscriber receives tenant A's event only")
+                .containsExactly("A:" + TAG_TENANT_A);
+        assertThat(seenByB)
+                .as("tenant B's subscriber receives tenant B's event and the sentinel, not tenant A's")
+                .containsExactlyInAnyOrder("B:" + TAG_TENANT_B, "B:" + TAG_SENTINEL);
+        assertThat(seenByU)
+                .as("the unscoped subscriber receives every event, scoped or not")
+                .containsExactlyInAnyOrder("U:" + TAG_UNSCOPED, "U:" + TAG_TENANT_A,
+                        "U:" + TAG_TENANT_B, "U:" + TAG_SENTINEL);
+    }
+
+    /**
+     * Subscribes a scoped handler under {@code key}'s context. A {@code barrierTag} with a barrier
+     * latch makes the handler count that event down, so a probe can wait for it.
+     */
+    private void subscribeScopedAs(String key, String label, UUID streamId, List<String> seen,
+                                   int barrierTag, CountDownLatch barrier) throws Exception {
+        ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared(key)).call(() ->
+                engine.bus().subscribeScoped(TYPE_KAFKA_PROBE,
+                        recordTags(label, streamId, seen, barrierTag, barrier)));
+    }
+
+    private static EventHandler recordTags(String label, UUID streamId, List<String> seen,
+                                           int barrierTag, CountDownLatch barrier) {
+        return (descriptor, payload) -> {
+            try (payload) {
+                if (descriptor.streamIdHigh() != streamId.getMostSignificantBits()
+                        || descriptor.streamIdLow() != streamId.getLeastSignificantBits()) {
+                    return;
+                }
+                int tag = Byte.toUnsignedInt(payload.segment().get(ValueLayout.JAVA_BYTE, 0L));
+                seen.add(label + ":" + tag);
+                if (barrier != null && tag == barrierTag) {
+                    barrier.countDown();
+                }
+            }
+        };
+    }
+
+    /**
+     * Publishes one tagged event on {@code streamId}, under {@code key}'s storage context, or with no
+     * context when {@code key} is {@code null}. The descriptor carries ordinal 0 so the bus stamps it.
+     */
+    private void publishTagged(String key, int tag, UUID streamId, boolean awaitMode) throws Exception {
+        EventDescriptor descriptor = EventDescriptor.of(
+                UUID.randomUUID().getMostSignificantBits(), UUID.randomUUID().getLeastSignificantBits(),
+                streamId.getMostSignificantBits(), streamId.getLeastSignificantBits(),
+                ORDINAL_KAFKA_PROBE, EventDescriptor.FLAG_PERSISTENT, System.currentTimeMillis(), 0);
+        EventPayload payload = heapPayload(new byte[] {(byte) tag});
+        if (key == null) {
+            publishOnce(descriptor, payload, awaitMode);
+            return;
+        }
+        ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.shared(key)).run(() -> {
+            try {
+                publishOnce(descriptor, payload, awaitMode);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("interrupted while publishing the isolation probe", interrupted);
+            }
+        });
+    }
+
+    private void publishOnce(EventDescriptor descriptor, EventPayload payload, boolean awaitMode)
+            throws InterruptedException {
+        if (awaitMode) {
+            engine.bus().publishAndAwait(descriptor, payload);
+        } else {
+            engine.bus().publish(descriptor, payload);
         }
     }
 
