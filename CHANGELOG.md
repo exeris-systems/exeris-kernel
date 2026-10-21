@@ -44,14 +44,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **`boot()` registers a JVM shutdown hook by default — embedding hosts must opt out.** The hook runs
+  `KernelBootstrap.shutdown()`. A host that stops the kernel from its own lifecycle passes
+  `registerShutdownHook(false)` in the same release that adopts 0.13, or a `SIGTERM` starts two stop sequences.
+  The Spring host runtime is one such host. See `MIGRATION.md`.
+- **`Subsystem.stop()` may run on a thread with no kernel `ScopedValue` bindings.** A `stop()` that reads
+  `KernelProviders` fails when the hook or a host's lifecycle thread runs it. A `stop()` must not call
+  `System.exit`, `Runtime.exit` or `Runtime.halt`, and `initialize()` and `start()` must not call `System.exit`.
 - **`SubsystemOrchestrator.shutdown()` runs once under concurrent callers, and every caller returns after it
   completed.** A caller that loses the race waits for the winner; a call from a `stop()` on the stopping thread
-  returns at once. **For embedding hosts:** the shutdown hook is on by default; a host that stops the kernel from
-  its own lifecycle passes `registerShutdownHook(false)` in the same release that adopts 0.13, or a `SIGTERM`
-  starts two stop sequences. The Spring host runtime is one such host. `Subsystem.stop()` may run on a thread
-  with no kernel `ScopedValue` bindings, and must not call `System.exit`, `Runtime.exit` or `Runtime.halt`;
-  `initialize()` and `start()` must not call `System.exit` either. A second concurrent `boot()` on one
-  `KernelBootstrap` instance now throws `IllegalStateException`; booting again after a boot returned is unchanged.
+  returns at once.
+- **A second concurrent `boot()` on one `KernelBootstrap` instance throws `IllegalStateException`.** Booting
+  again after a boot returned is unchanged.
 
 - **Two `HttpProvider`s at equal priority resolve by implementation class name.** The Community HTTP
   subsystem now selects through `BootstrapProviderSelector`, as the graph, persistence, security and

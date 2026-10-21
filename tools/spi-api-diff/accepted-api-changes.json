@@ -70,5 +70,11 @@
     "since": "0.13",
     "adr": "ADR-102",
     "justification": "Behaviour on the Community SQL/PGQ binding: connected edges in registered tables are removed; the SPI sentence was already \"and all connected edges\"; a registered edge table that names the label but whose table name is not a valid SQL identifier makes the call throw GraphQueryException before any statement runs, and one that does not exist in the current scope fails the statement with the persistence engine's translated error; nothing is deleted in either case; no signature change."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.bootstrap.KernelBootstrap$Builder#registerShutdownHook(boolean)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "Behaviour: boot() registers a JVM shutdown hook that runs KernelBootstrap.shutdown() unless registerShutdownHook(false) is set (ADR-007 section 5); before 0.13 a SIGTERM exited without stopping the subsystems. An embedding host that stops the kernel from its own lifecycle disables the hook in the release that adopts 0.13, or one SIGTERM starts two stop sequences. Subsystem#stop() may now run on a thread that carries none of the kernel's ScopedValue bindings, so a stop() that reads KernelProviders fails there. A second concurrent boot() on one KernelBootstrap instance throws IllegalStateException. No SPI signature changes; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
   }
 ]
