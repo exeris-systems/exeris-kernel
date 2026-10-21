@@ -361,9 +361,14 @@ that is a shortest-path detail, not a traversal one.
   it at all.
 - **Live Contract:** `AbstractGraphSessionLiveContractTck` asserts `GraphSession` operations against
   a live backend: connected-pair shortest path, unconnected pairs, `deleteNode` edge cascade and
-  re-creation, heterogeneous two-hop terminal frontier (`L-HETERO`), empty hop (`L-EMPTY`), ranged
-  depth bounds (`L-DEPTH`), deduplication (`L-DEDUP`), walk semantics (`L-WALK`), cycle termination
-  (`L-CYCLE`), direction coverage (`L-DIR`), zero-copy streaming parity and buffer ownership (`L-STREAM`).
+  re-creation, heterogeneous two-hop terminal frontier
+  (`heterogeneousTwoHopPathReturnsTerminalFrontierInOrder`), empty hop
+  (`hopMatchingNothingYieldsEmptyResult`), ranged depth bounds
+  (`rangedHopFollowedByFixedHopHonoursLengths`), deduplication (`resultHoldsEachNodeOnce`), walk
+  semantics (`hopMayTraverseEdgePreviousHopTraversed`), cycle termination
+  (`cyclicGraphTerminatesAndHonoursExactLengthsWithWalkSemantics`), direction coverage
+  (`eachDirectionSelectsItsOwnEdgesAndOneHopAgrees`), streaming parity and buffer ownership
+  (`streamPathJsonReturnsSameIdSetInCallerOwnedBuffer`).
   Bound in Community by `CommunityGraphSessionPostgresContractTckIT` (live PostgreSQL) and
   `CommunityGraphSessionNeo4jContractTckIT` (live Neo4j).
 
