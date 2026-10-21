@@ -18,7 +18,7 @@ import java.util.UUID;
  * TCK: JFR Zero-Allocation monitor for the Execution Graph hot path.
  *
  * <h2>The Holy Grail (Enterprise)</h2>
- * <p>A pre-bootstrapped {@link GraphEngine} (with a simple Task schema) is seeded with a 2-hop
+ * <p>A pre-bootstrapped {@link GraphEngine} (with a Task/Step schema) is seeded with a 2-hop
  * chain {@code src -> mid -> tgt}; {@link #bootstrapSubsystem()} refuses unless the 2-hop path
  * is found. The benchmark loop repeatedly opens a {@link GraphSession}, invokes
  * {@link GraphSession#findShortestPath(GraphEdgeDescriptor, UUID, UUID) findShortestPath(edge, src, tgt)}

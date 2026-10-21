@@ -460,7 +460,7 @@ public abstract class AbstractGraphSessionLiveContractTck {
             link(s, LINKED, b, d);
             link(s, LINKED, c, d);
 
-            List<UUID> res = s.traversePath(new GraphPathSpec(a, List.of(new GraphHop(LINKED, 2, 2))));
+            List<UUID> res = s.traversePath(new GraphPathSpec(a, List.of(GraphHop.of(LINKED), GraphHop.of(LINKED))));
             assertThat(res).hasSize(1).containsExactly(d);
         });
     }
