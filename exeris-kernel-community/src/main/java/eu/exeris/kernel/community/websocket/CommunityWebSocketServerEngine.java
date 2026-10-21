@@ -5,6 +5,8 @@
 package eu.exeris.kernel.community.websocket;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.contract.ContractKernelProviders;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -90,7 +92,10 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
         }
         boolean startFailed = true;
         try {
-            transport.setStreamHandler(this::serve);
+            // Read here, inside the kernel scope, and captured: the connection threads inherit no binding.
+            WorkloadAdmission admission = ContractKernelProviders.workloadAdmission();
+            boolean enforced = admission.enforced();
+            transport.setStreamHandler(stream -> serve(stream, admission, enforced));
             transport.start();
             CommunityWebSocketLifecycleEvent.emit("start", listenPort);
             startFailed = false;
@@ -101,9 +106,9 @@ final class CommunityWebSocketServerEngine implements WebSocketServerEngine {
         }
     }
 
-    private void serve(TransportStream stream) {
+    private void serve(TransportStream stream, WorkloadAdmission admission, boolean enforced) {
         CommunityWebSocketUpgrade.Outcome outcome =
-                CommunityWebSocketUpgrade.negotiate(stream, config, handshakeHandler, allocator);
+                CommunityWebSocketUpgrade.negotiate(stream, config, handshakeHandler, allocator, admission, enforced);
         if (!outcome.accepted()) {
             stream.close();
             return;

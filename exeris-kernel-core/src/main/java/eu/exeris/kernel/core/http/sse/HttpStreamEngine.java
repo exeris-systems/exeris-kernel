@@ -9,6 +9,7 @@ import eu.exeris.kernel.core.http.jfr.StreamAbortiveTeardownEvent;
 import eu.exeris.kernel.core.http.jfr.StreamBackpressureParkEvent;
 import eu.exeris.kernel.core.http.jfr.StreamClosedEvent;
 import eu.exeris.kernel.core.http.jfr.StreamOpenedEvent;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
 import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpStreamExchange;
@@ -94,6 +95,8 @@ public final class HttpStreamEngine implements HttpStreamExchange {
     // path, where the engine frames and accounts the bytes itself.
     private final StreamEgress egress;
     private final int protocolStreamId;
+    // Stamped by the HTTP/1.1 head this engine writes; an egress writes its own head and stamps it itself.
+    private final boolean licenceMarker;
 
     private final AtomicLong outstandingBytes = new AtomicLong(0L);
     private final AtomicLong eventsEmitted = new AtomicLong(0L);
@@ -105,12 +108,14 @@ public final class HttpStreamEngine implements HttpStreamExchange {
                              TransportStream stream,
                              MemoryAllocator allocator,
                              long authDeadlineEpochMillis,
-                             int creditWindowBytes) {
+                             int creditWindowBytes,
+                             boolean licenceMarker) {
         this.request = Objects.requireNonNull(request, "request must not be null");
         this.stream = Objects.requireNonNull(stream, "stream must not be null");
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.authDeadlineEpochMillis = authDeadlineEpochMillis;
         this.creditWindow = creditWindowBytes;
+        this.licenceMarker = licenceMarker;
         this.egress = null;
         this.protocolStreamId = 0;
         this.openNanos = System.nanoTime();
@@ -124,6 +129,7 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         this.authDeadlineEpochMillis = authDeadlineEpochMillis;
         this.creditWindow = 0L;
         this.protocolStreamId = egress.protocolStreamId();
+        this.licenceMarker = false;
         this.openNanos = System.nanoTime();
     }
 
@@ -157,8 +163,30 @@ public final class HttpStreamEngine implements HttpStreamExchange {
                                         MemoryAllocator allocator,
                                         long authDeadlineEpochMillis,
                                         int creditWindowBytes) {
+        return open(request, stream, allocator, authDeadlineEpochMillis, creditWindowBytes, false);
+    }
+
+    /**
+     * Opens a stream whose response head may carry the developer-licence marker.
+     *
+     * @param request                 the inbound request
+     * @param stream                  the held-open transport stream
+     * @param allocator               the per-stream allocator
+     * @param authDeadlineEpochMillis epoch-millis deadline; {@code <= 0} disables expiry enforcement
+     * @param creditWindowBytes       outstanding-bytes window before {@code emit()} parks
+     * @param licenceMarker           whether the head carries
+     *                                {@link WorkloadAdmission#LICENCE_HEADER}: a driver under an enforced
+     *                                {@link WorkloadAdmission} passes {@code true}
+     * @return a live {@link HttpStreamExchange}
+     */
+    public static HttpStreamEngine open(HttpRequest request,
+                                        TransportStream stream,
+                                        MemoryAllocator allocator,
+                                        long authDeadlineEpochMillis,
+                                        int creditWindowBytes,
+                                        boolean licenceMarker) {
         HttpStreamEngine engine = new HttpStreamEngine(
-                request, stream, allocator, authDeadlineEpochMillis, creditWindowBytes);
+                request, stream, allocator, authDeadlineEpochMillis, creditWindowBytes, licenceMarker);
         engine.writeResponseHead();
         StreamOpenedEvent.emit(stream.streamId(), authDeadlineEpochMillis > NO_AUTH_DEADLINE);
         return engine;
@@ -363,6 +391,11 @@ public final class HttpStreamEngine implements HttpStreamExchange {
             // (for SSE through buffering reverse proxies) is not implemented.
             position = Http1ResponseEncoder.writeHeader(
                     scratch.segment(), position, "Connection", "close");
+            if (licenceMarker) {
+                position = Http1ResponseEncoder.writeHeader(
+                        scratch.segment(), position,
+                        WorkloadAdmission.LICENCE_HEADER, WorkloadAdmission.DEVELOPMENT_MARKER);
+            }
             position = Http1ResponseEncoder.writeHeaderEnd(scratch.segment(), position);
             stream.write(scratch.segment(), (int) position);
         }

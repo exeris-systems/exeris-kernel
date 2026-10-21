@@ -7,6 +7,7 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
+import eu.exeris.kernel.spi.contract.WorkloadAdmission;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
@@ -103,19 +104,24 @@ final class CommunityHttp2SessionProcessor {
     private final CommunityHttpStreamDispatcher streamDispatcher;
     private final int readChunkBytes;
     private final int maxAggregateBytes;
+    private final WorkloadAdmission workloadAdmission;
+    private final boolean workloadEnforced;
 
     /* default */ CommunityHttp2SessionProcessor(MemoryAllocator allocator,
                                    HttpResponseBodyEncoderRegistry encoderRegistry,
                                    HttpConfig config,
-                                   CommunityHttpRequestDispatcher requestDispatcher,
-                                   CommunityHttpStreamDispatcher streamDispatcher,
+                                   CommunityHttpDispatchers dispatchers,
                                    int readChunkBytes,
-                                   int maxAggregateBytes) {
+                                   int maxAggregateBytes,
+                                   WorkloadAdmission workloadAdmission) {
+        this.workloadAdmission = Objects.requireNonNull(workloadAdmission, "workloadAdmission must not be null");
+        this.workloadEnforced = workloadAdmission.enforced();
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.encoderRegistry = Objects.requireNonNull(encoderRegistry, "encoderRegistry must not be null");
         this.config = Objects.requireNonNull(config, "config must not be null");
-        this.requestDispatcher = Objects.requireNonNull(requestDispatcher, "requestDispatcher must not be null");
-        this.streamDispatcher = Objects.requireNonNull(streamDispatcher, "streamDispatcher must not be null");
+        Objects.requireNonNull(dispatchers, "dispatchers must not be null");
+        this.requestDispatcher = dispatchers.request();
+        this.streamDispatcher = dispatchers.stream();
         this.readChunkBytes = readChunkBytes;
         this.maxAggregateBytes = maxAggregateBytes;
     }
@@ -156,15 +162,19 @@ final class CommunityHttp2SessionProcessor {
                                            Http2SessionContext session) {
         Http2ConnectionWriter writer = Http2ConnectionWriter.create(
                 stream, allocator, session.maxConcurrentStreams(),
-                CommunityHttpStreamDispatcher.creditWindowBytes());
+                CommunityHttpStreamDispatcher.creditWindowBytes(), workloadEnforced);
         return new Http2Connection(stream, handler, session, writer);
     }
 
     private void writeHttp11UpgradeResponse(TransportStream stream) {
+        String marker = workloadEnforced
+                ? WorkloadAdmission.LICENCE_HEADER + ": " + WorkloadAdmission.DEVELOPMENT_MARKER + CRLF
+                : "";
         byte[] responseBytes = (
                 "HTTP/1.1 101 Switching Protocols" + CRLF
                         + "Connection: Upgrade" + CRLF
                         + "Upgrade: h2c" + CRLF
+                        + marker
                         + CRLF)
                 .getBytes(StandardCharsets.US_ASCII);
         MemorySegment responseSegment = MemorySegment.ofArray(responseBytes);
@@ -514,6 +524,17 @@ final class CommunityHttp2SessionProcessor {
         // Real work credits the Rapid Reset budget (CVE-2023-44487): a peer interleaving genuine
         // requests with cancels nets out and never trips the flood defense.
         connection.session().recordDispatchedRequest();
+        // Before the route is resolved and before anything is forked, so a refused request, a stream
+        // route included, reaches no handler and no task. The answer is HEADERS with END_STREAM, not a
+        // reset, so the client reads a response instead of a transport error.
+        if (workloadEnforced && !workloadAdmission.tryAdmitRequest()) {
+            if (bodyBuffer != null) {
+                bodyBuffer.close();
+            }
+            writeHttp2Response(connection, streamId, pendingSendWindowIncrement,
+                    CommunityHttpThrottle.response(HttpVersion.HTTP_2));
+            return;
+        }
         HttpRequest request = new HttpRequest(
                 decoded.method(),
                 decoded.path(),
