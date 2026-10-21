@@ -148,5 +148,11 @@
     "since": "0.13",
     "adr": "ADR-102",
     "justification": "Behaviour: the four traversal methods (traversePath, streamPathJson, traverseBreadthFirst, streamBfsJson) refuse under an ambient StorageContext that the binding cannot scope before database I/O, throwing GraphQueryException (EX-GRPH-5002, queryType ISOLATION_SCOPE). Community SQL/PGQ serves SEPARATED_SCHEMA and DEDICATED and refuses SHARED tenant contexts; Community Cypher refuses every tenant context; SQL/PGQ also refuses a tenant context when no PersistenceEngine is bound in the calling scope; system-scope callers are served. No SPI signature change."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.ContractBootstrapStep",
+    "since": "0.13",
+    "adr": "ADR-088",
+    "justification": "Behaviour: when license.manifest.path is unbound and the working directory holds no license-manifest.json, the contract gate reads the classpath; more than one distinct license-manifest.json URL there now fails the boot with ContractBreachException EX-LIC-0001 (rawArgs [\"classpath:license-manifest.json\"], the message listing every URL) instead of reading the first in classpath order. The same URL reported twice by a loader delegation chain counts once. A deployment whose dependency jars carry a second manifest binds license.manifest.path to the one to use. No signature changes; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
   }
 ]
