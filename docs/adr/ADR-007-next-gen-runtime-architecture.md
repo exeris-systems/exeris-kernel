@@ -80,8 +80,9 @@ We abandon buffer ownership by business logic. Buffers are exclusively **"loaned
 
 ### 5. Kernel Lifecycle and Process Termination
 
-> **ACCEPTED 2026-10-08, planned for 0.13** (proposed 2026-10-07) — see [Amendments](#amendments). Nothing in this section is
-> implemented yet; until it is, `docs/subsystems/bootstrap.md` describes the shipped behaviour.
+> **ACCEPTED 2026-10-08, planned for 0.13** (proposed 2026-10-07) — see [Amendments](#amendments). Implemented in 0.13:
+> `KernelBootstrap.shutdown()`, the standalone shutdown hook and
+> `KernelBootstrap.Builder#registerShutdownHook(boolean)`.
 
 #### 5.1 Context
 
