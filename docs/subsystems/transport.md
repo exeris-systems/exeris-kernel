@@ -409,10 +409,26 @@ is exercised by `BootstrapProviderSelectorTest` and validated end-to-end through
 | `EX-NET-4005` | Engine Start Failure     | `[0] String transportName, [1] int port` — thrown by `TransportException.engineStartFailure`; port-in-use is one cause among several (e.g. carrier loop thread creation failure) — **Fatal:** check OS process list when the port is the cause |
 | `EX-NET-4006` | PAQS Load Shedding       | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`); the JFR `StreamShedEvent` recorded on both shed paths carries typed fields (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) instead, read by name, not by this `rawArgs` layout |
 | `EX-NET-4007` | Buffer Exhaustion        | Reserved — no kernel code path raises it, so it publishes no `rawArgs` layout |
+| `EX-NET-4008` | Transport Stream Closed By Peer | No `rawArgs` — thrown as `TransportStreamClosedException` (an `IllegalStateException` subclass); the remote end was observed, or the transport tore the stream down, before the call |
+| `EX-NET-4009` | Transport Stream Closed Locally | No `rawArgs` — same thrower; the stream was closed through this endpoint with no remote end observed first |
 
 **Operational note for `EX-NET-4006`:** This is a deliberate, non-fatal policy decision — not a hardware
 failure. No connection state or heap object is allocated for the shed stream. It MUST emit a JFR event
 (`eu.exeris.kernel.core.transport.jfr.StreamShedEvent`) but must not increment error counters used for alerting.
+
+**Closed-stream signal (`EX-NET-4008` / `EX-NET-4009`).** A `read`, `write` or `queueWrite` on a closed
+`TransportStream` throws `TransportStreamClosedException`, an `IllegalStateException` subclass. `EX-NET-4008`
+means the stream is closed and the transport had observed the remote endpoint end it, or had torn the
+stream down itself without a local `close()`/`reset()` request, before the call. `EX-NET-4009` means the
+stream was closed through this endpoint (`close()`, `reset(long)`, or the parent connection's `close()`)
+with no remote end observed first. An observed remote end wins over a later local close. `PaqsScheduler`
+records a handler ending with `EX-NET-4008` as `StreamLifecycle` outcome `PEER_CLOSED`, logs it at DEBUG with
+the stream id and engine, and emits no `PaqsHandlerFailure`. It classifies the thrown object only, never its
+cause chain or the stream's state: a wrapper means an intermediate layer made the closed signal its own
+failure, so walking causes would let a genuine failure that follows a disconnect be downgraded; and protocol
+layers own their closed signals, which Core, being protocol-blind, cannot classify. `EX-NET-4009` stays a
+handler failure. The Community carrier also reports `EX-NET-4008` for a stream it reclaims idle or tears
+down after a connection fault, because it marks those streams remote-closed.
 
 ---
 
@@ -702,7 +718,7 @@ for client IP preservation behind load balancers (HAProxy, NGINX, AWS NLB, GCP L
 |---|---|---|
 | `StreamShedEvent` | `eu.exeris.kernel.transport.StreamShed` | Emitted by PAQS when stream is rejected under high load |
 | `StreamAcceptedEvent` | `eu.exeris.kernel.transport.StreamAccepted` | Emitted by PAQS when stream is admitted |
-| `StreamLifecycleEvent` | `eu.exeris.kernel.transport.StreamLifecycle` | State transitions within a stream lifetime |
+| `StreamLifecycleEvent` | `eu.exeris.kernel.core.transport.StreamLifecycle` | Stream virtual-thread completion; `outcome` is `COMPLETE`, `ERROR` or `PEER_CLOSED` |
 | `TransportIngressQueueDepthEvent` | `eu.exeris.kernel.transport.IngressQueueDepth` | Current queue depth metric |
 | `TransportQueueBackpressureAlertEvent` | `eu.exeris.kernel.transport.QueueBackpressureAlert` | Alert when queue exceeds threshold |
 | `CommunityConnectionIdleTimeoutEvent` | `eu.exeris.kernel.transport.CommunityConnectionIdleTimeout` | Connection reclaimed after `transport.idleTimeoutMillis` without activity; carries the observed idle span and the configured limit |

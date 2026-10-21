@@ -138,6 +138,8 @@ EX-NET-4004  Transport engine bootstrap     rawArgs[0]=String transportName,    
 EX-NET-4005  Transport engine start         rawArgs[0]=String transportName,    [1]=int port
 EX-NET-4006  PAQS load shedding             rawArgs[0]=String transportName,    [1]=long streamId          (exception carrier only — the JFR StreamShedEvent for this code has its own typed fields; see the JFR Events table)
 EX-NET-4007  Buffer exhaustion              (reserved — raised by no kernel code path; no rawArgs layout)
+EX-NET-4008  Transport stream closed by peer (no rawArgs — IllegalStateException subclass)
+EX-NET-4009  Transport stream closed locally (no rawArgs — IllegalStateException subclass)
 EX-SEC-2001  PrincipalContext missing        (no rawArgs)
 EX-SEC-2002  Token validation failure       rawArgs[0]=String tokenType,        [1]=String failureReason
 EX-RUN-3002  Carrier pinned                 rawArgs[0]=long blockTimeMs,        [1]=String carrierThreadName

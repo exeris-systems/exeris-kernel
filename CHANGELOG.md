@@ -48,6 +48,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **`PaqsScheduler` no longer reports a peer-closed stream as a handler failure.** A handler that ends with
+  `EX-NET-4008` is recorded as `StreamLifecycle` outcome `PEER_CLOSED`, logged at `DEBUG` with the stream id
+  and engine, and emits no `PaqsHandlerFailure` event. Only the thrown exception's own type counts: a failure
+  that wraps the signal, or follows a disconnect, keeps the `WARNING` and the event. A dashboard counting
+  `ERROR` outcomes stops counting peer disconnects.
 - **A handler failure that `PaqsScheduler` isolates is logged with the stream id, the engine name and the
   exception class name.** The record named none of them, so it could not be matched to the
   `PaqsHandlerFailureEvent` of the same failure. An `Error` is logged at `ERROR` before it is rethrown.
@@ -124,6 +129,13 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **A closed `TransportStream` says who closed it.** `read`, `write` and `queueWrite` on a closed stream throw
+  `TransportStreamClosedException`, an `IllegalStateException` carrying `EX-NET-4008` when the stream's remote
+  end was observed first (or the transport tore it down) and `EX-NET-4009` when it was closed through this
+  endpoint. Code that catches `IllegalStateException` keeps working. The Community TCP stream throws it at every
+  closed-stream site. **For anyone binding the TCK:** `AbstractTransportStreamTck` now asserts the type, and
+  `EX-NET-4009` after a local `close()` or `reset()`, so a binding that throws a bare `IllegalStateException`
+  fails those cases. The Enterprise QUIC stream binds the suite and needs the type when it moves to 0.13.
 - **`KernelBootstrap.shutdown()` and `Builder#registerShutdownHook(boolean)`; a standalone `boot()` stops the
   kernel in order on `SIGTERM` (ADR-007 §5).** `shutdown()` is idempotent and returns after the ordered stop;
   called while `boot()` is still initializing or starting, it records the request, `kernelMain` is not run and

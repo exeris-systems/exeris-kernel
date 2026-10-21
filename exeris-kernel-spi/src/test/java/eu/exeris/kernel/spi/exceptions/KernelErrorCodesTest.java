@@ -152,6 +152,18 @@ class KernelErrorCodesTest {
         void exNet4005() {
             assertThat(KernelErrorCodes.EX_NET_4005).isEqualTo("EX-NET-4005");
         }
+
+        @Test
+        @DisplayName("EX_NET_4008 == 'EX-NET-4008' (transport stream closed by peer)")
+        void exNet4008() {
+            assertThat(KernelErrorCodes.EX_NET_4008).isEqualTo("EX-NET-4008");
+        }
+
+        @Test
+        @DisplayName("EX_NET_4009 == 'EX-NET-4009' (transport stream closed locally)")
+        void exNet4009() {
+            assertThat(KernelErrorCodes.EX_NET_4009).isEqualTo("EX-NET-4009");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -560,6 +572,7 @@ class KernelErrorCodesTest {
                     KernelErrorCodes.EX_NET_2001, KernelErrorCodes.EX_NET_2002,
                     KernelErrorCodes.EX_NET_4001, KernelErrorCodes.EX_NET_4002,
                     KernelErrorCodes.EX_NET_4003, KernelErrorCodes.EX_NET_4004, KernelErrorCodes.EX_NET_4005,
+                    KernelErrorCodes.EX_NET_4008, KernelErrorCodes.EX_NET_4009,
                     KernelErrorCodes.EX_HTTP_4001, KernelErrorCodes.EX_HTTP_4002,
                     KernelErrorCodes.EX_HTTP_4003, KernelErrorCodes.EX_HTTP_4004,
                     KernelErrorCodes.EX_HTTP_4005, KernelErrorCodes.EX_HTTP_4006,

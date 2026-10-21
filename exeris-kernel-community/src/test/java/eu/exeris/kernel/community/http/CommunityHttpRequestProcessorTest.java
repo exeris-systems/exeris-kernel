@@ -12,6 +12,7 @@ import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpMode;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -222,6 +223,30 @@ class CommunityHttpRequestProcessorTest {
 
         List<LogRecord> records = captureProcessorWarnings(
                 () -> processor.process(new ThrowingTransportStream(new IllegalStateException("Stream is closed")), handler));
+
+        assertThat(records).isEmpty();
+    }
+
+    @Test
+    void peerClosedSignalDoesNotEmitWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(TransportStreamClosedException.peerClosed()), handler));
+
+        assertThat(records).isEmpty();
+    }
+
+    @Test
+    void locallyClosedSignalDoesNotEmitWarning() {
+        CommunityHttpRequestProcessor processor = new CommunityHttpRequestProcessor(ALLOCATOR, HttpResponseBodyEncoderRegistry.empty());
+        HttpHandler handler = exchange -> {
+        };
+
+        List<LogRecord> records = captureProcessorWarnings(
+                () -> processor.process(new ThrowingTransportStream(TransportStreamClosedException.locallyClosed()), handler));
 
         assertThat(records).isEmpty();
     }

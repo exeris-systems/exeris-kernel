@@ -14,6 +14,7 @@ import eu.exeris.kernel.spi.crypto.TlsEngine;
 import eu.exeris.kernel.spi.crypto.TlsStatus;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportConnection;
@@ -95,7 +96,6 @@ import java.util.concurrent.locks.LockSupport;
 final class NativeTcpStream implements TransportStream {
 
     private static final System.Logger LOG = System.getLogger(NativeTcpStream.class.getName());
-    private static final String STREAM_CLOSED_MESSAGE = "Stream is closed";
     private static final long REGISTRATION_BACKOFF_NANOS = 100_000L;
     private static final long REGISTRATION_TIMEOUT_MILLIS = 5_000L;
     private static final long CLOSE_OUTBOUND_CONSUMER_BACKOFF_NANOS = 100_000L;
@@ -271,8 +271,9 @@ final class NativeTcpStream implements TransportStream {
      * @return the number of bytes read, {@code 0} if {@code maxBytes <= 0}, or {@code -1} on EOF
      * @throws IllegalArgumentException if {@code target} is {@code null} or {@code maxBytes}
      *                                   exceeds its capacity
-     * @throws IllegalStateException    if this stream has been closed and the remote side did not
-     *                                   close first
+     * @throws TransportStreamClosedException if this stream has been closed and the remote side did
+     *                                   not close first ({@code EX-NET-4009}); a closed stream whose
+     *                                   remote end was observed reports end of stream instead
      * @throws TlsHandshakeException    if the TLS handshake failed ({@code EX-NET-2001}), including a
      *                                   server certificate that failed verification
      * @throws TransportException       if the TLS handshake does not complete within its timeout
@@ -384,7 +385,9 @@ final class NativeTcpStream implements TransportStream {
      * @param length number of bytes to write, from offset {@code 0}; {@code 0} is a no-op
      * @throws IllegalArgumentException if {@code source} is {@code null} or {@code length} is out
      *                                   of range for it
-     * @throws IllegalStateException    if this stream has been closed
+     * @throws TransportStreamClosedException if this stream has been closed ({@code EX-NET-4008} when
+     *                                   the carrier observed the remote end first, {@code EX-NET-4009}
+     *                                   otherwise)
      * @throws TlsHandshakeException    if the TLS handshake failed ({@code EX-NET-2001}), including a
      *                                   server certificate that failed verification
      * @throws TransportException       if an unrecoverable send failure occurs ({@code EX-NET-4002})
@@ -440,7 +443,7 @@ final class NativeTcpStream implements TransportStream {
             throw new IllegalArgumentException("buffer must not be null");
         }
         // Neither of these closes the buffer. The SPI puts it back with the caller on any thrown
-        // exception — it says so for IllegalStateException by name — so closing it here too makes
+        // exception — it says so for the closed-stream signal by name — so closing it here too makes
         // the caller's own release a double-free: the SIGSEGV shape the ownership policy exists to
         // rule out, reached by both sides obeying different halves of one contract. The two branches
         // must agree; one of them closing and the other not is the same defect wearing a smaller
@@ -452,7 +455,7 @@ final class NativeTcpStream implements TransportStream {
         lastActivityNanos = System.nanoTime();
         if (closeRequested.get() || closed.get()) {
             tlsHandshake.throwRecordedFailure();
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+            throw closedSignal();
         }
         if (length == 0) {
             buffer.close();
@@ -1090,10 +1093,21 @@ final class NativeTcpStream implements TransportStream {
         return written;
     }
 
+    /**
+     * The closed-stream signal for a stream observed closed. The remote-closed mark is read after the
+     * closed state, and the carrier sets it before it closes a stream it tears down, so a stream the
+     * peer ended reports {@code EX-NET-4008} even when a local close followed.
+     */
+    private TransportStreamClosedException closedSignal() {
+        return remoteClosed.get()
+                ? TransportStreamClosedException.peerClosed()
+                : TransportStreamClosedException.locallyClosed();
+    }
+
     private void ensureOpen() {
         if (closeRequested.get() || closed.get()) {
             tlsHandshake.throwRecordedFailure();
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+            throw closedSignal();
         }
     }
 
@@ -1103,7 +1117,7 @@ final class NativeTcpStream implements TransportStream {
      */
     private void requireTlsReady() {
         if (!tlsHandshake.ensureReady(true)) {
-            throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+            throw closedSignal();
         }
     }
 
@@ -1118,7 +1132,7 @@ final class NativeTcpStream implements TransportStream {
         if (remoteClosed.get()) {
             return -1;
         }
-        throw new IllegalStateException(STREAM_CLOSED_MESSAGE);
+        throw closedSignal();
     }
 
     private void cleanupInboundIfOwnedByCurrentThreadOrIdle() {

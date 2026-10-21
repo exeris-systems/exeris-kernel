@@ -14,7 +14,7 @@ import jdk.jfr.StackTrace;
 
 /**
  * JFR event emitted by the PAQS Scheduler when a stream's Virtual Thread lifecycle
- * completes (cleanly or with an error).
+ * completes (cleanly, with an error, or because the peer closed the stream).
  *
  * <h2>Stream Lifecycle Tracking</h2>
  * <p>Paired with {@link StreamAcceptedEvent}, this event closes the JFR timeline window
@@ -41,6 +41,12 @@ public final class StreamLifecycleEvent extends Event {
      */
     public static final String OUTCOME_ERROR = "ERROR";
 
+    /**
+     * The handler ended with a closed-stream signal whose remote end was observed
+     * ({@code EX-NET-4008}): a routine disconnect, not a handler failure.
+     */
+    public static final String OUTCOME_PEER_CLOSED = "PEER_CLOSED";
+
     /** SPI stream identifier, matching the {@code streamId} on the paired {@link StreamAcceptedEvent}. */
     @Label("Stream ID")
     public long streamId;
@@ -49,9 +55,9 @@ public final class StreamLifecycleEvent extends Event {
     @Label("Priority")
     public String priority;
 
-    /** {@link #OUTCOME_COMPLETE} if the handler returned normally, {@link #OUTCOME_ERROR} if it threw. */
+    /** {@link #OUTCOME_COMPLETE}, {@link #OUTCOME_ERROR} or {@link #OUTCOME_PEER_CLOSED}. */
     @Label("Outcome")
-    @Description("COMPLETE or ERROR")
+    @Description("COMPLETE, ERROR or PEER_CLOSED")
     public String outcome;
 
     /**
@@ -80,7 +86,8 @@ public final class StreamLifecycleEvent extends Event {
      *
      * @param streamId   the SPI stream identifier
      * @param priority   the {@link eu.exeris.kernel.spi.transport.StreamPriority} name
-     * @param outcome    {@link #OUTCOME_COMPLETE} or {@link #OUTCOME_ERROR}
+     * @param outcome    {@link #OUTCOME_COMPLETE}, {@link #OUTCOME_ERROR} or
+     *                   {@link #OUTCOME_PEER_CLOSED}
      * @param durationNs total Virtual Thread active duration in nanoseconds
      */
     public static void emit(long streamId, String priority, String outcome, long durationNs) {
