@@ -120,8 +120,8 @@ candidate, not in 0.13.0 itself (which would leave no bridge release). The relea
 members are `stable`, so removing them there is reported as a `stable` break; this ADR would then be
 the one sanctioned exception, by member, and the release-candidate pull request names it.
 That way 0.13.0 ships one release in which
-consumers on the old names compile with a deprecation warning — one consumer outside this
-repository reads `KernelProviders.GRAPH_ENGINE` today.
+consumers on the old names compile with a deprecation warning — consumers outside this
+repository bind or read these slots today.
 
 The rule is enforced, not only stated: the promotion commit (§5) adds a check that fails when a
 public signature of a class labelled `stable` in `stability-surfaces.conf` names a class labelled
