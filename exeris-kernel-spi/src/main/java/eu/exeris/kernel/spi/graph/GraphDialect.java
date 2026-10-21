@@ -5,6 +5,7 @@
 package eu.exeris.kernel.spi.graph;
 
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
 
 import java.util.List;
@@ -37,12 +38,28 @@ public interface GraphDialect {
      * Returns a dialect-specific query string that matches between {@code minHops} and
      * {@code maxHops} hops across {@code edge}.
      *
+     * <p>Equivalent to {@code buildPathQuery(List.of(new GraphHop(edge, minHops, maxHops)))}.
+     *
      * @param edge    edge descriptor to match
      * @param minHops minimum hops (≥ 1)
      * @param maxHops maximum hops
      * @return dialect-specific query string
      */
     String buildMultiHopQuery(GraphEdgeDescriptor edge, int minHops, int maxHops);
+
+    /**
+     * Returns a dialect-specific query string that runs {@code hops} in order from one start node and yields
+     * the terminal frontier, one id per row, with walk semantics and each hop's direction honoured (see
+     * {@link GraphSession#traversePath}). {@link #buildMultiHopQuery} is the single-hop case.
+     *
+     * @param hops ordered hops, not empty
+     * @return dialect-specific query string
+     * @throws IllegalArgumentException if {@code hops} is empty, or an identifier fails the dialect's check
+     * @implNote Community SQL/PGQ binds the start node as the only parameter {@code $1} and returns column
+     *           {@code id}; Community Cypher binds {@code $sourceId} (string form) and returns {@code id}.
+     * @since 0.13
+     */
+    String buildPathQuery(List<GraphHop> hops);
 
     /**
      * Returns a dialect-specific query string that finds the shortest path across

@@ -90,7 +90,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
 | `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck`, `…EntitlementRequirementTck` | — |
 | `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] [^eventisolation] [^eventbuspublish] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
-| `…spi.graph` | **preview** | 0.5.0 | — | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +4 | — |
+| `…spi.graph` | **preview** | 0.5.0 | — [^graphpath] | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +4 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
 | `…spi.crypto`⁴ | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
@@ -334,3 +334,11 @@ maturity change here.
     kept as a bridge that reports zero. The API-diff gate reports the new component and constructor;
     the note is here because the narrowed promise of `publish` on a brokered bus is the change, and no
     diff reports that.
+
+[^graphpath]: **Contract widening and source-incompatible change, 0.13 (ADR-102).** `GraphHop`,
+    `GraphPathSpec`, `GraphSession.traversePath`/`streamPathJson` and `GraphDialect.buildPathQuery` are
+    added as abstract members; `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` loses its default and
+    becomes abstract; `findShortestPath(UUID, UUID)` becomes a refusing default, deprecated for removal;
+    `GraphTraversal.includeStartNode`/`includePayload` are deprecated and have no effect. Every traversal
+    now honours the descriptor's direction. An out-of-tree implementer must implement the new members.
+    The surface stays `preview`; the anchor column names ADR-102 once all of its obligations have landed.
