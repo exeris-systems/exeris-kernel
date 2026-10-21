@@ -176,10 +176,7 @@ final class Http2SessionContext implements AutoCloseable {
             if (settingId == HTTP2_SETTINGS_HEADER_TABLE_SIZE) {
                 writer.applyHeaderTableSize(settingValue);
             } else if (settingId == Http2Settings.ID_INITIAL_WINDOW_SIZE) {
-                if (settingValue > Integer.MAX_VALUE) {
-                    return Http2ErrorCode.FLOW_CONTROL_ERROR;
-                }
-                Http2ErrorCode result = writer.applyInitialWindowSize((int) settingValue);
+                Http2ErrorCode result = applyInitialWindowSize(settingValue, writer);
                 if (result != Http2ErrorCode.NO_ERROR) {
                     return result;
                 }
@@ -190,6 +187,33 @@ final class Http2SessionContext implements AutoCloseable {
             }
         }
         return Http2ErrorCode.NO_ERROR;
+    }
+
+    private Http2ErrorCode applyInitialWindowSize(long value, Http2ConnectionWriter writer) {
+        if (value > Integer.MAX_VALUE) {
+            return Http2ErrorCode.FLOW_CONTROL_ERROR;
+        }
+        Http2ErrorCode result = writer.applyInitialWindowSize((int) value);
+        if (result != Http2ErrorCode.NO_ERROR) {
+            return result;
+        }
+        return requestPhaseWindowsFit((int) value)
+                ? Http2ErrorCode.NO_ERROR
+                : Http2ErrorCode.FLOW_CONTROL_ERROR;
+    }
+
+    /**
+     * Whether every stream whose request is still arriving can start its response window at
+     * {@code initialWindow} plus the credit it has already received without passing the maximum
+     * (RFC 9113 section 6.9.2: a change that overflows any stream window is a connection error).
+     */
+    private boolean requestPhaseWindowsFit(int initialWindow) {
+        for (Http2RequestStreamState requestStream : requestStreams.values()) {
+            if (!requestStream.addSendWindowIncrement(0, initialWindow)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /* default */ boolean isAwaitingContinuation() {

@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The writer's flow-control and ordering contract, driven directly: a "sender" is a test virtual
@@ -321,6 +322,29 @@ class Http2ConnectionWriterTest {
         assertThat(seen).allSatisfy(f -> assertThat(f.payload()).hasSize(100));
     }
 
+    @Test
+    @DisplayName("a failed header allocation closes the slice and gives both windows their credit back")
+    void failedFrameAllocationClosesTheSliceAndRestoresCredit() {
+        FailingHeaderAllocator failing = new FailingHeaderAllocator(allocator);
+        Http2ConnectionWriter failingWriter = Http2ConnectionWriter.create(transport, failing, 100, 64 * 1024);
+        Http2OutboundStream stream = failingWriter.register(1, 0);
+        LoanedBuffer body = body(100);
+        failing.failNext = true;
+
+        assertThatThrownBy(() -> failingWriter.sendBody(stream, body, 0, 100, true))
+                .isInstanceOf(IllegalStateException.class);
+
+        assertThat(stream.sendWindow.windowSize()).isEqualTo(Http2FlowController.DEFAULT_WINDOW_SIZE);
+        Http2OutboundStream sibling = failingWriter.register(3, 0);
+        LoanedBuffer full = body(Http2FlowController.DEFAULT_WINDOW_SIZE);
+        assertThat(failingWriter.sendBody(sibling, full, 0, Http2FlowController.DEFAULT_WINDOW_SIZE, true))
+                .as("the connection window still holds all of its credit")
+                .isEqualTo(SendOutcome.WRITTEN);
+        body.close();
+        full.close();
+        assertThat(allocator.outstanding()).as("the slice taken before the failure was closed").isZero();
+    }
+
     // ------------------------------------------------------------------ slots
 
     @Test
@@ -384,6 +408,50 @@ class Http2ConnectionWriterTest {
             }
         }
         return -1;
+    }
+
+    /** Fails the next 9-byte allocation, the size of a frame header, and forwards everything else. */
+    private static final class FailingHeaderAllocator implements MemoryAllocator {
+        private final MemoryAllocator delegate;
+        private volatile boolean failNext;
+
+        private FailingHeaderAllocator(MemoryAllocator delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public LoanedBuffer allocate(eu.exeris.kernel.spi.memory.AllocationHint hint) {
+            return delegate.allocate(hint);
+        }
+
+        @Override
+        public LoanedBuffer allocateNetwork(int estimatedBytes) {
+            if (failNext && estimatedBytes == 9) {
+                failNext = false;
+                throw new IllegalStateException("allocation refused");
+            }
+            return delegate.allocateNetwork(estimatedBytes);
+        }
+
+        @Override
+        public LoanedBuffer allocateCarrierSlab(int carrierIndex) {
+            return delegate.allocateCarrierSlab(carrierIndex);
+        }
+
+        @Override
+        public LoanedBuffer allocateInfrastructure(long sizeBytes) {
+            return delegate.allocateInfrastructure(sizeBytes);
+        }
+
+        @Override
+        public eu.exeris.kernel.spi.memory.MemoryStats stats() {
+            return delegate.stats();
+        }
+
+        @Override
+        public void close() {
+            // The delegate is owned by the test.
+        }
     }
 
     /** A virtual thread calling {@code sendBody} for one whole body. */

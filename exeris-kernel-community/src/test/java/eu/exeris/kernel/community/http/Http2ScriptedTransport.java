@@ -223,7 +223,7 @@ final class Http2ScriptedTransport implements TransportStream {
         blockLatch.countDown();
     }
 
-    /** The next {@code queueWrite} throws {@code failure} without taking the buffer. */
+    /** Every later {@code queueWrite} throws {@code failure} without taking the buffer. */
     void failQueueWrites(RuntimeException failure) {
         queueWriteFailure = failure;
     }

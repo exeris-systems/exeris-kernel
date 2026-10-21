@@ -48,7 +48,7 @@ import java.util.Objects;
 // PendingRequestHeaders (HPACK-decode accumulator), CommunityHttp2ControlFrames (SETTINGS/PING/
 // RST_STREAM/GOAWAY writers), and CommunityHttp2FrameFragments (pad/priority extraction).
 // Residual processor retains the frame-loop, frame dispatcher, headers/data frame handlers,
-// response hand-off, and ingress read loop. Response serialization and the HPACK encoder moved to
+// response hand-off, and ingress read loop. Response serialization and the HPACK encoder live in
 // Http2ConnectionWriter, and the per-connection state is held by Http2Connection.
 // Retained suppressions:
 // - TooManyMethods: frame-loop + dispatcher + frame handlers + response hand-off remain cohesive;
@@ -346,9 +346,13 @@ final class CommunityHttp2SessionProcessor {
             }
             return true;
         }
+        // The writer's table is searched first: it is a scan of an array, where the request table is
+        // a map keyed by a boxed id, and a stream is never in both.
+        if (writer.applyStreamWindowUpdate(streamId, increment)) {
+            return true;
+        }
         Http2RequestStreamState requestStream = session.requestStream(streamId);
         if (requestStream == null) {
-            writer.applyStreamWindowUpdate(streamId, increment);
             return true;
         }
         if (increment == 0) {
@@ -428,7 +432,11 @@ final class CommunityHttp2SessionProcessor {
 
         Http2RequestStreamState requestStream = session.requestStream(header.streamId());
         if (requestStream == null) {
-            CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, header.streamId());
+            // DATA after the request ended: a stream the writer still serves is closed (RFC 9113
+            // section 5.1) and its task stopped; a stream nobody knows is refused.
+            if (!writer.resetStream(header.streamId(), Http2ErrorCode.STREAM_CLOSED)) {
+                CommunityHttp2ControlFrames.sendRstStreamRefused(allocator, writer, header.streamId());
+            }
             return;
         }
 

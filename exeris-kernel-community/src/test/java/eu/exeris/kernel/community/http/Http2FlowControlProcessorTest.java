@@ -274,6 +274,47 @@ class Http2FlowControlProcessorTest {
     }
 
     @Test
+    @DisplayName("DATA after the request ended resets a continuation-served stream once, with STREAM_CLOSED")
+    void dataOnAContinuationServedStreamResetsItThroughTheWriter() throws Exception {
+        CountDownLatch bodyReleased = new CountDownLatch(1);
+        Connection connection = connect(exchange -> {
+            LoanedBuffer body = bodyOf(pattern(100));
+            body.addCloseAction(bodyReleased::countDown);
+            exchange.respond(new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_2, List.of(), body));
+        });
+        connection.feed(Http2Frames.concat(
+                Http2Frames.PREFACE,
+                Http2Frames.settings(Http2Settings.ID_INITIAL_WINDOW_SIZE, 0),
+                Http2Frames.headers(1, get("/held"), true),
+                Http2Frames.data(1, new byte[]{1}, false)));
+        Frame rst = transport.awaitFrame(f -> f.type() == RST_STREAM && f.streamId() == 1, BOUND);
+        assertThat(Http2Frames.readInt32(rst.payload(), 0)).isEqualTo(Http2ErrorCode.STREAM_CLOSED.code());
+
+        connection.feed(Http2Frames.windowUpdate(1, 100));
+        assertThat(bodyReleased.await(BOUND.toSeconds(), TimeUnit.SECONDS)).isTrue();
+        connection.barrier();
+
+        List<Frame> seen = transport.seen();
+        assertThat(seen.stream().filter(f -> f.type() == RST_STREAM && f.streamId() == 1)).hasSize(1);
+        assertThat(dataBytes(1)).as("nothing is sent on a stream we reset").isZero();
+    }
+
+    @Test
+    @DisplayName("an initial window that overflows a stream whose request is arriving is a FLOW_CONTROL_ERROR")
+    void initialWindowThatOverflowsAnArrivingRequestIsFlowControlError() {
+        Connection connection = connect(respondWith(pattern(1)));
+        connection.feed(Http2Frames.concat(
+                Http2Frames.PREFACE, Http2Frames.emptySettings(),
+                Http2Frames.headers(1, post("/echo"), false),
+                Http2Frames.windowUpdate(1, Http2FlowController.MAX_WINDOW_SIZE
+                        - Http2FlowController.DEFAULT_WINDOW_SIZE),
+                Http2Frames.settings(Http2Settings.ID_INITIAL_WINDOW_SIZE,
+                        Http2FlowController.DEFAULT_WINDOW_SIZE + 1)));
+
+        assertThat(goAwayCode()).isEqualTo(Http2ErrorCode.FLOW_CONTROL_ERROR.code());
+    }
+
+    @Test
     @DisplayName("ending the connection tears down continuations and releases their bodies")
     void eofTearsDownContinuationsAndReleasesTheirBodies() throws Exception {
         Connection connection = connect(respondWith(pattern(100)));

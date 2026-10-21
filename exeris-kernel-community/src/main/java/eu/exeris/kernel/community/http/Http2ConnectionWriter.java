@@ -60,18 +60,16 @@ import java.util.concurrent.locks.ReentrantLock;
  *       event, because a peer can grant a very large window and never read.</li>
  * </ul>
  *
- * <p><b>Allocation:</b> the frame-loop paths ({@link #applyConnectionWindowUpdate},
+ * <p><b>Allocation:</b> the window and reset methods ({@link #applyConnectionWindowUpdate},
  * {@link #applyStreamWindowUpdate}, {@link #applyInitialWindowSize}, {@link #resetByPeer}) allocate
- * nothing; a respond-once response allocates what it did before; a body frame allocates its header
- * buffer and a slice handle.
+ * nothing while the lock is uncontended; a contended acquire allocates a queue node. A respond-once
+ * response allocates what it did before; a body frame allocates its header buffer and a slice handle.
  * <p><b>Thread confinement:</b> none — every method may be called from any thread; the lock orders
  * the writers.
  * <p><b>Ownership:</b> buffers handed to {@code queueWrite} belong to the transport; the writer closes
  * every buffer it allocates and does not hand over.
  */
 // Retained suppressions:
-// - CloseResource: the buffers passed to queueWrite change owner at that call, and the lock acquired
-//   in acquireCredit is handed to the caller on the success path by design.
 // - TooManyMethods / GodClass: one cohesive lock-guarded state machine; splitting it would spread the
 //   lock discipline over several classes.
 // - AvoidCatchingGenericException: a failed transport write must close the connection for every
@@ -84,7 +82,6 @@ import java.util.concurrent.locks.ReentrantLock;
 //   the sum of the small state transitions the invariants above describe.
 // - NullAssignment: clearing parkedSender is the "no sender is parked" half of the park protocol.
 @SuppressWarnings({
-        "PMD.CloseResource",
         "PMD.TooManyMethods",
         "PMD.GodClass",
         "PMD.AvoidCatchingGenericException",
@@ -229,8 +226,9 @@ final class Http2ConnectionWriter {
     }
 
     /**
-     * Test seam: installs a hook that runs on a sender thread after it has published itself as parked
-     * and released the lock, immediately before it parks.
+     * Test seam: installs a hook that runs on a sender thread as the first thing after it has
+     * released the lock on finding no credit, before it parks. The sender is already published as
+     * parked there, so whatever the hook applies must find and wake it.
      *
      * @param hook the hook, or {@code null} to remove it
      */
@@ -319,23 +317,52 @@ final class Http2ConnectionWriter {
      *
      * @param streamId  the stream id
      * @param increment the window increment
+     * @return {@code true} when the writer tracks the stream, so the update was addressed to it
      */
-    /* default */ void applyStreamWindowUpdate(int streamId, int increment) {
+    /* default */ boolean applyStreamWindowUpdate(int streamId, int increment) {
         lock.lock();
         try {
             Http2OutboundStream stream = find(streamId);
-            if (stream == null || stream.state != Http2OutboundStream.State.OPEN) {
-                return;
+            if (stream == null) {
+                return false;
+            }
+            if (stream.state != Http2OutboundStream.State.OPEN) {
+                return true;
             }
             if (increment == 0) {
                 resetLocalLocked(stream, Http2ErrorCode.PROTOCOL_ERROR);
-                return;
+                return true;
             }
             if (!stream.sendWindow.increment(increment)) {
                 resetLocalLocked(stream, Http2ErrorCode.FLOW_CONTROL_ERROR);
-                return;
+                return true;
             }
             wake(stream);
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Resets a stream the writer tracks, on behalf of the frame loop: the RST_STREAM is written and
+     * the stream closed under the lock, so the task that serves it stops and no DATA follows the
+     * reset. Nothing is written for a tracked stream that has already ended.
+     *
+     * @param streamId the stream id
+     * @param code     the RST_STREAM error code
+     * @return {@code true} when the writer tracks the stream; {@code false} leaves the caller to
+     *         answer a stream the writer does not know
+     */
+    /* default */ boolean resetStream(int streamId, Http2ErrorCode code) {
+        lock.lock();
+        try {
+            Http2OutboundStream stream = find(streamId);
+            if (stream == null) {
+                return false;
+            }
+            resetLocalLocked(stream, code);
+            return true;
         } finally {
             lock.unlock();
         }
@@ -396,6 +423,8 @@ final class Http2ConnectionWriter {
      * @return {@code null} when the response is complete or could not be written; otherwise the
      *         stream, tracked, whose remaining body starts at {@link Http2OutboundStream#bodyOffset}
      */
+    // CloseResource: the body belongs to the response and is closed by the caller, never here.
+    @SuppressWarnings("PMD.CloseResource")
     /* default */ Http2OutboundStream writeRespondOnce(int streamId, long pendingIncrement, HttpResponse response) {
         LoanedBuffer body = response.body();
         int bodyBytes = body == null ? 0 : (int) body.size();
@@ -419,6 +448,8 @@ final class Http2ConnectionWriter {
             }
             Http2OutboundStream stream = new Http2OutboundStream(streamId, (int) (streamWindow - now));
             if (streamCount == streams.length) {
+                // Unreachable under the admission invariant; the frame loop reports it as a
+                // connection error, which is the right severity for a server-side defect.
                 throw new IllegalStateException("outbound stream table full");
             }
             registerLocked(stream);
@@ -449,7 +480,7 @@ final class Http2ConnectionWriter {
      * Sends {@code length} bytes of {@code body} from {@code offset} as DATA frames, waiting for
      * credit as often as it must. Does not close {@code body}.
      *
-     * @param s         the response stream
+     * @param stream    the response stream
      * @param body      the body buffer, owned by the caller
      * @param offset    where in {@code body} to start
      * @param length    how many bytes to send
@@ -469,19 +500,7 @@ final class Http2ConnectionWriter {
             try {
                 boolean last = sent + credit == length;
                 int flags = last && endStream ? FLAG_END_STREAM : 0;
-                // The slice is taken first so that a failure to take it leaves nothing of this frame
-                // on the wire; the header and the payload are then queued in the one hold, which
-                // keeps them adjacent.
-                LoanedBuffer part = body.slice(offset + sent, credit);
-                LoanedBuffer header = allocator.allocateNetwork(FRAME_HEADER);
-                Http2FrameEncoder.writeHeader(header.segment(), 0, credit,
-                        Http2FrameType.DATA.code(), flags, stream.streamId);
-                header.setSize(FRAME_HEADER);
-                if (!queueWriteOwned(header, FRAME_HEADER)) {
-                    part.close();
-                    return SendOutcome.CLOSED;
-                }
-                if (!queueWriteOwned(part, credit)) {
+                if (!queueDataFrame(stream, body, offset + sent, credit, flags)) {
                     return SendOutcome.CLOSED;
                 }
                 sent += credit;
@@ -498,7 +517,7 @@ final class Http2ConnectionWriter {
     /**
      * Resets a response stream from this side.
      *
-     * @param s    the response stream
+     * @param stream the response stream
      * @param code the RST_STREAM error code
      */
     /* default */ void resetLocal(Http2OutboundStream stream, Http2ErrorCode code) {
@@ -514,7 +533,7 @@ final class Http2ConnectionWriter {
      * Stops tracking a response stream and frees its slot. A stream still open is reset first.
      * Calling it again for the same stream does nothing.
      *
-     * @param s the response stream
+     * @param stream the response stream
      */
     /* default */ void release(Http2OutboundStream stream) {
         lock.lock();
@@ -537,19 +556,62 @@ final class Http2ConnectionWriter {
         }
     }
 
+    /**
+     * Queues one DATA frame, header then payload, with the lock held and {@code credit} already
+     * taken. The slice is taken first so that a failure to take it, or to allocate the header, leaves
+     * nothing of this frame on the wire; the credit is then returned, since the peer never saw it
+     * spent, and the buffers taken so far are closed. Restoring cannot overflow a window: the credit
+     * was consumed from it under the same hold.
+     *
+     * @return {@code false} when the transport failed and the connection has ended
+     */
+    // CloseResource: both buffers change owner at queueWrite and are closed here on every failure path.
+    @SuppressWarnings("PMD.CloseResource")
+    private boolean queueDataFrame(Http2OutboundStream stream, LoanedBuffer body, long from,
+                                   int credit, int flags) {
+        LoanedBuffer part = null;
+        LoanedBuffer header = null;
+        try {
+            part = body.slice(from, credit);
+            header = allocator.allocateNetwork(FRAME_HEADER);
+            Http2FrameEncoder.writeHeader(header.segment(), 0, credit,
+                    Http2FrameType.DATA.code(), flags, stream.streamId);
+            header.setSize(FRAME_HEADER);
+        } catch (RuntimeException failure) {
+            if (header != null) {
+                header.close();
+            }
+            if (part != null) {
+                part.close();
+            }
+            stream.sendWindow.increment(credit);
+            connectionWindow.increment(credit);
+            throw failure;
+        }
+        if (!queueWriteOwned(header, FRAME_HEADER)) {
+            part.close();
+            return false;
+        }
+        return queueWriteOwned(part, credit);
+    }
+
     // ------------------------------------------------------------------ credit
 
     /**
-     * Waits until {@code s} may send at least one byte, takes up to {@code maxWanted} bytes of both
+     * Waits until {@code stream} may send at least one byte, takes up to {@code maxWanted} bytes of both
      * windows, and returns that count with the lock HELD; the caller writes and unlocks. Returns
      * {@link #ACQUIRE_CLOSED} or {@link #ACQUIRE_DEADLINE} without the lock.
      */
+    // NPathComplexity: the credit-and-park loop is one transition table whose lock hand-over cannot be
+    // split across methods without obscuring it.
+    @SuppressWarnings("PMD.NPathComplexity")
     private int acquireCredit(Http2OutboundStream stream, boolean admitEvent, int maxWanted,
                               long deadlineEpochMillis) {
         while (true) {
             long window;
             boolean windowLimited;
             boolean handedOver = false;
+            boolean publishedForPark = false;
             lock.lock();
             try {
                 if (stream.state != Http2OutboundStream.State.OPEN || connectionClosed) {
@@ -566,9 +628,19 @@ final class Http2ConnectionWriter {
                 }
                 windowLimited = window <= 0;
                 stream.parkedSender = Thread.currentThread();
+                publishedForPark = true;
             } finally {
                 if (!handedOver) {
                     lock.unlock();
+                }
+                // First thing after the lock is released, so a test can apply a change in the gap
+                // between "no credit, lock released" and "parked": the sender must already be
+                // published for that change to find it.
+                if (publishedForPark) {
+                    Runnable hook = beforeParkHook;
+                    if (hook != null) {
+                        hook.run();
+                    }
                 }
             }
             // A transport release decrements outstandingBytes and then reads parkedSender, without
@@ -576,10 +648,6 @@ final class Http2ConnectionWriter {
             if (!windowLimited && stream.outstandingBytes.get() < outstandingCapBytes) {
                 stream.parkedSender = null;
                 continue;
-            }
-            Runnable hook = beforeParkHook;
-            if (hook != null) {
-                hook.run();
             }
             if (deadlineEpochMillis > 0) {
                 long remaining = deadlineEpochMillis - System.currentTimeMillis();
@@ -700,6 +768,8 @@ final class Http2ConnectionWriter {
         }
     }
 
+    // CloseResource: the body is only measured, and belongs to the response.
+    @SuppressWarnings("PMD.CloseResource")
     private long encodeResponseHeaders(MemorySegment target, HttpResponse response) {
         long position = encoder.encodeHeader(
                 target, 0, ":status", Integer.toString(response.status().code()), false);

@@ -31,6 +31,11 @@ class Http2ConnectionWriterAllocationTest {
     private static final ThreadMXBean THREADS = (ThreadMXBean) ManagementFactory.getThreadMXBean();
     private static final MemoryAllocator ALLOCATOR =
             new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
+    /**
+     * What the counter may show over a whole measured run with nothing allocated by the code: JIT
+     * and counter granularity. One boxed id per call would show well over a megabyte.
+     */
+    private static final long NOISE_BYTES = 4096;
     private static final int WARMUP = 20_000;
     private static final int MEASURED = 100_000;
     private static final int KNOWN_STREAM = 1001;
@@ -64,7 +69,7 @@ class Http2ConnectionWriterAllocationTest {
     void connectionWindowUpdateAllocatesNothing() {
         Http2ConnectionWriter writer = writerWithOpenStream();
 
-        assertThat(bytesPerCall(i -> writer.applyConnectionWindowUpdate(1))).isZero();
+        assertThat(bytesOverRun(i -> writer.applyConnectionWindowUpdate(1))).isLessThan(NOISE_BYTES);
     }
 
     @Test
@@ -72,10 +77,10 @@ class Http2ConnectionWriterAllocationTest {
     void streamWindowUpdateAllocatesNothing() {
         Http2ConnectionWriter writer = writerWithOpenStream();
 
-        assertThat(bytesPerCall(i -> writer.applyStreamWindowUpdate(KNOWN_STREAM, 1)))
-                .as("tracked stream").isZero();
-        assertThat(bytesPerCall(i -> writer.applyStreamWindowUpdate(UNKNOWN_STREAM, 1)))
-                .as("unknown stream").isZero();
+        assertThat(bytesOverRun(i -> writer.applyStreamWindowUpdate(KNOWN_STREAM, 1)))
+                .as("tracked stream").isLessThan(NOISE_BYTES);
+        assertThat(bytesOverRun(i -> writer.applyStreamWindowUpdate(UNKNOWN_STREAM, 1)))
+                .as("unknown stream").isLessThan(NOISE_BYTES);
     }
 
     @Test
@@ -83,8 +88,8 @@ class Http2ConnectionWriterAllocationTest {
     void initialWindowSizeAllocatesNothing() {
         Http2ConnectionWriter writer = writerWithOpenStream();
 
-        assertThat(bytesPerCall(i -> writer.applyInitialWindowSize(
-                Http2FlowController.DEFAULT_WINDOW_SIZE + (i & 1)))).isZero();
+        assertThat(bytesOverRun(i -> writer.applyInitialWindowSize(
+                Http2FlowController.DEFAULT_WINDOW_SIZE + (i & 1)))).isLessThan(NOISE_BYTES);
     }
 
     @Test
@@ -92,7 +97,7 @@ class Http2ConnectionWriterAllocationTest {
     void peerResetOfUnknownStreamAllocatesNothing() {
         Http2ConnectionWriter writer = writerWithOpenStream();
 
-        assertThat(bytesPerCall(i -> writer.resetByPeer(UNKNOWN_STREAM))).isZero();
+        assertThat(bytesOverRun(i -> writer.resetByPeer(UNKNOWN_STREAM))).isLessThan(NOISE_BYTES);
     }
 
     @Test
@@ -100,11 +105,12 @@ class Http2ConnectionWriterAllocationTest {
     void registerAndReleaseAllocates() {
         Http2ConnectionWriter writer = writerWithOpenStream();
 
-        assertThat(bytesPerCall(i -> writer.release(writer.register(UNKNOWN_STREAM, 0))))
+        assertThat(bytesOverRun(i -> writer.release(writer.register(UNKNOWN_STREAM, 0))))
                 .isGreaterThan(0L);
     }
 
-    private static long bytesPerCall(IntConsumer call) {
+    /** Total bytes allocated over {@code MEASURED} calls, not a per-call average that would round a small leak to zero. */
+    private static long bytesOverRun(IntConsumer call) {
         for (int i = 0; i < WARMUP; i++) {
             call.accept(i);
         }
@@ -112,6 +118,6 @@ class Http2ConnectionWriterAllocationTest {
         for (int i = 0; i < MEASURED; i++) {
             call.accept(i);
         }
-        return (THREADS.getCurrentThreadAllocatedBytes() - before) / MEASURED;
+        return THREADS.getCurrentThreadAllocatedBytes() - before;
     }
 }
