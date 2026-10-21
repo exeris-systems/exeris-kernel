@@ -44,6 +44,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **`SubsystemOrchestrator.shutdown()` runs once under concurrent callers, and every caller returns after it
+  completed.** A caller that loses the race waits for the winner; a call from a `stop()` on the stopping thread
+  returns at once. **For embedding hosts:** the shutdown hook is on by default; a host that stops the kernel from
+  its own lifecycle passes `registerShutdownHook(false)` in the same release that adopts 0.13, or a `SIGTERM`
+  starts two stop sequences. The Spring host runtime is one such host. `Subsystem.stop()` may run on a thread
+  with no kernel `ScopedValue` bindings, and must not call `System.exit`, `Runtime.exit` or `Runtime.halt`;
+  `initialize()` and `start()` must not call `System.exit` either. A second concurrent `boot()` on one
+  `KernelBootstrap` instance now throws `IllegalStateException`; booting again after a boot returned is unchanged.
+
 - **Two `HttpProvider`s at equal priority resolve by implementation class name.** The Community HTTP
   subsystem now selects through `BootstrapProviderSelector`, as the graph, persistence, security and
   crypto providers do, instead of taking the equal-priority provider `ServiceLoader` listed first. The
@@ -96,6 +105,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   visible through both and each accessor delegates; migrate by naming the holder instead.
 
 ### Added
+
+- **`KernelBootstrap.shutdown()` and `Builder#registerShutdownHook(boolean)`; a standalone `boot()` stops the
+  kernel in order on `SIGTERM` (ADR-007 §5).** `shutdown()` is idempotent and returns after the ordered stop;
+  called while `boot()` is still initializing or starting, it records the request, `kernelMain` is not run and
+  `boot()` returns normally. `boot()` registers one JVM shutdown hook (thread `exeris-kernel-shutdown`) that runs
+  `shutdown()` and removes it before returning, unless the builder disables it.
 
 - **A choreography `Start` for an instance the engine already holds is pinned as a no-op, and the absorbed
   delivery is observable.** A running, parked or completed instance is not run again and the supplied plan is
@@ -198,6 +213,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   names the label but whose table name is not a valid SQL identifier fails the call with
   `GraphQueryException` before any statement runs; one that does not exist in the current scope fails
   the statement with the persistence engine's translated error. Nothing is deleted in either case.
+- **A `SIGTERM` to a standalone kernel no longer exits without draining or stopping.** The JVM shutdown hook
+  runs the ordered stop: readiness turns `503`, the transport drains its in-flight requests, and subsystems stop in
+  reverse start order with memory last.
 - **The Community server sends its whole certificate chain, not its leaf alone (#532).** The server loaded its
   certificate file with `SSL_CTX_use_certificate_file`, which keeps only the first certificate, so a client that
   trusts the root alone could not verify a chained server. It now loads the file with

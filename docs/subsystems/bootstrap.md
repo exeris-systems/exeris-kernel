@@ -26,9 +26,11 @@ last-verified: 2026-09-28
   `eu.exeris.kernel.community.health.HealthEndpointHandler`
 
 > `KernelBootstrap` (entry point) lives in `eu.exeris.kernel.core.bootstrap`.
-> The kernel installs no signal handler and no JVM shutdown hook. `boot()` runs the application's
-> `kernelMain` on the calling thread and calls `shutdown()` in a `finally` once `kernelMain` returns or
-> throws; turning `SIGTERM`/`SIGINT` into that return is the caller's job.
+> The kernel installs no signal handler. `boot()` runs the application's `kernelMain` on the calling
+> thread and stops the subsystems in a `finally` once `kernelMain` returns or throws. A standalone
+> `boot()` also registers one JVM shutdown hook that runs `KernelBootstrap.shutdown()`, so `SIGTERM`
+> stops the kernel in order; an embedding host that owns the process's signals disables the hook with
+> `Builder#registerShutdownHook(false)` and calls `shutdown()` from its own lifecycle.
 
 **Layer:** L0 (Orchestration)  
 **Status:** Validated Architectural Prototype (TRL‑3) — JDK 25 LTS baseline
@@ -216,9 +218,16 @@ sequenceDiagram
     participant ORC as SubsystemOrchestrator
     participant SUB as Subsystems (reverse topological order)
 
-    APP-->>KB: kernelMain returns or throws
-    KB->>KB: close DynamicConfigFileWatcher
-    KB->>ORC: shutdown()  (in finally)
+    participant HOOK as JVM hook / host thread
+
+    alt kernelMain returns or throws
+        APP-->>KB: kernelMain returns or throws
+        KB->>KB: close DynamicConfigFileWatcher
+        KB->>ORC: shutdown()  (in finally)
+    else SIGTERM, or the host calls KernelBootstrap.shutdown()
+        HOOK->>ORC: shutdown()  (via KernelBootstrap.shutdown())
+    end
+    Note over KB,ORC: one caller wins a compare-and-set and runs the stop; every other caller waits for it
     ORC->>ORC: markKernelState(SHUTTING_DOWN) — readiness 503
     loop each subsystem, last initialized first
         alt isRunning() == true
@@ -230,6 +239,7 @@ sequenceDiagram
     end
     ORC->>ORC: KernelShutdownComplete JFR
     ORC-->>KB: returns (never throws)
+    KB->>KB: remove the JVM shutdown hook
     KB-->>APP: boot() returns, or throws BootstrapException
 ```
 
@@ -301,11 +311,21 @@ Bootstrap decides whether the Kernel comes up:
 
 A dependency cycle is fatal under either policy.
 
-### 3. Shutdown Is Driven by the Caller
+### 3. Who Starts the Stop
 
-The kernel does not listen for OS signals. Ordered shutdown happens when `kernelMain` returns; an application
-that must stop cleanly on `SIGTERM` has to make `kernelMain` return and let `boot()` finish before the JVM
-halts.
+The kernel handles no OS signal itself. The stop sequence starts from one of three triggers, and runs once
+however many fire: `kernelMain` returning or throwing (`boot()`'s `finally`); the JVM shutdown hook that a
+standalone `boot()` registers, which runs `KernelBootstrap.shutdown()` on `SIGTERM`; or a host calling
+`KernelBootstrap.shutdown()` from its own lifecycle. The caller that wins the orchestrator's compare-and-set
+runs the stop; every other caller returns only after it completed.
+
+- A `shutdown()` that arrives while `boot()` is still initializing or starting subsystems is recorded:
+  `kernelMain` is not run, `boot()` stops what started and returns normally.
+- `shutdown()` never interrupts or ends `kernelMain`; application code decides when to return.
+- `stop()` may run on a thread with no kernel `ScopedValue` bindings, so it acts on references captured in
+  `initialize()`/`start()`; it must not call `System.exit`, `Runtime.exit` or `Runtime.halt`, nor wait without
+  bound for a thread of its own. `initialize()` and `start()` must not call `System.exit` either: they run on
+  the booting thread, which the hook waits for.
 
 ---
 
@@ -472,8 +492,17 @@ failure is logged and never fails the subsystem.
 - `AbstractSubsystemLifecycleTck` bindings for `memory`, `transport`, `http` and `websocket`
 - `HealthEndpointHandlerKernelMonitorIntegrationTest`, `CommunitySubsystemHealthWatcherTest`
 
-> **Note:** `AbstractGracefulShutdownTck` is bound in Core over stub subsystems; the kernel handles no
-> signal, so there is no signal test. The transport drain is covered by
+- `KernelBootstrapShutdownTest`, `SubsystemOrchestratorShutdownTest` — the `shutdown()` entry point, the hook
+  lifecycle, and the concurrency rules (racing callers, re-entry, a stop requested during boot)
+- `CoreGracefulShutdownTckTest` binds `AbstractGracefulShutdownTck` over stub subsystems, with its trigger wired
+  to `KernelBootstrap.shutdown()`
+
+Community: `KernelSigtermShutdownTest` forks a kernel JVM and sends a real `SIGTERM` (in-flight request drained,
+ingress refused, subsystems stopped in reverse start order with memory last, exit status 143; a hook-disabled
+control; `System.exit` from `kernelMain` and from a subsystem's thread), and
+`CommunityShutdownUnboundThreadTest` stops the real subsystems from a thread with no bindings.
+
+> **Note:** The transport drain is covered by
 > `PaqsSchedulerTest`, `DrainCoordinatorTest` and `CommunityHttpDrainIntegrationTest`, not by this
 > subsystem's tests.
 
@@ -483,9 +512,10 @@ failure is logged and never fails the subsystem.
 
 The Bootstrap subsystem is the guardian of the Kernel's lifecycle. It enforces a dependency-aware boot
 sequence, starts each phase in dependency-safe rounds on the booting thread, fails the boot on the first
-mandatory failure, and stops running subsystems in reverse topological order when `kernelMain` returns. It
-does not handle signals or exit the JVM, and bounds shutdown time only where the transport drains its
-streams (60 s) — turning a signal into shutdown stays with the host.
+mandatory failure, and stops running subsystems in reverse topological order when `kernelMain` returns or
+`shutdown()` is called. A standalone boot registers one JVM shutdown hook that runs `shutdown()`; the kernel
+handles no signal itself and never exits the JVM, and it bounds shutdown time only where the transport drains
+its streams (60 s).
 
 ---
 
@@ -638,15 +668,15 @@ sequenceDiagram
     Note over K8s,OLD: Traffic shifts to new pod
     K8s->>K8s: Remove old pod from Service Endpoints
     K8s->>OLD: SIGTERM
-    Note over OLD: Application makes kernelMain return
+    Note over OLD: JVM shutdown hook runs shutdown()
     OLD->>OLD: shutdown(): readiness → 503 (SHUTTING_DOWN)
     OLD->>OLD: stop() running subsystems, reverse topological order
     OLD-->>K8s: process exits
 ```
 
 > **What holds:** with `HealthEndpointHandler`, readiness turns `503` as soon as `shutdown()` begins, before any
-> `stop()` runs. Nothing happens on `SIGTERM` by itself — the kernel installs no handler, so until the
-> application makes `kernelMain` return, readiness stays `200`.
+> `stop()` runs. In a standalone process the JVM shutdown hook starts that stop when `SIGTERM` arrives; a host
+> that disabled the hook (`registerShutdownHook(false)`) starts it by calling `KernelBootstrap.shutdown()`.
 
 > **`terminationGracePeriodSeconds`:** the orchestrator imposes no overall deadline; the transport's `stop()`
 > drains streams in service for up to 60 s. Size the grace period to the application's own drain plus that
