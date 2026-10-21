@@ -59,12 +59,13 @@ class CommunityGraphCoreE2EIntegrationTest {
         }
 
         assertThat(sqlQuery).contains("SELECT");
-        assertThat(sqlQuery).contains("target_id");
+        assertThat(sqlQuery.stripTrailing()).endsWith("SELECT id FROM f1");
         assertThat(sqlQuery).contains("$1");
 
         assertThat(cypherQuery).contains("MATCH");
         assertThat(cypherQuery).contains("(source)-[:FOLLOWS]->(target)");
         assertThat(cypherQuery).contains("$sourceId");
+        assertThat(cypherQuery).contains("RETURN DISTINCT target.id AS id");
     }
 
     @Test

@@ -90,6 +90,18 @@
     "justification": "Binary- and source-incompatible for implementers: the default that delegated to the two-argument overload is removed and the method is abstract on the preview SPI interface; an implementer that inherited it must now implement it (japicmp METHOD_NOW_ABSTRACT, the one preview break this release reports)."
   },
   {
+    "signature": "eu.exeris.kernel.spi.graph.GraphDialect#buildMatchQuery(eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour on both Community dialects: the query delegates to buildPathQuery over one hop, so the result column is id (was target_id) and the SQL binds the start node through CAST($1 AS uuid) in a leading CTE; the descriptor's direction is honoured; no signature change."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphDialect#buildMultiHopQuery(eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor, int, int)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour on both Community dialects: the query delegates to buildPathQuery over one ranged hop, so a maxHops above 64 throws IllegalArgumentException and minHops below 1 or maxHops below minHops is rejected by GraphHop; the result column is id; no signature change."
+  },
+  {
     "signature": "eu.exeris.kernel.spi.graph.GraphSession#traversePath(eu.exeris.kernel.spi.graph.model.GraphPathSpec)",
     "since": "0.13",
     "adr": "ADR-102",

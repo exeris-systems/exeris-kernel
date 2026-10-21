@@ -77,10 +77,10 @@ class CommunityGraphDialectTest {
         }
 
         @Test
-        @DisplayName("selects target_id")
-        void selectsTargetId() {
+        @DisplayName("yields the frontier in column id")
+        void yieldsFrontierInColumnId() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
-            assertThat(dialect.buildMatchQuery(edge)).containsIgnoringCase("target_id");
+            assertThat(dialect.buildMatchQuery(edge).stripTrailing()).endsWith("SELECT id FROM f1");
         }
 
         @Test
@@ -96,6 +96,21 @@ class CommunityGraphDialectTest {
     @Nested
     @DisplayName("buildMultiHopQuery()")
     class MultiHopQuery {
+
+        @Test
+        @DisplayName("a hop bound above 64 throws IllegalArgumentException")
+        void hopBoundAboveLimitThrows() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
+            assertThatThrownBy(() -> dialect.buildMultiHopQuery(edge, 1, 65))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("a hop bound of 64 is accepted")
+        void hopBoundAtLimitAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
+            assertThatCode(() -> dialect.buildMultiHopQuery(edge, 1, 64)).doesNotThrowAnyException();
+        }
 
         @Test
         @DisplayName("contains WITH RECURSIVE traversal CTE")
