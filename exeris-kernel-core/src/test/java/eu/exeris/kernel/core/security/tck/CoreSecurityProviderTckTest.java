@@ -4,12 +4,14 @@
  */
 package eu.exeris.kernel.core.security.tck;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.SecurityProvider;
 import eu.exeris.kernel.tck.contract.security.AbstractSecurityProviderTck;
 import org.junit.jupiter.api.DisplayName;
 
 import java.lang.foreign.MemorySegment;
+import java.util.List;
 
 @DisplayName("Core: SecurityProvider TCK")
 class CoreSecurityProviderTckTest extends AbstractSecurityProviderTck {
@@ -17,6 +19,12 @@ class CoreSecurityProviderTckTest extends AbstractSecurityProviderTck {
     @Override
     protected SecurityProvider createProvider() {
         return new CoreSecurityProviderFixture();
+    }
+
+    @Override
+    protected SecurityProvider selectAmong(List<SecurityProvider> candidates) {
+        // The kernel selects this SPI through BootstrapProviderSelector.
+        return BootstrapProviderSelector.selectHighestPriority(candidates, SecurityProvider::priority).orElseThrow();
     }
 
     @Override

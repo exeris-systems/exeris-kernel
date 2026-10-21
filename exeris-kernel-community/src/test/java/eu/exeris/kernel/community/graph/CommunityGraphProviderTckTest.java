@@ -4,9 +4,12 @@
  */
 package eu.exeris.kernel.community.graph;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.graph.GraphProvider;
 import eu.exeris.kernel.tck.contract.graph.AbstractGraphProviderTck;
 import org.junit.jupiter.api.DisplayName;
+
+import java.util.List;
 
 /**
  * Community concrete TCK: {@link AbstractGraphProviderTck} backed by
@@ -27,6 +30,12 @@ class CommunityGraphProviderTckTest extends AbstractGraphProviderTck {
     @Override
     protected GraphProvider createProvider() {
         return new CommunityGraphProvider();
+    }
+
+    @Override
+    protected GraphProvider selectAmong(List<GraphProvider> candidates) {
+        // The kernel selects this SPI through BootstrapProviderSelector.
+        return BootstrapProviderSelector.selectHighestPriority(candidates, GraphProvider::priority).orElseThrow();
     }
 }
 

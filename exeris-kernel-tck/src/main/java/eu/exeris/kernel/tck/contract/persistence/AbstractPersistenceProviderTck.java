@@ -5,12 +5,13 @@
 package eu.exeris.kernel.tck.contract.persistence;
 
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
+import eu.exeris.kernel.tck.support.PriorityRivals;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Comparator;
+import java.util.List;
 import java.util.ServiceLoader;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,6 +37,23 @@ public abstract class AbstractPersistenceProviderTck {
      * @return a provider under test
      */
     protected abstract PersistenceProvider createProvider();
+
+    /**
+     * Runs the selection the binding's kernel applies to discovered {@code PersistenceProvider}s over exactly
+     * {@code candidates}, and returns the provider that selection picks.
+     *
+     * <p>Delegate to the production selection routine, not to a reduction written in the binding:
+     * the precedence contract is judged against whatever this method returns.
+     *
+     * @param candidates the providers to choose between, in discovery order
+     * @return the selected provider
+     * @throws UnsupportedOperationException by default, so a binding that does not route the candidates
+     *         through its kernel's selection fails the precedence contract rather than skipping it
+     */
+    protected PersistenceProvider selectAmong(List<PersistenceProvider> candidates) {
+        throw new UnsupportedOperationException(
+                "Override selectAmong to route the candidates through the kernel's provider selection");
+    }
 
     private PersistenceProvider provider;
 
@@ -110,26 +128,19 @@ public abstract class AbstractPersistenceProviderTck {
         }
 
         /**
-         * Confirms {@link PersistenceProvider#priority()} yields a well-defined ordering over
-         * the {@link ServiceLoader}-discovered providers.
-         *
-         * @apiNote This does not prove that bootstrap wiring resolves a tie by selecting the
-         *          highest-priority provider: {@code selected} is independently recomputed here
-         *          as the maximum of the very set {@code provider} was drawn from, so the
-         *          assertion holds for any discovered provider regardless of how — or whether —
-         *          production selection logic uses {@code priority()}. Proving precedence
-         *          requires exercising the engine's own provider-selection path with two
-         *          competing providers registered.
+         * Stages a rival one priority step above and one below the provider under test, in both
+         * discovery orders, and requires the binding's selection to return the highest by identity.
          */
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            PersistenceProvider selected = ServiceLoader.load(PersistenceProvider.class)
-                    .stream()
-                    .map(ServiceLoader.Provider::get)
-                    .max(Comparator.comparingInt(PersistenceProvider::priority))
-                    .orElseThrow();
-            assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
+            PersistenceProvider higher = PriorityRivals.rival(PersistenceProvider.class, provider.priority() + 1, "tck-higher-priority");
+            PersistenceProvider lower = PriorityRivals.rival(PersistenceProvider.class, provider.priority() - 1, "tck-lower-priority");
+
+            assertThat(selectAmong(List.of(lower, provider, higher))).as("higher-priority rival listed last").isSameAs(higher);
+            assertThat(selectAmong(List.of(higher, provider, lower))).as("higher-priority rival listed first").isSameAs(higher);
+            assertThat(selectAmong(List.of(lower, provider))).as("provider under test listed last").isSameAs(provider);
+            assertThat(selectAmong(List.of(provider, lower))).as("provider under test listed first").isSameAs(provider);
         }
     }
 }
