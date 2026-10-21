@@ -410,6 +410,13 @@ public final class PaqsScheduler implements AutoCloseable {
         } catch (Error error) { //NOPMD AvoidCatchingGenericException — outcome must be set before rethrow
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
             PaqsHandlerFailureEvent.emit(streamId, engineName, error.getClass().getName(), PHASE_HANDLER);
+            // Stream id, engine and class mirror PaqsHandlerFailureEvent. The message and stack trace stay
+            // out of the log on purpose: a handler's exception message may carry request or user data.
+            if (LOG.isLoggable(System.Logger.Level.ERROR)) {
+                LOG.log(System.Logger.Level.ERROR, "Stream handler raised an Error"
+                                + " (streamId={0}, engine={1}, exception={2})",
+                        String.valueOf(streamId), engineName, error.getClass().getName());
+            }
             closeStreamBestEffort(stream, null, false);
             throw error;
         } catch (Throwable t) { //NOPMD AvoidCatchingGenericException,AvoidCatchingThrowable
@@ -417,8 +424,12 @@ public final class PaqsScheduler implements AutoCloseable {
             outcome = StreamLifecycleEvent.OUTCOME_ERROR;
             PaqsHandlerFailureEvent.emit(streamId, engineName, t.getClass().getName(), PHASE_HANDLER);
             closeStreamBestEffort(stream, t, true);
+            // Same fields as PaqsHandlerFailureEvent; no message or stack trace, see the Error branch.
             if (LOG.isLoggable(System.Logger.Level.WARNING)) {
-                LOG.log(System.Logger.Level.WARNING, "Stream handler failed internally (VT boundary isolation)");
+                LOG.log(System.Logger.Level.WARNING,
+                        "Stream handler failed internally (VT boundary isolation)"
+                                + " (streamId={0}, engine={1}, exception={2})",
+                        String.valueOf(streamId), engineName, t.getClass().getName());
             }
         } finally {
             admissionController.onStreamCompleted();

@@ -48,6 +48,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **A handler failure that `PaqsScheduler` isolates is logged with the stream id, the engine name and the
+  exception class name.** The record named none of them, so it could not be matched to the
+  `PaqsHandlerFailureEvent` of the same failure. An `Error` is logged at `ERROR` before it is rethrown.
+  Neither record carries the exception message or a stack trace: a handler's message may hold request data.
 - **`boot()` registers a JVM shutdown hook by default — embedding hosts must opt out.** The hook runs
   `KernelBootstrap.shutdown()`. A host that stops the kernel from its own lifecycle passes
   `registerShutdownHook(false)` in the same release that adopts 0.13, or a `SIGTERM` starts two stop sequences.
