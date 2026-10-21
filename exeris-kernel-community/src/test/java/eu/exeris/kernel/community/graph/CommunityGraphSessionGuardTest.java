@@ -100,4 +100,18 @@ class CommunityGraphSessionGuardTest {
                     });
         }
     }
+
+    @Test
+    @DisplayName("traversePath with a hop bound of Integer.MAX_VALUE after another hop throws PATH_LIMIT")
+    void traversePathSumOverflowingIntThrowsPathLimit() {
+        try (GraphSession session = engine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(),
+                    List.of(GraphHop.of(edge), new GraphHop(edge, 1, Integer.MAX_VALUE)));
+
+            assertThatThrownBy(() -> session.traversePath(path))
+                    .isInstanceOf(GraphQueryException.class)
+                    .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH_LIMIT"));
+        }
+    }
 }

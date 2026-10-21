@@ -50,6 +50,8 @@ final class CommunityGraphSession implements GraphSession {
 
     private static final String ACCESS_QUERY_TYPE = "ACCESS";
     private static final String PATH_LIMIT_QUERY_TYPE = "PATH_LIMIT";
+    private static final String PATH_LIMIT_DETAIL =
+            "path length bound (sum of maxRepeat) exceeds the Community graph limit of " + MAX_PATH_LENGTH;
     private static final String SHORTEST_PATH_ALGORITHM = "dijkstra";
 
     private final CommunityGraphBackend backend;
@@ -203,12 +205,11 @@ final class CommunityGraphSession implements GraphSession {
 
     private static void requireWithinLimit(GraphPathSpec path) {
         Objects.requireNonNull(path, "path must not be null");
-        int sum = 0;
+        long sum = 0;
         for (GraphHop hop : path.hops()) {
             sum += hop.maxRepeat();
             if (sum > MAX_PATH_LENGTH) {
-                throw new GraphQueryException(PATH_LIMIT_QUERY_TYPE,
-                        "path length bound (sum of maxRepeat) exceeds the Community graph limit of 64");
+                throw new GraphQueryException(PATH_LIMIT_QUERY_TYPE, PATH_LIMIT_DETAIL);
             }
         }
     }
