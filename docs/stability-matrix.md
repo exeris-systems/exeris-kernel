@@ -347,5 +347,10 @@ maturity change here.
     `StorageContext` that the binding cannot scope are refused before database I/O with
     `GraphQueryException` (`EX-GRPH-5002`, `queryType = "ISOLATION_SCOPE"`). Community SQL/PGQ serves
     `SEPARATED_SCHEMA` and `DEDICATED` and refuses `SHARED` tenant contexts; Community Cypher refuses
-    every tenant context. System-scope callers (`ImmutableStorageContext.GLOBAL`) are served on all backends.
+    every tenant context. SQL/PGQ also refuses a tenant context when no `PersistenceEngine` is bound in the
+    calling scope, because the request-session fallback opens an unscoped connection. System-scope callers
+    (`ImmutableStorageContext.GLOBAL`) are served on all backends. Under `SEPARATED_SCHEMA` the `search_path`
+    is `<schema>, public`, so a graph table missing from the tenant schema resolves to the system graph:
+    scoping holds only when every registered node and edge table exists in the tenant schema, and
+    `registerNodes`/`registerEdges` create tables only in the scope they run under.
     The SPI compatibility gate reports no signature change.

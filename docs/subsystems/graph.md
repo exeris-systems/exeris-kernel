@@ -285,6 +285,17 @@ A non-system context whose isolation strategy the backend cannot scope is refuse
 | SQL/PGQ | refused | scoped (`search_path`) | scoped (pool routing) | served |
 | Cypher | refused | refused | refused | served |
 
+A tenant context under SQL/PGQ is also refused when no `PersistenceEngine` is bound in the calling scope
+(`KernelProviders.PERSISTENCE_ENGINE`): only the engine opens a connection under the ambient context,
+while the request-session fallback serves a pooled connection that no interceptor has scoped.
+System-scope calls are still served through that fallback.
+
+Precondition for `SEPARATED_SCHEMA`: the connection's `search_path` is `<schema>, public`, so a graph table
+that is missing from the tenant schema resolves to the table in `public`, the system graph, without an error.
+Scoping holds only when every registered node and edge table exists in the tenant schema.
+`registerNodes` and `registerEdges` create tables only in the scope they run under, so a deployment creates
+them under each tenant context or provisions them per tenant. `DEDICATED` fails with an error on a missing table.
+
 Guarded: the four traversal methods (`traverseBreadthFirst`, `streamBfsJson`, `traversePath`, `streamPathJson`). Not guarded: writes, `getRootNode`, `findShortestPath`.
 
 ---
@@ -387,16 +398,17 @@ that is a shortest-path detail, not a traversal one.
   (`cyclicGraphTerminatesAndHonoursExactLengthsWithWalkSemantics`), direction coverage
   (`eachDirectionSelectsItsOwnEdgesAndOneHopAgrees`), streaming parity and buffer ownership
   (`streamPathJsonReturnsSameIdSetInCallerOwnedBuffer`).
+  Tenant scoping: `crossTenantIsolationPreventsReachingOutsideScope` (a dynamic test per scopable
+  strategy) and `unscopableStorageContextRefusesTraversals` (a dynamic test per unscopable strategy, all
+  four traversal methods). Against PostgreSQL both run; against Neo4j no strategy is scopable, so the first
+  yields no tests and only the refusal cases run.
   Bound in Community by `CommunityGraphSessionPostgresContractTckIT` (live PostgreSQL) and
   `CommunityGraphSessionNeo4jContractTckIT` (live Neo4j).
+  `CommunityGraphSessionGuardTest` covers the refusal and the unbound-engine case without a database.
 
-The following three checks are described in earlier documentation but have no backing test or type in
+The following two checks are described in earlier documentation but have no backing test or type in
 this tree today — listed here as gaps, not coverage:
 
-- `StorageContext`-based tenant isolation for graph traversals is verified by
-  `AbstractGraphSessionLiveContractTck` via `crossTenantIsolationPreventsReachingOutsideScope`
-  (dynamic test per supported strategy) and `unscopableStorageContextRefusesTraversals`
-  (dynamic test per unsupported strategy), executed against live PostgreSQL and Neo4j.
 - There is no `TraversalResult` type anywhere in the codebase, and no test comparing PostgreSQL and Neo4j
   output bit-for-bit; `CommunityGraphBackendParityIT` (Testcontainers Neo4j, `@Tag("integration")`) proves
   the Cypher backend executes real writes and reads, and separately asserts both dialects produce
@@ -441,8 +453,8 @@ Community drivers without changing a single line of business code.
 [ADR-102](../adr/ADR-102-graph-spi-anchor-and-multi-hop-traversal.md) anchors this subsystem and decides heterogeneous multi-hop traversal
 (`GraphPathSpec`, `traversePath`, `streamPathJson`), the refusal of the two-argument `findShortestPath`,
 and tenant scoping for graph access; it was written from
-[RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md). Its obligations are planned for 0.13, and
-this document describes them as shipped only once they land. The other registry entry naming the kernel
+[RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md). Its obligations landed in 0.13 and this
+document describes them as shipped. The other registry entry naming the kernel
 graph SPI is [ADR-030](../adr/ADR-030.link.md), owned by `exeris-spring-runtime`, which decides the
 Spring-side seam *onto* this SPI rather than the SPI itself.
 
