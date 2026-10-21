@@ -34,10 +34,11 @@ import java.util.concurrent.locks.LockSupport;
  * concrete {@link TransportStream}; the Community NIO {@code NativeTcpStream} and the Enterprise
  * native binding both flow through this engine.
  *
- * <p><b>Protocol scope:</b> the SSE event framing ({@link SseEventEncoder}) is protocol-blind, but
- * the response-head write is HTTP/1.1-specific (it uses {@code Http1ResponseEncoder}). HTTP/2 streaming
- * (head as HEADERS frame, body as DATA frames) needs a protocol-aware head-write seam, which is not
- * implemented; the Community path is HTTP/1.1 only.
+ * <p><b>Protocol scope:</b> the SSE event framing ({@link SseEventEncoder}) is protocol-blind. On
+ * HTTP/1.1 the engine writes the response head and the events through the transport directly. Another
+ * protocol supplies a {@link StreamEgress} (Community's HTTP/2 session does), which frames the head and
+ * the events, ends the stream without closing the connection, and parks the caller on that protocol's
+ * own credit; the engine keeps the stream's lifecycle, its terminal signal and its JFR events.
  *
  * <h2>Backpressure — park the VT, never an on-heap queue (obligation 4)</h2>
  * <p>The engine maintains a bounded <em>credit window</em>: at most {@code creditWindow} bytes may
@@ -89,6 +90,10 @@ public final class HttpStreamEngine implements HttpStreamExchange {
     private final long authDeadlineEpochMillis;
     private final long openNanos;
     private final long creditWindow;
+    // The protocol seam; null on HTTP/1.1. The allocator and the credit window serve only the HTTP/1.1
+    // path, where the engine frames and accounts the bytes itself.
+    private final StreamEgress egress;
+    private final int protocolStreamId;
 
     private final AtomicLong outstandingBytes = new AtomicLong(0L);
     private final AtomicLong eventsEmitted = new AtomicLong(0L);
@@ -106,6 +111,19 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.authDeadlineEpochMillis = authDeadlineEpochMillis;
         this.creditWindow = creditWindowBytes;
+        this.egress = null;
+        this.protocolStreamId = 0;
+        this.openNanos = System.nanoTime();
+    }
+
+    private HttpStreamEngine(HttpRequest request, StreamEgress egress, long authDeadlineEpochMillis) {
+        this.request = Objects.requireNonNull(request, "request must not be null");
+        this.egress = Objects.requireNonNull(egress, "egress must not be null");
+        this.stream = Objects.requireNonNull(egress.transport(), "egress transport must not be null");
+        this.allocator = null;
+        this.authDeadlineEpochMillis = authDeadlineEpochMillis;
+        this.creditWindow = 0L;
+        this.protocolStreamId = egress.protocolStreamId();
         this.openNanos = System.nanoTime();
     }
 
@@ -146,6 +164,31 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         return engine;
     }
 
+    /**
+     * Opens a stream on a protocol that supplies its own egress: asks the egress to write the response
+     * head and returns the live exchange. A stream that had already ended when its head was due yields
+     * an engine that is closed from the start, whose first {@link #emit} throws
+     * {@link StreamClosedException#peerDisconnect(long)}.
+     *
+     * @param request                 the inbound request that opened the stream
+     * @param egress                  the protocol side of the stream
+     * @param authDeadlineEpochMillis epoch-millis deadline; {@code <= 0} disables expiry enforcement
+     * @return a live {@link HttpStreamExchange}
+     */
+    public static HttpStreamEngine open(HttpRequest request,
+                                        StreamEgress egress,
+                                        long authDeadlineEpochMillis) {
+        HttpStreamEngine engine = new HttpStreamEngine(request, egress, authDeadlineEpochMillis);
+        if (egress.writeHead()) {
+            StreamOpenedEvent.emit(engine.stream.streamId(), engine.protocolStreamId,
+                    authDeadlineEpochMillis > NO_AUTH_DEADLINE);
+        } else {
+            engine.closed.set(true);
+            engine.recordSignal(StreamClosedException.peerDisconnect(0L));
+        }
+        return engine;
+    }
+
     @Override
     public HttpRequest request() {
         return request;
@@ -160,6 +203,10 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         failClosedIfAuthExpired();
 
         int frameBytes = SseEventEncoder.encodedLength(event);
+        if (egress != null) {
+            emitThroughEgress(event, frameBytes);
+            return;
+        }
         awaitCredit(frameBytes);
         transferFrame(event, frameBytes);
         eventsEmitted.incrementAndGet();
@@ -170,8 +217,21 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
-        stream.close();
-        StreamClosedEvent.emit(stream.streamId(), eventsEmitted.get());
+        if (egress != null) {
+            egress.finish();
+        } else {
+            stream.close();
+        }
+        StreamClosedEvent.emit(stream.streamId(), protocolStreamId, eventsEmitted.get());
+    }
+
+    private void emitThroughEgress(StreamEvent event, int frameBytes) {
+        switch (egress.writeEvent(event, frameBytes, authDeadlineEpochMillis, eventsEmitted.get())) {
+            case WRITTEN -> eventsEmitted.incrementAndGet();
+            case CLOSED -> abortiveTeardown(StreamClosedException.peerDisconnect(eventsEmitted.get()), null);
+            case DEADLINE -> abortiveTeardown(StreamClosedException.authExpired(
+                    (System.nanoTime() - openNanos) / MILLIS_PER_NANO, eventsEmitted.get()), null);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -184,7 +244,8 @@ public final class HttpStreamEngine implements HttpStreamExchange {
         }
         // Single-phase commit BEFORE parking — the blocking park must never sit between
         // begin() and commit() on a virtual thread (carrier-bound EventWriter straddle).
-        StreamBackpressureParkEvent.emit(stream.streamId(), outstandingBytes.get(), eventsEmitted.get());
+        StreamBackpressureParkEvent.emit(
+                stream.streamId(), protocolStreamId, outstandingBytes.get(), -1L, eventsEmitted.get());
         // Missed-unpark window: between the overflow check above and this set, releaseCredit() on the
         // transport callback thread may call unpark(null) (no-op) and the emitter would miss the signal.
         // The bounded parkNanos(PARK_SLICE_NANOS) backstop below makes that benign — the loop re-checks
@@ -263,8 +324,13 @@ public final class HttpStreamEngine implements HttpStreamExchange {
 
     private void abortiveTeardown(StreamClosedException signal, Throwable cause) {
         if (closed.compareAndSet(false, true)) {
-            stream.reset(0L);
-            StreamAbortiveTeardownEvent.emit(stream.streamId(), signal.errorCode(), eventsEmitted.get());
+            if (egress != null) {
+                egress.abort();
+            } else {
+                stream.reset(0L);
+            }
+            StreamAbortiveTeardownEvent.emit(
+                    stream.streamId(), protocolStreamId, signal.errorCode(), eventsEmitted.get());
         }
         if (cause != null && signal.getCause() == null) {
             // initCause throws if a cause was already established; only chain when the slot is free.
@@ -323,7 +389,8 @@ public final class HttpStreamEngine implements HttpStreamExchange {
     }
 
     /**
-     * Diagnostic seam: bytes outstanding (queued to the transport but not yet released).
+     * Diagnostic seam: bytes outstanding (queued to the transport but not yet released). Always
+     * {@code 0} on an engine backed by a {@link StreamEgress}, which accounts its own bytes.
      *
      * @return outstanding queued bytes
      */
