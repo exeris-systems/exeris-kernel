@@ -139,8 +139,9 @@ final class KernelBootstrapRuntimeFixture implements EmbeddedKernelFixture {
             System.setProperty(JDBC_URL_PROPERTY, jdbcUrl);
             System.setProperty(RUN_MIGRATIONS_PROPERTY, Boolean.toString(runMigrations));
 
-            // The fixture owns the kernel's lifecycle and stops it from close(), so it is the embedding host that
-            // owns signals; a kernel hook would stop the kernel a second time at JVM exit.
+            // The fixture owns the kernel's lifecycle and stops it from close(), so it is the embedding host
+            // that owns the stop; a kernel hook would be a second owner of it, and would drain an unclosed
+            // fixture inside the test JVM's exit window.
             KernelBootstrap.builder()
                     .selector(BootstrapSelector.forNames(subsystems.toArray(new String[0])))
                     .registerShutdownHook(false)

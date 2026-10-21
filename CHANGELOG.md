@@ -56,7 +56,6 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   returns at once.
 - **A second concurrent `boot()` on one `KernelBootstrap` instance throws `IllegalStateException`.** Booting
   again after a boot returned is unchanged.
-
 - **Two `HttpProvider`s at equal priority resolve by implementation class name.** The Community HTTP
   subsystem now selects through `BootstrapProviderSelector`, as the graph, persistence, security and
   crypto providers do, instead of taking the equal-priority provider `ServiceLoader` listed first. The

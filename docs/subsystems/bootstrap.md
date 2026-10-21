@@ -238,10 +238,14 @@ sequenceDiagram
         end
     end
     ORC->>ORC: KernelShutdownComplete JFR
-    ORC-->>KB: returns (never throws)
+    ORC-->>KB: returns (a stop() that throws is logged and skipped)
     KB->>KB: remove the JVM shutdown hook
     KB-->>APP: boot() returns, or throws BootstrapException
 ```
+
+The last two steps belong to the `boot()` thread and run once `kernelMain` has returned. When the JVM shutdown
+hook starts the stop, the JVM is exiting: `boot()` does not return in that process, and `kernelMain` is neither
+interrupted nor ended.
 
 `shutdown()` has no timeout and no second attempt. A `stop()` that throws is caught, logged at `WARNING`, and
 the subsystem is not marked `STOPPED`.
@@ -319,8 +323,8 @@ standalone `boot()` registers, which runs `KernelBootstrap.shutdown()` on `SIGTE
 `KernelBootstrap.shutdown()` from its own lifecycle. The caller that wins the orchestrator's compare-and-set
 runs the stop; every other caller returns only after it completed.
 
-- A `shutdown()` that arrives while `boot()` is still initializing or starting subsystems is recorded:
-  `kernelMain` is not run, `boot()` stops what started and returns normally.
+- A `shutdown()` that arrives while `boot()` is still resolving configuration, initializing or starting
+  subsystems is recorded: `kernelMain` is not run, `boot()` stops what started and returns normally.
 - `shutdown()` never interrupts or ends `kernelMain`; application code decides when to return.
 - `stop()` may run on a thread with no kernel `ScopedValue` bindings, so it acts on references captured in
   `initialize()`/`start()`; it must not call `System.exit`, `Runtime.exit` or `Runtime.halt`, nor wait without
