@@ -4,12 +4,15 @@
  */
 package eu.exeris.kernel.community.graph;
 
+import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.community.persistence.CommunityPersistenceProvider;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.graph.GraphConfig;
 import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceConfig;
 import eu.exeris.kernel.spi.persistence.PersistenceEngine;
 import eu.exeris.kernel.tck.contract.graph.AbstractGraphSessionLiveContractTck;
@@ -42,20 +45,24 @@ class CommunityGraphSessionPostgresContractTckIT extends AbstractGraphSessionLiv
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16");
 
+    private static MemoryAllocator allocator;
     private static PersistenceEngine persistence;
     private static CommunityGraphEngine graph;
 
     @BeforeAll
     static void startEngines() {
+        allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
         persistence = new CommunityPersistenceProvider().createEngine(new PersistenceConfig(
                 POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword(),
                 4, 1, 5_000L, 60_000L, 600_000L, false, false, false, 0, Map.of()));
         persistence.registerInterceptor(RlsConnectionInterceptor.INSTANCE);
         graph = new CommunityGraphEngine(GraphConfig.create("postgresql"));
-        ScopedValue.where(KernelProviders.PERSISTENCE_ENGINE, persistence).run(() -> {
-            graph.registerNodes(nodeTypes());
-            graph.registerEdges(edgeTypes());
-        });
+        ScopedValue.where(KernelProviders.PERSISTENCE_ENGINE, persistence)
+                .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
+                .run(() -> {
+                    graph.registerNodes(nodeTypes());
+                    graph.registerEdges(edgeTypes());
+                });
     }
 
     @AfterAll
@@ -65,6 +72,9 @@ class CommunityGraphSessionPostgresContractTckIT extends AbstractGraphSessionLiv
         }
         if (persistence != null) {
             persistence.close();
+        }
+        if (allocator != null) {
+            allocator.close();
         }
     }
 
@@ -77,6 +87,7 @@ class CommunityGraphSessionPostgresContractTckIT extends AbstractGraphSessionLiv
     protected <T> T callInScope(StorageContext ctx, Supplier<T> action) {
         return ScopedValue.where(KernelProviders.PERSISTENCE_ENGINE, persistence)
                 .where(KernelProviders.STORAGE_CONTEXT, ctx)
+                .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
                 .call(action::get);
     }
 }

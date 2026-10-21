@@ -11,6 +11,8 @@ import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.algorithm.EdgeWeightFunction;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -24,11 +26,11 @@ import java.util.UUID;
  * Community-tier {@link GraphSession}: a thin facade that, at construction, picks one
  * {@link CommunityGraphBackend} — {@link CommunityGraphCypherHelper} for a Cypher dialect,
  * {@link CommunityGraphSqlHelper} otherwise — and forwards every {@link GraphSession}
- * operation to it unchanged, except {@link #findShortestPath(UUID, UUID)} and
+ * operation to it unchanged, except
  * {@link #findShortestPath(GraphEdgeDescriptor, UUID, UUID)}, which this class implements
  * directly on top of {@link CommunityPathFinder}.
  *
- * <p><b>Allocation:</b> none of its own; {@link #streamBfsJson} forwards to the backend,
+ * <p><b>Allocation:</b> none of its own; {@link #streamPathJson} forwards to the backend,
  * which allocates the caller-owned {@link LoanedBuffer} it returns, and
  * {@link #findShortestPath(GraphEdgeDescriptor, UUID, UUID)} builds a fresh
  * {@link CommunityPathFinder} whenever {@code source} and {@code target} differ; the
@@ -38,13 +40,16 @@ import java.util.UUID;
  * {@link CommunityGraphCypherHelper}) without synchronization; each virtual thread must
  * obtain its own session from {@link CommunityGraphEngine#openSession()}.
  * <p><b>Ownership:</b> {@link #close()} closes the backend. Buffers returned from
- * {@link #streamBfsJson} are not touched by {@link #close()} — they remain the caller's
- * responsibility per {@link GraphSession#streamBfsJson(GraphTraversal)}.
+ * {@link #streamPathJson} are not touched by {@link #close()} — they remain the caller's
+ * responsibility per {@link GraphSession#streamPathJson(GraphPathSpec)}.
  */
 // SPI contract: one method per graph operation; TooManyMethods are inherent.
 @SuppressWarnings("PMD.TooManyMethods")
 final class CommunityGraphSession implements GraphSession {
+    /* default */ static final int MAX_PATH_LENGTH = CommunityGraphDialect.MAX_PATH_LENGTH;
+
     private static final String ACCESS_QUERY_TYPE = "ACCESS";
+    private static final String PATH_LIMIT_QUERY_TYPE = "PATH_LIMIT";
     private static final String SHORTEST_PATH_ALGORITHM = "dijkstra";
 
     private final CommunityGraphBackend backend;
@@ -59,13 +64,25 @@ final class CommunityGraphSession implements GraphSession {
     }
 
     @Override
+    public List<UUID> traversePath(GraphPathSpec path) {
+        requireWithinLimit(path);
+        return backend.traversePath(path);
+    }
+
+    @Override
+    public LoanedBuffer streamPathJson(GraphPathSpec path) {
+        requireWithinLimit(path);
+        return backend.streamPathJson(path);
+    }
+
+    @Override
     public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
-        return backend.traverseBreadthFirst(traversal);
+        return traversePath(asPath(traversal));
     }
 
     @Override
     public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
-        return backend.streamBfsJson(traversal);
+        return streamPathJson(asPath(traversal));
     }
 
     @Override
@@ -98,27 +115,6 @@ final class CommunityGraphSession implements GraphSession {
     @Override
     public UUID getRootNode() {
         return backend.getRootNode();
-    }
-
-    /**
-     * Detects only the trivial {@code source.equals(target)} case: this overload carries no
-     * edge descriptor to load adjacency from, so every other pair reports not found. Use
-     * {@link #findShortestPath(GraphEdgeDescriptor, UUID, UUID)} to compute an actual path.
-     *
-     * @param source source node ID
-     * @param target target node ID
-     * @return a zero-cost single-node path when {@code source} equals {@code target};
-     *         {@link PathResult#notFound} otherwise
-     * @throws NullPointerException if {@code source} or {@code target} is {@code null}
-     */
-    @Override
-    public PathResult findShortestPath(UUID source, UUID target) {
-        Objects.requireNonNull(source, "source must not be null");
-        Objects.requireNonNull(target, "target must not be null");
-        if (source.equals(target)) {
-            return new PathResult(source, target, List.of(source), 0.0, 0, SHORTEST_PATH_ALGORITHM);
-        }
-        return PathResult.notFound(source, target, SHORTEST_PATH_ALGORITHM);
     }
 
     /**
@@ -197,5 +193,23 @@ final class CommunityGraphSession implements GraphSession {
         }
         throw new GraphQueryException(ACCESS_QUERY_TYPE,
                 "PersistenceEngine is not available in this request scope (no ScopedValue binding)");
+    }
+
+    private static GraphPathSpec asPath(GraphTraversal traversal) {
+        Objects.requireNonNull(traversal, "traversal must not be null");
+        return new GraphPathSpec(traversal.startNodeId(),
+                List.of(new GraphHop(traversal.edgeDescriptor(), 1, traversal.maxDepth())));
+    }
+
+    private static void requireWithinLimit(GraphPathSpec path) {
+        Objects.requireNonNull(path, "path must not be null");
+        int sum = 0;
+        for (GraphHop hop : path.hops()) {
+            sum += hop.maxRepeat();
+            if (sum > MAX_PATH_LENGTH) {
+                throw new GraphQueryException(PATH_LIMIT_QUERY_TYPE,
+                        "path length bound (sum of maxRepeat) exceeds the Community graph limit of 64");
+            }
+        }
     }
 }

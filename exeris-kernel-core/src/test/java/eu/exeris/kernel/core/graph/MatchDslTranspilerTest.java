@@ -6,6 +6,7 @@ package eu.exeris.kernel.core.graph;
 
 import eu.exeris.kernel.spi.graph.GraphDialect;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,6 +38,9 @@ class MatchDslTranspilerTest {
         }
         @Override public String buildMultiHopQuery(GraphEdgeDescriptor edge, int min, int max) {
             return "MATCH_MULTI:" + edge.edgeType() + "[" + min + ".." + max + "]";
+        }
+        @Override public String buildPathQuery(List<GraphHop> hops) {
+            return "PATH:" + hops.size();
         }
         @Override public String buildShortestPathQuery(GraphEdgeDescriptor edge, int maxDepth) {
             return "SHORTEST:" + edge.edgeType() + "/" + maxDepth;

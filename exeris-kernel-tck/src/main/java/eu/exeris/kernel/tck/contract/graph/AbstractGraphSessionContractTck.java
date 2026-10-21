@@ -4,7 +4,10 @@
  */
 package eu.exeris.kernel.tck.contract.graph;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.GraphSession;
+import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.PathResult;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,6 +16,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * TCK: Observable contract for {@link GraphSession} path resolution and session lifecycle.
@@ -24,8 +28,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * <h2>Safe test scope</h2>
  * <p>Only calls methods whose behaviour is guaranteed without a live backend:
  * <ul>
- *   <li>{@code findShortestPath(id, id)} — same-node shortcut (no DB call)</li>
- *   <li>{@code findShortestPath(a, b)} for unknown distinct nodes — returns notFound (no DB call)</li>
+ *   <li>{@code findShortestPath(edge, id, id)} — same-node shortcut (no DB call)</li>
+ *   <li>{@code findShortestPath(a, b)} for distinct nodes — refuses with EX-GRPH-5002</li>
+ *   <li>{@code findShortestPath(id, id)} for equal nodes — refuses with EX-GRPH-5002</li>
  *   <li>{@code close()} — idempotent lifecycle</li>
  * </ul>
  *
@@ -50,11 +55,12 @@ public abstract class AbstractGraphSessionContractTck {
     protected abstract GraphSession createSession();
 
     @Test
-    @DisplayName("findShortestPath(id, id) returns a found single-node path with zero hop count")
-    void sameNodeShortestPathReturnsFoundSingleNodePath() {
+    @DisplayName("findShortestPath(edge, id, id) returns a found single-node path with zero hop count")
+    void sameNodeThreeArgShortestPathReturnsFoundSingleNodePath() {
+        GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("User", "FOLLOWS", "User");
         UUID id = UUID.randomUUID();
         try (GraphSession session = createSession()) {
-            PathResult result = session.findShortestPath(id, id);
+            PathResult result = session.findShortestPath(edge, id, id);
             assertThat(result.found()).isTrue();
             assertThat(result.path()).containsExactly(id);
             assertThat(result.hopCount()).isZero();
@@ -63,15 +69,39 @@ public abstract class AbstractGraphSessionContractTck {
     }
 
     @Test
-    @DisplayName("findShortestPath(a, b) for unknown distinct nodes returns notFound")
-    void unknownDistinctNodesShortestPathReturnsNotFound() {
+    @SuppressWarnings("removal")
+    @DisplayName("findShortestPath(a, b) for distinct nodes refuses and throws GraphQueryException")
+    void distinctNodesShortestPathRefuses() {
         UUID src = UUID.randomUUID();
         UUID tgt = UUID.randomUUID();
         try (GraphSession session = createSession()) {
-            PathResult result = session.findShortestPath(src, tgt);
-            assertThat(result.found()).isFalse();
-            assertThat(result.source()).isEqualTo(src);
-            assertThat(result.target()).isEqualTo(tgt);
+            assertThatThrownBy(() -> session.findShortestPath(src, tgt))
+                    .isInstanceOf(GraphQueryException.class)
+                    .satisfies(ex -> {
+                        GraphQueryException gqe = (GraphQueryException) ex;
+                        assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
+                        assertThat(gqe.rawArgs()[0]).isEqualTo("SHORTEST_PATH");
+                        assertThat(String.valueOf(gqe.rawArgs()[1]))
+                                .contains("findShortestPath(GraphEdgeDescriptor, UUID, UUID)");
+                    });
+        }
+    }
+
+    @Test
+    @SuppressWarnings("removal")
+    @DisplayName("findShortestPath(id, id) for equal nodes refuses and throws GraphQueryException")
+    void sameNodeTwoArgShortestPathRefuses() {
+        UUID id = UUID.randomUUID();
+        try (GraphSession session = createSession()) {
+            assertThatThrownBy(() -> session.findShortestPath(id, id))
+                    .isInstanceOf(GraphQueryException.class)
+                    .satisfies(ex -> {
+                        GraphQueryException gqe = (GraphQueryException) ex;
+                        assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
+                        assertThat(gqe.rawArgs()[0]).isEqualTo("SHORTEST_PATH");
+                        assertThat(String.valueOf(gqe.rawArgs()[1]))
+                                .contains("findShortestPath(GraphEdgeDescriptor, UUID, UUID)");
+                    });
         }
     }
 

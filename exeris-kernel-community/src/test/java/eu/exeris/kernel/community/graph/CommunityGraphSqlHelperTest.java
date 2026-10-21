@@ -6,8 +6,11 @@ package eu.exeris.kernel.community.graph;
 
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
+import eu.exeris.kernel.spi.persistence.QueryResult;
 import eu.exeris.kernel.tck.contract.graph.AbstractGraphSessionLiveContractTck;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +25,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -36,6 +41,9 @@ class CommunityGraphSqlHelperTest {
 
     @Mock
     private PersistenceStatement statement;
+
+    @Mock
+    private QueryResult queryResult;
 
     @Test
     @DisplayName("deleteNode for Product label builds expected CTEs and binds parameters")
@@ -142,5 +150,36 @@ class CommunityGraphSqlHelperTest {
                 .isInstanceOf(GraphQueryException.class);
 
         verify(connection, never()).prepare(any());
+    }
+
+    @Test
+    @DisplayName("three-hop traversePath prepares statement once and binds start UUID once")
+    void threeHopTraversePathPreparesOnceAndBindsStartUuidOnce() {
+        CommunityGraphDialect dialect = new CommunityGraphDialect("test_graph");
+        List<GraphEdgeDescriptor> edges = AbstractGraphSessionLiveContractTck.edgeTypes();
+        CommunityGraphSqlHelper helper = new CommunityGraphSqlHelper(dialect, () -> connection, edges);
+
+        when(connection.prepare(any())).thenReturn(statement);
+        when(statement.executeQuery()).thenReturn(queryResult);
+        when(queryResult.next()).thenReturn(false);
+
+        UUID start = UUID.randomUUID();
+        GraphEdgeDescriptor purchased = edges.get(0);
+        GraphEdgeDescriptor similarTo = edges.get(2);
+        GraphEdgeDescriptor linked = edges.get(3);
+        GraphPathSpec path = new GraphPathSpec(start, List.of(
+                GraphHop.of(purchased),
+                GraphHop.of(similarTo),
+                GraphHop.of(linked)));
+
+        List<UUID> result = helper.traversePath(path);
+
+        assertThat(result).isEmpty();
+        verify(connection, times(1)).prepare(any());
+        verify(statement, times(1)).bindUuid(0, start);
+        verify(statement, times(1)).bindUuid(anyInt(), any());
+        verify(statement, never()).bindString(anyInt(), any());
+        verify(statement, never()).bindLong(anyInt(), anyLong());
+        verify(statement, never()).bindInt(anyInt(), anyInt());
     }
 }

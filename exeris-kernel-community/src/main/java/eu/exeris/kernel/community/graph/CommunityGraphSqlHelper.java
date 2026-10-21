@@ -7,7 +7,7 @@ package eu.exeris.kernel.community.graph;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
-import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
@@ -33,10 +33,10 @@ import java.util.regex.Pattern;
  * execution.
  */
 // Backend adapter intentionally mirrors the GraphSession surface for the SQL dialect.
-// TooManyMethods + CyclomaticComplexity: SQL/PGQ backend adapter implementing the full
+// TooManyMethods + CyclomaticComplexity + GodClass: SQL/PGQ backend adapter implementing the full
 // CommunityGraphBackend surface — one method per graph operation type; complexity is structural
-// (SQL query branching).
-@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
+// (SQL query branching and statement lifecycle coordination).
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity", "PMD.GodClass"})
 final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     private static final String ROOT_NODE_QUERY_TYPE = "ROOT_NODE";
     private static final Pattern SQL_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
@@ -62,55 +62,53 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     }
 
     /**
-     * Runs a single-hop MATCH ({@code traversal.maxDepth() == 1}) or a recursive-CTE
-     * multi-hop query otherwise, and collects the visited node IDs.
+     * Executes a path traversal as one statement and collects the terminal frontier node IDs.
      *
-     * @param traversal traversal configuration
-     * @return node IDs visited, in result order
-     * @throws IllegalArgumentException if {@code traversal}'s edge descriptor table name
-     *         does not match {@code [A-Za-z][A-Za-z0-9_]*} (validated by
-     *         {@link CommunityGraphDialect}, which this method delegates the query text to)
+     * @param path path specification
+     * @return node IDs in the terminal frontier
+     * @throws GraphQueryException if query execution fails
      */
+    // Dialect and JDBC driver throw RuntimeException; map to GraphQueryException
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     @Override
-    public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
-        String sql = traversal.maxDepth() == 1
-                ? dialect.buildMatchQuery(traversal.edgeDescriptor())
-                : dialect.buildMultiHopQuery(traversal.edgeDescriptor(), 1, traversal.maxDepth());
+    public List<UUID> traversePath(GraphPathSpec path) {
+        String sql = dialect.buildPathQuery(path.hops());
         List<UUID> results = new ArrayList<>();
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
-            stmt.bindUuid(0, traversal.startNodeId());
+            stmt.bindUuid(0, path.startNodeId());
             try (QueryResult queryResult = stmt.executeQuery()) {
                 while (queryResult.next()) {
                     results.add(queryResult.row().getUuid(0));
                 }
             }
+        } catch (GraphQueryException e) {
+            throw e;
+        } catch (RuntimeException cause) {
+            throw new GraphQueryException("PATH", "Failed to execute graph path traversal", cause);
         }
         return results;
     }
 
     /**
-     * Runs a recursive-CTE traversal that aggregates the visited node IDs into JSON inside
-     * the query itself ({@code json_agg}), then copies the returned JSON text into a network
-     * buffer from {@code KernelProviders.MEMORY_ALLOCATOR}. Unlike the Cypher backend's
-     * {@link CommunityGraphCypherReader#streamBfsJson}, which builds the JSON in Java from a
-     * list of IDs, this pushes the aggregation down to PostgreSQL.
+     * Executes a path traversal and streams the terminal frontier node IDs as a UTF-8 JSON array
+     * into a network buffer from {@code KernelProviders.allocator()}.
      *
-     * @param traversal traversal configuration
-     * @return a buffer holding the query's JSON text (or {@code "[]"} if the query returned
-     *         no row or a {@code null} result); caller-owned, caller must close it
-     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
-     *         if {@code traversal}'s edge descriptor table name does not match
-     *         {@code [A-Za-z][A-Za-z0-9_]*}
+     * @param path path specification
+     * @return a buffer holding the query's JSON text; caller-owned, caller must close it
+     * @throws GraphQueryException if query execution fails
      */
+    // Dialect and JDBC driver throw RuntimeException; map to GraphQueryException
+    @SuppressWarnings("PMD.AvoidCatchingGenericException")
     @Override
-    public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
-        String sql = buildJsonPushDownQuery(traversal);
+    public LoanedBuffer streamPathJson(GraphPathSpec path) {
+        String sql = "SELECT json_agg(frontier.id) AS json_result FROM ("
+                + dialect.buildPathQuery(path.hops()) + ") AS frontier";
+        byte[] jsonBytes;
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
-            stmt.bindUuid(0, traversal.startNodeId());
+            stmt.bindUuid(0, path.startNodeId());
             try (QueryResult queryResult = stmt.executeQuery()) {
-                byte[] jsonBytes;
                 if (queryResult.next()) {
                     String json = queryResult.row().getString(0);
                     jsonBytes = json != null
@@ -119,13 +117,16 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
                 } else {
                     jsonBytes = CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
                 }
-                LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
-                MemorySegment.copy(jsonBytes, 0, buffer.segment(),
-                        ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
-                buffer.setSize(jsonBytes.length);
-                return buffer;
             }
+        } catch (GraphQueryException e) {
+            throw e;
+        } catch (RuntimeException cause) {
+            throw new GraphQueryException("PATH", "Failed to execute graph path traversal", cause);
         }
+        LoanedBuffer buffer = KernelProviders.allocator().allocateNetwork(jsonBytes.length);
+        MemorySegment.copy(jsonBytes, 0, buffer.segment(), ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
+        buffer.setSize(jsonBytes.length);
+        return buffer;
     }
 
     /**
@@ -377,24 +378,6 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
 
     private PersistenceConnection acquireConnection() {
         return connectionSupplier.get();
-    }
-
-    private String buildJsonPushDownQuery(GraphTraversal traversal) {
-        String table = requireSqlIdentifier(traversal.edgeDescriptor().tableName());
-        int maxDepth = traversal.maxDepth();
-        return """
-                WITH RECURSIVE traversal AS (
-                    SELECT target_id, 1 AS depth
-                    FROM %s
-                    WHERE source_id = $1
-                    UNION ALL
-                    SELECT e.target_id, t.depth + 1
-                    FROM %s e
-                    INNER JOIN traversal t ON e.source_id = t.target_id
-                    WHERE t.depth < %d
-                )
-                SELECT json_agg(DISTINCT target_id) AS json_result FROM traversal
-                """.formatted(table, table, maxDepth);
     }
 
     private String buildInsertEdgeSql(GraphEdgeDescriptor edge) {

@@ -18,11 +18,11 @@ import java.util.UUID;
  * TCK: JFR Zero-Allocation monitor for the Execution Graph hot path.
  *
  * <h2>The Holy Grail (Enterprise)</h2>
- * <p>A pre-bootstrapped {@link GraphEngine} (with a simple Task/Step schema)
- * repeatedly opens a {@link GraphSession}, invokes
- * {@link GraphSession#findShortestPath(UUID, UUID) findShortestPath(src, tgt)}
- * using fresh random {@link java.util.UUID} identifiers for {@code src} and
- * {@code tgt}, and then closes the session. This
+ * <p>A pre-bootstrapped {@link GraphEngine} (with a simple Task schema) is seeded with a 2-hop
+ * chain {@code src -> mid -> tgt}; {@link #bootstrapSubsystem()} refuses unless the 2-hop path
+ * is found. The benchmark loop repeatedly opens a {@link GraphSession}, invokes
+ * {@link GraphSession#findShortestPath(GraphEdgeDescriptor, UUID, UUID) findShortestPath(edge, src, tgt)}
+ * on the seeded endpoints, and closes the session. This
  * {@code openSession() → findShortestPath() → close()} sequence MUST produce
  * ZERO {@code eu.exeris.*} heap objects in the steady-state phase. This is the
  * Enterprise contract for the graph shortest-path hot path.
