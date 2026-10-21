@@ -13,7 +13,7 @@ slug: adr/ADR-043
 | **Status**      | **ACCEPTED**                                                                                       |
 | **Deciders**    | Arkadiusz Przychocki                                                                               |
 | **Date**        | 2026-06-21                                                                                         |
-| **Revised**     | 2026-09-26 (A1), 2026-10-20 (A2)                                                                   |
+| **Revised**     | 2026-09-26 (A1), 2026-10-20 (A2), 2026-10-21 (A1 note)                                             |
 | **Scope**       | `kernel/transport` (cross-repo obligations: `exeris-sdk`, `exeris-tooling`, `exeris-kernel-enterprise`) |
 | **Owning Repo** | `exeris-kernel`                                                                                    |
 | **Driven By**   | [RFC-2026-06-18](../rfc/RFC-2026-06-18-http-streaming-spi.md) (Kernel HTTP server-push / streaming SPI) |
@@ -166,6 +166,7 @@ protocols it offers from `HttpConfig#maxVersion`, and the ALPN callback selects 
 list names: a listener capped at HTTP/1.1 selects `http/1.1`, and a client that offers only `h2` gets
 no protocol. The stream-route half of the A1 limitation stands: on a connection that negotiates
 HTTP/2, a stream route is still not resolved. The Decision and A1 are otherwise unchanged.
+*(2026-10-21: the stream-route half is lifted as well — see the dated note in A1's Scope.)*
 
 ## Consequences
 
