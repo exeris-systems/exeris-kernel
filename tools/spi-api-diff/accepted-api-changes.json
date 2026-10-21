@@ -54,12 +54,6 @@
     "justification": "TCK contract: seeds a connected pair through a session and measures findShortestPath(GraphEdgeDescriptor, UUID, UUID); a binding needs a live backend; bootstrapSubsystem throws IllegalStateException unless the engine persists the seeded edges and the three-argument search finds the 2-hop path; source-compatible."
   },
   {
-    "signature": "eu.exeris.kernel.tck.contract.graph.GraphCarrierPinningTck",
-    "since": "0.13",
-    "adr": "ADR-102",
-    "justification": "TCK contract: seeds a connected pair through a session and measures findShortestPath(GraphEdgeDescriptor, UUID, UUID); a binding needs a live backend; bootstrapSubsystem throws IllegalStateException unless the engine persists the seeded edges and the three-argument search finds the 2-hop path; source-compatible."
-  },
-  {
     "signature": "eu.exeris.kernel.spi.graph.GraphSession#deleteNode(java.lang.String, java.util.UUID)",
     "since": "0.13",
     "adr": "ADR-102",

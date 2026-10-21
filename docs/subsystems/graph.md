@@ -337,9 +337,8 @@ this tree today — listed here as gaps, not coverage:
   throws that exception (see the error-code table above).
 - **Carrier Pinning (unbound):** `GraphCarrierPinningTck` (extends `AbstractSubsystemCarrierPinningTck`)
   defines JFR-based validation that driver I/O does not stall Virtual Threads over the
-  `openSession() → findShortestPath(edge, src, tgt) → close()` hot path (`CarrierPinnedEvent` must not
-  fire); a binding needs a live backend. No Community (or any other tier) binding subclasses it, so
-  this check does not run in this tree today.
+  `openSession() → findShortestPath() → close()` hot path (`CarrierPinnedEvent` must not fire). No
+  Community (or any other tier) binding subclasses it, so this check does not run in this tree today.
 
 > **TCK bindings:** `ExecutionGraphZeroAllocTck`, `AbstractGraphSessionLiveContractTck` and
 > `GraphChurnRatioTck` have Community-tier concrete bindings in `exeris-kernel-community/src/test/`.

@@ -243,10 +243,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **The live graph contract TCK runs against PostgreSQL and Neo4j.** Connected-pair shortest path
   and delete cascade are asserted against both backends (`AbstractGraphSessionLiveContractTck`,
   `CommunityGraphSessionPostgresContractTckIT`, `CommunityGraphSessionNeo4jContractTckIT`);
-  `ExecutionGraphZeroAllocTck` and `GraphCarrierPinningTck` measure a three-argument search over a
-  seeded connected pair (`GraphCarrierPinningTck` is still unbound in this tree), and the Community
-  zero-alloc binding is an integration test.
-  **For anyone binding the TCK:** the two TCKs now need a live backend, and `bootstrapSubsystem`
+  `ExecutionGraphZeroAllocTck` measures a three-argument search over a seeded connected pair, and the
+  Community zero-alloc binding is an integration test.
+  **For anyone binding the TCK:** the zero-alloc TCK now needs a live backend, and `bootstrapSubsystem`
   throws `IllegalStateException` unless the engine persists the seeded edges and the three-argument
   search finds the 2-hop path.
 - **`central-verify` verifies release candidates and skips tags that are not releases.** A GitHub
