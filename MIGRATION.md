@@ -24,6 +24,35 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — embedding hosts: disable the kernel's shutdown hook (ADR-007 §5)
+
+`KernelBootstrap.boot()` now registers one JVM shutdown hook that runs `KernelBootstrap.shutdown()`, so a
+standalone process stops its subsystems in order on `SIGTERM`. A host that embeds the kernel and already
+stops it from its own lifecycle must opt out, or one `SIGTERM` starts two stop sequences.
+
+1. **Disable the hook if your host owns the lifecycle.** In the release that adopts 0.13:
+
+   ```java
+   KernelBootstrap.builder()
+           .registerShutdownHook(false)
+           // ...
+           .build();
+   ```
+2. **Stop the kernel with the typed call.** Call `KernelBootstrap.shutdown()` from your lifecycle in place of
+   a reflective lookup or `close()`. It is idempotent and returns after the stop completed.
+3. **Interrupt a stuck boot thread before `shutdown()`.** Called while `boot()` is still initializing or
+   starting subsystems, `shutdown()` records the request and waits for the boot to unwind; it does not
+   interrupt the boot thread. A host that aborts a startup that hangs interrupts (and optionally joins) its
+   boot thread first, then calls `shutdown()`.
+4. **`Subsystem.stop()` implementers.** `stop()` may run on a thread with none of the kernel's `ScopedValue`
+   bindings (the hook's thread or your lifecycle thread), so it acts on references captured in
+   `initialize()` or `start()` and does not read `KernelProviders`. It must not call `System.exit`,
+   `Runtime.exit` or `Runtime.halt`.
+5. **One boot at a time.** A second `boot()` on a `KernelBootstrap` instance that is still booting throws
+   `IllegalStateException`. Booting again after `boot()` returned is unchanged.
+
+---
+
 ## 0.12.x → 0.13 — events: a tenant publish needs a registered key (ADR-101)
 
 Publishing under a tenant's `StorageContext` now stamps the event with that tenant's isolation ordinal,

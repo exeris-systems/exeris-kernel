@@ -125,10 +125,7 @@ class CoreGracefulShutdownTckTest extends AbstractGracefulShutdownTck {
         return new KernelHandle(transport, persistence, flow, events, graph, memory,
                 () -> ingress.accept(seq.incrementAndGet()),
                 () -> sink.confirmed.get(),
-                () -> {
-                    release.countDown();
-                    joinBootThread();
-                },
+                bootstrap::shutdown,
                 order);
     }
 

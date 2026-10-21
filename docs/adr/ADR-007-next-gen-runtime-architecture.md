@@ -80,8 +80,9 @@ We abandon buffer ownership by business logic. Buffers are exclusively **"loaned
 
 ### 5. Kernel Lifecycle and Process Termination
 
-> **ACCEPTED 2026-10-08, planned for 0.13** (proposed 2026-10-07) — see [Amendments](#amendments). Nothing in this section is
-> implemented yet; until it is, `docs/subsystems/bootstrap.md` describes the shipped behaviour.
+> **ACCEPTED 2026-10-08** (proposed 2026-10-07) — see [Amendments](#amendments). Implemented in 0.13:
+> `KernelBootstrap.shutdown()`, the standalone shutdown hook and
+> `KernelBootstrap.Builder#registerShutdownHook(boolean)`.
 
 #### 5.1 Context
 
@@ -234,7 +235,7 @@ thread, or the host's lifecycle thread. Two of those carry none of the kernel's 
   the kernel's, so diagnostics emitted during the stop can be lost. The forked-process test in §5.4 is
   the first to see it, which is why it records stop order through its own channel.
 
-#### 5.4 Verification obligations (planned for 0.13)
+#### 5.4 Verification obligations
 
 - **Real signal, separate process.** A test forks a JVM that boots the Community kernel with an HTTP
   handler held on a latch, starts a request, and sends that process a real `SIGTERM`. It asserts: the
