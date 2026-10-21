@@ -6,6 +6,7 @@ package eu.exeris.kernel.community.bootstrap;
 
 import eu.exeris.kernel.community.persistence.CommunityAdmissionConfig;
 import eu.exeris.kernel.community.persistence.RlsConnectionInterceptor;
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.core.persistence.PersistenceBootstrap;
 import eu.exeris.kernel.core.persistence.TransactionOrchestrator;
 import eu.exeris.kernel.core.persistence.TransactionRetryPolicy;
@@ -23,7 +24,6 @@ import eu.exeris.kernel.spi.persistence.TransactionalExecutor;
 
 import java.util.Comparator;
 import java.util.List;
-import java.util.ServiceLoader;
 import java.util.function.UnaryOperator;
 
 /**
@@ -156,11 +156,8 @@ final class CommunityPersistenceSubsystem extends AbstractCommunitySubsystem {
     }
 
     private static PersistenceProvider resolveProvider() {
-        return ServiceLoader.load(PersistenceProvider.class)
-                .stream()
-                .map(ServiceLoader.Provider::get)
-                .max(Comparator.comparingInt(PersistenceProvider::priority)
-                        .thenComparing(provider -> provider.getClass().getName()))
+        return BootstrapProviderSelector.loadHighestPriority(
+                        PersistenceProvider.class, Comparator.comparingInt(PersistenceProvider::priority))
                 .orElseThrow(() -> PersistenceProviderException
                         .noProviderAvailable("No PersistenceProvider found on classpath"));
     }
