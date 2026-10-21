@@ -7,6 +7,7 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.core.http.http2.Http2FlowController;
 
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -51,7 +52,7 @@ final class Http2OutboundStream {
     /* default */ final AtomicLong outstandingBytes = new AtomicLong();
 
     /** The thread parked waiting for credit, or {@code null}; published under the writer's lock. */
-    /* default */ volatile Thread parkedSender;
+    /* default */ final AtomicReference<Thread> parkedSender = new AtomicReference<>();
 
     /** Guarded by the writer's lock. */
     /* default */ State state = State.OPEN;
@@ -85,7 +86,7 @@ final class Http2OutboundStream {
      */
     /* default */ void releaseOutstanding(long bytes) {
         outstandingBytes.addAndGet(-bytes);
-        Thread sender = parkedSender;
+        Thread sender = parkedSender.get();
         if (sender != null) {
             LockSupport.unpark(sender);
         }

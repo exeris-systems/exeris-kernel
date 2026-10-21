@@ -20,6 +20,7 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 import java.lang.foreign.MemorySegment;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -63,7 +64,8 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p><b>Allocation:</b> the window and reset methods ({@link #applyConnectionWindowUpdate},
  * {@link #applyStreamWindowUpdate}, {@link #applyInitialWindowSize}, {@link #resetByPeer}) allocate
  * nothing while the lock is uncontended; a contended acquire allocates a queue node. A respond-once
- * response allocates what it did before; a body frame allocates its header buffer and a slice handle.
+ * response allocates one header-block buffer and one buffer holding its coalesced frames; a body frame
+ * allocates its header buffer and a slice handle.
  * <p><b>Thread confinement:</b> none — every method may be called from any thread; the lock orders
  * the writers.
  * <p><b>Ownership:</b> buffers handed to {@code queueWrite} belong to the transport; the writer closes
@@ -103,6 +105,7 @@ final class Http2ConnectionWriter {
     private static final int FLAG_END_HEADERS = 0x04;
     private static final int ACQUIRE_CLOSED = -1;
     private static final int ACQUIRE_DEADLINE = -2;
+    private static final int ACQUIRE_RETRY = 0;
     private static final String HEADER_CONTENT_LENGTH = "Content-Length";
 
     private final TransportStream transport;
@@ -117,7 +120,7 @@ final class Http2ConnectionWriter {
     private volatile int openStreamCount;
     private int peerInitialWindowSize = Http2FlowController.DEFAULT_WINDOW_SIZE;
     private boolean connectionClosed;
-    private volatile Runnable beforeParkHook;
+    private final AtomicReference<Runnable> beforeParkHook = new AtomicReference<>();
 
     /** How one attempt to send a body or an event ended. */
     /* default */ enum SendOutcome {
@@ -233,7 +236,7 @@ final class Http2ConnectionWriter {
      * @param hook the hook, or {@code null} to remove it
      */
     /* default */ void beforeParkForTest(Runnable hook) {
-        this.beforeParkHook = hook;
+        this.beforeParkHook.set(hook);
     }
 
     // ------------------------------------------------------------------ frame loop
@@ -272,7 +275,7 @@ final class Http2ConnectionWriter {
                 }
                 try {
                     stream.sendWindow.updateInitialWindowSize(old, newInitial);
-                } catch (IllegalStateException overflow) {
+                } catch (IllegalStateException _) {
                     return Http2ErrorCode.FLOW_CONTROL_ERROR;
                 }
                 wake(stream);
@@ -433,13 +436,13 @@ final class Http2ConnectionWriter {
             if (connectionClosed) {
                 return null;
             }
-            long streamWindow = (long) peerInitialWindowSize + pendingIncrement;
+            long streamWindow = peerInitialWindowSize + pendingIncrement;
             if (streamWindow > Http2FlowController.MAX_WINDOW_SIZE) {
                 writeRstStreamLocked(streamId, Http2ErrorCode.FLOW_CONTROL_ERROR);
                 return null;
             }
-            long credit = Math.max(0L, Math.min(streamWindow, connectionWindow.windowSize()));
-            int now = (int) Math.min(bodyBytes, credit);
+            int credit = Math.clamp(Math.min(streamWindow, connectionWindow.windowSize()), 0, Integer.MAX_VALUE);
+            int now = Math.min(bodyBytes, credit);
             boolean complete = now == bodyBytes;
             writeCoalesced(streamId, response, body, now, bodyBytes, complete);
             connectionWindow.consume(now);
@@ -578,6 +581,7 @@ final class Http2ConnectionWriter {
                     Http2FrameType.DATA.code(), flags, stream.streamId);
             header.setSize(FRAME_HEADER);
         } catch (RuntimeException failure) {
+            // Nothing of this frame was handed to the transport, so both buffers are still ours.
             if (header != null) {
                 header.close();
             }
@@ -602,9 +606,6 @@ final class Http2ConnectionWriter {
      * windows, and returns that count with the lock HELD; the caller writes and unlocks. Returns
      * {@link #ACQUIRE_CLOSED} or {@link #ACQUIRE_DEADLINE} without the lock.
      */
-    // NPathComplexity: the credit-and-park loop is one transition table whose lock hand-over cannot be
-    // split across methods without obscuring it.
-    @SuppressWarnings("PMD.NPathComplexity")
     private int acquireCredit(Http2OutboundStream stream, boolean admitEvent, int maxWanted,
                               long deadlineEpochMillis) {
         while (true) {
@@ -627,7 +628,7 @@ final class Http2ConnectionWriter {
                     return credit;
                 }
                 windowLimited = window <= 0;
-                stream.parkedSender = Thread.currentThread();
+                stream.parkedSender.set(Thread.currentThread());
                 publishedForPark = true;
             } finally {
                 if (!handedOver) {
@@ -637,7 +638,7 @@ final class Http2ConnectionWriter {
                 // between "no credit, lock released" and "parked": the sender must already be
                 // published for that change to find it.
                 if (publishedForPark) {
-                    Runnable hook = beforeParkHook;
+                    Runnable hook = beforeParkHook.get();
                     if (hook != null) {
                         hook.run();
                     }
@@ -646,24 +647,35 @@ final class Http2ConnectionWriter {
             // A transport release decrements outstandingBytes and then reads parkedSender, without
             // the lock; this read after publishing parkedSender is the other half of that handshake.
             if (!windowLimited && stream.outstandingBytes.get() < outstandingCapBytes) {
-                stream.parkedSender = null;
+                stream.parkedSender.set(null);
                 continue;
             }
-            if (deadlineEpochMillis > 0) {
-                long remaining = deadlineEpochMillis - System.currentTimeMillis();
-                if (remaining <= 0) {
-                    stream.parkedSender = null;
-                    return ACQUIRE_DEADLINE;
-                }
-                LockSupport.parkNanos(this, TimeUnit.MILLISECONDS.toNanos(remaining));
-            } else {
-                LockSupport.park(this);
-            }
-            stream.parkedSender = null;
-            if (Thread.currentThread().isInterrupted()) {
-                return ACQUIRE_CLOSED;
+            int outcome = parkSender(stream, deadlineEpochMillis);
+            if (outcome != ACQUIRE_RETRY) {
+                return outcome;
             }
         }
+    }
+
+    /**
+     * Parks the calling sender until it is woken, interrupted or past its deadline.
+     *
+     * @return {@link #ACQUIRE_RETRY} to look at the windows again, else {@link #ACQUIRE_CLOSED} or
+     *         {@link #ACQUIRE_DEADLINE}
+     */
+    private int parkSender(Http2OutboundStream stream, long deadlineEpochMillis) {
+        if (deadlineEpochMillis > 0) {
+            long remaining = deadlineEpochMillis - System.currentTimeMillis();
+            if (remaining <= 0) {
+                stream.parkedSender.set(null);
+                return ACQUIRE_DEADLINE;
+            }
+            LockSupport.parkNanos(this, TimeUnit.MILLISECONDS.toNanos(remaining));
+        } else {
+            LockSupport.park(this);
+        }
+        stream.parkedSender.set(null);
+        return Thread.currentThread().isInterrupted() ? ACQUIRE_CLOSED : ACQUIRE_RETRY;
     }
 
     // ------------------------------------------------------------------ helpers, lock held
@@ -692,7 +704,7 @@ final class Http2ConnectionWriter {
             long written = Http2FrameEncoder.writeRstStream(rst.segment(), 0, streamId, code.code());
             rst.setSize(written);
             transport.write(rst.segment(), (int) written);
-        } catch (RuntimeException failure) {
+        } catch (RuntimeException _) {
             failConnectionLocked();
         }
     }
@@ -709,7 +721,7 @@ final class Http2ConnectionWriter {
     }
 
     private static void wake(Http2OutboundStream stream) {
-        Thread thread = stream.parkedSender;
+        Thread thread = stream.parkedSender.get();
         if (thread != null) {
             LockSupport.unpark(thread);
         }
@@ -729,7 +741,8 @@ final class Http2ConnectionWriter {
         try {
             transport.queueWrite(buf, len);
             return true;
-        } catch (RuntimeException failure) {
+        } catch (RuntimeException _) {
+            // The transport hands the loan back to the caller on any throw (TransportStream#queueWrite).
             buf.close();
             failConnectionLocked();
             return false;

@@ -44,12 +44,13 @@ import java.util.Objects;
  * connection's {@link Http2Connection} scope while the loop goes on reading the frames that open the
  * windows.
  */
-// QA-018a extracted 4 seams: Http2SessionContext (HPACK decoder + assembler + per-stream state),
-// PendingRequestHeaders (HPACK-decode accumulator), CommunityHttp2ControlFrames (SETTINGS/PING/
-// RST_STREAM/GOAWAY writers), and CommunityHttp2FrameFragments (pad/priority extraction).
-// Residual processor retains the frame-loop, frame dispatcher, headers/data frame handlers,
-// response hand-off, and ingress read loop. Response serialization and the HPACK encoder live in
-// Http2ConnectionWriter, and the per-connection state is held by Http2Connection.
+// QA-018a extracted four collaborators: Http2SessionContext holds the HPACK decoder, the assembler and
+// the per-stream request state; PendingRequestHeaders accumulates a decoded header block;
+// CommunityHttp2ControlFrames writes the SETTINGS, PING, RST_STREAM and GOAWAY frames; and
+// CommunityHttp2FrameFragments extracts padding and priority fields. The processor keeps the frame loop,
+// the frame dispatcher, the headers and data handlers, the response hand-off and the ingress read loop.
+// Response serialization and the HPACK encoder live in Http2ConnectionWriter, and the per-connection
+// state is held by Http2Connection.
 // Retained suppressions:
 // - TooManyMethods: frame-loop + dispatcher + frame handlers + response hand-off remain cohesive;
 //   further split deferred.
@@ -114,7 +115,8 @@ final class CommunityHttp2SessionProcessor {
             LOG.log(System.Logger.Level.INFO,
                     "HTTP/2 prior-knowledge preface detected; entering h2c request frame-loop mode");
         }
-        try (Http2Connection connection = openConnection(stream, handler)) {
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config);
+             Http2Connection connection = openConnection(stream, handler, session)) {
             CommunityHttp2ControlFrames.sendServerSettings(
                     allocator, connection.writer(), config.maxHeaderListSize());
             processBufferedHttp2Frames(connection, state, totalBytes, initialFrameOffset);
@@ -128,15 +130,16 @@ final class CommunityHttp2SessionProcessor {
         LoanedBuffer aggregate = state.aggregate();
         writeHttp11UpgradeResponse(stream);
         long bufferedHttp2Bytes = CommunityHttpBufferOps.retainUnreadBytes(aggregate, readResult.consumedBytes());
-        try (Http2Connection connection = openConnection(stream, handler)) {
+        try (Http2SessionContext session = Http2SessionContext.create(allocator, config);
+             Http2Connection connection = openConnection(stream, handler, session)) {
             CommunityHttp2ControlFrames.sendServerSettings(
                     allocator, connection.writer(), config.maxHeaderListSize());
             processBufferedHttp2Frames(connection, state, bufferedHttp2Bytes, 0);
         }
     }
 
-    private Http2Connection openConnection(TransportStream stream, HttpHandler handler) {
-        Http2SessionContext session = Http2SessionContext.create(allocator, config);
+    private Http2Connection openConnection(TransportStream stream, HttpHandler handler,
+                                           Http2SessionContext session) {
         Http2ConnectionWriter writer = Http2ConnectionWriter.create(
                 stream, allocator, session.maxConcurrentStreams(),
                 CommunityHttpStreamDispatcher.creditWindowBytes());

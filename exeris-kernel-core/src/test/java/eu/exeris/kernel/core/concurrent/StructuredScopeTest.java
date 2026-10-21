@@ -363,7 +363,7 @@ class StructuredScopeTest {
 
         @Test
         @DisplayName("fork drops the tasks that have terminated")
-        void forkDropsTasksThatHaveTerminated() throws Exception {
+        void forkDropsTasksThatHaveTerminated() {
             try (StructuredScope scope = StructuredScope.openWithoutBindings()) {
                 List<StructuredScope.ForkedTask<String>> forked = new ArrayList<>();
                 for (int i = 0; i < 50; i++) {

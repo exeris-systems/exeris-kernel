@@ -215,7 +215,7 @@ class Http2ConnectionWriterTest {
 
     @Test
     @DisplayName("a zero stream increment resets the stream with PROTOCOL_ERROR")
-    void zeroStreamIncrementIsStreamProtocolError() throws Exception {
+    void zeroStreamIncrementIsStreamProtocolError() {
         writer.register(1, 0);
 
         writer.applyStreamWindowUpdate(1, 0);
@@ -474,7 +474,7 @@ class Http2ConnectionWriterTest {
         private SendOutcome join() {
             try {
                 thread.join(BOUND);
-            } catch (InterruptedException interrupted) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
             assertThat(thread.isAlive()).as("sender finished within the bound").isFalse();

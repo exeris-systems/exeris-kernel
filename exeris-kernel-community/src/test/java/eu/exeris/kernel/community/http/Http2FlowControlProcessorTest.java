@@ -76,7 +76,7 @@ class Http2FlowControlProcessorTest {
         for (Thread thread : started) {
             try {
                 thread.join(BOUND);
-            } catch (InterruptedException interrupted) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
             }
         }

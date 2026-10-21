@@ -19,8 +19,9 @@ import eu.exeris.kernel.spi.transport.TransportStream;
  * connections never need one.
  * <p><b>Thread confinement:</b> the frame loop's thread, except {@link #writer()}, which any thread
  * may use; the scope's owner is the thread that first forks.
- * <p><b>Ownership:</b> owns the session, the writer and the scope; {@link #close()} ends them. The
- * transport and the handler are borrowed.
+ * <p><b>Ownership:</b> owns the writer and the scope; {@link #close()} ends them. The session, the
+ * transport and the handler are borrowed: whoever created the session closes it, after this
+ * connection, so the senders are joined before the session's buffers are released.
  */
 final class Http2Connection implements AutoCloseable {
 
@@ -88,16 +89,14 @@ final class Http2Connection implements AutoCloseable {
 
     /**
      * Ends the connection. The order is load-bearing: the writer first, which marks every response
-     * stream closed and wakes its sender, then the scope, which interrupts and joins the senders —
-     * joining first would wait on a sender that only the writer can wake — then the session.
+     * stream closed and wakes its sender, then the scope, which interrupts and joins the senders;
+     * joining first would wait on a sender that only the writer can wake.
      */
     @Override
     public void close() {
         writer.closeConnection();
-        try (session) {
-            if (streamScope != null) {
-                streamScope.close();
-            }
+        if (streamScope != null) {
+            streamScope.close();
         }
     }
 

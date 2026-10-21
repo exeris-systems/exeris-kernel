@@ -98,7 +98,7 @@ final class Http2ScriptedTransport implements TransportStream {
             byte[] next;
             try {
                 next = inbound.take();
-            } catch (InterruptedException interrupted) {
+            } catch (InterruptedException _) {
                 Thread.currentThread().interrupt();
                 return -1;
             }
@@ -193,7 +193,7 @@ final class Http2ScriptedTransport implements TransportStream {
             try {
                 latch.await();
                 break;
-            } catch (InterruptedException e) {
+            } catch (InterruptedException _) {
                 interrupted = true;
             }
         }
