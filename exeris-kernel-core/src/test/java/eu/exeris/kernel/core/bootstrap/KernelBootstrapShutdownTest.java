@@ -9,13 +9,20 @@ import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
+import eu.exeris.kernel.spi.contract.ExecutionContract;
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordedEvent;
+import jdk.jfr.consumer.RecordingFile;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -57,15 +64,31 @@ class KernelBootstrapShutdownTest {
 
         private final List<Thread> registered = new CopyOnWriteArrayList<>();
         private final List<Thread> unregistered = new CopyOnWriteArrayList<>();
+        private volatile boolean refuseRegistration;
+        private volatile boolean failUnregistration;
 
         @Override
         public void register(Thread hook) {
+            if (refuseRegistration) {
+                throw new IllegalStateException("Shutdown in progress");
+            }
             registered.add(hook);
         }
 
         @Override
         public void unregister(Thread hook) {
             unregistered.add(hook);
+            if (failUnregistration) {
+                throw new IllegalArgumentException("unregister failed");
+            }
+        }
+
+        void refuseRegistration() {
+            refuseRegistration = true;
+        }
+
+        void failUnregistration() {
+            failUnregistration = true;
         }
 
         List<Thread> registered() {
@@ -110,6 +133,10 @@ class KernelBootstrapShutdownTest {
     // ── helpers ────────────────────────────────────────────────────────────────
 
     private static KernelBootstrap bootstrap(ShutdownHookRegistry registry, Boolean hook) {
+        return builder(registry, hook).build();
+    }
+
+    private static KernelBootstrap.Builder builder(ShutdownHookRegistry registry, Boolean hook) {
         ClassLoader shim = new KernelBootstrapTest.DualServiceShimLoader(
                 Thread.currentThread().getContextClassLoader(),
                 Map.of(
@@ -125,7 +152,7 @@ class KernelBootstrapShutdownTest {
         if (hook != null) {
             builder.registerShutdownHook(hook);
         }
-        return builder.build();
+        return builder;
     }
 
     /** A kernel with the builder's default hook setting. */
@@ -628,5 +655,175 @@ class KernelBootstrapShutdownTest {
         release.countDown();
         run.awaitReturned();
         assertThat(probe.stopCount()).isEqualTo(1);
+    }
+
+    // ── gate window ────────────────────────────────────────────────────────────
+
+    private static final ExecutionContract DECIDED = new ExecutionContract("EXR-SHUTDOWN", "OEM", "enterprise",
+            "SUBSCRIPTION", "exeris-sku-shutdown", Set.of("gateway.core"), Set.of("production"), 1, null, null,
+            null, 0, null);
+
+    @Test
+    @DisplayName("shutdown() while the contract gate runs skips initialize() and kernelMain, and returns after boot()")
+    void shutdownDuringTheContractGateSkipsEverythingAfterIt() {
+        CountDownLatch inGate = new CountDownLatch(1);
+        CountDownLatch releaseGate = new CountDownLatch(1);
+        ShutdownProbe probe = new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null);
+        provide(probe);
+        KernelBootstrap bootstrap = builder(new RecordingShutdownHookRegistry(), null)
+                .contractGate((config, loader) -> {
+                    inGate.countDown();
+                    awaitUninterruptibly(releaseGate);
+                    return DECIDED;
+                })
+                .build();
+        AtomicBoolean mainRan = new AtomicBoolean();
+        BootRun run = new BootRun(bootstrap, "shutdown-test-boot", () -> mainRan.set(true)).start();
+        await(inGate, "the gate is running");
+
+        Thread caller = callShutdown(bootstrap, "shutdown-caller");
+        assertStillBlocked(caller);
+
+        releaseGate.countDown();
+        join(caller);
+        run.awaitReturned();
+
+        assertThat(caller.isAlive()).isFalse();
+        assertThat(mainRan).isFalse();
+        assertThat(probe.initializeCount()).isZero();
+        assertThat(probe.startCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("a refused concurrent boot() runs no gate and emits no second KernelStart")
+    void aRefusedConcurrentBootHasNoSideEffect() throws Exception {
+        AtomicInteger gateRuns = new AtomicInteger();
+        provide(new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null));
+        KernelBootstrap bootstrap = builder(new RecordingShutdownHookRegistry(), null)
+                .contractGate((config, loader) -> {
+                    gateRuns.incrementAndGet();
+                    return DECIDED;
+                })
+                .build();
+        CountDownLatch mainEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Path dump = Files.createTempFile("kernel-start", ".jfr");
+        try (Recording recording = new Recording()) {
+            recording.enable("eu.exeris.kernel.bootstrap.KernelStart");
+            recording.start();
+            BootRun run = new BootRun(bootstrap, "shutdown-test-boot", () -> {
+                mainEntered.countDown();
+                awaitUninterruptibly(release);
+            }).start();
+            await(mainEntered, "kernelMain entered");
+
+            assertThatThrownBy(() -> bootstrap.boot(() -> { })).isInstanceOf(IllegalStateException.class);
+
+            release.countDown();
+            run.awaitReturned();
+            recording.stop();
+            recording.dump(dump);
+            List<RecordedEvent> starts = RecordingFile.readAllEvents(dump).stream()
+                    .filter(e -> "eu.exeris.kernel.bootstrap.KernelStart".equals(e.getEventType().getName()))
+                    .toList();
+            assertThat(starts).as("KernelStart events").hasSize(1);
+        } finally {
+            Files.deleteIfExists(dump);
+        }
+        assertThat(gateRuns).hasValue(1);
+    }
+
+    // ── interrupt handling of the waits ────────────────────────────────────────
+
+    @Test
+    @DisplayName("an interrupted caller waiting for boot() to unwind keeps waiting and returns with its flag set")
+    void aCallerWaitingForBootToUnwindKeepsWaitingWhenInterrupted() {
+        CountDownLatch inInitialize = new CountDownLatch(1);
+        CountDownLatch releaseInitialize = new CountDownLatch(1);
+        ShutdownProbe p1 = new ShutdownProbe("p1", BootstrapPhase.FOUNDATION, null).onInitialize(() -> {
+            inInitialize.countDown();
+            awaitUninterruptibly(releaseInitialize);
+        });
+        provide(p1);
+        KernelBootstrap bootstrap = bootstrap(new RecordingShutdownHookRegistry());
+        BootRun run = new BootRun(bootstrap, "shutdown-test-boot", () -> { }).start();
+        await(inInitialize, "p1 is inside initialize()");
+        AtomicBoolean flagOnReturn = new AtomicBoolean();
+        Thread caller = Thread.ofPlatform().daemon(true).name("shutdown-caller").unstarted(() -> {
+            bootstrap.shutdown();
+            flagOnReturn.set(Thread.currentThread().isInterrupted());
+        });
+        caller.start();
+        caller.interrupt();
+
+        assertStillBlocked(caller);
+
+        releaseInitialize.countDown();
+        join(caller);
+        run.awaitReturned();
+        assertThat(caller.isAlive()).isFalse();
+        assertThat(flagOnReturn).as("interrupt flag on return").isTrue();
+    }
+
+    // ── hook registry failures ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("a JVM that refuses the hook fails the boot before initialize(), and a later boot() succeeds")
+    void aRefusedHookFailsTheBootCleanly() throws Exception {
+        RecordingShutdownHookRegistry registry = new RecordingShutdownHookRegistry();
+        registry.refuseRegistration();
+        ShutdownProbe probe = new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null);
+        provide(probe);
+        KernelBootstrap bootstrap = bootstrap(registry);
+
+        assertThatThrownBy(() -> bootstrap.boot(() -> { }))
+                .isInstanceOf(KernelBootstrap.BootstrapException.class)
+                .hasCauseInstanceOf(IllegalStateException.class);
+        assertThat(probe.initializeCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("a refused hook leaves the instance bootable once the JVM accepts hooks again")
+    void aRefusedHookLeavesNoSessionBehind() throws Exception {
+        provide(new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null));
+        AtomicBoolean accepting = new AtomicBoolean();
+        ShutdownHookRegistry flipping = new ShutdownHookRegistry() {
+            @Override
+            public void register(Thread hook) {
+                if (!accepting.get()) {
+                    throw new IllegalStateException("Shutdown in progress");
+                }
+            }
+
+            @Override
+            public void unregister(Thread hook) {
+                // Nothing registered, nothing to remove.
+            }
+        };
+        KernelBootstrap bootstrap = bootstrap(flipping);
+
+        assertThatThrownBy(() -> bootstrap.boot(() -> { })).isInstanceOf(KernelBootstrap.BootstrapException.class);
+        accepting.set(true);
+        provide(new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null));
+        AtomicBoolean mainRan = new AtomicBoolean();
+        bootstrap.boot(() -> mainRan.set(true));
+
+        assertThat(mainRan).isTrue();
+    }
+
+    @Test
+    @DisplayName("an unregister() that throws does not leave the instance refusing later boots")
+    void aThrowingUnregisterLeavesNoSessionBehind() throws Exception {
+        RecordingShutdownHookRegistry registry = new RecordingShutdownHookRegistry();
+        registry.failUnregistration();
+        provide(new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null));
+        KernelBootstrap bootstrap = bootstrap(registry);
+
+        assertThatThrownBy(() -> bootstrap.boot(() -> { })).isInstanceOf(IllegalArgumentException.class);
+        provide(new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null));
+        AtomicBoolean mainRan = new AtomicBoolean();
+        assertThatThrownBy(() -> bootstrap.boot(() -> mainRan.set(true))).isNotInstanceOf(IllegalStateException.class);
+
+        assertThat(mainRan).as("the second boot was not refused as concurrent").isTrue();
     }
 }

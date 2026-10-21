@@ -13,9 +13,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -145,5 +149,87 @@ class SubsystemOrchestratorShutdownTest {
         assertThat(probe.startCount()).isEqualTo(1);
         orchestrator.shutdown();
         assertThat(probe.stopCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("an interrupted loser keeps waiting for the winner and returns with its interrupt flag set")
+    void anInterruptedLoserKeepsWaiting() throws Exception {
+        CountDownLatch inStop = new CountDownLatch(1);
+        CountDownLatch releaseStop = new CountDownLatch(1);
+        ShutdownProbe probe = new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null).onStop(() -> {
+            inStop.countDown();
+            awaitUninterruptibly(releaseStop);
+        });
+        SubsystemOrchestrator orchestrator = orchestrator(probe);
+        ConfigProvider config = new KernelBootstrapTest.StubConfigProvider();
+        orchestrator.initialize(config);
+        orchestrator.start(config);
+        Thread winner = run("shutdown-winner", orchestrator::shutdown);
+        assertThat(inStop.await(JOIN_MILLIS, TimeUnit.MILLISECONDS)).isTrue();
+        AtomicBoolean flagOnReturn = new AtomicBoolean();
+        Thread loser = run("shutdown-loser", () -> {
+            orchestrator.shutdown();
+            flagOnReturn.set(Thread.currentThread().isInterrupted());
+        });
+        loser.interrupt();
+
+        loser.join(NEGATIVE_WAIT_MILLIS);
+        assertThat(loser.isAlive()).as("the interrupted loser is still waiting").isTrue();
+        assertThat(probe.stopCount()).isEqualTo(1);
+
+        releaseStop.countDown();
+        join(winner);
+        join(loser);
+        assertThat(flagOnReturn).as("interrupt flag on return").isTrue();
+    }
+
+    @Test
+    @DisplayName("racing callers on fresh orchestrators run each stop() exactly once")
+    @Timeout(value = 60, unit = TimeUnit.SECONDS)
+    void racingCallersRunEachStopOnce() throws Exception {
+        final int callers = 4;
+        final int rounds = 3_000;
+        ConfigProvider config = new KernelBootstrapTest.StubConfigProvider();
+        AtomicReference<SubsystemOrchestrator> current = new AtomicReference<>();
+        AtomicReference<ShutdownProbe> currentProbe = new AtomicReference<>();
+        AtomicInteger startedRound = new AtomicInteger();
+        AtomicInteger returned = new AtomicInteger();
+        ConcurrentLinkedQueue<String> violations = new ConcurrentLinkedQueue<>();
+        List<Thread> threads = new ArrayList<>();
+        for (int c = 0; c < callers; c++) {
+            threads.add(run("shutdown-racer-" + c, () -> {
+                for (int round = 1; round <= rounds; round++) {
+                    while (startedRound.get() < round) {
+                        Thread.onSpinWait();
+                    }
+                    SubsystemOrchestrator orchestrator = current.get();
+                    ShutdownProbe probe = currentProbe.get();
+                    orchestrator.shutdown();
+                    if (probe.stopCount() != 1) {
+                        violations.add("round " + round + ": returned with stopCount " + probe.stopCount());
+                    }
+                    returned.incrementAndGet();
+                }
+            }));
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(50);
+        for (int round = 1; round <= rounds; round++) {
+            ShutdownProbe probe = new ShutdownProbe("a", BootstrapPhase.FOUNDATION, null);
+            SubsystemOrchestrator orchestrator = orchestrator(probe);
+            orchestrator.initialize(config);
+            orchestrator.start(config);
+            current.set(orchestrator);
+            currentProbe.set(probe);
+            startedRound.set(round);
+            while (returned.get() < round * callers) {
+                assertThat(System.nanoTime()).as("round %d finished in time", round).isLessThan(deadline);
+                Thread.onSpinWait();
+            }
+            assertThat(probe.stopCount()).as("stop count in round %d", round).isEqualTo(1);
+        }
+        for (Thread thread : threads) {
+            join(thread);
+        }
+        assertThat(violations).isEmpty();
     }
 }

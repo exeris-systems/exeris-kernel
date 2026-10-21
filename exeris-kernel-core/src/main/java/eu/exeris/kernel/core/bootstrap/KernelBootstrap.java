@@ -106,6 +106,8 @@ public final class KernelBootstrap {
 
     private static final System.Logger LOG = System.getLogger(KernelBootstrap.class.getName());
 
+    private static final String STOP_DURING_BOOT = "Stop requested during boot — kernelMain is not run";
+
     /** Name of the platform thread the JVM shutdown hook runs on. */
     private static final String SHUTDOWN_HOOK_THREAD_NAME = "exeris-kernel-shutdown";
 
@@ -212,6 +214,36 @@ public final class KernelBootstrap {
     }
 
     private void runKernel(boolean fullBoot, Runnable body) throws BootstrapException {
+        // The session is published before the first side effect, so a concurrent boot() is refused
+        // before it emits an event or runs the contract gate, and a shutdown() that arrives while the
+        // configuration or the gate is still running is recorded rather than lost.
+        BootSession bootSession = null;
+        if (fullBoot) {
+            BootSession candidate = new BootSession(Thread.currentThread());
+            if (!session.compareAndSet(null, candidate)) {
+                throw new IllegalStateException(
+                        "KernelBootstrap is already booting; one instance runs one boot at a time");
+            }
+            bootSession = candidate;
+        }
+        try {
+            runPublishedKernel(fullBoot, body, bootSession);
+        } finally {
+            if (bootSession != null) { // full boot only
+                bootSession.markUnwound(); // the stop has completed: runBootInsideScope's finally ran it
+                try {
+                    if (bootSession.hook() != null) {
+                        shutdownHookRegistry.unregister(bootSession.hook());
+                    }
+                } finally {
+                    session.compareAndSet(bootSession, null);
+                }
+            }
+        }
+    }
+
+    private void runPublishedKernel(boolean fullBoot, Runnable body, BootSession bootSession)
+            throws BootstrapException {
 
         // ── Step 1: Emit KernelStart JFR — the first anchor in the waterfall ─
         KernelStartEvent.emit(KERNEL_VERSION, failurePolicy.name(), selector.toString());
@@ -241,14 +273,8 @@ public final class KernelBootstrap {
                 .classLoader(classLoader)
                 .initializeDeadline(initializeDeadline)
                 .build();
-        BootSession bootSession = null;
-        if (fullBoot) {
-            BootSession candidate = new BootSession(orchestrator, Thread.currentThread());
-            if (!session.compareAndSet(null, candidate)) {
-                throw new IllegalStateException(
-                        "KernelBootstrap is already booting; one instance runs one boot at a time");
-            }
-            bootSession = candidate;
+        if (bootSession != null) {
+            bootSession.attach(orchestrator);
         }
         activeOrchestrator = orchestrator;
         bootActive.set(true);
@@ -281,13 +307,6 @@ public final class KernelBootstrap {
             throw new BootstrapException("Unexpected failure during kernel boot", ex);
         } finally {
             bootActive.set(false);
-            if (bootSession != null) { // full boot only
-                bootSession.markUnwound(); // the stop has completed: runBootInsideScope's finally ran it
-                if (bootSession.hook() != null) {
-                    shutdownHookRegistry.unregister(bootSession.hook());
-                }
-                session.compareAndSet(bootSession, null);
-            }
         }
     }
 
@@ -313,10 +332,12 @@ public final class KernelBootstrap {
      * <ul>
      *   <li>Idempotent and safe from any thread, concurrently with {@code kernelMain} returning: the stop
      *       sequence runs once, and every caller returns only after it has completed.</li>
-     *   <li>Never throws. A {@code stop()} that throws is logged and skipped.</li>
+     *   <li>A {@code stop()} that throws is logged and skipped; the one exception is a
+     *       {@link VirtualMachineError}, which propagates unchanged and ends the stop.</li>
      *   <li>A no-op before {@link #boot(Runnable)}, after it has returned, and during
      *       {@link #inspect(Runnable)}.</li>
-     *   <li>Called while {@code boot()} is still initializing or starting subsystems, it records the
+     *   <li>Called while {@code boot()} is still resolving configuration, initializing or starting
+     *       subsystems, it records the
      *       request: {@code kernelMain} is not run, and the stop runs once initialization has unwound;
      *       this call returns after that. Called from a subsystem's {@code initialize()} or {@code start()}
      *       on the booting thread, it records the request and returns at once.</li>
@@ -404,11 +425,15 @@ public final class KernelBootstrap {
         SubsystemOrchestrator orchestrator = bootSession.orchestrator();
         try {
             // Phase A: initialize all subsystems — providerBindings() collected internally
+            if (bootSession.stopPending()) {
+                LOG.log(System.Logger.Level.INFO, STOP_DURING_BOOT);
+                return; // stop requested before initialize: nothing to initialize, start or run
+            }
             orchestrator.initialize(config);
             configRegistry.seal();
             startConfigWatcher(configWatcher);
             if (bootSession.stopPending()) {
-                LOG.log(System.Logger.Level.INFO, "Stop requested during boot — kernelMain is not run");
+                LOG.log(System.Logger.Level.INFO, STOP_DURING_BOOT);
                 return; // stop requested during initialize: skip start and kernelMain
             }
 
@@ -449,7 +474,7 @@ public final class KernelBootstrap {
         if (bootSession.enterRunning()) {
             kernelMain.run();
         } else {
-            LOG.log(System.Logger.Level.INFO, "Stop requested during boot — kernelMain is not run");
+            LOG.log(System.Logger.Level.INFO, STOP_DURING_BOOT);
         }
     }
 

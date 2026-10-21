@@ -25,7 +25,7 @@ final class BootSession {
         RUNNING
     }
 
-    private final SubsystemOrchestrator orchestrator;
+    private volatile SubsystemOrchestrator orchestrator;
     private final Thread bootThread;
     private final AtomicReference<Stage> stage = new AtomicReference<>(Stage.BOOTING);
     private final CountDownLatch unwound = new CountDownLatch(1);
@@ -34,12 +34,15 @@ final class BootSession {
     /**
      * Creates the session of the boot running on {@code bootThread}.
      *
-     * @param orchestrator the orchestrator this boot drives
      * @param bootThread   the thread that runs {@code initialize()}, {@code start()} and {@code kernelMain}
      */
-    /* default */ BootSession(SubsystemOrchestrator orchestrator, Thread bootThread) {
-        this.orchestrator = orchestrator;
+    /* default */ BootSession(Thread bootThread) {
         this.bootThread = bootThread;
+    }
+
+    /** Attaches the orchestrator once it is built; a stop requested earlier is served by the boot thread. */
+    /* default */ void attach(SubsystemOrchestrator built) {
+        this.orchestrator = built;
     }
 
     /* default */ SubsystemOrchestrator orchestrator() {
