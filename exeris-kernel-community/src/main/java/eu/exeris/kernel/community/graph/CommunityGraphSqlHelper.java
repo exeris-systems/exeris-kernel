@@ -29,6 +29,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * SQL/PGQ backend adapter (Community's {@link CommunityGraphBackend} for the non-Cypher
@@ -55,7 +56,7 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
 
     static {
         Map<IsolationStrategy, String> details = new EnumMap<>(IsolationStrategy.class);
-        String scopableList = "SEPARATED_SCHEMA, DEDICATED";
+        String scopableList = SCOPABLE.stream().map(Enum::name).collect(Collectors.joining(", "));
         for (IsolationStrategy strategy : IsolationStrategy.values()) {
             details.put(strategy, BINDING_NAME + " cannot scope a graph query under isolation strategy "
                     + strategy + "; scopable strategies: " + scopableList);

@@ -60,10 +60,6 @@ class CommunityGraphSessionPostgresContractTckIT extends AbstractGraphSessionLiv
     private static PersistenceEngine persistence;
     private static CommunityGraphEngine graph;
 
-    CommunityGraphSessionPostgresContractTckIT() {
-        super();
-    }
-
     private static PersistenceConfig cfg(String url) {
         return new PersistenceConfig(
                 url, POSTGRES.getUsername(), POSTGRES.getPassword(),

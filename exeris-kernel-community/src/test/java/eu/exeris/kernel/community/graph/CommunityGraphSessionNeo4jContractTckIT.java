@@ -50,10 +50,6 @@ class CommunityGraphSessionNeo4jContractTckIT extends AbstractGraphSessionLiveCo
     private static MemoryAllocator allocator;
     private static CommunityGraphEngine graph;
 
-    CommunityGraphSessionNeo4jContractTckIT() {
-        super();
-    }
-
     private static GraphConfig neo4jConfig() {
         return new GraphConfig("neo4j", "live_contract", false, false, false, false,
                 Map.of(

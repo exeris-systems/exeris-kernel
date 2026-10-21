@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
@@ -637,7 +638,7 @@ public abstract class AbstractGraphSessionLiveContractTck {
                 () -> {
                     List<StorageContext> tenants = tenantContexts(strategy);
                     assertThat(tenants).as("tenantContexts must return two distinct contexts")
-                            .hasSize(2);
+                            .hasSize(2).doesNotHaveDuplicates();
                     StorageContext t1 = tenants.get(0);
                     StorageContext t2 = tenants.get(1);
 
@@ -696,44 +697,24 @@ public abstract class AbstractGraphSessionLiveContractTck {
                             GraphTraversal traversal = GraphTraversal.create(id, LINKED, 1);
 
                             inSession(canonical, s -> {
-                                assertThatThrownBy(() -> s.traversePath(path))
-                                        .isInstanceOf(GraphQueryException.class)
-                                        .satisfies(ex -> {
-                                            GraphQueryException gqe = (GraphQueryException) ex;
-                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
-                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
-                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
-                                        });
-
-                                assertThatThrownBy(() -> s.streamPathJson(path))
-                                        .isInstanceOf(GraphQueryException.class)
-                                        .satisfies(ex -> {
-                                            GraphQueryException gqe = (GraphQueryException) ex;
-                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
-                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
-                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
-                                        });
-
-                                assertThatThrownBy(() -> s.traverseBreadthFirst(traversal))
-                                        .isInstanceOf(GraphQueryException.class)
-                                        .satisfies(ex -> {
-                                            GraphQueryException gqe = (GraphQueryException) ex;
-                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
-                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
-                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
-                                        });
-
-                                assertThatThrownBy(() -> s.streamBfsJson(traversal))
-                                        .isInstanceOf(GraphQueryException.class)
-                                        .satisfies(ex -> {
-                                            GraphQueryException gqe = (GraphQueryException) ex;
-                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
-                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
-                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
-                                        });
+                                assertScopeRefused(() -> s.traversePath(path), strategy);
+                                assertScopeRefused(() -> s.streamPathJson(path), strategy);
+                                assertScopeRefused(() -> s.traverseBreadthFirst(traversal), strategy);
+                                assertScopeRefused(() -> s.streamBfsJson(traversal), strategy);
                             });
                         }
                 ));
+    }
+
+    private static void assertScopeRefused(ThrowingCallable call, StorageContext.IsolationStrategy strategy) {
+        assertThatThrownBy(call)
+                .isInstanceOf(GraphQueryException.class)
+                .satisfies(ex -> {
+                    GraphQueryException gqe = (GraphQueryException) ex;
+                    assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
+                    assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
+                    assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
+                });
     }
 
     private static StorageContext canonicalContext(StorageContext.IsolationStrategy strategy) {
