@@ -187,10 +187,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
-- **The SQL/PGQ graph backend's `deleteNode` removes the node's connected edges.** One statement
+- **The SQL/PGQ graph backend's `deleteNode` removes the node's connected edges (#468).** One statement
   deletes, from every registered edge table whose descriptor names the label on the source or target
   side, the rows touching the node, then the node row; matches the Cypher backend's `DETACH DELETE`;
-  an edge table not registered through `registerEdges` is not cascaded.
+  an edge table not registered through `registerEdges` is not cascaded. A registered edge table that
+  names the label but does not exist in the current scope, or whose table name is not a valid SQL
+  identifier, fails the call with `GraphQueryException` and nothing is deleted for that label.
 - **The Community server sends its whole certificate chain, not its leaf alone (#532).** The server loaded its
   certificate file with `SSL_CTX_use_certificate_file`, which keeps only the first certificate, so a client that
   trusts the root alone could not verify a chained server. It now loads the file with
@@ -241,8 +243,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   and delete cascade are asserted against both backends (`AbstractGraphSessionLiveContractTck`,
   `CommunityGraphSessionPostgresContractTckIT`, `CommunityGraphSessionNeo4jContractTckIT`);
   `ExecutionGraphZeroAllocTck` and `GraphCarrierPinningTck` measure a three-argument search over a
-  seeded connected pair, and the Community zero-alloc binding is an integration test.
-  **For anyone binding the TCK:** the two TCKs now need a live backend.
+  seeded connected pair (`GraphCarrierPinningTck` is still unbound in this tree), and the Community
+  zero-alloc binding is an integration test.
+  **For anyone binding the TCK:** the two TCKs now need a live backend, and `bootstrapSubsystem`
+  throws `IllegalStateException` unless the engine persists the seeded edges and the three-argument
+  search finds the 2-hop path.
 - **`central-verify` verifies release candidates and skips tags that are not releases.** A GitHub
   release for `vMAJOR.MINOR.PATCH-RCn` is verified against Central like a final release (ADR-065
   amendment A1); a release for any other tag ends the run with a notice instead of failing it. The

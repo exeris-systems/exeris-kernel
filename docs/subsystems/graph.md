@@ -112,7 +112,10 @@ segments exclusively through the `MemoryAllocator` SPI. This ensures that graph-
 Built-in `GraphSyncService` orchestration ensures that relational state changes in L1 are atomically reflected
 in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
 
-Both the Cypher and SQL/PGQ backends remove the node and its connected edges on `deleteNode`; on SQL/PGQ, connected edges in registered edge tables whose descriptor names the deleted node's label on the source or target side are removed.
+Both the Cypher and SQL/PGQ backends remove the node and its connected edges on `deleteNode`. On
+SQL/PGQ, connected edges in registered edge tables whose descriptor names the deleted node's label on
+the source or target side are removed; a registered table that does not exist in the current scope
+fails the call and nothing is deleted.
 
 ---
 
@@ -334,10 +337,16 @@ this tree today — listed here as gaps, not coverage:
   throws that exception (see the error-code table above).
 - **Carrier Pinning (unbound):** `GraphCarrierPinningTck` (extends `AbstractSubsystemCarrierPinningTck`)
   defines JFR-based validation that driver I/O does not stall Virtual Threads over the
-  `openSession() → findShortestPath() → close()` hot path (`CarrierPinnedEvent` must not fire). No
-  Community (or any other tier) binding subclasses it, so this check does not run in this tree today.
+  `openSession() → findShortestPath(edge, src, tgt) → close()` hot path (`CarrierPinnedEvent` must not
+  fire); a binding needs a live backend. No Community (or any other tier) binding subclasses it, so
+  this check does not run in this tree today.
 
-> **TCK bindings:** `ExecutionGraphZeroAllocTck`, `AbstractGraphSessionLiveContractTck` and `GraphChurnRatioTck` have Community-tier concrete bindings in `exeris-kernel-community/src/test/`. `CommunityExecutionGraphZeroAllocTckIT`, `CommunityGraphSessionPostgresContractTckIT`, `CommunityGraphSessionNeo4jContractTckIT` and `CommunityGraphChurnRatioTckIT` are `@Tag("integration")` and run in the `persistence-rls-gate` CI job (live PostgreSQL / Neo4j via Testcontainers). `GraphCarrierPinningTck` remains unbound.
+> **TCK bindings:** `ExecutionGraphZeroAllocTck`, `AbstractGraphSessionLiveContractTck` and
+> `GraphChurnRatioTck` have Community-tier concrete bindings in `exeris-kernel-community/src/test/`.
+> `CommunityExecutionGraphZeroAllocTckIT`, `CommunityGraphSessionPostgresContractTckIT`,
+> `CommunityGraphSessionNeo4jContractTckIT` and `CommunityGraphChurnRatioTckIT` are
+> `@Tag("integration")` and run in the `persistence-rls-gate` CI job (live PostgreSQL / Neo4j via
+> Testcontainers). `GraphCarrierPinningTck` remains unbound.
 
 ---
 
