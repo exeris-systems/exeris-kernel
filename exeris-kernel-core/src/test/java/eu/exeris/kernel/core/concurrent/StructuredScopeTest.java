@@ -357,6 +357,58 @@ class StructuredScopeTest {
         }
     }
 
+    @Nested
+    @DisplayName("Terminated-task tracking")
+    class TerminatedTaskTracking {
+
+        @Test
+        @DisplayName("fork drops the tasks that have terminated")
+        void forkDropsTasksThatHaveTerminated() throws Exception {
+            try (StructuredScope scope = StructuredScope.openWithoutBindings()) {
+                List<StructuredScope.ForkedTask<String>> forked = new ArrayList<>();
+                for (int i = 0; i < 50; i++) {
+                    forked.add(scope.fork(() -> "done"));
+                }
+                awaitAllTerminated(forked);
+                scope.fork(() -> "one more");
+                assertThat(scope.trackedTaskCount())
+                        .as("the 50 terminated tasks are pruned, the new one is tracked")
+                        .isEqualTo(1);
+            }
+        }
+
+        @Test
+        @DisplayName("fork keeps a running task and join still waits for it")
+        void joinStillWaitsForRunningTasks() throws Exception {
+            CountDownLatch release = new CountDownLatch(1);
+            try (StructuredScope scope = StructuredScope.openWithoutBindings()) {
+                StructuredScope.ForkedTask<String> blocked = scope.fork(() -> {
+                    release.await();
+                    return "released";
+                });
+                scope.fork(() -> {
+                    release.countDown();
+                    return "second";
+                });
+
+                assertThat(scope.trackedTaskCount())
+                        .as("the running task survives the prune that the second fork ran")
+                        .isEqualTo(2);
+                scope.join();
+
+                assertThat(blocked.state()).isEqualTo(StructuredScope.State.SUCCESS);
+            }
+        }
+
+        private void awaitAllTerminated(List<StructuredScope.ForkedTask<String>> forked) {
+            for (StructuredScope.ForkedTask<String> task : forked) {
+                while (task.state() == StructuredScope.State.RUNNING) {
+                    Thread.onSpinWait();
+                }
+            }
+        }
+    }
+
     private interface ThrowingBlock {
         void run() throws Exception;
     }
