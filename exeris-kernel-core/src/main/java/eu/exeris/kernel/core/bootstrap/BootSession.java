@@ -25,11 +25,11 @@ final class BootSession {
         RUNNING
     }
 
-    private volatile SubsystemOrchestrator orchestrator;
+    private final AtomicReference<SubsystemOrchestrator> orchestrator = new AtomicReference<>();
     private final Thread bootThread;
     private final AtomicReference<Stage> stage = new AtomicReference<>(Stage.BOOTING);
     private final CountDownLatch unwound = new CountDownLatch(1);
-    private volatile Thread hook;
+    private final AtomicReference<Thread> hook = new AtomicReference<>();
 
     /**
      * Creates the session of the boot running on {@code bootThread}.
@@ -42,20 +42,20 @@ final class BootSession {
 
     /** Attaches the orchestrator once it is built; a stop requested earlier is served by the boot thread. */
     /* default */ void attach(SubsystemOrchestrator built) {
-        this.orchestrator = built;
+        orchestrator.set(built);
     }
 
     /* default */ SubsystemOrchestrator orchestrator() {
-        return orchestrator;
+        return orchestrator.get();
     }
 
     /* default */ Thread hook() {
-        return hook;
+        return hook.get();
     }
 
     /** Records the shutdown hook; written by the boot thread before any subsystem is initialized. */
     /* default */ void hook(Thread registered) {
-        this.hook = registered;
+        hook.set(registered);
     }
 
     /** Counted down once the stop has completed and {@code boot()} is about to return. */
@@ -77,7 +77,7 @@ final class BootSession {
         while (true) {
             Stage current = stage.get();
             if (current == Stage.RUNNING) { // init and start are over: the orchestrator is quiescent
-                orchestrator.shutdown();    // winner runs it; losers wait; re-entry returns
+                orchestrator.get().shutdown(); // winner runs it; losers wait; re-entry returns
                 return;
             }
             if (current == Stage.STOP_PENDING || stage.compareAndSet(Stage.BOOTING, Stage.STOP_PENDING)) {

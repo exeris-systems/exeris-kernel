@@ -205,7 +205,8 @@ public final class SubsystemOrchestrator {
     private final AtomicBoolean terminated  = new AtomicBoolean(false);
     private final CountDownLatch shutdownCompleted = new CountDownLatch(1);
     /** The thread running the stop sequence; read to let a stop() that re-enters shutdown() return. */
-    private volatile Thread stoppingThread;
+    private final java.util.concurrent.atomic.AtomicReference<Thread> stoppingThread =
+            new java.util.concurrent.atomic.AtomicReference<>();
     private volatile long bootStartNanos;
 
     // =========================================================================
@@ -397,7 +398,8 @@ public final class SubsystemOrchestrator {
             return; // never initialized: nothing to stop, stays reusable
         }
         if (!terminated.compareAndSet(false, true)) {
-            if (Thread.currentThread() == stoppingThread) { // NOPMD CompareObjectsWithEquals — identity is the question
+            // identity is the question: a stop() on the stopping thread re-entering shutdown()
+            if (Thread.currentThread() == stoppingThread.get()) { // NOPMD CompareObjectsWithEquals
                 LOG.log(System.Logger.Level.WARNING,
                         "shutdown() re-entered from the stopping thread — returning");
             } else {
@@ -405,7 +407,7 @@ public final class SubsystemOrchestrator {
             }
             return;
         }
-        stoppingThread = Thread.currentThread(); // NOPMD UnusedAssignment — read by re-entrant callers
+        stoppingThread.set(Thread.currentThread());
         try {
             long shutdownStartNanos = System.nanoTime();
             int count = orderedSubsystems.size();
@@ -435,7 +437,7 @@ public final class SubsystemOrchestrator {
             LOG.log(System.Logger.Level.INFO, "SHUTDOWN complete in {0} ms",
                     elapsedMs(shutdownStartNanos));
         } finally {
-            stoppingThread = null; // NOPMD NullAssignment — no stopping thread once the stop ended
+            stoppingThread.set(null); // no stopping thread once the stop ended
             shutdownCompleted.countDown();
         }
     }
