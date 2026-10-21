@@ -101,15 +101,13 @@ public interface GraphSession extends AutoCloseable {
      * direction. Edges and nodes may repeat on a walk, so the start node can be in the result. The result
      * holds no duplicates, its order is unspecified, and a hop that matches nothing yields an empty list.
      *
-     * <p>Every hop runs under the {@code StorageContext} bound when this method is called; nothing in the
-     * request names a scope. A binding refuses a call under a non-system context whose isolation strategy it
-     * cannot scope, and MAY refuse a path whose Σ maxRepeat exceeds its own limit — both before any I/O.
+     * <p>A binding MAY refuse a path whose Σ maxRepeat exceeds its own limit, before any I/O.
      *
      * @param path the path specification
      * @return the terminal frontier
+     * @throws NullPointerException if {@code path} is null
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)} if the
-     *         query fails, the bound context cannot be scoped by this binding, or the path exceeds the
-     *         binding's length limit
+     *         query fails or the path exceeds the binding's length limit
      * @implNote Community issues exactly one statement on one connection (SQL/PGQ) or one query in one
      *           driver session (Cypher); the intermediate frontier never reaches the heap. Its length limit
      *           is Σ maxRepeat ≤ 64.
@@ -123,9 +121,9 @@ public interface GraphSession extends AutoCloseable {
      *
      * @param path the path specification
      * @return a loaned buffer holding the JSON array ({@code []} when empty); <strong>caller-owned</strong>
+     * @throws NullPointerException if {@code path} is null
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)} if the
-     *         query fails, the bound context cannot be scoped by this binding, or the path exceeds the
-     *         binding's length limit
+     *         query fails or the path exceeds the binding's length limit
      * @implSpec Implementations MUST transfer ownership of the returned buffer to the caller
      *           and MUST NOT close it themselves. Community allocates it via
      *           {@code MemoryAllocator.allocateNetwork(int)} and writes JSON before

@@ -20,10 +20,6 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 - **Graph SPI (preview): `GraphSession` gains abstract `traversePath`/`streamPathJson`, `GraphDialect` gains abstract `buildPathQuery`, and `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract (ADR-102).** An out-of-tree implementer must implement the three methods and the three-argument overload; it can no longer inherit the two-argument behaviour.
 
-### Added
-
-- **Multi-hop path traversal primitive.** `GraphPathSpec`/`GraphHop`, `traversePath`, `streamPathJson`, `buildPathQuery`; one request, terminal frontier, walk semantics, per-hop direction; Community runs it as one statement / one query.
-
 ### Security
 
 - **The Community crypto provider enforces `CryptoProviderConfig#minimumTlsVersion`.** Every context,
@@ -130,6 +126,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `boot()` returns normally. `boot()` registers one JVM shutdown hook (thread `exeris-kernel-shutdown`) that runs
   `shutdown()` and removes it before returning, unless the builder disables it.
 
+- **Multi-hop path traversal primitive.** `GraphPathSpec`/`GraphHop`, `traversePath`, `streamPathJson`, `buildPathQuery`; one request, terminal frontier, walk semantics, per-hop direction; Community runs it as one statement / one query.
 - **A choreography `Start` for an instance the engine already holds is pinned as a no-op, and the absorbed
   delivery is observable.** A running, parked or completed instance is not run again and the supplied plan is
   ignored; `AbstractFlowChoreographyTck` pins each state for every binding. Each absorbed `Start` emits the new

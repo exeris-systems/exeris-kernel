@@ -328,9 +328,13 @@ heap-resident visited set.
 
 | Control                        | Where it lives                                                              | Default |
 |:--------------------------------|:-----------------------------------------------------------------------------|:-------:|
-| **Max traversal depth**         | Community limit: `Σ maxRepeat <= 64` (and `maxDepth <= 64` for `GraphTraversal`); exceeding the limit is refused before I/O with `EX-GRPH-5002` (`PATH_LIMIT`) | 64 (Community cap) |
+| **Max traversal depth**         | Community limit: `Σ maxRepeat <= 64` (and `maxDepth <= 64` for `GraphTraversal`); exceeding the limit is refused before I/O with `EX-GRPH-5002` (`PATH_LIMIT`) | — (Community refuses above 64) |
 | **Max visited nodes**            | not implemented — `GraphTraversal` has no `maxNodes` field and no such cap exists anywhere in the traversal path | — |
 | **Cycle termination mechanism** | the query itself: SQL recursive CTE bounds each hop by `depth < maxRepeat` and deduplicates `(id, depth)` rows with `UNION` (never `UNION ALL`); Cypher bounds per-hop repetition with explicit step `MATCH` clauses joined by `WITH DISTINCT`. Step bounds guarantee termination without a heap-resident visited set | — |
+
+The 64 cap bounds the length of the generated query, not the work a Cypher ranged tail does: a variable-length
+segment enumerates relationship-unique paths, which can grow exponentially on a dense cyclic graph, and nothing in
+the traversal path verifies that the planner prunes it.
 
 `CommunityPathFinder` — the Dijkstra implementation behind `findShortestPath(GraphEdgeDescriptor, …)`,
 not the traversal methods — does hold a heap `HashSet<UUID>` of visited nodes while it walks adjacency;
