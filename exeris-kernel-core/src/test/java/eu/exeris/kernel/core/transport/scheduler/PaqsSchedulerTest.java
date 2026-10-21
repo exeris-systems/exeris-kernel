@@ -25,11 +25,17 @@ import org.junit.jupiter.api.Timeout;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -431,6 +437,94 @@ class PaqsSchedulerTest {
         private static void signalAndFail(CountDownLatch latch) {
             latch.countDown();
             throw new RuntimeException("simulated handler failure");
+        }
+    }
+
+    // =========================================================================
+    // Handler failure log record
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Handler failure log record")
+    class HandlerFailureLog {
+
+        private static final String SECRET = "tenant-secret-4f9a";
+
+        /** Error type distinct from every JDK one, so the class name in the record is unambiguous. */
+        private static final class HandlerAssertionError extends AssertionError {
+            private static final long serialVersionUID = 1L;
+
+            HandlerAssertionError(String message) {
+                super(message);
+            }
+        }
+
+        private List<String> capture(Runnable action, List<Level> levels) {
+            Logger logger = Logger.getLogger(PaqsScheduler.class.getName());
+            List<LogRecord> records = new CopyOnWriteArrayList<>();
+            Handler handler = new Handler() {
+                @Override public void publish(LogRecord r) { records.add(r); }
+                @Override public void flush() { /* in memory */ }
+                @Override public void close() { /* in memory */ }
+            };
+            SimpleFormatter formatter = new SimpleFormatter();
+            logger.addHandler(handler);
+            try {
+                action.run();
+            } finally {
+                logger.removeHandler(handler);
+            }
+            List<String> messages = new ArrayList<>();
+            for (LogRecord r : records) {
+                levels.add(r.getLevel());
+                messages.add(formatter.formatMessage(r));
+            }
+            return messages;
+        }
+
+        private PaqsScheduler synchronousScheduler(eu.exeris.kernel.spi.transport.StreamHandler handler) {
+            return new PaqsScheduler(buildController(WatermarkLevel.NORMAL), new StreamLoadShedder(ENGINE),
+                    handler, s -> StreamPriority.NORMAL, ENGINE, (name, task) -> task.run());
+        }
+
+        @Test
+        @DisplayName("an isolated handler exception logs one WARNING with stream id, engine and class, not the message")
+        void isolatedExceptionLogsFieldsWithoutMessage() {
+            PaqsScheduler sut = synchronousScheduler(stream -> {
+                throw new IllegalStateException(SECRET);
+            });
+            List<Level> levels = new ArrayList<>();
+
+            List<String> messages = capture(() -> sut.schedule(stubStream(4242L, new AtomicBoolean())), levels);
+
+            assertThat(levels).containsExactly(Level.WARNING);
+            assertThat(messages).singleElement().satisfies(m -> assertThat(m)
+                    .contains("4242", ENGINE, "java.lang.IllegalStateException")
+                    .doesNotContain(SECRET));
+        }
+
+        @Test
+        @DisplayName("a handler Error logs one ERROR with stream id, engine and class, and is rethrown")
+        void errorLogsFieldsAndIsRethrown() {
+            PaqsScheduler sut = synchronousScheduler(stream -> {
+                throw new HandlerAssertionError(SECRET);
+            });
+            List<Level> levels = new ArrayList<>();
+            AtomicReference<Throwable> thrown = new AtomicReference<>();
+
+            List<String> messages = capture(() -> {
+                try {
+                    sut.schedule(stubStream(4343L, new AtomicBoolean()));
+                } catch (Throwable t) { //NOPMD AvoidCatchingThrowable — records what escaped
+                    thrown.set(t);
+                }
+            }, levels);
+
+            assertThat(thrown.get()).isInstanceOf(HandlerAssertionError.class);
+            assertThat(levels).containsExactly(Level.SEVERE);
+            assertThat(messages).singleElement().satisfies(m -> assertThat(m)
+                    .contains("4343", ENGINE, HandlerAssertionError.class.getName())
+                    .doesNotContain(SECRET));
         }
     }
 
