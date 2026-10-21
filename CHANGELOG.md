@@ -191,8 +191,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   deletes, from every registered edge table whose descriptor names the label on the source or target
   side, the rows touching the node, then the node row; matches the Cypher backend's `DETACH DELETE`;
   an edge table not registered through `registerEdges` is not cascaded. A registered edge table that
-  names the label but does not exist in the current scope, or whose table name is not a valid SQL
-  identifier, fails the call with `GraphQueryException` and nothing is deleted for that label.
+  names the label but whose table name is not a valid SQL identifier fails the call with
+  `GraphQueryException` before any statement runs; one that does not exist in the current scope fails
+  the statement with the persistence engine's translated error. Nothing is deleted in either case.
 - **The Community server sends its whole certificate chain, not its leaf alone (#532).** The server loaded its
   certificate file with `SSL_CTX_use_certificate_file`, which keeps only the first certificate, so a client that
   trusts the root alone could not verify a chained server. It now loads the file with

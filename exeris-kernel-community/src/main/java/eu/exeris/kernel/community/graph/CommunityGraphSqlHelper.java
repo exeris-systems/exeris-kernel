@@ -239,6 +239,8 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
      *
      * @param label node label to delete
      * @return the complete atomic delete SQL statement
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if a registered edge table naming {@code label} is not a valid SQL identifier
      */
     /* default */ String buildDeleteNodeSql(String label) {
         Map<String, Integer> sides = resolveCascadeSides(label);
@@ -297,6 +299,11 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
      *
      * @param label  node label
      * @param nodeId node ID
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if a registered edge table naming {@code label} is not a valid SQL identifier;
+     *         no statement is prepared. A registered table missing in the current scope fails
+     *         the statement with the persistence engine's translated error, and nothing is
+     *         deleted.
      */
     @Override
     public void deleteNode(String label, UUID nodeId) {

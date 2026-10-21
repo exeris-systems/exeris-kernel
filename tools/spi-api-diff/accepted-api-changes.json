@@ -63,6 +63,6 @@
     "signature": "eu.exeris.kernel.spi.graph.GraphSession#deleteNode(java.lang.String, java.util.UUID)",
     "since": "0.13",
     "adr": "ADR-102",
-    "justification": "Behaviour on the Community SQL/PGQ binding: connected edges in registered tables are removed; the SPI sentence was already \"and all connected edges\"; a registered edge table that names the label but does not exist in the current scope, or whose table name is not a valid SQL identifier, makes the call throw GraphQueryException and nothing is deleted for that label; no signature change."
+    "justification": "Behaviour on the Community SQL/PGQ binding: connected edges in registered tables are removed; the SPI sentence was already \"and all connected edges\"; a registered edge table that names the label but whose table name is not a valid SQL identifier makes the call throw GraphQueryException before any statement runs, and one that does not exist in the current scope fails the statement with the persistence engine's translated error; nothing is deleted in either case; no signature change."
   }
 ]
