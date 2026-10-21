@@ -43,6 +43,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * stopping them from a thread with no bindings finds a {@code stop()} that reads a binding it no longer has,
  * including through a callee: such a {@code stop()} throws, and a subsystem whose {@code stop()} threw is
  * not marked {@code STOPPED}.
+ *
+ * <p>The stand-alone {@code transport} subsystem is not part of the scenario: its {@code initialize()} builds
+ * the engine while the memory allocator is not yet bound, which that engine refuses, so it cannot boot beside
+ * the other subsystems. The HTTP subsystem owns its own listener, which this test does stop.
  */
 @DisplayName("Community: shutdown() from a thread that carries no kernel bindings")
 @SuppressWarnings("PMD.AvoidUsingHardCodedIP")
@@ -115,15 +119,24 @@ class CommunityShutdownUnboundThreadTest {
     @DisplayName("every running subsystem reaches STOPPED when shutdown() is called from an unbound thread")
     void everyRunningSubsystemStopsFromAnUnboundThread() throws Exception {
         int port = reservePort();
-        Map<String, String> saved = new LinkedHashMap<>();
+        Map<String, String> published = new LinkedHashMap<>();
         for (String prefix : List.of("", "exeris.")) {
-            for (String key : List.of("http.mode", "http.bindHost", "http.port")) {
-                saved.put(prefix + key, System.getProperty(prefix + key));
-            }
-            System.setProperty(prefix + "http.mode", "SERVER");
-            System.setProperty(prefix + "http.bindHost", "127.0.0.1");
-            System.setProperty(prefix + "http.port", Integer.toString(port));
+            published.put(prefix + "http.mode", "SERVER");
+            published.put(prefix + "http.bindHost", "127.0.0.1");
+            published.put(prefix + "http.port", Integer.toString(port));
         }
+        // Websocket is off by default, and a subsystem that is off reports isRunning() false and is never
+        // stopped, so it is switched on to put its stop() under the test.
+        published.put("exeris.websocket.enabled", "true");
+        published.put("exeris.websocket.bindHost", "127.0.0.1");
+        published.put("exeris.websocket.port", Integer.toString(reservePort()));
+        published.put("exeris.persistence.jdbcUrl", "jdbc:h2:mem:unbound-stop;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
+        published.put("exeris.persistence.runMigrations", "true");
+        Map<String, String> saved = new LinkedHashMap<>();
+        published.forEach((key, value) -> {
+            saved.put(key, System.getProperty(key));
+            System.setProperty(key, value);
+        });
         try {
             runScenario();
         } finally {
@@ -139,8 +152,8 @@ class CommunityShutdownUnboundThreadTest {
 
     private static void runScenario() throws Exception {
         KernelBootstrap bootstrap = KernelBootstrap.builder()
-                // events, graph and flow depend on persistence, which needs a database the default build does not have.
-                .selector(BootstrapSelector.forNames("http", "scheduling", "security", "storage", "websocket"))
+                .selector(BootstrapSelector.forNames("http", "scheduling", "security", "storage", "websocket",
+                        "persistence", "events", "flow", "graph", "crypto"))
                 .classLoader(new RecordingProviderShim(Thread.currentThread().getContextClassLoader()))
                 .registerShutdownHook(false)
                 .build();

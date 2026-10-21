@@ -21,6 +21,7 @@ import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -42,6 +43,7 @@ class KernelSigtermShutdownTest {
 
     private static final long AWAIT_MILLIS = 30_000;
     private static final int SIGTERM_EXIT_STATUS = 143;
+    private static final long DRAIN_JOIN_MILLIS = 10_000;
     private static final String HOLD_REQUEST =
             "GET /hold HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
 
@@ -50,12 +52,15 @@ class KernelSigtermShutdownTest {
         private final Process process;
         private final Lines stdout = new Lines();
         private final Lines stderr = new Lines();
+        private final Thread stdoutDrain;
+        private final Thread stderrDrain;
 
         Child(String mode) throws IOException {
             List<String> command = new ArrayList<>();
-            command.add(ProcessHandle.current().info().command().orElseThrow());
+            command.add(ProcessHandle.current().info().command()
+                    .orElseGet(() -> Path.of(System.getProperty("java.home"), "bin", "java").toString()));
             for (String argument : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
-                if (!argument.startsWith("-javaagent:") && !argument.startsWith("-agentlib:")) {
+                if (!isBuildInstrumentation(argument)) {
                     command.add(argument);
                 }
             }
@@ -64,8 +69,15 @@ class KernelSigtermShutdownTest {
             command.add(SigtermChildKernel.class.getName());
             command.add(mode);
             process = new ProcessBuilder(command).start();
-            Thread.ofVirtual().start(() -> stdout.drain(process.getInputStream()));
-            Thread.ofVirtual().start(() -> stderr.drain(process.getErrorStream()));
+            stdoutDrain = Thread.ofVirtual().start(() -> stdout.drain(process.getInputStream()));
+            stderrDrain = Thread.ofVirtual().start(() -> stderr.drain(process.getErrorStream()));
+        }
+
+        /** Flags the build puts on the test JVM that a child kernel must not repeat: agents and JFR recordings. */
+        private static boolean isBuildInstrumentation(String argument) {
+            return argument.startsWith("-javaagent:") || argument.startsWith("-agentlib:")
+                    || argument.startsWith("-agentpath:") || argument.startsWith("-XX:StartFlightRecording")
+                    || argument.startsWith("-XX:FlightRecorderOptions");
         }
 
         int awaitReady() throws InterruptedException {
@@ -89,6 +101,10 @@ class KernelSigtermShutdownTest {
             assertThat(process.waitFor(AWAIT_MILLIS, TimeUnit.MILLISECONDS))
                     .as("the child exited within %d ms; stderr:%n%s", AWAIT_MILLIS, stderr.all())
                     .isTrue();
+            // waitFor returns when the process is reaped, not when its pipes are drained.
+            stdoutDrain.join(DRAIN_JOIN_MILLIS);
+            stderrDrain.join(DRAIN_JOIN_MILLIS);
+            assertThat(stdoutDrain.isAlive() || stderrDrain.isAlive()).as("both output streams drained").isFalse();
             return process.exitValue();
         }
 

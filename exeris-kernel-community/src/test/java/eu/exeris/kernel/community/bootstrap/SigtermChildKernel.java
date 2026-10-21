@@ -77,6 +77,9 @@ public final class SigtermChildKernel {
      */
     public static void main(String[] args) throws Exception {
         String mode = args[0];
+        // A child outliving the test JVM that forked it would hold its port and block forever.
+        ProcessHandle.current().parent()
+                .ifPresent(parent -> parent.onExit().thenRun(() -> Runtime.getRuntime().halt(2)));
         exitWorkerMode = MODE_EXIT_WORKER.equals(mode);
         int port = reservePort();
         for (String prefix : List.of("", "exeris.")) {
