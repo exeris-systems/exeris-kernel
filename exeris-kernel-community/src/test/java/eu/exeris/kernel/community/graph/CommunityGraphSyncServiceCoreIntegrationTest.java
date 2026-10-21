@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -143,6 +144,16 @@ class CommunityGraphSyncServiceCoreIntegrationTest {
         }
 
         @Override
+        public List<UUID> traversePath(GraphPathSpec path) {
+            return List.of();
+        }
+
+        @Override
+        public LoanedBuffer streamPathJson(GraphPathSpec path) {
+            throw new UnsupportedOperationException("Not needed for this test");
+        }
+
+        @Override
         public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
             return List.of();
         }
@@ -185,7 +196,7 @@ class CommunityGraphSyncServiceCoreIntegrationTest {
         }
 
         @Override
-        public PathResult findShortestPath(UUID source, UUID target) {
+        public PathResult findShortestPath(GraphEdgeDescriptor edge, UUID source, UUID target) {
             return PathResult.notFound(source, target, "test");
         }
 

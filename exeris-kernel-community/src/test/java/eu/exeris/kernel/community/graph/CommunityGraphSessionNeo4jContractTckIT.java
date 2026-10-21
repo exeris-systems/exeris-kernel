@@ -4,10 +4,13 @@
  */
 package eu.exeris.kernel.community.graph;
 
+import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.security.StorageContext;
 import eu.exeris.kernel.spi.graph.GraphConfig;
 import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.spi.memory.MemoryAllocator;
+import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.tck.contract.graph.AbstractGraphSessionLiveContractTck;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -41,6 +44,7 @@ class CommunityGraphSessionNeo4jContractTckIT extends AbstractGraphSessionLiveCo
     static final Neo4jContainer<?> NEO4J = new Neo4jContainer<>("neo4j:5-community")
             .withAdminPassword(ADMIN_PASSWORD);
 
+    private static MemoryAllocator allocator;
     private static CommunityGraphEngine graph;
 
     private static GraphConfig neo4jConfig() {
@@ -54,15 +58,21 @@ class CommunityGraphSessionNeo4jContractTckIT extends AbstractGraphSessionLiveCo
 
     @BeforeAll
     static void startEngines() {
+        allocator = new CommunityMemoryProvider().createAllocator(MemoryProviderConfig.defaults());
         graph = new CommunityGraphEngine(neo4jConfig());
-        graph.registerNodes(nodeTypes());
-        graph.registerEdges(edgeTypes());
+        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, allocator).run(() -> {
+            graph.registerNodes(nodeTypes());
+            graph.registerEdges(edgeTypes());
+        });
     }
 
     @AfterAll
     static void stopEngines() {
         if (graph != null) {
             graph.close();
+        }
+        if (allocator != null) {
+            allocator.close();
         }
     }
 
@@ -74,6 +84,7 @@ class CommunityGraphSessionNeo4jContractTckIT extends AbstractGraphSessionLiveCo
     @Override
     protected <T> T callInScope(StorageContext ctx, Supplier<T> action) {
         return ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ctx)
+                .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
                 .call(action::get);
     }
 }

@@ -14,6 +14,7 @@ slug: adr/ADR-102
 | **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-08                                                                                |
+| **Amended**     | 2026-10-21 — walk semantics and Cypher per-step MATCH clauses (A1)                         |
 | **Scope**       | `kernel/graph`                                                                            |
 | **Owning Repo** | `exeris-kernel`                                                                           |
 | **Driven By**   | [RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md) (Option A and rulings R1 to R5); [RFC-2026-09-02](../rfc/RFC-2026-09-02-preview-spi-promotion.md) (`…spi.graph` has no anchor ADR); issue #466; ROADMAP §"Graph: Heterogeneous Multi-Hop Traversal" |
@@ -197,7 +198,7 @@ Each obligation is testable. All land in 0.13.
    existing identifier check.
 5. **Neo4j shape.** One `MATCH` with one segment per hop and the arrow taken from the descriptor's
    direction; the result is `RETURN DISTINCT`. Every relationship type passes the existing Cypher
-   identifier check.
+   identifier check. *(superseded 2026-10-21 by Amendment A1 — see [Amendments](#amendments))*
 6. **Streaming.** `streamPathJson` returns the same id set as `traversePath`, in one caller-owned
    `LoanedBuffer`. PostgreSQL aggregates in the query (`json_agg`) and copies the text into one network
    buffer; the Cypher backend encodes the id list into one buffer.
@@ -357,3 +358,23 @@ single-type stand-in on one backend, not a measurement.
   mutation named with it.
 - The stability-matrix anchor column for `…spi.graph` names this ADR only once obligations 1 to 11 have
   landed; until then the row stays `preview` with `—`.
+
+## Amendments
+
+- **2026-10-21 — Walk semantics and Cypher per-step MATCH clauses (A1).** Supersedes the wording of
+  Obligation 5, which is marked in place, not rewritten (`adr-conventions.md` rule 7). On Neo4j a
+  `traversePath` call is one query with one `MATCH` clause per step, joined by `WITH DISTINCT`, with
+  arrows taken from the descriptor's direction and a `RETURN DISTINCT` result; every relationship type
+  still passes the existing Cypher identifier check. Obligations 3 and 5 otherwise stand.
+
+  The traversal rule, identical on both Community backends: a path is a walk. An edge may be traversed
+  more than once, within a hop and across hops, and a node may repeat, so the start node can be in the
+  result. A single `MATCH` pattern would instead enforce relationship uniqueness (a trail) across the
+  whole pattern, so it would not return the start user for `User -[PURCHASED]-> Product
+  <-[PURCHASED]- User` while the PostgreSQL recursive CTE does; one clause per step removes that
+  difference. A ranged hop is realised as its minimum unrolled into fixed steps followed by a
+  zero-based variable-length tail. That is set-equivalent to the walk rule because the shortest walk to
+  any node within a bound is a trail, so the tail loses no node by being relationship-unique.
+
+  The rule is pinned by `AbstractGraphSessionLiveContractTck#hopMayTraverseEdgePreviousHopTraversed`
+  and `AbstractGraphSessionLiveContractTck#cyclicGraphTerminatesAndHonoursExactLengthsWithWalkSemantics`.

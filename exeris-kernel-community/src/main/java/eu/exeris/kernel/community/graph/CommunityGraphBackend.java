@@ -5,7 +5,7 @@
 package eu.exeris.kernel.community.graph;
 
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
-import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.util.List;
@@ -17,10 +17,11 @@ import java.util.UUID;
  * for SQL/PGQ. Most operations mirror their {@link eu.exeris.kernel.spi.graph.GraphSession}
  * namesake one-to-one — see that interface for those operation contracts — so the session
  * facade dispatches those calls to whichever implementation the configured dialect selected
- * without branching on backend type. {@link #loadAdjacency} has no {@code GraphSession}
- * counterpart: it exists only so {@link CommunityGraphSession} can implement
- * {@code findShortestPath} itself, on top of {@link CommunityPathFinder}, instead of
- * delegating those two operations to this backend.
+ * without branching on backend type. The session converts single-hop traversals
+ * ({@code GraphTraversal}) to a one-hop {@link GraphPathSpec} before reaching this backend.
+ * {@link #loadAdjacency} has no {@code GraphSession} counterpart: it exists only so
+ * {@link CommunityGraphSession} can implement {@code findShortestPath} itself, on top of
+ * {@link CommunityPathFinder}, instead of delegating those operations to this backend.
  *
  * <p>{@link #beginTransaction()}, {@link #commit()}, {@link #rollback()} and {@link #close()}
  * default to no-ops. {@code CommunityGraphSqlHelper} does not override them: the SQL/PGQ
@@ -30,9 +31,9 @@ import java.util.UUID;
  */
 @SuppressWarnings("PMD.TooManyMethods")
 interface CommunityGraphBackend extends AutoCloseable {
-    List<UUID> traverseBreadthFirst(GraphTraversal traversal);
+    List<UUID> traversePath(GraphPathSpec path);
 
-    LoanedBuffer streamBfsJson(GraphTraversal traversal);
+    LoanedBuffer streamPathJson(GraphPathSpec path);
 
     void createEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId,
                     double weight, String properties);

@@ -7,19 +7,29 @@ package eu.exeris.kernel.tck.contract.graph;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphHop;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.graph.model.PathResult;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+import java.lang.foreign.ValueLayout;
+import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
@@ -32,6 +42,7 @@ import static org.assertj.core.api.Assertions.within;
  *
  * @since 0.13
  */
+@SuppressWarnings("PMD.CouplingBetweenObjects") // Live backend TCK exercises models, sessions, memory and assertions
 @DisplayName("TCK: GraphSession — contract against a live backend")
 public abstract class AbstractGraphSessionLiveContractTck {
 
@@ -172,6 +183,88 @@ public abstract class AbstractGraphSessionLiveContractTck {
         return new GraphEdgeDescriptor(src, type, tgt, 1.0, false, GraphEdgeDescriptor.Direction.OUTGOING, table);
     }
 
+    private static final Pattern UUID_PATTERN =
+            Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
+
+    /**
+     * Traverses a path in a system session, asserts no duplicates, and returns the result as a set.
+     *
+     * @param start start node ID
+     * @param hops hops to traverse
+     * @return set of reachable terminal node IDs
+     */
+    protected final Set<UUID> path(UUID start, GraphHop... hops) {
+        return inSystemSession(s -> {
+            List<UUID> list = s.traversePath(new GraphPathSpec(start, List.of(hops)));
+            assertThat(list).doesNotHaveDuplicates();
+            return Set.copyOf(list);
+        });
+    }
+
+    /**
+     * Streams a path JSON in a try-with-resources opened before and read after session.close(),
+     * parses the JSON array of UUID strings, and returns the result as a set.
+     *
+     * @param start start node ID
+     * @param hops hops to traverse
+     * @return set of reachable terminal node IDs
+     */
+    protected final Set<UUID> pathJson(UUID start, GraphHop... hops) {
+        byte[] bytes;
+        try (LoanedBuffer buffer = callInScope(ImmutableStorageContext.GLOBAL, () -> {
+            try (GraphSession session = engine().openSession()) {
+                return session.streamPathJson(new GraphPathSpec(start, List.of(hops)));
+            }
+        })) {
+            bytes = buffer.segment().asSlice(0, buffer.size()).toArray(ValueLayout.JAVA_BYTE);
+        }
+        return parseUuidJsonArray(bytes);
+    }
+
+    /**
+     * Executes BFS in a system session, asserts no duplicates, and returns the result as a set.
+     *
+     * @param traversal traversal configuration
+     * @return set of reachable node IDs
+     */
+    protected final Set<UUID> bfs(GraphTraversal traversal) {
+        return inSystemSession(s -> {
+            List<UUID> list = s.traverseBreadthFirst(traversal);
+            assertThat(list).doesNotHaveDuplicates();
+            return Set.copyOf(list);
+        });
+    }
+
+    /**
+     * Streams BFS JSON in a try-with-resources opened before and read after session.close(),
+     * parses the JSON array of UUID strings, and returns the result as a set.
+     *
+     * @param traversal traversal configuration
+     * @return set of reachable node IDs
+     */
+    protected final Set<UUID> bfsJson(GraphTraversal traversal) {
+        byte[] bytes;
+        try (LoanedBuffer buffer = callInScope(ImmutableStorageContext.GLOBAL, () -> {
+            try (GraphSession session = engine().openSession()) {
+                return session.streamBfsJson(traversal);
+            }
+        })) {
+            bytes = buffer.segment().asSlice(0, buffer.size()).toArray(ValueLayout.JAVA_BYTE);
+        }
+        return parseUuidJsonArray(bytes);
+    }
+
+    private static Set<UUID> parseUuidJsonArray(byte[] bytes) {
+        String json = new String(bytes, StandardCharsets.UTF_8).trim();
+        assertThat(json).startsWith("[").endsWith("]");
+        Set<UUID> ids = new HashSet<>();
+        Matcher matcher = UUID_PATTERN.matcher(json);
+        while (matcher.find()) {
+            ids.add(UUID.fromString(matcher.group()));
+        }
+        return Set.copyOf(ids);
+    }
+
     @Test
     @DisplayName("findShortestPath over a seeded connected pair finds the cheapest path through a session")
     void findShortestPathOverSeededConnectedPairFindsCheapestPath() {
@@ -288,6 +381,177 @@ public abstract class AbstractGraphSessionLiveContractTck {
             assertThat(res)
                     .containsExactlyInAnyOrder(b, c)
                     .doesNotContain(d, a);
+        });
+    }
+
+    @Test
+    @DisplayName("a heterogeneous two-hop path returns the terminal frontier of the hops in order")
+    void heterogeneousTwoHopPathReturnsTerminalFrontierInOrder() {
+        inSystemSession(s -> {
+            UUID u = newNode(s, "User");
+            UUID p1 = newNode(s, "Product");
+            UUID p2 = newNode(s, "Product");
+            UUID p3 = newNode(s, "Product");
+            UUID s1 = newNode(s, "Product");
+            UUID s2 = newNode(s, "Product");
+            UUID s3 = newNode(s, "Product");
+            link(s, PURCHASED, u, p1);
+            link(s, PURCHASED, u, p2);
+            link(s, SIMILAR_TO, p1, s1);
+            link(s, SIMILAR_TO, p2, s2);
+            link(s, VIEWED, u, p3);
+            link(s, SIMILAR_TO, p3, s3);
+
+            Set<UUID> forward = path(u, GraphHop.of(PURCHASED), GraphHop.of(SIMILAR_TO));
+            assertThat(forward).containsExactlyInAnyOrder(s1, s2);
+
+            Set<UUID> reversed = path(u, GraphHop.of(SIMILAR_TO), GraphHop.of(PURCHASED));
+            assertThat(reversed).isEmpty();
+            assertThat(reversed).isNotEqualTo(forward);
+        });
+    }
+
+    @Test
+    @DisplayName("a hop that matches nothing yields an empty result, not an error")
+    void hopMatchingNothingYieldsEmptyResult() {
+        inSystemSession(s -> {
+            UUID u = newNode(s, "User");
+            UUID p1 = newNode(s, "Product");
+            link(s, PURCHASED, u, p1);
+
+            assertThat(path(u, GraphHop.of(PURCHASED), GraphHop.of(NEVER_SEEDED))).isEmpty();
+            assertThat(pathJson(u, GraphHop.of(PURCHASED), GraphHop.of(NEVER_SEEDED))).isEmpty();
+            assertThat(path(u, GraphHop.of(VIEWED), GraphHop.of(SIMILAR_TO))).isEmpty();
+        });
+    }
+
+    @Test
+    @DisplayName("a ranged hop followed by a fixed hop returns exactly the nodes at the allowed lengths")
+    void rangedHopFollowedByFixedHopHonoursLengths() {
+        inSystemSession(s -> {
+            UUID a = newNode(s, "Product");
+            UUID b = newNode(s, "Product");
+            UUID c = newNode(s, "Product");
+            UUID d = newNode(s, "Product");
+            UUID e = newNode(s, "Product");
+            link(s, LINKED, a, b);
+            link(s, LINKED, b, c);
+            link(s, LINKED, c, d);
+            link(s, LINKED, d, e);
+
+            Set<UUID> res1 = path(a, new GraphHop(LINKED, 1, 2), GraphHop.of(LINKED));
+            assertThat(res1).containsExactlyInAnyOrder(c, d);
+
+            Set<UUID> res2 = path(a, new GraphHop(LINKED, 2, 3));
+            assertThat(res2).containsExactlyInAnyOrder(c, d);
+        });
+    }
+
+    @Test
+    @DisplayName("the result holds each node once")
+    void resultHoldsEachNodeOnce() {
+        inSystemSession(s -> {
+            UUID a = newNode(s, "Product");
+            UUID b = newNode(s, "Product");
+            UUID c = newNode(s, "Product");
+            UUID d = newNode(s, "Product");
+            link(s, LINKED, a, b);
+            link(s, LINKED, a, c);
+            link(s, LINKED, b, d);
+            link(s, LINKED, c, d);
+
+            List<UUID> res = s.traversePath(new GraphPathSpec(a, List.of(GraphHop.of(LINKED), GraphHop.of(LINKED))));
+            assertThat(res).hasSize(1).containsExactly(d);
+        });
+    }
+
+    @Test
+    @DisplayName("a hop may traverse an edge the previous hop traversed")
+    void hopMayTraverseEdgePreviousHopTraversed() {
+        inSystemSession(s -> {
+            UUID u1 = newNode(s, "User");
+            UUID u2 = newNode(s, "User");
+            UUID x = newNode(s, "Product");
+            link(s, PURCHASED, u1, x);
+            link(s, PURCHASED, u2, x);
+
+            Set<UUID> res = path(u1, GraphHop.of(PURCHASED),
+                    GraphHop.of(directed(PURCHASED, GraphEdgeDescriptor.Direction.INCOMING, false)));
+            assertThat(res).containsExactlyInAnyOrder(u1, u2);
+        });
+    }
+
+    @Test
+    @Timeout(60)
+    @DisplayName("a cyclic graph terminates and honours exact lengths with walk semantics")
+    void cyclicGraphTerminatesAndHonoursExactLengthsWithWalkSemantics() {
+        inSystemSession(s -> {
+            UUID x = newNode(s, "Product");
+            UUID y = newNode(s, "Product");
+            link(s, LINKED, x, y);
+            link(s, LINKED, y, x);
+
+            Set<UUID> res1 = path(x, new GraphHop(LINKED, 1, 5));
+            assertThat(res1).containsExactlyInAnyOrder(x, y);
+
+            Set<UUID> res2 = path(x, new GraphHop(LINKED, 3, 3));
+            assertThat(res2).containsExactly(y);
+        });
+    }
+
+    @Test
+    @DisplayName("each direction selects its own edges, and the one-hop methods agree with traversePath")
+    void eachDirectionSelectsItsOwnEdgesAndOneHopAgrees() {
+        inSystemSession(s -> {
+            UUID a = newNode(s, "Product");
+            UUID b = newNode(s, "Product");
+            UUID c = newNode(s, "Product");
+            link(s, LINKED, a, b);
+            link(s, LINKED, c, a);
+
+            GraphEdgeDescriptor out = directed(LINKED, GraphEdgeDescriptor.Direction.OUTGOING, false);
+            GraphEdgeDescriptor in = directed(LINKED, GraphEdgeDescriptor.Direction.INCOMING, false);
+            GraphEdgeDescriptor both = directed(LINKED, GraphEdgeDescriptor.Direction.BOTH, false);
+            GraphEdgeDescriptor bi = directed(LINKED, GraphEdgeDescriptor.Direction.OUTGOING, true);
+
+            assertThat(path(a, GraphHop.of(out))).containsExactly(b);
+            assertThat(path(a, GraphHop.of(in))).containsExactly(c);
+            assertThat(path(a, GraphHop.of(both))).containsExactlyInAnyOrder(b, c);
+            assertThat(path(a, GraphHop.of(bi))).containsExactlyInAnyOrder(b, c);
+
+            for (GraphEdgeDescriptor d : List.of(out, in, both, bi)) {
+                GraphTraversal t = GraphTraversal.create(a, d, 1);
+                Set<UUID> expected = path(a, GraphHop.of(d));
+                assertThat(bfs(t)).isEqualTo(expected);
+                assertThat(bfsJson(t)).isEqualTo(expected);
+            }
+        });
+    }
+
+    @Test
+    @DisplayName("streamPathJson returns the same id set as traversePath in a caller-owned buffer")
+    void streamPathJsonReturnsSameIdSetInCallerOwnedBuffer() {
+        inSystemSession(s -> {
+            UUID u = newNode(s, "User");
+            UUID p1 = newNode(s, "Product");
+            UUID p2 = newNode(s, "Product");
+            UUID p3 = newNode(s, "Product");
+            UUID s1 = newNode(s, "Product");
+            UUID s2 = newNode(s, "Product");
+            UUID s3 = newNode(s, "Product");
+            link(s, PURCHASED, u, p1);
+            link(s, PURCHASED, u, p2);
+            link(s, SIMILAR_TO, p1, s1);
+            link(s, SIMILAR_TO, p2, s2);
+            link(s, VIEWED, u, p3);
+            link(s, SIMILAR_TO, p3, s3);
+
+            GraphHop h1 = GraphHop.of(PURCHASED);
+            GraphHop h2 = GraphHop.of(SIMILAR_TO);
+            Set<UUID> pathSet = path(u, h1, h2);
+            Set<UUID> streamSet = pathJson(u, h1, h2);
+            assertThat(pathSet).containsExactlyInAnyOrder(s1, s2);
+            assertThat(streamSet).isEqualTo(pathSet);
         });
     }
 }

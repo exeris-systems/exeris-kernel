@@ -4,13 +4,14 @@
  */
 package eu.exeris.kernel.spi.graph;
 
+import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -26,8 +27,9 @@ import java.util.UUID;
  * (off-heap) instead of banned {@code java.io.OutputStream}.
  *
  * <p><b>Allocation:</b> obtaining a session allocates no buffer; an implementation
- *     allocates the buffer returned by {@link #streamBfsJson(GraphTraversal)} only when
- *     that method is invoked, never at session-open time.
+ *     allocates the buffer returned by {@link #streamBfsJson(GraphTraversal)} or
+ *     {@link #streamPathJson(GraphPathSpec)} only when that method is invoked, never at
+ *     session-open time.
  * <p><b>Thread confinement:</b> owner thread — a session is not thread-safe; each Virtual
  *     Thread obtains its own session from {@link GraphEngine#openSession()} and confines it
  *     to that thread for the session's whole unit-of-work.
@@ -35,8 +37,9 @@ import java.util.UUID;
  *     try-with-resources; {@link #close()} releases every resource the session itself
  *     opened, and an implementation whose database access is delegated to a shared
  *     connection pool holds no session-retained resource of its own to release there. A
- *     {@link LoanedBuffer} handed back from {@link #streamBfsJson(GraphTraversal)} passes
- *     to the caller instead — see that method's own ownership contract.
+ *     {@link LoanedBuffer} handed back from {@link #streamBfsJson(GraphTraversal)} or
+ *     {@link #streamPathJson(GraphPathSpec)} passes to the caller instead — see that
+ *     method's own ownership contract.
  *
  * @implNote The Community binding backed by the SQL dialect allocates the buffer
  *           returned by {@link #streamBfsJson(GraphTraversal)} via
@@ -55,6 +58,9 @@ public interface GraphSession extends AutoCloseable {
     /**
      * Executes a breadth-first search traversal.
      *
+     * <p>Equivalent to {@code traversePath} over one hop {@code [1, maxDepth]} of the
+     * traversal's edge, so the descriptor's direction is honoured.
+     *
      * @param traversal traversal configuration
      * @return list of node IDs found during traversal
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)}
@@ -66,6 +72,9 @@ public interface GraphSession extends AutoCloseable {
      * Streams BFS results as JSON directly into a {@link LoanedBuffer} — the zero-copy hot
      * path for large result sets, writing into the buffer's off-heap segment with no
      * intermediate heap allocation.
+     *
+     * <p>Equivalent to {@code streamPathJson} over one hop {@code [1, maxDepth]} of the
+     * traversal's edge, so the descriptor's direction is honoured.
      *
      * @param traversal traversal configuration
      * @return a loaned buffer containing UTF-8 JSON bytes; <strong>caller-owned</strong> —
@@ -81,6 +90,50 @@ public interface GraphSession extends AutoCloseable {
      *          try-with-resources; the session will not close it once returned.
      */
     LoanedBuffer streamBfsJson(GraphTraversal traversal);
+
+    /**
+     * Runs an ordered multi-hop traversal as one request and returns its terminal frontier.
+     *
+     * <p>A node is in the result iff a walk from {@code path.startNodeId()} exists that takes between
+     * {@code minRepeat} and {@code maxRepeat} consecutive edges of each hop, in hop order. Each hop follows
+     * its descriptor's direction: {@code OUTGOING} source to target, {@code INCOMING} target to source,
+     * {@code BOTH} either way; a {@code bidirectional} descriptor is followed both ways whatever its
+     * direction. Edges and nodes may repeat on a walk, so the start node can be in the result. The result
+     * holds no duplicates, its order is unspecified, and a hop that matches nothing yields an empty list.
+     *
+     * <p>A binding MAY refuse a path whose Σ maxRepeat exceeds its own limit, before any I/O.
+     *
+     * @param path the path specification
+     * @return the terminal frontier
+     * @throws NullPointerException if {@code path} is null
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)} if the
+     *         query fails or the path exceeds the binding's length limit
+     * @implNote Community issues exactly one statement on one connection (SQL/PGQ) or one query in one
+     *           driver session (Cypher); the intermediate frontier never reaches the heap. Its length limit
+     *           is Σ maxRepeat ≤ 64.
+     * @since 0.13
+     */
+    List<UUID> traversePath(GraphPathSpec path);
+
+    /**
+     * Streams the terminal frontier of {@link #traversePath(GraphPathSpec)} as a UTF-8 JSON array of
+     * quoted UUID strings into one {@link LoanedBuffer}.
+     *
+     * @param path the path specification
+     * @return a loaned buffer holding the JSON array ({@code []} when empty); <strong>caller-owned</strong>
+     * @throws NullPointerException if {@code path} is null
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)} if the
+     *         query fails or the path exceeds the binding's length limit
+     * @implSpec Implementations MUST transfer ownership of the returned buffer to the caller
+     *           and MUST NOT close it themselves. Community allocates it via
+     *           {@code MemoryAllocator.allocateNetwork(int)} and writes JSON before
+     *           returning it; Enterprise checks out a slab from the preallocated graph pool
+     *           and writes JSON through a raw pointer, with zero GC.
+     * @apiNote The caller owns the returned buffer and MUST close it, preferably via
+     *          try-with-resources; the session will not close it once returned.
+     * @since 0.13
+     */
+    LoanedBuffer streamPathJson(GraphPathSpec path);
 
     // =========================================================================
     // Edge CRUD
@@ -180,23 +233,31 @@ public interface GraphSession extends AutoCloseable {
     // =========================================================================
 
     /**
-     * Finds the shortest path between two nodes.
+     * Refuses: this overload names no relationship type, and searching every registered type would widen
+     * the question and change the answer whenever an unrelated type is registered.
      *
      * @param source source node ID
      * @param target target node ID
-     * @return path result (may indicate not found)
-     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)}
-     *         if the algorithm fails
+     * @return never returns normally
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException always ({@code EX-GRPH-5002},
+     *         query type {@code SHORTEST_PATH})
+     * @deprecated since 0.13, for removal before the graph SPI is promoted: it always refuses; call
+     *             {@link #findShortestPath(GraphEdgeDescriptor, UUID, UUID)}.
      */
-    PathResult findShortestPath(UUID source, UUID target);
+    @Deprecated(since = "0.13", forRemoval = true)
+    default PathResult findShortestPath(UUID source, UUID target) {
+        throw new GraphQueryException("SHORTEST_PATH",
+                "findShortestPath(UUID, UUID) names no relationship type; "
+                        + "call findShortestPath(GraphEdgeDescriptor, UUID, UUID)");
+    }
 
     /**
      * Finds the shortest path between two nodes for a specific edge type.
      *
      * <p>This overload provides the edge descriptor needed by implementations that
      * resolve adjacency from edge-specific storage (for example, one SQL table per
-     * edge type). Implementations that do not require edge metadata may rely on the
-     * default delegation.
+     * edge type). For {@code source} equal to {@code target} a binding returns a found
+     * zero-hop path without requiring {@code edge} to have rows.
      *
      * @param edge   edge descriptor that defines the traversed relationship set
      * @param source source node ID
@@ -205,12 +266,7 @@ public interface GraphSession extends AutoCloseable {
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)}
      *         if the algorithm fails
      */
-    default PathResult findShortestPath(GraphEdgeDescriptor edge, UUID source, UUID target) {
-        Objects.requireNonNull(edge,   "edge must not be null");
-        Objects.requireNonNull(source, "source must not be null");
-        Objects.requireNonNull(target, "target must not be null");
-        return findShortestPath(source, target);
-    }
+    PathResult findShortestPath(GraphEdgeDescriptor edge, UUID source, UUID target);
 
     // =========================================================================
     // Transaction Management

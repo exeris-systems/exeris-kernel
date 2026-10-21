@@ -11,6 +11,7 @@ import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -73,8 +74,10 @@ class GraphSyncServiceTest {
                                          double w, String p) { /* test stub — not exercised in this path */ }
         @Override public List<UUID> traverseBreadthFirst(GraphTraversal t) { return List.of(); }
         @Override public LoanedBuffer streamBfsJson(GraphTraversal t) { return null; }
+        @Override public List<UUID> traversePath(GraphPathSpec p) { return List.of(); }
+        @Override public LoanedBuffer streamPathJson(GraphPathSpec p) { return null; }
         @Override public UUID getRootNode() { return UUID.randomUUID(); }
-        @Override public PathResult findShortestPath(UUID src, UUID tgt) {
+        @Override public PathResult findShortestPath(GraphEdgeDescriptor e, UUID src, UUID tgt) {
             return PathResult.notFound(src, tgt, "stub");
         }
         @Override public void close() { /* test stub — no resources to release */ }

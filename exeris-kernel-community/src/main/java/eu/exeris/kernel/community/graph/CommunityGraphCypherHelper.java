@@ -6,7 +6,7 @@ package eu.exeris.kernel.community.graph;
 
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
-import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import org.neo4j.driver.Result;
 import org.neo4j.driver.Session;
@@ -66,13 +66,13 @@ final class CommunityGraphCypherHelper implements CommunityGraphBackend, CypherE
     // ─── CommunityGraphBackend — read delegation ─────────────────────────────────
 
     @Override
-    public List<UUID> traverseBreadthFirst(GraphTraversal traversal) {
-        return reader.traverseBreadthFirst(traversal);
+    public List<UUID> traversePath(GraphPathSpec path) {
+        return reader.traversePath(path);
     }
 
     @Override
-    public LoanedBuffer streamBfsJson(GraphTraversal traversal) {
-        return reader.streamBfsJson(traversal);
+    public LoanedBuffer streamPathJson(GraphPathSpec path) {
+        return reader.streamPathJson(path);
     }
 
     @Override
