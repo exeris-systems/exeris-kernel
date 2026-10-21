@@ -62,6 +62,7 @@ public final class SigtermChildKernel {
     private static final String MODE_EXIT_WORKER = "exit-worker";
     private static final String EXIT_PROBE = "exit-probe";
     private static final long HOLD_MILLIS = 2_000;
+    private static final long PARENT_POLL_MILLIS = 500;
 
     private static volatile boolean exitWorkerMode;
 
@@ -78,8 +79,17 @@ public final class SigtermChildKernel {
     public static void main(String[] args) throws Exception {
         String mode = args[0];
         // A child outliving the test JVM that forked it would hold its port and block forever.
-        ProcessHandle.current().parent()
-                .ifPresent(parent -> parent.onExit().thenRun(() -> Runtime.getRuntime().halt(2)));
+        ProcessHandle.current().parent().ifPresent(parent ->
+                Thread.ofPlatform().daemon(true).name("parent-watch").start(() -> {
+                    while (parent.isAlive()) {
+                        try {
+                            Thread.sleep(PARENT_POLL_MILLIS);
+                        } catch (InterruptedException ex) {
+                            return;
+                        }
+                    }
+                    Runtime.getRuntime().halt(2);
+                }));
         exitWorkerMode = MODE_EXIT_WORKER.equals(mode);
         int port = reservePort();
         for (String prefix : List.of("", "exeris.")) {
