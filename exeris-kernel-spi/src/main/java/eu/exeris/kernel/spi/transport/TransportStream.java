@@ -40,6 +40,15 @@ import java.lang.foreign.MemorySegment;
  * @implSpec Implementations must not copy stream payload between heap and off-heap memory.
  *           A {@link #read} may block the owning virtual thread — which unmounts from its
  *           carrier — but must never pin the carrier thread.
+ *           A {@link #write} or {@link #queueWrite} on a closed stream, and a positive-{@code maxBytes}
+ *           {@link #read} on one that has no end of stream left to report, throws
+ *           {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException}, never a
+ *           bare {@link IllegalStateException}. A {@link #read} that can still report end of stream
+ *           returns {@code -1} instead of throwing. The exception carries {@code EX-NET-4008} when the
+ *           transport observed the remote end, or tore the stream down without a local {@code close()}
+ *           or {@code reset(long)} request, before the stream was closed through this endpoint, and
+ *           {@code EX-NET-4009} when the stream was closed through this endpoint first
+ *           ({@code close()}, {@code reset(long)} or the parent connection's {@code close()}).
  * @implNote A carrier driven by native asynchronous I/O completions writes into pre-registered
  *           slab buffers; the Community carrier reads directly from the underlying connection
  *           into the caller's segment. A future migration of hot-path stream metadata to a
@@ -70,8 +79,8 @@ public interface TransportStream extends AutoCloseable {
      *
      * <p>The no-op takes precedence over closed state: a non-positive request returns
      * {@code 0} even after this stream has been closed, rather than raising the
-     * {@code IllegalStateException} that a positive-{@code maxBytes} read on a closed
-     * stream throws.
+     * {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException} that a
+     * positive-{@code maxBytes} read on a closed stream throws.
      *
      * @param target   off-heap segment to read into (from {@link LoanedBuffer#segment()})
      * @param maxBytes maximum number of bytes to read (must be ≤ {@code target.byteSize()});
@@ -80,7 +89,9 @@ public interface TransportStream extends AutoCloseable {
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportException on I/O failure —
      *         {@code EX-NET-4003} when a TLS handshake this read has to wait for does not
      *         complete within the driver's deadline
-     * @throws IllegalStateException if this stream has been closed
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
+     *         with the code the interface {@code @implSpec} defines;
+     *         a read that can still report end of stream returns {@code -1} instead
      * @implSpec Implementations must not throw on non-positive {@code maxBytes}, and must fill
      *           {@code target} from the transport's receive path with no intermediate heap copy.
      * @implNote A carrier driven by native asynchronous I/O fills the target segment directly
@@ -103,7 +114,8 @@ public interface TransportStream extends AutoCloseable {
      *         {@code EX-NET-4002} when the send itself fails, {@code EX-NET-4003} when a TLS
      *         handshake this write has to wait for does not complete within the driver's
      *         deadline
-     * @throws IllegalStateException if this stream has been closed
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
+     *         with the code the interface {@code @implSpec} defines
      * @implSpec Implementations must not hold a reference to {@code source} after this call
      *           returns.
      */
@@ -118,7 +130,8 @@ public interface TransportStream extends AutoCloseable {
      *   <li><strong>On normal return</strong> the transport owns the loan and releases it —
      *       immediately for a synchronous transmission, or after the asynchronous flush
      *       completes. The caller MUST NOT close {@code buffer}.</li>
-     *   <li><strong>If this method throws</strong> (including {@link IllegalStateException}),
+     *   <li><strong>If this method throws</strong> (including
+     *       {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException}),
      *       ownership returns to the caller, who MUST close {@code buffer} to avoid leaking it.
      *       Because {@link LoanedBuffer#close()} is idempotent, this caller-close is safe even
      *       if an implementation happened to release the loan while unwinding.</li>
@@ -141,7 +154,8 @@ public interface TransportStream extends AutoCloseable {
      *         {@code EX-NET-4002} when the send fails, {@code EX-NET-4003} when a TLS handshake
      *         this write has to wait for does not complete within the driver's deadline; in
      *         either case the caller owns and must close {@code buffer}
-     * @throws IllegalStateException if this stream has been closed — the caller owns and must
+     * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
+     *         with the code the interface {@code @implSpec} defines; the caller owns and must
      *         close {@code buffer}
      * @throws IllegalArgumentException if {@code length} is negative or exceeds
      *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}

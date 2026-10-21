@@ -10,6 +10,7 @@ import eu.exeris.kernel.core.security.GeneratedRoleRegistryLoader;
 import eu.exeris.kernel.core.transport.TransportScopes;
 import eu.exeris.kernel.core.security.SecurityInterceptor;
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.http.HttpConfig;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpKernelProviders;
@@ -280,7 +281,11 @@ public final class CommunityHttpRequestProcessor {
     private static boolean isExpectedStreamClose(RuntimeException streamError) {
         Throwable current = streamError;
         for (int depth = 0; depth < 4 && current != null; depth++) {
-            if (current instanceof IllegalStateException
+            // Both forms are expected closes: a transport that signals closure with the typed
+            // exception, and one that still throws a bare IllegalStateException with the stream
+            // contract's message.
+            if (current instanceof TransportStreamClosedException
+                    || current instanceof IllegalStateException
                     && "Stream is closed".equals(current.getMessage())) {
                 return true;
             }

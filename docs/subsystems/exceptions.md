@@ -134,6 +134,8 @@ value of the `environment` key fails the gate earlier, as `ConfigProviderExcepti
 | `EX-NET-4005` | Transport Engine Start      | `[0] String transportName, [1] int port`              |
 | `EX-NET-4006` | PAQS Load Shedding          | `[0] String transportName, [1] long streamId` — the exception carrier's schema (`TransportException.streamShed`, streaming stream-open path); PAQS request-edge shedding throws nothing and both paths record the JFR event `eu.exeris.kernel.core.transport.StreamShed` (`streamId`, `priority`, `shedReason`, `engineName`, `activeStreamCount`) |
 | `EX-NET-4007` | Buffer Exhaustion (reserved) | *(reserved — no rawArgs)*: no kernel code path raises this code, so it publishes no layout; one is defined with its first thrower |
+| `EX-NET-4008` | Transport stream closed by peer | *(no rawArgs)*: the thrower, `TransportStreamClosedException`, is an `IllegalStateException` subclass, not an `ExerisKernelException`. The remote end was observed, or the transport tore the stream down without a local close request, before the stream was closed through this endpoint. Core's PAQS records a handler ending with it as `StreamLifecycle` outcome `PEER_CLOSED`, not as a handler failure |
+| `EX-NET-4009` | Transport stream closed locally | *(no rawArgs)*: same thrower; the stream was closed through this endpoint (`close()`, `reset(long)`, or the connection's `close()`) first, before any remote end was observed or any transport teardown |
 
 ### HTTP (`EX-HTTP-`, codec-level violations 4001..4006; subsystem, streaming and request-decode faults 4007..)
 

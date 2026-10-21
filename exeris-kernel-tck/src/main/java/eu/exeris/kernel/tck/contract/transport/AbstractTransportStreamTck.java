@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.tck.contract.transport;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -42,7 +44,11 @@ import static org.assertj.core.api.Assertions.fail;
  *   <li>{@code close()} is idempotent</li>
  *   <li>{@code connection().close()} closes the stream even after the stream has read the peer's
  *       end of stream: {@code write()} and {@code queueWrite()} are then refused with
- *       {@link IllegalStateException}</li>
+ *       {@link TransportStreamClosedException}</li>
+ *   <li>a read or write after this endpoint's own {@code close()} or {@code reset()} throws
+ *       {@link TransportStreamClosedException} with {@code EX-NET-4009}; the peer-closed code
+ *       {@code EX-NET-4008} is not pinned here, because whether a peer's end of stream closes the
+ *       local side is transport semantics</li>
  *   <li>{@code streamId()} returns a non-negative identifier</li>
  *   <li>{@code connection()} returns non-null parent</li>
  * </ul>
@@ -423,11 +429,12 @@ public abstract class AbstractTransportStreamTck {
                 TransportStream writer = streams.writer();
                 writer.close();
 
-                // The SPI names IllegalStateException as a caller-owns case explicitly, so both
+                // The SPI names the closed-stream signal as a caller-owns case explicitly, so both
                 // throwing branches of one method have to agree. One closing and the other not is
                 // the same defect wearing a smaller hat.
                 assertThatThrownBy(() -> writer.queueWrite(buf, Long.BYTES))
-                        .isInstanceOf(IllegalStateException.class);
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
 
                 assertThat(buf.refCount()).isEqualTo(before);
                 assertThat(buf.isAlive()).isTrue();
@@ -460,14 +467,15 @@ public abstract class AbstractTransportStreamTck {
         }
 
         @Test
-        @DisplayName("write() after close() throws IllegalStateException")
+        @DisplayName("write() after close() throws the closed-stream signal with EX-NET-4009")
         void writeAfterCloseThrows() {
             var writer = streams.writer();
             writer.close();
             try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
                 MemorySegment seg = buf.segment();
                 assertThatThrownBy(() -> writer.write(seg, 1))
-                        .isInstanceOf(IllegalStateException.class);
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
             }
         }
 
@@ -486,7 +494,7 @@ public abstract class AbstractTransportStreamTck {
             boolean readerOpenAfterPeerClose = true;
             try (LoanedBuffer sink = allocator.allocate(AllocationHint.MICRO)) {
                 endOfStream = reader.read(sink.segment(), 1);
-            } catch (IllegalStateException _) {
+            } catch (TransportStreamClosedException _) {
                 readerOpenAfterPeerClose = false;
             }
             Assumptions.assumeTrue(readerOpenAfterPeerClose,
@@ -503,12 +511,16 @@ public abstract class AbstractTransportStreamTck {
                     .isFalse();
             try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
                 MemorySegment seg = buf.segment();
-                assertThatExceptionOfType(IllegalStateException.class)
+                assertThatExceptionOfType(TransportStreamClosedException.class)
                         .as("connection().close() closes its streams, so a write() on one is refused")
-                        .isThrownBy(() -> reader.write(seg, 1));
-                assertThatExceptionOfType(IllegalStateException.class)
+                        .isThrownBy(() -> reader.write(seg, 1))
+                        .satisfies(e -> assertThat(e.errorCode())
+                                .isIn(KernelErrorCodes.EX_NET_4008, KernelErrorCodes.EX_NET_4009));
+                assertThatExceptionOfType(TransportStreamClosedException.class)
                         .as("and so is a queueWrite(), which leaves the buffer with the caller")
-                        .isThrownBy(() -> reader.queueWrite(buf, 1));
+                        .isThrownBy(() -> reader.queueWrite(buf, 1))
+                        .satisfies(e -> assertThat(e.errorCode())
+                                .isIn(KernelErrorCodes.EX_NET_4008, KernelErrorCodes.EX_NET_4009));
                 assertThat(buf.isAlive())
                         .as("the caller still owns the buffer after the throw")
                         .isTrue();
@@ -586,7 +598,8 @@ public abstract class AbstractTransportStreamTck {
                 MemorySegment seg = buf.segment();
                 assertThatThrownBy(() -> writer.read(seg, 1))
                         .as("read() on a stream that has been reset MUST be rejected")
-                        .isInstanceOf(IllegalStateException.class);
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
             }
         }
 
@@ -598,7 +611,8 @@ public abstract class AbstractTransportStreamTck {
             try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
                 MemorySegment seg = buf.segment();
                 assertThatThrownBy(() -> writer.write(seg, 1))
-                        .isInstanceOf(IllegalStateException.class);
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
             }
         }
 
@@ -611,7 +625,8 @@ public abstract class AbstractTransportStreamTck {
             // must close it itself — leaving it open here would leak under LeakDetectionMode.PARANOID.
             try (LoanedBuffer buf = allocator.allocate(AllocationHint.MICRO)) {
                 assertThatThrownBy(() -> writer.queueWrite(buf, 1))
-                        .isInstanceOf(IllegalStateException.class);
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
                 assertThat(buf.isAlive())
                         .as("the caller still owns it after the throw, so it must still be closeable")
                         .isTrue();

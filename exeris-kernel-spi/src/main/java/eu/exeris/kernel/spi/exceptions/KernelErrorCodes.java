@@ -325,6 +325,35 @@ public final class KernelErrorCodes {
      */
     public static final String EX_NET_4007 = "EX-NET-4007";
 
+    /**
+     * A read or write on a {@link eu.exeris.kernel.spi.transport.TransportStream} that is closed
+     * because its remote endpoint ended it, or because the transport tore it down without a local
+     * {@code close()} or {@code reset()} request. Thrown as
+     * {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException#peerClosed()}.
+     *
+     * <p>The first side to end the stream decides the code: a stream the peer ended and this endpoint
+     * then closed reports this code, not {@link #EX_NET_4009}, and a stream this endpoint closed first
+     * reports {@link #EX_NET_4009} even if the remote end is observed afterwards.
+     *
+     * <p><b>rawArgs:</b> none. The thrower is an {@link IllegalStateException} subclass, not an
+     * {@link ExerisKernelException}; the stream identity travels with the caller's own record.
+     *
+     * @implNote The kernel's Core transport records a stream handler that ends with this code as the
+     *           JFR event {@code eu.exeris.kernel.core.transport.StreamLifecycle} with
+     *           {@code outcome} {@code PEER_CLOSED}, and does not count it as a handler failure.
+     */
+    public static final String EX_NET_4008 = "EX-NET-4008";
+
+    /**
+     * A read or write on a {@link eu.exeris.kernel.spi.transport.TransportStream} that was closed
+     * through this endpoint — {@code close()}, {@code reset(long)}, or the parent connection's
+     * {@code close()} — with no remote end observed first. Thrown as
+     * {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException#locallyClosed()}.
+     *
+     * <p><b>rawArgs:</b> none, for the reason given on {@link #EX_NET_4008}.
+     */
+    public static final String EX_NET_4009 = "EX-NET-4009";
+
     // -----------------------------------------------------------------------
     // EX-HTTP – HTTP codec subsystem (HTTP/1.1, HTTP/2, HPACK, Huffman)
     // -----------------------------------------------------------------------

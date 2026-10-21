@@ -5,6 +5,8 @@
 package eu.exeris.kernel.community.transport;
 
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -62,8 +65,11 @@ class NativeTcpConnectionCloseTest {
             assertTrue(stream.isClosed(), "close() after a remote close must close the connection's stream");
             LoanedBuffer refused = ALLOCATOR.allocate(AllocationHint.MICRO);
             try (refused) {
-                assertThrows(IllegalStateException.class, () -> stream.queueWrite(refused, Long.BYTES),
+                TransportStreamClosedException refusal = assertThrows(TransportStreamClosedException.class,
+                        () -> stream.queueWrite(refused, Long.BYTES),
                         "a stream closed through its connection must refuse a write");
+                assertEquals(KernelErrorCodes.EX_NET_4008, refusal.errorCode(),
+                        "a stream whose peer closed first reports the peer code even after a local close");
             }
 
             connection.close();
