@@ -7,8 +7,10 @@ package eu.exeris.kernel.community.graph;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
+import eu.exeris.kernel.spi.security.StorageContext;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -34,6 +36,23 @@ interface CommunityGraphBackend extends AutoCloseable {
     List<UUID> traversePath(GraphPathSpec path);
 
     LoanedBuffer streamPathJson(GraphPathSpec path);
+
+    /**
+     * Isolation strategies under which this backend scopes a query; a non-system context with
+     * any other strategy is refused.
+     *
+     * @return immutable set of supported isolation strategies
+     */
+    Set<StorageContext.IsolationStrategy> scopableStrategies();
+
+    /**
+     * Refusal detail naming this backend and {@code strategy}; a constant per strategy,
+     * built once.
+     *
+     * @param strategy the unscopable isolation strategy
+     * @return refusal detail string
+     */
+    String scopeRefusalDetail(StorageContext.IsolationStrategy strategy);
 
     void createEdge(GraphEdgeDescriptor edge, UUID sourceId, UUID targetId,
                     double weight, String properties);

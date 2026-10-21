@@ -90,7 +90,7 @@ this is informational and **not** a dependency of the open-core surface.
 | `…spi.config` | **stable**¹ | 0.5.0 | — | `AbstractConfigProviderTck`, `…DynamicConfigRegistryTck` | — |
 | `…spi.contract` | **preview** | 0.13.0 | ADR-088 / ADR-089 | `AbstractExecutionContractTck`, `…LicenseManifestCryptoTck`, `…EntitlementRequirementTck` | — |
 | `…spi.events` | **preview** | 0.5.0 | — [^eventbusawait] [^eventisolation] [^eventbuspublish] | `AbstractEventBusTck`, `…EventLoopTck`, `…KafkaEventEngineTck`, +6 | — |
-| `…spi.graph` | **preview** | 0.5.0 | — [^graphpath] | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +4 | — |
+| `…spi.graph` | **preview** | 0.5.0 | ADR-102 [^graphpath] [^graphscope] | `AbstractGraphProviderTck`, `…GraphEngineTck`, `…GraphDialectTck`, +4 | — |
 | `…spi.security` | **preview** | 0.5.0 | ADR-014 (RBAC) | `AbstractSecurityProviderTck`, `…RequiresRoleTck`, `…CitadelGuardTck`, +6 | — |
 | `…spi.security.identity` | **preview** | 0.10.0 | ADR-040 | `AbstractIdentityProviderTck` | — |
 | `…spi.crypto`⁴ | **preview** | 0.5.0 | ADR-008 (TLS engine) | `AbstractCryptoEngineTck` | yes (FFM crypto) |
@@ -342,3 +342,15 @@ maturity change here.
     `GraphTraversal.includeStartNode`/`includePayload` are deprecated and have no effect. Every traversal
     now honours the descriptor's direction. An out-of-tree implementer must implement the new members.
     The surface stays `preview`; the anchor column names ADR-102 once all of its obligations have landed.
+
+[^graphscope]: **Tenant scoping behaviour, 0.13 (ADR-102 Obligation 9).** Traversals under an ambient
+    `StorageContext` that the binding cannot scope are refused before database I/O with
+    `GraphQueryException` (`EX-GRPH-5002`, `queryType = "ISOLATION_SCOPE"`). Community SQL/PGQ serves
+    `SEPARATED_SCHEMA` and `DEDICATED` and refuses `SHARED` tenant contexts; Community Cypher refuses
+    every tenant context. SQL/PGQ also refuses a tenant context when no `PersistenceEngine` is bound in the
+    calling scope, because the request-session fallback opens an unscoped connection. System-scope callers
+    (`ImmutableStorageContext.GLOBAL`) are served on all backends. Under `SEPARATED_SCHEMA` the `search_path`
+    is `<schema>, public`, so a graph table missing from the tenant schema resolves to the system graph:
+    scoping holds only when every registered node and edge table exists in the tenant schema, and
+    `registerNodes`/`registerEdges` create tables only in the scope they run under.
+    The SPI compatibility gate reports no signature change.

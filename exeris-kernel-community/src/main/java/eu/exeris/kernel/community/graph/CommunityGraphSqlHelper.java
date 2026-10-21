@@ -12,18 +12,24 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
 import eu.exeris.kernel.spi.persistence.QueryResult;
+import eu.exeris.kernel.spi.security.StorageContext.IsolationStrategy;
 
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * SQL/PGQ backend adapter (Community's {@link CommunityGraphBackend} for the non-Cypher
@@ -43,6 +49,20 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     private static final int SIDE_SOURCE = 1;
     private static final int SIDE_TARGET = 2;
     private static final int INITIAL_SQL_CAPACITY = 256;
+    private static final String BINDING_NAME = "Community SQL/PGQ (PostgreSQL)";
+    private static final Set<IsolationStrategy> SCOPABLE =
+            Collections.unmodifiableSet(EnumSet.of(IsolationStrategy.SEPARATED_SCHEMA, IsolationStrategy.DEDICATED));
+    private static final Map<IsolationStrategy, String> SCOPE_REFUSAL_DETAILS;
+
+    static {
+        Map<IsolationStrategy, String> details = new EnumMap<>(IsolationStrategy.class);
+        String scopableList = SCOPABLE.stream().map(Enum::name).collect(Collectors.joining(", "));
+        for (IsolationStrategy strategy : IsolationStrategy.values()) {
+            details.put(strategy, BINDING_NAME + " cannot scope a graph query under isolation strategy "
+                    + strategy + "; scopable strategies: " + scopableList);
+        }
+        SCOPE_REFUSAL_DETAILS = Collections.unmodifiableMap(details);
+    }
 
     private final CommunityGraphDialect dialect;
     private final Supplier<PersistenceConnection> connectionSupplier;
@@ -131,6 +151,16 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
         MemorySegment.copy(jsonBytes, 0, buffer.segment(), ValueLayout.JAVA_BYTE, 0, jsonBytes.length);
         buffer.setSize(jsonBytes.length);
         return buffer;
+    }
+
+    @Override
+    public Set<IsolationStrategy> scopableStrategies() {
+        return SCOPABLE;
+    }
+
+    @Override
+    public String scopeRefusalDetail(IsolationStrategy strategy) {
+        return SCOPE_REFUSAL_DETAILS.get(strategy);
     }
 
     /**

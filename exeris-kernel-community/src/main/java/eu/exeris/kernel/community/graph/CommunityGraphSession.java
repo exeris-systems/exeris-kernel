@@ -17,6 +17,7 @@ import eu.exeris.kernel.spi.graph.model.GraphTraversal;
 import eu.exeris.kernel.spi.graph.model.PathResult;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
+import eu.exeris.kernel.spi.security.StorageContext;
 
 import java.util.List;
 import java.util.Objects;
@@ -42,9 +43,17 @@ import java.util.UUID;
  * <p><b>Ownership:</b> {@link #close()} closes the backend. Buffers returned from
  * {@link #streamPathJson} are not touched by {@link #close()} — they remain the caller's
  * responsibility per {@link GraphSession#streamPathJson(GraphPathSpec)}.
+ *
+ * <p>Before issuing any query, traversal operations ({@link #traversePath},
+ * {@link #streamPathJson}, and their single-hop delegates {@link #traverseBreadthFirst} and
+ * {@link #streamBfsJson}) verify that the path length does not exceed {@link #MAX_PATH_LENGTH}
+ * and that the ambient {@link StorageContext} can be scoped by the selected backend.
+ * Traversals under an unscopable context are refused before a connection or driver session is
+ * acquired (the scope guard covers the four traversal methods only).
  */
-// SPI contract: one method per graph operation; TooManyMethods are inherent.
-@SuppressWarnings("PMD.TooManyMethods")
+// SPI contract: one method per graph operation, and a guard per traversal entry point; the
+// class-total complexity is the sum of small methods, none above 7.
+@SuppressWarnings({"PMD.TooManyMethods", "PMD.CyclomaticComplexity"})
 final class CommunityGraphSession implements GraphSession {
     /* default */ static final int MAX_PATH_LENGTH = CommunityGraphDialect.MAX_PATH_LENGTH;
 
@@ -52,6 +61,10 @@ final class CommunityGraphSession implements GraphSession {
     private static final String PATH_LIMIT_QUERY_TYPE = "PATH_LIMIT";
     private static final String PATH_LIMIT_DETAIL =
             "path length bound (sum of maxRepeat) exceeds the Community graph limit of " + MAX_PATH_LENGTH;
+    private static final String SCOPE_QUERY_TYPE = "ISOLATION_SCOPE";
+    private static final String NO_ENGINE_SCOPE_DETAIL =
+            "a graph query under a tenant context needs a bound PersistenceEngine to open a scoped "
+                    + "connection; without one the request session serves an unscoped connection";
     private static final String SHORTEST_PATH_ALGORITHM = "dijkstra";
 
     private final CommunityGraphBackend backend;
@@ -68,12 +81,14 @@ final class CommunityGraphSession implements GraphSession {
     @Override
     public List<UUID> traversePath(GraphPathSpec path) {
         requireWithinLimit(path);
+        requireScopable();
         return backend.traversePath(path);
     }
 
     @Override
     public LoanedBuffer streamPathJson(GraphPathSpec path) {
         requireWithinLimit(path);
+        requireScopable();
         return backend.streamPathJson(path);
     }
 
@@ -186,7 +201,9 @@ final class CommunityGraphSession implements GraphSession {
                     .openConnection(KernelProviders.storageContextOrSystem());
         }
         // Fallback for a scope carrying the session but not the engine: the box holds its own
-        // engine reference and can still serve the request.
+        // engine reference and can still serve the request, on a connection that is not scoped
+        // to the ambient StorageContext. requireScopable refuses tenant traversals before they
+        // reach this point; system-scope calls and writes are served from it.
         if (box != null) {
             PersistenceConnection connection = box.requestScopedConnection();
             if (connection != null) {
@@ -211,6 +228,21 @@ final class CommunityGraphSession implements GraphSession {
             if (sum > MAX_PATH_LENGTH) {
                 throw new GraphQueryException(PATH_LIMIT_QUERY_TYPE, PATH_LIMIT_DETAIL);
             }
+        }
+    }
+
+    private void requireScopable() {
+        StorageContext ctx = KernelProviders.storageContextOrSystem();
+        if (ctx.strategy() == StorageContext.IsolationStrategy.SHARED && ctx.isolationKey().isEmpty()) {
+            return;
+        }
+        if (!backend.scopableStrategies().contains(ctx.strategy())) {
+            throw new GraphQueryException(SCOPE_QUERY_TYPE, backend.scopeRefusalDetail(ctx.strategy()));
+        }
+        // Only the engine opens a connection under the ambient context; the request-session
+        // fallback in acquireConnection hands out a pooled connection no interceptor has scoped.
+        if (!KernelProviders.PERSISTENCE_ENGINE.isBound()) {
+            throw new GraphQueryException(SCOPE_QUERY_TYPE, NO_ENGINE_SCOPE_DETAIL);
         }
     }
 }

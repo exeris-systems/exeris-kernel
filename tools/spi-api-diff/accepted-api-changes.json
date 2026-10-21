@@ -142,5 +142,11 @@
     "since": "0.13",
     "adr": "ADR-102",
     "justification": "TCK contract: new buildPathQuery group exercising multi-hop query generation. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: the four traversal methods (traversePath, streamPathJson, traverseBreadthFirst, streamBfsJson) refuse under an ambient StorageContext that the binding cannot scope before database I/O, throwing GraphQueryException (EX-GRPH-5002, queryType ISOLATION_SCOPE). Community SQL/PGQ serves SEPARATED_SCHEMA and DEDICATED and refuses SHARED tenant contexts; Community Cypher refuses every tenant context; SQL/PGQ also refuses a tenant context when no PersistenceEngine is bound in the calling scope; system-scope callers are served. No SPI signature change."
   }
 ]

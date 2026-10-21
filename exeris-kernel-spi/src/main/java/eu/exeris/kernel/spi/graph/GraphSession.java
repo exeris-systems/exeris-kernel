@@ -64,7 +64,8 @@ public interface GraphSession extends AutoCloseable {
      * @param traversal traversal configuration
      * @return list of node IDs found during traversal
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)}
-     *         if the query fails
+     *         if the query fails, or (query type {@code ISOLATION_SCOPE}) if the bound
+     *         {@code StorageContext} is a tenant context the binding cannot scope
      */
     List<UUID> traverseBreadthFirst(GraphTraversal traversal);
 
@@ -80,7 +81,8 @@ public interface GraphSession extends AutoCloseable {
      * @return a loaned buffer containing UTF-8 JSON bytes; <strong>caller-owned</strong> —
      *         the caller MUST close it
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)}
-     *         if the query fails
+     *         if the query fails, or (query type {@code ISOLATION_SCOPE}) if the bound
+     *         {@code StorageContext} is a tenant context the binding cannot scope
      * @implSpec Implementations MUST transfer ownership of the returned buffer to the caller
      *           and MUST NOT close it themselves. Community allocates it via
      *           {@code MemoryAllocator.allocateNetwork(int)} and writes JSON before
@@ -107,7 +109,9 @@ public interface GraphSession extends AutoCloseable {
      * @return the terminal frontier
      * @throws NullPointerException if {@code path} is null
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)} if the
-     *         query fails or the path exceeds the binding's length limit
+     *         query fails, the path exceeds the binding's length limit, or (query type
+     *         {@code ISOLATION_SCOPE}) the bound {@code StorageContext} is a tenant context the binding
+     *         cannot scope; a binding refuses such a context before any I/O and serves the system scope
      * @implNote Community issues exactly one statement on one connection (SQL/PGQ) or one query in one
      *           driver session (Cypher); the intermediate frontier never reaches the heap. Its length limit
      *           is Σ maxRepeat ≤ 64.
@@ -123,7 +127,9 @@ public interface GraphSession extends AutoCloseable {
      * @return a loaned buffer holding the JSON array ({@code []} when empty); <strong>caller-owned</strong>
      * @throws NullPointerException if {@code path} is null
      * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException {@code (EX-GRPH-5002)} if the
-     *         query fails or the path exceeds the binding's length limit
+     *         query fails, the path exceeds the binding's length limit, or (query type
+     *         {@code ISOLATION_SCOPE}) the bound {@code StorageContext} is a tenant context the binding
+     *         cannot scope; a binding refuses such a context before any I/O and serves the system scope
      * @implSpec Implementations MUST transfer ownership of the returned buffer to the caller
      *           and MUST NOT close it themselves. Community allocates it via
      *           {@code MemoryAllocator.allocateNetwork(int)} and writes JSON before

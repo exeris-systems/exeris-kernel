@@ -20,7 +20,10 @@ import org.testcontainers.containers.Neo4jContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 
 /**
@@ -86,5 +89,15 @@ class CommunityGraphSessionNeo4jContractTckIT extends AbstractGraphSessionLiveCo
         return ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ctx)
                 .where(KernelProviders.MEMORY_ALLOCATOR, allocator)
                 .call(action::get);
+    }
+
+    @Override
+    protected Set<StorageContext.IsolationStrategy> scopableStrategies() {
+        return EnumSet.noneOf(StorageContext.IsolationStrategy.class);
+    }
+
+    @Override
+    protected List<StorageContext> tenantContexts(StorageContext.IsolationStrategy strategy) {
+        throw new UnsupportedOperationException("Neo4j backend does not support tenant contexts");
     }
 }
