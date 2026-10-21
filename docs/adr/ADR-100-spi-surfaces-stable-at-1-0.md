@@ -220,8 +220,8 @@ whose precondition has not landed keeps its `preview` row in that commit.
 
 ## Amendments
 
-- **2026-10-21 — §3's consumer count corrected.** §3 said one consumer outside this repository reads
-  `KernelProviders.GRAPH_ENGINE`. More than one consumer outside this repository binds or reads the
-  graph and time slots, and one of them binds them rather than only reading them. The decision is
-  unchanged: the bridges stay deprecated for removal at the first 1.0 release candidate, and every
+- **2026-10-21 — §3's consumer count corrected.** §3 said one consumer outside this repository
+  reads the graph engine slot on `KernelProviders`. More than one consumer outside this repository
+  binds or reads the graph and time slots, and one of them binds them rather than only reading them.
+  The decision is unchanged: the bridges stay deprecated for removal at the first 1.0 release candidate, and every
   consumer moves to the holders before it adopts that release candidate.
