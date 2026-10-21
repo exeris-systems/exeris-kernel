@@ -154,5 +154,11 @@
     "since": "0.13",
     "adr": "ADR-088",
     "justification": "Behaviour: when license.manifest.path is unbound and the working directory holds no license-manifest.json, the contract gate reads the classpath; more than one distinct license-manifest.json URL there now fails the boot with ContractBreachException EX-LIC-0001 (rawArgs [\"classpath:license-manifest.json\"], the message listing every URL) instead of reading the first in classpath order. The same URL reported twice by a loader delegation chain counts once. A deployment whose dependency jars carry a second manifest binds license.manifest.path to the one to use. No signature changes; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.core.contract.ContractBootstrapStep#run",
+    "since": "0.13",
+    "adr": "ADR-089",
+    "justification": "Signature: ContractBootstrapStep.run(ConfigProvider, ClassLoader) returns the new ContractDecision, the contract together with the WorkloadAdmission its drivers consult, instead of the bare ExecutionContract; a caller outside the kernel takes .contract() for the old value. KernelBootstrap binds both in one scope, and its package-private Builder.contractGate takes the same type. The gate binds WorkloadAdmission.UNGATED for every contract, so no kernel behaves differently until a contract policy selects the developer-licence gate. This Core entry is a record for the release notes, not read by the SPI compatibility gate."
   }
 ]

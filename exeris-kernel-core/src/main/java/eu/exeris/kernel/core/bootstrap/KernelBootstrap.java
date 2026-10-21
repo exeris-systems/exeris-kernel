@@ -10,12 +10,12 @@ import eu.exeris.kernel.core.bootstrap.jfr.KernelStartEvent;
 import eu.exeris.kernel.core.config.DynamicConfigFileWatcher;
 import eu.exeris.kernel.core.config.KernelConfigRegistry;
 import eu.exeris.kernel.core.contract.ContractBootstrapStep;
+import eu.exeris.kernel.core.contract.ContractDecision;
 import eu.exeris.kernel.spi.bootstrap.BootstrapSelector;
 import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.contract.ContractKernelProviders;
-import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemCircularDependencyException;
 import eu.exeris.kernel.spi.exceptions.bootstrap.SubsystemInitDeadlineException;
 import eu.exeris.kernel.spi.exceptions.contract.ContractBreachException;
@@ -116,7 +116,7 @@ public final class KernelBootstrap {
     private final SubsystemOrchestrator.FailurePolicy failurePolicy;
     private final BootstrapSelector                   selector;
     private final ClassLoader                         classLoader;
-    private final BiFunction<ConfigProvider, ClassLoader, ExecutionContract> contractGate;
+    private final BiFunction<ConfigProvider, ClassLoader, ContractDecision> contractGate;
     private final Duration                            initializeDeadline;
     private final boolean                             registerShutdownHook;
     private final ShutdownHookRegistry                shutdownHookRegistry;
@@ -159,8 +159,8 @@ public final class KernelBootstrap {
      *   <li>Emit {@code ConfigSettingsResolved} JFR event.</li>
      *   <li>Run the Phase 0 contract gate ({@code ContractBootstrapStep}, ADR-088 / ADR-089) before any
      *       subsystem is initialized; a breach propagates as {@link ContractBreachException}.</li>
-     *   <li>Bind {@code CURRENT_CONFIG} and {@code EXECUTION_CONTRACT} and run subsystem bootstrap within
-     *       the scope.</li>
+     *   <li>Bind {@code CURRENT_CONFIG}, {@code EXECUTION_CONTRACT} and {@code WORKLOAD_ADMISSION} and run
+     *       subsystem bootstrap within the scope.</li>
      *   <li>Register the JVM shutdown hook that runs {@link #shutdown()}, unless
      *       {@link Builder#registerShutdownHook(boolean)} disabled it; a JVM already shutting down fails
      *       the boot here.</li>
@@ -206,7 +206,8 @@ public final class KernelBootstrap {
      * done by the diagnostics provider via {@link java.util.ServiceLoader}, independent of this scope.
      * {@code isRunning()} reports {@code false} for every subsystem — the honest answer for a static
      * composition snapshot. The Phase 0 contract gate does not run, because nothing is initialized:
-     * {@link ContractKernelProviders#EXECUTION_CONTRACT} is unbound inside {@code inspector}.
+     * {@link ContractKernelProviders#EXECUTION_CONTRACT} and {@link ContractKernelProviders#WORKLOAD_ADMISSION}
+     * are unbound inside {@code inspector}.
      *
      * @param inspector the read-only introspection runnable
      * @throws BootstrapException if config resolution or topology resolution fails
@@ -369,9 +370,13 @@ public final class KernelBootstrap {
      */
     private ScopedValue.Carrier kernelScope(ConfigProvider config, boolean fullBoot) {
         ScopedValue.Carrier scope = ScopedValue.where(KernelProviders.CURRENT_CONFIG, config);
-        return fullBoot
-                ? scope.where(ContractKernelProviders.EXECUTION_CONTRACT, contractGate.apply(config, classLoader))
-                : scope;
+        if (!fullBoot) {
+            return scope;
+        }
+        ContractDecision decision = contractGate.apply(config, classLoader);
+        return scope
+                .where(ContractKernelProviders.EXECUTION_CONTRACT, decision.contract())
+                .where(ContractKernelProviders.WORKLOAD_ADMISSION, decision.admission());
     }
 
     /**
@@ -664,7 +669,7 @@ public final class KernelBootstrap {
                 SubsystemOrchestrator.FailurePolicy.FAIL_FAST;
         private BootstrapSelector selector   = BootstrapSelector.all();
         private ClassLoader       classLoader;
-        private BiFunction<ConfigProvider, ClassLoader, ExecutionContract> contractGate = ContractBootstrapStep::run;
+        private BiFunction<ConfigProvider, ClassLoader, ContractDecision> contractGate = ContractBootstrapStep::run;
         private Duration initializeDeadline = SubsystemOrchestrator.DEFAULT_INITIALIZE_DEADLINE;
         private boolean registerShutdownHook = true;
         private ShutdownHookRegistry shutdownHookRegistry = RuntimeShutdownHookRegistry.INSTANCE;
@@ -736,10 +741,10 @@ public final class KernelBootstrap {
          * Replaces the contract gate. Package-private: only code in the bootstrap package can reach it, so a
          * kernel built outside this package always runs {@link ContractBootstrapStep#run}.
          *
-         * @param gate decides the execution contract from the configuration and class loader
+         * @param gate decides the execution contract and the workload gate from the configuration and class loader
          * @return this builder
          */
-        /* default */ Builder contractGate(BiFunction<ConfigProvider, ClassLoader, ExecutionContract> gate) {
+        /* default */ Builder contractGate(BiFunction<ConfigProvider, ClassLoader, ContractDecision> gate) {
             this.contractGate = Objects.requireNonNull(gate, "contractGate");
             return this;
         }
