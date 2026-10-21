@@ -121,7 +121,9 @@ members are `stable`, so removing them there is reported as a `stable` break; th
 the one sanctioned exception, by member, and the release-candidate pull request names it.
 That way 0.13.0 ships one release in which
 consumers on the old names compile with a deprecation warning — one consumer outside this
-repository reads `KernelProviders.GRAPH_ENGINE` today.
+repository reads `KernelProviders.GRAPH_ENGINE` today. *(Corrected 2026-10-21, see
+[Amendments](#amendments): more than one consumer outside this repository binds or reads these
+slots.)*
 
 The rule is enforced, not only stated: the promotion commit (§5) adds a check that fails when a
 public signature of a class labelled `stable` in `stability-surfaces.conf` names a class labelled
@@ -215,3 +217,11 @@ whose precondition has not landed keeps its `preview` row in that commit.
   [ADR-056](ADR-056-blob-storage-provider-spi.md), [ADR-057](ADR-057-job-scheduler-spi.md),
   [ADR-084](ADR-084-websocket-provider-spi.md), [ADR-088](ADR-088.link.md),
   [ADR-089](ADR-089.link.md).
+
+## Amendments
+
+- **2026-10-21 — §3's consumer count corrected.** §3 said one consumer outside this repository
+  reads the graph engine slot on `KernelProviders`. More than one consumer outside this repository
+  binds or reads the graph and time slots, and one of them binds them rather than only reading them.
+  The decision is unchanged: the bridges stay deprecated for removal at the first 1.0 release candidate, and every
+  consumer moves to the holders before it adopts that release candidate.

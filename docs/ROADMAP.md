@@ -3700,7 +3700,7 @@ See also: v0.11 §"Transport: PAQS Execution-Seam Port (M1)" (seam landed on the
 
 **Status (v0.12): superseded — see the second status below, which records the migration as complete.** *(As first written: "the seam ships and the saga TTL is drivable; the rest of the migration is not". The rest landed later in the same milestone.)*
 [ADR-082](adr/ADR-082-injectable-time-seam.md) rules `TimeSource` (`nanoTime()` + `wallTime()`) in
-`spi.time`, bound through `KernelProviders.TIME_SOURCE` and read through `KernelProviders.timeSource()`,
+`spi.time`, bound through `TimeKernelProviders.TIME_SOURCE` and read through `TimeKernelProviders.timeSource()`,
 which falls back to the platform clock. The names are taken from `CommunitySchedulerClock` rather than
 invented, so the scheduler's clock becomes the seam plus waiting instead of a second definition.
 
