@@ -13,6 +13,7 @@ import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphNodeDescriptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -30,10 +31,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * which supplies connections from the Community engine's HikariCP-backed pool. This engine
  * holds no {@code DataSource} or connection pool reference of its own.
  *
- * <p><b>Allocation:</b> constructs one {@link CommunityGraphDialect} and, when the resolved
- * backend is Cypher-mode, one {@link CommunityNeo4jClient}, both at construction time;
- * {@link #openSession()} allocates one {@link CommunityGraphSession} per call and nothing
- * else.
+ * <p><b>Allocation:</b> constructs one {@link CommunityGraphDialect}, an unmodifiable edge
+ * list view and, when the resolved backend is Cypher-mode, one {@link CommunityNeo4jClient},
+ * all at construction time; {@link #openSession()} allocates one
+ * {@link CommunityGraphSession} per call and nothing else.
  * <p><b>Thread confinement:</b> any thread — the dialect and Neo4j client fields are set
  * once in the constructor and never reassigned, the node/edge registries are
  * {@code CopyOnWriteArrayList}, and {@link #isRunning()} reads a {@code volatile} flag.
@@ -53,6 +54,7 @@ public final class CommunityGraphEngine implements GraphEngine {
     private final CommunityNeo4jClient neo4jClient;
     private final List<GraphNodeDescriptor> nodes;
     private final List<GraphEdgeDescriptor> edges;
+    private final List<GraphEdgeDescriptor> edgesView;
     private volatile boolean running;
 
     /* default */ CommunityGraphEngine(GraphConfig config) {
@@ -62,6 +64,7 @@ public final class CommunityGraphEngine implements GraphEngine {
                 : null;
         this.nodes = new CopyOnWriteArrayList<>();
         this.edges = new CopyOnWriteArrayList<>();
+        this.edgesView = Collections.unmodifiableList(edges);
         this.running = true;
     }
 
@@ -77,7 +80,7 @@ public final class CommunityGraphEngine implements GraphEngine {
         if (!running) {
             throw new IllegalStateException("CommunityGraphEngine is not running");
         }
-        return new CommunityGraphSession(dialect, neo4jClient);
+        return new CommunityGraphSession(dialect, neo4jClient, edgesView);
     }
 
     /**

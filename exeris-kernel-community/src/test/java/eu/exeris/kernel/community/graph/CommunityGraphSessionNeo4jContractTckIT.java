@@ -1,0 +1,69 @@
+/*
+ * Copyright (C) 2025-2026 Exeris Systems.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package eu.exeris.kernel.community.graph;
+
+import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.security.StorageContext;
+import eu.exeris.kernel.spi.graph.GraphConfig;
+import eu.exeris.kernel.spi.graph.GraphEngine;
+import eu.exeris.kernel.tck.contract.graph.AbstractGraphSessionLiveContractTck;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Tag;
+import org.testcontainers.containers.Neo4jContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+import java.util.Map;
+import java.util.function.Supplier;
+
+@Tag("integration")
+@Testcontainers(disabledWithoutDocker = true)
+@DisplayName("Community: GraphSession contract — live Neo4j (Cypher backend)")
+class CommunityGraphSessionNeo4jContractTckIT extends AbstractGraphSessionLiveContractTck {
+
+    private static final String ADMIN_PASSWORD = "testpass";
+
+    @Container
+    static final Neo4jContainer<?> NEO4J = new Neo4jContainer<>("neo4j:5-community")
+            .withAdminPassword(ADMIN_PASSWORD);
+
+    private static CommunityGraphEngine graph;
+
+    private static GraphConfig neo4jConfig() {
+        return new GraphConfig("neo4j", "live_contract", false, false, false, false,
+                Map.of(
+                        "neo4j.uri", NEO4J.getBoltUrl(),
+                        "neo4j.user", "neo4j",
+                        "neo4j.password", ADMIN_PASSWORD
+                ));
+    }
+
+    @BeforeAll
+    static void startEngines() {
+        graph = new CommunityGraphEngine(neo4jConfig());
+        graph.registerNodes(nodeTypes());
+        graph.registerEdges(edgeTypes());
+    }
+
+    @AfterAll
+    static void stopEngines() {
+        if (graph != null) {
+            graph.close();
+        }
+    }
+
+    @Override
+    protected GraphEngine engine() {
+        return graph;
+    }
+
+    @Override
+    protected <T> T callInScope(StorageContext ctx, Supplier<T> action) {
+        return ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ctx)
+                .call(action::get);
+    }
+}

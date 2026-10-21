@@ -49,11 +49,13 @@ final class CommunityGraphSession implements GraphSession {
 
     private final CommunityGraphBackend backend;
 
-    /* default */ CommunityGraphSession(CommunityGraphDialect dialect, CommunityNeo4jClient neo4jClient) {
+    /* default */ CommunityGraphSession(CommunityGraphDialect dialect, CommunityNeo4jClient neo4jClient,
+                                        List<GraphEdgeDescriptor> registeredEdges) {
         Objects.requireNonNull(dialect, "dialect must not be null");
+        Objects.requireNonNull(registeredEdges, "registeredEdges must not be null");
         this.backend = dialect.isCypherMode()
                 ? new CommunityGraphCypherHelper(dialect, neo4jClient)
-                : new CommunityGraphSqlHelper(dialect, this::acquireConnection);
+                : new CommunityGraphSqlHelper(dialect, this::acquireConnection, registeredEdges);
     }
 
     @Override

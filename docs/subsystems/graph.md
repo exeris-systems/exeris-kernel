@@ -112,14 +112,7 @@ segments exclusively through the `MemoryAllocator` SPI. This ensures that graph-
 Built-in `GraphSyncService` orchestration ensures that relational state changes in L1 are atomically reflected
 in L2 graph structure — or rolled back together on failure (`EX-GRPH-5003`).
 
-> **Known gap in the node-delete path (#468):** `GraphSyncService.syncNodeDelete` reaches L2 through
-> `GraphSession.deleteNode`, and that method's two Community backends do not agree on what "reflected"
-> means. The Cypher backend issues `DETACH DELETE`, which removes the node and every edge that touched
-> it. The SQL/PGQ backend issues a bare `DELETE FROM graph_nodes …` — the edge tables have no foreign
-> key back to `graph_nodes` (see `CommunityGraphDialect.buildCreateEdgeTable`) and nothing else in the
-> write path cleans them up, so edge rows referencing the deleted node survive and a later traversal
-> still walks them. Which behaviour a caller gets depends on which backend is bound; the SQL/PGQ path
-> does not honour the "and all connected edges" half of `GraphSession#deleteNode`'s contract.
+Both the Cypher and SQL/PGQ backends remove the node and its connected edges on `deleteNode`; on SQL/PGQ, connected edges in registered edge tables whose descriptor names the deleted node's label on the source or target side are removed.
 
 ---
 
@@ -229,7 +222,7 @@ public interface GraphDialect {
 
 | Driver                          | Tier        | Status      | Production Ready? | Notes                                                    |
 |:--------------------------------|:------------|:-----------:|:-----------------:|:---------------------------------------------------------|
-| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. `deleteNode` does not remove connected edges (#468, dangling rows — see §4 above); `findShortestPath(source, target)` never searches a distinct pair (#466, shared with the Bolt backends below). No test in this tree runs the SQL/PGQ dialect against a live PostgreSQL instance — the only integration coverage (`CommunityGraphBackendParityIT`) exercises Cypher against Neo4j and checks SQL/PGQ only for non-blank generated query text. |
+| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. `findShortestPath(source, target)` never searches a distinct pair (#466, shared with the Bolt backends below). `CommunityGraphSessionPostgresContractTckIT` runs the SQL/PGQ dialect against a live PostgreSQL instance. |
 | Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (17.4–20.8x churn measured across two regimes, see §2). `findShortestPath(source, target)` never searches a distinct pair (#466). |
 | Memgraph Bolt                   | Community   | ✅ TRL-3    | ✅ Yes             | Same driver as Neo4j Bolt (Bolt protocol compatible). Same `findShortestPath(source, target)` gap (#466). |
 
@@ -310,6 +303,11 @@ that is a shortest-path detail, not a BFS one.
   does not test an automatic L1-write-triggers-L2-sync wiring, and none exists — but `GraphSyncService`
   itself has no call site anywhere in this tree outside test code: nothing in application code calls
   it at all.
+- **Live Contract:** `AbstractGraphSessionLiveContractTck` asserts `GraphSession` operations against
+  a live backend (shortest-path resolution over a connected pair, unconnected pairs, `deleteNode` edge
+  cascade and re-creation, single-hop BFS traversal). Bound in Community by
+  `CommunityGraphSessionPostgresContractTckIT` (live PostgreSQL) and
+  `CommunityGraphSessionNeo4jContractTckIT` (live Neo4j).
 
 The following three checks are described in earlier documentation but have no backing test or type in
 this tree today — listed here as gaps, not coverage:
@@ -339,7 +337,7 @@ this tree today — listed here as gaps, not coverage:
   `openSession() → findShortestPath() → close()` hot path (`CarrierPinnedEvent` must not fire). No
   Community (or any other tier) binding subclasses it, so this check does not run in this tree today.
 
-> **TCK bindings:** Both `ExecutionGraphZeroAllocTck` and `GraphChurnRatioTck` now have Community-tier concrete bindings in `exeris-kernel-community/src/test/`. `CommunityExecutionGraphZeroAllocTckTest` runs in the main `build-and-verify` lane (in-process shortest-path hot path, no database). `CommunityGraphChurnRatioTckIT` is `@Tag("integration")` (live Neo4j via Testcontainers) and runs in the `persistence-rls-gate` CI job — gating the Community churn-to-data ratio below the **regression** bound described in §2, not below the published 20x contract, which this path meets in only one of its two allocation regimes.
+> **TCK bindings:** `ExecutionGraphZeroAllocTck`, `AbstractGraphSessionLiveContractTck` and `GraphChurnRatioTck` have Community-tier concrete bindings in `exeris-kernel-community/src/test/`. `CommunityExecutionGraphZeroAllocTckIT`, `CommunityGraphSessionPostgresContractTckIT`, `CommunityGraphSessionNeo4jContractTckIT` and `CommunityGraphChurnRatioTckIT` are `@Tag("integration")` and run in the `persistence-rls-gate` CI job (live PostgreSQL / Neo4j via Testcontainers). `GraphCarrierPinningTck` remains unbound.
 
 ---
 
