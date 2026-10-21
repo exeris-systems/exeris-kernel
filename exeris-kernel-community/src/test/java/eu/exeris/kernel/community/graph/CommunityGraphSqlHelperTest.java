@@ -182,4 +182,37 @@ class CommunityGraphSqlHelperTest {
         verify(statement, never()).bindLong(anyInt(), anyLong());
         verify(statement, never()).bindInt(anyInt(), anyInt());
     }
+
+    @Test
+    @DisplayName("traversePath with an invalid table name surfaces as a PATH GraphQueryException")
+    void traversePathInvalidTableNameSurfacesAsPathQueryException() {
+        CommunityGraphDialect dialect = new CommunityGraphDialect("test_graph");
+        CommunityGraphSqlHelper helper = new CommunityGraphSqlHelper(dialect, () -> connection, List.of());
+        GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(), List.of(GraphHop.of(badTableEdge())));
+
+        assertThatThrownBy(() -> helper.traversePath(path))
+                .isInstanceOf(GraphQueryException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class)
+                .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH"));
+        verify(connection, never()).prepare(any());
+    }
+
+    @Test
+    @DisplayName("streamPathJson with an invalid table name surfaces as a PATH GraphQueryException")
+    void streamPathJsonInvalidTableNameSurfacesAsPathQueryException() {
+        CommunityGraphDialect dialect = new CommunityGraphDialect("test_graph");
+        CommunityGraphSqlHelper helper = new CommunityGraphSqlHelper(dialect, () -> connection, List.of());
+        GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(), List.of(GraphHop.of(badTableEdge())));
+
+        assertThatThrownBy(() -> helper.streamPathJson(path))
+                .isInstanceOf(GraphQueryException.class)
+                .hasCauseInstanceOf(IllegalArgumentException.class)
+                .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH"));
+        verify(connection, never()).prepare(any());
+    }
+
+    private static GraphEdgeDescriptor badTableEdge() {
+        return new GraphEdgeDescriptor("Product", "LINKED", "Product", 1.0, false,
+                GraphEdgeDescriptor.Direction.OUTGOING, "bad-name");
+    }
 }

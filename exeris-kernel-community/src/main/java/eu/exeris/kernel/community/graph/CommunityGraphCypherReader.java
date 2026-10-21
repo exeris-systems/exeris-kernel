@@ -54,9 +54,9 @@ final class CommunityGraphCypherReader {
     // Neo4j driver raises RuntimeException; map to GraphQueryException
     @SuppressWarnings(PMD_AVOID_CATCHING_GENERIC_EXCEPTION)
     /* default */ List<UUID> traversePath(GraphPathSpec path) {
-        String query = dialect.buildPathQuery(path.hops());
         Map<String, Object> params = Map.of(PARAM_SOURCE_ID, path.startNodeId().toString());
         try {
+            String query = dialect.buildPathQuery(path.hops());
             return executor.executeRead(query, params, result -> {
                 List<UUID> ids = new ArrayList<>();
                 while (result.hasNext()) {

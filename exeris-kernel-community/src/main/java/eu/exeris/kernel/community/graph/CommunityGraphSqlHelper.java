@@ -72,14 +72,16 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     @Override
     public List<UUID> traversePath(GraphPathSpec path) {
-        String sql = dialect.buildPathQuery(path.hops());
         List<UUID> results = new ArrayList<>();
-        try (PersistenceConnection conn = acquireConnection();
-             PersistenceStatement stmt = conn.prepare(sql)) {
-            stmt.bindUuid(0, path.startNodeId());
-            try (QueryResult queryResult = stmt.executeQuery()) {
-                while (queryResult.next()) {
-                    results.add(queryResult.row().getUuid(0));
+        try {
+            String sql = dialect.buildPathQuery(path.hops());
+            try (PersistenceConnection conn = acquireConnection();
+                 PersistenceStatement stmt = conn.prepare(sql)) {
+                stmt.bindUuid(0, path.startNodeId());
+                try (QueryResult queryResult = stmt.executeQuery()) {
+                    while (queryResult.next()) {
+                        results.add(queryResult.row().getUuid(0));
+                    }
                 }
             }
         } catch (GraphQueryException e) {
@@ -102,20 +104,22 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     @SuppressWarnings("PMD.AvoidCatchingGenericException")
     @Override
     public LoanedBuffer streamPathJson(GraphPathSpec path) {
-        String sql = "SELECT json_agg(frontier.id) AS json_result FROM ("
-                + dialect.buildPathQuery(path.hops()) + ") AS frontier";
         byte[] jsonBytes;
-        try (PersistenceConnection conn = acquireConnection();
-             PersistenceStatement stmt = conn.prepare(sql)) {
-            stmt.bindUuid(0, path.startNodeId());
-            try (QueryResult queryResult = stmt.executeQuery()) {
-                if (queryResult.next()) {
-                    String json = queryResult.row().getString(0);
-                    jsonBytes = json != null
-                            ? json.getBytes(StandardCharsets.UTF_8)
-                            : CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
-                } else {
-                    jsonBytes = CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
+        try {
+            String sql = "SELECT json_agg(frontier.id) AS json_result FROM ("
+                    + dialect.buildPathQuery(path.hops()) + ") AS frontier";
+            try (PersistenceConnection conn = acquireConnection();
+                 PersistenceStatement stmt = conn.prepare(sql)) {
+                stmt.bindUuid(0, path.startNodeId());
+                try (QueryResult queryResult = stmt.executeQuery()) {
+                    if (queryResult.next()) {
+                        String json = queryResult.row().getString(0);
+                        jsonBytes = json != null
+                                ? json.getBytes(StandardCharsets.UTF_8)
+                                : CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
+                    } else {
+                        jsonBytes = CommunityGraphBufferOps.EMPTY_JSON_ARRAY;
+                    }
                 }
             }
         } catch (GraphQueryException e) {
