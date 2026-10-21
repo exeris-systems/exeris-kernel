@@ -58,5 +58,17 @@
     "since": "0.13",
     "adr": "ADR-007",
     "justification": "Behaviour: Subsystem#initialize() is bounded by an initialization deadline of 300 s by default (ADR-007 amendment 2026-10-20). A subsystem whose initialize() is still running at the deadline is interrupted, and boot fails with EX-BOOT-0003 (SubsystemInitDeadlineException, rawArgs [subsystemName, deadlineMs]); under DEGRADE an optional subsystem is dropped with its dependents. Before 0.13 such a boot waited indefinitely. KernelBootstrap.Builder#initializeDeadline(Duration) changes the deadline, and Duration.ZERO restores the unbounded wait. The new SPI exception is additive; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.graph.ExecutionGraphZeroAllocTck",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "TCK contract: seeds a connected pair through a session and measures findShortestPath(GraphEdgeDescriptor, UUID, UUID); a binding needs a live backend; bootstrapSubsystem throws IllegalStateException unless the engine persists the seeded edges and the three-argument search finds the 2-hop path; source-compatible."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#deleteNode(java.lang.String, java.util.UUID)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour on the Community SQL/PGQ binding: connected edges in registered tables are removed; the SPI sentence was already \"and all connected edges\"; a registered edge table that names the label but whose table name is not a valid SQL identifier makes the call throw GraphQueryException before any statement runs, and one that does not exist in the current scope fails the statement with the persistence engine's translated error; nothing is deleted in either case; no signature change."
   }
 ]

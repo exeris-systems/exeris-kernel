@@ -17,7 +17,9 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -38,17 +40,25 @@ import java.util.regex.Pattern;
 final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     private static final String ROOT_NODE_QUERY_TYPE = "ROOT_NODE";
     private static final Pattern SQL_IDENTIFIER_PATTERN = Pattern.compile("^[A-Za-z]\\w*$");
+    private static final int SIDE_SOURCE = 1;
+    private static final int SIDE_TARGET = 2;
+    private static final int INITIAL_SQL_CAPACITY = 256;
 
     private final CommunityGraphDialect dialect;
     private final Supplier<PersistenceConnection> connectionSupplier;
+    private final List<GraphEdgeDescriptor> registeredEdges;
 
     /* default */ CommunityGraphSqlHelper(
             CommunityGraphDialect dialect,
-            Supplier<PersistenceConnection> connectionSupplier) {
+            Supplier<PersistenceConnection> connectionSupplier,
+            List<GraphEdgeDescriptor> registeredEdges) {
         this.dialect = Objects.requireNonNull(dialect, "dialect must not be null");
         this.connectionSupplier = Objects.requireNonNull(
                 connectionSupplier,
                 "connectionSupplier must not be null");
+        this.registeredEdges = Objects.requireNonNull(
+                registeredEdges,
+                "registeredEdges must not be null");
     }
 
     /**
@@ -210,19 +220,96 @@ final class CommunityGraphSqlHelper implements CommunityGraphBackend {
     }
 
     /**
-     * Deletes the row identified by {@code nodeId} and {@code label} from
-     * {@code graph_nodes}. A no-op if no such row exists.
+     * Builds the SQL statement for deleting a node and cascading the deletion to all
+     * connected edges across registered edge tables.
      *
-     * <p>Unlike the Cypher backend's {@code deleteNode} ({@code DETACH DELETE}), this does
-     * not remove edge rows referencing {@code nodeId} — the edge tables are separate from
-     * {@code graph_nodes} and are not cleaned up here.
+     * <p>One statement is atomic without a transaction (the SQL backend has none):
+     * PostgreSQL runs every data-modifying {@code WITH} sub-statement exactly once, to
+     * completion, on one snapshot.
+     *
+     * <p>Edge rows carry no label; a node of label {@code L} is connected through the edges
+     * whose descriptor names {@code L} on that side. That is exactly the set Neo4j's
+     * {@code MATCH (n:L {id}) DETACH DELETE n} removes, because Cypher {@code createEdge}
+     * {@code MERGE}s endpoints with the descriptor's labels. A label the node does not carry
+     * therefore removes nothing on either backend.
+     *
+     * <p>Only registered edge descriptors are cascaded; an edge table created outside
+     * {@code registerEdges} is not known to the engine. A registered table missing in the
+     * current scope fails the whole statement (nothing is deleted).
+     *
+     * @param label node label to delete
+     * @return the complete atomic delete SQL statement
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if a registered edge table naming {@code label} is not a valid SQL identifier
+     */
+    /* default */ String buildDeleteNodeSql(String label) {
+        Map<String, Integer> sides = resolveCascadeSides(label);
+        if (sides.isEmpty()) {
+            return "WITH arg (id) AS (SELECT CAST($1 AS uuid))\n"
+                    + "DELETE FROM graph_nodes WHERE id = (SELECT id FROM arg) AND label = $2";
+        }
+        StringBuilder sqlBuilder = new StringBuilder(INITIAL_SQL_CAPACITY);
+        sqlBuilder.append("WITH arg (id) AS (SELECT CAST($1 AS uuid)),\n");
+        int index = 0;
+        int total = sides.size();
+        for (Map.Entry<String, Integer> entry : sides.entrySet()) {
+            String table = entry.getKey();
+            int side = entry.getValue();
+            String pred = deletePredicate(side);
+            sqlBuilder.append("     del_e").append(index).append(" AS (DELETE FROM ").append(table)
+                    .append(" WHERE ").append(pred).append(')');
+            if (index < total - 1) {
+                sqlBuilder.append(",\n");
+            } else {
+                sqlBuilder.append('\n');
+            }
+            index++;
+        }
+        sqlBuilder.append("DELETE FROM graph_nodes WHERE id = (SELECT id FROM arg) AND label = $2");
+        return sqlBuilder.toString();
+    }
+
+    private Map<String, Integer> resolveCascadeSides(String label) {
+        Map<String, Integer> sides = new LinkedHashMap<>();
+        for (GraphEdgeDescriptor e : registeredEdges) {
+            int side = (e.sourceNode().equals(label) ? SIDE_SOURCE : 0)
+                    | (e.targetNode().equals(label) ? SIDE_TARGET : 0);
+            if (side == 0) {
+                continue;
+            }
+            sides.merge(requireSqlIdentifier(e.tableName()), side, (a, b) -> a | b);
+        }
+        return sides;
+    }
+
+    private static String deletePredicate(int side) {
+        if (side == SIDE_SOURCE) {
+            return "source_id = (SELECT id FROM arg)";
+        }
+        if (side == SIDE_TARGET) {
+            return "target_id = (SELECT id FROM arg)";
+        }
+        return "source_id = (SELECT id FROM arg) OR target_id = (SELECT id FROM arg)";
+    }
+
+    /**
+     * Deletes the row identified by {@code nodeId} and {@code label} from
+     * {@code graph_nodes} and cascades the deletion to all connected edges in registered
+     * edge tables. A no-op if no such row exists.
      *
      * @param label  node label
      * @param nodeId node ID
+     * @throws eu.exeris.kernel.spi.exceptions.graph.GraphQueryException ({@code EX-GRPH-5002})
+     *         if a registered edge table naming {@code label} is not a valid SQL identifier;
+     *         no statement is prepared. A registered table missing in the current scope fails
+     *         the statement with the persistence engine's translated error, and nothing is
+     *         deleted.
      */
     @Override
     public void deleteNode(String label, UUID nodeId) {
-        String sql = "DELETE FROM graph_nodes WHERE id = $1 AND label = $2";
+        Objects.requireNonNull(label, "label must not be null");
+        Objects.requireNonNull(nodeId, "nodeId must not be null");
+        String sql = buildDeleteNodeSql(label);
         try (PersistenceConnection conn = acquireConnection();
              PersistenceStatement stmt = conn.prepare(sql)) {
             stmt.bindUuid(0, nodeId);
