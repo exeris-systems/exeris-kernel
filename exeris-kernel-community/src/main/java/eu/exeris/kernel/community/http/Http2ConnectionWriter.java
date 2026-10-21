@@ -11,8 +11,11 @@ import eu.exeris.kernel.core.http.http2.Http2FlowController;
 import eu.exeris.kernel.core.http.http2.Http2FrameEncoder;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2FrameType;
+import eu.exeris.kernel.core.http.jfr.StreamBackpressureParkEvent;
+import eu.exeris.kernel.core.http.sse.SseEventEncoder;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
+import eu.exeris.kernel.spi.http.StreamEvent;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.transport.TransportStream;
@@ -34,6 +37,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * its writes handing bytes to an outbound queue rather than waiting for the peer, so a hold is short
  * and never waits on the reader. {@code CommunityWebSocketEgress} orders the senders of a WebSocket
  * connection with a lock for the same reason.
+ *
+ * <p>A held-open event stream is written the same way: its head is a header block encoded and written
+ * in one hold, each event is one or more DATA frames taken from the credit of both windows, and its end
+ * is an empty DATA frame carrying END_STREAM, which no window limits.
  *
  * <p>Invariants:
  * <ul>
@@ -65,7 +72,9 @@ import java.util.concurrent.locks.ReentrantLock;
  * {@link #applyStreamWindowUpdate}, {@link #applyInitialWindowSize}, {@link #resetByPeer}) allocate
  * nothing while the lock is uncontended; a contended acquire allocates a queue node. A respond-once
  * response allocates one header-block buffer and one buffer holding its coalesced frames; a body frame
- * allocates its header buffer and a slice handle.
+ * allocates its header buffer and a slice handle. An event allocates its frame buffer and one close
+ * action, and each frame cut from an event larger than the credit adds a nine-byte header buffer and a
+ * slice handle; no event is ever queued on the heap, a sender without credit parks.
  * <p><b>Thread confinement:</b> none — every method may be called from any thread; the lock orders
  * the writers.
  * <p><b>Ownership:</b> buffers handed to {@code queueWrite} belong to the transport; the writer closes
@@ -101,12 +110,18 @@ final class Http2ConnectionWriter {
     private static final int HEADER_BLOCK_BYTES = 65_536;
     private static final int CONTROL_FRAME_BYTES = 64;
     private static final int HTTP2_MAX_DYNAMIC_TABLE_SIZE = 4096;
+    private static final int STREAM_HEAD_SCRATCH_BYTES = 256;
     private static final int FLAG_END_STREAM = 0x01;
     private static final int FLAG_END_HEADERS = 0x04;
     private static final int ACQUIRE_CLOSED = -1;
     private static final int ACQUIRE_DEADLINE = -2;
     private static final int ACQUIRE_RETRY = 0;
     private static final String HEADER_CONTENT_LENGTH = "Content-Length";
+    private static final String HEADER_STATUS = ":status";
+    private static final String HEADER_CONTENT_TYPE = "content-type";
+    private static final String HEADER_CACHE_CONTROL = "cache-control";
+    private static final String EVENT_STREAM_TYPE = "text/event-stream; charset=utf-8";
+    private static final String NO_CACHE = "no-cache";
 
     private final TransportStream transport;
     private final MemoryAllocator allocator;
@@ -121,6 +136,7 @@ final class Http2ConnectionWriter {
     private int peerInitialWindowSize = Http2FlowController.DEFAULT_WINDOW_SIZE;
     private boolean connectionClosed;
     private final AtomicReference<Runnable> beforeParkHook = new AtomicReference<>();
+    private final AtomicReference<Runnable> afterHeadEncodedHook = new AtomicReference<>();
 
     /** How one attempt to send a body or an event ended. */
     /* default */ enum SendOutcome {
@@ -178,7 +194,7 @@ final class Http2ConnectionWriter {
             try {
                 transport.write(frame, length);
             } catch (RuntimeException failure) {
-                failConnectionLocked();
+                failTransportLocked();
                 throw failure;
             }
         } finally {
@@ -229,14 +245,25 @@ final class Http2ConnectionWriter {
     }
 
     /**
-     * Test seam: installs a hook that runs on a sender thread as the first thing after it has
-     * released the lock on finding no credit, before it parks. The sender is already published as
-     * parked there, so whatever the hook applies must find and wake it.
+     * Test seam: installs a hook that runs on a sender thread immediately before it parks, after it has
+     * released the lock on finding no credit and re-read the transport's release count. The sender is
+     * already published as parked there, so whatever the hook applies must find and wake it.
      *
      * @param hook the hook, or {@code null} to remove it
      */
     /* default */ void beforeParkForTest(Runnable hook) {
         this.beforeParkHook.set(hook);
+    }
+
+    /**
+     * Test seam: installs a hook that runs on the sending thread inside {@link #writeStreamHead}, after
+     * the head's header block is encoded and before it is written. The hook runs with the lock held, so
+     * a thread that must not overtake the encoder's order cannot pass it.
+     *
+     * @param hook the hook, or {@code null} to remove it
+     */
+    /* default */ void afterHeadEncodedForTest(Runnable hook) {
+        this.afterHeadEncodedHook.set(hook);
     }
 
     // ------------------------------------------------------------------ frame loop
@@ -394,13 +421,18 @@ final class Http2ConnectionWriter {
      *
      * @param streamId         the stream id
      * @param pendingIncrement WINDOW_UPDATE credit the peer sent while the request was still arriving
-     * @return the stream, or {@code null} when the connection has ended, the table is full, or the
-     *         credit overflows the window (the stream is then reset with FLOW_CONTROL_ERROR)
+     * @return the stream, or {@code null} when the connection has ended, the table is full (the stream
+     *         is then refused with REFUSED_STREAM), or the credit overflows the window (the stream is
+     *         then reset with FLOW_CONTROL_ERROR)
      */
     /* default */ Http2OutboundStream register(int streamId, long pendingIncrement) {
         lock.lock();
         try {
-            if (connectionClosed || streamCount == streams.length) {
+            if (connectionClosed) {
+                return null;
+            }
+            if (streamCount == streams.length) {
+                writeRstStreamLocked(streamId, Http2ErrorCode.REFUSED_STREAM);
                 return null;
             }
             Http2OutboundStream stream = new Http2OutboundStream(streamId, peerInitialWindowSize);
@@ -496,7 +528,7 @@ final class Http2ConnectionWriter {
         int sent = 0;
         while (sent < length) {
             int credit = acquireCredit(stream, false,
-                    Math.min(length - sent, MAX_FRAME_PAYLOAD_BYTES), 0L);
+                    Math.min(length - sent, MAX_FRAME_PAYLOAD_BYTES), 0L, -1L);
             if (credit < 0) {
                 return SendOutcome.CLOSED;
             }
@@ -515,6 +547,218 @@ final class Http2ConnectionWriter {
             }
         }
         return SendOutcome.WRITTEN;
+    }
+
+    // ------------------------------------------------------------------ stream open and events
+
+    /**
+     * Writes the SSE response head of a stream: HEADERS with END_HEADERS and without END_STREAM,
+     * carrying {@code :status 200}, {@code content-type: text/event-stream} and
+     * {@code cache-control: no-cache}. The block is encoded and written within one hold, so it
+     * reaches the wire in the order the shared HPACK encoder produced it. There is no
+     * {@code content-length}: the body ends with END_STREAM.
+     *
+     * @param stream the response stream
+     * @return {@code false} when the stream or the connection had already ended and nothing was written
+     */
+    /* default */ boolean writeStreamHead(Http2OutboundStream stream) {
+        lock.lock();
+        try {
+            if (stream.state != Http2OutboundStream.State.OPEN || connectionClosed) {
+                return false;
+            }
+            try (LoanedBuffer scratch = allocator.allocateNetwork(STREAM_HEAD_SCRATCH_BYTES)) {
+                MemorySegment target = scratch.segment();
+                long position = FRAME_HEADER;
+                position = encoder.encodeHeader(target, position, HEADER_STATUS, "200", false);
+                position = encoder.encodeHeader(target, position, HEADER_CONTENT_TYPE, EVENT_STREAM_TYPE, false);
+                position = encoder.encodeHeader(target, position, HEADER_CACHE_CONTROL, NO_CACHE, false);
+                Runnable encoded = afterHeadEncodedHook.get();
+                if (encoded != null) {
+                    encoded.run();
+                }
+                Http2FrameEncoder.writeHeader(target, 0L, (int) (position - FRAME_HEADER),
+                        Http2FrameType.HEADERS.code(), FLAG_END_HEADERS, stream.streamId);
+                scratch.setSize(position);
+                try {
+                    transport.write(target, (int) position);
+                } catch (RuntimeException failure) {
+                    failTransportLocked();
+                    throw failure;
+                }
+            }
+            stream.headWritten = true;
+            return true;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Frames one SSE event as DATA and sends it, parking for credit as often as it must. The event is
+     * framed once into a buffer of {@code eventAllocator}; an event that fits the available credit goes
+     * out as one frame with its header in place, a larger one as 16 KiB frames cut from the same buffer.
+     * The event's bytes count against the stream's transport-outstanding cap until the transport
+     * releases the buffer.
+     *
+     * @param stream                  the response stream
+     * @param event                   the event to send
+     * @param encodedLength           the event's length in its SSE framing
+     * @param authDeadlineEpochMillis deadline for the wait for credit, {@code <= 0} for none
+     * @param eventsEmitted           events already sent on the stream, for the backpressure event
+     * @param eventAllocator          allocator for the event's frame buffer
+     * @return {@link SendOutcome#WRITTEN}, {@link SendOutcome#CLOSED} when the stream or the connection
+     *         ended first, or {@link SendOutcome#DEADLINE} when the deadline passed while waiting
+     */
+    // CloseResource / UseTryWithResources: the framed buffer changes owner at queueWrite, so it is closed
+    // here only on the paths on which nothing took it.
+    @SuppressWarnings({"PMD.CloseResource", "PMD.UseTryWithResources"})
+    /* default */ SendOutcome sendEvent(Http2OutboundStream stream, StreamEvent event, int encodedLength,
+                                        long authDeadlineEpochMillis, long eventsEmitted,
+                                        MemoryAllocator eventAllocator) {
+        LoanedBuffer framed = eventAllocator.allocateNetwork(FRAME_HEADER + encodedLength);
+        boolean ownsFramed = true;
+        boolean accounted = false;
+        try {
+            SseEventEncoder.encodeInto(event, framed.segment(), FRAME_HEADER);
+            framed.setSize((long) FRAME_HEADER + encodedLength);
+            int sent = 0;
+            while (sent < encodedLength) {
+                int credit = acquireCredit(stream, sent == 0,
+                        Math.min(encodedLength - sent, MAX_FRAME_PAYLOAD_BYTES),
+                        authDeadlineEpochMillis, eventsEmitted);
+                if (credit == ACQUIRE_DEADLINE) {
+                    return SendOutcome.DEADLINE;
+                }
+                if (credit < 0) {
+                    return SendOutcome.CLOSED;
+                }
+                try {
+                    if (!accounted) {
+                        accountOutstanding(stream, framed, encodedLength);
+                        accounted = true;
+                    }
+                    if (sent == 0 && credit == encodedLength) {
+                        // The whole event in one frame: the header goes in front of the payload, so
+                        // the buffer is handed over as it is.
+                        ownsFramed = false;
+                        if (!queueEventFrame(stream, framed, credit)) {
+                            return SendOutcome.CLOSED;
+                        }
+                    } else if (!queueDataFrame(stream, framed, (long) FRAME_HEADER + sent, credit, 0)) {
+                        return SendOutcome.CLOSED;
+                    }
+                    sent += credit;
+                } finally {
+                    lock.unlock();
+                }
+            }
+            return SendOutcome.WRITTEN;
+        } finally {
+            if (ownsFramed) {
+                framed.close();
+            }
+        }
+    }
+
+    /**
+     * Counts {@code bytes} against the stream's transport-outstanding cap and registers the release on
+     * {@code framed}, undoing the count if the registration fails.
+     */
+    private static void accountOutstanding(Http2OutboundStream stream, LoanedBuffer framed, int bytes) {
+        stream.outstandingBytes.addAndGet(bytes);
+        try {
+            framed.addCloseAction(() -> stream.releaseOutstanding(bytes));
+        } catch (RuntimeException failure) {
+            stream.outstandingBytes.addAndGet(-bytes);
+            throw failure;
+        }
+    }
+
+    /**
+     * Writes a whole event as one DATA frame, with the lock held and {@code credit} already taken: the
+     * frame header goes into the nine bytes the event buffer reserves in front of the payload. The
+     * buffer is handed to the transport, which closes it, or closed here when that fails; the credit
+     * returns to both windows when nothing of the frame reached the transport.
+     *
+     * @return {@code false} when the transport failed and the connection has ended
+     */
+    private boolean queueEventFrame(Http2OutboundStream stream, LoanedBuffer framed, int credit) {
+        try {
+            Http2FrameEncoder.writeHeader(framed.segment(), 0L, credit,
+                    Http2FrameType.DATA.code(), 0, stream.streamId);
+        } catch (RuntimeException failure) {
+            framed.close();
+            stream.sendWindow.increment(credit);
+            connectionWindow.increment(credit);
+            throw failure;
+        }
+        return queueWriteOwned(framed, FRAME_HEADER + credit);
+    }
+
+    /**
+     * Ends a stream gracefully: an empty DATA frame with END_STREAM, which no window limits, so this
+     * never waits. Does nothing for a stream that has already ended.
+     *
+     * @param stream the response stream
+     */
+    /* default */ void endStream(Http2OutboundStream stream) {
+        lock.lock();
+        try {
+            if (stream.state != Http2OutboundStream.State.OPEN || connectionClosed) {
+                return;
+            }
+            try (LoanedBuffer frame = allocator.allocateNetwork(FRAME_HEADER)) {
+                Http2FrameEncoder.writeHeader(frame.segment(), 0L, 0,
+                        Http2FrameType.DATA.code(), FLAG_END_STREAM, stream.streamId);
+                frame.setSize(FRAME_HEADER);
+                try {
+                    transport.write(frame.segment(), FRAME_HEADER);
+                } catch (RuntimeException failure) {
+                    failTransportLocked();
+                    throw failure;
+                }
+            }
+            stream.state = Http2OutboundStream.State.END_STREAM_SENT;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * Sends a complete response on a response stream whose head has not been written, from the
+     * stream's own thread: HEADERS and as much of the body as both windows carry in one write, and the
+     * rest as DATA once credit allows, which may park. Closes the response body.
+     *
+     * @param stream   the response stream
+     * @param response the response; its body is closed here
+     */
+    /* default */ void respondOnStream(Http2OutboundStream stream, HttpResponse response) {
+        LoanedBuffer body = response.body();
+        try (body) {
+            int bodyBytes = body == null ? 0 : (int) body.size();
+            int now;
+            lock.lock();
+            try {
+                if (stream.state != Http2OutboundStream.State.OPEN || connectionClosed) {
+                    return;
+                }
+                int credit = Math.clamp(Math.min(stream.sendWindow.windowSize(), connectionWindow.windowSize()),
+                        0, Integer.MAX_VALUE);
+                now = Math.min(bodyBytes, credit);
+                writeCoalesced(stream.streamId, response, body, now, bodyBytes, now == bodyBytes);
+                stream.headWritten = true;
+                stream.sendWindow.consume(now);
+                connectionWindow.consume(now);
+                if (now == bodyBytes) {
+                    stream.state = Http2OutboundStream.State.END_STREAM_SENT;
+                    return;
+                }
+            } finally {
+                lock.unlock();
+            }
+            sendBody(stream, body, now, bodyBytes - now, true);
+        }
     }
 
     /**
@@ -604,15 +848,16 @@ final class Http2ConnectionWriter {
     /**
      * Waits until {@code stream} may send at least one byte, takes up to {@code maxWanted} bytes of both
      * windows, and returns that count with the lock HELD; the caller writes and unlocks. Returns
-     * {@link #ACQUIRE_CLOSED} or {@link #ACQUIRE_DEADLINE} without the lock.
+     * {@link #ACQUIRE_CLOSED} or {@link #ACQUIRE_DEADLINE} without the lock. A non-negative
+     * {@code eventsEmitted} makes the first park of this wait a backpressure event.
      */
     private int acquireCredit(Http2OutboundStream stream, boolean admitEvent, int maxWanted,
-                              long deadlineEpochMillis) {
+                              long deadlineEpochMillis, long eventsEmitted) {
+        boolean parkRecorded = false;
         while (true) {
             long window;
             boolean windowLimited;
             boolean handedOver = false;
-            boolean publishedForPark = false;
             lock.lock();
             try {
                 if (stream.state != Http2OutboundStream.State.OPEN || connectionClosed) {
@@ -629,19 +874,9 @@ final class Http2ConnectionWriter {
                 }
                 windowLimited = window <= 0;
                 stream.parkedSender.set(Thread.currentThread());
-                publishedForPark = true;
             } finally {
                 if (!handedOver) {
                     lock.unlock();
-                }
-                // First thing after the lock is released, so a test can apply a change in the gap
-                // between "no credit, lock released" and "parked": the sender must already be
-                // published for that change to find it.
-                if (publishedForPark) {
-                    Runnable hook = beforeParkHook.get();
-                    if (hook != null) {
-                        hook.run();
-                    }
                 }
             }
             // A transport release decrements outstandingBytes and then reads parkedSender, without
@@ -650,11 +885,34 @@ final class Http2ConnectionWriter {
                 stream.parkedSender.set(null);
                 continue;
             }
+            parkRecorded = beforePark(stream, window, eventsEmitted, parkRecorded);
             int outcome = parkSender(stream, deadlineEpochMillis);
             if (outcome != ACQUIRE_RETRY) {
                 return outcome;
             }
         }
+    }
+
+    /**
+     * What a sender does immediately before it parks. The test hook runs first, so a test can apply a
+     * change in the gap between "no credit, lock released, re-checked" and "parked": the sender is
+     * already published, so the change must find it and leave it a permit. The backpressure event is a
+     * single-phase commit made before the park, once per credit wait and not per wakeup.
+     *
+     * @return whether the backpressure event has been recorded for this wait
+     */
+    private boolean beforePark(Http2OutboundStream stream, long window, long eventsEmitted,
+                               boolean alreadyRecorded) {
+        Runnable hook = beforeParkHook.get();
+        if (hook != null) {
+            hook.run();
+        }
+        if (alreadyRecorded || eventsEmitted < 0) {
+            return alreadyRecorded;
+        }
+        StreamBackpressureParkEvent.emit(transport.streamId(), stream.streamId,
+                stream.outstandingBytes.get(), window, eventsEmitted);
+        return true;
     }
 
     /**
@@ -705,7 +963,23 @@ final class Http2ConnectionWriter {
             rst.setSize(written);
             transport.write(rst.segment(), (int) written);
         } catch (RuntimeException _) {
-            failConnectionLocked();
+            failTransportLocked();
+        }
+    }
+
+    /**
+     * Ends the connection after the transport failed on a write, and closes the transport: the frame
+     * loop is parked reading the same stream, and a stream whose write path has failed does not
+     * necessarily wake its reader, so without the close the loop would wait for a peer that can no
+     * longer be answered.
+     */
+    private void failTransportLocked() {
+        failConnectionLocked();
+        try {
+            transport.close();
+        } catch (RuntimeException _) {
+            // Already failing: the close exists to wake the reader, and a stream that cannot close
+            // has nothing more to wake.
         }
     }
 
@@ -744,7 +1018,7 @@ final class Http2ConnectionWriter {
         } catch (RuntimeException _) {
             // The transport hands the loan back to the caller on any throw (TransportStream#queueWrite).
             buf.close();
-            failConnectionLocked();
+            failTransportLocked();
             return false;
         }
     }
@@ -774,7 +1048,7 @@ final class Http2ConnectionWriter {
                 try {
                     transport.write(outbound.segment(), (int) position);
                 } catch (RuntimeException failure) {
-                    failConnectionLocked();
+                    failTransportLocked();
                     throw failure;
                 }
             }

@@ -7,6 +7,7 @@ package eu.exeris.kernel.community.http;
 import eu.exeris.kernel.core.http.routing.PathParamStreamExchange;
 import eu.exeris.kernel.core.http.sse.HttpStreamEngine;
 import eu.exeris.kernel.core.http.sse.StreamAdmissionController;
+import eu.exeris.kernel.core.http.sse.StreamEgress;
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpRequest;
@@ -18,13 +19,15 @@ import eu.exeris.kernel.spi.transport.TransportStream;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.ToLongFunction;
 
 /**
  * Community: routes a parsed request to the SSE streaming path when its route is streaming-flagged
  * (ADR-043 obligation 7, amendment A1). A streaming route resolves to an {@link HttpStreamHandler}
  * through the bound handler's {@link StreamRouteResolver}; a handler that does not implement it gets
  * respond-once dispatch only. The handler runs on the stream's own virtual thread (the "1 VT per
- * stream" model — the same VT the transport already dispatched this stream on).
+ * stream" model): on HTTP/1.1 the one the transport already dispatched the connection on, on HTTP/2 a
+ * thread forked for the stream, because many streams share one connection and its frame loop.
  *
  * <p>The SSE wire framing and the held-open egress mechanics live in the tier-blind Core
  * {@link HttpStreamEngine}; this class is the NIO-side wiring that hands it the
@@ -42,8 +45,11 @@ final class CommunityHttpStreamDispatcher {
     private static final int CREDIT_WINDOW_BYTES = Integer.getInteger(
             "exeris.http.stream.creditWindowBytes", HttpStreamEngine.DEFAULT_CREDIT_WINDOW_BYTES);
 
+    private static final ToLongFunction<HttpRequest> NO_AUTH_DEADLINE = request -> 0L;
+
     private final MemoryAllocator allocator;
     private final StreamAdmissionController admissionController;
+    private final ToLongFunction<HttpRequest> authDeadline;
     private final AtomicInteger activeStreams = new AtomicInteger(0);
 
     /* default */ CommunityHttpStreamDispatcher(MemoryAllocator allocator) {
@@ -52,8 +58,33 @@ final class CommunityHttpStreamDispatcher {
 
     /* default */ CommunityHttpStreamDispatcher(MemoryAllocator allocator,
                                                 StreamAdmissionController admissionController) {
+        this(allocator, admissionController, NO_AUTH_DEADLINE);
+    }
+
+    /**
+     * Creates a dispatcher whose HTTP/2 streams carry a fail-closed deadline.
+     *
+     * @param allocator           the allocator events are framed with
+     * @param admissionController admits or sheds a new stream open, or {@code null} for none
+     * @param authDeadline        the JWT-expiry deadline of a request as epoch milliseconds, {@code <= 0}
+     *                            for none; production passes none until the identity provider surfaces a
+     *                            principal expiry on the streaming path
+     */
+    /* default */ CommunityHttpStreamDispatcher(MemoryAllocator allocator,
+                                                StreamAdmissionController admissionController,
+                                                ToLongFunction<HttpRequest> authDeadline) {
         this.allocator = Objects.requireNonNull(allocator, "allocator must not be null");
         this.admissionController = admissionController;
+        this.authDeadline = Objects.requireNonNull(authDeadline, "authDeadline must not be null");
+    }
+
+    /**
+     * Returns the allocator the dispatcher frames events with.
+     *
+     * @return the allocator
+     */
+    /* default */ MemoryAllocator allocator() {
+        return allocator;
     }
 
     /**
@@ -120,6 +151,42 @@ final class CommunityHttpStreamDispatcher {
         activeStreams.incrementAndGet();
         HttpStreamEngine engine = HttpStreamEngine.open(
                 request, stream, allocator, authDeadlineEpochMillis, CREDIT_WINDOW_BYTES);
+        return runHandler(engine, match);
+    }
+
+    /**
+     * Opens an SSE stream on one HTTP/2 stream of a connection, writes its head through {@code egress},
+     * and runs the handler's emit loop on the calling thread, which belongs to this stream alone. The
+     * stream ends, gracefully or not, without closing the connection; a {@link StreamClosedException}
+     * that unwinds the handler is the designed end of the loop and is swallowed, as on HTTP/1.1.
+     *
+     * @param request the parsed request that opened the stream
+     * @param egress  the HTTP/2 side of the stream
+     * @param match   the resolved stream route
+     * @return what ended the stream, or {@code null} when it closed gracefully
+     */
+    /* default */ StreamClosedException dispatchHttp2Stream(HttpRequest request,
+                                                            StreamEgress egress,
+                                                            StreamMatch match) {
+        if (admissionController != null) {
+            admissionController.admit(egress.transport().streamId(), activeStreams.get());
+        }
+        activeStreams.incrementAndGet();
+        HttpStreamEngine engine;
+        boolean opened = false;
+        try {
+            engine = HttpStreamEngine.open(request, egress, authDeadline.applyAsLong(request));
+            opened = true;
+        } finally {
+            // A head that cannot be written must not leave the slot counted for a stream that never ran.
+            if (!opened) {
+                activeStreams.decrementAndGet();
+            }
+        }
+        return runHandler(engine, match);
+    }
+
+    private StreamClosedException runHandler(HttpStreamEngine engine, StreamMatch match) {
         try {
             // An exact stream route gets the engine itself; only a template pays for the decorator.
             match.handler().handle(match.params().isEmpty()
