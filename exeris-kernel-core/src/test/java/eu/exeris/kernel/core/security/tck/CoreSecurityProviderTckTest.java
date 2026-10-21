@@ -23,7 +23,7 @@ class CoreSecurityProviderTckTest extends AbstractSecurityProviderTck {
 
     @Override
     protected SecurityProvider selectAmong(List<SecurityProvider> candidates) {
-        // The kernel selects this SPI through BootstrapProviderSelector.
+        // The kernel's provider selection routine is BootstrapProviderSelector.
         return BootstrapProviderSelector.selectHighestPriority(candidates, SecurityProvider::priority).orElseThrow();
     }
 

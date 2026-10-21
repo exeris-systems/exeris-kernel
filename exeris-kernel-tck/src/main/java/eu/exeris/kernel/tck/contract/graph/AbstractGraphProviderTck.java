@@ -120,8 +120,10 @@ public abstract class AbstractGraphProviderTck {
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            GraphProvider higher = PriorityRivals.rival(GraphProvider.class, provider.priority() + 1, "tck-higher-priority");
-            GraphProvider lower = PriorityRivals.rival(GraphProvider.class, provider.priority() - 1, "tck-lower-priority");
+            GraphProvider higher = PriorityRivals.rival(
+                    GraphProvider.class, Math.addExact(provider.priority(), 1), "tck-higher-priority");
+            GraphProvider lower = PriorityRivals.rival(
+                    GraphProvider.class, Math.subtractExact(provider.priority(), 1), "tck-lower-priority");
 
             assertThat(selectAmong(List.of(lower, provider, higher))).as("higher-priority rival listed last").isSameAs(higher);
             assertThat(selectAmong(List.of(higher, provider, lower))).as("higher-priority rival listed first").isSameAs(higher);

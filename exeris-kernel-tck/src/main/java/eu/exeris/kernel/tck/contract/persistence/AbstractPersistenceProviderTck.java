@@ -134,8 +134,10 @@ public abstract class AbstractPersistenceProviderTck {
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            PersistenceProvider higher = PriorityRivals.rival(PersistenceProvider.class, provider.priority() + 1, "tck-higher-priority");
-            PersistenceProvider lower = PriorityRivals.rival(PersistenceProvider.class, provider.priority() - 1, "tck-lower-priority");
+            PersistenceProvider higher = PriorityRivals.rival(
+                    PersistenceProvider.class, Math.addExact(provider.priority(), 1), "tck-higher-priority");
+            PersistenceProvider lower = PriorityRivals.rival(
+                    PersistenceProvider.class, Math.subtractExact(provider.priority(), 1), "tck-lower-priority");
 
             assertThat(selectAmong(List.of(lower, provider, higher))).as("higher-priority rival listed last").isSameAs(higher);
             assertThat(selectAmong(List.of(higher, provider, lower))).as("higher-priority rival listed first").isSameAs(higher);

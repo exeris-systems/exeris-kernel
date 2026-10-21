@@ -21,7 +21,7 @@ class CoreHttpProviderTckTest extends AbstractHttpProviderTck {
 
     @Override
     protected HttpProvider selectAmong(List<HttpProvider> candidates) {
-        // The kernel selects this SPI through BootstrapProviderSelector.
+        // The kernel's provider selection routine is BootstrapProviderSelector.
         return BootstrapProviderSelector.selectHighestPriority(candidates, HttpProvider::priority).orElseThrow();
     }
 }

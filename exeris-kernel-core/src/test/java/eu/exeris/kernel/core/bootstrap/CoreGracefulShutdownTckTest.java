@@ -101,7 +101,7 @@ class CoreGracefulShutdownTckTest extends AbstractGracefulShutdownTck {
                 .classLoader(shim)
                 .build();
 
-        bootThread = Thread.ofPlatform().name("core-graceful-shutdown-tck-boot").unstarted(() -> {
+        bootThread = Thread.ofPlatform().daemon(true).name("core-graceful-shutdown-tck-boot").unstarted(() -> {
             try {
                 bootstrap.boot(() -> {
                     started.countDown();
@@ -136,7 +136,6 @@ class CoreGracefulShutdownTckTest extends AbstractGracefulShutdownTck {
     void releaseKernelMain() {
         release.countDown();
         joinBootThread();
-        assertThat(bootThread.isAlive()).isFalse();
         assertThat(bootFailure.get()).isNull();
     }
 
@@ -147,6 +146,7 @@ class CoreGracefulShutdownTckTest extends AbstractGracefulShutdownTck {
         }
         try {
             thread.join(JOIN_MILLIS);
+            assertThat(thread.isAlive()).as("boot thread ended within %d ms of the release", JOIN_MILLIS).isFalse();
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             throw new AssertionError("Interrupted while joining the boot thread", ex);

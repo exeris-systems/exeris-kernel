@@ -259,8 +259,10 @@ public abstract class AbstractHttpProviderTck {
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            HttpProvider higher = PriorityRivals.rival(HttpProvider.class, provider.priority() + 1, "tck-higher-priority");
-            HttpProvider lower = PriorityRivals.rival(HttpProvider.class, provider.priority() - 1, "tck-lower-priority");
+            HttpProvider higher = PriorityRivals.rival(
+                    HttpProvider.class, Math.addExact(provider.priority(), 1), "tck-higher-priority");
+            HttpProvider lower = PriorityRivals.rival(
+                    HttpProvider.class, Math.subtractExact(provider.priority(), 1), "tck-lower-priority");
 
             assertThat(selectAmong(List.of(lower, provider, higher))).as("higher-priority rival listed last").isSameAs(higher);
             assertThat(selectAmong(List.of(higher, provider, lower))).as("higher-priority rival listed first").isSameAs(higher);

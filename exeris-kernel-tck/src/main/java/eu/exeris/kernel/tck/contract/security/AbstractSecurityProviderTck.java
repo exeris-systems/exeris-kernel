@@ -861,8 +861,10 @@ public abstract class AbstractSecurityProviderTck {
         @Test
         @DisplayName("Highest-priority provider wins selection")
         void highestPriorityWins() {
-            SecurityProvider higher = PriorityRivals.rival(SecurityProvider.class, provider.priority() + 1, "tck-higher-priority");
-            SecurityProvider lower = PriorityRivals.rival(SecurityProvider.class, provider.priority() - 1, "tck-lower-priority");
+            SecurityProvider higher = PriorityRivals.rival(
+                    SecurityProvider.class, Math.addExact(provider.priority(), 1), "tck-higher-priority");
+            SecurityProvider lower = PriorityRivals.rival(
+                    SecurityProvider.class, Math.subtractExact(provider.priority(), 1), "tck-lower-priority");
 
             assertThat(selectAmong(List.of(lower, provider, higher))).as("higher-priority rival listed last").isSameAs(higher);
             assertThat(selectAmong(List.of(higher, provider, lower))).as("higher-priority rival listed first").isSameAs(higher);

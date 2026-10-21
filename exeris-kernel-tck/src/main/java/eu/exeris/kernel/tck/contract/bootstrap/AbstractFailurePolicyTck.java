@@ -13,7 +13,11 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -105,6 +109,9 @@ public abstract class AbstractFailurePolicyTck {
         Throwable thrown = bootCapturing(List.of(memory, events), true, () -> mainRan.set(true));
 
         assertThat(thrown).as("boot outcome").isNotNull();
+        assertThat(startFailureNames(thrown)).as("subsystems whose start() failure is in the cause chain")
+                .contains("events");
+        assertThat(events.startCount()).as("events start() calls").isEqualTo(1);
         assertThat(mainRan).as("kernelMain ran").isFalse();
         assertThat(memory.stopCount()).as("memory stop() calls").isEqualTo(1);
     }
@@ -119,6 +126,9 @@ public abstract class AbstractFailurePolicyTck {
         Throwable thrown = bootCapturing(List.of(memory), true, () -> mainRan.set(true));
 
         assertThat(thrown).as("boot outcome").isNotNull();
+        assertThat(startFailureNames(thrown)).as("subsystems whose start() failure is in the cause chain")
+                .contains("memory");
+        assertThat(memory.startCount()).as("memory start() calls").isEqualTo(1);
         assertThat(mainRan).as("kernelMain ran").isFalse();
     }
 
@@ -133,19 +143,33 @@ public abstract class AbstractFailurePolicyTck {
         Throwable thrown = bootCapturing(List.of(memory, events), false, () -> mainRan.set(true));
 
         assertThat(thrown).as("boot outcome").isNotNull();
+        assertThat(startFailureNames(thrown)).as("subsystems whose start() failure is in the cause chain")
+                .contains("events");
+        assertThat(events.startCount()).as("events start() calls").isEqualTo(1);
         assertThat(mainRan).as("kernelMain ran").isFalse();
         assertThat(memory.stopCount()).as("memory stop() calls: started subsystems are stopped on abort").isEqualTo(1);
     }
 
-    private static List<String> causeChainMessages(Throwable thrown) {
-        List<String> messages = new java.util.ArrayList<>();
-        for (Throwable t = thrown; t != null; t = t.getCause()) {
-            messages.add(String.valueOf(t.getMessage()));
-            if (t.getCause() == t) {  // NOPMD CompareObjectsWithEquals - self-referential cause guard
-                break;
-            }
+    private static List<Throwable> causeChain(Throwable thrown) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        List<Throwable> chain = new ArrayList<>();
+        for (Throwable t = thrown; t != null && seen.add(t); t = t.getCause()) {
+            chain.add(t);
         }
-        return messages;
+        return chain;
+    }
+
+    private static List<String> causeChainMessages(Throwable thrown) {
+        return causeChain(thrown).stream().map(t -> String.valueOf(t.getMessage())).toList();
+    }
+
+    private static List<String> startFailureNames(Throwable thrown) {
+        return causeChain(thrown).stream()
+                .filter(SubsystemException.class::isInstance)
+                .map(SubsystemException.class::cast)
+                .filter(e -> e.phase() == SubsystemException.Phase.START)
+                .map(SubsystemException::subsystemName)
+                .toList();
     }
 
     /**
@@ -173,7 +197,7 @@ public abstract class AbstractFailurePolicyTck {
          * @param dependsOn   the names of the subsystems it depends on
          */
         ProbeSubsystem(String name, BootstrapPhase phase, boolean optional,
-                              boolean failOnStart, List<String> dependsOn) {
+                       boolean failOnStart, List<String> dependsOn) {
             this.name = name;
             this.phase = phase;
             this.optional = optional;
