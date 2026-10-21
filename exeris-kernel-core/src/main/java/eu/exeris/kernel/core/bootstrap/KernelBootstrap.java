@@ -86,11 +86,13 @@ import java.util.function.Supplier;
 // we must catch the broadest type and re-wrap for callers.
 // TooManyMethods / CyclomaticComplexity: this is the composition root of the boot sequence; every step
 // (config, contract gate, orchestrator, scope, shutdown) is one small method, and their sum is the count.
+// GodClass: the same sum read as coupling; the per-boot stop state is already in BootSession.
 @SuppressWarnings({
     "PMD.LawOfDemeter",
     "PMD.AvoidCatchingGenericException",
     "PMD.TooManyMethods",
-    "PMD.CyclomaticComplexity"
+    "PMD.CyclomaticComplexity",
+    "PMD.GodClass"
 })
 public final class KernelBootstrap {
 
