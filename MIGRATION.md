@@ -24,6 +24,20 @@ upgrade in full takes both documents: the steps here, the context there.
 
 ---
 
+## 0.12.x → 0.13 — contract gate: one license manifest on the classpath (ADR-088)
+
+The contract gate reads `license-manifest.json` from the classpath when `license.manifest.path` is unbound
+and the working directory holds none. It used to take the first one in classpath order; more than one
+distinct manifest now fails the boot with `EX-LIC-0001`, the message listing every URL.
+
+1. **Find the second manifest.** The message names each URL; a dependency jar that bundles its own
+   `license-manifest.json` is the usual source.
+2. **Choose one.** Remove the stray file from the packaging, or bind `license.manifest.path`
+   (`-Dexeris.license.manifest.path` or `EXERIS_LICENSE_MANIFEST_PATH`) to the manifest to use. A bound path is
+   read alone, so the classpath is not consulted and the check does not apply.
+
+---
+
 ## 0.12.x → 0.13 — embedding hosts: disable the kernel's shutdown hook (ADR-007 §5)
 
 `KernelBootstrap.boot()` now registers one JVM shutdown hook that runs `KernelBootstrap.shutdown()`, so a

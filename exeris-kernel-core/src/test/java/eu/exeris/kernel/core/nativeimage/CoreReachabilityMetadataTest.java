@@ -62,8 +62,8 @@ class CoreReachabilityMetadataTest {
             // Resources
             allow("eu.exeris.kernel.core.bootstrap.KernelVersion", "load", "Class.getResourceAsStream",
                     "covered-by-metadata: exeris-kernel.properties resource registered in reachability-metadata.json"),
-            allow("eu.exeris.kernel.core.contract.ManifestLocator", "readClasspathResource",
-                    "ClassLoader.getResourceAsStream",
+            allow("eu.exeris.kernel.core.contract.ManifestLocator", "classpathManifests",
+                    "ClassLoader.getResources",
                     "covered-by-metadata: consumer-provided license-manifest.json fallback "
                             + "registered in reachability-metadata.json"),
 

@@ -3462,7 +3462,6 @@ fails, and fixed to `false` both positive cases fail.
 - `BlockedManifestRegistry` (ADR-088 §4 item 3, offline revocation) is not implemented.
 - The `exeris-manifest-tool` signing CLI and the `-Pproduction` capability gate belong to `exeris-tooling` and are not started.
 - The gate's cost is not measured against ADR-089's reversal threshold (5 ms); the measurement that settles it — marginal cost to `KernelBootReady` with and without a manifest, read from `ContractResolved.gateDuration` — is exeris-systems/exeris-kernel#605.
-- More than one `license-manifest.json` on the classpath is not refused: the first jar wins (exeris-systems/exeris-kernel#606).
 - No architecture rule keeps the `core.contract` packages free of cycles (exeris-systems/exeris-kernel#607).
 
 **Merge Gate:** Complete TCK coverage with passing Community bindings, zero-dependency canonicalization in Core, ArchUnit/The Wall compliance. A startup-cost claim waits for the measurement listed above.
