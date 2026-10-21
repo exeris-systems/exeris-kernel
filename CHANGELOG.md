@@ -49,6 +49,12 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **The four stream JFR events carry the protocol's stream id, and the park event the window.**
+  `StreamOpened`, `StreamClosed`, `StreamAbortiveTeardown` and `StreamBackpressurePark` gain
+  `protocolStreamId`, the HTTP/2 stream id and `0` on HTTP/1.1, so two streams of one connection are told
+  apart by `(streamId, protocolStreamId)`. `StreamBackpressurePark` also gains `windowBytes`, the smaller of
+  the stream's and the connection's window at the park and `-1` on HTTP/1.1. The existing `emit` overloads
+  remain.
 - **`PaqsScheduler` no longer reports a peer-closed stream as a handler failure.** A handler that ends with
   `EX-NET-4008` is recorded as `StreamLifecycle` outcome `PEER_CLOSED`, logged at `DEBUG` with the stream id
   and engine, and emits no `PaqsHandlerFailure` event. Only the thrown exception's own type counts: a failure
@@ -134,6 +140,15 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Added
 
+- **Stream routes are resolved and served over HTTP/2.** A request for a stream route that arrives over TLS
+  with ALPN `h2`, an `h2c` upgrade or a prior-knowledge preface now reaches its stream handler instead of the
+  respond-once handler. The head is a `HEADERS` frame, each event one or more `DATA` frames, a graceful close
+  an empty `DATA` frame with `END_STREAM`, and an abortive end `RST_STREAM(CANCEL)`; `emit` parks on the
+  smaller of the stream's and the connection's flow-control window and on a per-stream bound of
+  `exeris.http.stream.creditWindowBytes` bytes queued to the transport. Each stream runs on a thread of its
+  own, authorized by the dispatch HTTP/1.1 uses, and holds a `SETTINGS_MAX_CONCURRENT_STREAMS` slot until its
+  handler returns; a peer `GOAWAY` or the end of the connection ends every stream. Core gains `StreamEgress`,
+  the protocol side of a held-open stream, which `HttpStreamEngine` runs over.
 - **A closed `TransportStream` says who closed it.** `read`, `write` and `queueWrite` on a closed stream throw
   `TransportStreamClosedException`, an `IllegalStateException` carrying `EX-NET-4008` when the stream's remote
   end was observed first (or the transport tore it down) and `EX-NET-4009` when it was closed through this

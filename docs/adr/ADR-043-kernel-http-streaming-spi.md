@@ -125,6 +125,9 @@ that returns a handler it has wrapped gets that nesting from the driver as it st
   *(2026-10-20: the ALPN half of this limitation is lifted — see
   [Amendment A2](#amendment-a2-2026-10-20--alpn-selection-honours-httpmaxversion). The stream-route
   half stands.)*
+  *(2026-10-21: the stream-route half is lifted. Community resolves stream routes over HTTP/2 — TLS
+  with ALPN `h2`, an `h2c` upgrade and a prior-knowledge preface — and `emit` parks on the stream's
+  and the connection's flow-control windows.)*
 - The Enterprise native streaming binding, still listed under *What is NOT in scope*, resolves
   through the same interface when it is built. Today the Enterprise HTTP engine serves respond-once
   routes only.
