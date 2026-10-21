@@ -87,7 +87,7 @@
     "signature": "eu.exeris.kernel.spi.graph.GraphSession#findShortestPath(eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor, java.util.UUID, java.util.UUID)",
     "since": "0.13",
     "adr": "ADR-102",
-    "justification": "Contract widening: default implementation removed and method made abstract on the preview SPI interface; an out-of-tree implementer must implement this overload directly."
+    "justification": "Binary- and source-incompatible for implementers: the default that delegated to the two-argument overload is removed and the method is abstract on the preview SPI interface; an implementer that inherited it must now implement it (japicmp METHOD_NOW_ABSTRACT, the one preview break this release reports)."
   },
   {
     "signature": "eu.exeris.kernel.spi.graph.GraphSession#traversePath(eu.exeris.kernel.spi.graph.model.GraphPathSpec)",
