@@ -45,9 +45,9 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ### Changed
 
 - **Two `HttpProvider`s at equal priority resolve by implementation class name.** The Community HTTP
-  subsystem now selects through `BootstrapProviderSelector`, like every other provider SPI, instead of
-  taking the equal-priority provider `ServiceLoader` listed first. The Community persistence and
-  security subsystems share the same routine, so their ranking is unchanged.
+  subsystem now selects through `BootstrapProviderSelector`, as the graph, persistence, security and
+  crypto providers do, instead of taking the equal-priority provider `ServiceLoader` listed first. The
+  Community persistence and security subsystems share the same routine, so their ranking is unchanged.
 - **A subsystem's `initialize()` is bounded by a 300-second deadline (EX-BOOT-0003).** The orchestrator
   interrupts the booting thread when one `initialize()` runs past the deadline, and the boot fails with
   `SubsystemInitDeadlineException` (`EX-BOOT-0003`, rawArgs `[subsystemName, deadlineMs]`). The deadline
@@ -264,7 +264,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   template method `selectAmong(List)`, which delegates to your kernel's selection routine
   (`BootstrapProviderSelector.selectHighestPriority` in Core and Community); its default throws, so an
   unbound provider TCK fails instead of passing. The Enterprise `PersistenceProvider` and `HttpProvider`
-  TCK bindings must implement it when they move to 0.13.
+  TCK bindings must implement it when they move to 0.13, and `EnterpriseHttpSubsystem`, which selects
+  inline, must first route its selection through `BootstrapProviderSelector.loadHighestPriority`:
+  until then a binding that delegates to `selectHighestPriority` proves a routine that kernel does not
+  run. The Enterprise telemetry binding loses `highestPriorityWins` with no replacement.
 - **`AbstractFailurePolicyTck` observes the boot itself.** The three `boolean` hooks, each of which a
   hardcoded `true` satisfied, are replaced by `bootCapturing(subsystems, degrade, kernelMain)`; the TCK
   supplies counting subsystems and judges the boot by what they saw, and adds the cases that a mandatory

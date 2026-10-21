@@ -24,6 +24,18 @@
     "justification": "TCK contract: AbstractCryptoEngineTck gains three cases asserting CryptoProviderConfig#minimumTlsVersion as the handshake floor (a TLS 1.2-only peer refused at the default TLSv1.3, served at TLSv1.2; an unsupported value fails createTlsEngine). They drive a handshake through the new template method bindToSocket, which throws by default, so an existing binding fails them until it implements it or returns false from honoursMinimumTlsVersion() because its provider does not build the TLS context from the configuration. Source-compatible; no SPI class changes."
   },
   {
+    "signature": "eu.exeris.kernel.tck.contract.bootstrap.AbstractFailurePolicyTck",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: the three abstract boolean hooks missingDependencyFailsInAllSelector, degradeContinuesOnOptionalFailure and failFastAbortsOnOptionalFailure are replaced by one abstract template method, bootCapturing(List<Subsystem>, boolean, Runnable), which boots the kernel over exactly the subsystems the TCK supplies. The TCK now owns counting probe subsystems and judges the boot by their initialize/start/stop counts and whether kernelMain ran, because a hook that returned a hardcoded true satisfied the previous contract. An existing binding stops compiling until it removes the three overrides and implements bootCapturing, as AbstractSubsystemErrorRoutingTck's bindings do. Source-breaking for bindings; no SPI class changes."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.http.AbstractHttpProviderTck#selectAmong(java.util.List)",
+    "since": "0.13",
+    "adr": "ADR-007",
+    "justification": "TCK contract: the graph, persistence, HTTP and security provider TCKs (AbstractGraphProviderTck, AbstractPersistenceProviderTck, AbstractHttpProviderTck, AbstractSecurityProviderTck) each gain the template method selectAmong(List), which a binding implements by routing the candidates through its kernel's provider selection. highestPriorityWins stages a rival one priority step above and one below the provider under test, in both discovery orders, and requires that selection to return the highest by identity. selectAmong throws by default, so an existing binding fails highestPriorityWins until it implements it. Source-compatible; no SPI class changes."
+  },
+  {
     "signature": "eu.exeris.kernel.spi.events.EventEngine#bus()",
     "since": "0.13",
     "adr": "ADR-101",
