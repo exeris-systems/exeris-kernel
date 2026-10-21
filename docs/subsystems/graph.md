@@ -135,7 +135,7 @@ fails the call and nothing is deleted.
    (`buildMatchQuery`, `buildMultiHopQuery`) themselves (see Core Philosophy §1 above).
 2. Manage the `GraphSyncService` for cross-subsystem consistency.
 3. Execute shortest-path algorithms (Dijkstra, Yen's k-shortest) via the pluggable `PathFinder` SPI.
-   BFS traversal (`traverseBreadthFirst`, `streamBfsJson`) does not go through `PathFinder` — it is
+   BFS traversal (`traverseBreadthFirst`, `streamBfsJson`) is the single-hop case of `traversePath`,
    pushed down as one dialect-generated query per call (see the Cycle Detection section below).
 4. Enforce the No-Arena Policy by verifying all driver allocations go through `MemoryAllocator`.
 
@@ -157,15 +157,6 @@ fails the call and nothing is deleted.
 covered by `GraphExceptionLayoutTest`, but no kernel code path throws it — a driver self-reporting a breach at
 runtime would be its first caller. TCK enforcement of the ratio does not go through it: `GraphChurnRatioTck`
 fails the build with an assertion carrying the measured ratio, the allocated bytes and the transferred bytes.
-
-**`GraphSession#findShortestPath(source, target)` status (#466):** the two-argument overload — the one the
-SPI documents as returning "path result (may indicate not found)" — never searches for a distinct pair on the
-Community binding. `CommunityGraphSession` returns a zero-hop path only when `source.equals(target)`, and
-`PathResult.notFound(...)` for every other pair, unconditionally; it has no edge descriptor to load adjacency
-from. The capability exists — `findShortestPath(GraphEdgeDescriptor, source, target)` loads adjacency for the
-given relationship type into a `CommunityPathFinder` and runs Dijkstra correctly — but the two-argument entry
-point cannot reach it. A caller holding two connected node IDs and calling the SPI method as documented gets
-"not found" every time.
 
 ---
 
@@ -221,13 +212,76 @@ public interface GraphDialect {
 
 ---
 
+## Multi-Hop Traversal (`GraphPathSpec`)
+
+The multi-hop traversal primitive executes an ordered path specification as one statement / query,
+honouring direction and returning the terminal frontier with walk semantics.
+
+### Semantics
+
+- **Path specification:** `GraphPathSpec(startNodeId, hops)` with ordered `GraphHop` steps. Hop *i* is
+  `GraphHop(edge, minRepeat, maxRepeat)`, with `1 <= minRepeat <= maxRepeat`.
+- **Direction:** Evaluated via effective direction `edge.bidirectional() ? BOTH : edge.direction()`:
+  - `OUTGOING`: step from `u` reaches `t` where `s = u`.
+  - `INCOMING`: step from `u` reaches `s` where `t = u`.
+  - `BOTH`: step from `u` reaches `t` where `s = u`, and `s` where `t = u`.
+- **Walk semantics:** Edges and nodes may repeat within and across hops. Cycles terminate by step bounds.
+- **Terminal frontier:** Result is the set of nodes reached at the end of the last hop (not the union of
+  intermediate frontiers), returned as `List<UUID>` without duplicates in unspecified order.
+- **Empty hop:** A hop that matches nothing yields an empty result (`[]`), never an error.
+- **Single-hop equivalence:** `traverseBreadthFirst(GraphTraversal(start, edge, d, ...))` is equivalent
+  to `traversePath(new GraphPathSpec(start, List.of(new GraphHop(edge, 1, d))))`. Both honour direction.
+- **Streaming:** `streamPathJson` returns one caller-owned `LoanedBuffer` holding a UTF-8 JSON array of
+  quoted UUID strings (`["...","..."]`, `[]` when empty). The session never closes it.
+- **Community limit:** Community bounds paths to `Σ maxRepeat <= 64` (and `maxDepth <= 64` for BFS). Exceeding
+  the bound is refused before any I/O with `GraphQueryException` (`EX-GRPH-5002`, `queryType = "PATH_LIMIT"`).
+
+### Generated Query Shapes
+
+For hops `[GraphHop.of(PURCHASED), new GraphHop(SIMILAR_TO, 1, 2)]`:
+
+**PostgreSQL (SQL/PGQ):**
+```sql
+WITH RECURSIVE
+f0 (id) AS (SELECT CAST($1 AS uuid)),
+f1 (id) AS (SELECT DISTINCT e.target_id AS id FROM f0 p INNER JOIN tck_purchased_edges e ON e.source_id = p.id),
+h2 (id, depth) AS (SELECT p.id, 0 FROM f1 p UNION SELECT e.target_id, h.depth + 1 FROM h2 h INNER JOIN tck_similar_to_edges e ON e.source_id = h.id WHERE h.depth < 2),
+f2 (id) AS (SELECT DISTINCT id FROM h2 WHERE depth >= 1)
+SELECT id FROM f2
+```
+
+**Neo4j (Cypher):**
+```cypher
+MATCH (source) WHERE source.id = $sourceId
+WITH DISTINCT source
+MATCH (source)-[:PURCHASED]->(n1)
+WITH DISTINCT n1
+MATCH (n1)-[:SIMILAR_TO]->(n2)
+WITH DISTINCT n2
+MATCH (n2)-[:SIMILAR_TO*0..1]->(target)
+WITH DISTINCT target
+RETURN DISTINCT target.id AS id
+```
+
+### Java Example
+
+```java
+GraphPathSpec path = new GraphPathSpec(userId, List.of(
+        GraphHop.of(PURCHASED),
+        new GraphHop(SIMILAR_TO, 1, 2)
+));
+List<UUID> recommendations = session.traversePath(path);
+```
+
+---
+
 ## Driver Roadmap and Production Readiness
 
 | Driver                          | Tier        | Status      | Production Ready? | Notes                                                    |
 |:--------------------------------|:------------|:-----------:|:-----------------:|:---------------------------------------------------------|
-| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. `findShortestPath(source, target)` never searches a distinct pair (#466, shared with the Bolt backends below). `CommunityGraphSessionPostgresContractTckIT` runs the SQL/PGQ dialect against a live PostgreSQL instance. |
-| Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (17.4–20.8x churn measured across two regimes, see §2). `findShortestPath(source, target)` never searches a distinct pair (#466). |
-| Memgraph Bolt                   | Community   | ✅ TRL-3    | ✅ Yes             | Same driver as Neo4j Bolt (Bolt protocol compatible). Same `findShortestPath(source, target)` gap (#466). |
+| PostgreSQL JDBC (PGQ)           | Community   | ✅ TRL-3    | ✅ Yes             | Standard JDBC, full VT-compatible. Shortest-path adjacency treats `INCOMING` as outgoing (known gap). `CommunityGraphSessionPostgresContractTckIT` runs the SQL/PGQ dialect against a live PostgreSQL instance. |
+| Neo4j Bolt (Java driver)        | Community   | ✅ TRL-3    | ✅ Yes             | Standard Bolt driver, heap allocating (17.4–20.8x churn measured across two regimes, see §2). Shortest-path adjacency treats `INCOMING` as outgoing (known gap). |
+| Memgraph Bolt                   | Community   | ✅ TRL-3    | ✅ Yes             | Same driver as Neo4j Bolt (Bolt protocol compatible). Shortest-path adjacency treats `INCOMING` as outgoing (known gap). |
 
 ---
 
@@ -266,24 +320,21 @@ try (GraphCursor cursor = graphService.bfsCursor(query)) {
 
 ### Cycle Detection
 
-Community's `traverseBreadthFirst` and `streamBfsJson` do not run a BFS loop in kernel code at all — they
-delegate to one push-down query per call (`GraphDialect.buildMatchQuery` for a single hop,
-`buildMultiHopQuery` otherwise: a `WITH RECURSIVE` CTE on SQL/PGQ, a bounded variable-length `MATCH` on
-Cypher), so cycle safety is a property of that query, not of a heap-resident visited set.
+Community's `traversePath`, `streamPathJson`, `traverseBreadthFirst` and `streamBfsJson` do not run a
+traversal loop in kernel code at all — they delegate to one push-down query per call
+(`GraphDialect.buildPathQuery`: a `WITH RECURSIVE` CTE on SQL/PGQ with `UNION` deduplicating `(id, depth)`
+rows, bounded step `MATCH` clauses on Cypher), so cycle safety is a property of that query, not of a
+heap-resident visited set.
 
 | Control                        | Where it lives                                                              | Default |
 |:--------------------------------|:-----------------------------------------------------------------------------|:-------:|
-| **Max traversal depth**         | `GraphTraversal`'s canonical constructor: `maxDepth` (`int`), rejected below 1 with `IllegalArgumentException` | none — always explicit |
+| **Max traversal depth**         | Community limit: `Σ maxRepeat <= 64` (and `maxDepth <= 64` for `GraphTraversal`); exceeding the limit is refused before I/O with `EX-GRPH-5002` (`PATH_LIMIT`) | 64 (Community cap) |
 | **Max visited nodes**            | not implemented — `GraphTraversal` has no `maxNodes` field and no such cap exists anywhere in the traversal path | — |
-| **Cycle termination mechanism** | the query itself: the recursive CTE stops recursing once `depth` reaches `maxDepth` (`WHERE t.depth < maxHops`), and the Cypher form bounds the same range in `*minHops..maxHops` — a cyclic edge can produce duplicate visits within that bound, deduplicated by `SELECT DISTINCT` / `RETURN DISTINCT`, but the depth bound alone is what stops the query, not a visited-node set | — |
+| **Cycle termination mechanism** | the query itself: SQL recursive CTE bounds each hop by `depth < maxRepeat` and deduplicates `(id, depth)` rows with `UNION` (never `UNION ALL`); Cypher bounds per-hop repetition with explicit step `MATCH` clauses joined by `WITH DISTINCT`. Step bounds guarantee termination without a heap-resident visited set | — |
 
-There is no `exeris.graph.bfs.max-depth` or `exeris.graph.bfs.max-nodes` configuration key anywhere in this
-tree, and no code path emits `EX-GRPH-5002` for a depth or node-count limit — `maxDepth` is a required,
-always-explicit constructor argument with no default to fall back to, so "leave it at the default" does not
-apply: every caller of `GraphTraversal`'s constructor (directly or via `GraphTraversal.create`) must choose a
-value. `CommunityPathFinder` — the Dijkstra implementation behind `findShortestPath(GraphEdgeDescriptor, …)`,
-not the BFS traversal methods — does hold a heap `HashSet<UUID>` of visited nodes while it walks adjacency;
-that is a shortest-path detail, not a BFS one.
+`CommunityPathFinder` — the Dijkstra implementation behind `findShortestPath(GraphEdgeDescriptor, …)`,
+not the traversal methods — does hold a heap `HashSet<UUID>` of visited nodes while it walks adjacency;
+that is a shortest-path detail, not a traversal one.
 
 ## Testing Strategy
 
@@ -293,8 +344,10 @@ that is a shortest-path detail, not a BFS one.
 - Metadata discovery: verify extraction from annotated `record` nodes/edges.
 - Pathfinding: `AbstractAlgoOrchestratorTck` (bound in `CommunityAlgoOrchestratorTckTest`) validates
   Dijkstra correctness — found/not-found, hop count, cost — against `PathFinder` directly, not through
-  a `GraphSession`; there is no separate unit test for BFS traversal logic, since BFS has none of its
-  own to test (see Cycle Detection above).
+  a `GraphSession`.
+- Dialect path query generation: `AbstractGraphDialectTck` and `CommunityGraphDialectTest` validate
+  multi-hop SQL CTE and Cypher generation, directional arrows, and bound validation.
+- Session path limit guard: `CommunityGraphSessionGuardTest` verifies the 64-hop cap and `PATH_LIMIT` refusal.
 
 ### Integration Tests (TCK)
 
@@ -307,9 +360,11 @@ that is a shortest-path detail, not a BFS one.
   itself has no call site anywhere in this tree outside test code: nothing in application code calls
   it at all.
 - **Live Contract:** `AbstractGraphSessionLiveContractTck` asserts `GraphSession` operations against
-  a live backend (shortest-path resolution over a connected pair, unconnected pairs, `deleteNode` edge
-  cascade and re-creation, single-hop BFS traversal). Bound in Community by
-  `CommunityGraphSessionPostgresContractTckIT` (live PostgreSQL) and
+  a live backend: connected-pair shortest path, unconnected pairs, `deleteNode` edge cascade and
+  re-creation, heterogeneous two-hop terminal frontier (`L-HETERO`), empty hop (`L-EMPTY`), ranged
+  depth bounds (`L-DEPTH`), deduplication (`L-DEDUP`), walk semantics (`L-WALK`), cycle termination
+  (`L-CYCLE`), direction coverage (`L-DIR`), zero-copy streaming parity and buffer ownership (`L-STREAM`).
+  Bound in Community by `CommunityGraphSessionPostgresContractTckIT` (live PostgreSQL) and
   `CommunityGraphSessionNeo4jContractTckIT` (live Neo4j).
 
 The following three checks are described in earlier documentation but have no backing test or type in

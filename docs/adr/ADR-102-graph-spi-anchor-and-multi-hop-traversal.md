@@ -14,6 +14,7 @@ slug: adr/ADR-102
 | **Status**      | **ACCEPTED** (2026-10-08)                                                                 |
 | **Deciders**    | Arkadiusz Przychocki                                                                      |
 | **Date**        | 2026-10-08                                                                                |
+| **Amended**     | 2026-10-21 — walk semantics and Cypher per-step MATCH clauses (A1)                         |
 | **Scope**       | `kernel/graph`                                                                            |
 | **Owning Repo** | `exeris-kernel`                                                                           |
 | **Driven By**   | [RFC-2026-10-07](../rfc/RFC-2026-10-07-graph-multi-hop.md) (Option A and rulings R1 to R5); [RFC-2026-09-02](../rfc/RFC-2026-09-02-preview-spi-promotion.md) (`…spi.graph` has no anchor ADR); issue #466; ROADMAP §"Graph: Heterogeneous Multi-Hop Traversal" |
@@ -195,9 +196,9 @@ Each obligation is testable. All land in 0.13.
    join seeded from the previous frontier; a ranged hop is a `WITH RECURSIVE` over its edge table seeded
    the same way; `SELECT DISTINCT` between hops keeps the frontier a set. Every table name passes the
    existing identifier check.
-5. **Neo4j shape.** One `MATCH` with one segment per hop and the arrow taken from the descriptor's
-   direction; the result is `RETURN DISTINCT`. Every relationship type passes the existing Cypher
-   identifier check.
+5. **Neo4j shape.** One `MATCH` per step joined by `WITH DISTINCT` (walk semantics; see
+   [Amendments](#amendments)), with arrows taken from the descriptor's direction; the result is
+   `RETURN DISTINCT`. Every relationship type passes the existing Cypher identifier check.
 6. **Streaming.** `streamPathJson` returns the same id set as `traversePath`, in one caller-owned
    `LoanedBuffer`. PostgreSQL aggregates in the query (`json_agg`) and copies the text into one network
    buffer; the Cypher backend encodes the id list into one buffer.
@@ -357,3 +358,10 @@ single-type stand-in on one backend, not a measurement.
   mutation named with it.
 - The stability-matrix anchor column for `…spi.graph` names this ADR only once obligations 1 to 11 have
   landed; until then the row stays `preview` with `—`.
+
+## Amendments
+
+- **2026-10-21 — Walk semantics and Cypher per-step MATCH clauses (A1).** Replaces the "one MATCH with
+  one segment per hop" phrasing in Obligation 5 with one MATCH clause per step joined by WITH DISTINCT,
+  yielding walk semantics that match the SQL recursive CTE and allow relationship reuse across hops
+  (pinned by TCK cases `L-WALK` and `L-CYCLE`).

@@ -76,5 +76,59 @@
     "since": "0.13",
     "adr": "ADR-007",
     "justification": "Behaviour: boot() registers a JVM shutdown hook that runs KernelBootstrap.shutdown() unless registerShutdownHook(false) is set (ADR-007 section 5); before 0.13 a SIGTERM exited without stopping the subsystems. An embedding host that stops the kernel from its own lifecycle disables the hook in the release that adopts 0.13, or one SIGTERM starts two stop sequences. Subsystem#stop() may now run on a thread that carries none of the kernel's ScopedValue bindings, so a stop() that reads KernelProviders fails there. A second concurrent boot() on one KernelBootstrap instance throws IllegalStateException. No SPI signature changes; this Core entry is a record for the release notes, not read by the SPI compatibility gate."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#findShortestPath(java.util.UUID, java.util.UUID)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: refuses unconditionally with GraphQueryException (EX-GRPH-5002, queryType SHORTEST_PATH) for distinct and equal ids; deprecated for removal before the graph SPI is promoted; now a default method on the preview SPI interface."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#findShortestPath(eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor, java.util.UUID, java.util.UUID)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Contract widening: default implementation removed and method made abstract on the preview SPI interface; an out-of-tree implementer must implement this overload directly."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#traversePath(eu.exeris.kernel.spi.graph.model.GraphPathSpec)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Contract widening: new abstract method on the preview SPI interface for multi-hop path traversal; runs an ordered GraphPathSpec as one request, honours direction, and returns the terminal frontier with walk semantics."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#streamPathJson(eu.exeris.kernel.spi.graph.model.GraphPathSpec)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Contract widening: new abstract method on the preview SPI interface streaming the terminal frontier as UTF-8 JSON in a caller-owned LoanedBuffer."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphDialect#buildPathQuery(java.util.List)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Contract widening: new abstract method on the preview SPI interface generating dialect-specific query text for ordered hops."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#traverseBreadthFirst(eu.exeris.kernel.spi.graph.model.GraphTraversal)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: direction and bidirectional are honoured on both backends; a descriptor with INCOMING, BOTH, or bidirectional returns reached nodes according to that orientation."
+  },
+  {
+    "signature": "eu.exeris.kernel.spi.graph.GraphSession#streamBfsJson(eu.exeris.kernel.spi.graph.model.GraphTraversal)",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "Behaviour: direction and bidirectional are honoured on both backends; equivalent to streamPathJson over a single hop of the traversal's edge."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.graph.AbstractGraphSessionContractTck",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "TCK contract: refusal cases replace the not-found case; the same-node case uses the three-argument overload. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
+  },
+  {
+    "signature": "eu.exeris.kernel.tck.contract.graph.AbstractGraphDialectTck",
+    "since": "0.13",
+    "adr": "ADR-102",
+    "justification": "TCK contract: new buildPathQuery group exercising multi-hop query generation. The SPI compatibility gate diffs exeris-kernel-spi only and does not read this entry."
   }
 ]

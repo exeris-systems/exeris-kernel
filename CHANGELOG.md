@@ -16,6 +16,14 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ## [Unreleased]
 
+### Breaking
+
+- **Graph SPI (preview): `GraphSession` gains abstract `traversePath`/`streamPathJson`, `GraphDialect` gains abstract `buildPathQuery`, and `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract (ADR-102).** An out-of-tree implementer must implement the three methods and the three-argument overload; it can no longer inherit the two-argument behaviour.
+
+### Added
+
+- **Multi-hop path traversal primitive.** `GraphPathSpec`/`GraphHop`, `traversePath`, `streamPathJson`, `buildPathQuery`; one request, terminal frontier, walk semantics, per-hop direction; Community runs it as one statement / one query.
+
 ### Security
 
 - **The Community crypto provider enforces `CryptoProviderConfig#minimumTlsVersion`.** Every context,
@@ -56,6 +64,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   returns at once.
 - **A second concurrent `boot()` on one `KernelBootstrap` instance throws `IllegalStateException`.** Booting
   again after a boot returned is unchanged.
+- **Every graph traversal honours the descriptor's direction (ADR-102).** `traverseBreadthFirst` and `streamBfsJson` with an `INCOMING`, `BOTH` or `bidirectional` descriptor now return a different set than before; a caller relying on the old result moves to an explicit `OUTGOING` descriptor.
+- **`findShortestPath(UUID, UUID)` throws `GraphQueryException` instead of returning not-found (ADR-102).** Two-argument shortest path is refused with `EX-GRPH-5002` (`SHORTEST_PATH`) for distinct and equal ids; callers must specify a `GraphEdgeDescriptor` through the three-argument overload.
+- **Community refuses a traversal whose path length bound exceeds 64 (ADR-102).** A traversal where `Σ maxRepeat` (or `maxDepth` for breadth-first) exceeds 64 is refused before any I/O with `GraphQueryException` (`EX-GRPH-5002`, query type `PATH_LIMIT`).
+- **A failing Community traversal surfaces as `GraphQueryException` (`PATH`) on both backends.** Exceptions during traversal execution are uniformly wrapped in `GraphQueryException` with query type `PATH`.
 - **Two `HttpProvider`s at equal priority resolve by implementation class name.** The Community HTTP
   subsystem now selects through `BootstrapProviderSelector`, as the graph, persistence, security and
   crypto providers do, instead of taking the equal-priority provider `ServiceLoader` listed first. The
@@ -102,6 +114,8 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Deprecated
 
+- **`findShortestPath(UUID, UUID)` is deprecated for removal before the graph SPI is promoted.** Use `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` instead.
+- **`GraphTraversal.includeStartNode()` and `includePayload()` are deprecated and have no effect.** No binding reads them.
 - **`KernelProviders.GRAPH_PROVIDER`, `GRAPH_ENGINE`, `graphEngine()`, `TIME_SOURCE` and
   `timeSource()` are deprecated for removal in the first 1.0 release candidate.** Each field is the
   very same `ScopedValue` instance the holder declares, so a binding made through either name is
@@ -209,6 +223,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **`findShortestPath(UUID, UUID)` no longer reports not-found for a pair it never searched; it refuses (see Changed).**
 - **The SQL/PGQ graph backend's `deleteNode` removes the node's connected edges (#468).** One statement
   deletes, from every registered edge table whose descriptor names the label on the source or target
   side, the rows touching the node, then the node row; matches the Cypher backend's `DETACH DELETE`;
