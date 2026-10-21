@@ -107,6 +107,39 @@ class NativeTcpStreamClosedSignalTest {
         }
     }
 
+    @Test
+    void writeAfterALocalCloseRequestThenThePeerResetCarriesTheLocalCode() throws Exception {
+        CommunityTransportTestHarness.Pair pair = CommunityTransportTestHarness.openLoopbackPair(ALLOCATOR, false);
+        LoanedBuffer queued = ALLOCATOR.allocate(AllocationHint.MICRO);
+        try (LoanedBuffer buffer = ALLOCATOR.allocate(AllocationHint.MICRO)) {
+            NativeTcpStream client = (NativeTcpStream) pair.clientStream();
+            try (AutoCloseable hold = CommunityTransportTestHarness.holdOutboundConsumer(client)) {
+                queued.setSize(1);
+                client.queueWrite(queued, 1);
+                client.reset(0L);
+                assertTrue(client.hasPendingData(), "precondition: the local close left a write pending");
+
+                pair.serverStream().reset(0L);
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAIT_SECONDS);
+                while (!client.isRemoteClosed() && System.nanoTime() < deadline) {
+                    LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(5));
+                }
+                assertTrue(client.isRemoteClosed(), "precondition: the client observed the peer's reset");
+
+                TransportStreamClosedException signal = assertThrows(TransportStreamClosedException.class,
+                        () -> client.write(buffer.segment(), 1));
+
+                assertEquals(KernelErrorCodes.EX_NET_4009, signal.errorCode(),
+                        "a stream this endpoint closed first reports the local code");
+                assertFalse(signal.isPeerClosed());
+            }
+        } finally {
+            queued.close();
+            pair.closeConnections();
+            pair.closeEngines();
+        }
+    }
+
     /** Resets the client stream and waits until the server stream is both closed and remote-closed. */
     private static NativeTcpStream awaitServerObservedReset(CommunityTransportTestHarness.Pair pair) {
         NativeTcpStream server = (NativeTcpStream) pair.serverStream();

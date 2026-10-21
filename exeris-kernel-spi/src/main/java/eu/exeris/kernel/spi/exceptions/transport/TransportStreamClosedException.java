@@ -16,10 +16,12 @@ import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
  * own use of a stream it closed:
  * <ul>
  *   <li>{@link #peerClosed()} → {@value KernelErrorCodes#EX_NET_4008}: the remote endpoint ended the
- *       stream, or the transport tore it down without a local close request;</li>
+ *       stream, or the transport tore it down without a local close request, before the stream was
+ *       closed through this endpoint;</li>
  *   <li>{@link #locallyClosed()} → {@value KernelErrorCodes#EX_NET_4009}: the stream was closed through
- *       this endpoint.</li>
+ *       this endpoint first.</li>
  * </ul>
+ * The first side to end the stream decides the code.
  *
  * <h2>Why an {@code IllegalStateException}</h2>
  * <p>The stream contract names {@link IllegalStateException} for a closed stream, and callers catch

@@ -51,8 +51,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 - **`PaqsScheduler` no longer reports a peer-closed stream as a handler failure.** A handler that ends with
   `EX-NET-4008` is recorded as `StreamLifecycle` outcome `PEER_CLOSED`, logged at `DEBUG` with the stream id
   and engine, and emits no `PaqsHandlerFailure` event. Only the thrown exception's own type counts: a failure
-  that wraps the signal, or follows a disconnect, keeps the `WARNING` and the event. A dashboard counting
-  `ERROR` outcomes stops counting peer disconnects.
+  that wraps the signal, or follows a disconnect, keeps the `WARNING` and the event. A raw `StreamHandler` that
+  ends on the Community stream's peer-closed signal leaves the `ERROR` count; Community HTTP swallows the signal
+  itself, a write after a peer FIN still fails as `EX-NET-4002` and stays `ERROR` (#686), and an Enterprise
+  stream takes the quiet path once it adopts the type. Community also reports `EX-NET-4008` for a stream its
+  carrier reclaims idle or tears down after a dispatch fault, so those end as `PEER_CLOSED` too.
 - **A handler failure that `PaqsScheduler` isolates is logged with the stream id, the engine name and the
   exception class name.** The record named none of them, so it could not be matched to the
   `PaqsHandlerFailureEvent` of the same failure. An `Error` is logged at `ERROR` before it is rethrown.

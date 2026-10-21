@@ -144,6 +144,9 @@ final class NativeTcpStream implements TransportStream {
     private final AtomicBoolean closeRequested = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean remoteClosed = new AtomicBoolean(false);
+    // Set when the remote end (or a carrier teardown) is observed while no local close was requested:
+    // the first side to end the stream decides which closed-stream code it reports.
+    private final AtomicBoolean peerEndedFirst = new AtomicBoolean(false);
     // Set by reset(long): abandon queued writes (no drain wait) and terminate abortively (RST).
     private final AtomicBoolean resetRequested = new AtomicBoolean(false);
     // Last time the application moved bytes on this connection, for idle reclamation
@@ -708,6 +711,9 @@ final class NativeTcpStream implements TransportStream {
     }
 
     /* default */ void markRemoteClosed() {
+        if (!closeRequested.get()) {
+            peerEndedFirst.set(true);
+        }
         remoteClosed.set(true);
         connection.markClosedByCarrier();
         signalReadableIngress();
@@ -1094,12 +1100,13 @@ final class NativeTcpStream implements TransportStream {
     }
 
     /**
-     * The closed-stream signal for a stream observed closed. The remote-closed mark is read after the
-     * closed state, and the carrier sets it before it closes a stream it tears down, so a stream the
-     * peer ended reports {@code EX-NET-4008} even when a local close followed.
+     * The closed-stream signal for a stream observed closed. The first side to end the stream decides
+     * the code: the remote end (or a carrier teardown) observed before any local close request reports
+     * {@code EX-NET-4008}, even when a local close followed; a local close request that came first
+     * reports {@code EX-NET-4009}, even when the remote end was observed afterwards.
      */
     private TransportStreamClosedException closedSignal() {
-        return remoteClosed.get()
+        return peerEndedFirst.get()
                 ? TransportStreamClosedException.peerClosed()
                 : TransportStreamClosedException.locallyClosed();
     }
@@ -1132,7 +1139,7 @@ final class NativeTcpStream implements TransportStream {
         if (remoteClosed.get()) {
             return -1;
         }
-        throw closedSignal();
+        throw TransportStreamClosedException.locallyClosed();
     }
 
     private void cleanupInboundIfOwnedByCurrentThreadOrIdle() {

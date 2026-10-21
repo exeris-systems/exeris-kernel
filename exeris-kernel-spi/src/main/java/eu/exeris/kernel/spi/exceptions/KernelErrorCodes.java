@@ -331,8 +331,9 @@ public final class KernelErrorCodes {
      * {@code close()} or {@code reset()} request. Thrown as
      * {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException#peerClosed()}.
      *
-     * <p>An observed remote end takes precedence over a later local close: a stream the peer ended
-     * and this endpoint then closed reports this code, not {@link #EX_NET_4009}.
+     * <p>The first side to end the stream decides the code: a stream the peer ended and this endpoint
+     * then closed reports this code, not {@link #EX_NET_4009}, and a stream this endpoint closed first
+     * reports {@link #EX_NET_4009} even if the remote end is observed afterwards.
      *
      * <p><b>rawArgs:</b> none. The thrower is an {@link IllegalStateException} subclass, not an
      * {@link ExerisKernelException}; the stream identity travels with the caller's own record.

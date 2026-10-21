@@ -40,10 +40,15 @@ import java.lang.foreign.MemorySegment;
  * @implSpec Implementations must not copy stream payload between heap and off-heap memory.
  *           A {@link #read} may block the owning virtual thread — which unmounts from its
  *           carrier — but must never pin the carrier thread.
- *           A {@link #read}, {@link #write} or {@link #queueWrite} on a closed stream throws
- *           {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException}, never a bare
- *           {@link IllegalStateException}, carrying {@code EX-NET-4008} when the stream's remote
- *           end was observed before it closed and {@code EX-NET-4009} otherwise.
+ *           A {@link #write} or {@link #queueWrite} on a closed stream, and a positive-{@code maxBytes}
+ *           {@link #read} on one that has no end of stream left to report, throws
+ *           {@link eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException}, never a
+ *           bare {@link IllegalStateException}. A {@link #read} that can still report end of stream
+ *           returns {@code -1} instead of throwing. The exception carries {@code EX-NET-4008} when the
+ *           transport observed the remote end, or tore the stream down without a local {@code close()}
+ *           or {@code reset(long)} request, before the stream was closed through this endpoint, and
+ *           {@code EX-NET-4009} when the stream was closed through this endpoint first
+ *           ({@code close()}, {@code reset(long)} or the parent connection's {@code close()}).
  * @implNote A carrier driven by native asynchronous I/O completions writes into pre-registered
  *           slab buffers; the Community carrier reads directly from the underlying connection
  *           into the caller's segment. A future migration of hot-path stream metadata to a
@@ -85,8 +90,8 @@ public interface TransportStream extends AutoCloseable {
      *         {@code EX-NET-4003} when a TLS handshake this read has to wait for does not
      *         complete within the driver's deadline
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
-     *         {@code EX-NET-4008} when its remote end was observed first, {@code EX-NET-4009} when it
-     *         was closed through this endpoint
+     *         with the code the interface {@code @implSpec} defines;
+     *         a read that can still report end of stream returns {@code -1} instead
      * @implSpec Implementations must not throw on non-positive {@code maxBytes}, and must fill
      *           {@code target} from the transport's receive path with no intermediate heap copy.
      * @implNote A carrier driven by native asynchronous I/O fills the target segment directly
@@ -110,8 +115,7 @@ public interface TransportStream extends AutoCloseable {
      *         handshake this write has to wait for does not complete within the driver's
      *         deadline
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
-     *         {@code EX-NET-4008} when its remote end was observed first, {@code EX-NET-4009} when it
-     *         was closed through this endpoint
+     *         with the code the interface {@code @implSpec} defines
      * @implSpec Implementations must not hold a reference to {@code source} after this call
      *           returns.
      */
@@ -151,8 +155,7 @@ public interface TransportStream extends AutoCloseable {
      *         this write has to wait for does not complete within the driver's deadline; in
      *         either case the caller owns and must close {@code buffer}
      * @throws eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException if this stream has been closed —
-     *         {@code EX-NET-4008} when its remote end was observed first, {@code EX-NET-4009} when it
-     *         was closed through this endpoint; the caller owns and must
+     *         with the code the interface {@code @implSpec} defines; the caller owns and must
      *         close {@code buffer}
      * @throws IllegalArgumentException if {@code length} is negative or exceeds
      *         {@code buffer.capacity()} — the caller owns and must close {@code buffer}
