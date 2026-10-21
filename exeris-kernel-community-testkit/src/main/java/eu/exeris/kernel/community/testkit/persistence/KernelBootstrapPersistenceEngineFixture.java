@@ -147,8 +147,11 @@ final class KernelBootstrapPersistenceEngineFixture implements EmbeddedPersisten
             System.setProperty(JDBC_URL_PROPERTY, jdbcUrl);
             System.setProperty(RUN_MIGRATIONS_PROPERTY, Boolean.toString(runMigrations));
 
+            // The fixture owns the kernel's lifecycle and stops it from close(), so it is the embedding host that
+            // owns signals; a kernel hook would stop the kernel a second time at JVM exit.
             KernelBootstrap bootstrap = KernelBootstrap.builder()
                     .selector(BootstrapSelector.forNames("persistence"))
+                    .registerShutdownHook(false)
                     .build();
 
             bootstrap.boot(() -> {

@@ -216,8 +216,11 @@ public final class KernelBootstrapHttpEngineFixture implements EmbeddedHttpEngin
             System.setProperty("http.bindHost", LOOPBACK_HOST);
             System.setProperty("http.port", Integer.toString(reservedPort));
 
+            // The fixture owns the kernel's lifecycle and stops it from close(), so it is the embedding host that
+            // owns signals; a kernel hook would stop the kernel a second time at JVM exit.
             KernelBootstrap bootstrap = KernelBootstrap.builder()
                     .selector(BootstrapSelector.forNames("http"))
+                    .registerShutdownHook(false)
                     .build();
 
             ScopedValue.where(HttpKernelProviders.HTTP_SERVER_HANDLER, handler)
