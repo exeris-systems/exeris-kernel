@@ -257,9 +257,11 @@ Open items, in the order they block measurement:
 
 ## Results
 
-Backend `jdk` only, two regimes, kernel `bc26f9a0e8fc`, Loom EA b18-20260917, 10 fresh JVMs per
-(arm, rate) on a cpuset-shielded host. Full report: `exeris-benchmarks`,
-`results/reports/2026-10-14-loom-carrier-scheduler-pinned-carriers-and-the-open-loop-tail.md`.
+Backend `jdk` only, two regimes, kernel `bc26f9a0e8fc`, Loom EA b18-20260917, on a
+cpuset-shielded host: 10 fresh JVMs per (arm, rate) for HYP-TAIL and HYP-CPU, 5 per (arm, rung)
+on the capacity ladders. Full reports: `exeris-benchmarks`,
+`results/reports/2026-10-14-loom-carrier-scheduler-pinned-carriers-and-the-open-loop-tail.md` and
+`results/reports/2026-10-16-loom-carrier-scheduler-capacity-at-a-fixed-tail.md`.
 The pilot is archived as non-evidence and is not a result of this track.
 
 ### Summary
@@ -268,13 +270,28 @@ The pilot is archived as non-evidence and is not a result of this track.
   85 % (both regimes) and 90 % (CPU-bound) `D`'s p99 separates completely from `A_iso` and `C_iso`
   (exact Mann–Whitney p ≤ 2.2 × 10⁻⁵). At 50 % no arm separates. At 70 % with the 30 ms backend
   `D` is the worst arm, bimodal across JVMs, and the stall is observed on the mock backend's side (its CPU
-  hits its ceiling near second 53 in 9 of 10 `D` trials, never under the other arms; pinning, the
-  read sub-poller, GC and connection churn ruled out); why only `D` triggers it is open. The
+  hits its ceiling near second 53 in 9 of 10 `D` trials, never under the floating arms; pinning, the
+  read sub-poller, GC and connection churn ruled out). The capacity ladders reproduce it under the
+  stock pool pinned as well (`B_pin`, 5 of 5 trials), so it follows the pinning, not the custom
+  scheduler; its cause is open. The
   falsification criterion (not below `A_iso` at three or more rates) is not met; "at every rate"
   is not met either. Diagnostic scheduler traces show `A_iso`'s workers stacked on one CPU in its
   slow windows and no stacking behind `C_iso`'s tail.
 - **HYP-CPU — not falsified.** At 50 % `D` uses 1.21 CPUs against `A_iso`'s 1.22 (1 ms backend)
   and 1.25 against 1.32 (30 ms backend). The pilot's CPU premium does not reproduce.
+- **HYP-CAPACITY — not falsified with the 1 ms backend, falsified with the 30 ms backend.**
+  Capacity at p99 ≤ 5 ms: `D` and `B_pin` 95 % of `A_iso`'s saturation, `A_iso` and `C_iso` 50 %
+  (70 % on a freshly booted host; the campaign started ~14 h after boot);
+  `B_pin` lands at `D`'s, so pinning carries the gain. Capacity at p99 ≤ 80 ms: `C_iso` 80 %,
+  `A_iso` 70 %, `D` and `B_pin` 50 %, both pinned arms failing the 70 % rung on the backend stall;
+  highest passing rung `B_pin` 95 %, `D` 85 %. Under pinning the custom scheduler costs tail and
+  saturation throughput with the 30 ms backend and changes nothing with the 1 ms backend: per-carrier queues without
+  stealing, started threads kept on the starting carrier, and carriers that park as soon as their queue is empty.
+  Its plain-`Thread` carriers lack the JDK's carrier-only paths, but those are not in play at
+  `maxPoolSize = 2` (no `B_pin` JVM started a third worker). The
+  reproduction check (`B_float` against `A_iso` at 85 %) is accepted with the 1 ms backend and not
+  with the 30 ms one (range clause, by 1.54 ms), where `B_pin` is read against `B_float`: 40.7
+  against 199 ms p99.
 - **HYP-CACHE — not run.** In-flight state stays far inside L3 in both regimes.
 
 ### Data
@@ -293,17 +310,30 @@ p99, median of 10 sustained trials (9 where one did not sustain the rate), ms.
 
 Campaigns, in `exeris-benchmarks` `results/raw/loom-carrier-scheduler/`:
 `20261009T040618Z-jdk-kbc26f9a0e8fc` (harness `84685a1c`, 129 of 129 trials valid) and
-`20261013T191957Z-jdk-kbc26f9a0e8fc` (harness `e33e9595`, 99 of 99 valid).
+`20261013T191957Z-jdk-kbc26f9a0e8fc` (harness `e33e9595`, 99 of 99 valid); capacity ladders
+`20261016T002844Z-jdk-kbc26f9a0e8fc` and `20261016T034438Z-jdk-kbc26f9a0e8fc` (harness
+`8b915264`, 177 of 177 valid each).
+
+Capacity (highest rung below which every rung passed) and, in brackets, highest passing rung, as a
+fraction of `A_iso`'s saturation in the same campaign:
+
+| Regime, objective | `A_iso` | `B_pin` | `C_iso` | `D` |
+|:------------------|--:|--:|--:|--:|
+| 1 ms backend, p99 ≤ 5 ms | 50 % (50 %) | **95 %** (95 %) | 50 % (50 %) | **95 %** (95 %) |
+| 30 ms backend, p99 ≤ 80 ms | 70 % (70 %) | 50 % (**95 %**) | **80 %** (80 %) | 50 % (85 %) |
 
 Diagnostic runs (exploratory, recorders attached): `exeris-benchmarks`
 `results/raw/loom-carrier-scheduler-diag/20261015T041646Z-h71112fae47da` and
 `20261015T093021Z-h596d216ecca5`; the report's §5.5 summarises them.
 
-Next, in order: why the backend stalls only under the pinned arm at I/O-bound 70 % — a 60 s
-warmup (does the jump follow the mock's age or the measurement phase), a JIT, deoptimisation and
-pinning record of the mock with its `ForkJoinPool` size, and the arrival pattern at the mock under
-`D` against `A_iso` (if pinned carriers send burstier traffic, the trigger is the scheduler's);
-what drives `C_iso`'s tail at 85 %; the `kernel` backend; the HYP-CACHE sweep.
+Next, in order: why the backend stalls under pinned carriers at I/O-bound 70 % — a 60 s warmup
+(does the jump follow the mock's age or the measurement phase), a JIT, deoptimisation and pinning
+record of the mock with its `ForkJoinPool` size, and the arrival pattern at the mock under `B_pin`
+against `A_iso` (same algorithm, only the binding differs); why the floating arms' CPU-bound tails
+are worse in the capacity campaign than in the first one at the same rates (a 2×2 check rules out
+the app's backend pool and the descriptor limit; the difference goes with the time since the
+host's boot — runs started minutes after boot reproduce the first campaign, runs 14–34 h after
+reproduce the capacity one — and what accumulates is not identified); what drives `C_iso`'s tail at 85 %; the `kernel` backend; the HYP-CACHE sweep.
 
 ---
 
