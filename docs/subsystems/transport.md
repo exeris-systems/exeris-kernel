@@ -66,8 +66,10 @@ modes".
 What a client observes: the socket opens and then dies, with no HTTP response — a transport-level
 failure, not a status code, and indistinguishable from a network fault. **The stream admission
 ceiling below behaves the same way**: a shed stream is closed (FIN/RST on TCP, `STOP_SENDING` on
-QUIC), not answered. No server path in the kernel refuses with a status; if that is ever wanted it is
-a third mechanism above the connection layer, not a replacement for either of these (ADR-081 §2).
+QUIC), not answered. No transport-level path in the kernel refuses with a status; if that is ever wanted it is
+a third mechanism above the connection layer, not a replacement for either of these (ADR-081 §2). The
+request gate of a developer licence is such a mechanism, and it lives in the HTTP drivers (see
+`http.md`, "Developer-licence workload envelope").
 
 Two properties make the ceiling easy to reach at a request rate that feels comfortable. It counts
 **concurrent connections, not rate**, so a client whose connection pool overlaps with a draining
@@ -81,6 +83,31 @@ Refusals are visible in two places, and were visible in neither before v0.11:
   healthy, look elsewhere".
 - `eu.exeris.kernel.transport.CommunityConnectionRefused` is emitted per refusal, carrying the active
   count, the configured ceiling, and a cumulative total whose slope distinguishes a blip from a wall.
+
+## Developer-licence connection ceiling
+
+Under a developer-licence contract every inbound connection also counts against
+`WorkloadEnvelope.maxConnections`, through the `WorkloadAdmission` the kernel binds
+(`ContractKernelProviders.WORKLOAD_ADMISSION`, ADR-089). The gate is inert until a contract policy selects
+the developer gate: the contract gate binds `WorkloadAdmission.UNGATED` otherwise, and under `UNGATED` the
+acceptor makes no admission call. The obligations are written on `spi.contract.WorkloadAdmission`,
+cross-referenced from `TransportEngine`, and pinned by `AbstractTransportWorkloadAdmissionTck`.
+
+- **Read once, in `start()`.** `NativeTcpCarrier.start()` reads the slot inside the kernel scope and keeps
+  it. The acceptor and the reactors are platform threads that inherit no binding, so a read there finds the
+  slot unbound and admits everything without a signal.
+- **Refusal at accept.** The acceptor asks the gate before it touches an accepted socket. A refused
+  connection is closed with no byte written and no TLS handshake started, and counts into
+  `TransportStats.totalRejected` through a counter of its own; it emits no `CommunityConnectionRefused` and does
+  not move that event's `total`, which describe the `maxConnections` ceiling and would report the wrong one. The gate reports its own first refusal once, as a
+  `HARD` contract violation.
+- **Exactly one release.** An admitted connection holds one admission beside its connection slot. The
+  admission is recorded on the channel's runtime state when the stream is registered, and the single
+  lifecycle cleanup in `onStreamClosed` releases it, so reset, idle reclamation, drain and `stop()` all
+  release it once. A setup that fails before the stream owns the slot releases both from the acceptor. An
+  outbound connection, registered through `connect`, never takes an admission and releases none.
+- **Every listener counts.** The HTTP and WebSocket listeners each run their own carrier and share the one
+  gate, so their connections add up against a single ceiling.
 
 ## Stream admission ceiling
 

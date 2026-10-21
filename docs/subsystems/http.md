@@ -482,6 +482,42 @@ A response never exceeds the windows the peer has granted (RFC 9113 §6.9). The 
 - **DATA after the request ended.** DATA on a stream the writer still serves resets it with `STREAM_CLOSED` through the writer, which stops the task serving it; DATA on a stream the server does not know is refused with `REFUSED_STREAM`.
 - **Coverage:** `Http2ConnectionWriterTest` (every park and wake interleaving through the writer's test seam, each with a mutation of the matching production line that turns it red), `Http2ConnectionWriterAllocationTest` (the writer's window and reset methods allocate nothing while the lock is uncontended), `Http2FlowControlProcessorTest` (the frame loop over a scripted transport).
 
+### Developer-licence workload envelope (since 0.13, ADR-089)
+
+A kernel that runs under a developer-licence contract holds its HTTP traffic to the contract's
+`WorkloadEnvelope` at `HARD`. The mechanism is in place and inert: the contract gate binds
+`WorkloadAdmission.UNGATED` until a contract policy selects the developer gate, and under `UNGATED` a driver
+makes no admission call and writes no marker. The obligations every server-side driver owes are written on
+`spi.contract.WorkloadAdmission`, cross-referenced from `HttpServerEngine`, and pinned by
+`AbstractWorkloadAdmissionTck`.
+
+- **The gate is read once, in `start()`.** `CommunityHttpServerEngine.start()` reads
+  `ContractKernelProviders.workloadAdmission()` inside the kernel scope and hands it to
+  `CommunityHttpRequestProcessor` as a final field. The connection threads inherit no binding, so a read on
+  one of them finds the slot unbound and enforces nothing; the TCK's enforcement cases fail a driver that
+  does that while its direction controls still pass.
+- **Requests.** Each HTTP/1.1 message and each HTTP/2 stream asks `tryAdmitRequest()` before the route is
+  looked up and before any handler runs; a stream-route request is gated before it is resolved. A refused
+  request is answered `429 Too Many Requests` with `Retry-After: 1` and no body (`CommunityHttpThrottle`), through
+  the exchange or writer every other response uses. HTTP/1.1 keeps the connection open; HTTP/2 answers with
+  `HEADERS` carrying `END_STREAM`, never `RST_STREAM`. The refused HTTP/2 stream still counts toward the
+  Rapid Reset budget as dispatched work, because the request reached dispatch.
+- **HTTP/2 stream routes.** The frame loop asks the gate before it resolves the route and before it forks the
+  stream's task, so a refused stream route is answered `429` on its stream and forks no handler thread. The
+  stream head `Http2ConnectionWriter.writeStreamHead` encodes carries the marker, and a denial framed on the
+  stream goes through `encodeResponseHeaders`, which stamps it and drops an application header of that name.
+- **The marker.** Every final response carries `Exeris-License: development`, written after the application's
+  headers; an application header of that name is dropped in any letter case, so a handler can neither remove
+  the marker nor change its value. It is stamped where each head is encoded: `CommunityHttpResponseHeaders`
+  (the HTTP/1.1 block, which also carries every kernel-generated 4xx and 5xx), `Http2ConnectionWriter`
+  (`encodeResponseHeaders`, the one place an HTTP/2 response head is encoded, which also carries the
+  `400` and `431` the session writes), `HttpStreamEngine` (the server-sent-events head), the `101` that
+  completes an h2c upgrade and the WebSocket handshake. No configuration key disables it.
+- **WebSocket.** A handshake counts as one request and is refused `429` before the origin check and the
+  handshake callback run. The `101` and every refusal the handshake writes carry the marker.
+- **Not stamped.** `RST_STREAM`, `GOAWAY` and the responses of an outbound client are not responses of this
+  server. `Http1Codec.writeStatusAndConnection` and `writeH2cSwitchingProtocols` have no caller in a driver.
+
 ### HTTP/2 Rapid Reset flood defense (CVE-2023-44487, since v0.9)
 
 The §5.1.2 concurrent-stream cap alone does **not** defend against Rapid Reset: a peer that opens a stream and immediately sends `RST_STREAM` frees the slot before the cap is ever reached, so it can drive unbounded request setup/teardown on a single connection (CVE-2023-44487, the 2023 HTTP/2 Rapid Reset DoS).
