@@ -6,13 +6,12 @@ package eu.exeris.kernel.community.http;
 
 import eu.exeris.kernel.core.http.hpack.HpackDecoder;
 import eu.exeris.kernel.core.http.hpack.HpackDynamicTable;
-import eu.exeris.kernel.core.http.hpack.HpackEncoder;
+import eu.exeris.kernel.core.http.http2.Http2ErrorCode;
 import eu.exeris.kernel.core.http.http2.Http2FrameCodec;
 import eu.exeris.kernel.core.http.http2.Http2FrameParser;
 import eu.exeris.kernel.core.http.http2.Http2HeaderBlockAssembler;
+import eu.exeris.kernel.core.http.http2.Http2Settings;
 import eu.exeris.kernel.spi.http.HttpConfig;
-import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
@@ -20,15 +19,14 @@ import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
- * Package-private per-connection HTTP/2 session state used by
+ * Package-private per-connection HTTP/2 decode-side session state used by
  * {@link CommunityHttp2SessionProcessor}. Owns:
  * <ul>
- *   <li>The per-connection HPACK encoder/decoder pair (RFC 7541) and their
- *       dynamic tables.</li>
+ *   <li>The per-connection HPACK decoder (RFC 7541) and its dynamic table. The
+ *       encoder belongs to {@link Http2ConnectionWriter}, which uses it under its lock.</li>
  *   <li>The frame codec ({@link Http2FrameCodec}) with peer-advertised
  *       {@code SETTINGS_MAX_FRAME_SIZE}.</li>
  *   <li>The header-block assembler ({@link Http2HeaderBlockAssembler}) that
@@ -41,7 +39,7 @@ import java.util.Map;
  * try-with-resources so {@link #close()} discards any unprocessed assembler
  * state and request streams.
  *
- * <p><b>Allocation:</b> the HPACK tables, frame codec and header-block assembler are allocated once,
+ * <p><b>Allocation:</b> the HPACK decoder table, frame codec and header-block assembler are allocated once,
  * in {@link #create}, for the connection's whole life; the per-stream {@link Http2RequestStreamState}
  * registry adds one entry per stream admitted by {@link #admitClientStreamId}, up to
  * {@link #maxConcurrentStreams()}.
@@ -68,7 +66,6 @@ final class Http2SessionContext implements AutoCloseable {
     private static final int HTTP2_SETTINGS_ENTRY_BYTES = 6;
     private static final int HTTP2_SETTINGS_HEADER_TABLE_SIZE = 0x01;
     private static final int HTTP2_SETTINGS_MAX_FRAME_SIZE = 0x05;
-    private static final String HEADER_CONTENT_LENGTH = "Content-Length";
     private static final String UPGRADE_TOKEN = "upgrade";
 
     /**
@@ -90,9 +87,7 @@ final class Http2SessionContext implements AutoCloseable {
      */
     private static final int HTTP2_RAPID_RESET_BUDGET = 200;
 
-    private final HpackDynamicTable encodeTable;
     private final HpackDecoder decoder;
-    private final HpackEncoder encoder;
     private final Http2FrameCodec codec;
     private final Http2HeaderBlockAssembler assembler;
     private final Map<Integer, Http2RequestStreamState> requestStreams;
@@ -111,14 +106,10 @@ final class Http2SessionContext implements AutoCloseable {
      */
     private int rapidResetCount;
 
-    private Http2SessionContext(HpackDynamicTable encodeTable,
-                                HpackDecoder decoder,
-                                HpackEncoder encoder,
+    private Http2SessionContext(HpackDecoder decoder,
                                 Http2FrameCodec codec,
                                 Http2HeaderBlockAssembler assembler) {
-        this.encodeTable = encodeTable;
         this.decoder = decoder;
-        this.encoder = encoder;
         this.codec = codec;
         this.assembler = assembler;
         this.requestStreams = new HashMap<>();
@@ -139,14 +130,12 @@ final class Http2SessionContext implements AutoCloseable {
      */
     /* default */ static Http2SessionContext create(MemoryAllocator allocator, HttpConfig config) {
         HpackDynamicTable decodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
-        HpackDynamicTable encodeTable = new HpackDynamicTable(HTTP2_MAX_DYNAMIC_TABLE_SIZE);
         HpackDecoder decoder = new HpackDecoder(
                 decodeTable, allocator, config.maxHeaderListSize(), config.maxStringLiteralSize());
-        HpackEncoder encoder = new HpackEncoder(encodeTable, allocator, false);
         Http2FrameCodec codec = new Http2FrameCodec();
         Http2HeaderBlockAssembler assembler =
                 new Http2HeaderBlockAssembler(allocator, config.maxHeaderBlockSize());
-        return new Http2SessionContext(encodeTable, decoder, encoder, codec, assembler);
+        return new Http2SessionContext(decoder, codec, assembler);
     }
 
     /* default */ Http2FrameCodec codec() {
@@ -154,16 +143,23 @@ final class Http2SessionContext implements AutoCloseable {
     }
 
     /**
-     * Parses peer-advertised SETTINGS entries from the frame payload and
-     * applies the ones this implementation honours: HEADER_TABLE_SIZE (0x01)
-     * resizes the HPACK encoder dynamic table, MAX_FRAME_SIZE (0x05) clamps
-     * the frame codec's maximum frame size to the codec-enforced bounds.
-     * All other settings are accepted but ignored. Throws when the payload
-     * length is not a multiple of {@value #HTTP2_SETTINGS_ENTRY_BYTES}.
+     * Parses peer-advertised SETTINGS entries from the frame payload and applies them in order:
+     * HEADER_TABLE_SIZE (0x01) resizes the HPACK encoder's table, INITIAL_WINDOW_SIZE (0x04) moves
+     * the send window of every open response stream, and MAX_FRAME_SIZE (0x05) clamps the frame
+     * codec's maximum frame size to the codec-enforced bounds. All other settings are accepted but
+     * ignored. Throws when the payload length is not a multiple of
+     * {@value #HTTP2_SETTINGS_ENTRY_BYTES}.
+     *
+     * @return {@link Http2ErrorCode#FLOW_CONTROL_ERROR} when an initial window size exceeds the
+     *         maximum or moves a stream window past it, else {@link Http2ErrorCode#NO_ERROR}; the
+     *         caller ends the connection on an error
      */
-    /* default */ void applyPeerSettings(LoanedBuffer aggregate, long payloadOffset, int payloadLength) {
+    /* default */ Http2ErrorCode applyPeerSettings(LoanedBuffer aggregate,
+                                                   long payloadOffset,
+                                                   int payloadLength,
+                                                   Http2ConnectionWriter writer) {
         if (payloadLength == 0) {
-            return;
+            return Http2ErrorCode.NO_ERROR;
         }
         if (payloadLength % HTTP2_SETTINGS_ENTRY_BYTES != 0) {
             throw new IllegalStateException("Invalid SETTINGS payload length");
@@ -178,13 +174,46 @@ final class Http2SessionContext implements AutoCloseable {
                     | ((segment.get(ValueLayout.JAVA_BYTE, cursor + 4) & 0xFFL) << 8)
                     | (segment.get(ValueLayout.JAVA_BYTE, cursor + 5) & 0xFFL);
             if (settingId == HTTP2_SETTINGS_HEADER_TABLE_SIZE) {
-                encodeTable.setMaxSize(settingValue);
+                writer.applyHeaderTableSize(settingValue);
+            } else if (settingId == Http2Settings.ID_INITIAL_WINDOW_SIZE) {
+                Http2ErrorCode result = applyInitialWindowSize(settingValue, writer);
+                if (result != Http2ErrorCode.NO_ERROR) {
+                    return result;
+                }
             } else if (settingId == HTTP2_SETTINGS_MAX_FRAME_SIZE
                     && settingValue >= Http2FrameCodec.MIN_MAX_FRAME_SIZE
                     && settingValue <= Http2FrameCodec.MAX_MAX_FRAME_SIZE) {
                 codec.setMaxFrameSize((int) settingValue);
             }
         }
+        return Http2ErrorCode.NO_ERROR;
+    }
+
+    private Http2ErrorCode applyInitialWindowSize(long value, Http2ConnectionWriter writer) {
+        if (value > Integer.MAX_VALUE) {
+            return Http2ErrorCode.FLOW_CONTROL_ERROR;
+        }
+        Http2ErrorCode result = writer.applyInitialWindowSize((int) value);
+        if (result != Http2ErrorCode.NO_ERROR) {
+            return result;
+        }
+        return requestPhaseWindowsFit((int) value)
+                ? Http2ErrorCode.NO_ERROR
+                : Http2ErrorCode.FLOW_CONTROL_ERROR;
+    }
+
+    /**
+     * Whether every stream whose request is still arriving can start its response window at
+     * {@code initialWindow} plus the credit it has already received without passing the maximum
+     * (RFC 9113 section 6.9.2: a change that overflows any stream window is a connection error).
+     */
+    private boolean requestPhaseWindowsFit(int initialWindow) {
+        for (Http2RequestStreamState requestStream : requestStreams.values()) {
+            if (!requestStream.addSendWindowIncrement(0, initialWindow)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /* default */ boolean isAwaitingContinuation() {
@@ -206,7 +235,8 @@ final class Http2SessionContext implements AutoCloseable {
      *
      * <ul>
      *   <li>{@link #ACCEPT} — odd id, strictly greater than {@code lastClientStreamId},
-     *       and {@code requestStreams.size() < maxConcurrentStreams}. The session
+     *       and the requests still arriving plus the response streams still held by the writer
+     *       number fewer than {@code maxConcurrentStreams}. The session
      *       advances {@code lastClientStreamId}; caller proceeds with HEADERS decode.</li>
      *   <li>{@link #REJECT_INVALID_ID} — RFC 7540 §5.1.1 violation: even id (server-side
      *       reserved) OR id ≤ {@code lastClientStreamId}. Caller MUST send GOAWAY
@@ -230,10 +260,21 @@ final class Http2SessionContext implements AutoCloseable {
      * error-frame emission on the two reject paths.
      */
     /* default */ StreamAdmission admitClientStreamId(int streamId) {
+        return admitClientStreamId(streamId, 0);
+    }
+
+    /**
+     * As {@link #admitClientStreamId(int)}, counting the response streams that still hold a slot in
+     * the connection's writer against the cap along with the requests still arriving.
+     *
+     * @param streamId            the client-initiated stream id of the arriving HEADERS frame
+     * @param openResponseStreams how many response streams hold a slot
+     */
+    /* default */ StreamAdmission admitClientStreamId(int streamId, int openResponseStreams) {
         if ((streamId & 1) == 0 || streamId <= lastClientStreamId) {
             return StreamAdmission.REJECT_INVALID_ID;
         }
-        if (requestStreams.size() >= maxConcurrentStreams) {
+        if (requestStreams.size() + openResponseStreams >= maxConcurrentStreams) {
             return StreamAdmission.REJECT_OVER_CAP;
         }
         lastClientStreamId = streamId;
@@ -357,39 +398,6 @@ final class Http2SessionContext implements AutoCloseable {
     /** The per-connection Rapid Reset budget (CVE-2023-44487); resets beyond it trip GOAWAY. */
     /* default */ static int rapidResetBudget() {
         return HTTP2_RAPID_RESET_BUDGET;
-    }
-
-    /* default */ long encodeResponseHeaders(MemorySegment target, HttpResponse response) {
-        long position = 0;
-        position = encoder.encodeHeader(
-                target,
-                position,
-                ":status",
-                Integer.toString(response.status().code()),
-                false);
-
-        boolean hasContentLength = false;
-        for (HttpHeader header : response.headers()) {
-            if (header.nameEqualsIgnoreCase(HEADER_CONTENT_LENGTH)) {
-                hasContentLength = true;
-            }
-            if (isConnectionSpecificHeader(header.name()) || header.name().startsWith(":")) {
-                continue;
-            }
-            position = encoder.encodeHeader(
-                    target,
-                    position,
-                    header.name().toLowerCase(Locale.ROOT),
-                    header.value(),
-                    false);
-        }
-
-        LoanedBuffer body = response.body();
-        if (!hasContentLength) {
-            int bodyBytes = body == null ? 0 : (int) body.size();
-            position = encoder.encodeHeader(target, position, "content-length", Integer.toString(bodyBytes), false);
-        }
-        return position;
     }
 
     /* default */ void clearPendingIfStreamMatches(int streamId) {

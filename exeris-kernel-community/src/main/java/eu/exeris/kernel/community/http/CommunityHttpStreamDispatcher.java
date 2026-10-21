@@ -57,6 +57,16 @@ final class CommunityHttpStreamDispatcher {
     }
 
     /**
+     * Returns the per-stream egress credit window in bytes: the system property
+     * {@code exeris.http.stream.creditWindowBytes} when set, else the engine's default.
+     *
+     * @return the window, which an HTTP/2 stream also uses as its bound on bytes queued at the transport
+     */
+    /* default */ static int creditWindowBytes() {
+        return CREDIT_WINDOW_BYTES;
+    }
+
+    /**
      * Resolves the streaming handler for {@code request} if the active handler resolves stream
      * routes; returns {@code null} when the request is not streaming (respond-once path). The method
      * and the path are passed as the request carries them, query string included.

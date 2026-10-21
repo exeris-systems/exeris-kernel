@@ -242,6 +242,11 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **HTTP/2 respond-once responses honour the peer's connection and stream flow-control windows.** The
+  session applies `WINDOW_UPDATE` and `SETTINGS_INITIAL_WINDOW_SIZE`; a body the windows cannot carry
+  yet finishes on a task that waits for credit while the frame loop keeps reading, and every write to
+  the connection goes through one writer. A response larger than 65 535 bytes to a client that keeps
+  the default window is no longer sent past it.
 - **`findShortestPath(UUID, UUID)` no longer reports not-found for a pair it never searched; it refuses (see Changed).**
 - **The SQL/PGQ graph backend's `deleteNode` removes the node's connected edges (#468).** One statement
   deletes, from every registered edge table whose descriptor names the label on the source or target
