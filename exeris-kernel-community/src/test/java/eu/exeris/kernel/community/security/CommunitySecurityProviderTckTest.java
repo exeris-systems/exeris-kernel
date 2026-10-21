@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.security;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.community.testkit.security.TestJwt;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.KernelIsolationClaims;
@@ -28,6 +29,12 @@ class CommunitySecurityProviderTckTest extends AbstractSecurityProviderTck {
     @Override
     protected SecurityProvider createProvider() {
         return new CommunitySecurityProvider(TestJwt.keySet(), TestJwt.EXPECTED_ISSUER, TestJwt.EXPECTED_AUDIENCE);
+    }
+
+    @Override
+    protected SecurityProvider selectAmong(List<SecurityProvider> candidates) {
+        // The kernel selects this SPI through BootstrapProviderSelector.
+        return BootstrapProviderSelector.selectHighestPriority(candidates, SecurityProvider::priority).orElseThrow();
     }
 
     @Override

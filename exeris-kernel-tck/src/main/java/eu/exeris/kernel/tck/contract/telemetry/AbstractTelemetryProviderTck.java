@@ -14,7 +14,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.ServiceLoader;
 
@@ -35,11 +34,11 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  *       {@link KernelEvent#fatal}, and {@code increment()}/{@code gauge()}/{@code latency()},
  *       without throwing</li>
  *   <li>Each sink has a non-blank {@code sinkName()}</li>
- *   <li>A {@link TelemetryProvider} is discoverable via {@link ServiceLoader}; the priority
- *       ordering itself is checked against whichever providers are on the running module's test
- *       classpath, which in every current binding is this one provider alone, so the comparison
- *       cannot fail a provider that ignores {@link ServiceLoader}'s ranking against a competitor</li>
+ *   <li>A {@link TelemetryProvider} is discoverable via {@link ServiceLoader}</li>
  * </ul>
+ *
+ * <p>The kernel does not select among {@code TelemetryProvider}s, so this contract states no
+ * precedence rule; a binding that adds a selector adds its precedence test with it.
  *
  * <h2>How to use</h2>
  * {@snippet lang="java" :
@@ -302,18 +301,6 @@ public abstract class AbstractTelemetryProviderTck {
             assertThat(loader.stream().count())
                     .as("At least one TelemetryProvider must be on the classpath")
                     .isGreaterThanOrEqualTo(1);
-        }
-
-        @Test
-        @DisplayName("Highest-priority provider wins selection")
-        void highestPriorityWins() {
-            TelemetryProvider selected = ServiceLoader.load(TelemetryProvider.class)
-                    .stream()
-                    .map(ServiceLoader.Provider::get)
-                    .max(Comparator.comparingInt(TelemetryProvider::priority))
-                    .orElseThrow();
-            assertThat(selected.priority())
-                    .isGreaterThanOrEqualTo(provider.priority());
         }
     }
 }

@@ -5,6 +5,7 @@
 package eu.exeris.kernel.tck.contract.http;
 
 import eu.exeris.kernel.spi.http.HttpProvider;
+import eu.exeris.kernel.tck.support.PriorityRivals;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -17,7 +18,6 @@ import java.io.InputStreamReader;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -73,6 +73,23 @@ public abstract class AbstractHttpProviderTck {
      * @return a fresh provider instance; never {@code null}
      */
     protected abstract HttpProvider createProvider();
+
+    /**
+     * Runs the selection the binding's kernel applies to discovered {@code HttpProvider}s over exactly
+     * {@code candidates}, and returns the provider that selection picks.
+     *
+     * <p>Delegate to the production selection routine, not to a reduction written in the binding:
+     * the precedence contract is judged against whatever this method returns.
+     *
+     * @param candidates the providers to choose between, in discovery order
+     * @return the selected provider
+     * @throws UnsupportedOperationException by default, so a binding that does not route the candidates
+     *         through its kernel's selection fails the precedence contract rather than skipping it
+     */
+    protected HttpProvider selectAmong(List<HttpProvider> candidates) {
+        throw new UnsupportedOperationException(
+                "Override selectAmong to route the candidates through the kernel's provider selection");
+    }
 
     private HttpProvider provider;
 
@@ -236,23 +253,21 @@ public abstract class AbstractHttpProviderTck {
         }
 
         /**
-         * Asserts that the maximum priority among all providers {@link #discoverProviders()}
-         * finds is never lower than the priority of the provider under test.
-         *
-         * <p>This does not exercise real precedence between competing providers of different
-         * priority: the discovered set typically also contains an instance of the same driver
-         * class as the provider under test, sharing its priority, so the comparison holds by
-         * construction whenever only one driver class is on the classpath. Verifying that a
-         * higher-priority provider actually displaces a lower one requires two distinct
-         * provider classes present at once, which this fixture does not stage.
+         * Stages a rival one priority step above and one below the provider under test, in both
+         * discovery orders, and requires the binding's selection to return the highest by identity.
          */
         @Test
         @DisplayName("Highest-priority provider wins")
         void highestPriorityWins() {
-            HttpProvider selected = discoverProviders().stream()
-                    .max(Comparator.comparingInt(HttpProvider::priority))
-                    .orElseThrow(() -> new AssertionError("No HttpProvider discovered via ServiceLoader"));
-            assertThat(selected.priority()).isGreaterThanOrEqualTo(provider.priority());
+            HttpProvider higher = PriorityRivals.rival(
+                    HttpProvider.class, Math.addExact(provider.priority(), 1), "tck-higher-priority");
+            HttpProvider lower = PriorityRivals.rival(
+                    HttpProvider.class, Math.subtractExact(provider.priority(), 1), "tck-lower-priority");
+
+            assertThat(selectAmong(List.of(lower, provider, higher))).as("higher-priority rival listed last").isSameAs(higher);
+            assertThat(selectAmong(List.of(higher, provider, lower))).as("higher-priority rival listed first").isSameAs(higher);
+            assertThat(selectAmong(List.of(lower, provider))).as("provider under test listed last").isSameAs(provider);
+            assertThat(selectAmong(List.of(provider, lower))).as("provider under test listed first").isSameAs(provider);
         }
     }
 }

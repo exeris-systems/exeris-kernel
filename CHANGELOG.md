@@ -44,6 +44,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Changed
 
+- **Two `HttpProvider`s at equal priority resolve by implementation class name.** The Community HTTP
+  subsystem now selects through `BootstrapProviderSelector`, as the graph, persistence, security and
+  crypto providers do, instead of taking the equal-priority provider `ServiceLoader` listed first. The
+  Community persistence and security subsystems share the same routine, so their ranking is unchanged.
 - **A subsystem's `initialize()` is bounded by a 300-second deadline (EX-BOOT-0003).** The orchestrator
   interrupts the booting thread when one `initialize()` runs past the deadline, and the boot fails with
   `SubsystemInitDeadlineException` (`EX-BOOT-0003`, rawArgs `[subsystemName, deadlineMs]`). The deadline
@@ -251,6 +255,30 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   in Core and Community carry `@Tag("research")` and run only through the `research` profile
   (`mvn -pl exeris-kernel-core,exeris-kernel-community -Presearch test-compile surefire:test`);
   Sonar's S2699 and S3577 are suppressed for them alone (#564).
+- **The provider-precedence contract runs the kernel's selection.** `highestPriorityWins()` in the
+  graph, persistence, HTTP and security provider TCKs compared a maximum computed in the test with the
+  provider the test had created, which holds for any implementation. It now stages a rival one priority
+  step above and one below the provider under test, in both discovery orders, and requires the binding's
+  selection to return the highest by identity. The telemetry TCK drops the equivalent test: the kernel
+  selects no `TelemetryProvider`. **For anyone binding the TCK:** the four provider TCKs need the
+  template method `selectAmong(List)`, which delegates to your kernel's selection routine
+  (`BootstrapProviderSelector.selectHighestPriority` in Core and Community); its default throws, so an
+  unbound provider TCK fails instead of passing. The Enterprise `PersistenceProvider` and `HttpProvider`
+  TCK bindings must implement it when they move to 0.13, and `EnterpriseHttpSubsystem`, which selects
+  inline, must first route its selection through `BootstrapProviderSelector.loadHighestPriority`:
+  until then a binding that delegates to `selectHighestPriority` proves a routine that kernel does not
+  run. The Enterprise telemetry binding loses `highestPriorityWins` with no replacement.
+- **`AbstractFailurePolicyTck` observes the boot itself.** The three `boolean` hooks, each of which a
+  hardcoded `true` satisfied, are replaced by `bootCapturing(subsystems, degrade, kernelMain)`; the TCK
+  supplies counting subsystems and judges the boot by what they saw, and adds the cases that a mandatory
+  and a FOUNDATION failure still abort under `DEGRADE`. **For anyone binding the TCK:** implement
+  `bootCapturing` as in `AbstractSubsystemErrorRoutingTck`.
+- **`AbstractGracefulShutdownTck` is bound in Core and can no longer pass without observing a stop.**
+  `CoreGracefulShutdownTckTest` boots six stub subsystems through the real bootstrap and checks the
+  order and the drain of the shipped stop path. The TCK fails when the handle carries fewer than two
+  tracked engines, when an engine is bound to another order list, or when engines are not closed within
+  10 s of the trigger. **For anyone binding the TCK:** supply at least two `TrackedEngine`s bound to the
+  handle's order list.
 
 ## [0.12.0] — 2026-09-30
 

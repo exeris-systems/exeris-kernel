@@ -4,9 +4,12 @@
  */
 package eu.exeris.kernel.community.persistence;
 
+import eu.exeris.kernel.core.bootstrap.BootstrapProviderSelector;
 import eu.exeris.kernel.spi.persistence.PersistenceProvider;
 import eu.exeris.kernel.tck.contract.persistence.AbstractPersistenceProviderTck;
 import org.junit.jupiter.api.DisplayName;
+
+import java.util.List;
 
 /**
  * Community concrete TCK: {@link AbstractPersistenceProviderTck} backed by
@@ -28,5 +31,11 @@ class CommunityPersistenceProviderTckTest extends AbstractPersistenceProviderTck
     @Override
     protected PersistenceProvider createProvider() {
         return new CommunityPersistenceProvider();
+    }
+
+    @Override
+    protected PersistenceProvider selectAmong(List<PersistenceProvider> candidates) {
+        // The kernel selects this SPI through BootstrapProviderSelector.
+        return BootstrapProviderSelector.selectHighestPriority(candidates, PersistenceProvider::priority).orElseThrow();
     }
 }
