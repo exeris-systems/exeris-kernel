@@ -461,6 +461,7 @@ failure is logged and never fails the subsystem.
   subsystem is initialized
 - `CoreBootstrapOrchestratorTckTest`, `CoreBootstrapOrchestratorRealSortTckTest` — `AbstractBootstrapOrchestratorTck`
 - `CoreFailurePolicyTckTest` — `AbstractFailurePolicyTck` (FAIL_FAST vs DEGRADE)
+- `CoreGracefulShutdownTckTest` — `AbstractGracefulShutdownTck` (stop order and drain, stub subsystems through the real bootstrap)
 - `CoreSubsystemErrorRoutingTckTest` — `AbstractSubsystemErrorRoutingTck` (routing non-fatal `Error` through failure policy; `VirtualMachineError` raw propagation)
 - `CoreBootstrapZeroAllocTckTest` — `BootstrapZeroAllocTck`
 - `CoreHealthMonitorTckTest`, `CoreProviderBindingLifecycleTckTest`, `KernelBootstrapTest`, `ScopedValueBindingTest`
@@ -471,8 +472,8 @@ failure is logged and never fails the subsystem.
 - `AbstractSubsystemLifecycleTck` bindings for `memory`, `transport`, `http` and `websocket`
 - `HealthEndpointHandlerKernelMonitorIntegrationTest`, `CommunitySubsystemHealthWatcherTest`
 
-> **Note:** `AbstractGracefulShutdownTck` has no concrete binding in this repository, and there is no test
-> of signal handling, because the kernel handles no signal. The transport drain is covered by
+> **Note:** `AbstractGracefulShutdownTck` is bound in Core over stub subsystems; the kernel handles no
+> signal, so there is no signal test. The transport drain is covered by
 > `PaqsSchedulerTest`, `DrainCoordinatorTest` and `CommunityHttpDrainIntegrationTest`, not by this
 > subsystem's tests.
 
