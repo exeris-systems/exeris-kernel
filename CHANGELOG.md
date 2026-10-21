@@ -141,9 +141,10 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 ### Added
 
 - **Stream routes are resolved and served over HTTP/2.** A request for a stream route that arrives over TLS
-  with ALPN `h2`, an `h2c` upgrade or a prior-knowledge preface now reaches its stream handler instead of the
-  respond-once handler. The head is a `HEADERS` frame, each event one or more `DATA` frames, a graceful close
-  an empty `DATA` frame with `END_STREAM`, and an abortive end `RST_STREAM(CANCEL)`; `emit` parks on the
+  with ALPN `h2` or a prior-knowledge preface now reaches its stream handler instead of the respond-once
+  handler. The `h2c` upgrade path does not yet consume the client connection preface that follows `101`, so a
+  compliant client that upgrades is answered with `GOAWAY(PROTOCOL_ERROR)`. The head is a `HEADERS` frame, each event one or more `DATA` frames, a graceful close
+  an empty `DATA` frame with `END_STREAM`, and an authorization that expires mid-stream resets the stream with `RST_STREAM(CANCEL)`; `emit` parks on the
   smaller of the stream's and the connection's flow-control window and on a per-stream bound of
   `exeris.http.stream.creditWindowBytes` bytes queued to the transport. Each stream runs on a thread of its
   own, authorized by the dispatch HTTP/1.1 uses, and holds a `SETTINGS_MAX_CONCURRENT_STREAMS` slot until its

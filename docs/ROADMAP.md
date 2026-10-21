@@ -3373,7 +3373,7 @@ request over `h2c` resolves the same route.
 **Status (v0.13): DELIVERED.** A listener's ALPN answer follows `http.maxVersion` (#533), outbound
 HTTP/2 flow control is delivered, and Community resolves and serves stream routes over HTTP/2. The
 merge gate is held by `CommunityHttp2StreamRouteIntegrationTest`, which reads a stream route over TLS
-with ALPN `h2`, over prior knowledge and after an `h2c` upgrade, and by `Http2StreamRouteTest` and
+with ALPN `h2` and over prior knowledge, and by `Http2StreamRouteTest` and
 `Http2ConnectionWriterTest`, which exercise the park on the HTTP/2 flow-control window and every
 interleaving of a window change with a parking emitter. `CommunityHttp2cStreamExchangeTckTest` binds
 `AbstractHttpStreamExchangeTck` over HTTP/2 and runs on demand with the `stream-loopback` group.

@@ -36,7 +36,7 @@ import java.util.concurrent.locks.LockSupport;
 
 /**
  * One live HTTP/2 stream round trip for the stream TCK bindings: a real NIO server whose request loop
- * serves {@code GET /stream} as a stream route, over cleartext prior knowledge or TLS with ALPN, and an
+ * serves {@code GET /stream} as a stream route over cleartext prior knowledge, and an
  * {@link Http2TestClient} that reads it. The emit path's allocator is a {@link LeakTrackingAllocator},
  * so the outstanding loans are this stream's alone.
  */
