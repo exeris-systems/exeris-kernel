@@ -3371,7 +3371,8 @@ request over `h2c` resolves the same route.
 "HTTP/1.1 + h2", not a narrowing of it.
 
 **Status (v0.13): PARTIAL.** The ALPN half is delivered: a listener's ALPN answer follows
-`http.maxVersion` (#533). Stream resolution over HTTP/2 stays OPEN.
+`http.maxVersion` (#533). Outbound HTTP/2 flow control is delivered; stream resolution over HTTP/2
+stays OPEN.
 
 ---
 
