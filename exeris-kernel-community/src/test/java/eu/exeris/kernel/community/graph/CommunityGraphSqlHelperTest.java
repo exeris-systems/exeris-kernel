@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.graph;
 
+import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.persistence.PersistenceConnection;
 import eu.exeris.kernel.spi.persistence.PersistenceStatement;
@@ -19,7 +20,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -59,11 +62,14 @@ class CommunityGraphSqlHelperTest {
         assertThat(sql).contains(
                 "DELETE FROM graph_nodes WHERE id = (SELECT id FROM arg) AND label = $2");
 
-        when(connection.prepare(anyString())).thenReturn(statement);
+        assertThat(sql).containsOnlyOnce("$1").containsOnlyOnce("$2");
+        assertThat(sql.indexOf("$1")).isLessThan(sql.indexOf("$2"));
+
+        when(connection.prepare(sql)).thenReturn(statement);
         UUID nodeId = UUID.randomUUID();
         helper.deleteNode("Product", nodeId);
 
-        verify(connection, times(1)).prepare(anyString());
+        verify(connection, times(1)).prepare(sql);
         verify(statement, times(1)).bindUuid(0, nodeId);
         verify(statement, times(1)).bindString(1, "Product");
         verify(statement, times(1)).executeUpdate();
@@ -119,5 +125,22 @@ class CommunityGraphSqlHelperTest {
         assertThat(sql).containsOnlyOnce(
                 "DELETE FROM tck_purchased_edges WHERE source_id = (SELECT id FROM arg)"
                         + " OR target_id = (SELECT id FROM arg)");
+    }
+
+    @Test
+    @DisplayName("deleteNode rejects an edge table name that is not a SQL identifier before preparing anything")
+    void deleteNodeRejectsInvalidEdgeTableNameBeforePrepare() {
+        CommunityGraphDialect dialect = new CommunityGraphDialect("test_graph");
+        List<GraphEdgeDescriptor> edges = new ArrayList<>(AbstractGraphSessionLiveContractTck.edgeTypes());
+        edges.add(new GraphEdgeDescriptor(
+                "Product", "MALICIOUS", "User", 1.0, false,
+                GraphEdgeDescriptor.Direction.OUTGOING, "t; DROP TABLE graph_nodes"));
+        CommunityGraphSqlHelper helper = new CommunityGraphSqlHelper(dialect, () -> connection, edges);
+        UUID nodeId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> helper.deleteNode("Product", nodeId))
+                .isInstanceOf(GraphQueryException.class);
+
+        verify(connection, never()).prepare(any());
     }
 }

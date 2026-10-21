@@ -24,6 +24,16 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.util.Map;
 import java.util.function.Supplier;
 
+/**
+ * Community binding of {@link AbstractGraphSessionLiveContractTck} against a live PostgreSQL
+ * instance through the SQL/PGQ backend, via Testcontainers.
+ *
+ * <h2>Execution</h2>
+ * <p>Tagged {@code integration} and excluded by default. Runs in the
+ * {@code persistence-rls-gate} CI job, not in {@code build-and-verify}.
+ *
+ * @since 0.13
+ */
 @Tag("integration")
 @Testcontainers(disabledWithoutDocker = true)
 @DisplayName("Community: GraphSession contract — live PostgreSQL (SQL/PGQ backend)")

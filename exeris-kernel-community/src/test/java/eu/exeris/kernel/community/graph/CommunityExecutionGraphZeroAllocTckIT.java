@@ -23,7 +23,7 @@ import java.util.Map;
  * <p>Tagged {@code integration} and excluded by default. Runs in the
  * {@code persistence-rls-gate} CI job, not in {@code build-and-verify}.
  *
- * @since 0.5.0
+ * @since 0.13
  */
 @Tag("integration")
 @Testcontainers(disabledWithoutDocker = true)
