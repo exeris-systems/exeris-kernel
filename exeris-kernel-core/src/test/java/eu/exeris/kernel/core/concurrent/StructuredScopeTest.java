@@ -401,8 +401,10 @@ class StructuredScopeTest {
         }
 
         private void awaitAllTerminated(List<StructuredScope.ForkedTask<String>> forked) {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
             for (StructuredScope.ForkedTask<String> task : forked) {
                 while (task.state() == StructuredScope.State.RUNNING) {
+                    assertThat(System.nanoTime()).as("tasks terminate within the bound").isLessThan(deadline);
                     Thread.onSpinWait();
                 }
             }
