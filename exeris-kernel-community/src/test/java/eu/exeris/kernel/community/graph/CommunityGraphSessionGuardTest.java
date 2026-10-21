@@ -4,6 +4,7 @@
  */
 package eu.exeris.kernel.community.graph;
 
+import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.GraphConfig;
 import eu.exeris.kernel.spi.graph.GraphEngine;
@@ -12,6 +13,8 @@ import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
 import eu.exeris.kernel.spi.graph.model.GraphHop;
 import eu.exeris.kernel.spi.graph.model.GraphPathSpec;
 import eu.exeris.kernel.spi.graph.model.GraphTraversal;
+import eu.exeris.kernel.spi.security.ImmutableStorageContext;
+import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -167,6 +170,77 @@ class CommunityGraphSessionGuardTest {
             assertThatThrownBy(() -> session.streamBfsJson(traversal))
                     .isInstanceOf(GraphQueryException.class)
                     .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH_LIMIT"));
+        }
+    }
+
+    @Test
+    @DisplayName("SQL engine refuses traversePath under SHARED tenant context as ISOLATION_SCOPE")
+    void sqlEngineRefusesTraversePathUnderSharedTenantContext() {
+        StorageContext ctx = ImmutableStorageContext.shared("t");
+        try (GraphSession session = engine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(), List.of(GraphHop.of(edge)));
+
+            ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ctx).run(() ->
+                    assertThatThrownBy(() -> session.traversePath(path))
+                            .isInstanceOf(GraphQueryException.class)
+                            .satisfies(ex -> {
+                                GraphQueryException gqe = (GraphQueryException) ex;
+                                assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
+                                assertThat((String) gqe.rawArgs()[1])
+                                        .contains("Community SQL/PGQ (PostgreSQL)")
+                                        .contains("SHARED");
+                            }));
+        }
+    }
+
+    @Test
+    @DisplayName("SQL engine passes scope guard under SEPARATED_SCHEMA and GLOBAL contexts")
+    void sqlEnginePassesScopeGuardUnderSeparatedSchemaAndGlobal() {
+        StorageContext sep = ImmutableStorageContext.separatedSchema("t", "s");
+        try (GraphSession session = engine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(), List.of(GraphHop.of(edge)));
+
+            ScopedValue.where(KernelProviders.STORAGE_CONTEXT, sep).run(() ->
+                    assertThatThrownBy(() -> session.traversePath(path))
+                            .isInstanceOf(GraphQueryException.class)
+                            .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0])
+                                    .isNotEqualTo("ISOLATION_SCOPE")));
+
+            ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL).run(() ->
+                    assertThatThrownBy(() -> session.traversePath(path))
+                            .isInstanceOf(GraphQueryException.class)
+                            .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0])
+                                    .isNotEqualTo("ISOLATION_SCOPE")));
+        }
+    }
+
+    @Test
+    @DisplayName("Cypher engine refuses traversePath under DEDICATED context and passes under GLOBAL")
+    void cypherEngineRefusesDedicatedAndPassesGlobal() {
+        try (CommunityGraphEngine cypherEngine = new CommunityGraphEngine(GraphConfig.create("neo4j"));
+             GraphSession session = cypherEngine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(), List.of(GraphHop.of(edge)));
+
+            StorageContext ded = ImmutableStorageContext.dedicated("t", "d");
+            ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ded).run(() ->
+                    assertThatThrownBy(() -> session.traversePath(path))
+                            .isInstanceOf(GraphQueryException.class)
+                            .satisfies(ex -> {
+                                GraphQueryException gqe = (GraphQueryException) ex;
+                                assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
+                                assertThat((String) gqe.rawArgs()[1])
+                                        .contains("Community Cypher (Neo4j)")
+                                        .contains("DEDICATED");
+                            }));
+
+            ScopedValue.where(KernelProviders.STORAGE_CONTEXT, ImmutableStorageContext.GLOBAL).run(() ->
+                    assertThatThrownBy(() -> session.traversePath(path))
+                            .isInstanceOf(GraphQueryException.class)
+                            .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0])
+                                    .isNotEqualTo("ISOLATION_SCOPE")));
         }
     }
 }

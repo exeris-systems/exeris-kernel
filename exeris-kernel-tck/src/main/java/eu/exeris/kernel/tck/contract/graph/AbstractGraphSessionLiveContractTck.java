@@ -4,6 +4,8 @@
  */
 package eu.exeris.kernel.tck.contract.graph;
 
+import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.graph.GraphQueryException;
 import eu.exeris.kernel.spi.graph.GraphEngine;
 import eu.exeris.kernel.spi.graph.GraphSession;
 import eu.exeris.kernel.spi.graph.model.GraphEdgeDescriptor;
@@ -16,11 +18,14 @@ import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.security.ImmutableStorageContext;
 import eu.exeris.kernel.spi.security.StorageContext;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.Timeout;
 
 import java.lang.foreign.ValueLayout;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -30,15 +35,19 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 /**
  * TCK: Observable contract for {@link GraphSession} against a live backend (PostgreSQL, Neo4j).
  *
  * <p>A binding registers {@link #nodeTypes()} and {@link #edgeTypes()} once under the system context
- * and implements {@link #callInScope(StorageContext, Supplier)}.
+ * and implements {@link #callInScope(StorageContext, Supplier)}, {@link #scopableStrategies()}, and
+ * {@link #tenantContexts(StorageContext.IsolationStrategy)}. An empty {@link TestFactory} stream is
+ * legal and is produced by bindings that scope no tenant contexts (e.g. Neo4j).
  *
  * @since 0.13
  */
@@ -103,6 +112,52 @@ public abstract class AbstractGraphSessionLiveContractTck {
     protected abstract <T> T callInScope(StorageContext context, Supplier<T> action);
 
     /**
+     * Strategies the binding declares it scopes.
+     *
+     * @return set of supported isolation strategies
+     */
+    protected abstract Set<StorageContext.IsolationStrategy> scopableStrategies();
+
+    /**
+     * Two distinct tenant contexts of {@code strategy} whose storage the binding has
+     * provisioned with every {@link #edgeTypes()} and {@link #nodeTypes()} table; called
+     * only for declared strategies.
+     *
+     * @param strategy the isolation strategy
+     * @return list containing exactly two distinct tenant contexts
+     */
+    protected abstract List<StorageContext> tenantContexts(StorageContext.IsolationStrategy strategy);
+
+    /**
+     * Executes work inside a session opened under the specified storage context.
+     *
+     * @param <T> result type
+     * @param context the storage context to bind
+     * @param work the function to execute with an open session
+     * @return result of work
+     */
+    protected final <T> T inSession(StorageContext context, Function<GraphSession, T> work) {
+        return callInScope(context, () -> {
+            try (GraphSession session = engine().openSession()) {
+                return work.apply(session);
+            }
+        });
+    }
+
+    /**
+     * Executes an action inside a session opened under the specified storage context.
+     *
+     * @param context the storage context to bind
+     * @param work the consumer to execute with an open session
+     */
+    protected final void inSession(StorageContext context, Consumer<GraphSession> work) {
+        inSession(context, s -> {
+            work.accept(s);
+            return null;
+        });
+    }
+
+    /**
      * Executes work inside a session opened under the system context (GLOBAL).
      *
      * @param <T> result type
@@ -110,11 +165,7 @@ public abstract class AbstractGraphSessionLiveContractTck {
      * @return result of work
      */
     protected final <T> T inSystemSession(Function<GraphSession, T> work) {
-        return callInScope(ImmutableStorageContext.GLOBAL, () -> {
-            try (GraphSession session = engine().openSession()) {
-                return work.apply(session);
-            }
-        });
+        return inSession(ImmutableStorageContext.GLOBAL, work);
     }
 
     /**
@@ -123,10 +174,7 @@ public abstract class AbstractGraphSessionLiveContractTck {
      * @param work the consumer to execute with an open session
      */
     protected final void inSystemSession(Consumer<GraphSession> work) {
-        inSystemSession(s -> {
-            work.accept(s);
-            return null;
-        });
+        inSession(ImmutableStorageContext.GLOBAL, work);
     }
 
     /**
@@ -187,6 +235,22 @@ public abstract class AbstractGraphSessionLiveContractTck {
             Pattern.compile("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     /**
+     * Traverses a path under the specified storage context, asserts no duplicates, and returns the result as a set.
+     *
+     * @param context the storage context to bind
+     * @param start start node ID
+     * @param hops hops to traverse
+     * @return set of reachable terminal node IDs
+     */
+    protected final Set<UUID> path(StorageContext context, UUID start, GraphHop... hops) {
+        return inSession(context, s -> {
+            List<UUID> list = s.traversePath(new GraphPathSpec(start, List.of(hops)));
+            assertThat(list).doesNotHaveDuplicates();
+            return Set.copyOf(list);
+        });
+    }
+
+    /**
      * Traverses a path in a system session, asserts no duplicates, and returns the result as a set.
      *
      * @param start start node ID
@@ -194,11 +258,29 @@ public abstract class AbstractGraphSessionLiveContractTck {
      * @return set of reachable terminal node IDs
      */
     protected final Set<UUID> path(UUID start, GraphHop... hops) {
-        return inSystemSession(s -> {
-            List<UUID> list = s.traversePath(new GraphPathSpec(start, List.of(hops)));
-            assertThat(list).doesNotHaveDuplicates();
-            return Set.copyOf(list);
-        });
+        return path(ImmutableStorageContext.GLOBAL, start, hops);
+    }
+
+    /**
+     * Streams a path JSON under the specified storage context in a try-with-resources opened
+     * before and read after session.close(), parses the JSON array of UUID strings, and returns
+     * the result as a set.
+     *
+     * @param context the storage context to bind
+     * @param start start node ID
+     * @param hops hops to traverse
+     * @return set of reachable terminal node IDs
+     */
+    protected final Set<UUID> pathJson(StorageContext context, UUID start, GraphHop... hops) {
+        byte[] bytes;
+        try (LoanedBuffer buffer = callInScope(context, () -> {
+            try (GraphSession session = engine().openSession()) {
+                return session.streamPathJson(new GraphPathSpec(start, List.of(hops)));
+            }
+        })) {
+            bytes = buffer.segment().asSlice(0, buffer.size()).toArray(ValueLayout.JAVA_BYTE);
+        }
+        return parseUuidJsonArray(bytes);
     }
 
     /**
@@ -210,15 +292,7 @@ public abstract class AbstractGraphSessionLiveContractTck {
      * @return set of reachable terminal node IDs
      */
     protected final Set<UUID> pathJson(UUID start, GraphHop... hops) {
-        byte[] bytes;
-        try (LoanedBuffer buffer = callInScope(ImmutableStorageContext.GLOBAL, () -> {
-            try (GraphSession session = engine().openSession()) {
-                return session.streamPathJson(new GraphPathSpec(start, List.of(hops)));
-            }
-        })) {
-            bytes = buffer.segment().asSlice(0, buffer.size()).toArray(ValueLayout.JAVA_BYTE);
-        }
-        return parseUuidJsonArray(bytes);
+        return pathJson(ImmutableStorageContext.GLOBAL, start, hops);
     }
 
     /**
@@ -553,5 +627,120 @@ public abstract class AbstractGraphSessionLiveContractTck {
             assertThat(pathSet).containsExactlyInAnyOrder(s1, s2);
             assertThat(streamSet).isEqualTo(pathSet);
         });
+    }
+
+    @TestFactory
+    @DisplayName("a second hop cannot reach a node outside the caller's scope")
+    Stream<DynamicTest> crossTenantIsolationPreventsReachingOutsideScope() {
+        return scopableStrategies().stream().map(strategy -> DynamicTest.dynamicTest(
+                strategy.name() + ": a second hop cannot reach a node outside the caller's scope",
+                () -> {
+                    List<StorageContext> tenants = tenantContexts(strategy);
+                    assertThat(tenants).as("tenantContexts must return two distinct contexts")
+                            .hasSize(2);
+                    StorageContext t1 = tenants.get(0);
+                    StorageContext t2 = tenants.get(1);
+
+                    UUID u = UUID.randomUUID();
+                    UUID p = UUID.randomUUID();
+                    UUID x1 = UUID.randomUUID();
+                    UUID x2 = UUID.randomUUID();
+                    UUID xs = UUID.randomUUID();
+
+                    inSession(t1, s -> {
+                        s.upsertNode("User", u, null);
+                        s.upsertNode("Product", p, null);
+                        s.upsertNode("Product", x1, null);
+                        link(s, PURCHASED, u, p);
+                        link(s, SIMILAR_TO, p, x1);
+                    });
+
+                    inSession(t2, s -> {
+                        s.upsertNode("Product", p, null);
+                        s.upsertNode("Product", x2, null);
+                        link(s, SIMILAR_TO, p, x2);
+                    });
+
+                    inSystemSession(s -> {
+                        s.upsertNode("User", u, null);
+                        s.upsertNode("Product", p, null);
+                        s.upsertNode("Product", xs, null);
+                        link(s, PURCHASED, u, p);
+                        link(s, SIMILAR_TO, p, xs);
+                    });
+
+                    GraphHop h1 = GraphHop.of(PURCHASED);
+                    GraphHop h2 = GraphHop.of(SIMILAR_TO);
+
+                    assertThat(path(t1, u, h1, h2)).containsExactly(x1);
+                    assertThat(pathJson(t1, u, h1, h2)).containsExactly(x1);
+
+                    assertThat(path(t2, p, h2)).containsExactly(x2);
+                    assertThat(path(t2, u, h1, h2)).isEmpty();
+                }
+        ));
+    }
+
+    @TestFactory
+    @DisplayName("graph traversals are refused under an unscopable storage context")
+    Stream<DynamicTest> unscopableStorageContextRefusesTraversals() {
+        return Arrays.stream(StorageContext.IsolationStrategy.values())
+                .filter(strategy -> !scopableStrategies().contains(strategy))
+                .map(strategy -> DynamicTest.dynamicTest(
+                        strategy.name() + ": graph traversals are refused under an unscopable storage context",
+                        () -> {
+                            StorageContext canonical = canonicalContext(strategy);
+                            UUID id = UUID.randomUUID();
+                            GraphHop hop = GraphHop.of(LINKED);
+                            GraphPathSpec path = new GraphPathSpec(id, List.of(hop));
+                            GraphTraversal traversal = GraphTraversal.create(id, LINKED, 1);
+
+                            inSession(canonical, s -> {
+                                assertThatThrownBy(() -> s.traversePath(path))
+                                        .isInstanceOf(GraphQueryException.class)
+                                        .satisfies(ex -> {
+                                            GraphQueryException gqe = (GraphQueryException) ex;
+                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
+                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
+                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
+                                        });
+
+                                assertThatThrownBy(() -> s.streamPathJson(path))
+                                        .isInstanceOf(GraphQueryException.class)
+                                        .satisfies(ex -> {
+                                            GraphQueryException gqe = (GraphQueryException) ex;
+                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
+                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
+                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
+                                        });
+
+                                assertThatThrownBy(() -> s.traverseBreadthFirst(traversal))
+                                        .isInstanceOf(GraphQueryException.class)
+                                        .satisfies(ex -> {
+                                            GraphQueryException gqe = (GraphQueryException) ex;
+                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
+                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
+                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
+                                        });
+
+                                assertThatThrownBy(() -> s.streamBfsJson(traversal))
+                                        .isInstanceOf(GraphQueryException.class)
+                                        .satisfies(ex -> {
+                                            GraphQueryException gqe = (GraphQueryException) ex;
+                                            assertThat(gqe.errorCode()).isEqualTo(KernelErrorCodes.EX_GRPH_5002);
+                                            assertThat(gqe.rawArgs()[0]).isEqualTo("ISOLATION_SCOPE");
+                                            assertThat((String) gqe.rawArgs()[1]).contains(strategy.name());
+                                        });
+                            });
+                        }
+                ));
+    }
+
+    private static StorageContext canonicalContext(StorageContext.IsolationStrategy strategy) {
+        return switch (strategy) {
+            case SHARED -> ImmutableStorageContext.shared("tck-tenant");
+            case SEPARATED_SCHEMA -> ImmutableStorageContext.separatedSchema("tck-tenant", "tck_unscopable");
+            case DEDICATED -> ImmutableStorageContext.dedicated("tck-tenant", "tck-unscopable");
+        };
     }
 }

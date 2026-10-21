@@ -18,6 +18,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Breaking
 
+- **Graph traversal refused under an unscopable storage context (ADR-102 Obligation 9).** Traversals under an unscopable tenant context are refused before any database I/O; see Changed.
 - **Graph SPI (preview): `GraphSession` gains abstract `traversePath`/`streamPathJson`, `GraphDialect` gains abstract `buildPathQuery`, and `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract (ADR-102).** An out-of-tree implementer must implement the three methods and the three-argument overload; it can no longer inherit the two-argument behaviour.
 
 ### Security
@@ -60,6 +61,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   returns at once.
 - **A second concurrent `boot()` on one `KernelBootstrap` instance throws `IllegalStateException`.** Booting
   again after a boot returned is unchanged.
+- **Graph traversal refused under an unscopable storage context (ADR-102 Obligation 9).** Community SQL/PGQ serves `SEPARATED_SCHEMA` and `DEDICATED` and refuses `SHARED` tenant contexts; Community Cypher refuses every tenant context; system-scope callers are unaffected; `GraphQueryException` `ISOLATION_SCOPE`.
 - **Every graph traversal honours the descriptor's direction (ADR-102).** `traverseBreadthFirst` and `streamBfsJson` with an `INCOMING`, `BOTH` or `bidirectional` descriptor now return a different set than before; a caller relying on the old result moves to an explicit `OUTGOING` descriptor.
 - **`findShortestPath(UUID, UUID)` throws `GraphQueryException` instead of returning not-found (ADR-102).** Two-argument shortest path is refused with `EX-GRPH-5002` (`SHORTEST_PATH`) for distinct and equal ids; callers must specify a `GraphEdgeDescriptor` through the three-argument overload.
 - **Community refuses a traversal whose path length bound exceeds 64 (ADR-102).** A traversal where `Σ maxRepeat` (or `maxDepth` for breadth-first) exceeds 64 is refused before any I/O with `GraphQueryException` (`EX-GRPH-5002`, query type `PATH_LIMIT`).

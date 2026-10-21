@@ -273,6 +273,20 @@ GraphPathSpec path = new GraphPathSpec(userId, List.of(
 List<UUID> recommendations = session.traversePath(path);
 ```
 
+### Tenant Scoping
+
+Graph traversals execute under the ambient `StorageContext` (`KernelProviders.storageContextOrSystem()`).
+A context is system-scope if its strategy is `SHARED` with an empty isolation key (such as `ImmutableStorageContext.GLOBAL`).
+A non-system context whose isolation strategy the backend cannot scope is refused before any database I/O with
+`GraphQueryException` (`EX-GRPH-5002`, `queryType = "ISOLATION_SCOPE"`).
+
+| Binding | `SHARED` (tenant) | `SEPARATED_SCHEMA` | `DEDICATED` | system context |
+|:---|:---:|:---:|:---:|:---:|
+| SQL/PGQ | refused | scoped (`search_path`) | scoped (pool routing) | served |
+| Cypher | refused | refused | refused | served |
+
+Guarded: the four traversal methods (`traverseBreadthFirst`, `streamBfsJson`, `traversePath`, `streamPathJson`). Not guarded: writes, `getRootNode`, `findShortestPath`.
+
 ---
 
 ## Driver Roadmap and Production Readiness
@@ -379,11 +393,10 @@ that is a shortest-path detail, not a traversal one.
 The following three checks are described in earlier documentation but have no backing test or type in
 this tree today — listed here as gaps, not coverage:
 
-- No test exercises `StorageContext`-based tenant isolation for graph traversals; `CommunityGraphDialect`'s
-  generated edge-table DDL deliberately has no `tenant_id` column (`CommunityGraphDialectTest`'s
-  `tenantIdNotPresent()` asserts exactly that), so any tenant scoping for the SQL/PGQ backend would have
-  to come from the connection `StorageContext` routes to, not from a column the graph layer owns — and
-  nothing in this tree proves that routing holds for a graph traversal specifically.
+- `StorageContext`-based tenant isolation for graph traversals is verified by
+  `AbstractGraphSessionLiveContractTck` via `crossTenantIsolationPreventsReachingOutsideScope`
+  (dynamic test per supported strategy) and `unscopableStorageContextRefusesTraversals`
+  (dynamic test per unsupported strategy), executed against live PostgreSQL and Neo4j.
 - There is no `TraversalResult` type anywhere in the codebase, and no test comparing PostgreSQL and Neo4j
   output bit-for-bit; `CommunityGraphBackendParityIT` (Testcontainers Neo4j, `@Tag("integration")`) proves
   the Cypher backend executes real writes and reads, and separately asserts both dialects produce
