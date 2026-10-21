@@ -368,6 +368,25 @@ class CommunityGraphDialectTest {
                     .doesNotThrowAnyException();
         }
 
+
+        @Test
+        @DisplayName("two hops summing to 65 throw IllegalArgumentException")
+        void sqlTwoHopsSummingToSixtyFiveThrow() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 33));
+            assertThatThrownBy(() -> dialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("two hops summing to 64 are accepted")
+        void sqlTwoHopsSummingToSixtyFourAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 32));
+            assertThatCode(() -> dialect.buildPathQuery(hops))
+                    .doesNotThrowAnyException();
+        }
+
         @Test
         @DisplayName("empty hops list throws IllegalArgumentException")
         void emptyHopsThrows() {
@@ -472,6 +491,25 @@ class CommunityGraphDialectTest {
         void cypherHopsSumAtLimitAccepted() {
             GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
             List<GraphHop> hops = List.of(new GraphHop(edge, 1, 64));
+            assertThatCode(() -> cypherDialect.buildPathQuery(hops))
+                    .doesNotThrowAnyException();
+        }
+
+
+        @Test
+        @DisplayName("two hops summing to 65 in Cypher mode throw IllegalArgumentException")
+        void cypherTwoHopsSummingToSixtyFiveThrow() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 33));
+            assertThatThrownBy(() -> cypherDialect.buildPathQuery(hops))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("two hops summing to 64 in Cypher mode are accepted")
+        void cypherTwoHopsSummingToSixtyFourAccepted() {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            List<GraphHop> hops = List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 32));
             assertThatCode(() -> cypherDialect.buildPathQuery(hops))
                     .doesNotThrowAnyException();
         }

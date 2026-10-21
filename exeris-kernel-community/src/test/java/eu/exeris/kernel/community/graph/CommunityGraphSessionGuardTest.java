@@ -114,4 +114,59 @@ class CommunityGraphSessionGuardTest {
                     .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH_LIMIT"));
         }
     }
+
+    @Test
+    @DisplayName("traversePath with two hops summing to 65 throws PATH_LIMIT")
+    void traversePathTwoHopsSummingToSixtyFiveThrowsPathLimit() {
+        try (GraphSession session = engine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(),
+                    List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 33)));
+
+            assertThatThrownBy(() -> session.traversePath(path))
+                    .isInstanceOf(GraphQueryException.class)
+                    .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH_LIMIT"));
+        }
+    }
+
+    @Test
+    @DisplayName("traversePath with two hops summing to 64 passes the limit guard")
+    void traversePathTwoHopsSummingToSixtyFourPassesGuard() {
+        try (GraphSession session = engine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(),
+                    List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 32)));
+
+            assertThatThrownBy(() -> session.traversePath(path))
+                    .isInstanceOf(GraphQueryException.class)
+                    .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isNotEqualTo("PATH_LIMIT"));
+        }
+    }
+
+    @Test
+    @DisplayName("streamPathJson with hops summing to 65 throws PATH_LIMIT")
+    void streamPathJsonExceedingLimitThrowsPathLimit() {
+        try (GraphSession session = engine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphPathSpec path = new GraphPathSpec(UUID.randomUUID(),
+                    List.of(new GraphHop(edge, 1, 32), new GraphHop(edge, 1, 33)));
+
+            assertThatThrownBy(() -> session.streamPathJson(path))
+                    .isInstanceOf(GraphQueryException.class)
+                    .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH_LIMIT"));
+        }
+    }
+
+    @Test
+    @DisplayName("streamBfsJson with depth 65 throws PATH_LIMIT")
+    void streamBfsJsonExceedingLimitThrowsPathLimit() {
+        try (GraphSession session = engine.openSession()) {
+            GraphEdgeDescriptor edge = GraphEdgeDescriptor.create("Product", "LINKED", "Product");
+            GraphTraversal traversal = GraphTraversal.create(UUID.randomUUID(), edge, 65);
+
+            assertThatThrownBy(() -> session.streamBfsJson(traversal))
+                    .isInstanceOf(GraphQueryException.class)
+                    .satisfies(ex -> assertThat(((GraphQueryException) ex).rawArgs()[0]).isEqualTo("PATH_LIMIT"));
+        }
+    }
 }
