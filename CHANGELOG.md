@@ -18,6 +18,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Breaking
 
+- **More than one `license-manifest.json` on the classpath now stops the boot (ADR-088 §5 step 1).** The contract gate read the first one in classpath order; it now fails with `EX-LIC-0001` and lists every URL. A deployment whose dependency jars carry a second manifest binds `license.manifest.path` to the one to use; see `MIGRATION.md`.
 - **Graph traversal refused under an unscopable storage context (ADR-102 Obligation 9).** Traversals under an unscopable tenant context are refused before any database I/O; see Changed.
 - **Graph SPI (preview): `GraphSession` gains abstract `traversePath`/`streamPathJson`, `GraphDialect` gains abstract `buildPathQuery`, and `findShortestPath(GraphEdgeDescriptor, UUID, UUID)` is abstract (ADR-102).** An out-of-tree implementer must implement the three methods and the three-argument overload; it can no longer inherit the two-argument behaviour.
 
@@ -209,7 +210,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `spi.contract` (preview); `SOFT` and `AUDIT` violations are reported once each, and every gate
   decision is recorded as `ContractResolvedEvent`. Covered by `AbstractExecutionContractTck`,
   `AbstractLicenseManifestCryptoTck` and `AbstractEntitlementRequirementTck`. Not yet: metering,
-  offline revocation, refusing more than one manifest on the classpath (#606), and the cost
+  offline revocation and the cost
   measurement against ADR-089's 5 ms (#605).
 - **`KernelProviders.TRANSACTIONAL_EXECUTOR` publishes the kernel's `TransactionalExecutor`.** The
   Community persistence subsystem binds a `TransactionOrchestrator` over the shared engine next to

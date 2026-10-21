@@ -290,7 +290,12 @@ to declare it.
 > nothing runs as `development`: it is not gated, and if entitlement-requiring code is on the classpath the
 > gate says so with one `SOFT` warning rather than refusing the boot. A value outside the six environment
 > ids fails the boot with `ConfigProviderException` `EX-CFG-1002`; a manifest path bound to a blank value
-> fails it with `EX-LIC-0001`. An `EntitlementRequirement` that cannot be loaded, throws, or declares `null`,
+> fails it with `EX-LIC-0001`. The manifest is read from `license.manifest.path` when that key is bound (and
+> only from there: the working directory and the classpath are not consulted), else from
+> `license-manifest.json` in the working directory, else from the classpath. The classpath may hold at most
+> one: more than one distinct `license-manifest.json` URL (the same URL reported twice by a loader chain
+> counts once) fails the boot with `EX-LIC-0001`, the message listing every URL, because the first one in
+> classpath order would otherwise decide the contract; bind `license.manifest.path` to choose. An `EntitlementRequirement` that cannot be loaded, throws, or declares `null`,
 > nothing or a malformed capability id fails it with `EX-LIC-0008`, in every environment.
 
 ---
