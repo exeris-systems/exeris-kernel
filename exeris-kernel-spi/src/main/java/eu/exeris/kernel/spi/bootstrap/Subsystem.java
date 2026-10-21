@@ -137,6 +137,8 @@ public interface Subsystem {
      *          returns.
      * @implSpec Respond to interruption: a method that ignores the interrupt still holds the boot
      *           until it returns.
+     *           It must not call {@code System.exit} or {@link Runtime#exit}: it runs on the booting
+     *           thread, which the kernel's shutdown hook waits for.
      * @throws SubsystemException ({@code EX-BOOT-0002}) if initialization fails
      *         unrecoverably; any other unchecked exception — a {@link RuntimeException},
      *         or an {@link Error} such as a {@link LinkageError} or
@@ -172,6 +174,8 @@ public interface Subsystem {
      *           report {@code true} from {@link #isRunning()} once this method returns;
      *           the orchestrator skips {@link #stop()} for a subsystem that reports
      *           {@code false}.
+     *           It must not call {@code System.exit} or {@link Runtime#exit}: it runs on the booting
+     *           thread, which the kernel's shutdown hook waits for.
      */
     void start();
 
@@ -186,6 +190,15 @@ public interface Subsystem {
      *           resource unreleased because a preceding release failed: shutdown has no
      *           second attempt and no failure policy — a subsystem that throws here is the
      *           last one the kernel hears from about that resource.
+     *           {@code stop()} may run on a thread that carries none of the kernel's
+     *           {@code ScopedValue} bindings — the JVM shutdown hook's thread or an embedding host's
+     *           lifecycle thread — so it acts on references captured in {@code initialize()} or
+     *           {@code start()} and does not read
+     *           {@link eu.exeris.kernel.spi.context.KernelProviders}; a thread it forks inherits no
+     *           bindings either. It must not call {@code System.exit}, {@link Runtime#exit} or
+     *           {@link Runtime#halt}, and must not wait without bound for a thread of its own: that
+     *           thread may be the one whose {@code System.exit} started the JVM's shutdown, and it
+     *           never returns.
      * @implNote The Core orchestrator swallows any unchecked exception other than a
      *           {@link VirtualMachineError} thrown here, logs it at {@code WARNING}, and
      *           continues with the next subsystem; the subsystem is then not marked
