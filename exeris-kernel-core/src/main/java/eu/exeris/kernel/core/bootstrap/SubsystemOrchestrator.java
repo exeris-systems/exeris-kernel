@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.UnaryOperator;
 
@@ -75,7 +76,9 @@ import java.util.function.UnaryOperator;
  * <p>This class is single-use per kernel lifecycle. {@link AtomicBoolean} guards
  * protect lifecycle transitions without broad synchronized lifecycle guarding.
  * Narrow synchronized sections are used only for internal {@code orderedSubsystems}
- * list mutation/snapshots off the hot path.
+ * list mutation/snapshots off the hot path. {@link #shutdown()} is entered through a
+ * compare-and-set, so concurrent callers run the stop sequence once, and a latch holds the losers
+ * until the winner has finished.
  *
  * @since 0.5
  * @see SubsystemCircularDependencyException
@@ -90,11 +93,13 @@ import java.util.function.UnaryOperator;
 // Retained suppressions:
 // - TooManyMethods, CyclomaticComplexity: inherent to a lifecycle orchestrator coordinating
 //   discovery → sort → phased init → start → shutdown.
+// - GodClass: the same lifecycle read as coupling; the sorter and registry loader are already extracted.
 // - LawOfDemeter: chained calls on Subsystem / SubsystemException are intrinsic to the lifecycle.
 @SuppressWarnings({
     "PMD.TooManyMethods",
     "PMD.CyclomaticComplexity",
-    "PMD.LawOfDemeter"
+    "PMD.LawOfDemeter",
+    "PMD.GodClass"
 })
 public final class SubsystemOrchestrator {
 
@@ -198,6 +203,9 @@ public final class SubsystemOrchestrator {
     private final AtomicBoolean initialized = new AtomicBoolean(false);
     private final AtomicBoolean started     = new AtomicBoolean(false);
     private final AtomicBoolean terminated  = new AtomicBoolean(false);
+    private final CountDownLatch shutdownCompleted = new CountDownLatch(1);
+    /** The thread running the stop sequence; read to let a stop() that re-enters shutdown() return. */
+    private volatile Thread stoppingThread;
     private volatile long bootStartNanos;
 
     // =========================================================================
@@ -375,45 +383,77 @@ public final class SubsystemOrchestrator {
      * A {@code stop()} that throws is caught and logged as WARNING, and the shutdown continues
      * with the next subsystem. The one exception is a {@link VirtualMachineError}, which
      * propagates unchanged and ends the shutdown.
+     *
+     * <p>Idempotent. Concurrent callers run the sequence once and every caller returns after it
+     * completed; a call from the stopping thread itself (a {@code stop()} that calls back) returns at
+     * once. A call on an orchestrator that was never initialized is a no-op and leaves it reusable.
+     * Must not run concurrently with {@link #initialize(ConfigProvider)} or
+     * {@link #start(ConfigProvider)} — {@link KernelBootstrap} enforces that.
      */
     @SuppressWarnings("java:S1181") // an Error from a subsystem is a subsystem failure;
                                     // VirtualMachineError is rethrown by rethrowIfFatal
     public void shutdown() {
-        if (terminated.get()) {
+        if (!terminated.get() && !initialized.get() && !started.get()) {
+            return; // never initialized: nothing to stop, stays reusable
+        }
+        if (!terminated.compareAndSet(false, true)) {
+            if (Thread.currentThread() == stoppingThread) { // NOPMD CompareObjectsWithEquals — identity is the question
+                LOG.log(System.Logger.Level.WARNING,
+                        "shutdown() re-entered from the stopping thread — returning");
+            } else {
+                awaitShutdownCompleted(); // loser: return only after the winner finished
+            }
             return;
         }
-        if (!initialized.get() && !started.get()) {
-            return;
-        }
+        stoppingThread = Thread.currentThread(); // NOPMD UnusedAssignment — read by re-entrant callers
+        try {
+            long shutdownStartNanos = System.nanoTime();
+            int count = orderedSubsystems.size();
+            healthMonitor.markKernelState(KernelHealthMonitor.KernelState.SHUTTING_DOWN);
+            LOG.log(System.Logger.Level.INFO, "Shutting down {0} subsystem(s)", count);
 
-        terminated.set(true);
-        long shutdownStartNanos = System.nanoTime();
-        int count = orderedSubsystems.size();
-        healthMonitor.markKernelState(KernelHealthMonitor.KernelState.SHUTTING_DOWN);
-        LOG.log(System.Logger.Level.INFO, "Shutting down {0} subsystem(s)", count);
-
-        for (Subsystem subsystem : orderedSubsystems.reversed()) {
-            if (subsystem.isRunning()) {
-                long stopStartNanos = System.nanoTime();
-                LOG.log(System.Logger.Level.INFO, "  Stopping [{0}]", subsystem.name());
-                try {
-                    subsystem.stop();
-                    BootstrapJfrEvents.emitStopped(subsystem.name(), stopStartNanos);
-                    healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.STOPPED);
-                } catch (RuntimeException | Error ex) { // NOPMD — stop() must never throw; swallowed by design
-                    rethrowIfFatal(ex);
-                    LOG.log(System.Logger.Level.WARNING,
-                            "  [{0}] stop() threw — ignoring: {1}",
-                            subsystem.name(), ex.getMessage());
+            for (Subsystem subsystem : orderedSubsystems.reversed()) {
+                if (subsystem.isRunning()) {
+                    long stopStartNanos = System.nanoTime();
+                    LOG.log(System.Logger.Level.INFO, "  Stopping [{0}]", subsystem.name());
+                    try {
+                        subsystem.stop();
+                        BootstrapJfrEvents.emitStopped(subsystem.name(), stopStartNanos);
+                        healthMonitor.markSubsystemState(subsystem.name(), KernelHealthMonitor.SubsystemState.STOPPED);
+                    } catch (RuntimeException | Error ex) { // NOPMD — stop() must never throw; swallowed by design
+                        rethrowIfFatal(ex);
+                        LOG.log(System.Logger.Level.WARNING,
+                                "  [{0}] stop() threw — ignoring: {1}",
+                                subsystem.name(), ex.getMessage());
+                    }
                 }
             }
-        }
 
-        started.set(false);
-        initialized.set(false);
-        BootstrapJfrEvents.emitShutdownComplete(shutdownStartNanos, count);
-        LOG.log(System.Logger.Level.INFO, "SHUTDOWN complete in {0} ms",
-                elapsedMs(shutdownStartNanos));
+            started.set(false);
+            initialized.set(false);
+            BootstrapJfrEvents.emitShutdownComplete(shutdownStartNanos, count);
+            LOG.log(System.Logger.Level.INFO, "SHUTDOWN complete in {0} ms",
+                    elapsedMs(shutdownStartNanos));
+        } finally {
+            stoppingThread = null; // NOPMD NullAssignment — no stopping thread once the stop ended
+            shutdownCompleted.countDown();
+        }
+    }
+
+    /** Waits for the winning shutdown to finish; uninterruptible, and restores the interrupt flag. */
+    private void awaitShutdownCompleted() {
+        boolean interrupted = false;
+        while (true) {
+            try {
+                shutdownCompleted.await();
+                break;
+            } catch (InterruptedException ex) {
+                interrupted = true;
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     // =========================================================================
