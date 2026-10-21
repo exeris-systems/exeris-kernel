@@ -28,7 +28,7 @@ final class RuntimeShutdownHookRegistry implements ShutdownHookRegistry {
     public void unregister(Thread hook) {
         try {
             Runtime.getRuntime().removeShutdownHook(hook);
-        } catch (IllegalStateException ex) {
+        } catch (IllegalStateException _) {
             // Removal is only an optimisation once shutdown has begun.
         }
     }

@@ -447,7 +447,7 @@ public final class SubsystemOrchestrator {
             try {
                 shutdownCompleted.await();
                 break;
-            } catch (InterruptedException ex) {
+            } catch (InterruptedException _) { // NOSONAR — an uninterruptible wait restores the flag once it ends
                 interrupted = true;
             }
         }
