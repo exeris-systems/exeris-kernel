@@ -4,7 +4,10 @@
  */
 package eu.exeris.kernel.community.http;
 
+import eu.exeris.kernel.community.crypto.CommunityKernelCryptoProvider;
 import eu.exeris.kernel.community.memory.CommunityMemoryProvider;
+import eu.exeris.kernel.community.transport.MapConfigProvider;
+import eu.exeris.kernel.community.transport.TlsTestCertificate;
 import eu.exeris.kernel.core.http.sse.HttpStreamEngine;
 import eu.exeris.kernel.spi.context.KernelProviders;
 import eu.exeris.kernel.spi.exceptions.http.StreamClosedException;
@@ -25,9 +28,11 @@ import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
 import eu.exeris.kernel.spi.transport.TransportEngine;
 
+import javax.net.ssl.SSLContext;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +44,9 @@ import java.util.concurrent.locks.LockSupport;
  * serves {@code GET /stream} as a stream route over cleartext prior knowledge, and an
  * {@link Http2TestClient} that reads it. The emit path's allocator is a {@link LeakTrackingAllocator},
  * so the outstanding loans are this stream's alone.
+ *
+ * <p>{@link #startTls} serves the same route over TLS with ALPN {@code h2} instead, on the production
+ * transport's TLS listener.
  */
 final class Http2StreamLoopback implements AutoCloseable {
 
@@ -60,6 +68,10 @@ final class Http2StreamLoopback implements AutoCloseable {
         this.emitAllocator = emitAllocator;
     }
 
+    /** The material a TLS round trip needs: the server's crypto provider and certificate, and the client's trust. */
+    record Tls(CommunityKernelCryptoProvider crypto, TlsTestCertificate certificate, SSLContext clientTrust) {
+    }
+
     /**
      * Starts a server and a client that has already sent its request.
      *
@@ -67,8 +79,25 @@ final class Http2StreamLoopback implements AutoCloseable {
      * @param authDeadlineEpochMillis fail-closed deadline for the stream, {@code 0} for none
      * @return the running round trip
      */
-    @SuppressWarnings("PMD.CloseResource") // the server engine and the client are owned and closed by close().
     static Http2StreamLoopback start(HttpStreamHandler handler, long authDeadlineEpochMillis) {
+        return begin(handler, authDeadlineEpochMillis, null);
+    }
+
+    /**
+     * As {@link #start}, over TLS with ALPN {@code h2}: the server's listener terminates TLS and the
+     * client negotiates the protocol before it sends its request.
+     *
+     * @param handler                 the stream handler the route runs
+     * @param authDeadlineEpochMillis fail-closed deadline for the stream, {@code 0} for none
+     * @param tls                     the server and client TLS material
+     * @return the running round trip
+     */
+    static Http2StreamLoopback startTls(HttpStreamHandler handler, long authDeadlineEpochMillis, Tls tls) {
+        return begin(handler, authDeadlineEpochMillis, Objects.requireNonNull(tls));
+    }
+
+    @SuppressWarnings("PMD.CloseResource") // the server engine and the client are owned and closed by close().
+    private static Http2StreamLoopback begin(HttpStreamHandler handler, long authDeadlineEpochMillis, Tls tls) {
         int port = nextFreePort();
         LeakTrackingAllocator emitAllocator = new LeakTrackingAllocator(ALLOCATOR);
         Http2StreamLoopback loopback = new Http2StreamLoopback(emitAllocator);
@@ -79,13 +108,15 @@ final class Http2StreamLoopback implements AutoCloseable {
                 new CommunityHttpStreamDispatcher(emitAllocator, null, request -> authDeadlineEpochMillis));
         HttpHandler routes = new Routes(loopback.observing(handler));
 
-        TransportEngine engine = buildTransport(config, port);
+        TransportEngine engine = buildTransport(config, port, tls);
         engine.setStreamHandler(stream -> processor.process(stream, routes));
         engine.setConnectionHandler(connection -> { });
         engine.start();
         loopback.serverEngine = engine;
-        loopback.client = Http2TestClient.connectPlain(
-                port, STREAM_PATH, CLIENT_INITIAL_WINDOW, Http2TestClient.Start.PRIOR_KNOWLEDGE);
+        loopback.client = tls == null
+                ? Http2TestClient.connectPlain(
+                        port, STREAM_PATH, CLIENT_INITIAL_WINDOW, Http2TestClient.Start.PRIOR_KNOWLEDGE)
+                : Http2TestClient.connectTls(port, tls.clientTrust(), STREAM_PATH, CLIENT_INITIAL_WINDOW);
         return loopback;
     }
 
@@ -254,11 +285,19 @@ final class Http2StreamLoopback implements AutoCloseable {
 
     // ------------------------------------------------------------------ server
 
-    private static TransportEngine buildTransport(HttpConfig config, int port) {
+    private static TransportEngine buildTransport(HttpConfig config, int port, Tls tls) {
         TransportEngine[] holder = new TransportEngine[1];
-        ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR).run(() ->
-                holder[0] = CommunityHttpTransportFactory.buildTransport(
-                        config, port, ALLOCATOR, CommunityHttpTransportFactory.Role.SERVER));
+        ScopedValue.Carrier scope = ScopedValue.where(KernelProviders.MEMORY_ALLOCATOR, ALLOCATOR);
+        if (tls != null) {
+            MapConfigProvider kernelConfig = new MapConfigProvider(
+                    Map.of("transport.certPath", tls.certificate().certificate().toString(),
+                            "transport.keyPath", tls.certificate().privateKey().toString()),
+                    Map.of());
+            scope = scope.where(KernelProviders.CRYPTO_PROVIDER, tls.crypto())
+                    .where(KernelProviders.CURRENT_CONFIG, kernelConfig);
+        }
+        scope.run(() -> holder[0] = CommunityHttpTransportFactory.buildTransport(
+                config, port, ALLOCATOR, CommunityHttpTransportFactory.Role.SERVER));
         return holder[0];
     }
 

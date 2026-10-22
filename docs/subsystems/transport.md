@@ -430,8 +430,8 @@ A `NativeTcpStream` can end through several routes, and a thread parked on it, w
 rules below are the contract between the terminal paths and the waiters. They describe the Community
 native TCP stream only; an Enterprise transport meets the same observable obligations through the
 `AbstractTransportStreamTck` terminal-wake cases, not through this mechanism. A TLS write that meets a
-full send buffer still aborts the stream instead of stalling, and goes through the rules below as an
-abort.
+full send buffer does not end the stream: it stalls, as described in [TLS write stall](#tls-write-stall).
+Only a fatal TLS wrap status ends the stream, and it goes through the rules below as an abort.
 
 The cost is a wake on every terminal transition, not only on the one that wins: each call reads three
 waiter slots and unparks the threads it finds, so a waiter may receive a surplus permit, which its park
@@ -476,16 +476,60 @@ paths gain one extra flag read.
 |:--|:--|:--|:--|
 | `close()` (any call) | `closeRequested` | all | now, if the slot is free and the queue is drained; otherwise whoever releases the slot, or the reactor's drain |
 | `reset(long)` (any call) | `resetRequested`, `closeRequested` | all | now, if the slot is free; otherwise the reactor is woken to do it |
-| Write `IOException` on a plain or ciphertext queue drain (not a TLS wrap `CLOSED`, which still goes through `close()`) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed and no local close came first | all | after the failing thread releases the slot |
+| Send failure on a queue drain: a write `IOException`, or a fatal TLS wrap status (`CLOSED`, which never re-enters `close()` under the slot) | `resetRequested`, `closeRequested`; `peerEndedFirst` when the remote end was already observed and no local close came first | all | after the failing thread releases the slot |
 | Peer FIN or TLS `close_notify` (`markRemoteClosed`) | `remoteClosed`; `peerEndedFirst` when no local close was requested | all | none |
 | Carrier teardown (`closeKeyStream`: dispatch fault, idle reap) | `markRemoteClosed`, then `reset(long)` | all | through `reset(long)` |
 | The finish succeeds | `closed` | all | none |
+| TLS wrap `NEED_WRAP` or `NEED_UNWRAP` (a stall) | none | none | none |
 
 A peer FIN is a half-close: it ends the reader's input but does not end writes, so a writer woken by
 it re-checks its condition and keeps waiting.
 
 A thread that wants to wait on the stream's terminal state registers itself the way `read` does and
 checks every flag in the table after registering and before parking.
+
+## TLS write stall
+
+A TLS stream's write goes through `SSL_write` on the socket-owner BIO. When the kernel send buffer is
+full, OpenSSL reports `SSL_ERROR_WANT_WRITE`, which the engine maps to `NEED_WRAP`. That is back
+pressure from the peer, not a failure, so the head entry of the outbound queue stays queued and the
+drain reports a stall. The stream stays open, no waiter is woken and nothing is abandoned.
+
+- **`NEED_WRAP` arms write interest.** The caller that sees the stall asks the reactor for
+  `OP_WRITE`: `queueWrite` does so when data is still queued after its flush, and the reactor keeps
+  `OP_WRITE` set while its own flush does not drain. When the socket becomes writable again the
+  reactor retries the head entry.
+- **The retry is the same call.** The engine's context sets neither `SSL_MODE_ENABLE_PARTIAL_WRITE`
+  nor `SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER`, so OpenSSL accepts a retry only with the same plaintext
+  address and the same length. A stalled head entry is therefore never re-cut, merged with a
+  neighbour, resized or reallocated, and its prepared flag stays unset until the record layer has
+  accepted every byte. A retry with other arguments is a fatal bad-write-retry, which the engine
+  reports as `CLOSED`.
+- **`NEED_UNWRAP` from a wrap is a stall that does not arm write interest.** The engine waits for the
+  peer, for example during a renegotiation the peer started, and a writable socket would only make the
+  reactor spin. The reactor's own flush drops `OP_WRITE` for such a write. The carrier's TLS ingress
+  loop flushes the queue after each readable event while a write waits for the peer, and re-arms write
+  interest only if the head entry then stalls on the socket. Two windows would lose that flush, and
+  both are closed. The wait is recorded under the TLS lock, in the same critical section as the wrap,
+  so an ingress read that takes the lock afterwards always sees it. An ingress flush that finds the
+  outbound slot held leaves a retry request, and the holder, after releasing the slot on a stall,
+  flushes once more. A graceful `close()` while a write waits for the peer finishes when the peer's
+  next record arrives, or when the idle reclamation resets the stream.
+- **A fatal status aborts.** `CLOSED` from a wrap (a broken connection, a reset, a protocol error)
+  abandons the queue under the outbound slot, wakes every waiter and ends the stream, so a queued
+  write is never lost silently and no waiter hangs. The failure (`EX-NET-4002`) is thrown to the
+  writer when its own thread runs the drain. A retry that the reactor runs instead ends the stream
+  through the reactor's teardown, and the writer's next call reports the closed signal. The abort's
+  terminal close runs after the slot is released; it never re-enters `close()` from under the slot.
+- **Allocation.** A stall allocates nothing. `write()` makes one private copy of the caller's bytes,
+  at enqueue; `queueWrite` makes none.
+
+The tests wait on the stall as an event: a test-only hook runs on every stall, so no test polls for a
+full send buffer. `NativeTcpStreamTlsBackpressureTest` scripts `SSL_write` results and records the
+address and length of each call; `CommunityHttp1TlsSlowReaderTest` sends a 4 MiB HTTP/1.1 body over TLS
+to a client that reads nothing until the stall, with an 8 KiB send buffer, and checks the body byte for
+byte; `CommunityHttp2TlsStreamExchangeTckTest` binds the stream exchange TCK over TLS with ALPN `h2` and fails its backpressure probe unless at least one TLS write stalled.
+The last two are in the `stream-loopback` group.
 
 ## Error Codes
 

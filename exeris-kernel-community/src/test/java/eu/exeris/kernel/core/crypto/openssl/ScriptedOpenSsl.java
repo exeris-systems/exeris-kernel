@@ -9,7 +9,9 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -25,12 +27,17 @@ public final class ScriptedOpenSsl {
     /** The {@code SSL*} every {@code SSL_new} returns. */
     public static final long SSL_PTR = 0x5EED_0000L;
 
+    private static final int NO_PENDING_WRITE_ERROR = Integer.MIN_VALUE;
+
     private final Deque<Integer> connectResults = new ArrayDeque<>();
     private final AtomicInteger connectCalls = new AtomicInteger();
     private final Deque<byte[]> readRecords = new ArrayDeque<>();
     private final AtomicInteger readCalls = new AtomicInteger();
+    private final Deque<ScriptedWrite> writeResults = new ArrayDeque<>();
+    private final List<WriteCall> writeCalls = new ArrayList<>();
     private final AtomicInteger clears = new AtomicInteger();
     private final AtomicInteger ctxFrees = new AtomicInteger();
+    private int pendingWriteError = NO_PENDING_WRITE_ERROR;
     private volatile int errorResult = CoreOpenSslLoader.SSL_ERROR_WANT_READ;
     private volatile long verifyResult = CoreOpenSslLoader.X509_V_OK;
     private volatile int set1HostResult = 1;
@@ -64,6 +71,46 @@ public final class ScriptedOpenSsl {
             readRecords.addLast(record.clone());
         }
         return this;
+    }
+
+    /**
+     * Queues a {@code SSL_write} that accepts every byte it is given. Once the queue is empty, each
+     * call returns {@code -1} and {@link #errorResult(int)} decides what that means.
+     *
+     * @return this
+     */
+    public synchronized ScriptedOpenSsl acceptWrite() {
+        writeResults.addLast(new ScriptedWrite(true, 0));
+        return this;
+    }
+
+    /**
+     * Queues a {@code SSL_write} that returns {@code -1}, and the {@code SSL_get_error} code the
+     * engine reads right after it.
+     *
+     * @param errorCode an {@code SSL_ERROR_*} code for this call alone
+     * @return this
+     */
+    public synchronized ScriptedOpenSsl failWrite(int errorCode) {
+        writeResults.addLast(new ScriptedWrite(false, errorCode));
+        return this;
+    }
+
+    /** @return each {@code SSL_write} call so far, in order, with the buffer address and length it got */
+    public synchronized List<WriteCall> writeCalls() {
+        return List.copyOf(writeCalls);
+    }
+
+    /**
+     * One {@code SSL_write} call as the engine made it.
+     *
+     * @param address the address of the plaintext buffer
+     * @param length  the number of bytes offered
+     */
+    public record WriteCall(long address, int length) {
+    }
+
+    private record ScriptedWrite(boolean accepts, int errorCode) {
     }
 
     /**
@@ -147,7 +194,7 @@ public final class ScriptedOpenSsl {
                 bind("sslAccept", int.class, long.class));
         CoreSslHandles.IoHandles io = new CoreSslHandles.IoHandles(
                 bind("sslRead", int.class, long.class, long.class, int.class),
-                bind("sslReadWrite", int.class, long.class, long.class, int.class),
+                bind("sslWrite", int.class, long.class, long.class, int.class),
                 bind("sslAccept", int.class, long.class),
                 bind("zero", int.class, long.class),
                 bind("sslGetError", int.class, long.class, int.class),
@@ -231,7 +278,18 @@ public final class ScriptedOpenSsl {
     }
 
     @SuppressWarnings("unused")
-    private int sslReadWrite(long ssl, long buffer, int length) {
+    private synchronized int sslWrite(long ssl, long buffer, int length) {
+        writeCalls.add(new WriteCall(buffer, length));
+        ScriptedWrite next = writeResults.pollFirst();
+        if (next == null) {
+            pendingWriteError = NO_PENDING_WRITE_ERROR;
+            return -1;
+        }
+        if (next.accepts()) {
+            pendingWriteError = NO_PENDING_WRITE_ERROR;
+            return length;
+        }
+        pendingWriteError = next.errorCode();
         return -1;
     }
 
@@ -241,7 +299,12 @@ public final class ScriptedOpenSsl {
     }
 
     @SuppressWarnings("unused")
-    private int sslGetError(long ssl, int ret) {
+    private synchronized int sslGetError(long ssl, int ret) {
+        if (pendingWriteError != NO_PENDING_WRITE_ERROR) {
+            int code = pendingWriteError;
+            pendingWriteError = NO_PENDING_WRITE_ERROR;
+            return code;
+        }
         return errorResult;
     }
 

@@ -111,9 +111,8 @@ final class NativeTcpStream implements TransportStream {
     private static final int INBOUND_QUEUE_CAPACITY =
             QUEUE_BACKPRESSURE_ENABLED ? QUEUE_DEPTH_THRESHOLD_HIGH : Integer.MAX_VALUE;
 
-    private static final int DRAIN_CLOSED  = 0;
-    private static final int DRAIN_OK      = 1;
-    private static final int DRAIN_STALLED = 2;
+    private static final int DRAIN_OK      = NativeTcpStreamTlsDrain.DRAIN_OK;
+    private static final int DRAIN_STALLED = NativeTcpStreamTlsDrain.DRAIN_STALLED;
 
     private static final int INBOUND_ADVANCE_NEEDS_MORE_DATA = -1;
     private static final int INBOUND_ADVANCE_RETRY = 0;
@@ -133,6 +132,7 @@ final class NativeTcpStream implements TransportStream {
     private final NativeTcpStreamPendingWrite.TlsContext pendingWriteTlsContext;
     private final NativeTcpStreamPendingWrite.TryWriter pendingWriteTryWriter;
     private final NativeTcpStreamTlsHandshake tlsHandshake;
+    private final NativeTcpStreamTlsDrain tlsDrain;
 
     // PERF: fd-owner BIO unwrap pulls ciphertext directly from the kernel socket and never
     // inspects its {@code ciphertext} parameter (OffHeapTlsEngine#unwrap contract). A single
@@ -261,10 +261,12 @@ final class NativeTcpStream implements TransportStream {
         this.pendingWriteTlsContext = tlsEngine == null
                 ? null
                 : new NativeTcpStreamPendingWrite.TlsContext(
-                        tlsEngine, tlsLock, tlsCiphertextPlaceholder);
+                        tlsEngine, tlsLock, tlsCiphertextPlaceholder, new AtomicBoolean());
         this.pendingWriteTryWriter = this::tryWrite;
         this.tlsHandshake = new NativeTcpStreamTlsHandshake(engineName, tlsEngine, channel, allocator,
                 tlsLock, handshakeBackoff, closed, closeRequested, this::close, writeInterestCallback);
+        this.tlsDrain = tlsEngine == null ? null : new NativeTcpStreamTlsDrain(
+                engineName, remoteClosed, closed, pendingWriteTlsContext.waitingForPeer(), this::requestAbort);
     }
 
     /**
@@ -477,7 +479,7 @@ final class NativeTcpStream implements TransportStream {
             if (observedConsumer != null
                     && !Objects.equals(observedConsumer, Thread.currentThread())
                     && activeConsumer == null
-                    && hasPendingData()) {
+                    && needsWriteInterest()) {
                 writeInterestCallback.run();
             }
             return;
@@ -491,7 +493,7 @@ final class NativeTcpStream implements TransportStream {
             // producer saw a non-empty depth, so it is not a flusher, and this flush never saw its
             // write. A depth still above zero here hands the stream to the reactor, which keeps
             // write interest armed until it observes the depth at zero.
-            if (hasPendingData()) {
+            if (needsWriteInterest()) {
                 writeInterestCallback.run();
             }
         } catch (RuntimeException error) {
@@ -889,15 +891,38 @@ final class NativeTcpStream implements TransportStream {
         }
     }
 
+    /**
+     * Whether the head write waits for the peer's next record instead of for socket space. Write
+     * interest stays off meanwhile, because a writable socket would not change anything for it.
+     */
+    /* default */ boolean stalledOnRead() {
+        return tlsDrain != null && tlsDrain.stalledOnRead();
+    }
+
+    private boolean needsWriteInterest() {
+        return hasPendingData() && !stalledOnRead();
+    }
+
+    /** Flushes a write that waited for the peer, after an ingress batch that may have satisfied it. */
+    /* default */ void flushPendingAfterIngress() {
+        if (tlsDrain != null && tlsDrain.markRetryAfterIngress() && hasPendingData()) {
+            flushPendingWrites();
+            if (needsWriteInterest()) {
+                writeInterestCallback.run();
+            }
+        }
+    }
+
     /* default */ boolean flushPendingWrites() {
         Thread currentThread = Thread.currentThread();
         int entry = NativeTcpStreamConsumerGate.enterSingleConsumer(runtime.outboundConsumer(), currentThread);
         if (entry == NativeTcpStreamConsumerGate.NOT_ACQUIRED) {
             return false;
         }
+        boolean drained;
         try {
             try {
-                return drainPendingWrites();
+                drained = drainPendingWrites();
             } finally {
                 NativeTcpStreamConsumerGate.exitSingleConsumer(runtime.outboundConsumer(), currentThread, entry);
             }
@@ -909,6 +934,11 @@ final class NativeTcpStream implements TransportStream {
                 finishAfterRelease();
             }
         }
+        // An ingress batch that found the slot held left a retry request; the release above is what
+        // lets it run. The check is on the stall path only, so a drained queue pays nothing for it.
+        boolean retry = !drained && entry == NativeTcpStreamConsumerGate.ACQUIRED
+                && tlsDrain != null && tlsDrain.consumeRetryAfterIngress();
+        return retry ? flushPendingWrites() : drained;
     }
 
     private void finishAfterRelease() {
@@ -933,9 +963,6 @@ final class NativeTcpStream implements TransportStream {
         NativeTcpStreamPendingWrite pending = outboundQueue.peek();
         while (pending != null) {
             int result = drainSinglePendingWrite(pending);
-            if (result == DRAIN_CLOSED) {
-                return true;
-            }
             if (result == DRAIN_STALLED) {
                 finalizeCloseIfRequestedAfterBestEffortFlush();
                 return false;
@@ -961,7 +988,7 @@ final class NativeTcpStream implements TransportStream {
         if (tlsEngine == null) {
             return tryDrainPlainWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
         }
-        return drainTlsPending(pending);
+        return tlsDrain.drain(pending);
     }
 
     private void completeQueueHeadAfterDrain(NativeTcpStreamPendingWrite expectedHead) {
@@ -977,37 +1004,9 @@ final class NativeTcpStream implements TransportStream {
         pendingWrite.close();
     }
 
-    private int drainTlsPending(NativeTcpStreamPendingWrite pending) {
-        TlsStatus status = pending.prepareCipher();
-        if (status == TlsStatus.CLOSED) {
-            close();
-            return DRAIN_CLOSED;
-        }
-        if (status != TlsStatus.OK) {
-            // Same fail-closed discipline as the IOException paths: an unrecoverable TLS WRAP
-            // status must not leave the queued write stuck (hasPendingData() would stay true and
-            // hang teardown). We hold the single-consumer slot here, so the discard is safe.
-            requestAbort(remoteClosed.get());
-            throw TransportException.sendFailure(engineName, pending.bytesWritten(), null);
-        }
-        return tryDrainCipherWrite(pending) ? DRAIN_OK : DRAIN_STALLED;
-    }
-
     private boolean tryDrainPlainWrite(NativeTcpStreamPendingWrite pending) {
         try {
             return pending.writePlain();
-        } catch (IOException e) {
-            if (closed.get()) {
-                return true;
-            }
-            requestAbort(remoteClosed.get());
-            throw TransportException.sendFailure(engineName, pending.bytesWritten(), e);
-        }
-    }
-
-    private boolean tryDrainCipherWrite(NativeTcpStreamPendingWrite pending) {
-        try {
-            return pending.writeCipher();
         } catch (IOException e) {
             if (closed.get()) {
                 return true;

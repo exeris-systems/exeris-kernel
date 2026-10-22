@@ -1278,10 +1278,11 @@ public final class NativeTcpCarrier implements TransportEngine {
             for (int drained = 0; drained < MAX_TLS_RECORDS_PER_READ; drained++) {
                 LoanedBuffer offered = stream.readTlsIngressFromFd();
                 if (offered == null) {
-                    return;
+                    break;
                 }
                 stream.offerIngress(offered);
             }
+            stream.flushPendingAfterIngress();
             return;
         }
 
@@ -1318,7 +1319,7 @@ public final class NativeTcpCarrier implements TransportEngine {
     /* default */ void flushStream(NativeTcpStream stream, SelectionKey key) {
         stream.signalWriteReady();
         boolean drained = stream.flushPendingWrites();
-        if (drained && !stream.hasPendingData()) {
+        if (drained && !stream.hasPendingData() || stream.hasPendingData() && stream.stalledOnRead()) {
             key.interestOps(SelectionKey.OP_READ);
         }
     }
