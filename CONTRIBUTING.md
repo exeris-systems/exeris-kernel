@@ -328,7 +328,16 @@ MAVEN_GPG_PASSPHRASE=testpass mvn -P release clean verify -DskipTests
 tools/release-readiness/release-readiness.sh
 ```
 
-The gate asserts that every coordinate has a pom, jar, sources jar, javadoc jar and SBOM, and that
+The release workflow's dry run goes one step further and builds the bundle Central would receive,
+without sending it: `mvn -P release clean deploy -DskipTests -DskipUpload=true`. Then
+`tools/central-bundle-gate/central-bundle-gate.sh` reads `target/central-publishing/central-bundle.zip`
+and fails on any entry outside a coordinate's `<group>/<artifact>/<version>/` directory, any file in a
+version directory not named `<artifact>-<version>…` (which catches `maven-metadata-*`,
+`_remote.repositories` and `.locks`), and a version directory without its `.pom`; Central refuses the
+whole bundle for any of them. `--self-test` shows the gate
+refusing each kind of stray entry.
+
+The readiness gate asserts that every coordinate has a pom, jar, sources jar, javadoc jar and SBOM, and that
 each verifies against the key. It reports what it deliberately skipped rather than staying silent —
 `exeris-kernel-tck` is currently held back from Central, and the root POM records why.
 

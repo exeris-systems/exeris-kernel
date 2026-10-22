@@ -146,6 +146,7 @@ jobs:
           grep -q '<id>release</id>' pom.xml || add "the 'release' profile in pom.xml"
           for t in tools/release-readiness/release-readiness.sh \
                    tools/sbom-gate/sbom-gate.sh \
+                   tools/central-bundle-gate/central-bundle-gate.sh \
                    tools/preview-bytecode-scan/preview-bytecode-scan.sh; do
             # -x rather than -e: the scripts are committed 100755, and a mode that did not survive
             # (core.fileMode=false hides a chmod locally) is exit 126 at the point of use, which is
@@ -283,6 +284,16 @@ jobs:
             exeris-kernel-*/target/*.jar
             !exeris-kernel-*/target/*-tests.jar
 
+      - name: Build the Central bundle without uploading it (dry run)
+        if: ${{ steps.rel.outputs.upload != 'true' }}
+        # The same `clean deploy` as the upload step below, with skipUpload: central-publishing
+        # stages and bundles exactly what it would send, writes target/central-publishing/
+        # central-bundle.zip, and sends nothing. A bundle Central would refuse therefore fails here,
+        # before a tag depends on it.
+        run: mvn -B -P release clean deploy -DskipTests -DskipUpload=true --settings .github/maven-settings.xml
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
       - name: Upload the deployment to Central
         if: ${{ steps.rel.outputs.upload == 'true' }}
         # autoPublish=false, so this uploads a deployment and stops. Review the validation results
@@ -301,8 +312,18 @@ jobs:
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
 
+      - name: Central Bundle Gate
+        # Central refuses the whole bundle for one directory without a pom, so this reads the bundle
+        # the step above wrote: every entry inside a published coordinate's version directory, and
+        # a pom in each. On the upload path it runs after the upload, so what it guards is
+        # publication: on a failure, Drop the deployment in the Central Portal.
+        run: |
+          tools/central-bundle-gate/central-bundle-gate.sh --self-test
+          tools/central-bundle-gate/central-bundle-gate.sh
+
       - name: Assert the uploaded artifacts are the gated artifacts
-        if: ${{ steps.rel.outputs.upload == 'true' }}
+        # Runs on the dry run too: the second build is the same on both paths, and so is the
+        # property that it reproduces the gated bytes.
         # Closes the gap the step above describes. If a jar, pom or SBOM changed between the gated
         # build and the deploying build, then the readiness gate and the provenance attestation
         # describe something other than what Central received — and the deployment must be DROPPED

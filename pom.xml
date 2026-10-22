@@ -659,11 +659,26 @@
                         touched, ever. The first release goes through manual review of the portal's
                         validation results, and waitUntil=validated makes the build block until
                         there is something to review rather than exiting green on an upload.
+
+                        Staging installs each module into a local repository under
+                        target/central-staging, and before bundling the plugin deletes the
+                        bookkeeping that install leaves: maven-metadata files at the artifact and
+                        group level, _remote.repositories and .locks, none of which has a pom beside
+                        it, and Central refuses a bundle holding one. The names depend on the
+                        resolver of the Maven running the build: maven-metadata-central-staging.xml
+                        on Maven 3.9, and maven-metadata-local.xml and _remote.repositories on
+                        Maven 3.10, which plugin versions before 0.12.0 do not delete. Keep this at
+                        0.12.0 or later: the runner image picks the Maven version.
+                        tools/central-bundle-gate fails a bundle holding anything outside a
+                        published coordinate's version directory.
+
+                        skipUpload builds the bundle without uploading it; release.yml's dry run
+                        sets it.
                     -->
                     <plugin>
                         <groupId>org.sonatype.central</groupId>
                         <artifactId>central-publishing-maven-plugin</artifactId>
-                        <version>0.11.0</version>
+                        <version>0.12.0</version>
                         <extensions>true</extensions>
                         <configuration>
                             <publishingServerId>central</publishingServerId>
