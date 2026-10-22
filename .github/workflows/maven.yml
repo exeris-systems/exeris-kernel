@@ -457,6 +457,9 @@ jobs:
           # ancestor: value classes, StructuredTaskScope signatures, a baseline that is garbage in
           # either direction. The preview line tags `preview/vX.Y.Z` for that reason, but a naming
           # convention nobody can enforce is not a guard — this is.
+          # The same filter deliberately skips a release candidate, `vX.Y.Z-RC<n>`: diffing against
+          # a candidate would make whatever it changed the reference for the next one, so the freeze
+          # would follow the candidates instead of holding them to the last release.
           # `|| true` is load-bearing under `set -euo pipefail`, not defensive noise. grep exits 1
           # when it matches nothing, pipefail makes that the pipeline's status, and an assignment
           # from a failing command substitution aborts under -e — so without it the "no release tag

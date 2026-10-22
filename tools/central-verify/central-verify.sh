@@ -78,8 +78,9 @@ REPO = pathlib.Path(os.environ['REPO_ROOT'])
 CHECKSUMS = [('md5', 'md5'), ('sha1', 'sha1'), ('sha256', 'sha256'), ('sha512', 'sha512')]
 # A final release that stays on Central for good; the negative controls tamper with copies of it.
 SELFTEST_VERSION = '0.12.0'
-TAG_PATTERN = re.compile(r'v\d+\.\d+\.\d+(-RC\d+)?')
-VERSION_PATTERN = re.compile(r'\d+\.\d+\.\d+(-RC\d+)?')
+# Same form as tools/release-tag: no leading zeros, and a candidate number starts at 1.
+TAG_PATTERN = re.compile(r'v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(-RC[1-9]\d*)?')
+VERSION_PATTERN = re.compile(r'(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(-RC[1-9]\d*)?')
 
 
 class Failure(Exception):
@@ -336,12 +337,14 @@ def self_test(base, work, version, key_file):
         shutil.rmtree(eph, ignore_errors=True)
     # The tag filter decides whether a release is verified at all; pin both directions.
     for tag, want in [('v1.0.0', 'verify'), ('v1.0.0-RC1', 'verify'), ('v1.0.0-beta', 'skip'),
-                      ('v1.0.0-rc1', 'skip'), ('preview/v0.12.0', 'skip')]:
+                      ('v1.0.0-rc1', 'skip'), ('preview/v0.12.0', 'skip'),
+                      ('v1.0.0-RC0', 'skip'), ('v1.0.0-RC01', 'skip'), ('v01.0.0', 'skip'),
+                      ('v1.00.0', 'skip')]:
         got = classify_tag(tag)
         if got != want:
             raise Failure(f'tag classification: {tag} is {got}, expected {want}')
     print('    tag classification: v1.0.0, v1.0.0-RC1 verify; v1.0.0-beta, v1.0.0-rc1, '
-          'preview/v0.12.0 skip')
+          'preview/v0.12.0, v1.0.0-RC0, v1.0.0-RC01, v01.0.0, v1.00.0 skip')
     print('central-verify: negative controls PASSED (every control failed as expected)')
 
 
