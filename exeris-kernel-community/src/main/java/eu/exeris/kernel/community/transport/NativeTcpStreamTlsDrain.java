@@ -116,8 +116,8 @@ final class NativeTcpStreamTlsDrain {
      *
      * @param pending the head of the outbound queue; the caller holds the outbound slot
      * @return {@link #DRAIN_OK} or {@link #DRAIN_STALLED}
-     * @throws TransportException if the engine reported an unrecoverable status; the stream is
-     *                            already aborting
+     * @throws TransportException ({@code EX-NET-4002}) if the engine reported an unrecoverable
+     *                            status; the stream is already aborting
      */
     /* default */ int drain(NativeTcpStreamPendingWrite pending) {
         TlsStatus status = pending.prepareCipher();
