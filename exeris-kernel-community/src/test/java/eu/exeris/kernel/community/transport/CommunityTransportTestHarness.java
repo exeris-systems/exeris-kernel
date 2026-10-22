@@ -183,12 +183,12 @@ final class CommunityTransportTestHarness {
     }
 
     /**
-     * Test-only egress hold for the {@code reset()}-abandon discriminator (issue #180). Pins the
-     * {@code writer}'s outbound consumer slot from a dedicated virtual thread so a subsequent
-     * {@link TransportStream#queueWrite} leaves its payload genuinely pending (no synchronous
-     * flush). The returned handle, on {@code close()}, completes the already-requested abortive
-     * {@code reset()} on the slot-owning thread — discarding the pending write before any carrier
-     * reactor can flush it — and then releases the slot.
+     * Test-only egress hold. Pins the {@code writer}'s outbound consumer slot from a dedicated
+     * virtual thread so a subsequent {@link TransportStream#queueWrite} leaves its payload genuinely
+     * pending (no synchronous flush). The returned handle, on {@code close()}, completes an
+     * already-requested abortive {@code reset()} on the slot-owning thread — discarding the pending
+     * write before any carrier reactor can flush it — and then releases the slot; an
+     * already-requested {@code close()} stays pending until the reactor drains it after the release.
      */
     static AutoCloseable holdOutboundConsumer(TransportStream writer) {
         NativeTcpStream stream = (NativeTcpStream) writer;
@@ -201,7 +201,7 @@ final class CommunityTransportTestHarness {
             }
             acquired.countDown();
             awaitUninterruptibly(release);
-            stream.completeAbortAndUnpinOutboundConsumerForTest(self);
+            stream.completeRequestedCloseAndUnpinOutboundConsumerForTest(self);
         });
         awaitUninterruptibly(acquired);
         return () -> {

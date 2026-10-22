@@ -5,6 +5,7 @@
 package eu.exeris.kernel.tck.contract.transport;
 
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
+import eu.exeris.kernel.spi.exceptions.transport.TransportException;
 import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
@@ -24,6 +25,7 @@ import java.lang.foreign.ValueLayout;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +51,10 @@ import static org.assertj.core.api.Assertions.fail;
  *       {@link TransportStreamClosedException} with {@code EX-NET-4009}; the peer-closed code
  *       {@code EX-NET-4008} is not pinned here, because whether a peer's end of stream closes the
  *       local side is transport semantics</li>
+ *   <li>a thread blocked in {@code read()} is woken when its own stream ends: by this endpoint's
+ *       {@code close()}, even while queued writes are still draining, and by the peer's
+ *       {@code reset()}; it then returns end of stream or throws the closed-stream signal, and a
+ *       write after the peer's reset is refused</li>
  *   <li>{@code streamId()} returns a non-negative identifier</li>
  *   <li>{@code connection()} returns non-null parent</li>
  * </ul>
@@ -106,15 +112,51 @@ public abstract class AbstractTransportStreamTck {
      *
      * <p>Bindings whose {@code queueWrite} opportunistically flushes on the caller thread MUST
      * override this so the abandon-vs-drain discriminator is deterministic on a constrained CI box;
-     * a volume-based socket-buffer fill is flaky and platform-dependent. The default returns a no-op
-     * handle and is only consulted from the {@link #expectsTrueReset()}-gated test, so default
-     * bindings never depend on it.
+     * a volume-based socket-buffer fill is flaky and platform-dependent. The terminal-wake cases
+     * hold egress the same way, so the writes they queue are still draining when the stream ends;
+     * for them closing the handle also lets an already-requested {@code close()} finish by draining.
+     * The default returns a no-op handle, so a binding that does not override it relies on
+     * {@link #fillOutboundUntilPending(TransportStream)} to reach a pending state.
      *
      * @param writer the stream that will receive a queued write to be abandoned by {@code reset}
      * @return a handle whose {@code close()} releases the hold; never {@code null}
      */
     protected AutoCloseable holdOutboundEgress(TransportStream writer) {
         return () -> { };
+    }
+
+    /**
+     * Leaves {@code stream} with outbound data it has accepted but not yet handed to the peer, by
+     * queueing fixed-size loans until {@link TransportStream#hasPendingData()} reports pending.
+     *
+     * <p>The cases that need "writes still draining" call this inside a
+     * {@link #holdOutboundEgress(TransportStream)} hold, so the first loan is already pending. For a
+     * binding without a hold the default ends at the first stall the transport reports, and fails
+     * the case if the transport swallows a bounded volume without ever reporting pending data; a
+     * binding whose {@code queueWrite} never reports pending data overrides this with its own way
+     * to reach that state.
+     *
+     * @param stream the stream to load; its peer must not be reading
+     */
+    protected void fillOutboundUntilPending(TransportStream stream) {
+        int chunk = 64 * 1024;
+        long volumeCap = 1L << 30;
+        long queued = 0;
+        while (!stream.hasPendingData()) {
+            if (queued >= volumeCap) {
+                fail("outbound never reported pending data after " + queued + " bytes with the peer not reading");
+            }
+            LoanedBuffer loan = allocator.allocateNetwork(chunk);
+            loan.setSize(chunk);
+            try {
+                stream.queueWrite(loan, chunk);
+            } catch (RuntimeException refused) {
+                // a throwing queueWrite leaves the loan with the caller
+                loan.close();
+                throw refused;
+            }
+            queued += chunk;
+        }
     }
 
     /**
@@ -694,6 +736,193 @@ public abstract class AbstractTransportStreamTck {
                         .as("read() should unblock within 500ms of remote close — got %dms", durationMs)
                         .isLessThanOrEqualTo(500L);
             }
+        }
+    }
+
+    // =========================================================================
+    // Terminal transitions wake blocked readers
+    // =========================================================================
+
+    @Nested
+    @DisplayName("Terminal transitions wake a blocked reader")
+    class TerminalWake {
+
+        private static final long WAKE_SECONDS = 2L;
+        private static final long DRAIN_SECONDS = 10L;
+        private static final int MAX_WRITE_ATTEMPTS = 100_000;
+
+        private BlockedRead startBlockedRead(TransportStream stream) {
+            BlockedRead blocked = new BlockedRead(stream);
+            blocked.thread.start();
+            return blocked;
+        }
+
+        /**
+         * Creates a fixture with no state of its own; JUnit constructs one instance per
+         * {@code @Test} method below to exercise terminal wakeups of a blocked reader.
+         */
+        TerminalWake() {
+            // Declared, not added: the implicit no-arg constructor, written out so it can carry a comment.
+            super();
+        }
+
+        @Test
+        @DisplayName("close() while queued writes are still draining wakes a blocked reader with EX-NET-4009")
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        void closeWithQueuedWritesWakesBlockedReader() throws Exception {
+            TransportStream stream = streams.writer();
+            BlockedRead blocked = startBlockedRead(stream);
+            blocked.awaitParked();
+            try (var _ = holdOutboundEgress(stream)) {
+                fillOutboundUntilPending(stream);
+                assertThat(stream.hasPendingData())
+                        .as("precondition: the queued writes are still draining when close() is called")
+                        .isTrue();
+
+                stream.close();
+
+                assertThat(blocked.outcome(WAKE_SECONDS))
+                        .as("close() ends the stream for its own reader even while queued writes still "
+                                + "drain: the reader must be woken and told so")
+                        .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                                e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
+            }
+            assertThat(drainedToEnd(streams.reader()))
+                    .as("the close still delivers what was queued, then ends the stream for the peer")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("close() with nothing queued wakes a blocked reader with EX-NET-4009")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void closeWithNothingQueuedWakesBlockedReader() throws Exception {
+            TransportStream stream = streams.writer();
+            BlockedRead blocked = startBlockedRead(stream);
+            blocked.awaitParked();
+
+            stream.close();
+
+            assertThat(blocked.outcome(WAKE_SECONDS))
+                    .isInstanceOfSatisfying(TransportStreamClosedException.class,
+                            e -> assertThat(e.errorCode()).isEqualTo(KernelErrorCodes.EX_NET_4009));
+        }
+
+        @Test
+        @DisplayName("the peer's reset() releases a blocked reader, and later writes are refused")
+        @Timeout(value = 30, unit = TimeUnit.SECONDS)
+        void peerResetReleasesBlockedReaderAndRefusesLaterWrites() throws Exception {
+            TransportStream stream = streams.writer();
+            BlockedRead blocked = startBlockedRead(stream);
+            blocked.awaitParked();
+
+            streams.reader().reset(0L);
+
+            Object outcome = blocked.outcome(WAKE_SECONDS);
+            assertThat(outcome)
+                    .as("a reader on a stream whose peer reset it returns end of stream or throws "
+                            + "the closed-stream signal; it never stays blocked")
+                    .satisfiesAnyOf(
+                            o -> assertThat(o).isEqualTo(-1),
+                            o -> assertThat(o).isInstanceOf(TransportStreamClosedException.class));
+            assertThat(writeRefusedWithinDeadline(stream))
+                    .as("the stream is over, so a write is refused with the closed-stream signal")
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("the peer's close() without reset releases a blocked reader with end of stream")
+        @Timeout(value = 10, unit = TimeUnit.SECONDS)
+        void peerCloseReleasesBlockedReaderWithEndOfStream() throws Exception {
+            TransportStream stream = streams.writer();
+            BlockedRead blocked = startBlockedRead(stream);
+            blocked.awaitParked();
+
+            streams.reader().close();
+
+            assertThat(blocked.outcome(WAKE_SECONDS))
+                    .as("a graceful peer close is end of stream, not an error")
+                    .isEqualTo(-1);
+        }
+
+        /** Whether the peer reads to the end of stream, or hits the stream's closed signal, in time. */
+        private boolean drainedToEnd(TransportStream peer) throws InterruptedException {
+            AtomicReference<Boolean> done = new AtomicReference<>(Boolean.FALSE);
+            Thread drainer = Thread.ofVirtual().start(() -> {
+                try (LoanedBuffer sink = allocator.allocateNetwork(64 * 1024)) {
+                    int read;
+                    do {
+                        read = peer.read(sink.segment(), 64 * 1024);
+                    } while (read >= 0);
+                    done.set(Boolean.TRUE);
+                } catch (TransportStreamClosedException _) {
+                    done.set(Boolean.TRUE);
+                } catch (RuntimeException _) {
+                    done.set(Boolean.FALSE);
+                }
+            });
+            drainer.join(TimeUnit.SECONDS.toMillis(DRAIN_SECONDS));
+            return !drainer.isAlive() && done.get();
+        }
+
+        /**
+         * Writes until the closed-stream signal arrives; false if it does not within the deadline
+         * or the attempt bound. A send failure is the one other outcome a write may report first
+         * (it ends the stream, and the next write reports the closed signal); any other exception
+         * is a defect and propagates.
+         */
+        private boolean writeRefusedWithinDeadline(TransportStream stream) {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(WAKE_SECONDS);
+            try (LoanedBuffer probe = allocator.allocate(AllocationHint.MICRO)) {
+                for (int attempt = 0; attempt < MAX_WRITE_ATTEMPTS && System.nanoTime() < deadline; attempt++) {
+                    try {
+                        stream.write(probe.segment(), 1);
+                    } catch (TransportStreamClosedException _) {
+                        return true;
+                    } catch (TransportException _) {
+                        Thread.onSpinWait();
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    /** A virtual thread blocked in {@code read()}, with the way it ended exposed as a future. */
+    private final class BlockedRead {
+
+        private final AtomicReference<Object> outcome = new AtomicReference<>();
+        private final Thread thread;
+
+        private BlockedRead(TransportStream stream) {
+            thread = Thread.ofVirtual().unstarted(() -> {
+                try (LoanedBuffer sink = allocator.allocate(AllocationHint.SMALL)) {
+                    outcome.set(stream.read(sink.segment(), (int) sink.segment().byteSize()));
+                } catch (RuntimeException failure) {
+                    outcome.set(failure);
+                }
+            });
+        }
+
+        /** Waits, by thread state, until the reader is parked: the transport suite's idiom. */
+        private void awaitParked() {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+            while (thread.getState() != Thread.State.WAITING
+                    && thread.getState() != Thread.State.TIMED_WAITING
+                    && System.nanoTime() < deadline) {
+                Thread.onSpinWait();
+            }
+            assertThat(thread.getState())
+                    .as("the reader parks waiting for data")
+                    .isIn(Thread.State.WAITING, Thread.State.TIMED_WAITING);
+        }
+
+        /** The read's result: its byte count, or the exception it ended with. */
+        private Object outcome(long seconds) throws Exception {
+            thread.join(TimeUnit.SECONDS.toMillis(seconds));
+            if (thread.isAlive()) {
+                return fail("the blocked reader was not released within " + seconds + "s");
+            }
+            return outcome.get();
         }
     }
 }

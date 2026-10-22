@@ -304,6 +304,17 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
 
 ### Fixed
 
+- **A thread blocked in `read` on a Community TCP stream is woken by every transition that ends the stream.**
+  The wake was tied to winning the first `close()` or `reset(long)`, a close whose teardown was deferred
+  behind queued writes removed the reader's registration, and the read loop ignored a requested close, so a
+  reader could park again with nothing left to wake it. Every terminal transition now wakes the reader, a
+  writer and a registration waiter; a repeated `close()` or `reset(long)`, a send failure that aborts the
+  stream and the final teardown included, and a reader still completing the TLS handshake stops on a
+  requested close. A send failure finishes the teardown once its thread has released the outbound slot, and the slot gate no longer lets a nested cleanup release a slot its caller holds.
+  Bytes a peer sent before it ended the stream stay readable after a send-failure abort that follows
+  its end; a local `close()` or `reset(long)` still discards them.
+  `AbstractTransportStreamTck` gains the cases that pin the reader's wake on the stream's own `close()` and on the
+  peer's `reset(long)`.
 - **HTTP/2 respond-once responses honour the peer's connection and stream flow-control windows.** The
   session applies `WINDOW_UPDATE` and `SETTINGS_INITIAL_WINDOW_SIZE`; a body the windows cannot carry
   yet finishes on a task that waits for credit while the frame loop keeps reading, and every write to

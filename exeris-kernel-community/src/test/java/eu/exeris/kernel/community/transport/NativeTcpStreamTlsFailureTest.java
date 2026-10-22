@@ -13,6 +13,7 @@ import eu.exeris.kernel.core.crypto.tls.TlsFailureDetail;
 import eu.exeris.kernel.core.crypto.tls.TlsPeerIdentity;
 import eu.exeris.kernel.spi.exceptions.KernelErrorCodes;
 import eu.exeris.kernel.spi.exceptions.crypto.TlsHandshakeException;
+import eu.exeris.kernel.spi.exceptions.transport.TransportStreamClosedException;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 import eu.exeris.kernel.spi.memory.MemoryProviderConfig;
@@ -29,6 +30,8 @@ import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -213,6 +216,45 @@ class NativeTcpStreamTlsFailureTest {
                             X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT));
         } finally {
             outboundSlot.set(null);
+        }
+    }
+
+    @Test
+    @DisplayName("a reader still driving the handshake is released by a close whose teardown is deferred")
+    void readerInHandshakeIsReleasedByDeferredClose() throws Exception {
+        openSsl.errorResult(CoreOpenSslLoader.SSL_ERROR_WANT_READ);
+        CountDownLatch inHandshake = new CountDownLatch(1);
+        Semaphore pause = new Semaphore(0);
+        NativeTcpStream stream = stream(() -> {
+            inHandshake.countDown();
+            try {
+                pause.tryAcquire(20, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        AtomicReference<Throwable> outcome = new AtomicReference<>();
+        Thread slotHolder = Thread.ofPlatform().unstarted(() -> { });
+        assertThat(stream.tryPinOutboundConsumerForTest(slotHolder)).isTrue();
+        Thread reader = Thread.ofPlatform().start(() -> {
+            try (LoanedBuffer sink = ALLOCATOR.allocateNetwork(8)) {
+                stream.read(sink.segment(), 8);
+            } catch (Throwable failure) {
+                outcome.set(failure);
+            }
+        });
+        try {
+            assertThat(inHandshake.await(5, TimeUnit.SECONDS)).isTrue();
+
+            stream.close();
+
+            reader.join(TimeUnit.SECONDS.toMillis(5));
+            assertThat(reader.isAlive()).as("the reader left the handshake").isFalse();
+            assertThat(outcome.get()).isInstanceOf(TransportStreamClosedException.class);
+            assertThat(closeCallbacks).as("the teardown is still deferred").hasValue(0);
+        } finally {
+            stream.unpinOutboundConsumerForTest(slotHolder);
+            pause.release(1000);
         }
     }
 
