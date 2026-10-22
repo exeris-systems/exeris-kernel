@@ -12,6 +12,7 @@ import eu.exeris.kernel.spi.bootstrap.Subsystem;
 import eu.exeris.kernel.spi.bootstrap.SubsystemProvider;
 import eu.exeris.kernel.spi.config.ConfigProvider;
 import eu.exeris.kernel.spi.contract.ContractKernelProviders;
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.contract.WorkloadAdmission;
@@ -290,6 +291,11 @@ class ContractPhaseZeroBootstrapTest {
         @Override
         public Set<String> requiredCapabilities() {
             return Set.of("gateway.core");
+        }
+
+        @Override
+        public EntitlementClass entitlementClass() {
+            return EntitlementClass.COMMERCIAL;
         }
     }
 }

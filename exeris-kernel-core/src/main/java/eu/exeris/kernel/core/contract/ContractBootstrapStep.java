@@ -25,8 +25,6 @@ import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
-import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 /**
@@ -116,7 +114,7 @@ public final class ContractBootstrapStep {
         try {
             ExecutionEnvironment environment = declaredEnvironment(config);
             environmentId = environment.id();
-            Set<String> required = RequirementDiscovery.requiredCapabilities(classLoader);
+            RequirementDiscovery.DeclaredRequirements required = RequirementDiscovery.declared(classLoader);
             ManifestLocator.ManifestSource manifest = ManifestLocator.resolve(
                     config == null ? Optional.empty() : config.getString(MANIFEST_PATH_KEY),
                     Path.of(ManifestLocator.DEFAULT_MANIFEST_FILENAME),
@@ -139,7 +137,7 @@ public final class ContractBootstrapStep {
      * Decides the execution contract from already-resolved inputs.
      *
      * @param environment          declared environment
-     * @param requiredCapabilities capabilities the classpath's requirements declare
+     * @param requirements         what the classpath's requirements declare
      * @param manifestBytes        manifest content, or {@code null} when no manifest was found
      * @param now                  evaluation instant for temporal validity
      * @param keyResolver          issuer key resolution; {@link #run} always passes the embedded one
@@ -147,17 +145,17 @@ public final class ContractBootstrapStep {
      */
     /* default */ static ExecutionContract decide(
             ExecutionEnvironment environment,
-            Set<String> requiredCapabilities,
+            RequirementDiscovery.DeclaredRequirements requirements,
             byte[] manifestBytes,
             Instant now,
             IssuerKeyResolver keyResolver) {
-        List<String> required = List.copyOf(new TreeSet<>(requiredCapabilities));
+        List<String> required = List.copyOf(requirements.byId().keySet());
         if (manifestBytes == null) {
             return withoutManifest(environment, required);
         }
         ExecutionContract contract = LicenseManifestVerifier.verify(
                 JsonCanonicalizer.decodeUtf8(manifestBytes), now, keyResolver);
-        if (environment.requiresEntitlement()) {
+        if (environment.isProductionClass()) {
             contract.assertEnvironment(environment.id()).ifPresent(ContractViolationReporter::report);
             for (String capability : required) {
                 contract.assertCapability(capability).ifPresent(ContractViolationReporter::report);
@@ -171,7 +169,7 @@ public final class ContractBootstrapStep {
         if (required.isEmpty()) {
             return fallback;
         }
-        if (environment.requiresEntitlement()) {
+        if (environment.isProductionClass()) {
             throw new ContractBreachException(
                     KernelErrorCodes.EX_LIC_0005,
                     "No license manifest found, and environment '" + environment.id()

@@ -8,7 +8,7 @@ import eu.exeris.kernel.core.contract.crypto.IssuerKeyResolver;
 import eu.exeris.kernel.core.contract.crypto.JsonCanonicalizer;
 import eu.exeris.kernel.core.contract.jfr.ContractViolationReporterTest;
 import eu.exeris.kernel.spi.config.ConfigProvider;
-import eu.exeris.kernel.spi.contract.EntitlementRequirement;
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.ExecutionContract;
 import eu.exeris.kernel.spi.contract.ExecutionEnvironment;
 import eu.exeris.kernel.spi.contract.WorkloadAdmission;
@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.junit.jupiter.params.provider.ValueSource;
 
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -38,7 +37,8 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
+import java.util.SortedMap;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.LogRecord;
@@ -52,8 +52,8 @@ class ContractBootstrapStepTest {
 
     private static final String KEY_ID = "phase0-test-k1";
     private static final Instant NOW = Instant.parse("2026-10-06T12:00:00Z");
-    private static final Set<String> NO_REQUIREMENT = Set.of();
-    private static final Set<String> GATEWAY = Set.of("gateway-core");
+    private static final RequirementDiscovery.DeclaredRequirements NO_REQUIREMENT = declared();
+    private static final RequirementDiscovery.DeclaredRequirements GATEWAY = declared("gateway-core");
 
     private KeyPair keyPair;
     private IssuerKeyResolver resolver;
@@ -81,7 +81,7 @@ class ContractBootstrapStepTest {
     @DisplayName("No manifest, a requirement, and a production-class environment: the boot stops with EX-LIC-0005")
     void productionClassWithRequirementAndNoManifestHalts(ExecutionEnvironment environment) {
         assertThatThrownBy(() -> ContractBootstrapStep.decide(
-                environment, Set.of("gateway-core", "bot-fingerprinting"), null, NOW, resolver))
+                environment, declared("gateway-core", "bot-fingerprinting"), null, NOW, resolver))
                 .isInstanceOf(ContractBreachException.class)
                 .satisfies(e -> {
                     ContractBreachException breach = (ContractBreachException) e;
@@ -305,7 +305,7 @@ class ContractBootstrapStepTest {
     @DisplayName("A null class loader reads the classpath through the system class loader, not into a NullPointerException")
     void nullClassLoaderFallsBackToSystemLoader(@TempDir Path dir) {
         assertThat(ManifestLocator.resolve(Optional.empty(), dir.resolve("license-manifest.json"), null)).isNull();
-        assertThat(RequirementDiscovery.requiredCapabilities(null)).isEmpty();
+        assertThat(RequirementDiscovery.declared(null).isEmpty()).isTrue();
     }
 
     @Test
@@ -333,59 +333,12 @@ class ContractBootstrapStepTest {
         }
     }
 
-    // ── Requirement discovery ───────────────────────────────────────────────
-
-    @Test
-    @DisplayName("Requirements are discovered through ServiceLoader and merged")
-    void requirementsAreDiscovered(@TempDir Path root) throws Exception {
-        Path services = root.resolve("META-INF/services");
-        Files.createDirectories(services);
-        Files.writeString(services.resolve(EntitlementRequirement.class.getName()),
-                GatewayRequirement.class.getName() + "\n" + BotRequirement.class.getName() + "\n");
-
-        try (URLClassLoader loader = new URLClassLoader(
-                new URL[] {root.toUri().toURL()}, getClass().getClassLoader())) {
-            assertThat(RequirementDiscovery.requiredCapabilities(loader))
-                    .containsExactly("bot-fingerprinting", "gateway-core", "gateway-routing");
-        }
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @ValueSource(classes = {
-            ThrowingRequirement.class, NullRequirement.class, EmptyRequirement.class, MalformedRequirement.class})
-    @DisplayName("A requirement that throws, or declares null, nothing or a malformed id, stops the boot with EX-LIC-0008")
-    void invalidRequirementIsRefused(Class<?> provider, @TempDir Path root) throws Exception {
-        try (URLClassLoader loader = loaderDeclaring(root, provider.getName())) {
-            assertThatThrownBy(() -> RequirementDiscovery.requiredCapabilities(loader))
-                    .isInstanceOf(ContractBreachException.class)
-                    .satisfies(e -> {
-                        ContractBreachException breach = (ContractBreachException) e;
-                        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0008);
-                        assertThat(breach.rawArgs()).containsExactly(provider.getName());
-                    });
-        }
-    }
-
-    @Test
-    @DisplayName("A requirement class that cannot be loaded stops the boot with EX-LIC-0008, not a raw Error")
-    void unloadableRequirementIsRefused(@TempDir Path root) throws Exception {
-        try (URLClassLoader loader = loaderDeclaring(root, "eu.exeris.example.MissingRequirement")) {
-            assertThatThrownBy(() -> RequirementDiscovery.requiredCapabilities(loader))
-                    .isInstanceOf(ContractBreachException.class)
-                    .satisfies(e -> {
-                        ContractBreachException breach = (ContractBreachException) e;
-                        assertThat(breach.errorCode()).isEqualTo(KernelErrorCodes.EX_LIC_0008);
-                        assertThat(breach.rawArgs()).containsExactly(EntitlementRequirement.class.getName());
-                    });
-        }
-    }
-
     @Test
     @DisplayName("A requirement outside production with no manifest boots, and warns that the code runs ungated")
     void ungatedRequirementWarns() {
         List<LogRecord> warnings = ContractViolationReporterTest.captureWarnings(() ->
                 assertThat(ContractBootstrapStep.decide(
-                        ExecutionEnvironment.STAGING, Set.of("staging-only-capability"), null, NOW, resolver)
+                        ExecutionEnvironment.STAGING, declared("staging-only-capability"), null, NOW, resolver)
                         .edition()).isEqualTo("community"));
 
         assertThat(warnings).singleElement().satisfies(r -> assertThat(
@@ -441,68 +394,17 @@ class ContractBootstrapStepTest {
         }
     }
 
-    private static URLClassLoader loaderDeclaring(Path root, String providerClass) throws Exception {
-        Path services = root.resolve("META-INF/services");
-        Files.createDirectories(services);
-        Files.writeString(services.resolve(EntitlementRequirement.class.getName()), providerClass + "\n");
-        return new URLClassLoader(new URL[] {root.toUri().toURL()}, ContractBootstrapStepTest.class.getClassLoader());
-    }
-
-    /** Test requirement that fails to declare. */
-    public static final class ThrowingRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            throw new IllegalStateException("not ready");
-        }
-    }
-
-    /** Test requirement that declares null. */
-    public static final class NullRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return null;
-        }
-    }
-
-    /** Test requirement that declares nothing. */
-    public static final class EmptyRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return Set.of();
-        }
-    }
-
-    /** Test requirement that declares an identifier no manifest could entitle. */
-    public static final class MalformedRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return Set.of("Gateway Core");
-        }
-    }
-
-    @Test
-    @DisplayName("A classpath with no requirement declares nothing")
-    void noRequirementOnPlainClasspath() {
-        assertThat(RequirementDiscovery.requiredCapabilities(getClass().getClassLoader())).isEmpty();
-    }
-
-    /** Test requirement: two gateway capabilities. */
-    public static final class GatewayRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return Set.of("gateway-core", "gateway-routing");
-        }
-    }
-
-    /** Test requirement: one overlapping and one distinct capability. */
-    public static final class BotRequirement implements EntitlementRequirement {
-        @Override
-        public Set<String> requiredCapabilities() {
-            return Set.of("gateway-core", "bot-fingerprinting");
-        }
-    }
-
     // ── Fixtures ────────────────────────────────────────────────────────────
+
+    private static RequirementDiscovery.DeclaredRequirements declared(String... capabilities) {
+        SortedMap<String, EntitlementClass> byId = new TreeMap<>();
+        SortedMap<String, String> providerById = new TreeMap<>();
+        for (String capability : capabilities) {
+            byId.put(capability, EntitlementClass.COMMERCIAL);
+            providerById.put(capability, "test-provider");
+        }
+        return new RequirementDiscovery.DeclaredRequirements(byId, providerById);
+    }
 
     private byte[] signedManifest(List<String> environments, List<String> capabilities) throws Exception {
         return signedManifest(environments, capabilities, "HARD");

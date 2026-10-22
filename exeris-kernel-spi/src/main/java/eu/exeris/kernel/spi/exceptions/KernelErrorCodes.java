@@ -1436,13 +1436,14 @@ public final class KernelErrorCodes {
 
     /**
      * An {@code EntitlementRequirement} on the classpath breaks its contract: it cannot be loaded or
-     * instantiated, throws, or returns {@code null}, an empty set, or an identifier that is not a capability
-     * identifier. Raised by the contract gate before any subsystem is initialized, in every environment.
+     * instantiated, throws, or returns {@code null}, an empty set, an identifier that is not a capability
+     * identifier or a {@code null} entitlement class, or declares one identifier under two classes. Raised
+     * by the contract gate before any subsystem is initialized, in every environment.
      *
      * <p><b>rawArgs layout for Glass-Box:</b>
      * <ul>
      *   <li>index 0 – {@code String} provider class name, or the service name when the provider could not
-     *       be loaded</li>
+     *       be loaded; for an identifier declared under two classes, the second provider</li>
      * </ul>
      */
     public static final String EX_LIC_0008 = "EX-LIC-0008";
