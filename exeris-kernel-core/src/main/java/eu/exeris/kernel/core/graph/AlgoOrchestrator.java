@@ -100,20 +100,9 @@ public final class AlgoOrchestrator {
         Objects.requireNonNull(target,   NULL_TARGET);
         Objects.requireNonNull(weightFn, NULL_WEIGHT);
 
-        final AlgoOrchestratorEvent event = AlgoOrchestratorEvent.beginIfEnabled();
-        if (event != null) {
-            event.algorithmName = pathFinder.algorithmName();
-            event.operationType = "SHORTEST_PATH";
-        }
-
+        final long startNs = System.nanoTime();
         PathResult result = pathFinder.findShortestPath(source, target, weightFn);
-
-        if (event != null) {
-            event.found     = result.found();
-            event.hopCount  = result.hopCount();
-            event.totalCost = result.totalCost();
-            event.commit();
-        }
+        AlgoOrchestratorEvent.emitSingle(pathFinder.algorithmName(), "SHORTEST_PATH", result, startNs);
 
         if (failIfNotFound && !result.found()) {
             throw new PathNotFoundException(source, target);
@@ -139,21 +128,9 @@ public final class AlgoOrchestrator {
         Objects.requireNonNull(targets,  NULL_TARGETS);
         Objects.requireNonNull(weightFn, NULL_WEIGHT);
 
-        final AlgoOrchestratorEvent event = AlgoOrchestratorEvent.beginIfEnabled();
-        if (event != null) {
-            event.algorithmName = pathFinder.algorithmName();
-            event.operationType = "MULTI_TARGET_SHORTEST_PATH";
-        }
-
+        final long startNs = System.nanoTime();
         Map<UUID, PathResult> results = pathFinder.findShortestPaths(source, targets, weightFn);
-
-        if (event != null) {
-            long foundCount = results.values().stream().filter(PathResult::found).count();
-            event.found     = foundCount > 0;
-            event.hopCount  = (int) foundCount;
-            event.totalCost = Double.NaN;
-            event.commit();
-        }
+        AlgoOrchestratorEvent.emitMultiTarget(pathFinder.algorithmName(), results, startNs);
 
         return results;
     }
@@ -181,20 +158,9 @@ public final class AlgoOrchestrator {
             throw new IllegalArgumentException("maxPaths must be >= 1, got: " + maxPaths);
         }
 
-        final AlgoOrchestratorEvent event = AlgoOrchestratorEvent.beginIfEnabled();
-        if (event != null) {
-            event.algorithmName = pathFinder.algorithmName();
-            event.operationType = "K_SHORTEST_PATHS";
-        }
-
+        final long startNs = System.nanoTime();
         List<PathResult> results = pathFinder.findKShortestPaths(source, target, maxPaths, weightFn);
-
-        if (event != null) {
-            event.found     = !results.isEmpty();
-            event.hopCount  = results.size();
-            event.totalCost = results.isEmpty() ? Double.POSITIVE_INFINITY : results.getFirst().totalCost();
-            event.commit();
-        }
+        AlgoOrchestratorEvent.emitKPaths(pathFinder.algorithmName(), results, startNs);
 
         return results;
     }
