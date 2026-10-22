@@ -28,7 +28,7 @@ import java.util.Optional;
  * {@link ScopedValue} slot <em>before</em> calling {@link eu.exeris.kernel.spi.flow.FlowEngine#start()}.
  * During {@code start()}, the engine reads that slot (if and only if
  * {@link eu.exeris.kernel.spi.flow.FlowEngineConfig#persistenceEnabled()} is {@code true})
- * and wires the store into the PARK / LRU-eviction path. If {@code persistenceEnabled} is
+ * and wires the store into the PARK and terminal-transition path. If {@code persistenceEnabled} is
  * {@code true} but the slot is unbound, {@code FlowEngine.start()} MUST throw
  * {@link eu.exeris.kernel.spi.exceptions.flow.FlowEngineException} ({@code EX-FLOW-7002}).
  *
@@ -38,13 +38,14 @@ import java.util.Optional;
  * no constructor parameters, no magic DI, no {@code ServiceLoader} for the store itself.
  *
  * <h2>Call Contract</h2>
- * <p>Once wired, the engine calls {@link #save(FlowSnapshot)} asynchronously on the
- * PARK transition and synchronously on LRU eviction.
+ * <p>Once wired, the engine calls {@link #save(FlowSnapshot)} synchronously on the calling thread
+ * (the flow's worker for step outcomes): at the PARK transition, at the start of compensation, at a
+ * terminal transition and at a version migration. It never calls it on a catalogue eviction.
  *
  * <p><b>Allocation:</b> allocates — {@link #load} and {@link #listParked()} materialise
  * {@link FlowSnapshot} carriers and the defensive array copies each one makes. A write may be
  * zero-copy in a binding that streams from the off-heap slab. Every method here is on the cold
- * persistence path (PARK, eviction, restart recovery), never on step dispatch.
+ * persistence path (PARK, terminal transition, restart recovery), never on step dispatch.
  * <p><b>Thread confinement:</b> any thread — {@link #save} may be called from any virtual thread,
  * and implementations are required to be thread-safe.
  * <p><b>Ownership:</b> whatever bound the store owns it. This interface has no {@code close()}, so a
@@ -74,7 +75,9 @@ public interface FlowSnapshotStore {
      * @implSpec May be called from any virtual thread; implementations MUST be thread-safe. A
      *           durable, distributed store MUST advance the on-disk {@code schemaVersion} by one on
      *           every accepted write and MUST reject a write whose incoming version does not match
-     *           the row it addresses.
+     *           the row it addresses. It MUST accept a snapshot in any {@link FlowState}, including
+     *           {@code COMPLETED} and {@code FAILED_ROLLEDBACK}, and {@link #load} MUST return it as
+     *           written; the engine relies on a terminal row as proof that an instance finished.
      */
     void save(FlowSnapshot snapshot);
 
@@ -96,8 +99,10 @@ public interface FlowSnapshotStore {
      * @param instanceIdMost  most-significant bits of the flow instance UUID
      * @param instanceIdLeast least-significant bits of the flow instance UUID
      * @apiNote The engine calls this on completion only while its terminal-state catalogue is
-     *          unbounded. Under a bounded catalogue the completed row is deliberately kept, because
-     *          it is the only proof of completion that survives an eviction.
+     *          unbounded. Under a bounded catalogue the engine replaces the row with a
+     *          {@code COMPLETED} snapshot instead of deleting it. That row is the proof of
+     *          completion that survives an eviction or a restart. The engine never reclaims terminal
+     *          rows; the binder does, and deleting one lets that instance id run again.
      */
     void delete(long instanceIdMost, long instanceIdLeast);
 

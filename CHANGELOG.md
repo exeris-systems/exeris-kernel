@@ -204,7 +204,7 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   `instanceIdLeast`, `existingState` naming the `FlowState`: `RUNNING`, `PARKED`, `COMPLETED` or
   `FAILED_ROLLEDBACK`, or `TERMINAL` when the finished instance's state is no longer cached). Two limits are documented on `ChoreographyDecision.Start`: with the
   default `terminalCatalogMaxSize` the no-op does not hold across an engine restart (bounded mode also needs a
-  snapshot store and a row within the saga TTL), and a non-terminal durable row is resumed rather than treated
+  snapshot store), and a non-terminal durable row is resumed rather than treated
   as a duplicate, which raises no event.
 - **Core binds `OPENSSL_cleanse` and exposes it as `CoreOpenSslRuntime#cleanse(MemorySegment)`.** The
   facade zeroes a native segment through the C routine, skipping null and zero-length segments and
@@ -303,6 +303,18 @@ Format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.
   exemption.
 
 ### Fixed
+
+- **A completed flow is not run again, and does not come back as parked, after a bounded terminal catalog
+  evicts it or the engine restarts.** With `terminalCatalogMaxSize > 0` and a snapshot store bound,
+  completion now replaces the instance's row with a `COMPLETED` snapshot. A resubmit or a choreography
+  `Start` for that id is absorbed as terminal, `lookupParked` returns empty, and a wake is refused with
+  `NOT_PARKED`. Before this fix, a flow that never parked ran again from its first step, and one that had
+  parked came back as `PARKED` and ran its post-park steps again on the next wake; failed flows were
+  already fenced. Bounded mode now writes one row per completed instance and the kernel reclaims no
+  terminal row, so the binder owns their retention; deleting a row lets its id run again. The unbounded
+  default is unchanged. `FlowSnapshotStore` states that a store accepts and returns terminal snapshots,
+  which `AbstractDistributedFlowSnapshotStoreTck` now checks, and `AbstractSagaRecoveryTck` gains the
+  `createBoundedEngine(int)` obligation, whose default throws so that no binding skips it.
 
 - **A thread blocked in `read` on a Community TCP stream is woken by every transition that ends the stream.**
   The wake was tied to winning the first `close()` or `reset(long)`, a close whose teardown was deferred

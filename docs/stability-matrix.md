@@ -68,7 +68,7 @@ this is informational and **not** a dependency of the open-core surface.
 |---|---|---|---|---|---|
 | `…spi.diagnostics` | **stable** | 0.9.0 | ADR-033 | `AbstractKernelDiagnosticsTck` (+ JSON schema fixture) | `KernelDiagnosticsProvider` priority=100 (follow-up) |
 | `…spi.persistence` | **stable** | 0.5.0 | ADR-022, ADR-080 [^rowcursor] | `AbstractPersistenceProviderTck`, `…EngineTck`, `…OutboxGuaranteeTck`, `AbstractRowCursorTypeSetTck`, +7 | yes (slab/FFM tier) |
-| `…spi.flow` | **stable** | 0.5.0 | ADR-013 | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +4 | v0.11 record-component note below |
+| `…spi.flow` | **stable** | 0.5.0 | ADR-013 [^flowterminal] | `AbstractFlowEngineTck`, `…SagaRecoveryTck`, `…IdempotencyGuardTck`, +4 | v0.11 record-component note below |
 
 > **`spi.flow` in v0.11 — `FlowSnapshot` gains three record components.** `currentStepName` (ADR-062), `definitionVersion` (ADR-064) and `compensationStepNames` (ADR-064 amendment A5) move the canonical constructor from eleven parameters to fourteen. The 0.10.0 constructor descriptor is **restored as an overload**, so code compiled against 0.10.0 still constructs snapshots — and all three new components default to their fail-closed sentinels (`Optional.empty()`, `VERSION_ABSENT`, an empty identity array), so the bridge buys compilation and never a bypass of the resume guards those decisions added (`AbstractFlowDefinitionVersioningTck$StabilityCompatibility` asserts both halves). Because 0.11 is unreleased, the intermediate twelve- and thirteen-parameter descriptors never shipped, so no further bridge is owed — one overload covers the whole milestone.
 >
@@ -334,6 +334,19 @@ maturity change here.
     kept as a bridge that reports zero. The API-diff gate reports the new component and constructor;
     the note is here because the narrowed promise of `publish` on a brokered bus is the change, and no
     diff reports that.
+
+[^flowterminal]: **Behavioural note, 0.13 (ADR-013).** With `terminalCatalogMaxSize > 0` and a
+    snapshot store bound, the engine now calls `FlowSnapshotStore.save` with a `COMPLETED` snapshot when an
+    instance completes, in place of leaving a stale `PARKED` row or no row. A store must accept and
+    return a snapshot in any `FlowState`; one that keeps only `PARKED` rows, or filters `load` by state,
+    loses the idempotency fence. The kernel reclaims no terminal row, so the binder owns retention.
+    Javadoc on `FlowSnapshotStore`, `FlowSnapshot`, `ChoreographyDecision.Start` and `FlowEngineConfig`
+    no longer describes a save on eviction or a saga TTL retention, neither of which exists.
+    `AbstractDistributedFlowSnapshotStoreTck` checks the store half. An out-of-tree
+    `AbstractSagaRecoveryTck` binding must override the new `createBoundedEngine(int)`; its default
+    throws, so the bounded cases fail rather than skip. No signature changes, so the
+    API-diff gate reports nothing; the note is here because the stricter reading of `save`/`load` is a
+    change in behaviour that no diff reports.
 
 [^graphpath]: **Contract widening and source-incompatible change, 0.13 (ADR-102).** `GraphHop`,
     `GraphPathSpec`, `GraphSession.traversePath`/`streamPathJson` and `GraphDialect.buildPathQuery` are

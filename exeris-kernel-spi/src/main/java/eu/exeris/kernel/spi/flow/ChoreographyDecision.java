@@ -47,8 +47,8 @@ public sealed interface ChoreographyDecision
      *   <li>With {@code FlowEngineConfig#terminalCatalogMaxSize()} at {@code 0} (the default) a
      *       completed instance's durable row is deleted, so after an engine restart a redelivered
      *       Start runs the flow again. The no-op holds across restarts only in bounded-catalog mode,
-     *       with a snapshot store configured, and while the retained row is still within the
-     *       distributed saga TTL retention.</li>
+     *       with a snapshot store configured, and until the binder deletes the row the engine
+     *       leaves for each finished instance.</li>
      *   <li>When the id exists only as a non-terminal durable row, Start resumes that row instead of
      *       treating it as a duplicate. Two engines that own the same instance are not fenced
      *       against each other.</li>
